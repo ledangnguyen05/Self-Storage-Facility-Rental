@@ -9,5 +9,5 @@ public interface JwtService {
     String extractEmail(String token);
     boolean isTokenValid(String token);
     boolean isTokenExpired(String token);
-
+    boolean isAccessToken(String token);
 }

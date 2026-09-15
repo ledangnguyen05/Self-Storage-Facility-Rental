@@ -11,9 +11,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
-import java.security.Key;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 @Slf4j
@@ -32,10 +34,21 @@ public class JwtServiceImpl implements JwtService {
 
     @Override
     public String generateAccessToken(User user) {
+        Map<String, Object> extraClaims = new HashMap<>();
+        if (user.getId() != null) {
+            extraClaims.put("userId", user.getId().toString());
+        }
+        if (user.getRole() != null) {
+            extraClaims.put("role", user.getRole().getName());
+        }
+        if (user.getFullName() != null) {
+            extraClaims.put("fullName", user.getFullName());
+        }
         return buildToken(
                 user.getEmail(),
                 TokenType.ACCESS,
-                accessTokenExpiration
+                accessTokenExpiration,
+                extraClaims
         );
     }
 
@@ -44,7 +57,8 @@ public class JwtServiceImpl implements JwtService {
         return buildToken(
                 user.getEmail(),
                 TokenType.REFRESH,
-                refreshTokenExpiration
+                refreshTokenExpiration,
+                null
         );
     }
 
@@ -53,7 +67,8 @@ public class JwtServiceImpl implements JwtService {
         return buildToken(
                 user.getEmail(),
                 TokenType.RESET_PASSWORD,
-                RESET_PASSWORD_EXPIRATION
+                RESET_PASSWORD_EXPIRATION,
+                null
         );
     }
 
@@ -74,6 +89,18 @@ public class JwtServiceImpl implements JwtService {
     }
 
     @Override
+    public boolean isAccessToken(String token) {
+        try {
+            Claims claims = extractAllClaims(token);
+            String type = claims.get("type", String.class);
+            return TokenType.ACCESS.name().equals(type) && !isTokenExpired(token);
+        } catch (JwtException | IllegalArgumentException e) {
+            log.warn("Invalid access token: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
     public boolean isTokenExpired(String token) {
         return extractAllClaims(token)
                 .getExpiration()
@@ -83,20 +110,27 @@ public class JwtServiceImpl implements JwtService {
     private String buildToken(
             String email,
             TokenType tokenType,
-            long expiration
+            long expiration,
+            Map<String, Object> extraClaims
     ) {
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(email)
                 .claim("type", tokenType.name())
                 .issuedAt(new Date())
                 .expiration(
                         new Date(System.currentTimeMillis() + expiration)
-                )
+                );
+
+        if (extraClaims != null) {
+            extraClaims.forEach(builder::claim);
+        }
+
+        return builder
                 .signWith(getSigningKey())
                 .compact();
     }
 
-    private Key getSigningKey() {
+    private SecretKey getSigningKey() {
         return Keys.hmacShaKeyFor(
                 secretKey.getBytes(StandardCharsets.UTF_8)
         );
@@ -104,9 +138,9 @@ public class JwtServiceImpl implements JwtService {
 
     private Claims extractAllClaims(String token) {
         return Jwts.parser()
-                .setSigningKey(getSigningKey())
+                .verifyWith(getSigningKey())
                 .build()
-                .parseClaimsJws(token)
-                .getBody();
+                .parseSignedClaims(token)
+                .getPayload();
     }
 }

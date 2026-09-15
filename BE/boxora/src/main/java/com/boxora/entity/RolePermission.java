@@ -27,6 +27,7 @@ public class RolePermission extends BaseEntity{
     private Permission permission;
 
     @Column(nullable = false)
+    @Builder.Default
     private Boolean isActive = true;
 
     @Size(max=255, message = "Description must be less than 255 characters")

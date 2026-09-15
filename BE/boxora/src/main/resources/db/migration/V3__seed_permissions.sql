@@ -1,0 +1,283 @@
+INSERT INTO permissions
+(
+    id,
+    created_at,
+    updated_at,
+    name,
+    permission_group,
+    description,
+    is_active
+)
+VALUES
+
+-- USER
+(
+    '10000000-0000-0000-0000-000000000001',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'USER_VIEW',
+    'USER',
+    'View users',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000002',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'USER_CREATE',
+    'USER',
+    'Create users',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000003',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'USER_UPDATE',
+    'USER',
+    'Update users',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000004',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'USER_DELETE',
+    'USER',
+    'Delete users',
+    TRUE
+),
+
+-- ROLE
+(
+    '10000000-0000-0000-0000-000000000005',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'ROLE_VIEW',
+    'ROLE',
+    'View roles',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000006',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'ROLE_CREATE',
+    'ROLE',
+    'Create roles',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000007',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'ROLE_UPDATE',
+    'ROLE',
+    'Update roles',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000008',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'ROLE_DELETE',
+    'ROLE',
+    'Delete roles',
+    TRUE
+),
+
+-- FACILITY
+(
+    '10000000-0000-0000-0000-000000000009',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'FACILITY_VIEW',
+    'FACILITY',
+    'View facilities',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000010',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'FACILITY_CREATE',
+    'FACILITY',
+    'Create facilities',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000011',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'FACILITY_UPDATE',
+    'FACILITY',
+    'Update facilities',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000012',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'FACILITY_DELETE',
+    'FACILITY',
+    'Delete facilities',
+    TRUE
+),
+
+-- STORAGE UNIT
+(
+    '10000000-0000-0000-0000-000000000013',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'STORAGE_UNIT_VIEW',
+    'STORAGE_UNIT',
+    'View storage units',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000014',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'STORAGE_UNIT_CREATE',
+    'STORAGE_UNIT',
+    'Create storage units',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000015',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'STORAGE_UNIT_UPDATE',
+    'STORAGE_UNIT',
+    'Update storage units',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000016',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'STORAGE_UNIT_DELETE',
+    'STORAGE_UNIT',
+    'Delete storage units',
+    TRUE
+),
+
+-- BOOKING
+(
+    '10000000-0000-0000-0000-000000000017',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'BOOKING_VIEW',
+    'BOOKING',
+    'View bookings',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000018',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'BOOKING_CREATE',
+    'BOOKING',
+    'Create bookings',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000019',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'BOOKING_UPDATE',
+    'BOOKING',
+    'Update bookings',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000020',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'BOOKING_CANCEL',
+    'BOOKING',
+    'Cancel bookings',
+    TRUE
+),
+
+-- PAYMENT
+(
+    '10000000-0000-0000-0000-000000000021',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'PAYMENT_VIEW',
+    'PAYMENT',
+    'View payments',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000022',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'PAYMENT_CREATE',
+    'PAYMENT',
+    'Create payments',
+    TRUE
+),
+
+-- SUPPORT
+(
+    '10000000-0000-0000-0000-000000000023',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'SUPPORT_VIEW',
+    'SUPPORT',
+    'View support tickets',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000024',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'SUPPORT_CREATE',
+    'SUPPORT',
+    'Create support tickets',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000025',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'SUPPORT_UPDATE',
+    'SUPPORT',
+    'Update support tickets',
+    TRUE
+),
+
+-- REPORT
+(
+    '10000000-0000-0000-0000-000000000026',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'REPORT_VIEW',
+    'REPORT',
+    'View business reports',
+    TRUE
+),
+
+-- POLICY
+(
+    '10000000-0000-0000-0000-000000000027',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'POLICY_VIEW',
+    'POLICY',
+    'View facility policies',
+    TRUE
+),
+(
+    '10000000-0000-0000-0000-000000000028',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    'POLICY_UPDATE',
+    'POLICY',
+    'Update facility policies',
+    TRUE
+)
+
+    ON CONFLICT (id) DO NOTHING;

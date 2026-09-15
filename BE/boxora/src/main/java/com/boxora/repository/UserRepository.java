@@ -20,6 +20,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     boolean existsByUsername(String username);
     boolean existsByUsernameAndIdNot(String username, UUID id);
     boolean existsByEmailAndIdNot(String email, UUID id);
+    boolean existsByRole_Id(UUID roleId);
 
     @Query("""
             SELECT u FROM User u

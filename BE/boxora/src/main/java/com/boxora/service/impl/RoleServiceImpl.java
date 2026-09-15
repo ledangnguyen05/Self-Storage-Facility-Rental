@@ -8,6 +8,8 @@ import com.boxora.entity.Role;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.RoleMapper;
+import com.boxora.repository.RolePermissionRepository;
+import com.boxora.repository.UserRepository;
 import com.boxora.repository.RoleRepository;
 import com.boxora.service.RoleService;
 import org.springframework.data.domain.Page;
@@ -22,16 +24,22 @@ import org.springframework.stereotype.*;
 import java.util.*;
 
 @Service
-@RequiredArgsConstructor  // do not need to create constructor RoleServiceImpl
-@Slf4j  // do not need to create constructor      private static final Logger log
-@Transactional  /*if a method contains 2 repository.save , Transactional make sure that
-either both features save success or both fail, if 1 success and 1 fail then will roll back
-and that method will not save in db
-*/
-
+@RequiredArgsConstructor
+@Slf4j
+@Transactional
 public class RoleServiceImpl implements RoleService {
 
+    private static final Set<String> SYSTEM_ROLES = Set.of(
+            "ADMIN",
+            "FACILITY_MANAGER",
+            "BUSINESS_MANAGER",
+            "STAFF",
+            "CUSTOMER"
+    );
+
     private final RoleRepository roleRepository;
+    private final UserRepository userRepository;
+    private final RolePermissionRepository rolePermissionRepository;
     private final RoleMapper roleMapper;
 
     @Override
@@ -43,11 +51,13 @@ public class RoleServiceImpl implements RoleService {
 
     @Override
     public RoleResponse create(RoleCreateRequest request) {
-        if(roleRepository.existsByName(request.getName())){
+        String trimmedName = request.getName() != null ? request.getName().trim() : "";
+        if(roleRepository.existsByName(trimmedName)){
             throw new AppException(ErrorCode.ROLE_NAME_EXISTED);
         }
-        Role role=roleMapper.toEntity(request);
-        Role saved=roleRepository.save(role);
+        Role role = roleMapper.toEntity(request);
+        role.setName(trimmedName);
+        Role saved = roleRepository.save(role);
 
         return roleMapper.toResponse(saved);
     }
@@ -57,12 +67,21 @@ public class RoleServiceImpl implements RoleService {
         Role role = roleRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
 
-        if(roleRepository.existsByNameAndIdNot(request.getName(),role.getId())){
+        String trimmedName = request.getName() != null ? request.getName().trim() : role.getName();
+
+        // Protect system role name from being renamed
+        if (SYSTEM_ROLES.contains(role.getName().toUpperCase())
+                && !role.getName().equalsIgnoreCase(trimmedName)) {
+            throw new AppException(ErrorCode.CANNOT_MODIFY_SYSTEM_ROLE);
+        }
+
+        if(roleRepository.existsByNameAndIdNot(trimmedName, role.getId())){
             throw new AppException(ErrorCode.ROLE_NAME_EXISTED);
         }
 
         roleMapper.updateEntityFromRequest(request, role);
-        Role updated=roleRepository.save(role);
+        role.setName(trimmedName);
+        Role updated = roleRepository.save(role);
         return roleMapper.toResponse(updated);
     }
 
@@ -70,6 +89,20 @@ public class RoleServiceImpl implements RoleService {
     public void delete(UUID id) {
         Role role = roleRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
+
+        // Protect default system roles
+        if (SYSTEM_ROLES.contains(role.getName().toUpperCase())) {
+            throw new AppException(ErrorCode.CANNOT_DELETE_SYSTEM_ROLE);
+        }
+
+        // Prevent deletion if users are currently assigned to this role
+        if (userRepository.existsByRole_Id(role.getId())) {
+            throw new AppException(ErrorCode.ROLE_IN_USE);
+        }
+
+        // Cascade delete permissions assigned to this role before deleting the role
+        rolePermissionRepository.deleteAllByRole_Id(role.getId());
+
         roleRepository.deleteById(role.getId());
     }
 

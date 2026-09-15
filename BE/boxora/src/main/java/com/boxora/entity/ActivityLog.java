@@ -12,32 +12,24 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class ActivityLog {
+public class ActivityLog extends BaseEntity {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user;
 
-    @Column(name = "user_id")
-    private Long userId;
-
-    @Column(length = 50)
+    @Column(name = "username", length = 50)
     private String username;
 
-    @Column(nullable = false, length = 100)
+    @Column(name = "action", nullable = false, length = 100)
     private String action;
 
-    @Column(columnDefinition = "TEXT")
+    @Column(name = "details")
     private String details;
 
     @Column(name = "ip_address", length = 45)
     private String ipAddress;
 
-    @Column(name = "timestamp", nullable = false, updatable = false)
+    @Column(name = "timestamp", nullable = false)
     private LocalDateTime timestamp;
-
-    @PrePersist
-    public void prePersist() {
-        this.timestamp = LocalDateTime.now();
-    }
 }

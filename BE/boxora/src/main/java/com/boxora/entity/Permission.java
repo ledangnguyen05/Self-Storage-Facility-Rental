@@ -16,12 +16,13 @@ public class Permission extends BaseEntity{
     @NotEmpty(message = "Permission name is required")
     private String name;
 
-    @Column(name = "permission_group", unique = true, nullable = false)
+    @Column(name = "permission_group", nullable = false)
     @NotEmpty(message = "Permission group is required")
     private String permissionGroup;
 
     private String description;
 
     @Column(nullable = false)
+    @Builder.Default
     private Boolean isActive=true;
 }

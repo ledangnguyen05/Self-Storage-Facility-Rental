@@ -12,16 +12,12 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class UnitType {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+public class UnitType extends BaseEntity {
 
     @Column(name = "type_name", nullable = false, length = 100)
     private String typeName;
 
-    @Column(nullable = false, length = 50)
+    @Column(name = "dimensions", nullable = false, length = 50)
     private String dimensions;
 
     @Column(name = "area_sqm", nullable = false)

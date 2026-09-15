@@ -1,7 +1,5 @@
 package com.boxora.entity;
 
-import com.boxora.enums.PaymentStatus;
-import com.boxora.enums.PaymentType;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -15,11 +13,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Payment {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+public class Payment extends BaseEntity {
 
     @Column(name = "transaction_id", nullable = false, unique = true, length = 60)
     private String transactionId;
@@ -28,25 +22,18 @@ public class Payment {
     @JoinColumn(name = "booking_id", nullable = false)
     private Booking booking;
 
-    @Column(nullable = false, precision = 12, scale = 2)
+    @Column(name = "amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal amount;
 
-    @Enumerated(EnumType.STRING)
     @Column(name = "payment_type", nullable = false, length = 30)
-    private PaymentType paymentType;
+    private String paymentType;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
-    private PaymentStatus status;
+    @Column(name = "status", nullable = false, length = 30)
+    private String status;
 
     @Column(name = "payment_method", length = 50)
     private String paymentMethod;
 
-    @Column(name = "payment_time", nullable = false, updatable = false)
+    @Column(name = "payment_time", nullable = false)
     private LocalDateTime paymentTime;
-
-    @PrePersist
-    public void prePersist() {
-        this.paymentTime = LocalDateTime.now();
-    }
 }

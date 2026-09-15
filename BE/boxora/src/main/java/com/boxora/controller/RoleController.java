@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("api/v1/roles")
+@RequestMapping("/api/v1/roles")
 @RequiredArgsConstructor
 @Slf4j
 public class RoleController {

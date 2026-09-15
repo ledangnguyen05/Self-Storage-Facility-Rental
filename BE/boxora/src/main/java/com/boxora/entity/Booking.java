@@ -7,6 +7,7 @@ import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "bookings")
@@ -15,11 +16,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Booking {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+public class Booking extends BaseEntity {
 
     @Column(name = "booking_code", nullable = false, unique = true, length = 30)
     private String bookingCode;
@@ -48,26 +45,27 @@ public class Booking {
     private BigDecimal depositPaid;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
+    @Column(name = "status", nullable = false, length = 30)
     private BookingStatus status;
 
     @Column(name = "access_code", length = 20)
     private String accessCode;
 
+    @Column(name = "access_pin", length = 10)
+    private String accessPin;
+
+    @Column(name = "qr_access_token", length = 255)
+    private String qrAccessToken;
+
+    @Column(name = "pin_updated_at")
+    private LocalDateTime pinUpdatedAt;
+
     @Column(name = "handed_over_by_staff_id")
-    private Long handedOverByStaffId;
+    private UUID handedOverByStaffId;
 
     @Column(name = "handover_time")
     private LocalDateTime handoverTime;
 
     @Column(name = "return_time")
     private LocalDateTime returnTime;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @PrePersist
-    public void prePersist() {
-        this.createdAt = LocalDateTime.now();
-    }
 }

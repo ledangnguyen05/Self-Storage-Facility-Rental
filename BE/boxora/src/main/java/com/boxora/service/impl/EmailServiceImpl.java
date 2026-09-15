@@ -43,7 +43,7 @@ public class EmailServiceImpl implements EmailService {
                     </a>
                     <p>If you did not request this, please ignore this email.</p>
                     <hr/>
-                    <p style="color: #999; font-size: 12px;">LMS Platform</p>
+                    <p style="color: #999; font-size: 12px;">Store Hub Platform</p>
                 </div>
                 """.formatted(fullName, resetLink);
 
@@ -54,20 +54,20 @@ public class EmailServiceImpl implements EmailService {
     @Override
     public void sendWelcomeEmail(String toEmail, String fullName) {
         String loginLink = frontendUrl + "/login";
-        String subject = "Welcome to LMS!";
+        String subject = "Welcome to Store Hub!";
         String content = """
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                    <h2>Welcome to LMS!</h2>
+                    <h2>Welcome to Store Hub!</h2>
                     <p>Hi <strong>%s</strong>,</p>
                     <p>Your account has been created successfully.</p>
                     <a href="%s"
                        style="display: inline-block; padding: 12px 24px; margin: 16px 0;
                               background-color: #4F46E5; color: white;
                               text-decoration: none; border-radius: 6px;">
-                        Start Learning
+                        Go to boxora platform
                     </a>
                     <hr/>
-                    <p style="color: #999; font-size: 12px;">LMS Platform</p>
+                    <p style="color: #999; font-size: 12px;">Store Hub Platform</p>
                 </div>
                 """.formatted(fullName, loginLink);
 
