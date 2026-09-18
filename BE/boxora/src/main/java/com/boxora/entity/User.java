@@ -1,7 +1,9 @@
 package com.boxora.entity;
 
-import jakarta.persistence.*;
 import lombok.*;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.DBRef;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -12,26 +14,21 @@ import java.util.UUID;
 @AllArgsConstructor
 @ToString
 @Builder
-@Entity
-@Table(name = "users")
+@Document(collection = "users")
 public class User extends BaseEntity {
 
-    @Column(unique = true, nullable = false, length = 30)
+    @Indexed(unique = true)
     private String username;
 
-    @Column(unique = true, nullable = false)
+    @Indexed(unique = true)
     private String email;
 
-    @Column(nullable = false)
     private String password;
 
-    @Column(nullable = false, length = 20)
     private String phone;
 
-    @Column(length = 30)
     private String fullName;
 
-    @Column(nullable = false)
     @Builder.Default
     private Boolean isActive = true;
 
@@ -39,10 +36,8 @@ public class User extends BaseEntity {
 
     private UUID assignedBy;
 
-    @Temporal(TemporalType.TIMESTAMP)
     private LocalDateTime assignedAt;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "role_id")
+    @DBRef
     private Role role;
-}
+}

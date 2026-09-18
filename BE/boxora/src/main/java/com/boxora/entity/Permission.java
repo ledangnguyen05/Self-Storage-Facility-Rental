@@ -1,7 +1,9 @@
 package com.boxora.entity;
-import jakarta.persistence.*;
-import jakarta.validation.constraints.*;
+
+import jakarta.validation.constraints.NotEmpty;
 import lombok.*;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 @Getter
 @Setter
@@ -9,20 +11,19 @@ import lombok.*;
 @AllArgsConstructor
 @ToString
 @Builder
-@Entity
-@Table(name = "permissions")
-public class Permission extends BaseEntity{
-    @Column(unique = true, nullable = false)
+@Document(collection = "permissions")
+public class Permission extends BaseEntity {
+
+    @Indexed(unique = true)
     @NotEmpty(message = "Permission name is required")
     private String name;
 
-    @Column(name = "permission_group", nullable = false)
     @NotEmpty(message = "Permission group is required")
     private String permissionGroup;
 
     private String description;
 
-    @Column(nullable = false)
     @Builder.Default
-    private Boolean isActive=true;
+    private Boolean isActive = true;
 }
+

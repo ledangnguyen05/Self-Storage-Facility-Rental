@@ -1,12 +1,12 @@
 package com.boxora.entity;
 
-import jakarta.persistence.*;
 import lombok.*;
+import org.springframework.data.mongodb.core.mapping.DBRef;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "activity_logs")
+@Document(collection = "activity_logs")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -14,22 +14,16 @@ import java.time.LocalDateTime;
 @Builder
 public class ActivityLog extends BaseEntity {
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id")
+    @DBRef
     private User user;
 
-    @Column(name = "username", length = 50)
     private String username;
 
-    @Column(name = "action", nullable = false, length = 100)
     private String action;
 
-    @Column(name = "details")
     private String details;
 
-    @Column(name = "ip_address", length = 45)
     private String ipAddress;
 
-    @Column(name = "timestamp", nullable = false)
     private LocalDateTime timestamp;
-}
+}

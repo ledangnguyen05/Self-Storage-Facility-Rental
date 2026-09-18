@@ -1,10 +1,9 @@
 package com.boxora.entity;
 
-import jakarta.persistence.*;
 import lombok.*;
+import org.springframework.data.mongodb.core.mapping.Document;
 
-@Entity
-@Table(name = "facilities")
+@Document(collection = "facilities")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -12,15 +11,11 @@ import lombok.*;
 @Builder
 public class Facility extends BaseEntity {
 
-    @Column(name = "name", nullable = false, length = 150)
     private String name;
 
-    @Column(name = "address", nullable = false, length = 255)
     private String address;
 
-    @Column(name = "city", length = 50)
     private String city;
 
-    @Column(name = "contact_phone", length = 20)
     private String contactPhone;
-}
+}

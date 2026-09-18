@@ -1,13 +1,14 @@
 package com.boxora.entity;
 
-import jakarta.persistence.*;
 import lombok.*;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.DBRef;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "payments")
+@Document(collection = "payments")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -15,25 +16,19 @@ import java.time.LocalDateTime;
 @Builder
 public class Payment extends BaseEntity {
 
-    @Column(name = "transaction_id", nullable = false, unique = true, length = 60)
+    @Indexed(unique = true)
     private String transactionId;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "booking_id", nullable = false)
+    @DBRef
     private Booking booking;
 
-    @Column(name = "amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal amount;
 
-    @Column(name = "payment_type", nullable = false, length = 30)
     private String paymentType;
 
-    @Column(name = "status", nullable = false, length = 30)
     private String status;
 
-    @Column(name = "payment_method", length = 50)
     private String paymentMethod;
 
-    @Column(name = "payment_time", nullable = false)
     private LocalDateTime paymentTime;
-}
+}
