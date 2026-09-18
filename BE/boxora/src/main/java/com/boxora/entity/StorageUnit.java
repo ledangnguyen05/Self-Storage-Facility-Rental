@@ -1,10 +1,10 @@
 package com.boxora.entity;
 
-import jakarta.persistence.*;
 import lombok.*;
+import org.springframework.data.mongodb.core.mapping.DBRef;
+import org.springframework.data.mongodb.core.mapping.Document;
 
-@Entity
-@Table(name = "storage_units")
+@Document(collection = "storage_units")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -12,20 +12,15 @@ import lombok.*;
 @Builder
 public class StorageUnit extends BaseEntity {
 
-    @Column(name = "unit_code", nullable = false, length = 30)
     private String unitCode;
 
-    @Column(name = "floor_level", length = 50)
     private String floorLevel;
 
-    @Column(name = "status", nullable = false, length = 30)
     private String status;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "facility_id", nullable = false)
+    @DBRef
     private Facility facility;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "unit_type_id", nullable = false)
+    @DBRef
     private UnitType unitType;
-}
+}

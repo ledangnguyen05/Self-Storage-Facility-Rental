@@ -1,7 +1,9 @@
 package com.boxora.entity;
-import jakarta.persistence.*;
-import jakarta.validation.constraints.*;
+
+import jakarta.validation.constraints.Size;
 import lombok.*;
+import org.springframework.data.mongodb.core.mapping.DBRef;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 @Getter
 @Setter
@@ -9,27 +11,19 @@ import lombok.*;
 @AllArgsConstructor
 @ToString(exclude = {"role", "permission"})
 @Builder
-@Entity
-@Table(
-        name = "role_permissions",
-        uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"role_id", "permission_id"})
-        }
-)
+@Document(collection = "role_permissions")
+public class RolePermission extends BaseEntity {
 
-public class RolePermission extends BaseEntity{
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "role_id", nullable = false)
+    @DBRef
     private Role role;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "permission_id", nullable = false)
+    @DBRef
     private Permission permission;
 
-    @Column(nullable = false)
     @Builder.Default
     private Boolean isActive = true;
 
-    @Size(max=255, message = "Description must be less than 255 characters")
+    @Size(max = 255, message = "Description must be less than 255 characters")
     private String description;
 }
+
