@@ -40,7 +40,9 @@ public enum ErrorCode {
     // ========================= PERMISSION (800 - 899) =========================
     PERMISSION_NOT_FOUND(800, "Permission not found", HttpStatus.NOT_FOUND),
     PERMISSION_NAME_EXISTED(801, "Permission name already exists", HttpStatus.BAD_REQUEST),
-    PERMISSION_GROUP_EXISTED(802, "Permission group already exists", HttpStatus.BAD_REQUEST);
+    PERMISSION_GROUP_EXISTED(802, "Permission group already exists", HttpStatus.BAD_REQUEST),
+    // ========================= COMMON (900 - 999) =========================
+    RESOURCE_NOT_FOUND(900, "Resource not found", HttpStatus.NOT_FOUND);
 
     private final int code;
     private final String message;

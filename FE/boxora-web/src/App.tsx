@@ -1,62 +1,150 @@
 import React from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { AuthProvider } from './context/AuthContext'
-import { Navbar } from './components/layout/Navbar'
-import { Footer } from './components/layout/Footer'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import { DashboardLayout } from './components/layout/DashboardLayout'
+import { ProtectedRoute } from './components/auth/ProtectedRoute'
 
-// Public Pages
-import { HomePage } from './pages/public/HomePage'
-import { FacilitiesPage } from './pages/public/FacilitiesPage'
+// Public Pages (Authentication & Landing)
 import { LoginPage } from './pages/public/LoginPage'
 import { RegisterPage } from './pages/public/RegisterPage'
+import { HomePage } from './pages/public/HomePage'
 
-// Portal Dashboards
+// StorageOps Pro Portals (Matching Prototype Stitch Files)
 import { CustomerDashboard } from './pages/customer/CustomerDashboard'
 import { StaffDashboard } from './pages/staff/StaffDashboard'
 import { ManagerDashboard } from './pages/manager/ManagerDashboard'
 import { OperationsDashboard } from './pages/operations/OperationsDashboard'
 import { AdminDashboard } from './pages/admin/AdminDashboard'
 
+// Root redirect handler based on user role
+function RootRedirect() {
+  const { isAuthenticated, role, isLoading } = useAuth()
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-3 text-white">
+        <div className="w-10 h-10 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin"></div>
+        <span className="font-mono text-xs text-slate-400">Khởi động StorageOps Pro...</span>
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />
+  }
+
+  switch (role) {
+    case 'ADMIN':
+      return <Navigate to="/portal/admin" replace />
+    case 'BUSINESS_MANAGER':
+      return <Navigate to="/portal/business-manager" replace />
+    case 'FACILITY_MANAGER':
+      return <Navigate to="/portal/facility-manager" replace />
+    case 'STAFF':
+      return <Navigate to="/portal/staff" replace />
+    case 'CUSTOMER':
+    default:
+      return <Navigate to="/portal/customer" replace />
+  }
+}
+
+function MainContent() {
+  return (
+    <div className="min-h-screen flex flex-col bg-[#F8FAFC] font-sans antialiased text-slate-900">
+      <main className="flex-1">
+        <Routes>
+          {/* Root '/' routes to Login (if anonymous) or Role Dashboard (if authenticated) */}
+          <Route path="/" element={<RootRedirect />} />
+
+          {/* Authentication & Standalone Pages */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/landing" element={<HomePage />} />
+
+          {/* Core StorageOps Pro Portal with RBAC Route Protection */}
+          <Route
+            path="/portal"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<RootRedirect />} />
+
+            {/* 1. Customer Portal: All authenticated roles can view */}
+            <Route
+              path="customer"
+              element={
+                <ProtectedRoute allowedRoles={['CUSTOMER', 'STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
+                  <CustomerDashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* 2. Staff Portal: Staff, Facility Manager, Admin */}
+            <Route
+              path="staff"
+              element={
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'ADMIN']}>
+                  <StaffDashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* 3. Facility Manager Portal: Facility Manager, Business Manager, Admin */}
+            <Route
+              path="facility-manager"
+              element={
+                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
+                  <ManagerDashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* 4. Business Manager Portal: Business Manager, Admin */}
+            <Route
+              path="business-manager"
+              element={
+                <ProtectedRoute allowedRoles={['BUSINESS_MANAGER', 'ADMIN']}>
+                  <OperationsDashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* 5. System Admin Portal: Strictly Admin */}
+            <Route
+              path="admin"
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN']}>
+                  <AdminDashboard />
+                </ProtectedRoute>
+              }
+            />
+          </Route>
+
+          {/* Direct Friendly URLs with Automatic Route Guards */}
+          <Route path="/customer" element={<Navigate to="/portal/customer" replace />} />
+          <Route path="/staff" element={<Navigate to="/portal/staff" replace />} />
+          <Route path="/facility-manager" element={<Navigate to="/portal/facility-manager" replace />} />
+          <Route path="/manager" element={<Navigate to="/portal/facility-manager" replace />} />
+          <Route path="/operations" element={<Navigate to="/portal/business-manager" replace />} />
+          <Route path="/business" element={<Navigate to="/portal/business-manager" replace />} />
+          <Route path="/admin" element={<Navigate to="/portal/admin" replace />} />
+
+          {/* Fallback */}
+          <Route path="*" element={<RootRedirect />} />
+        </Routes>
+      </main>
+    </div>
+  )
+}
+
 export function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <div className="min-h-screen flex flex-col bg-[var(--surface-canvas)] font-sans antialiased text-[var(--color-primary)]">
-          <Navbar />
-          
-          <main className="flex-1">
-            <Routes>
-              {/* Public Routes */}
-              <Route path="/" element={<HomePage />} />
-              <Route path="/facilities" element={<FacilitiesPage />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
-
-              {/* Authenticated Role Portals wrapped in DashboardLayout */}
-              <Route path="/portal" element={<DashboardLayout />}>
-                <Route index element={<Navigate to="/portal/customer" replace />} />
-                <Route path="customer" element={<CustomerDashboard />} />
-                <Route path="staff" element={<StaffDashboard />} />
-                <Route path="facility-manager" element={<ManagerDashboard />} />
-                <Route path="business-manager" element={<OperationsDashboard />} />
-                <Route path="admin" element={<AdminDashboard />} />
-              </Route>
-
-              {/* Convenience Shortcuts */}
-              <Route path="/dashboard" element={<Navigate to="/portal/customer" replace />} />
-              <Route path="/admin" element={<Navigate to="/portal/admin" replace />} />
-              <Route path="/staff" element={<Navigate to="/portal/staff" replace />} />
-              <Route path="/manager" element={<Navigate to="/portal/facility-manager" replace />} />
-              <Route path="/operations" element={<Navigate to="/portal/business-manager" replace />} />
-
-              {/* Fallback */}
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </main>
-
-          <Footer />
-        </div>
+        <MainContent />
       </AuthProvider>
     </BrowserRouter>
   )
