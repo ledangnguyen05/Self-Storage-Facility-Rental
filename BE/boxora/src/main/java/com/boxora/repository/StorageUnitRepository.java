@@ -18,12 +18,12 @@ public interface StorageUnitRepository extends JpaRepository<StorageUnit, UUID> 
     Optional<StorageUnit> findWithDetailsById(UUID id);
 
     // Derived query type-safe bằng Enum UnitStatus – không hardcode magic string
+    @EntityGraph(attributePaths = {"facility", "unitType"})
     List<StorageUnit> findByFacility_IdAndUnitType_IdAndStatus(
             UUID facilityId,
             UUID unitTypeId,
             UnitStatus status
     );
-    @EntityGraph(attributePaths = {"facility", "unitType"})
 
     @Query("""
             SELECT su.facility.id, su.facility.name, su.status, COUNT(su)

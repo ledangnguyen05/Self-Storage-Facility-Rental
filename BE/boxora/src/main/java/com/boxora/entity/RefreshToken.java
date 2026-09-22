@@ -1,11 +1,9 @@
 package com.boxora.entity;
 
 import com.boxora.enums.TokenType;
+import jakarta.persistence.*;
 import jakarta.validation.constraints.NotEmpty;
 import lombok.*;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.mapping.DBRef;
-import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
 
@@ -15,23 +13,29 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @ToString
 @Builder
-@Document(collection = "refresh_tokens")
+@Entity
+@Table(name = "refresh_tokens")
 public class RefreshToken extends BaseEntity {
 
-    @DBRef
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Indexed(unique = true)
+    @Column(nullable = false, unique = true)
     @NotEmpty(message = "Token is required")
     private String token;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private TokenType type;
 
+    @Column(name = "expired_at", nullable = false)
     private LocalDateTime expiredAt;
 
+    @Column(name = "last_used_at", nullable = false)
     private LocalDateTime lastUsedAt;
 
+    @Column(nullable = false)
     @Builder.Default
     private Boolean revoked = false;
 }
-
