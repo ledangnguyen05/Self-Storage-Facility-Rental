@@ -31,15 +31,16 @@ public class User extends BaseEntity {
     @Column(length = 30)
     private String fullName;
 
-    @Column(nullable = false)
+    @Column(name = "is_active", nullable = false)
     @Builder.Default
     private Boolean isActive = true;
 
     private String avatar;
 
+    @Column(name = "assigned_by")
     private UUID assignedBy;
 
-    @Temporal(TemporalType.TIMESTAMP)
+    @Column(name = "assigned_at")
     private LocalDateTime assignedAt;
 
     @ManyToOne(fetch = FetchType.LAZY)

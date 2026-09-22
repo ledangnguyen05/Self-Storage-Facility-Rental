@@ -1,11 +1,12 @@
 package com.boxora.entity;
 
+import com.boxora.enums.TicketCategory;
+import com.boxora.enums.TicketStatus;
+import jakarta.persistence.*;
 import lombok.*;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.mapping.DBRef;
-import org.springframework.data.mongodb.core.mapping.Document;
 
-@Document(collection = "support_tickets")
+@Entity
+@Table(name = "support_tickets")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -13,30 +14,40 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @Builder
 public class SupportTicket extends BaseEntity {
 
-    @Indexed(unique = true)
+    @Column(name = "ticket_code", nullable = false, unique = true, length = 50)
     private String ticketCode;
 
-    @DBRef
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
     private User customer;
 
-    @DBRef
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "booking_id")
     private Booking booking;
 
-    private String category;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 50)
+    private TicketCategory category;
 
+    @Column(nullable = false)
     private String title;
 
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String description;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
     @Builder.Default
-    private String status = "OPEN";
+    private TicketStatus status = TicketStatus.OPEN;
 
+    @Column(length = 20)
     @Builder.Default
     private String priority = "MEDIUM";
 
-    @DBRef
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_staff_id")
     private User assignedStaff;
 
+    @Column(name = "resolution_note", columnDefinition = "TEXT")
     private String resolutionNote;
 }
-
