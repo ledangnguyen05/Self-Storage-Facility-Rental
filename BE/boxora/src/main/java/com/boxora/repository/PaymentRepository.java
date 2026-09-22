@@ -11,14 +11,16 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import java.util.UUID;
+
 @Repository
-public interface PaymentRepository extends JpaRepository<Payment, Long> {
+public interface PaymentRepository extends JpaRepository<Payment, UUID> {
 
     java.util.Optional<Payment> findByTransactionId(String transactionId);
 
     boolean existsByTransactionId(String transactionId);
 
-    java.util.List<Payment> findAllByBooking_Id(Long bookingId);
+    java.util.List<Payment> findAllByBooking_Id(UUID bookingId);
 
     // Revenue grouped by facility - only PAID payments count as real revenue.
     // fromDate/toDate are inclusive bounds on payment_time; pass null to leave a side open.
