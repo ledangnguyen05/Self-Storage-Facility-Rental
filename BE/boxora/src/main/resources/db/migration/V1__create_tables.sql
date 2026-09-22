@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS users
     assigned_by  UUID,
     assigned_at  TIMESTAMP,
     role_id      UUID,
+    facility_id  UUID,
 
     CONSTRAINT pk_users PRIMARY KEY (id),
     CONSTRAINT uc_users_username UNIQUE (username),
@@ -133,12 +134,31 @@ CREATE TABLE IF NOT EXISTS facilities
     created_at     TIMESTAMP    NOT NULL,
     updated_at     TIMESTAMP    NOT NULL,
     name           VARCHAR(150) NOT NULL,
+    code           VARCHAR(30)  NOT NULL,
     address        VARCHAR(255) NOT NULL,
     city           VARCHAR(50),
     contact_phone  VARCHAR(20),
+    email          VARCHAR(150),
+    manager_id     UUID,
+    status         VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
+    open_time      TIME         NOT NULL DEFAULT '08:00',
+    close_time     TIME         NOT NULL DEFAULT '20:00',
+    description    TEXT,
 
-    CONSTRAINT pk_facilities PRIMARY KEY (id)
+    CONSTRAINT pk_facilities PRIMARY KEY (id),
+    CONSTRAINT uc_facilities_code UNIQUE (code),
+
+    CONSTRAINT fk_facilities_manager
+    FOREIGN KEY (manager_id)
+    REFERENCES users(id)
     );
+
+ALTER TABLE users
+    ADD CONSTRAINT fk_users_facility
+    FOREIGN KEY (facility_id)
+    REFERENCES facilities(id);
+
+CREATE INDEX IF NOT EXISTS idx_users_facility_id ON users(facility_id);
 
 
 -- =========================================================
@@ -193,13 +213,22 @@ CREATE TABLE IF NOT EXISTS storage_units
 
 CREATE TABLE IF NOT EXISTS facility_policies
 (
-    id                       UUID           NOT NULL,
-    created_at               TIMESTAMP      NOT NULL,
-    updated_at               TIMESTAMP      NOT NULL,
-    facility_id              UUID           NOT NULL,
-    deposit_percentage       DOUBLE PRECISION NOT NULL,
-    daily_late_fee           NUMERIC(12,2)  NOT NULL,
-    cancellation_refund_days INTEGER        NOT NULL,
+    id                                   UUID             NOT NULL,
+    created_at                           TIMESTAMP        NOT NULL,
+    updated_at                           TIMESTAMP        NOT NULL,
+    facility_id                          UUID             NOT NULL,
+    deposit_percentage                   DOUBLE PRECISION NOT NULL,
+    renewal_window_days                  INTEGER          NOT NULL DEFAULT 3,
+    cancellation_full_refund_hours       INTEGER          NOT NULL DEFAULT 48,
+    cancellation_partial_refund_hours    INTEGER          NOT NULL DEFAULT 24,
+    cancellation_partial_refund_percent  DOUBLE PRECISION NOT NULL DEFAULT 50.0,
+    return_notice_days                  INTEGER          NOT NULL DEFAULT 0,
+    deposit_refund_sla_days              INTEGER          NOT NULL DEFAULT 5,
+    daily_late_fee                       NUMERIC(12,2)    NOT NULL,
+    overdue_grace_days                   INTEGER          NOT NULL DEFAULT 1,
+    overdue_access_disable_days          INTEGER          NOT NULL DEFAULT 3,
+    overdue_sealing_days                 INTEGER          NOT NULL DEFAULT 7,
+    minimum_rental_months                INTEGER          NOT NULL DEFAULT 1,
 
     CONSTRAINT pk_facility_policies PRIMARY KEY (id),
 
@@ -284,6 +313,38 @@ CREATE TABLE IF NOT EXISTS payments
     REFERENCES bookings(id)
     );
 
+-- =========================================================
+-- ACTIVITY_LOGS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS activity_logs
+(
+    id                UUID         NOT NULL,
+    created_at        TIMESTAMP    NOT NULL,
+    updated_at        TIMESTAMP    NOT NULL,
+    user_id           UUID,
+    log_type          VARCHAR(20)  NOT NULL,
+    action            VARCHAR(100) NOT NULL,
+    email_attempted   VARCHAR(150),
+    resource_type     VARCHAR(100),
+    resource_id       UUID,
+    description       VARCHAR(500),
+    old_value         TEXT,
+    new_value         TEXT,
+    status            VARCHAR(20)  NOT NULL,
+    ip_address        VARCHAR(45),
+    user_agent        VARCHAR(255),
+
+    CONSTRAINT pk_activity_logs PRIMARY KEY (id),
+
+    CONSTRAINT fk_activity_logs_user
+    FOREIGN KEY (user_id)
+    REFERENCES users(id)
+    );
+
+CREATE INDEX IF NOT EXISTS idx_activity_logs_user_id ON activity_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_log_type ON activity_logs(log_type);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at ON activity_logs(created_at);
 
 -- =========================================================
 -- HANDOVER RECORDS
@@ -312,29 +373,6 @@ CREATE TABLE IF NOT EXISTS handover_records
     REFERENCES users(id)
     );
 
-
--- =========================================================
--- ACTIVITY LOGS
--- =========================================================
-
-CREATE TABLE IF NOT EXISTS activity_logs
-(
-    id          UUID         NOT NULL,
-    created_at  TIMESTAMP    NOT NULL,
-    updated_at  TIMESTAMP    NOT NULL,
-    user_id     UUID,
-    username    VARCHAR(50),
-    action      VARCHAR(100) NOT NULL,
-    details     TEXT,
-    ip_address  VARCHAR(45),
-    timestamp   TIMESTAMP    NOT NULL,
-
-    CONSTRAINT pk_activity_logs PRIMARY KEY (id),
-
-    CONSTRAINT fk_activity_logs_user
-    FOREIGN KEY (user_id)
-    REFERENCES users(id)
-    );
 
 -- =========================================================
 -- SUPPORT_TICKETS
@@ -373,3 +411,4 @@ CREATE TABLE IF NOT EXISTS support_tickets
     FOREIGN KEY (assigned_staff_id)
     REFERENCES users(id)
     );
+
