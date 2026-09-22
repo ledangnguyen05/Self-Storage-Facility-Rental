@@ -1,29 +1,22 @@
 package com.boxora.entity;
 
-import jakarta.persistence.*;
 import lombok.*;
-
-import java.util.List;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Entity
-@Table(name = "roles")
-public class Role extends com.boxora.entity.BaseEntity {
+@Document(collection = "roles")
+public class Role extends BaseEntity {
 
-    @Column(nullable = false, unique = true, length = 50)
+    @Indexed(unique = true)
     private String name;
 
-    @Column(length = 255)
     private String description;
 
-    @Column(nullable = false)
     @Builder.Default
     private Boolean isActive = true;
-
-    @OneToMany(mappedBy = "role", fetch = FetchType.LAZY)
-    private List<User> users;
-}
+}
