@@ -44,6 +44,12 @@ public class JwtServiceImpl implements JwtService {
         if (user.getFullName() != null) {
             extraClaims.put("fullName", user.getFullName());
         }
+        if (user.getFacility() != null) {
+            extraClaims.put("facilityId", user.getFacility().getId().toString());
+            if (user.getFacility().getName() != null) {
+                extraClaims.put("facilityName", user.getFacility().getName());
+            }
+        }
         return buildToken(
                 user.getEmail(),
                 TokenType.ACCESS,

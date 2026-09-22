@@ -45,4 +45,10 @@ public class User extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "role_id")
     private Role role;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "facility_id")
+    private Facility facility;
+    // de phân facility cho từng customer/staff nhằm bảo mât thong tin
+    // null cho ADMIN/BUSINESS_OPERATIONS_MANAGER/CUSTOMER — chỉ STAFF/FACILITY_MANAGER mới scope
 }

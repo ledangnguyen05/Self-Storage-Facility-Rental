@@ -70,6 +70,45 @@ public class GlobalExceptionHandler {
 
 
     // =========================
+    // Security Exceptions
+    // =========================
+
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> handleAccessDeniedException(
+            org.springframework.security.access.AccessDeniedException ex) {
+
+        ErrorCode errorCode = ErrorCode.FORBIDDEN;
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("timestamp", LocalDateTime.now());
+        response.put("status", errorCode.getHttpStatus().value());
+        response.put("code", errorCode.getCode());
+        response.put("error", errorCode.getHttpStatus().getReasonPhrase());
+        response.put("message", errorCode.getMessage());
+
+        return ResponseEntity
+                .status(errorCode.getHttpStatus())
+                .body(response);
+    }
+
+    @ExceptionHandler(org.springframework.security.core.AuthenticationException.class)
+    public ResponseEntity<Map<String, Object>> handleAuthenticationException(
+            org.springframework.security.core.AuthenticationException ex) {
+
+        ErrorCode errorCode = ErrorCode.UNAUTHORIZED;
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("timestamp", LocalDateTime.now());
+        response.put("status", errorCode.getHttpStatus().value());
+        response.put("code", errorCode.getCode());
+        response.put("error", errorCode.getHttpStatus().getReasonPhrase());
+        response.put("message", ex.getMessage() != null ? ex.getMessage() : errorCode.getMessage());
+
+        return ResponseEntity
+                .status(errorCode.getHttpStatus())
+                .body(response);
+    }
+
+
+    // =========================
     // Unexpected Exception
     // =========================
 

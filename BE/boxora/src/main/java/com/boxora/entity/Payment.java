@@ -1,5 +1,7 @@
 package com.boxora.entity;
 
+import com.boxora.enums.PaymentStatus;
+import com.boxora.enums.PaymentType;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -25,11 +27,13 @@ public class Payment extends BaseEntity {
     @Column(name = "amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal amount;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "payment_type", nullable = false, length = 30)
-    private String paymentType;
+    private PaymentType paymentType;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)
-    private String status;
+    private PaymentStatus status;
 
     @Column(name = "payment_method", length = 50)
     private String paymentMethod;

@@ -15,7 +15,7 @@ public class OpenApiConfig {
     public OpenAPI customOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("LMS API")
+                        .title("Boxora - Self Storage Management API")
                         .version("1.0"))
                 .components(new Components()
                         .addSecuritySchemes(

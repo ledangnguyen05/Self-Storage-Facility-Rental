@@ -15,13 +15,13 @@ import org.springframework.web.bind.annotation.*;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("api/v1/permissions")
+@RequestMapping("/api/v1/permissions")
 @RequiredArgsConstructor
 @Slf4j
 public class PermissionController {
     private final PermissionService permissionService;
 
-    @GetMapping("{id}")
+    @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<PermissionResponse>> getById(@PathVariable UUID id) {
         PermissionResponse response = permissionService.getById(id);
         return ResponseEntity.ok(ApiResponse.success(response));
@@ -35,14 +35,14 @@ public class PermissionController {
                 body(ApiResponse.success("Created permission successfully", response));
     }
 
-    @PutMapping("{id}")
+    @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<PermissionResponse>> update
             (@PathVariable UUID id, @Valid @RequestBody PermissionUpdateRequest request) {
         PermissionResponse response = permissionService.update(id, request);
         return ResponseEntity.ok(ApiResponse.success("Updated permission successfully.", response));
     }
 
-    @DeleteMapping("{id}")
+    @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         permissionService.delete(id);
         return ResponseEntity.ok(ApiResponse.success("Deleted permission successfully.", null));

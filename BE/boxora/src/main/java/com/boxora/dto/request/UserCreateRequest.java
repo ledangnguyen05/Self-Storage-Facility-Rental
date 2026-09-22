@@ -37,4 +37,7 @@ public class UserCreateRequest {
     // Admin assigns role when creating a user
     // If null, service will default to "customer"
     private UUID roleId;
+
+    // Assigned facility (applicable for STAFF / FACILITY_MANAGER)
+    private UUID facilityId;
 }

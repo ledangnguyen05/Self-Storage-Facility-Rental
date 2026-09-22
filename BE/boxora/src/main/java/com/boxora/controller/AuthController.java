@@ -60,7 +60,6 @@ public class AuthController {
             @Valid @RequestBody ForgotPasswordRequest request
     ) {
         authService.forgotPassword(request);
-        // Always return success — don't reveal if email exists or not
         return ResponseEntity.ok(ApiResponse.success(
                 "If this email exists, a reset link has been sent", null
         ));

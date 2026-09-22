@@ -18,6 +18,11 @@ public class UserResponse {
     private String fullName;
     private String phone;
     private Boolean isActive;
+    private UUID roleId;
+    private String roleName;
+    private UUID facilityId;
+    private String facilityName;
+    private String facilityCode;
     private UUID assignedBy;
     private LocalDateTime assignedAt;
     private LocalDateTime createdAt;

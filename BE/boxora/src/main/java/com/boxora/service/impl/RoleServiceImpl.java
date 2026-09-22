@@ -69,7 +69,6 @@ public class RoleServiceImpl implements RoleService {
 
         String trimmedName = request.getName() != null ? request.getName().trim() : role.getName();
 
-        // Protect system role name from being renamed
         if (SYSTEM_ROLES.contains(role.getName().toUpperCase())
                 && !role.getName().equalsIgnoreCase(trimmedName)) {
             throw new AppException(ErrorCode.CANNOT_MODIFY_SYSTEM_ROLE);
@@ -90,17 +89,14 @@ public class RoleServiceImpl implements RoleService {
         Role role = roleRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
 
-        // Protect default system roles
         if (SYSTEM_ROLES.contains(role.getName().toUpperCase())) {
             throw new AppException(ErrorCode.CANNOT_DELETE_SYSTEM_ROLE);
         }
 
-        // Prevent deletion if users are currently assigned to this role
         if (userRepository.existsByRole_Id(role.getId())) {
             throw new AppException(ErrorCode.ROLE_IN_USE);
         }
 
-        // Cascade delete permissions assigned to this role before deleting the role
         rolePermissionRepository.deleteAllByRole_Id(role.getId());
 
         roleRepository.deleteById(role.getId());

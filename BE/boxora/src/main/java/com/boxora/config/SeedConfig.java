@@ -1,7 +1,9 @@
 package com.boxora.config;
 
+import com.boxora.entity.Facility;
 import com.boxora.entity.Role;
 import com.boxora.entity.User;
+import com.boxora.repository.FacilityRepository;
 import com.boxora.repository.RoleRepository;
 import com.boxora.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,7 @@ public class SeedConfig implements ApplicationRunner {
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final FacilityRepository facilityRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Override
@@ -44,9 +47,12 @@ public class SeedConfig implements ApplicationRunner {
     }
 
     private void seedUsers() {
+        Facility facilityD1 = facilityRepository.findByCode("HCM-D1").orElse(null);
+        Facility facilityD7 = facilityRepository.findByCode("HCM-D7").orElse(null);
 
-        // Chỉ seed nếu chưa có user nào trong DB
+        // Neu DB da co user, kiem tra va gan bo sung facility neu chua co
         if (userRepository.count() > 0) {
+            backfillUserFacilities(facilityD1, facilityD7);
             log.info("Users already seeded — skipping");
             return;
         }
@@ -59,18 +65,25 @@ public class SeedConfig implements ApplicationRunner {
                 adminPassword,
                 "System Administrator",
                 "0371234567",
-                "ADMIN"
-
+                "ADMIN",
+                null
         );
 
-        createUser(
+        User facilityManager = createUser(
                 "facility_manager",
                 "facility@gmail.com",
                 facilityManagerPassword,
                 "System Facility Manager",
                 "0372345678",
-                "FACILITY_MANAGER"
+                "FACILITY_MANAGER",
+                facilityD1
         );
+
+        if (facilityD1 != null && facilityManager != null) {
+            facilityD1.setManager(facilityManager);
+            facilityRepository.save(facilityD1);
+            log.info("Assigned facility_manager as manager of {}", facilityD1.getName());
+        }
 
         createUser(
                 "business_manager",
@@ -78,16 +91,28 @@ public class SeedConfig implements ApplicationRunner {
                 businessManagerPassword,
                 "System Manager",
                 "0373456789",
-                "BUSINESS_MANAGER"
+                "BUSINESS_MANAGER",
+                null
         );
 
         createUser(
                 "staff",
                 "staff@gmail.com",
                 staffPassword,
-                "System Staff",
+                "System Staff (D1)",
                 "0374567890",
-                "STAFF"
+                "STAFF",
+                facilityD1
+        );
+
+        createUser(
+                "staff_d7",
+                "staff_d7@gmail.com",
+                staffPassword,
+                "System Staff (D7)",
+                "0374567891",
+                "STAFF",
+                facilityD7
         );
 
         createUser(
@@ -96,19 +121,53 @@ public class SeedConfig implements ApplicationRunner {
                 customerPassword,
                 "System Customer",
                 "0373214567",
-                "CUSTOMER"
+                "CUSTOMER",
+                null
         );
 
         log.info("Default users seeded successfully");
     }
 
-    private void createUser(
+    private void backfillUserFacilities(Facility facilityD1, Facility facilityD7) {
+        if (facilityD1 != null) {
+            userRepository.findByUsername("facility_manager").ifPresent(fm -> {
+                if (fm.getFacility() == null) {
+                    fm.setFacility(facilityD1);
+                    userRepository.save(fm);
+                    facilityD1.setManager(fm);
+                    facilityRepository.save(facilityD1);
+                    log.info("Backfilled facility for user facility_manager -> {}", facilityD1.getName());
+                }
+            });
+
+            userRepository.findByUsername("staff").ifPresent(st -> {
+                if (st.getFacility() == null) {
+                    st.setFacility(facilityD1);
+                    userRepository.save(st);
+                    log.info("Backfilled facility for user staff -> {}", facilityD1.getName());
+                }
+            });
+        }
+
+        if (facilityD7 != null) {
+            userRepository.findByUsername("staff_d7").ifPresent(st -> {
+                if (st.getFacility() == null) {
+                    st.setFacility(facilityD7);
+                    userRepository.save(st);
+                    log.info("Backfilled facility for user staff_d7 -> {}", facilityD7.getName());
+                }
+            });
+        }
+    }
+
+    private User createUser(
             String username,
             String email,
             String rawPassword,
             String fullName,
             String phone,
-            String roleName
+            String roleName,
+            Facility facility
     ) {
         Role role = roleRepository.findByName(roleName)
                 .orElseThrow(() ->
@@ -122,11 +181,14 @@ public class SeedConfig implements ApplicationRunner {
                 .fullName(fullName)
                 .phone(phone)
                 .role(role)
+                .facility(facility)
                 .isActive(true)
                 .build();
 
-        userRepository.save(user);
+        User saved = userRepository.save(user);
 
-        log.info("Created user: {} ({})", username, email);
+        log.info("Created user: {} ({}) with role {} and facility {}",
+                username, email, roleName, facility != null ? facility.getName() : "None");
+        return saved;
     }
 }

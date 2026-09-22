@@ -29,4 +29,7 @@ public class UserUpdateRequest {
     
     // Only admin can change role
     private UUID roleId;
+
+    // Assigned facility (applicable for STAFF / FACILITY_MANAGER)
+    private UUID facilityId;
 }

@@ -1,9 +1,10 @@
 package com.boxora.entity;
 
+import com.boxora.enums.*;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "activity_logs")
@@ -16,20 +17,41 @@ public class ActivityLog extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
-    private User user;
+    private User user; // null for a failed login with an unknown email, or a system/scheduler action
 
-    @Column(name = "username", length = 50)
-    private String username;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "log_type", nullable = false, length = 20)
+    private ActivityLogType logType;
 
-    @Column(name = "action", nullable = false, length = 100)
-    private String action;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "action", nullable = false, length = 50)
+    private ActivityAction action;
 
-    @Column(name = "details")
-    private String details;
+    @Column(name = "email_attempted", length = 150)
+    private String emailAttempted;
+
+    @Column(name = "resource_type", length = 100)
+    private String resourceType;
+
+    @Column(name = "resource_id")
+    private UUID resourceId;
+
+    @Column(name = "description", length = 500)
+    private String description;
+
+    @Column(name = "old_value", columnDefinition = "TEXT")
+    private String oldValue;
+
+    @Column(name = "new_value", columnDefinition = "TEXT")
+    private String newValue;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    private ActivityLogStatus status;
 
     @Column(name = "ip_address", length = 45)
     private String ipAddress;
 
-    @Column(name = "timestamp", nullable = false)
-    private LocalDateTime timestamp;
+    @Column(name = "user_agent", length = 255)
+    private String userAgent;
 }

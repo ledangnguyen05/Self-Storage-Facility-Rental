@@ -48,4 +48,4 @@ VALUES
         'Store customer',
         TRUE
     )
-    ON CONFLICT (name) DO NOTHING;
+    ON CONFLICT (id) DO NOTHING;

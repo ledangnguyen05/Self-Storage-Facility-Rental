@@ -1,5 +1,6 @@
 package com.boxora.entity;
 
+import com.boxora.enums.UnitStatus;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -18,8 +19,9 @@ public class StorageUnit extends BaseEntity {
     @Column(name = "floor_level", length = 50)
     private String floorLevel;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)
-    private String status;
+    private UnitStatus status;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "facility_id", nullable = false)

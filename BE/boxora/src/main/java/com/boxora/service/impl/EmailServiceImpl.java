@@ -26,6 +26,7 @@ public class EmailServiceImpl implements EmailService {
 
 
     @Override
+    @Async
     public void sendPasswordResetEmail(String toEmail, String fullName, String resetToken) {
         String resetLink = frontendUrl + "/reset-password?token=" + resetToken;
         String subject = "Reset Your Password";
@@ -52,6 +53,7 @@ public class EmailServiceImpl implements EmailService {
 
 
     @Override
+    @Async
     public void sendWelcomeEmail(String toEmail, String fullName) {
         String loginLink = frontendUrl + "/login";
         String subject = "Welcome to Store Hub!";

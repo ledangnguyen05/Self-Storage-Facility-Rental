@@ -4,13 +4,16 @@ import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.UserCreateRequest;
 import com.boxora.dto.request.UserUpdateRequest;
 import com.boxora.dto.response.UserResponse;
+import com.boxora.entity.Facility;
 import com.boxora.entity.Role;
 import com.boxora.entity.User;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.UserMapper;
+import com.boxora.repository.FacilityRepository;
 import com.boxora.repository.RoleRepository;
 import com.boxora.repository.UserRepository;
+import com.boxora.security.FacilityAccessGuard;
 import com.boxora.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +35,8 @@ public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final FacilityRepository facilityRepository;
+    private final FacilityAccessGuard facilityAccessGuard;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
 
@@ -55,6 +60,17 @@ public class UserServiceImpl implements UserService {
                     .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
         }
 
+        Facility facility = null;
+        if (request.getFacilityId() != null) {
+            facility = facilityRepository.findById(request.getFacilityId())
+                    .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
+
+            // System-wide roles (ADMIN, BUSINESS_MANAGER) do not belong to a specific facility
+            if ("ADMIN".equalsIgnoreCase(role.getName()) || "BUSINESS_MANAGER".equalsIgnoreCase(role.getName())) {
+                facility = null;
+            }
+        }
+
         User user = User.builder()
                 .username(request.getUsername())
                 .email(request.getEmail())
@@ -62,6 +78,7 @@ public class UserServiceImpl implements UserService {
                 .fullName(request.getFullName())
                 .phone(request.getPhone())
                 .role(role)
+                .facility(facility)
                 .isActive(true)
                 .build();
 
@@ -76,6 +93,10 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
 
+        if (facilityAccessGuard.isFacilityScoped() && user.getFacility() != null) {
+            facilityAccessGuard.checkFacilityAccess(user.getFacility().getId());
+        }
+
         // Check username duplicate — exclude current user
         if (request.getUsername() != null
                 && userRepository.existsByUsernameAndIdNot(request.getUsername(), id)) {
@@ -87,6 +108,20 @@ public class UserServiceImpl implements UserService {
             Role role = roleRepository.findById(request.getRoleId())
                     .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
             user.setRole(role);
+            if ("ADMIN".equalsIgnoreCase(role.getName()) || "BUSINESS_MANAGER".equalsIgnoreCase(role.getName())) {
+                user.setFacility(null);
+            }
+        }
+
+        // Update facility if provided
+        if (request.getFacilityId() != null) {
+            Facility facility = facilityRepository.findById(request.getFacilityId())
+                    .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
+
+            String currentRoleName = user.getRole() != null ? user.getRole().getName() : "";
+            if (!"ADMIN".equalsIgnoreCase(currentRoleName) && !"BUSINESS_MANAGER".equalsIgnoreCase(currentRoleName)) {
+                user.setFacility(facility);
+            }
         }
 
         userMapper.updateEntityFromRequest(request, user);
@@ -99,11 +134,14 @@ public class UserServiceImpl implements UserService {
     @Override
     public void delete(UUID id) {
 
-        if (!userRepository.existsById(id)) {
-            throw new AppException(ErrorCode.USER_NOT_FOUND);
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+
+        if (facilityAccessGuard.isFacilityScoped() && user.getFacility() != null) {
+            facilityAccessGuard.checkFacilityAccess(user.getFacility().getId());
         }
 
-        userRepository.deleteById(id);
+        userRepository.delete(user);
         log.info("User deleted successfully with id: {}", id);
     }
 
@@ -115,6 +153,14 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
 
+        if (facilityAccessGuard.isFacilityScoped()) {
+            if (user.getFacility() != null) {
+                facilityAccessGuard.checkFacilityAccess(user.getFacility().getId());
+            } else if (user.getRole() != null && ("ADMIN".equalsIgnoreCase(user.getRole().getName()) || "BUSINESS_MANAGER".equalsIgnoreCase(user.getRole().getName()))) {
+                throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
+            }
+        }
+
         return userMapper.toResponse(user);
     }
 
@@ -124,6 +170,8 @@ public class UserServiceImpl implements UserService {
     public PageResponse<UserResponse> findAllWithFilters(
             String search,
             Boolean isActive,
+            UUID roleId,
+            UUID facilityId,
             int page,
             int size,
             String sortBy,
@@ -136,8 +184,13 @@ public class UserServiceImpl implements UserService {
 
         Pageable pageable = PageRequest.of(page, size, sort);
 
+        UUID effectiveFacilityId = facilityId;
+        if (facilityAccessGuard.isFacilityScoped()) {
+            effectiveFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+        }
+
         Page<UserResponse> result = userRepository
-                .findAllWithFilters(search, isActive, pageable)
+                .findAllWithFilters(search, isActive, roleId, effectiveFacilityId, pageable)
                 .map(userMapper::toResponse);
 
         return PageResponse.from(result);
@@ -148,6 +201,10 @@ public class UserServiceImpl implements UserService {
 
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+
+        if (facilityAccessGuard.isFacilityScoped() && user.getFacility() != null) {
+            facilityAccessGuard.checkFacilityAccess(user.getFacility().getId());
+        }
 
         user.setIsActive(!user.getIsActive());
         User updated = userRepository.save(user);

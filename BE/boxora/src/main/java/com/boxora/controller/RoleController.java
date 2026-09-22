@@ -21,7 +21,7 @@ import java.util.UUID;
 public class RoleController {
     private final RoleService roleService;
 
-    @GetMapping("{id}")
+    @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<RoleResponse>> getById(@PathVariable UUID id){
         log.info("Get role by id : {}",id);
         RoleResponse response=roleService.getById(id);
@@ -37,7 +37,7 @@ public class RoleController {
                 body(ApiResponse.success("Created role successfully",response));
     }
 
-    @PutMapping("{id}")
+    @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<RoleResponse>> update
             (@PathVariable UUID id,@Valid @RequestBody RoleUpdateRequest request){
         log.info("Updating role : {}", request.getName());
@@ -45,7 +45,7 @@ public class RoleController {
         return ResponseEntity.ok(ApiResponse.success("Updated role successfully.", response));
     }
 
-    @DeleteMapping("{id}")
+    @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id){
         log.info("Deleting role with id : {}",id);
         roleService.delete(id);

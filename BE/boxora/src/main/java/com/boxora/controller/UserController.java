@@ -50,13 +50,15 @@ public class UserController {
     public ResponseEntity<ApiResponse<PageResponse<UserResponse>>> getAll(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Boolean isActive,
+            @RequestParam(required = false) UUID roleId,
+            @RequestParam(required = false) UUID facilityId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDir
     ) {
         PageResponse<UserResponse> response = userService.findAllWithFilters(
-                search, isActive, page, size, sortBy, sortDir
+                search, isActive, roleId, facilityId, page, size, sortBy, sortDir
         );
         return ResponseEntity.ok(ApiResponse.success(response));
     }

@@ -24,7 +24,7 @@ import java.util.UUID;
 public class RolePermissionController {
     private final RolePermissionService rolePermissionService;
 
-    @GetMapping("{id}")
+    @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<RolePermissionResponse>> getById(@PathVariable UUID id) {
         RolePermissionResponse response = rolePermissionService.getById(id);
         return ResponseEntity.ok(ApiResponse.success(response));
@@ -46,14 +46,14 @@ public class RolePermissionController {
         return ResponseEntity.ok(ApiResponse.success("Assigned permissions to role successfully", response));
     }
 
-    @PutMapping("{id}")
+    @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<RolePermissionResponse>> update
             (@PathVariable UUID id, @Valid @RequestBody RolePermissionUpdateRequest request) {
         RolePermissionResponse response = rolePermissionService.update(id, request);
         return ResponseEntity.ok(ApiResponse.success("Updated role-permission successfully.", response));
     }
 
-    @DeleteMapping("{id}")
+    @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         rolePermissionService.delete(id);
         return ResponseEntity.ok(ApiResponse.success("Revoked permission from role successfully.", null));
