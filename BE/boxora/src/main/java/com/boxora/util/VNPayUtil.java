@@ -33,8 +33,13 @@ public final class VNPayUtil {
         return sorted;
     }
 
-    /** Builds the exact string VNPay expects to be signed / verified. */
+    /** Builds the exact string VNPay expects to be signed / verified using US_ASCII encoding. */
     public static String buildHashData(SortedMap<String, String> sortedParams) {
+        return buildHashData(sortedParams, StandardCharsets.US_ASCII);
+    }
+
+    /** Builds the hash data string with specified charset encoding for values. */
+    public static String buildHashData(SortedMap<String, String> sortedParams, java.nio.charset.Charset charset) {
         StringBuilder sb = new StringBuilder();
         boolean first = true;
         for (Map.Entry<String, String> entry : sortedParams.entrySet()) {
@@ -42,7 +47,21 @@ public final class VNPayUtil {
                 sb.append('&');
             }
             sb.append(entry.getKey()).append('=')
-                    .append(java.net.URLEncoder.encode(entry.getValue(), StandardCharsets.US_ASCII));
+                    .append(java.net.URLEncoder.encode(entry.getValue(), charset));
+            first = false;
+        }
+        return sb.toString();
+    }
+
+    /** Builds hash data without URL-encoding values (raw parameters string key=value&key2=value2). */
+    public static String buildRawHashData(SortedMap<String, String> sortedParams) {
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+        for (Map.Entry<String, String> entry : sortedParams.entrySet()) {
+            if (!first) {
+                sb.append('&');
+            }
+            sb.append(entry.getKey()).append('=').append(entry.getValue());
             first = false;
         }
         return sb.toString();
@@ -67,7 +86,13 @@ public final class VNPayUtil {
 
     /** VNPay requires the IP address of the customer making the request, IPv4-formatted. */
     public static String normalizeIp(String ip) {
-        if (ip == null || ip.isBlank() || "0:0:0:0:0:0:0:1".equals(ip)) {
+        if (ip == null || ip.isBlank()) {
+            return "127.0.0.1";
+        }
+        if (ip.contains(",")) {
+            ip = ip.split(",")[0].trim();
+        }
+        if ("0:0:0:0:0:0:0:1".equals(ip) || "::1".equals(ip)) {
             return "127.0.0.1";
         }
         return ip;
