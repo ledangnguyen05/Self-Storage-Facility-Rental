@@ -26,6 +26,16 @@ public class VNPayServiceImpl implements VNPayService {
 
     @Override
     public String createPaymentUrl(String txnRef, BigDecimal amount, String orderInfo, String ipAddress) {
+        if (vnPayConfig.getTmnCode() == null || vnPayConfig.getTmnCode().isBlank()
+                || vnPayConfig.getHashSecret() == null || vnPayConfig.getHashSecret().isBlank()) {
+            log.error("VNPay configuration missing: tmnCode or hashSecret is not set.");
+            throw new IllegalStateException("VNPay configuration is missing. Please set VNPAY_TMN_CODE and VNPAY_HASH_SECRET in your environment.");
+        }
+
+        String safeOrderInfo = (orderInfo != null && !orderInfo.isBlank())
+                ? orderInfo
+                : "Thanh toan don hang " + txnRef;
+
         Map<String, String> params = new HashMap<>();
         params.put("vnp_Version", vnPayConfig.getVersion());
         params.put("vnp_Command", vnPayConfig.getCommand());
@@ -34,7 +44,7 @@ public class VNPayServiceImpl implements VNPayService {
         params.put("vnp_Amount", amount.multiply(BigDecimal.valueOf(100)).setScale(0, java.math.RoundingMode.HALF_UP).toPlainString());
         params.put("vnp_CurrCode", vnPayConfig.getCurrCode());
         params.put("vnp_TxnRef", txnRef);
-        params.put("vnp_OrderInfo", orderInfo);
+        params.put("vnp_OrderInfo", safeOrderInfo);
         params.put("vnp_OrderType", vnPayConfig.getOrderType());
         params.put("vnp_Locale", vnPayConfig.getLocale());
         params.put("vnp_ReturnUrl", vnPayConfig.getReturnUrl());
@@ -63,18 +73,43 @@ public class VNPayServiceImpl implements VNPayService {
             return false;
         }
 
-        Map<String, String> paramsToVerify = new HashMap<>(params);
-        paramsToVerify.remove("vnp_SecureHash");
-        paramsToVerify.remove("vnp_SecureHashType");
+        Map<String, String> paramsToVerify = new HashMap<>();
+        for (Map.Entry<String, String> entry : params.entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
+            if (key != null && key.startsWith("vnp_")
+                    && !"vnp_SecureHash".equals(key)
+                    && !"vnp_SecureHashType".equals(key)
+                    && value != null && !value.isBlank()) {
+                paramsToVerify.put(key, value);
+            }
+        }
 
         SortedMap<String, String> sorted = VNPayUtil.sortParams(paramsToVerify);
-        String hashData = VNPayUtil.buildHashData(sorted);
-        String computedHash = VNPayUtil.hmacSHA512(vnPayConfig.getHashSecret(), hashData);
 
-        boolean valid = computedHash.equalsIgnoreCase(receivedHash);
-        if (!valid) {
-            log.warn("VNPay signature mismatch for txnRef={}", params.get("vnp_TxnRef"));
+        // 1. Check with US_ASCII encoding (standard VNPay Java SDK)
+        String hashDataAscii = VNPayUtil.buildHashData(sorted, StandardCharsets.US_ASCII);
+        String computedHashAscii = VNPayUtil.hmacSHA512(vnPayConfig.getHashSecret(), hashDataAscii);
+        if (computedHashAscii.equalsIgnoreCase(receivedHash)) {
+            return true;
         }
-        return valid;
+
+        // 2. Check with UTF-8 encoding
+        String hashDataUtf8 = VNPayUtil.buildHashData(sorted, StandardCharsets.UTF_8);
+        String computedHashUtf8 = VNPayUtil.hmacSHA512(vnPayConfig.getHashSecret(), hashDataUtf8);
+        if (computedHashUtf8.equalsIgnoreCase(receivedHash)) {
+            return true;
+        }
+
+        // 3. Check with raw unencoded parameters
+        String hashDataRaw = VNPayUtil.buildRawHashData(sorted);
+        String computedHashRaw = VNPayUtil.hmacSHA512(vnPayConfig.getHashSecret(), hashDataRaw);
+        if (computedHashRaw.equalsIgnoreCase(receivedHash)) {
+            return true;
+        }
+
+        log.warn("VNPay signature mismatch for txnRef={}. Received={}, ComputedAscii={}",
+                params.get("vnp_TxnRef"), receivedHash, computedHashAscii);
+        return false;
     }
 }

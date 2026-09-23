@@ -39,6 +39,9 @@ public class SecurityConfig {
 
     private static final String[] PUBLIC_URLS = {
             "/api/v1/auth/**",
+            "/api/v1/payments/vnpay-return",
+            "/api/v1/payments/vnpay-ipn",
+            "/api/v1/payments/vnpay-verify",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/api-docs/**",
