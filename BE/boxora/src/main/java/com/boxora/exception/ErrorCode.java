@@ -54,6 +54,9 @@ public enum ErrorCode {
     // ========================= PAYMENT (750 - 799) =========================
     PAYMENT_NOT_FOUND(750, "Payment transaction not found", HttpStatus.NOT_FOUND),
     PAYMENT_ALREADY_PROCESSED(751, "Payment has already been processed", HttpStatus.CONFLICT),
+    INVALID_PAYMENT_SIGNATURE(752, "Invalid VNPay payment signature", HttpStatus.BAD_REQUEST),
+    PAYMENT_AMOUNT_MISMATCH(753, "Payment amount does not match booking requirement", HttpStatus.BAD_REQUEST),
+    PAYMENT_FAILED(754, "Payment transaction failed or was cancelled", HttpStatus.BAD_REQUEST),
 
     // ========================= ROLE_PERMISSION (800 - 899) =========================
     ROLE_PERMISSION_NOT_FOUND(800, "Role-permission mapping not found", HttpStatus.NOT_FOUND),
