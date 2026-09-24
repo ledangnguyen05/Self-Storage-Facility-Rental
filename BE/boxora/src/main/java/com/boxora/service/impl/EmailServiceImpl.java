@@ -92,4 +92,52 @@ public class EmailServiceImpl implements EmailService {
             throw new RuntimeException("Failed to send email", e);
         }
     }
+
+    @Override
+    @Async
+    public void sendMasterKeyAlertEmail(String toEmail, String recipientName, String facilityName,
+                                        String performedByName, String witnessName,
+                                        String category, String severity,
+                                        String reason, String documentReference) {
+        String subject = String.format("[%s] Master Key được sử dụng tại %s", severity, facilityName);
+        String docRow = (documentReference != null && !documentReference.isBlank())
+                ? """
+                  <tr><td style="padding: 6px; border: 1px solid #eee;"><strong>Số hiệu / Văn bản</strong></td>
+                      <td style="padding: 6px; border: 1px solid #eee;">%s</td></tr>
+                  """.formatted(documentReference)
+                : "";
+
+        String severityColor = switch (severity) {
+            case "CRITICAL" -> "#DC2626";
+            case "HIGH" -> "#EA580C";
+            default -> "#2563EB";
+        };
+
+        String content = """
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: %s;">⚠ Cảnh báo: Sử dụng Master Key (%s)</h2>
+                <p>Xin chào <strong>%s</strong>,</p>
+                <p>Hệ thống ghi nhận Master Key vừa được sử dụng tại cơ sở <strong>%s</strong>.</p>
+                <table style="width: 100%%; border-collapse: collapse; margin: 16px 0;">
+                    <tr><td style="padding: 6px; border: 1px solid #eee;"><strong>Nhóm tình huống (Category)</strong></td>
+                        <td style="padding: 6px; border: 1px solid #eee;">%s</td></tr>
+                    <tr><td style="padding: 6px; border: 1px solid #eee;"><strong>Mức độ khẩn cấp (Severity)</strong></td>
+                        <td style="padding: 6px; border: 1px solid #eee; font-weight: bold; color: %s;">%s</td></tr>
+                    <tr><td style="padding: 6px; border: 1px solid #eee;"><strong>Người thực hiện</strong></td>
+                        <td style="padding: 6px; border: 1px solid #eee;">%s</td></tr>
+                    <tr><td style="padding: 6px; border: 1px solid #eee;"><strong>Người làm chứng (Xác thực 2 người)</strong></td>
+                        <td style="padding: 6px; border: 1px solid #eee;">%s</td></tr>
+                    <tr><td style="padding: 6px; border: 1px solid #eee;"><strong>Lý do chi tiết</strong></td>
+                        <td style="padding: 6px; border: 1px solid #eee;">%s</td></tr>
+                    %s
+                </table>
+                <p>Vui lòng kiểm tra Activity Log trên hệ thống để xem chi tiết đầy đủ nếu cần.</p>
+                <hr/>
+                <p style="color: #999; font-size: 12px;">Boxora Platform - Automated Security Alert</p>
+            </div>
+            """.formatted(severityColor, severity, recipientName, facilityName, category,
+                          severityColor, severity, performedByName, witnessName, reason, docRow);
+
+        sendHtmlEmail(toEmail, subject, content);
+    }
 }

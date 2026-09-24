@@ -28,6 +28,9 @@ public class ActivityLogResponse {
     private String oldValue;
     private String newValue;
 
+    private UUID facilityId;
+    private String facilityName;
+
     private ActivityLogStatus status;
     private String ipAddress;
     private String userAgent;

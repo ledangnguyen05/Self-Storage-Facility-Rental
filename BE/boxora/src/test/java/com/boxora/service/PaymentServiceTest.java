@@ -36,6 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -58,6 +59,12 @@ class PaymentServiceTest {
 
     @Mock
     private RequestContext requestContext;
+
+    @Mock
+    private com.boxora.security.FacilityAccessGuard facilityAccessGuard;
+
+    @Mock
+    private org.springframework.beans.factory.ObjectProvider<ContractRenewalService> contractRenewalServiceProvider;
 
     @InjectMocks
     private PaymentServiceImpl paymentService;
@@ -120,7 +127,7 @@ class PaymentServiceTest {
         assertThat(response.getBookingId()).isEqualTo(bookingId);
 
         verify(paymentRepository).save(any(Payment.class));
-        verify(activityLogService).record(eq(ActivityAction.PAYMENT_INITIATED), anyString(), any(), anyString(), any(), any());
+        verify(activityLogService).record(nullable(UUID.class), eq(ActivityAction.PAYMENT_INITIATED), anyString(), any(), anyString(), any(), any());
     }
 
     @Test
@@ -170,7 +177,7 @@ class PaymentServiceTest {
 
         verify(bookingRepository).save(mockBooking);
         verify(paymentRepository).save(mockPayment);
-        verify(activityLogService).record(eq(ActivityAction.PAYMENT_CONFIRMED), anyString(), any(), anyString(), any(), any());
+        verify(activityLogService).record(nullable(UUID.class), eq(ActivityAction.PAYMENT_CONFIRMED), anyString(), any(), anyString(), any(), any());
     }
 
     @Test
@@ -199,7 +206,7 @@ class PaymentServiceTest {
         paymentService.processVNPayReturn(params);
 
         assertThat(mockPayment.getStatus()).isEqualTo(PaymentStatus.FAILED);
-        verify(activityLogService).record(eq(ActivityAction.PAYMENT_FAILED), anyString(), any(), anyString(), any(), any());
+        verify(activityLogService).record(nullable(UUID.class), eq(ActivityAction.PAYMENT_FAILED), anyString(), any(), anyString(), any(), any());
     }
 
     @Test

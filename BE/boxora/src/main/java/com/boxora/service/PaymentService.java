@@ -5,10 +5,12 @@ import com.boxora.dto.request.PaymentCreateRequest;
 import com.boxora.dto.response.PaymentResponse;
 import com.boxora.dto.response.VNPayIpnResponse;
 import com.boxora.dto.response.VNPayPaymentResponse;
+import com.boxora.entity.RentalContract;
 import com.boxora.enums.PaymentStatus;
 import com.boxora.enums.PaymentType;
 import jakarta.servlet.http.HttpServletRequest;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -62,4 +64,8 @@ public interface PaymentService {
             String sortBy,
             String sortDir
     );
+
+    VNPayPaymentResponse createContractPayment(
+            RentalContract contract, PaymentType type, BigDecimal amount,
+            Integer renewalMonths, String orderInfo, HttpServletRequest httpRequest);
 }

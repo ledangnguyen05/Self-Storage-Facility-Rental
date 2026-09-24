@@ -19,12 +19,23 @@ public interface ActivityLogService {
     void record(ActivityAction action, String resourceType, UUID resourceId,
                 String description, Object oldValue, Object newValue);
 
-    /** Ghi log với userId được chỉ định rõ (dùng khi vừa tạo user hoặc đã biết rõ userId). */
-    void record(UUID userId, ActivityAction action, String resourceType, UUID resourceId,
+    /** Ghi log gắn với cơ sở/kho (facilityId) cụ thể cho user đang đăng nhập. */
+    void record(UUID facilityId, ActivityAction action, String resourceType, UUID resourceId,
+                String description, Object oldValue, Object newValue);
+
+    /** Ghi log với userId được chỉ định rõ (dùng cho auth/register/password-reset khi user chưa có trong RequestContext). */
+    void recordForUser(UUID userId, ActivityAction action, String resourceType, UUID resourceId,
+                       String description, Object oldValue, Object newValue);
+
+    /** Ghi log với userId và facilityId được chỉ định rõ. */
+    void record(UUID userId, UUID facilityId, ActivityAction action, String resourceType, UUID resourceId,
                 String description, Object oldValue, Object newValue);
 
     /** Dùng cho scheduled job / system action — không có user, không có HTTP request. */
     void recordSystem(ActivityAction action, String resourceType, UUID resourceId, String description);
+
+    /** Dùng cho scheduled job / system action gắn với cơ sở cụ thể. */
+    void recordSystem(UUID facilityId, ActivityAction action, String resourceType, UUID resourceId, String description);
 
     ActivityLogResponse getById(UUID id);
 
@@ -33,7 +44,17 @@ public interface ActivityLogService {
             Boolean criticalOnly, LocalDate fromDate, LocalDate toDate, String search,
             int page, int size, String sortBy, String sortDir);
 
+    PageResponse<ActivityLogResponse> getAll(
+            UUID userId, UUID facilityId, ActivityLogType logType, ActivityAction action, ActivityLogStatus status,
+            Boolean criticalOnly, String resourceType, UUID resourceId,
+            LocalDate fromDate, LocalDate toDate, String search,
+            int page, int size, String sortBy, String sortDir);
+
     PageResponse<ActivityLogResponse> getLoginHistory(
             UUID userId, ActivityLogStatus status, LocalDate fromDate, LocalDate toDate,
+            int page, int size, String sortBy, String sortDir);
+
+    PageResponse<ActivityLogResponse> getLoginHistory(
+            UUID userId, UUID facilityId, ActivityLogStatus status, LocalDate fromDate, LocalDate toDate,
             int page, int size, String sortBy, String sortDir);
 }

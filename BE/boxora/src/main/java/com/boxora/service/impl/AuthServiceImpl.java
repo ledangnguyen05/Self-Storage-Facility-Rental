@@ -41,6 +41,7 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final EmailService emailService;
+    private final com.boxora.service.ActivityLogService activityLogService;
 
 
     @Override
@@ -69,6 +70,9 @@ public class AuthServiceImpl implements AuthService {
         User saved = userRepository.save(user);
         log.info("User registered successfully with id: {}", saved.getId());
 
+        activityLogService.recordForUser(saved.getId(), ActivityAction.USER_CREATE, "User", saved.getId(),
+                "Dang ky tai khoan moi: " + saved.getEmail(), null, saved.getId());
+
         emailService.sendWelcomeEmail(saved.getEmail(), saved.getFullName());
 
         UserResponse userResponse = userMapper.toResponse(saved);
@@ -90,11 +94,16 @@ public class AuthServiceImpl implements AuthService {
                     )
             );
         } catch (BadCredentialsException e) {
+            User failedUser = userRepository.findByEmail(request.getEmail()).orElse(null);
+            activityLogService.recordLogin(failedUser != null ? failedUser.getId() : null,
+                    request.getEmail(), false, "Invalid email or password");
             throw new AppException(ErrorCode.INVALID_CREDENTIALS);
         }
 
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+
+        activityLogService.recordLogin(user.getId(), user.getEmail(), true, null);
 
         // Revoke old refresh tokens
         refreshTokenRepository.revokeAllUserTokensByType(user, TokenType.REFRESH);
@@ -112,6 +121,10 @@ public class AuthServiceImpl implements AuthService {
 
         refreshToken.setRevoked(true);
         refreshTokenRepository.save(refreshToken);
+
+        if (refreshToken.getUser() != null) {
+            activityLogService.recordLogout(refreshToken.getUser().getId());
+        }
 
     }
 
@@ -164,6 +177,9 @@ public class AuthServiceImpl implements AuthService {
             refreshTokenRepository.save(tokenEntity);
             emailService.sendPasswordResetEmail(user.getEmail(), user.getFullName(), resetToken);
             log.info("Password reset email sent to: {}", user.getEmail());
+
+            activityLogService.recordForUser(user.getId(), ActivityAction.PASSWORD_RESET_REQUESTED, "User", user.getId(),
+                    "Yeu cau dat lai mat khau cho: " + user.getEmail(), null, null);
         });
     }
 
@@ -197,6 +213,9 @@ public class AuthServiceImpl implements AuthService {
         // Revoke tất cả token — bắt đăng nhập lại
         refreshTokenRepository.revokeAllUserTokens(user);
 
+        activityLogService.recordForUser(user.getId(), ActivityAction.PASSWORD_RESET_COMPLETED, "User", user.getId(),
+                "Dat lai mat khau thanh cong cho: " + user.getEmail(), null, null);
+
     }
 
 
@@ -223,6 +242,9 @@ public class AuthServiceImpl implements AuthService {
 
         // Revoke tất cả token — bắt đăng nhập lại trên tất cả thiết bị
         refreshTokenRepository.revokeAllUserTokens(user);
+
+        activityLogService.recordForUser(user.getId(), ActivityAction.PASSWORD_CHANGE, "User", user.getId(),
+                "Doi mat khau thanh cong cho: " + user.getEmail(), null, null);
 
     }
 

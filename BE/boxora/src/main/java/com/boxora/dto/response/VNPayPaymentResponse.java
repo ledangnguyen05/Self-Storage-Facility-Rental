@@ -17,6 +17,7 @@ public class VNPayPaymentResponse {
     private String transactionId;
     private UUID paymentId;
     private UUID bookingId;
+    private UUID contractId;
     private BigDecimal amount;
     private String orderInfo;
 }
