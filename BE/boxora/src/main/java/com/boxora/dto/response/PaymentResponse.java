@@ -18,6 +18,8 @@ public class PaymentResponse {
     private UUID bookingId;
     private String bookingCode;
 
+    private UUID contractId;
+
     private BigDecimal amount;
     private PaymentType paymentType;
     private PaymentStatus status;

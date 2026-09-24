@@ -88,7 +88,7 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
 
         FacilityPolicy saved = facilityPolicyRepository.save(policy);
 
-        activityLogService.record(ActivityAction.FACILITY_POLICY_CREATE, "FACILITY_POLICY", saved.getId(),
+        activityLogService.record(facility.getId(), ActivityAction.FACILITY_POLICY_CREATE, "FACILITY_POLICY", saved.getId(),
                 "Created policy for facility " + facility.getName(), null, facility.getId());
 
         return facilityPolicyMapper.toResponse(saved);
@@ -115,7 +115,7 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
         facilityPolicyMapper.updateEntityFromRequest(request, policy);
         FacilityPolicy updated = facilityPolicyRepository.save(policy);
 
-        activityLogService.record(ActivityAction.FACILITY_POLICY_UPDATE, "FACILITY_POLICY", updated.getId(),
+        activityLogService.record(policy.getFacility().getId(), ActivityAction.FACILITY_POLICY_UPDATE, "FACILITY_POLICY", updated.getId(),
                 "Updated policy for facility " + (policy.getFacility() != null ? policy.getFacility().getName() : updated.getId()), null, updated.getId());
 
         return facilityPolicyMapper.toResponse(updated);
@@ -130,7 +130,7 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
 
         facilityPolicyRepository.deleteById(policy.getId());
 
-        activityLogService.record(ActivityAction.FACILITY_POLICY_UPDATE, "FACILITY_POLICY", policy.getId(),
+        activityLogService.record(policy.getFacility().getId(), ActivityAction.FACILITY_POLICY_UPDATE, "FACILITY_POLICY", policy.getId(),
                 "Deleted policy for facility " + (policy.getFacility() != null ? policy.getFacility().getName() : id), null, null);
     }
 

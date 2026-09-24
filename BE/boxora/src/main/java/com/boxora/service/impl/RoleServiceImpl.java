@@ -5,6 +5,7 @@ import com.boxora.dto.request.RoleCreateRequest;
 import com.boxora.dto.request.RoleUpdateRequest;
 import com.boxora.dto.response.RoleResponse;
 import com.boxora.entity.Role;
+import com.boxora.enums.ActivityAction;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.RoleMapper;
@@ -41,6 +42,7 @@ public class RoleServiceImpl implements RoleService {
     private final UserRepository userRepository;
     private final RolePermissionRepository rolePermissionRepository;
     private final RoleMapper roleMapper;
+    private final com.boxora.service.ActivityLogService activityLogService;
 
     @Override
     public RoleResponse getById(UUID id){
@@ -58,6 +60,15 @@ public class RoleServiceImpl implements RoleService {
         Role role = roleMapper.toEntity(request);
         role.setName(trimmedName);
         Role saved = roleRepository.save(role);
+
+        activityLogService.record(
+                ActivityAction.ROLE_CREATE,
+                "Role",
+                saved.getId(),
+                "Tao moi role: " + saved.getName(),
+                null,
+                saved.getName()
+        );
 
         return roleMapper.toResponse(saved);
     }
@@ -81,6 +92,16 @@ public class RoleServiceImpl implements RoleService {
         roleMapper.updateEntityFromRequest(request, role);
         role.setName(trimmedName);
         Role updated = roleRepository.save(role);
+
+        activityLogService.record(
+                ActivityAction.ROLE_UPDATE,
+                "Role",
+                updated.getId(),
+                "Cap nhat role: " + updated.getName(),
+                null,
+                updated.getName()
+        );
+
         return roleMapper.toResponse(updated);
     }
 
@@ -96,6 +117,15 @@ public class RoleServiceImpl implements RoleService {
         if (userRepository.existsByRole_Id(role.getId())) {
             throw new AppException(ErrorCode.ROLE_IN_USE);
         }
+
+        activityLogService.record(
+                ActivityAction.ROLE_DELETE,
+                "Role",
+                role.getId(),
+                "Xoa role: " + role.getName(),
+                null,
+                null
+        );
 
         rolePermissionRepository.deleteAllByRole_Id(role.getId());
 

@@ -10,5 +10,6 @@ public interface PaymentMapper {
 
     @Mapping(source = "booking.id", target = "bookingId")
     @Mapping(source = "booking.bookingCode", target = "bookingCode")
+    @Mapping(source = "contract.id", target = "contractId")
     PaymentResponse toResponse(Payment entity);
 }

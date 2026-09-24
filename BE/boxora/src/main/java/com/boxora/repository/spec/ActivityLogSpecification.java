@@ -1,6 +1,7 @@
 package com.boxora.repository.spec;
 
 import com.boxora.entity.ActivityLog;
+import com.boxora.entity.Facility;
 import com.boxora.entity.User;
 import com.boxora.enums.ActivityAction;
 import com.boxora.enums.ActivityLogStatus;
@@ -22,6 +23,13 @@ public class ActivityLogSpecification {
     public static Specification<ActivityLog> build(
             UUID userId, ActivityLogType logType, ActivityAction action, ActivityLogStatus status,
             List<ActivityAction> criticalActions, LocalDateTime fromDate, LocalDateTime toDate, String search) {
+        return build(userId, null, logType, action, status, criticalActions, null, null, fromDate, toDate, search);
+    }
+
+    public static Specification<ActivityLog> build(
+            UUID userId, UUID facilityId, ActivityLogType logType, ActivityAction action, ActivityLogStatus status,
+            List<ActivityAction> criticalActions, String resourceType, UUID resourceId,
+            LocalDateTime fromDate, LocalDateTime toDate, String search) {
 
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -32,8 +40,17 @@ public class ActivityLogSpecification {
                 userJoin = root.join("user", JoinType.LEFT);
             }
 
+            // Only join to `facility` when facilityId is provided or search is present.
+            Join<ActivityLog, Facility> facilityJoin = null;
+            if (facilityId != null || (search != null && !search.isBlank())) {
+                facilityJoin = root.join("facility", JoinType.LEFT);
+            }
+
             if (userId != null) {
                 predicates.add(cb.equal(userJoin.get("id"), userId));
+            }
+            if (facilityId != null) {
+                predicates.add(cb.equal(facilityJoin.get("id"), facilityId));
             }
             if (logType != null) {
                 predicates.add(cb.equal(root.get("logType"), logType));
@@ -47,6 +64,12 @@ public class ActivityLogSpecification {
             if (criticalActions != null && !criticalActions.isEmpty()) {
                 predicates.add(root.get("action").in(criticalActions));
             }
+            if (resourceType != null && !resourceType.isBlank()) {
+                predicates.add(cb.equal(cb.lower(root.get("resourceType")), resourceType.trim().toLowerCase()));
+            }
+            if (resourceId != null) {
+                predicates.add(cb.equal(root.get("resourceId"), resourceId));
+            }
             if (fromDate != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), fromDate));
             }
@@ -55,7 +78,7 @@ public class ActivityLogSpecification {
             }
             if (search != null && !search.isBlank()) {
                 String pattern = "%" + search.toLowerCase() + "%";
-                predicates.add(cb.or(
+                List<Predicate> searchPredicates = new ArrayList<>(List.of(
                         cb.like(cb.lower(root.get("description")), pattern),
                         cb.like(cb.lower(root.get("emailAttempted")), pattern),
                         cb.like(cb.lower(root.get("resourceType")), pattern),
@@ -63,6 +86,11 @@ public class ActivityLogSpecification {
                         cb.like(cb.lower(userJoin.get("fullName")), pattern),
                         cb.like(cb.lower(userJoin.get("username")), pattern)
                 ));
+                if (facilityJoin != null) {
+                    searchPredicates.add(cb.like(cb.lower(facilityJoin.get("name")), pattern));
+                    searchPredicates.add(cb.like(cb.lower(facilityJoin.get("code")), pattern));
+                }
+                predicates.add(cb.or(searchPredicates.toArray(new Predicate[0])));
             }
 
             return cb.and(predicates.toArray(new Predicate[0]));
