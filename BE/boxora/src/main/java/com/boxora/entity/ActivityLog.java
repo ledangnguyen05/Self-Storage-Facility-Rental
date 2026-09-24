@@ -19,6 +19,10 @@ public class ActivityLog extends BaseEntity {
     @JoinColumn(name = "user_id")
     private User user; // null for a failed login with an unknown email, or a system/scheduler action
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "facility_id")
+    private Facility facility;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "log_type", nullable = false, length = 20)
     private ActivityLogType logType;

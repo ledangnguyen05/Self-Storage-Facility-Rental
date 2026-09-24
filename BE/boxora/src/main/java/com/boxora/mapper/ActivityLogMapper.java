@@ -11,6 +11,8 @@ public interface ActivityLogMapper {
     @Mapping(source = "user.id", target = "userId")
     @Mapping(source = "user.fullName", target = "userName")
     @Mapping(source = "user.email", target = "userEmail")
+    @Mapping(source = "facility.id", target = "facilityId")
+    @Mapping(source = "facility.name", target = "facilityName")
     @Mapping(target = "critical", expression = "java(entity.getAction() != null && entity.getAction().isCritical())")
     ActivityLogResponse toResponse(ActivityLog entity);
 }

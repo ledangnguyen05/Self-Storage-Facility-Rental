@@ -8,6 +8,7 @@ import com.boxora.dto.response.RolePermissionResponse;
 import com.boxora.entity.Permission;
 import com.boxora.entity.Role;
 import com.boxora.entity.RolePermission;
+import com.boxora.enums.ActivityAction;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.RolePermissionMapper;
@@ -37,6 +38,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     private final RoleRepository roleRepository;
     private final PermissionRepository permissionRepository;
     private final RolePermissionMapper rolePermissionMapper;
+    private final com.boxora.service.ActivityLogService activityLogService;
 
     @Override
     public RolePermissionResponse getById(UUID id) {
@@ -66,6 +68,16 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                 existing.setDescription(request.getDescription());
             }
             RolePermission updated = rolePermissionRepository.save(existing);
+
+            activityLogService.record(
+                    ActivityAction.ROLE_PERMISSION_ASSIGN,
+                    "RolePermission",
+                    updated.getId(),
+                    "Kich hoat lai quyen " + permission.getName() + " cho role " + role.getName(),
+                    null,
+                    role.getName()
+            );
+
             return rolePermissionMapper.toResponse(updated);
         }
 
@@ -77,6 +89,16 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                 .build();
 
         RolePermission saved = rolePermissionRepository.save(rolePermission);
+
+        activityLogService.record(
+                ActivityAction.ROLE_PERMISSION_ASSIGN,
+                "RolePermission",
+                saved.getId(),
+                "Gan quyen " + permission.getName() + " cho role " + role.getName(),
+                null,
+                role.getName()
+        );
+
         return rolePermissionMapper.toResponse(saved);
     }
 
@@ -94,6 +116,17 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     public void delete(UUID id) {
         RolePermission rolePermission = rolePermissionRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.ROLE_PERMISSION_NOT_FOUND));
+
+        activityLogService.record(
+                ActivityAction.ROLE_PERMISSION_REVOKE,
+                "RolePermission",
+                rolePermission.getId(),
+                "Thu hoi quyen " + (rolePermission.getPermission() != null ? rolePermission.getPermission().getName() : "")
+                        + " khoi role " + (rolePermission.getRole() != null ? rolePermission.getRole().getName() : ""),
+                null,
+                null
+        );
+
         rolePermissionRepository.deleteById(rolePermission.getId());
     }
 
@@ -163,6 +196,16 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         }
 
         List<RolePermission> saved = rolePermissionRepository.saveAll(toSave);
+
+        activityLogService.record(
+                ActivityAction.ROLE_PERMISSION_ASSIGN,
+                "RolePermission",
+                role.getId(),
+                "Gan hang loat " + saved.size() + " quyen cho role " + role.getName(),
+                null,
+                saved.size()
+        );
+
         return saved.stream()
                 .map(rolePermissionMapper::toResponse)
                 .toList();

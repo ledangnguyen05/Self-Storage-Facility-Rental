@@ -84,7 +84,33 @@ public enum ErrorCode {
     TICKET_NOT_FOUND(1200, "Support ticket not found or does not belong to user", HttpStatus.NOT_FOUND),
 
     // ========================= ACTIVITY_LOG (1300 - 1399) =========================
-    ACTIVITY_LOG_NOT_FOUND(1300, "Activity log entry not found", HttpStatus.NOT_FOUND);
+    ACTIVITY_LOG_NOT_FOUND(1300, "Activity log entry not found", HttpStatus.NOT_FOUND),
+
+    // ========================= MASTER_KEY (1400 - 1499) =========================
+    MASTER_KEY_OVERRIDE_NOT_FOUND(1400, "Master key override record not found", HttpStatus.NOT_FOUND),
+    MASTER_KEY_WITNESS_REQUIRED(1401, "Witness must be a different user from the person performing the override", HttpStatus.BAD_REQUEST),
+    MASTER_KEY_WITNESS_NOT_FOUND(1402, "Witness user not found", HttpStatus.NOT_FOUND),
+    MASTER_KEY_WITNESS_WRONG_FACILITY(1403, "Witness must belong to the same facility", HttpStatus.BAD_REQUEST),
+    MASTER_KEY_WITNESS_INVALID_CREDENTIALS(1404, "Witness credentials verification failed", HttpStatus.UNAUTHORIZED),
+    MASTER_KEY_WITNESS_INACTIVE(1405, "Witness user account is inactive or disabled", HttpStatus.BAD_REQUEST),
+    MASTER_KEY_WITNESS_UNAUTHORIZED_ROLE(1406, "Witness must be a staff member or manager", HttpStatus.FORBIDDEN),
+    MASTER_KEY_RESOURCE_WRONG_FACILITY(1407, "Target storage unit does not belong to the specified facility", HttpStatus.BAD_REQUEST),
+
+    // ========================= CONTRACT & RENEWAL (1500 - 1599) =========================
+    CONTRACT_NOT_FOUND(1500, "Rental contract not found", HttpStatus.NOT_FOUND),
+    CONTRACT_SIGNING_FAILED(1501, "Failed to create e-contract signing request", HttpStatus.INTERNAL_SERVER_ERROR),
+    CONTRACT_SIGNING_INVALID_WEBHOOK_TOKEN(1502, "Invalid webhook token", HttpStatus.UNAUTHORIZED),
+    CONTRACT_ALREADY_SIGNED(1503, "Contract is already signed", HttpStatus.BAD_REQUEST),
+    CONTRACT_NOT_ACTIVE(1504, "Contract is not active", HttpStatus.BAD_REQUEST),
+    CONTRACT_RENEWAL_WINDOW_CLOSED(1505, "Contract renewal is only allowed within the renewal window before expiration", HttpStatus.BAD_REQUEST),
+    CONTRACT_RENEWAL_NOT_FOUND(1506, "Contract renewal request not found", HttpStatus.NOT_FOUND),
+    CONTRACT_RENEWAL_ALREADY_COMPLETED(1507, "Contract renewal has already been completed", HttpStatus.BAD_REQUEST),
+    CONTRACT_RENEWAL_ALREADY_SIGNED(1508, "Contract renewal is already signed", HttpStatus.BAD_REQUEST),
+    RENEWAL_CONTRACT_NOT_FOUND(1509, "Rental contract not found", HttpStatus.NOT_FOUND);
+
+
+
+
     private final int code;
     private final String message;
     private final HttpStatus httpStatus;

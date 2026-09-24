@@ -287,6 +287,54 @@ CREATE TABLE IF NOT EXISTS bookings
 
 
 -- =========================================================
+-- RENTAL CONTRACTS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS rental_contracts
+(
+    id                       UUID          NOT NULL,
+    created_at               TIMESTAMP     NOT NULL,
+    updated_at               TIMESTAMP     NOT NULL,
+
+    contract_code            VARCHAR(50),
+    customer_id              UUID          NOT NULL,
+    unit_id                  UUID          NOT NULL,
+    facility_id              UUID          NOT NULL,
+    booking_id               UUID,
+
+    start_date               DATE          NOT NULL,
+    end_date                 DATE          NOT NULL,
+    monthly_fee              NUMERIC(15,2) NOT NULL,
+    deposit_held             NUMERIC(15,2) NOT NULL DEFAULT 0,
+
+    status                   VARCHAR(30)   NOT NULL DEFAULT 'PENDING_SIGNATURE',
+
+    docuseal_submission_id   BIGINT,
+    docuseal_submitter_slug  VARCHAR(100),
+    signed_document_url      VARCHAR(500),
+    signed_at                TIMESTAMP,
+
+    CONSTRAINT pk_rental_contracts
+    PRIMARY KEY (id),
+
+    CONSTRAINT fk_rental_contracts_customer
+    FOREIGN KEY (customer_id)
+    REFERENCES users(id),
+
+    CONSTRAINT fk_rental_contracts_unit
+    FOREIGN KEY (unit_id)
+    REFERENCES storage_units(id),
+
+    CONSTRAINT fk_rental_contracts_facility
+    FOREIGN KEY (facility_id)
+    REFERENCES facilities(id),
+
+    CONSTRAINT fk_rental_contracts_booking
+    FOREIGN KEY (booking_id)
+    REFERENCES bookings(id)
+);
+
+-- =========================================================
 -- PAYMENTS
 -- =========================================================
 
@@ -296,22 +344,29 @@ CREATE TABLE IF NOT EXISTS payments
     created_at      TIMESTAMP     NOT NULL,
     updated_at      TIMESTAMP     NOT NULL,
     transaction_id  VARCHAR(60)   NOT NULL,
-    booking_id      UUID          NOT NULL,
+    booking_id      UUID,
+    contract_id     UUID,
+    renewal_months  INTEGER,
     amount          NUMERIC(12,2) NOT NULL,
     payment_type    VARCHAR(30)   NOT NULL,
     status          VARCHAR(30)   NOT NULL,
     payment_method  VARCHAR(50),
     payment_time    TIMESTAMP     NOT NULL,
 
-    CONSTRAINT pk_payments PRIMARY KEY (id),
+    CONSTRAINT pk_payments
+    PRIMARY KEY (id),
 
     CONSTRAINT uc_payments_transaction_id
     UNIQUE (transaction_id),
 
     CONSTRAINT fk_payments_booking
     FOREIGN KEY (booking_id)
-    REFERENCES bookings(id)
-    );
+    REFERENCES bookings(id),
+
+    CONSTRAINT fk_payments_contract
+    FOREIGN KEY (contract_id)
+    REFERENCES rental_contracts(id)
+);
 
 -- =========================================================
 -- ACTIVITY_LOGS
@@ -323,6 +378,7 @@ CREATE TABLE IF NOT EXISTS activity_logs
     created_at        TIMESTAMP    NOT NULL,
     updated_at        TIMESTAMP    NOT NULL,
     user_id           UUID,
+    facility_id       UUID,
     log_type          VARCHAR(20)  NOT NULL,
     action            VARCHAR(100) NOT NULL,
     email_attempted   VARCHAR(150),
@@ -339,10 +395,15 @@ CREATE TABLE IF NOT EXISTS activity_logs
 
     CONSTRAINT fk_activity_logs_user
     FOREIGN KEY (user_id)
-    REFERENCES users(id)
-    );
+    REFERENCES users(id),
+
+    CONSTRAINT fk_activity_logs_facility
+    FOREIGN KEY (facility_id)
+    REFERENCES facilities(id)
+);
 
 CREATE INDEX IF NOT EXISTS idx_activity_logs_user_id ON activity_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_facility_id ON activity_logs(facility_id);
 CREATE INDEX IF NOT EXISTS idx_activity_logs_log_type ON activity_logs(log_type);
 CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at ON activity_logs(created_at);
 
@@ -412,3 +473,69 @@ CREATE TABLE IF NOT EXISTS support_tickets
     REFERENCES users(id)
     );
 
+-- =========================================================
+-- MASTER_KEY_OVERRIDE
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS master_key_overrides
+(
+    id                 UUID         NOT NULL,
+    created_at         TIMESTAMP    NOT NULL,
+    updated_at         TIMESTAMP    NOT NULL,
+    facility_id        UUID         NOT NULL,
+    performed_by_id    UUID         NOT NULL,
+    witness_id         UUID         NOT NULL,
+    category           VARCHAR(50)  NOT NULL,
+    severity           VARCHAR(30)  NOT NULL,
+    reason             VARCHAR(500) NOT NULL,
+    document_reference VARCHAR(100),
+    resource_type      VARCHAR(100),
+    resource_id        UUID,
+
+    CONSTRAINT pk_master_key_overrides PRIMARY KEY (id),
+
+    CONSTRAINT fk_mko_facility
+    FOREIGN KEY (facility_id) REFERENCES facilities(id),
+    CONSTRAINT fk_mko_performed_by
+    FOREIGN KEY (performed_by_id) REFERENCES users(id),
+    CONSTRAINT fk_mko_witness
+    FOREIGN KEY (witness_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mko_facility_id ON master_key_overrides(facility_id);
+CREATE INDEX IF NOT EXISTS idx_mko_created_at ON master_key_overrides(created_at);
+
+-- =========================================================
+-- RENEWAL CONTRACTS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS contract_renewals
+(
+    id                      UUID          NOT NULL,
+    created_at              TIMESTAMP     NOT NULL,
+    updated_at              TIMESTAMP     NOT NULL,
+
+    contract_id             UUID          NOT NULL,
+    payment_id              UUID,
+    old_end_date            DATE          NOT NULL,
+    new_end_date            DATE          NOT NULL,
+    cycle_months            INTEGER       NOT NULL,
+    renewal_fee             NUMERIC(12,2) NOT NULL,
+    status                  VARCHAR(30)   NOT NULL DEFAULT 'PENDING_SIGNATURE',
+
+    docuseal_submission_id  BIGINT,
+    docuseal_submitter_slug VARCHAR(100),
+    signed_document_url     VARCHAR(500),
+    signed_at               TIMESTAMP,
+
+    CONSTRAINT pk_contract_renewals
+    PRIMARY KEY (id),
+
+    CONSTRAINT fk_contract_renewals_contract
+    FOREIGN KEY (contract_id)
+    REFERENCES rental_contracts(id),
+
+    CONSTRAINT fk_contract_renewals_payment
+    FOREIGN KEY (payment_id)
+    REFERENCES payments(id)
+);

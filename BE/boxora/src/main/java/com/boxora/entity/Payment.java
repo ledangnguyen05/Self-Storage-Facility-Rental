@@ -21,7 +21,7 @@ public class Payment extends BaseEntity {
     private String transactionId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "booking_id", nullable = false)
+    @JoinColumn(name = "booking_id")
     private Booking booking;
 
     @Column(name = "amount", nullable = false, precision = 12, scale = 2)
@@ -40,4 +40,11 @@ public class Payment extends BaseEntity {
 
     @Column(name = "payment_time", nullable = false)
     private LocalDateTime paymentTime;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "contract_id")
+    private RentalContract contract; // dùng cho RENEWAL_FEE - booking sẽ null trong trường hợp này
+
+    @Column(name = "renewal_months")
+    private Integer renewalMonths; // chỉ set khi paymentType = RENEWAL_FEE, dùng để tính newEndDate lúc webhook confirm
 }

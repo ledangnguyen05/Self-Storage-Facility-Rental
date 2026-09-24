@@ -22,6 +22,10 @@ public interface FacilityPolicyRepository extends JpaRepository<FacilityPolicy, 
     @EntityGraph(attributePaths = {"facility"})
     Optional<FacilityPolicy> findByFacility_Id(UUID facilityId);
 
+    default Optional<FacilityPolicy> findByFacilityId(UUID facilityId) {
+        return findByFacility_Id(facilityId);
+    }
+
     boolean existsByFacility_Id(UUID facilityId);
 
     @EntityGraph(attributePaths = {"facility"})

@@ -7,6 +7,7 @@ import com.boxora.dto.response.UserResponse;
 import com.boxora.entity.Facility;
 import com.boxora.entity.Role;
 import com.boxora.entity.User;
+import com.boxora.enums.ActivityAction;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.UserMapper;
@@ -39,6 +40,7 @@ public class UserServiceImpl implements UserService {
     private final FacilityAccessGuard facilityAccessGuard;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final com.boxora.service.ActivityLogService activityLogService;
 
 
     @Override
@@ -83,6 +85,17 @@ public class UserServiceImpl implements UserService {
                 .build();
 
         User saved = userRepository.save(user);
+
+        activityLogService.record(
+                saved.getFacility() != null ? saved.getFacility().getId() : null,
+                ActivityAction.USER_CREATE,
+                "User",
+                saved.getId(),
+                "Tao moi tai khoan user: " + saved.getUsername(),
+                null,
+                saved.getUsername()
+        );
+
         return userMapper.toResponse(saved);
     }
 
@@ -127,6 +140,16 @@ public class UserServiceImpl implements UserService {
         userMapper.updateEntityFromRequest(request, user);
         User updated = userRepository.save(user);
 
+        activityLogService.record(
+                updated.getFacility() != null ? updated.getFacility().getId() : null,
+                ActivityAction.USER_UPDATE,
+                "User",
+                updated.getId(),
+                "Cap nhat tai khoan user: " + updated.getUsername(),
+                null,
+                updated.getUsername()
+        );
+
         return userMapper.toResponse(updated);
     }
 
@@ -140,6 +163,16 @@ public class UserServiceImpl implements UserService {
         if (facilityAccessGuard.isFacilityScoped() && user.getFacility() != null) {
             facilityAccessGuard.checkFacilityAccess(user.getFacility().getId());
         }
+
+        activityLogService.record(
+                user.getFacility() != null ? user.getFacility().getId() : null,
+                ActivityAction.USER_DEACTIVATE,
+                "User",
+                user.getId(),
+                "Xoa tai khoan user: " + user.getUsername(),
+                null,
+                null
+        );
 
         userRepository.delete(user);
         log.info("User deleted successfully with id: {}", id);
@@ -208,6 +241,17 @@ public class UserServiceImpl implements UserService {
 
         user.setIsActive(!user.getIsActive());
         User updated = userRepository.save(user);
+
+        ActivityAction action = updated.getIsActive() ? ActivityAction.USER_ACTIVATE : ActivityAction.USER_DEACTIVATE;
+        activityLogService.record(
+                updated.getFacility() != null ? updated.getFacility().getId() : null,
+                action,
+                "User",
+                updated.getId(),
+                (updated.getIsActive() ? "Kich hoat" : "Khoa") + " tai khoan user: " + updated.getUsername(),
+                !updated.getIsActive(),
+                updated.getIsActive()
+        );
 
         return userMapper.toResponse(updated);
     }

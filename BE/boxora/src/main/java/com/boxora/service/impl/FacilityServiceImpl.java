@@ -69,7 +69,7 @@ public class FacilityServiceImpl implements FacilityService {
 
         Facility saved = facilityRepository.save(facility);
 
-        activityLogService.record(ActivityAction.FACILITY_CREATE, "FACILITY", saved.getId(),
+        activityLogService.record(saved.getId(), ActivityAction.FACILITY_CREATE, "FACILITY", saved.getId(),
                 "Created facility: " + saved.getName() + " (" + saved.getCode() + ")", null, saved.getCode());
 
         return facilityMapper.toResponse(saved);
@@ -111,7 +111,7 @@ public class FacilityServiceImpl implements FacilityService {
 
         Facility updated = facilityRepository.save(facility);
 
-        activityLogService.record(ActivityAction.FACILITY_UPDATE, "FACILITY", updated.getId(),
+        activityLogService.record(updated.getId(), ActivityAction.FACILITY_UPDATE, "FACILITY", updated.getId(),
                 "Updated facility: " + updated.getName(), null, updated.getStatus());
 
         return facilityMapper.toResponse(updated);
@@ -126,7 +126,7 @@ public class FacilityServiceImpl implements FacilityService {
 
         facilityRepository.deleteById(facility.getId());
 
-        activityLogService.record(ActivityAction.FACILITY_DEACTIVATE, "FACILITY", facility.getId(),
+        activityLogService.record(facility.getId(), ActivityAction.FACILITY_DEACTIVATE, "FACILITY", facility.getId(),
                 "Deleted facility: " + facility.getName(), null, null);
     }
 

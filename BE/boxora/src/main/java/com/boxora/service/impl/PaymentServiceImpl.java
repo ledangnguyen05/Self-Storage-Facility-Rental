@@ -7,6 +7,7 @@ import com.boxora.dto.response.VNPayIpnResponse;
 import com.boxora.dto.response.VNPayPaymentResponse;
 import com.boxora.entity.Booking;
 import com.boxora.entity.Payment;
+import com.boxora.entity.RentalContract;
 import com.boxora.enums.ActivityAction;
 import com.boxora.enums.BookingStatus;
 import com.boxora.enums.PaymentStatus;
@@ -18,6 +19,7 @@ import com.boxora.repository.BookingRepository;
 import com.boxora.repository.PaymentRepository;
 import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
+import com.boxora.service.ContractRenewalService;
 import com.boxora.service.PaymentService;
 import com.boxora.service.VNPayService;
 import com.boxora.util.VNPayUtil;
@@ -52,6 +54,19 @@ public class PaymentServiceImpl implements PaymentService {
     private final VNPayService vnPayService;
     private final ActivityLogService activityLogService;
     private final RequestContext requestContext;
+    private final com.boxora.security.FacilityAccessGuard facilityAccessGuard;
+    private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractRenewalService> contractRenewalServiceProvider;
+
+    private UUID extractFacilityId(Payment payment) {
+        if (payment == null) return null;
+        if (payment.getContract() != null && payment.getContract().getFacility() != null) {
+            return payment.getContract().getFacility().getId();
+        }
+        if (payment.getBooking() != null && payment.getBooking().getStorageUnit() != null && payment.getBooking().getStorageUnit().getFacility() != null) {
+            return payment.getBooking().getStorageUnit().getFacility().getId();
+        }
+        return null;
+    }
 
     @Override
     public VNPayPaymentResponse createVNPayPayment(PaymentCreateRequest request, HttpServletRequest httpRequest) {
@@ -92,13 +107,16 @@ public class PaymentServiceImpl implements PaymentService {
 
         payment = paymentRepository.save(payment);
 
+        UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                ? booking.getStorageUnit().getFacility().getId() : null;
         activityLogService.record(
+                facilityId,
                 ActivityAction.PAYMENT_INITIATED,
                 "PAYMENT",
                 payment.getId(),
                 "Khoi tao giao dich thanh toan VNPAY cho booking " + booking.getBookingCode() + ", so tien: " + request.getAmount(),
                 null,
-                payment
+                payment.getId()
         );
 
         // Generate VNPay checkout URL
@@ -152,31 +170,52 @@ public class PaymentServiceImpl implements PaymentService {
 
             // Update Booking status & deposit amount if applicable
             Booking booking = payment.getBooking();
-            if (payment.getPaymentType() == PaymentType.DEPOSIT) {
-                BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
-                booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
+            if (booking != null) {
+                if (payment.getPaymentType() == PaymentType.DEPOSIT) {
+                    BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
+                    booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
+                }
+                if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                    booking.setStatus(BookingStatus.CONFIRMED);
+                }
+                bookingRepository.save(booking);
             }
-            if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
-                booking.setStatus(BookingStatus.CONFIRMED);
-            }
-            bookingRepository.save(booking);
 
+            if (payment.getPaymentType() == PaymentType.RENEWAL_FEE) {
+                ContractRenewalService renewalService = contractRenewalServiceProvider.getIfAvailable();
+                if (renewalService != null) {
+                    renewalService.handleRenewalPaid(payment);
+                }
+            }
+
+            String targetDesc = payment.getBooking() != null
+                    ? "booking " + payment.getBooking().getBookingCode()
+                    : "hop dong " + (payment.getContract() != null ? payment.getContract().getId() : "N/A");
+
+            UUID facilityId = extractFacilityId(payment);
             activityLogService.record(
+                    facilityId,
                     ActivityAction.PAYMENT_CONFIRMED,
                     "PAYMENT",
                     payment.getId(),
-                    "Thanh toan VNPAY thanh cong cho booking " + booking.getBookingCode() + ", ma GD: " + txnRef,
+                    "Thanh toan VNPAY thanh cong cho " + targetDesc + ", ma GD: " + txnRef,
                     PaymentStatus.PENDING,
                     PaymentStatus.PAID
             );
         } else {
             payment.setStatus(PaymentStatus.FAILED);
 
+            String targetDesc = payment.getBooking() != null
+                    ? "booking " + payment.getBooking().getBookingCode()
+                    : "hop dong " + (payment.getContract() != null ? payment.getContract().getId() : "N/A");
+
+            UUID facilityId = extractFacilityId(payment);
             activityLogService.record(
+                    facilityId,
                     ActivityAction.PAYMENT_FAILED,
                     "PAYMENT",
                     payment.getId(),
-                    "Thanh toan VNPAY that bai hoac bi huy cho booking " + payment.getBooking().getBookingCode() + ", responseCode: " + responseCode,
+                    "Thanh toan VNPAY that bai hoac bi huy cho " + targetDesc + ", responseCode: " + responseCode,
                     PaymentStatus.PENDING,
                     PaymentStatus.FAILED
             );
@@ -242,16 +281,27 @@ public class PaymentServiceImpl implements PaymentService {
             payment.setStatus(PaymentStatus.PAID);
 
             Booking booking = payment.getBooking();
-            if (payment.getPaymentType() == PaymentType.DEPOSIT) {
-                BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
-                booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
+            if (booking != null) {
+                if (payment.getPaymentType() == PaymentType.DEPOSIT) {
+                    BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
+                    booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
+                }
+                if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                    booking.setStatus(BookingStatus.CONFIRMED);
+                }
+                bookingRepository.save(booking);
             }
-            if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
-                booking.setStatus(BookingStatus.CONFIRMED);
-            }
-            bookingRepository.save(booking);
 
+            if (payment.getPaymentType() == PaymentType.RENEWAL_FEE) {
+                ContractRenewalService renewalService = contractRenewalServiceProvider.getIfAvailable();
+                if (renewalService != null) {
+                    renewalService.handleRenewalPaid(payment);
+                }
+            }
+
+            UUID facilityId = extractFacilityId(payment);
             activityLogService.recordSystem(
+                    facilityId,
                     ActivityAction.PAYMENT_CONFIRMED,
                     "PAYMENT",
                     payment.getId(),
@@ -260,7 +310,9 @@ public class PaymentServiceImpl implements PaymentService {
         } else {
             payment.setStatus(PaymentStatus.FAILED);
 
+            UUID facilityId = extractFacilityId(payment);
             activityLogService.recordSystem(
+                    facilityId,
                     ActivityAction.PAYMENT_FAILED,
                     "PAYMENT",
                     payment.getId(),
@@ -311,8 +363,17 @@ public class PaymentServiceImpl implements PaymentService {
         Sort sort = sortDir.equalsIgnoreCase("asc") ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
 
+        UUID scopedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+
         Specification<Payment> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
+
+            if (scopedFacilityId != null) {
+                predicates.add(cb.or(
+                        cb.equal(root.get("booking").get("facility").get("id"), scopedFacilityId),
+                        cb.equal(root.get("contract").get("facility").get("id"), scopedFacilityId)
+                ));
+            }
 
             if (bookingId != null) {
                 predicates.add(cb.equal(root.get("booking").get("id"), bookingId));
@@ -335,5 +396,64 @@ public class PaymentServiceImpl implements PaymentService {
 
         Page<Payment> result = paymentRepository.findAll(spec, pageable);
         return PageResponse.from(result.map(paymentMapper::toResponse));
+    }
+
+    @Override
+    @Transactional
+    public VNPayPaymentResponse createContractPayment(
+            RentalContract contract, PaymentType type, BigDecimal amount,
+            Integer renewalMonths, String orderInfo, HttpServletRequest httpRequest) {
+
+        String txnRef = "BOX" + System.currentTimeMillis() + VNPayUtil.randomAlphaNumeric(6);
+
+        String ipAddress = null;
+        if (httpRequest != null) {
+            ipAddress = httpRequest.getHeader("X-Forwarded-For");
+            if (ipAddress == null || ipAddress.isBlank()) {
+                ipAddress = httpRequest.getRemoteAddr();
+            }
+        }
+        if (ipAddress == null || ipAddress.isBlank()) {
+            ipAddress = requestContext.currentIpAddress();
+        }
+        ipAddress = VNPayUtil.normalizeIp(ipAddress);
+
+        if (orderInfo == null || orderInfo.isBlank()) {
+            orderInfo = "Thanh toan phi gia han hop dong " + (contract.getContractCode() != null ? contract.getContractCode() : contract.getId());
+        }
+
+        Payment payment = Payment.builder()
+                .transactionId(txnRef)
+                .contract(contract)
+                .amount(amount)
+                .paymentType(type)
+                .renewalMonths(renewalMonths)
+                .status(PaymentStatus.PENDING)
+                .paymentMethod("VNPAY")
+                .paymentTime(LocalDateTime.now())
+                .build();
+        payment = paymentRepository.save(payment);
+
+        UUID facilityId = contract.getFacility() != null ? contract.getFacility().getId() : null;
+        activityLogService.record(
+                facilityId,
+                ActivityAction.PAYMENT_INITIATED,
+                "PAYMENT",
+                payment.getId(),
+                "Khoi tao thanh toan phi gia han hop dong " + contract.getId() + ", so tien: " + amount,
+                null,
+                payment.getId()
+        );
+
+        String paymentUrl = vnPayService.createPaymentUrl(txnRef, amount, orderInfo, ipAddress);
+
+        return VNPayPaymentResponse.builder()
+                .paymentUrl(paymentUrl)
+                .transactionId(txnRef)
+                .paymentId(payment.getId())
+                .contractId(contract.getId())
+                .amount(payment.getAmount())
+                .orderInfo(orderInfo)
+                .build();
     }
 }
