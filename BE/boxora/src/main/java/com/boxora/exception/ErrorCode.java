@@ -40,6 +40,7 @@ public enum ErrorCode {
     // ========================= SYSTEM (600 - 699) =========================
     INTERNAL_SERVER_ERROR(600, "Internal server error", HttpStatus.INTERNAL_SERVER_ERROR),
     INVALID_REQUEST(601, "Invalid request", HttpStatus.BAD_REQUEST),
+    RESOURCE_NOT_FOUND(602, "Resource not found", HttpStatus.NOT_FOUND),
 
     // ========================= BOOKING & ACCESS (700 - 799) =================
     BOOKING_NOT_FOUND(700, "Booking not found or does not belong to user", HttpStatus.NOT_FOUND),
@@ -50,6 +51,10 @@ public enum ErrorCode {
     INVALID_PRICING_TARGET(705, "Provide either unitTypeId or storageUnitId, but not both or neither", HttpStatus.BAD_REQUEST),
     UNIT_TYPE_PRICE_NOT_CONFIGURED(706, "Unit type monthly price is not configured", HttpStatus.INTERNAL_SERVER_ERROR),
     NO_AVAILABLE_UNIT(707, "No available storage unit found for the selected type and facility", HttpStatus.CONFLICT),
+    STORAGE_UNIT_CODE_EXISTED(708, "Storage unit code already exists in this facility", HttpStatus.BAD_REQUEST),
+    STORAGE_UNIT_IN_USE(709, "Cannot delete storage unit because it has active contracts or bookings", HttpStatus.CONFLICT),
+    STORAGE_UNIT_CANNOT_MAINTAIN(710, "Cannot put storage unit into maintenance while it is occupied or reserved", HttpStatus.BAD_REQUEST),
+    STORAGE_UNIT_NOT_AVAILABLE(711, "Storage unit is currently not available for booking", HttpStatus.CONFLICT),
 
     // ========================= PAYMENT (750 - 799) =========================
     PAYMENT_NOT_FOUND(750, "Payment transaction not found", HttpStatus.NOT_FOUND),

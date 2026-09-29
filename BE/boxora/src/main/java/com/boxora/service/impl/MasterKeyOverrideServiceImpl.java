@@ -56,7 +56,7 @@ public class MasterKeyOverrideServiceImpl implements MasterKeyOverrideService {
             Set.of("STAFF", "FACILITY_MANAGER", "BUSINESS_MANAGER", "ADMIN");
 
     private static final Set<String> SYSTEM_WIDE_ROLES =
-            Set.of("ADMIN", "BUSINESS_MANAGER", "BUSINESS_MANAGER");
+            Set.of("ADMIN", "BUSINESS_MANAGER");
 
     @Override
     public MasterKeyOverrideResponse create(MasterKeyOverrideRequest request) {
