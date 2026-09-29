@@ -13,7 +13,7 @@ import java.util.UUID;
 public class FacilityAccessGuard {
 
     // roles that see every facility's data, unscoped
-    private static final Set<String> SYSTEM_WIDE_ROLES = Set.of("ADMIN", "BUSINESS_MANAGER", "BUSINESS_MANAGER");
+    private static final Set<String> SYSTEM_WIDE_ROLES = Set.of("ADMIN", "BUSINESS_MANAGER");
 
     private final RequestContext requestContext;
 
