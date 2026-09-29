@@ -23,7 +23,7 @@ public class EmergencyAlertServiceImpl implements EmergencyAlertService {
 
     // BUSINESS_MANAGER is the seeded system-wide management role in Boxora
     private static final List<String> ALERT_RECIPIENT_ROLES =
-            List.of("BUSINESS_MANAGER", "BUSINESS_OPERATIONS_MANAGER", "ADMIN");
+            List.of("BUSINESS_MANAGER", "BUSINESS_MANAGER", "ADMIN");
 
     @Override
     public void alertMasterKeyUsed(UUID facilityId, String facilityName,
