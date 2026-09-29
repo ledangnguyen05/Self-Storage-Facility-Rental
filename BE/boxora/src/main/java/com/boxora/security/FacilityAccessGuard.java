@@ -13,14 +13,14 @@ import java.util.UUID;
 public class FacilityAccessGuard {
 
     // roles that see every facility's data, unscoped
-    private static final Set<String> SYSTEM_WIDE_ROLES = Set.of("ADMIN", "BUSINESS_MANAGER", "BUSINESS_OPERATIONS_MANAGER");
+    private static final Set<String> SYSTEM_WIDE_ROLES = Set.of("ADMIN", "BUSINESS_MANAGER", "BUSINESS_MANAGER");
 
     private final RequestContext requestContext;
 
     /**
      * Throws FACILITY_ACCESS_DENIED if the current user's role is facility-scoped
      * (STAFF / FACILITY_MANAGER) and their assigned facility does not match targetFacilityId.
-     * ADMIN and BUSINESS_OPERATIONS_MANAGER always pass. CUSTOMER should never call this -
+     * ADMIN and BUSINESS_MANAGER always pass. CUSTOMER should never call this -
      * customer-owned-record checks belong in their own service, not here.
      */
     public void checkFacilityAccess(UUID targetFacilityId) {

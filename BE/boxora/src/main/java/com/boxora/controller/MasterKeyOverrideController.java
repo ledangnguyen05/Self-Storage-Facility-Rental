@@ -20,7 +20,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/master-key")
 @Tag(name = "Master Key", description = "API ghi nhận việc sử dụng chìa khóa cơ tổng khẩn cấp (BR-RULE-009)")
-@PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+@PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
 @RequiredArgsConstructor
 @Slf4j
 public class MasterKeyOverrideController {

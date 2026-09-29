@@ -51,5 +51,5 @@ public class User extends BaseEntity {
     @JoinColumn(name = "facility_id")
     private Facility facility;
     // de phân facility cho từng customer/staff nhằm bảo mât thong tin
-    // null cho ADMIN/BUSINESS_OPERATIONS_MANAGER/CUSTOMER — chỉ STAFF/FACILITY_MANAGER mới scope
+    // null cho ADMIN/BUSINESS_MANAGER/CUSTOMER — chỉ STAFF/FACILITY_MANAGER mới scope
 }
