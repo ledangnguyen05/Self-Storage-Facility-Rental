@@ -30,4 +30,6 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
     Optional<RentalContract> findByBookingId(UUID bookingId);
 
     List<RentalContract> findByStatus(RentalContractStatus status);
+
+    boolean existsByUnit_Id(UUID unitId);
 }
