@@ -72,11 +72,11 @@ function MainContent() {
           >
             <Route index element={<RootRedirect />} />
 
-            {/* 1. Customer Portal: All authenticated roles can view */}
+            {/* 1. Customer Portal: Strictly Customer and Admin */}
             <Route
               path="customer"
               element={
-                <ProtectedRoute allowedRoles={['CUSTOMER', 'STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
+                <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}>
                   <CustomerDashboard />
                 </ProtectedRoute>
               }
