@@ -1,67 +1,16 @@
 import React, { useState } from 'react'
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom'
-import { useAuth, ROLE_PRESETS } from '../../context/AuthContext'
+import { useAuth } from '../../context/AuthContext'
 import { RoleType } from '../../types'
 
 export const DashboardLayout: React.FC = () => {
-  const { user, role, logout, switchRole, isAuthenticated } = useAuth()
+  const { user, role, logout, isAuthenticated } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
   const [selectedFacility, setSelectedFacility] = useState('tb')
   const [searchQuery, setSearchQuery] = useState('')
-  const [showRoleMenu, setShowRoleMenu] = useState(false)
-  const [isSwitching, setIsSwitching] = useState(false)
-
-  const topNavLinks: Array<{
-    label: string
-    shortLabel: string
-    path: string
-    allowedRoles: RoleType[]
-  }> = [
-    {
-      label: 'Khách hàng / Đặt & Quản lý Kho',
-      shortLabel: 'Khách hàng',
-      path: '/portal/customer',
-      allowedRoles: ['CUSTOMER', 'STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']
-    },
-    {
-      label: 'Nhân viên / Check-in & Bàn giao',
-      shortLabel: 'Nhân viên',
-      path: '/portal/staff',
-      allowedRoles: ['STAFF', 'FACILITY_MANAGER', 'ADMIN']
-    },
-    {
-      label: 'Quản lý Cơ sở / Sơ đồ mặt bằng',
-      shortLabel: 'Quản lý Cơ sở',
-      path: '/portal/facility-manager',
-      allowedRoles: ['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']
-    },
-    {
-      label: 'Giám đốc Vận hành & Doanh thu',
-      shortLabel: 'GĐ Vận hành',
-      path: '/portal/business-manager',
-      allowedRoles: ['BUSINESS_MANAGER', 'ADMIN']
-    },
-    {
-      label: 'Quản trị viên Hệ thống / RBAC',
-      shortLabel: 'Quản trị RBAC',
-      path: '/portal/admin',
-      allowedRoles: ['ADMIN']
-    },
-  ]
-
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const isCurrentPath = (path: string) => location.pathname === path
-
-  const handleSwitchRole = async (targetRole: RoleType, path: string) => {
-    setIsSwitching(true)
-    try {
-      await switchRole(targetRole)
-      setShowRoleMenu(false)
-      navigate(path)
-    } finally {
-      setIsSwitching(false)
-    }
-  }
 
   const getRoleBadge = (r: RoleType | null) => {
     switch (r) {
@@ -85,137 +34,62 @@ export const DashboardLayout: React.FC = () => {
     <div className="min-h-screen bg-[var(--background)] text-[var(--on-surface)] flex flex-col antialiased">
       {/* Fixed Top Header (80px) */}
       <header className="fixed top-0 left-0 right-0 h-20 bg-white z-50 shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-slate-200">
-        <div className="w-full h-full px-6 flex items-center justify-between gap-4">
+        <div className="w-full h-full px-4 sm:px-6 flex items-center justify-between gap-3">
           
-          {/* Logo & Facility Context */}
-          <div className="flex items-center gap-6 shrink-0">
-            <Link to="/" className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-md">
-                <span className="material-symbols-outlined text-orange-500 text-[24px]">warehouse</span>
+          {/* Logo & Mobile Menu Toggle */}
+          <div className="flex items-center gap-3 sm:gap-6 shrink-0">
+            {/* Mobile Hamburger Button */}
+            <button
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="lg:hidden p-2 rounded-xl text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer flex items-center justify-center"
+              aria-label="Mở menu điều hướng"
+            >
+              <span className="material-symbols-outlined text-[24px]">
+                {isMobileMenuOpen ? 'close' : 'menu'}
+              </span>
+            </button>
+
+            <Link to="/" className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm">
+                <span className="material-symbols-outlined text-orange-500 text-[22px]">warehouse</span>
               </div>
               <div className="flex flex-col text-left">
                 <span className="font-headline text-lg font-bold text-slate-900 tracking-tight leading-none">
-                  StorageOps <span className="text-orange-600">Pro</span>
+                  BOXORA<span className="text-orange-600">.</span>
                 </span>
                 <span className="font-mono text-[10px] text-slate-500 font-semibold tracking-wider uppercase mt-1">
-                  Smart Self-Storage Network
+                  Self-Storage Portal
                 </span>
               </div>
             </Link>
 
             <div className="h-8 w-[1px] bg-slate-200 hidden md:block"></div>
 
-            {/* Facility Selector */}
-            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg">
-              <span className="material-symbols-outlined text-orange-600 text-[18px]">location_on</span>
-              <div className="flex flex-col text-left">
-                <span className="text-[10px] uppercase font-bold text-slate-500">Cơ sở trực thuộc</span>
-                <select
-                  value={selectedFacility}
-                  onChange={(e) => setSelectedFacility(e.target.value)}
-                  className="bg-transparent font-unit-code text-xs text-slate-800 font-semibold focus:outline-none cursor-pointer pr-2"
-                >
-                  <option value="tb">Cơ sở Tân Bình - Mega Central (TP.HCM)</option>
-                  <option value="q7">Cơ sở Quận 7 - Nam Sài Gòn (TP.HCM)</option>
-                  <option value="bt">Cơ sở Bình Thạnh - Landmark (TP.HCM)</option>
-                  <option value="cg">Cơ sở Cầu Giấy - Hà Nội Hub (Hà Nội)</option>
-                  <option value="hp">Cơ sở Hải Phòng - Hồng Bàng Port</option>
-                </select>
+            {/* Facility Selector (Only for internal staff/managers) */}
+            {role && role !== 'CUSTOMER' && (
+              <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg">
+                <span className="material-symbols-outlined text-orange-600 text-[18px]">location_on</span>
+                <div className="flex flex-col text-left">
+                  <span className="text-[10px] uppercase font-bold text-slate-500">Cơ sở trực thuộc</span>
+                  <select
+                    value={selectedFacility}
+                    onChange={(e) => setSelectedFacility(e.target.value)}
+                    className="bg-transparent font-unit-code text-xs text-slate-800 font-semibold focus:outline-none cursor-pointer pr-2"
+                  >
+                    <option value="tb">Cơ sở Tân Bình - Mega Central (TP.HCM)</option>
+                    <option value="q7">Cơ sở Quận 7 - Nam Sài Gòn (TP.HCM)</option>
+                    <option value="bt">Cơ sở Bình Thạnh - Landmark (TP.HCM)</option>
+                    <option value="cg">Cơ sở Cầu Giấy - Hà Nội Hub (Hà Nội)</option>
+                    <option value="hp">Cơ sở Hải Phòng - Hồng Bàng Port</option>
+                  </select>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
-          {/* Top Role Navigation Tabs (Only Render Permitted Links) */}
-          <nav className="hidden xl:flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
-            {topNavLinks
-              .filter((item) => (role ? item.allowedRoles.includes(role) : false))
-              .map((item) => {
-                const active = isCurrentPath(item.path)
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                      active
-                        ? 'bg-slate-900 text-white shadow-sm font-bold'
-                        : 'text-slate-700 hover:text-slate-900 hover:bg-slate-200/60'
-                    }`}
-                  >
-                    <span>{item.shortLabel}</span>
-                  </Link>
-                )
-              })}
-          </nav>
 
-          {/* Right Tools: Role Switcher, Notifications, User Profile */}
+          {/* Right Tools: Notifications, Search, User Profile */}
           <div className="flex items-center gap-3 shrink-0">
-            
-            {/* Quick Role Switcher Dropdown (Interactive RBAC Demo) */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowRoleMenu(!showRoleMenu)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-50 border border-orange-200 text-orange-700 hover:bg-orange-100 transition-colors text-xs font-bold shadow-xs"
-                title="Đổi nhanh giữa 5 vai trò phân quyền để kiểm tra RBAC"
-              >
-                <span className="material-symbols-outlined text-[16px] text-orange-600">
-                  switch_account
-                </span>
-                <span className="hidden sm:inline">Đổi Vai Trò</span>
-                <span className="material-symbols-outlined text-[14px]">
-                  {showRoleMenu ? 'expand_less' : 'expand_more'}
-                </span>
-              </button>
-
-              {/* Dropdown Menu */}
-              {showRoleMenu && (
-                <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-2xl border border-slate-200 p-2 z-50 text-left space-y-1">
-                  <div className="px-3 py-2 border-b border-slate-100">
-                    <span className="font-mono text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                      Chọn vai trò thử nghiệm (RBAC)
-                    </span>
-                  </div>
-                  {ROLE_PRESETS.map((p) => {
-                    const isCurrent = role === p.role
-                    return (
-                      <button
-                        key={p.role}
-                        type="button"
-                        disabled={isSwitching}
-                        onClick={() => handleSwitchRole(p.role, p.portalPath)}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center justify-between ${
-                          isCurrent
-                            ? 'bg-slate-900 text-white font-bold'
-                            : 'hover:bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        <div className="flex flex-col">
-                          <span className="font-bold">{p.label}</span>
-                          <span className={`text-[10px] font-mono ${isCurrent ? 'text-slate-300' : 'text-slate-400'}`}>
-                            {p.role}
-                          </span>
-                        </div>
-                        {isCurrent && (
-                          <span className="material-symbols-outlined text-[16px] text-emerald-400">
-                            check_circle
-                          </span>
-                        )}
-                      </button>
-                    )
-                  })}
-                  <div className="pt-2 border-t border-slate-100 px-3 py-1">
-                    <Link
-                      to="/login"
-                      onClick={() => setShowRoleMenu(false)}
-                      className="text-[11px] text-orange-600 hover:underline font-semibold flex items-center gap-1"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">login</span>
-                      Mở trang Đăng nhập chi tiết
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </div>
 
             {/* Quick search */}
             <div className="relative hidden md:block">
@@ -280,8 +154,18 @@ export const DashboardLayout: React.FC = () => {
         </div>
       </header>
 
-      {/* Fixed Left Sidebar (256px / 16rem) */}
-      <aside className="fixed left-0 top-20 bottom-0 w-64 bg-white z-40 border-r border-slate-200 flex flex-col justify-between py-4 shadow-[0_1px_8px_rgba(0,0,0,0.02)]">
+      {/* Mobile Backdrop Overlay */}
+      {isMobileMenuOpen && (
+        <div
+          onClick={() => setIsMobileMenuOpen(false)}
+          className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-xs lg:hidden transition-opacity"
+        />
+      )}
+
+      {/* Sidebar (Responsive drawer on mobile, fixed column on lg) */}
+      <aside className={`fixed left-0 top-20 bottom-0 w-64 bg-white z-40 border-r border-slate-200 flex flex-col justify-between py-4 shadow-[0_1px_8px_rgba(0,0,0,0.02)] transition-transform duration-200 ease-in-out ${
+        isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+      }`}>
         <div className="flex flex-col gap-4 px-3">
           
           {/* Active Account Summary Card */}
@@ -302,80 +186,145 @@ export const DashboardLayout: React.FC = () => {
             </div>
           </div>
 
-          {/* Section 1: Điều hành Cơ sở (Only show items user has access to) */}
-          {role && (
+          {/* CUSTOMER NAVIGATION */}
+          {role === 'CUSTOMER' && (
             <div>
               <div className="px-3 pb-2">
                 <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                  {role === 'CUSTOMER' ? 'Dịch Vụ Khách Thuê' : 'Điều hành Cơ sở'}
+                  Dịch Vụ Khách Thuê
                 </span>
               </div>
               <nav className="flex flex-col gap-1 text-left">
-                {/* Sơ đồ kho & Mặt bằng: FACILITY_MANAGER, BUSINESS_MANAGER, ADMIN */}
-                {['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN'].includes(role) && (
-                  <Link
-                    to="/portal/facility-manager"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-                      isCurrentPath('/portal/facility-manager')
-                        ? 'bg-slate-100 text-slate-900 font-bold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">grid_view</span>
-                    <span>Sơ đồ kho &amp; Mặt bằng</span>
-                  </Link>
-                )}
-
-                {/* Check-in & Bàn giao: STAFF, FACILITY_MANAGER, ADMIN */}
-                {['STAFF', 'FACILITY_MANAGER', 'ADMIN'].includes(role) && (
-                  <Link
-                    to="/portal/staff"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-                      isCurrentPath('/portal/staff')
-                        ? 'bg-slate-100 text-slate-900 font-bold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">badge</span>
-                    <span>Check-in &amp; Bàn giao</span>
-                  </Link>
-                )}
-
-                {/* Kiểm soát Cổng & IoT: All authenticated users */}
                 <Link
-                  to="/portal/customer"
+                  to="/portal/customer?tab=my-units"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-                    isCurrentPath('/portal/customer')
+                    isCurrentPath('/portal/customer') && (!new URLSearchParams(location.search).get('tab') || new URLSearchParams(location.search).get('tab') === 'my-units')
                       ? 'bg-slate-100 text-slate-900 font-bold'
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
-                  <span className="material-symbols-outlined text-[18px]">sensor_door</span>
-                  <span>Kiểm soát Cổng &amp; IoT</span>
+                  <span className="material-symbols-outlined text-[18px]">inventory_2</span>
+                  <span>Kho của tôi &amp; Mã PIN</span>
                 </Link>
 
-                {/* Hợp đồng & Khách thuê: All authenticated users */}
                 <Link
-                  to="/portal/customer"
-                  className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all"
+                  to="/portal/customer?tab=explore"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'explore'
+                      ? 'bg-slate-100 text-slate-900 font-bold'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
                 >
-                  <span className="material-symbols-outlined text-[18px]">folder_shared</span>
-                  <span>Hợp đồng &amp; Khách thuê</span>
+                  <span className="material-symbols-outlined text-[18px]">travel_explore</span>
+                  <span>Tìm &amp; Thuê kho mới</span>
+                </Link>
+
+                <Link
+                  to="/portal/customer?tab=contracts"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'contracts'
+                      ? 'bg-slate-100 text-slate-900 font-bold'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">receipt_long</span>
+                  <span>Hợp đồng &amp; Hóa đơn</span>
+                </Link>
+
+                <Link
+                  to="/portal/customer?tab=support"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'support'
+                      ? 'bg-slate-100 text-slate-900 font-bold'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">support_agent</span>
+                  <span>Trung tâm hỗ trợ</span>
+                </Link>
+
+                <div className="pt-2 mt-2 border-t border-slate-100">
+                  <Link
+                    to="/"
+                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition-all"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">home</span>
+                    <span>Về trang chủ</span>
+                  </Link>
+                </div>
+              </nav>
+            </div>
+          )}
+
+          {/* STAFF NAVIGATION */}
+          {role === 'STAFF' && (
+            <div>
+              <div className="px-3 pb-2">
+                <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                  Vận Hành Quầy
+                </span>
+              </div>
+              <nav className="flex flex-col gap-1 text-left">
+                <Link
+                  to="/portal/staff"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    isCurrentPath('/portal/staff')
+                      ? 'bg-slate-100 text-slate-900 font-bold'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">badge</span>
+                  <span>Check-in &amp; Bàn giao Kho</span>
                 </Link>
               </nav>
             </div>
           )}
 
-          {/* Section 2: Kinh doanh & Quản trị (Only show if role has permission) */}
-          {role && ['BUSINESS_MANAGER', 'ADMIN'].includes(role) && (
+          {/* FACILITY_MANAGER NAVIGATION */}
+          {role === 'FACILITY_MANAGER' && (
             <div>
-              <div className="px-3 pb-2 pt-2 border-t border-slate-100">
+              <div className="px-3 pb-2">
                 <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                  Kinh doanh &amp; Quản trị
+                  Quản Lý Cơ Sở
                 </span>
               </div>
               <nav className="flex flex-col gap-1 text-left">
-                {/* Doanh thu & Lấp đầy: BUSINESS_MANAGER, ADMIN */}
+                <Link
+                  to="/portal/facility-manager"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    isCurrentPath('/portal/facility-manager')
+                      ? 'bg-slate-100 text-slate-900 font-bold'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">grid_view</span>
+                  <span>Sơ đồ kho &amp; Mặt bằng</span>
+                </Link>
+
+                <Link
+                  to="/portal/staff"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    isCurrentPath('/portal/staff')
+                      ? 'bg-slate-100 text-slate-900 font-bold'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">badge</span>
+                  <span>Giám sát Quầy Bàn giao</span>
+                </Link>
+              </nav>
+            </div>
+          )}
+
+          {/* BUSINESS_MANAGER NAVIGATION */}
+          {role === 'BUSINESS_MANAGER' && (
+            <div>
+              <div className="px-3 pb-2">
+                <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                  Điều Hành &amp; Kinh Doanh
+                </span>
+              </div>
+              <nav className="flex flex-col gap-1 text-left">
                 <Link
                   to="/portal/business-manager"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
@@ -385,11 +334,34 @@ export const DashboardLayout: React.FC = () => {
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">query_stats</span>
-                  <span>Doanh thu &amp; Lấp đầy</span>
+                  <span>Doanh thu &amp; Tỷ lệ Lấp đầy</span>
                 </Link>
 
-                {/* Phân quyền RBAC: Strictly ADMIN */}
-                {role === 'ADMIN' && (
+                <Link
+                  to="/portal/facility-manager"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    isCurrentPath('/portal/facility-manager')
+                      ? 'bg-slate-100 text-slate-900 font-bold'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">apartment</span>
+                  <span>Theo dõi Các Cơ sở Kho</span>
+                </Link>
+              </nav>
+            </div>
+          )}
+
+          {/* ADMIN NAVIGATION */}
+          {role === 'ADMIN' && (
+            <>
+              <div>
+                <div className="px-3 pb-2">
+                  <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                    Quản Trị Hệ Thống
+                  </span>
+                </div>
+                <nav className="flex flex-col gap-1 text-left">
                   <Link
                     to="/portal/admin"
                     className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
@@ -399,32 +371,80 @@ export const DashboardLayout: React.FC = () => {
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">admin_panel_settings</span>
-                    <span>Phân quyền RBAC</span>
+                    <span>Phân quyền RBAC &amp; Users</span>
                   </Link>
-                )}
-              </nav>
-            </div>
-          )}
+                </nav>
+              </div>
 
+              <div>
+                <div className="px-3 pb-2 pt-2 border-t border-slate-100">
+                  <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                    Vận Hành Toàn Chuỗi
+                  </span>
+                </div>
+                <nav className="flex flex-col gap-1 text-left">
+                  <Link
+                    to="/portal/business-manager"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                      isCurrentPath('/portal/business-manager')
+                        ? 'bg-slate-100 text-slate-900 font-bold'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">query_stats</span>
+                    <span>Báo cáo Doanh thu</span>
+                  </Link>
+                  <Link
+                    to="/portal/facility-manager"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                      isCurrentPath('/portal/facility-manager')
+                        ? 'bg-slate-100 text-slate-900 font-bold'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">grid_view</span>
+                    <span>Sơ đồ Cơ sở Kho</span>
+                  </Link>
+                  <Link
+                    to="/portal/staff"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                      isCurrentPath('/portal/staff')
+                        ? 'bg-slate-100 text-slate-900 font-bold'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">badge</span>
+                    <span>Vận hành Quầy Bàn giao</span>
+                  </Link>
+                </nav>
+              </div>
+            </>
+          )}
 
         </div>
 
-        {/* Bottom Station IoT Online Status Widget */}
+        {/* Bottom Status Widget */}
         <div className="px-4">
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-1 text-left">
             <div className="flex items-center justify-between">
-              <span className="font-mono text-[10px] text-slate-500 font-bold uppercase">Trạng thái Trạm</span>
+              <span className="font-mono text-[10px] text-slate-500 font-bold uppercase">
+                {role === 'CUSTOMER' ? 'An Ninh Kho' : 'Trạng Thái Hệ Thống'}
+              </span>
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
             </div>
-            <span className="font-unit-code text-xs text-slate-900 font-bold">Cổng &amp; Lưới khóa: Online</span>
-            <span className="text-[11px] text-slate-500">240/256 Kho đang kết nối</span>
+            <span className="font-unit-code text-xs text-slate-900 font-bold">
+              {role === 'CUSTOMER' ? 'Khóa bảo mật: Hoạt động' : 'Hệ thống trực tuyến'}
+            </span>
+            <span className="text-[11px] text-slate-500">
+              {role === 'CUSTOMER' ? 'Hỗ trợ khách: 1900 6828' : 'Kết nối máy chủ ổn định'}
+            </span>
           </div>
         </div>
       </aside>
 
       {/* Main Canvas Area */}
-      <div className="pl-64 pt-20 flex-1 min-w-0">
-        <main className="w-full min-h-[calc(100vh-5rem)] p-6 md:p-8 bg-[#F8FAFC]">
+      <div className="lg:pl-64 pt-20 flex-1 min-w-0">
+        <main className="w-full min-h-[calc(100vh-5rem)] p-4 sm:p-6 md:p-8 bg-[#F8FAFC]">
           <Outlet />
         </main>
       </div>
