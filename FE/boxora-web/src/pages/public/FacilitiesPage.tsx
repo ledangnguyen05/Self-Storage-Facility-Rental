@@ -1,10 +1,9 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Building2, MapPin, Phone, CheckCircle2, Search, ArrowRight, ShieldCheck, Filter } from 'lucide-react'
-import { Card } from '../../components/ui/Card'
+import { Building2, MapPin, Phone, Filter } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
-import { MOCK_FACILITIES, MOCK_STORAGE_UNITS, MOCK_UNIT_TYPES } from '../../services/mockData'
+import { MOCK_FACILITIES, MOCK_STORAGE_UNITS } from '../../services/mockData'
 
 export const FacilitiesPage: React.FC = () => {
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>(MOCK_FACILITIES[0].id)
@@ -19,18 +18,20 @@ export const FacilitiesPage: React.FC = () => {
   })
 
   return (
-    <div className="bg-[var(--surface-canvas)] min-h-screen py-12 text-[var(--color-primary)]">
+    <div className="bg-slate-50 min-h-screen py-12 text-slate-900 font-sans antialiased text-left">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Header */}
-        <div className="max-w-3xl mb-12">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--surface-pure)] border border-[var(--border-subtle)] text-xs font-mono uppercase tracking-widest text-[var(--color-secondary)] mb-3">
-            <Building2 className="w-3.5 h-3.5 text-[var(--color-brand)]" />
-            Network Topology &bull; 3 Locations
+        <div className="max-w-3xl mb-10">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-50 border border-orange-200 text-xs font-semibold text-orange-700 mb-3">
+            <Building2 className="w-3.5 h-3.5 text-orange-600" />
+            Hệ thống 3 cơ sở kho tiêu chuẩn cao
           </div>
-          <h1 className="text-4xl font-extrabold tracking-tight mb-3">Storage Facilities &amp; Unit Availability</h1>
-          <p className="text-[var(--color-secondary)] leading-relaxed">
-            Inspect real-time locker and storage suite inventory across each facility. View floor maps, specifications, and instant rental slots.
+          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-2 text-slate-900">
+            Hệ Thống Cơ Sở &amp; Tình Trạng Kho Trống
+          </h1>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            Kiểm tra sơ đồ thực tế, sức chứa và danh sách các vị trí kho đang sẵn sàng bàn giao tại từng chi nhánh của Boxora.
           </p>
         </div>
 
@@ -42,36 +43,36 @@ export const FacilitiesPage: React.FC = () => {
               <div
                 key={facility.id}
                 onClick={() => setSelectedFacilityId(facility.id)}
-                className={`cursor-pointer rounded-xl border p-5 transition-all ${
+                className={`cursor-pointer rounded-2xl border p-5 transition-all ${
                   isSelected 
-                    ? 'border-[var(--color-brand)] bg-[var(--surface-pure)] shadow-md ring-2 ring-[var(--color-brand)]/20' 
-                    : 'border-[var(--border-subtle)] bg-[var(--surface-pure)] hover:border-[var(--color-secondary)]'
+                    ? 'border-orange-500 bg-white shadow-md ring-2 ring-orange-500/20' 
+                    : 'border-slate-200 bg-white hover:border-slate-300 shadow-sm'
                 }`}
               >
-                <div className="h-40 rounded-lg overflow-hidden mb-4 relative">
+                <div className="h-44 rounded-xl overflow-hidden mb-4 relative">
                   <img 
                     src={facility.imageUrl} 
                     alt={facility.name} 
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute top-2 right-2">
-                    <Badge variant="success">{facility.availableUnits} Available</Badge>
+                  <div className="absolute top-2.5 right-2.5">
+                    <Badge variant="success" className="font-semibold">{facility.availableUnits} Kho Trống</Badge>
                   </div>
                 </div>
 
-                <h3 className="font-bold text-base mb-1">{facility.name}</h3>
-                <p className="text-xs text-[var(--color-secondary)] flex items-center gap-1.5 mb-2">
-                  <MapPin className="w-3.5 h-3.5 text-[var(--color-muted)] shrink-0" />
+                <h3 className="font-bold text-base text-slate-900 mb-1">{facility.name}</h3>
+                <p className="text-xs text-slate-600 flex items-center gap-1.5 mb-2">
+                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   {facility.address}
                 </p>
-                <p className="text-xs text-[var(--color-muted)] font-mono flex items-center gap-1.5 mb-4">
-                  <Phone className="w-3.5 h-3.5 shrink-0" />
+                <p className="text-xs text-slate-500 font-mono flex items-center gap-1.5 mb-4">
+                  <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   {facility.contactPhone}
                 </p>
 
-                <div className="flex items-center justify-between border-t border-[var(--border-subtle)] pt-3 text-xs">
-                  <span className="text-[var(--color-secondary)]">Total Capacity:</span>
-                  <span className="font-mono font-semibold">{facility.totalUnits} Units</span>
+                <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-xs">
+                  <span className="text-slate-500">Tổng quy mô:</span>
+                  <span className="font-unit-code font-bold text-slate-900">{facility.totalUnits} Kho</span>
                 </div>
               </div>
             )
@@ -79,26 +80,25 @@ export const FacilitiesPage: React.FC = () => {
         </div>
 
         {/* Selected Facility Unit Inventory Grid */}
-        <div className="bg-[var(--surface-pure)] rounded-xl border border-[var(--border-subtle)] p-6 shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--border-subtle)]">
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
             <div>
-              <h2 className="text-xl font-bold">{selectedFacility.name} &bull; Unit Matrix</h2>
-              <p className="text-xs text-[var(--color-secondary)] mt-1">Real-time status of storage units on premises.</p>
+              <h2 className="text-xl font-bold text-slate-900">{selectedFacility.name} • Danh Sách Kho</h2>
+              <p className="text-xs text-slate-500 mt-1">Cập nhật trực tiếp tình trạng từng vị trí kho tại cơ sở này.</p>
             </div>
 
             <div className="flex items-center gap-3">
-              <span className="text-xs font-semibold text-[var(--color-muted)] uppercase tracking-wider flex items-center gap-1">
-                <Filter className="w-3.5 h-3.5" /> Filter:
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                <Filter className="w-3.5 h-3.5" /> Lọc kho:
               </span>
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-1.5 text-xs rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-canvas)] font-medium focus:outline-none"
+                className="px-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50 font-semibold text-slate-800 focus:outline-none focus:border-slate-400"
               >
-                <option value="ALL">All Statuses</option>
-                <option value="AVAILABLE">Available Only</option>
-                <option value="OCCUPIED">Occupied</option>
-                <option value="MAINTENANCE">Maintenance</option>
+                <option value="ALL">Tất cả trạng thái</option>
+                <option value="AVAILABLE">Đang trống (Thuê ngay)</option>
+                <option value="OCCUPIED">Đang có khách thuê</option>
               </select>
             </div>
           </div>
@@ -108,32 +108,35 @@ export const FacilitiesPage: React.FC = () => {
             {facilityUnits.map(unit => (
               <div 
                 key={unit.id}
-                className="p-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-canvas)] flex flex-col justify-between"
+                className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-slate-50 transition-colors flex flex-col justify-between"
               >
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-mono font-bold text-lg text-[var(--color-primary)]">{unit.unitCode}</span>
-                    <Badge variant={
-                      unit.status === 'AVAILABLE' ? 'success' :
-                      unit.status === 'OCCUPIED' ? 'warning' : 'neutral'
-                    }>
-                      {unit.status}
-                    </Badge>
+                    <span className="font-unit-code font-bold text-base text-slate-900">{unit.unitCode}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                      unit.status === 'AVAILABLE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                      unit.status === 'OCCUPIED' ? 'bg-slate-100 text-slate-600 border-slate-200' : 
+                      'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}>
+                      {unit.status === 'AVAILABLE' ? 'Sẵn sàng' : unit.status === 'OCCUPIED' ? 'Đã thuê' : 'Bảo trì'}
+                    </span>
                   </div>
-                  <p className="text-xs font-medium text-[var(--color-secondary)] mb-1">{unit.unitTypeName}</p>
-                  <p className="text-[11px] font-mono text-[var(--color-muted)] mb-3">{unit.floorLevel}</p>
+                  <p className="text-xs font-semibold text-slate-700 mb-0.5">{unit.unitTypeName}</p>
+                  <p className="text-[11px] text-slate-500 mb-3">{unit.floorLevel}</p>
                 </div>
 
-                <div className="border-t border-[var(--border-subtle)] pt-3 flex items-center justify-between">
-                  <span className="font-mono font-bold text-sm text-[var(--color-primary)]">
-                    {unit.pricePerMonth.toLocaleString()} ₫<span className="text-[10px] font-normal text-[var(--color-muted)]">/mo</span>
+                <div className="border-t border-slate-200/80 pt-3 flex items-center justify-between">
+                  <span className="font-unit-code font-bold text-xs text-orange-600">
+                    {unit.pricePerMonth.toLocaleString()} ₫<span className="text-[10px] font-normal text-slate-500">/tháng</span>
                   </span>
                   {unit.status === 'AVAILABLE' ? (
-                    <Link to="/?reserve=true">
-                      <Button size="sm" variant="primary">Reserve</Button>
+                    <Link to="/portal/customer?tab=explore">
+                      <Button size="sm" variant="primary" className="bg-slate-900 hover:bg-slate-800 text-white text-[11px] py-1 px-2.5">
+                        Giữ chỗ
+                      </Button>
                     </Link>
                   ) : (
-                    <span className="text-[11px] text-[var(--color-muted)] font-mono">Unavailable</span>
+                    <span className="text-[11px] text-slate-400 font-medium">Hết kho</span>
                   )}
                 </div>
               </div>
@@ -141,8 +144,8 @@ export const FacilitiesPage: React.FC = () => {
           </div>
 
           {facilityUnits.length === 0 && (
-            <div className="py-12 text-center text-[var(--color-muted)] text-sm">
-              No units match the selected status filter in this facility.
+            <div className="py-12 text-center text-slate-400 text-xs">
+              Không tìm thấy vị trí kho nào phù hợp với bộ lọc đã chọn.
             </div>
           )}
         </div>
@@ -151,3 +154,5 @@ export const FacilitiesPage: React.FC = () => {
     </div>
   )
 }
+
+export default FacilitiesPage
