@@ -10,6 +10,7 @@ import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.StorageUnitPriceHistoryMapper;
 import com.boxora.repository.StorageUnitPriceHistoryRepository;
 import com.boxora.repository.StorageUnitRepository;
+import com.boxora.repository.UnitTypeRepository;
 import com.boxora.repository.UserRepository;
 import com.boxora.security.FacilityAccessGuard;
 import com.boxora.security.RequestContext;
@@ -42,6 +43,9 @@ class StorageUnitPriceHistoryServiceTest {
 
     @Mock
     private StorageUnitRepository storageUnitRepository;
+
+    @Mock
+    private UnitTypeRepository unitTypeRepository;
 
     @Mock
     private UserRepository userRepository;
@@ -145,7 +149,7 @@ class StorageUnitPriceHistoryServiceTest {
             verify(storageUnitPriceHistoryRepository).save(any(StorageUnitPriceHistory.class));
             verify(storageUnitRepository).save(storageUnit);
             verify(activityLogService).record(eq(facility.getId()), eq(ActivityAction.PRICE_UPDATE),
-                    eq("STORAGE_UNIT"), eq(unitId), anyString(), any(), any());
+                    eq("StorageUnit"), eq(unitId), anyString(), any(), any());
         }
 
         @Test
@@ -291,6 +295,43 @@ class StorageUnitPriceHistoryServiceTest {
             BigDecimal effectivePrice = storageUnitPriceHistoryService.getEffectivePrice(unitId, queryTime);
 
             assertThat(effectivePrice).isEqualByComparingTo("1150000.00");
+        }
+
+        @Test
+        @DisplayName("BR-RULE-011: Điều chỉnh giá loại kho (UnitType) thành công")
+        void adjustUnitTypePrice_Success() {
+            UUID utId = UUID.randomUUID();
+            UnitType ut = UnitType.builder()
+                    .typeName("Standard Storage")
+                    .basePricePerMonth(new BigDecimal("1000000.00"))
+                    .build();
+            ut.setId(utId);
+
+            StorageUnitPriceAdjustmentRequest request = StorageUnitPriceAdjustmentRequest.builder()
+                    .newPrice(new BigDecimal("1200000.00"))
+                    .reason("Cập nhật giá theo quý")
+                    .build();
+
+            when(unitTypeRepository.findById(utId)).thenReturn(Optional.of(ut));
+            when(requestContext.currentUserRole()).thenReturn("ADMIN");
+            when(requestContext.currentUserId()).thenReturn(managerUser.getId());
+            when(userRepository.findById(managerUser.getId())).thenReturn(Optional.of(managerUser));
+
+            StorageUnitPriceHistory history = StorageUnitPriceHistory.builder()
+                    .unitType(ut)
+                    .oldPrice(new BigDecimal("1000000.00"))
+                    .newPrice(new BigDecimal("1200000.00"))
+                    .build();
+
+            when(storageUnitPriceHistoryRepository.save(any(StorageUnitPriceHistory.class))).thenReturn(history);
+            when(storageUnitPriceHistoryMapper.toResponse(history))
+                    .thenReturn(StorageUnitPriceHistoryResponse.builder().newPrice(new BigDecimal("1200000.00")).build());
+
+            StorageUnitPriceHistoryResponse result = storageUnitPriceHistoryService.adjustUnitTypePrice(utId, request);
+
+            assertThat(result.getNewPrice()).isEqualByComparingTo("1200000.00");
+            assertThat(ut.getBasePricePerMonth()).isEqualByComparingTo("1200000.00");
+            verify(activityLogService).record(eq(ActivityAction.PRICE_UPDATE), eq("UnitType"), eq(utId), any(), any(), any());
         }
     }
 }

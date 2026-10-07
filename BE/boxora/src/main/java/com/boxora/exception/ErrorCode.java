@@ -55,6 +55,8 @@ public enum ErrorCode {
     STORAGE_UNIT_IN_USE(709, "Cannot delete storage unit because it has active contracts or bookings", HttpStatus.CONFLICT),
     STORAGE_UNIT_CANNOT_MAINTAIN(710, "Cannot put storage unit into maintenance while it is occupied or reserved", HttpStatus.BAD_REQUEST),
     STORAGE_UNIT_NOT_AVAILABLE(711, "Storage unit is currently not available for booking", HttpStatus.CONFLICT),
+    UNIT_TYPE_NAME_EXISTED(712, "Unit type name already exists", HttpStatus.BAD_REQUEST),
+    UNIT_TYPE_IN_USE(713, "Cannot delete unit type because it is being used by existing storage units", HttpStatus.CONFLICT),
 
     // ========================= PAYMENT (750 - 799) =========================
     PAYMENT_NOT_FOUND(750, "Payment transaction not found", HttpStatus.NOT_FOUND),

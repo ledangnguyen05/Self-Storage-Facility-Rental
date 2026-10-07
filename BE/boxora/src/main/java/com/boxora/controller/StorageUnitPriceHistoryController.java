@@ -51,17 +51,18 @@ public class StorageUnitPriceHistoryController {
 
     @GetMapping("/price-histories")
     @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
-    @Operation(summary = "Tra cứu toàn bộ lịch sử biến động giá (phân trang, lọc theo cơ sở/kho)")
+    @Operation(summary = "Tra cứu toàn bộ lịch sử biến động giá (phân trang, lọc theo cơ sở/kho/loại kho)")
     public ResponseEntity<ApiResponse<PageResponse<StorageUnitPriceHistoryResponse>>> getAllPriceHistories(
             @RequestParam(required = false) UUID facilityId,
             @RequestParam(required = false) UUID unitId,
+            @RequestParam(required = false) UUID unitTypeId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "effectiveFrom") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDir
     ) {
         PageResponse<StorageUnitPriceHistoryResponse> response =
-                storageUnitPriceHistoryService.getAllPriceHistories(facilityId, unitId, page, size, sortBy, sortDir);
+                storageUnitPriceHistoryService.getAllPriceHistories(facilityId, unitId, unitTypeId, page, size, sortBy, sortDir);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 }

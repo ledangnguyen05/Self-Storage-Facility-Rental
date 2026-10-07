@@ -34,8 +34,35 @@ export interface UnitType {
   areaSqm: number // e.g. 3.0
   basePricePerMonth: number // e.g. 1200000
   depositAmount: number // e.g. 1200000
-  description: string
-  suitableFor: string
+  description?: string
+  suitableFor?: string
+  activeUnitsCount?: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface UnitTypeCreateRequest {
+  typeName: string
+  dimensions: string
+  areaSqm: number
+  basePricePerMonth: number
+  depositAmount: number
+}
+
+export interface UnitTypeUpdateRequest {
+  typeName?: string
+  dimensions?: string
+  areaSqm?: number
+  basePricePerMonth?: number
+  depositAmount?: number
+  priceChangeReason?: string
+}
+
+export interface UnitTypePriceAdjustmentRequest {
+  newPrice: number
+  effectiveFrom?: string
+  reason: string
+  cascadeToAvailableUnits?: boolean
 }
 
 export type UnitStatusType = 'AVAILABLE' | 'RESERVED' | 'OCCUPIED' | 'MAINTENANCE'
