@@ -45,3 +45,4 @@ public class UnitTypeCreateRequest {
     @Schema(description = "Tiền đặt cọc chuẩn (VNĐ)", example = "450000.00")
     private BigDecimal depositAmount;
 }
+

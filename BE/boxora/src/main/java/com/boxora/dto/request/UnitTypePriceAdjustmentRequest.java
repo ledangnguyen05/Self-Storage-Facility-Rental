@@ -37,3 +37,4 @@ public class UnitTypePriceAdjustmentRequest {
     @Builder.Default
     private Boolean cascadeToAvailableUnits = true;
 }
+

@@ -226,3 +226,4 @@ public class UnitTypeServiceImpl implements UnitTypeService {
         return storageUnitPriceHistoryService.getPriceHistoryByUnitType(id);
     }
 }
+

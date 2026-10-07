@@ -63,3 +63,4 @@ export const unitTypeService = {
     await api.delete(`/api/v1/unit-types/${id}`)
   },
 }
+
