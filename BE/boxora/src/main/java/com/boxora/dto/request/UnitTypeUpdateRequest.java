@@ -42,3 +42,4 @@ public class UnitTypeUpdateRequest {
             example = "Điều chỉnh giá niêm yết theo định kỳ quý 4")
     private String priceChangeReason;
 }
+

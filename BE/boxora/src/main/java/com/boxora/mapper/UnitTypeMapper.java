@@ -14,3 +14,4 @@ public interface UnitTypeMapper {
     @Mapping(target = "activeUnitsCount", source = "activeUnitsCount")
     UnitTypeResponse toResponse(UnitType entity, Long activeUnitsCount);
 }
+

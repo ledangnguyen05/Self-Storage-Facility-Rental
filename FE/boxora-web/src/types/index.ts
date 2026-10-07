@@ -203,3 +203,69 @@ export interface StaffAssignmentStatusUpdateRequest {
   status: StaffAssignmentStatus
   notes?: string
 }
+
+export type SealingStatus = 'SEALED' | 'UNSEALED'
+
+export interface SealingRecord {
+  id: string
+  storageUnitId: string
+  unitCode: string
+  facilityId: string
+  facilityName: string
+  contractId?: string
+  contractCode?: string
+  sealTagNumber: string
+  reason: string
+  sealedAt: string
+  sealedById: string
+  sealedByName: string
+  witnessId: string
+  witnessName: string
+  status: SealingStatus
+  unsealedAt?: string
+  unsealedById?: string
+  unsealedByName?: string
+  unsealReason?: string
+  photoEvidenceUrl?: string
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface UnsealRequest {
+  unsealReason: string
+  photoEvidenceUrl?: string
+  notes?: string
+}
+
+export interface OverdueContractDetail {
+  contractId: string
+  contractCode: string
+  customerId?: string
+  customerName: string
+  customerEmail: string
+  storageUnitId?: string
+  unitCode: string
+  facilityId?: string
+  facilityName: string
+  endDate: string
+  overdueDays: number
+  monthlyFee: number
+  contractStatus: string
+  latePenaltyApplied: boolean
+  latePenaltyAmount: number
+  pinAccessDisabled: boolean
+  unitSealed: boolean
+  sealTagNumber?: string
+  actionSummary: string
+}
+
+export interface OverdueProcessResult {
+  executionTime: string
+  scannedOverdueContractsCount: number
+  latePenaltyCount: number
+  pinDisabledCount: number
+  sealedUnitsCount: number
+  details: OverdueContractDetail[]
+}
+

@@ -24,6 +24,13 @@ public interface SealingRecordRepository extends JpaRepository<SealingRecord, UU
     List<SealingRecord> findByStorageUnit_Id(UUID storageUnitId);
 
     @EntityGraph(attributePaths = {"storageUnit", "contract", "facility", "sealedBy", "witness", "unsealedBy"})
+    Optional<SealingRecord> findByStorageUnit_IdAndStatus(UUID storageUnitId, SealingStatus status);
+
+    boolean existsByContract_IdAndStatus(UUID contractId, SealingStatus status);
+
+    boolean existsByStorageUnit_IdAndStatus(UUID storageUnitId, SealingStatus status);
+
+    @EntityGraph(attributePaths = {"storageUnit", "contract", "facility", "sealedBy", "witness", "unsealedBy"})
     @Query("""
             SELECT s FROM SealingRecord s
             WHERE (:facilityId IS NULL OR s.facility.id = :facilityId)
@@ -35,4 +42,3 @@ public interface SealingRecordRepository extends JpaRepository<SealingRecord, UU
             Pageable pageable
     );
 }
-
