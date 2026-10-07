@@ -25,3 +25,4 @@ public interface DiscountRepository extends JpaRepository<Discount, UUID> {
             """)
     List<Discount> findActiveDiscounts(@Param("today") LocalDate today, @Param("facilityId") UUID facilityId);
 }
+

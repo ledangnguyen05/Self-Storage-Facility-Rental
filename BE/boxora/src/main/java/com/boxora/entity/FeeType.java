@@ -39,3 +39,4 @@ public class FeeType extends BaseEntity {
     @Builder.Default
     private Boolean isActive = true;
 }
+

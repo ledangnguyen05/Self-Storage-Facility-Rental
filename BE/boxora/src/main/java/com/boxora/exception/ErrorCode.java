@@ -118,7 +118,15 @@ public enum ErrorCode {
     PRICE_UNCHANGED(1601, "New price must be different from current price", HttpStatus.BAD_REQUEST),
     PRICE_ADJUSTMENT_REASON_REQUIRED(1602, "Reason for price adjustment is mandatory under BR-RULE-011", HttpStatus.BAD_REQUEST),
     PRICE_EFFECTIVE_DATE_INVALID(1603, "Effective date cannot be more than 1 day in the past", HttpStatus.BAD_REQUEST),
-    PRICE_HISTORY_NOT_FOUND(1604, "Storage unit price history not found", HttpStatus.NOT_FOUND);
+    PRICE_HISTORY_NOT_FOUND(1604, "Storage unit price history not found", HttpStatus.NOT_FOUND),
+
+    // ========================= STAFF_ASSIGNMENT (1700 - 1799) =========================
+    STAFF_ASSIGNMENT_NOT_FOUND(1700, "Staff assignment not found", HttpStatus.NOT_FOUND),
+    STAFF_USER_NOT_FOUND(1701, "Staff user not found", HttpStatus.NOT_FOUND),
+    USER_NOT_A_STAFF(1702, "The selected user is not a staff member", HttpStatus.BAD_REQUEST),
+    STAFF_ALREADY_ASSIGNED_SHIFT(1703, "Staff member is already assigned to this shift on the specified date", HttpStatus.CONFLICT),
+    STAFF_ASSIGNMENT_FACILITY_MISMATCH(1704, "Staff member does not belong to the selected facility", HttpStatus.BAD_REQUEST),
+    INVALID_ASSIGNMENT_DATE(1705, "Assignment date cannot be in the past", HttpStatus.BAD_REQUEST);
 
 
 

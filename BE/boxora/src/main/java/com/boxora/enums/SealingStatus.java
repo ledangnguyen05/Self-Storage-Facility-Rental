@@ -5,3 +5,4 @@ public enum SealingStatus {
     UNSEALED,
     DISPOSED
 }
+

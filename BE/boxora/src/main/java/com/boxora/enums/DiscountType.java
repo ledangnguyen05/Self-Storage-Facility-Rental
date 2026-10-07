@@ -5,3 +5,4 @@ public enum DiscountType {
     FIXED_AMOUNT,
     TENURE_CYCLE
 }
+
