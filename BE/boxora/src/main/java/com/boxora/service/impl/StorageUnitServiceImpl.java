@@ -39,6 +39,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
     private final BookingRepository bookingRepository;
     private final RentalContractRepository rentalContractRepository;
     private final FacilityAccessGuard facilityAccessGuard;
+    private final com.boxora.service.StorageUnitPriceHistoryService storageUnitPriceHistoryService;
 
     @Override
     @Transactional(readOnly = true)
@@ -107,15 +108,24 @@ public class StorageUnitServiceImpl implements StorageUnitService {
             throw new AppException(ErrorCode.STORAGE_UNIT_CODE_EXISTED);
         }
 
+        BigDecimal initialPrice = request.getPricePerMonth() != null
+                ? request.getPricePerMonth()
+                : unitType.getBasePricePerMonth();
+
         StorageUnit unit = StorageUnit.builder()
                 .unitCode(trimmedCode)
                 .floorLevel(request.getFloorLevel().trim())
                 .status(UnitStatus.AVAILABLE)
                 .facility(facility)
                 .unitType(unitType)
+                .pricePerMonth(initialPrice)
                 .build();
 
         unit = storageUnitRepository.save(unit);
+
+        // Khởi tạo lịch sử giá ban đầu cho kho
+        storageUnitPriceHistoryService.recordInitialPrice(unit, initialPrice, null);
+
         return mapToResponse(unit);
     }
 
@@ -137,6 +147,21 @@ public class StorageUnitServiceImpl implements StorageUnitService {
         unit.setUnitCode(trimmedCode);
         unit.setFloorLevel(request.getFloorLevel().trim());
         unit.setUnitType(unitType);
+
+        // BR-RULE-011: Nếu có cập nhật đơn giá, thực hiện quy trình điều chỉnh và ghi nhận lịch sử giá
+        if (request.getPricePerMonth() != null) {
+            BigDecimal currentPrice = unit.getEffectiveBasePrice();
+            if (currentPrice == null || currentPrice.compareTo(request.getPricePerMonth()) != 0) {
+                String reason = request.getPriceChangeReason() != null && !request.getPriceChangeReason().isBlank()
+                        ? request.getPriceChangeReason()
+                        : "Cập nhật đơn giá kho qua chức năng chỉnh sửa thông tin kho";
+                storageUnitPriceHistoryService.adjustUnitPrice(id, com.boxora.dto.request.StorageUnitPriceAdjustmentRequest.builder()
+                        .newPrice(request.getPricePerMonth())
+                        .reason(reason)
+                        .effectiveFrom(java.time.LocalDateTime.now())
+                        .build());
+            }
+        }
 
         unit = storageUnitRepository.save(unit);
         return mapToResponse(unit);
@@ -184,9 +209,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
     }
 
     private StorageUnitResponse mapToResponse(StorageUnit u) {
-        BigDecimal price = (u.getUnitType() != null && u.getUnitType().getBasePricePerMonth() != null)
-                ? u.getUnitType().getBasePricePerMonth()
-                : null;
+        BigDecimal price = u.getEffectiveBasePrice();
         Double area = (u.getUnitType() != null) ? u.getUnitType().getAreaSqm() : null;
 
         return StorageUnitResponse.builder()
