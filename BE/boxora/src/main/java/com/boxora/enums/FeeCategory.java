@@ -8,3 +8,4 @@ public enum FeeCategory {
     OVERDUE_STORAGE,
     OTHER
 }
+

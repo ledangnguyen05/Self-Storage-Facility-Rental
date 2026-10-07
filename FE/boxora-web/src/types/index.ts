@@ -129,3 +129,50 @@ export interface StorageUnitPriceAdjustmentRequest {
   effectiveFrom?: string
   reason: string
 }
+
+export type StaffShift = 'MORNING' | 'AFTERNOON' | 'NIGHT' | 'FULL_DAY'
+export type StaffAssignmentStatus = 'ASSIGNED' | 'CHECKED_IN' | 'COMPLETED' | 'ABSENT'
+
+export interface StaffAssignment {
+  id: string
+  staffId: string
+  staffUsername: string
+  staffFullName: string
+  staffEmail: string
+  facilityId: string
+  facilityName: string
+  facilityCode: string
+  assignedDate: string
+  shift: StaffShift
+  assignedZone?: string
+  roleInShift: string
+  status: StaffAssignmentStatus
+  assignedById?: string
+  assignedByName?: string
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface StaffAssignmentCreateRequest {
+  staffId: string
+  facilityId: string
+  assignedDate: string
+  shift: StaffShift
+  assignedZone?: string
+  roleInShift?: string
+  notes?: string
+}
+
+export interface StaffAssignmentUpdateRequest {
+  shift?: StaffShift
+  assignedZone?: string
+  roleInShift?: string
+  status?: StaffAssignmentStatus
+  notes?: string
+}
+
+export interface StaffAssignmentStatusUpdateRequest {
+  status: StaffAssignmentStatus
+  notes?: string
+}

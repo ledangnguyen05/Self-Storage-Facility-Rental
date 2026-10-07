@@ -363,3 +363,4 @@ CROSS JOIN (SELECT id FROM users WHERE role_id IN (SELECT id FROM roles WHERE na
 CROSS JOIN (SELECT id FROM users WHERE role_id IN (SELECT id FROM roles WHERE name = 'FACILITY_MANAGER') LIMIT 1) mgr_user
 WHERE f.code = 'HCM-D1'
 LIMIT 1;
+

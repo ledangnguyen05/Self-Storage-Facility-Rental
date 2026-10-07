@@ -16,3 +16,4 @@ public interface FeeTypeRepository extends JpaRepository<FeeType, UUID> {
     List<FeeType> findByIsActiveTrue();
     List<FeeType> findByFeeCategoryAndIsActiveTrue(FeeCategory category);
 }
+

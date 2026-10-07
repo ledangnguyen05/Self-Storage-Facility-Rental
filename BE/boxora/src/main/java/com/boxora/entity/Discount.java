@@ -60,3 +60,4 @@ public class Discount extends BaseEntity {
     @Builder.Default
     private Boolean isActive = true;
 }
+
