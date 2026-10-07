@@ -6,3 +6,4 @@ public enum StaffAssignmentStatus {
     COMPLETED,
     ABSENT
 }
+

@@ -69,3 +69,4 @@ public class SealingRecord extends BaseEntity {
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
 }
+

@@ -35,3 +35,4 @@ public interface SealingRecordRepository extends JpaRepository<SealingRecord, UU
             Pageable pageable
     );
 }
+

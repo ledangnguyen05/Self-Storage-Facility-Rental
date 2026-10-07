@@ -6,3 +6,4 @@ public enum StaffShift {
     NIGHT,
     FULL_DAY
 }
+
