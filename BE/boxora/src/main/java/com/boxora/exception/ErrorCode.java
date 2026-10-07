@@ -111,7 +111,14 @@ public enum ErrorCode {
     CONTRACT_RENEWAL_NOT_FOUND(1506, "Contract renewal request not found", HttpStatus.NOT_FOUND),
     CONTRACT_RENEWAL_ALREADY_COMPLETED(1507, "Contract renewal has already been completed", HttpStatus.BAD_REQUEST),
     CONTRACT_RENEWAL_ALREADY_SIGNED(1508, "Contract renewal is already signed", HttpStatus.BAD_REQUEST),
-    RENEWAL_CONTRACT_NOT_FOUND(1509, "Rental contract not found", HttpStatus.NOT_FOUND);
+    RENEWAL_CONTRACT_NOT_FOUND(1509, "Rental contract not found", HttpStatus.NOT_FOUND),
+
+    // ========================= PRICE & PRICE HISTORY (BR-RULE-011) (1600 - 1699) =========================
+    PRICE_MUST_BE_GREATER_THAN_ZERO(1600, "Price must be greater than zero", HttpStatus.BAD_REQUEST),
+    PRICE_UNCHANGED(1601, "New price must be different from current price", HttpStatus.BAD_REQUEST),
+    PRICE_ADJUSTMENT_REASON_REQUIRED(1602, "Reason for price adjustment is mandatory under BR-RULE-011", HttpStatus.BAD_REQUEST),
+    PRICE_EFFECTIVE_DATE_INVALID(1603, "Effective date cannot be more than 1 day in the past", HttpStatus.BAD_REQUEST),
+    PRICE_HISTORY_NOT_FOUND(1604, "Storage unit price history not found", HttpStatus.NOT_FOUND);
 
 
 
