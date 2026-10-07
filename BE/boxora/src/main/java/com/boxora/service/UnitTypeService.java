@@ -46,3 +46,4 @@ public interface UnitTypeService {
      */
     List<StorageUnitPriceHistoryResponse> getPriceHistory(UUID id);
 }
+

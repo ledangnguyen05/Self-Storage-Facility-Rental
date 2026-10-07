@@ -128,7 +128,13 @@ public enum ErrorCode {
     USER_NOT_A_STAFF(1702, "The selected user is not a staff member", HttpStatus.BAD_REQUEST),
     STAFF_ALREADY_ASSIGNED_SHIFT(1703, "Staff member is already assigned to this shift on the specified date", HttpStatus.CONFLICT),
     STAFF_ASSIGNMENT_FACILITY_MISMATCH(1704, "Staff member does not belong to the selected facility", HttpStatus.BAD_REQUEST),
-    INVALID_ASSIGNMENT_DATE(1705, "Assignment date cannot be in the past", HttpStatus.BAD_REQUEST);
+    INVALID_ASSIGNMENT_DATE(1705, "Assignment date cannot be in the past", HttpStatus.BAD_REQUEST),
+
+    // ========================= SEALING & OVERDUE (BR-RULE-012) (1800 - 1899) =========================
+    SEALING_RECORD_NOT_FOUND(1800, "Sealing record not found", HttpStatus.NOT_FOUND),
+    SEALING_ALREADY_SEALED(1801, "Storage unit is already sealed", HttpStatus.BAD_REQUEST),
+    SEALING_ALREADY_UNSEALED(1802, "Storage unit is already unsealed", HttpStatus.BAD_REQUEST),
+    SEALING_WITNESS_REQUIRED(1803, "Witness is mandatory for sealing/unsealing under BR-RULE-012", HttpStatus.BAD_REQUEST);
 
 
 
