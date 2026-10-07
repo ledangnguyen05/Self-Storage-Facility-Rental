@@ -106,3 +106,26 @@ export interface HandoverRecord {
   notes?: string
   recordedAt: string
 }
+
+export interface StorageUnitPriceHistory {
+  id: string
+  storageUnitId: string
+  unitCode: string
+  facilityId: string
+  facilityName: string
+  unitTypeId?: string
+  unitTypeName?: string
+  oldPrice?: number
+  newPrice: number
+  effectiveFrom: string
+  reason: string
+  changedById: string
+  changedByName: string
+  createdAt: string
+}
+
+export interface StorageUnitPriceAdjustmentRequest {
+  newPrice: number
+  effectiveFrom?: string
+  reason: string
+}

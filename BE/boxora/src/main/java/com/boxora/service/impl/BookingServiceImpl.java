@@ -55,8 +55,9 @@ public class BookingServiceImpl implements BookingService {
         int months = request.getRentalMonths() != null ? request.getRentalMonths() : 1;
         LocalDate endDate = startDate.plusMonths(months);
 
-        BigDecimal pricePerMonth = (unit.getUnitType() != null && unit.getUnitType().getBasePricePerMonth() != null)
-                ? unit.getUnitType().getBasePricePerMonth()
+        // BR-RULE-011: Lấy đơn giá có hiệu lực của kho lưu trữ (Grandfathering: giá mới áp dụng cho booking mới tạo)
+        BigDecimal pricePerMonth = unit.getEffectiveBasePrice() != null
+                ? unit.getEffectiveBasePrice()
                 : new BigDecimal("1450000");
 
         BigDecimal totalFee = request.getTotalRentalFee() != null 
