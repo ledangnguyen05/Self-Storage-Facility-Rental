@@ -20,7 +20,7 @@ import java.time.LocalDateTime;
 public class StorageUnitPriceHistory extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "storage_unit_id", nullable = false)
+    @JoinColumn(name = "storage_unit_id")
     private StorageUnit storageUnit;
 
     @ManyToOne(fetch = FetchType.LAZY)

@@ -19,8 +19,8 @@ CREATE TABLE IF NOT EXISTS storage_unit_price_histories
     id              UUID          NOT NULL,
     created_at      TIMESTAMP     NOT NULL,
     updated_at      TIMESTAMP     NOT NULL,
-    storage_unit_id UUID          NOT NULL,
-    unit_type_id    UUID,
+    storage_unit_id UUID,                       -- Nullable khi ghi nhận lịch sử giá cho cả Loại kho (UnitType)
+    unit_type_id    UUID,                       -- Liên kết loại kho tương ứng
     old_price       NUMERIC(12,2),
     new_price       NUMERIC(12,2) NOT NULL,
     effective_from  TIMESTAMP     NOT NULL,
@@ -44,7 +44,20 @@ CREATE TABLE IF NOT EXISTS storage_unit_price_histories
         REFERENCES users(id)
 );
 
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'storage_unit_price_histories' 
+          AND column_name = 'storage_unit_id' 
+          AND is_nullable = 'NO'
+    ) THEN
+        ALTER TABLE storage_unit_price_histories ALTER COLUMN storage_unit_id DROP NOT NULL;
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_suph_storage_unit_id ON storage_unit_price_histories(storage_unit_id);
+CREATE INDEX IF NOT EXISTS idx_suph_unit_type_id ON storage_unit_price_histories(unit_type_id);
 CREATE INDEX IF NOT EXISTS idx_suph_effective_from ON storage_unit_price_histories(effective_from);
 CREATE INDEX IF NOT EXISTS idx_suph_changed_by_id ON storage_unit_price_histories(changed_by_id);
 
@@ -267,8 +280,37 @@ WHERE r.name = 'STAFF'
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
 -- =========================================================================
--- 7. SEED DATA: 5 NEW TABLES
+-- 7. SEED DATA: 5 NEW TABLES & UNIT TYPES
 -- =========================================================================
+
+-- 7.0 Seed 4 loai kho chuan (Unit Types) va lich su gia ban dau
+INSERT INTO unit_types (id, created_at, updated_at, type_name, dimensions, area_sqm, base_price_per_month, deposit_amount)
+VALUES
+    ('10000000-0000-0000-0000-000000000001'::uuid, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'Personal Locker (Mini Box)', '1.0m x 1.0m x 1.2m', 1.0, 450000.00, 450000.00),
+    ('10000000-0000-0000-0000-000000000002'::uuid, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'Compact Studio Unit', '1.5m x 2.0m x 2.6m', 3.0, 1250000.00, 1250000.00),
+    ('10000000-0000-0000-0000-000000000003'::uuid, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'Standard 1-Bedroom Storage', '2.0m x 3.0m x 2.8m', 6.0, 2400000.00, 2400000.00),
+    ('10000000-0000-0000-0000-000000000004'::uuid, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'Commercial & E-Commerce Suite', '3.0m x 4.0m x 3.0m', 12.0, 4800000.00, 4800000.00)
+ON CONFLICT (id) DO NOTHING;
+
+-- Seed lich su gia ban dau cho 4 loai kho (UnitType Price History)
+INSERT INTO storage_unit_price_histories (id, created_at, updated_at, storage_unit_id, unit_type_id, old_price, new_price, effective_from, reason, changed_by_id)
+SELECT
+    gen_random_uuid(), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL, ut.id, NULL, ut.base_price_per_month, CURRENT_TIMESTAMP,
+    'Thiết lập giá niêm yết ban đầu cho loại kho ' || ut.type_name,
+    COALESCE(
+        (SELECT id FROM users WHERE username = 'admin' LIMIT 1),
+        (SELECT id FROM users LIMIT 1)
+    )
+FROM unit_types ut
+WHERE ut.id IN (
+    '10000000-0000-0000-0000-000000000001'::uuid,
+    '10000000-0000-0000-0000-000000000002'::uuid,
+    '10000000-0000-0000-0000-000000000003'::uuid,
+    '10000000-0000-0000-0000-000000000004'::uuid
+)
+AND NOT EXISTS (
+    SELECT 1 FROM storage_unit_price_histories h WHERE h.unit_type_id = ut.id AND h.storage_unit_id IS NULL
+);
 
 -- 7.1 Seed fee_types
 INSERT INTO fee_types (id, created_at, updated_at, code, name, description, default_amount, fee_category, is_recurring, is_active)
