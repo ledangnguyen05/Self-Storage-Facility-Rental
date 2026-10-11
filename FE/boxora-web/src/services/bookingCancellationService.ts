@@ -36,3 +36,4 @@ export const bookingCancellationService = {
     return response.data?.data
   },
 }
+
