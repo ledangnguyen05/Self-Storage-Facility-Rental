@@ -348,6 +348,18 @@ export const DashboardLayout: React.FC = () => {
                   <span className="material-symbols-outlined text-[18px]">apartment</span>
                   <span>Theo dõi Các Cơ sở Kho</span>
                 </Link>
+
+                <Link
+                  to="/portal/policies"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    isCurrentPath('/portal/policies')
+                      ? 'bg-slate-100 text-slate-900 font-bold'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">policy</span>
+                  <span>Chính sách, Biểu phí &amp; Voucher</span>
+                </Link>
               </nav>
             </div>
           )}
@@ -415,6 +427,17 @@ export const DashboardLayout: React.FC = () => {
                   >
                     <span className="material-symbols-outlined text-[18px]">badge</span>
                     <span>Vận hành Quầy Bàn giao</span>
+                  </Link>
+                  <Link
+                    to="/portal/policies"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                      isCurrentPath('/portal/policies')
+                        ? 'bg-slate-100 text-slate-900 font-bold'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">policy</span>
+                    <span>Chính sách, Biểu phí &amp; Voucher</span>
                   </Link>
                 </nav>
               </div>

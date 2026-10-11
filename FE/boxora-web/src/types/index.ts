@@ -269,3 +269,167 @@ export interface OverdueProcessResult {
   details: OverdueContractDetail[]
 }
 
+// ==================== FEE TYPES ====================
+export type FeeCategory =
+  | 'LATE_PENALTY'
+  | 'CLEANING'
+  | 'KEY_REPLACEMENT'
+  | 'INSURANCE'
+  | 'OVERDUE_STORAGE'
+  | 'OTHER'
+
+export interface FeeType {
+  id: string
+  code: string
+  name: string
+  description?: string
+  defaultAmount: number
+  feeCategory: FeeCategory
+  isRecurring: boolean
+  isActive: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface FeeTypeCreateRequest {
+  code: string
+  name: string
+  description?: string
+  defaultAmount: number
+  feeCategory: FeeCategory
+  isRecurring?: boolean
+  isActive?: boolean
+}
+
+export interface FeeTypeUpdateRequest {
+  name?: string
+  description?: string
+  defaultAmount?: number
+  feeCategory?: FeeCategory
+  isRecurring?: boolean
+  isActive?: boolean
+}
+
+// ==================== DISCOUNTS & VOUCHERS ====================
+export type DiscountType = 'PERCENTAGE' | 'FIXED_AMOUNT' | 'TENURE_CYCLE'
+
+export interface Discount {
+  id: string
+  code: string
+  name: string
+  description?: string
+  discountType: DiscountType
+  discountValue: number
+  minRentalMonths: number
+  maxDiscountAmount?: number
+  startDate: string
+  endDate?: string
+  usageLimit?: number
+  usedCount: number
+  facilityId?: string
+  facilityName?: string
+  isActive: boolean
+  isCurrentlyValid?: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface DiscountCreateRequest {
+  code: string
+  name: string
+  description?: string
+  discountType: DiscountType
+  discountValue: number
+  minRentalMonths?: number
+  maxDiscountAmount?: number
+  startDate: string
+  endDate?: string
+  usageLimit?: number
+  facilityId?: string
+  isActive?: boolean
+}
+
+export interface DiscountUpdateRequest {
+  name?: string
+  description?: string
+  discountType?: DiscountType
+  discountValue?: number
+  minRentalMonths?: number
+  maxDiscountAmount?: number
+  startDate?: string
+  endDate?: string
+  usageLimit?: number
+  facilityId?: string
+  isActive?: boolean
+}
+
+export interface DiscountValidateRequest {
+  code: string
+  rentalMonths: number
+  baseAmount: number
+  facilityId?: string
+}
+
+export interface DiscountValidateResponse {
+  isValid: boolean
+  discountId: string
+  code: string
+  name: string
+  discountType: DiscountType
+  discountValue: number
+  discountAmount: number
+  finalAmount: number
+  message: string
+}
+
+// ==================== FACILITY POLICY ====================
+export interface FacilityPolicy {
+  id: string
+  facilityId: string
+  facilityName?: string
+  depositPercentage: number
+  renewalWindowDays: number
+  cancellationFullRefundHours: number
+  cancellationPartialRefundHours: number
+  cancellationPartialRefundPercent: number
+  returnNoticeDays: number
+  depositRefundSlaDays: number
+  dailyLateFee: number
+  overdueGraceDays: number
+  overdueAccessDisableDays: number
+  overdueSealingDays: number
+  minimumRentalMonths: number
+}
+
+export interface FacilityPolicyCreateRequest {
+  facilityId: string
+  depositPercentage?: number
+  renewalWindowDays?: number
+  cancellationFullRefundHours?: number
+  cancellationPartialRefundHours?: number
+  cancellationPartialRefundPercent?: number
+  returnNoticeDays?: number
+  depositRefundSlaDays?: number
+  dailyLateFee?: number
+  overdueGraceDays?: number
+  overdueAccessDisableDays?: number
+  overdueSealingDays?: number
+  minimumRentalMonths?: number
+}
+
+export interface FacilityPolicyUpdateRequest {
+  depositPercentage?: number
+  renewalWindowDays?: number
+  cancellationFullRefundHours?: number
+  cancellationPartialRefundHours?: number
+  cancellationPartialRefundPercent?: number
+  returnNoticeDays?: number
+  depositRefundSlaDays?: number
+  dailyLateFee?: number
+  overdueGraceDays?: number
+  overdueAccessDisableDays?: number
+  overdueSealingDays?: number
+  minimumRentalMonths?: number
+}
+
+
