@@ -23,6 +23,15 @@ public class HandoverRequest {
 
     private String idCardNumber;
 
+    /** Xác nhận đã đối chiếu CCCD/hộ chiếu gốc tại quầy */
+    private Boolean identityVerified;
+
+    /** Xác nhận đã thu/đối soát tiền thuê tháng đầu */
+    private Boolean firstMonthRentConfirmed;
+
+    /** Xác nhận hợp đồng điện tử đã được ký hoàn tất */
+    private Boolean contractConfirmed;
+
     private String rfidCardNumber;
 
     private String accessPin;
