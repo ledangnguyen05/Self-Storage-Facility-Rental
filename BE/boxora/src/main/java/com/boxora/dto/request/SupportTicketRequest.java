@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -26,4 +27,10 @@ public class SupportTicketRequest {
     private String description;
 
     private String priority;
+
+    /** URL ảnh hoặc danh sách URL ảnh bằng chứng sự cố (ví dụ kẹt khóa, rách cửa) */
+    private String imageEvidence;
+
+    /** Danh sách URLs ảnh bằng chứng */
+    private List<String> evidenceUrls;
 }

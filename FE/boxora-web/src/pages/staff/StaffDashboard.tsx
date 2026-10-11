@@ -26,7 +26,10 @@ export const StaffDashboard: React.FC = () => {
       priority: 'HIGH',
       staff: 'Hoàng Nam (Kỹ thuật)',
       time: '12 phút trước',
-      status: 'IN_PROGRESS'
+      status: 'IN_PROGRESS',
+      evidenceUrls: [
+        'https://images.unsplash.com/photo-1558002038-1055907df827?auto=format&fit=crop&w=800&q=80'
+      ]
     },
     {
       id: '#TK-405',
@@ -36,7 +39,10 @@ export const StaffDashboard: React.FC = () => {
       priority: 'MEDIUM',
       staff: 'Nguyễn Quỳnh Anh (Trực ca)',
       time: '28 phút trước',
-      status: 'IN_PROGRESS'
+      status: 'IN_PROGRESS',
+      evidenceUrls: [
+        'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80'
+      ]
     },
     {
       id: '#TK-408',
@@ -46,9 +52,17 @@ export const StaffDashboard: React.FC = () => {
       priority: 'LOW',
       staff: 'Quỳnh Anh (NV-842)',
       time: 'Vừa xong',
-      status: 'RESOLVED'
+      status: 'RESOLVED',
+      evidenceUrls: [] as string[]
     }
   ])
+
+  // Evidence image preview modal state
+  const [activeEvidenceModal, setActiveEvidenceModal] = useState<{
+    ticketId: string
+    title: string
+    images: string[]
+  } | null>(null)
 
   // Quick Walkin Modal
   const [isWalkinOpen, setIsWalkinOpen] = useState(false)
@@ -795,7 +809,10 @@ export const StaffDashboard: React.FC = () => {
                 priority: 'MEDIUM',
                 staff: 'Nguyễn Quỳnh Anh (Trực ca)',
                 time: 'Vừa xong',
-                status: 'IN_PROGRESS'
+                status: 'IN_PROGRESS',
+                evidenceUrls: [
+                  'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80'
+                ]
               }
               setTickets([newTk, ...tickets])
             }}
@@ -812,6 +829,7 @@ export const StaffDashboard: React.FC = () => {
               <tr className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider">
                 <th className="py-2.5 px-3 rounded-l-lg">Mã Ticket</th>
                 <th className="py-2.5 px-3">Mô Tả Chi Tiết Sự Cố</th>
+                <th className="py-2.5 px-3">Ảnh Hiện Trường</th>
                 <th className="py-2.5 px-3">Vị Trí &amp; Kho</th>
                 <th className="py-2.5 px-3">Mức Độ</th>
                 <th className="py-2.5 px-3">Nhân Viên Phụ Trách</th>
@@ -833,6 +851,49 @@ export const StaffDashboard: React.FC = () => {
                   <td className="py-3 px-3 max-w-xs">
                     <span className="font-bold text-slate-900 block">{tk.title}</span>
                     <span className="text-[11px] text-slate-500 line-clamp-1">{tk.detail}</span>
+                  </td>
+                  <td className="py-3 px-3">
+                    {tk.evidenceUrls && tk.evidenceUrls.length > 0 ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setActiveEvidenceModal({
+                            ticketId: tk.id,
+                            title: tk.title,
+                            images: tk.evidenceUrls
+                          })}
+                          className="group relative block w-10 h-10 rounded-lg overflow-hidden border border-slate-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500 shrink-0"
+                          title="Nhấn để phóng to ảnh hiện trường"
+                        >
+                          <img
+                            src={tk.evidenceUrls[0]}
+                            alt="Ảnh hiện trường"
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200"
+                          />
+                          <span className="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition-colors" />
+                          <span className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded bg-black/60 text-white flex items-center justify-center">
+                            <span className="material-symbols-outlined text-[10px]">zoom_in</span>
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveEvidenceModal({
+                            ticketId: tk.id,
+                            title: tk.title,
+                            images: tk.evidenceUrls
+                          })}
+                          className="text-[11px] font-semibold text-orange-600 hover:text-orange-700 flex items-center gap-0.5"
+                        >
+                          <span>{tk.evidenceUrls.length} ảnh</span>
+                          <span className="material-symbols-outlined text-[13px]">open_in_new</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-slate-400 text-[11px] italic flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px]">hide_image</span>
+                        Chưa có ảnh
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 px-3">
                     <span className="font-bold text-slate-800">{tk.location}</span>
@@ -952,6 +1013,73 @@ export const StaffDashboard: React.FC = () => {
                 </div>
               </form>
             )}
+      {/* Evidence Image Preview Modal */}
+      {activeEvidenceModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[20px]">image</span>
+                </span>
+                <div>
+                  <h3 className="font-headline text-base font-bold text-slate-900">
+                    Bằng Chứng Hiện Trường Sự Cố {activeEvidenceModal.ticketId}
+                  </h3>
+                  <p className="text-xs text-slate-500 line-clamp-1">
+                    {activeEvidenceModal.title}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveEvidenceModal(null)}
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto p-1">
+                {activeEvidenceModal.images.map((imgUrl, idx) => (
+                  <div key={idx} className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 group shadow-sm">
+                    <img
+                      src={imgUrl}
+                      alt={`Bằng chứng ${idx + 1}`}
+                      className="w-full h-56 object-cover"
+                    />
+                    <div className="absolute bottom-2 right-2 flex gap-1">
+                      <a
+                        href={imgUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2 py-1 rounded-md bg-slate-900/80 hover:bg-slate-900 text-white text-[11px] font-bold flex items-center gap-1 backdrop-blur-sm transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                        Xem ảnh gốc
+                      </a>
+                    </div>
+                    <span className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/60 text-white font-mono text-[10px]">
+                      Ảnh #{idx + 1}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                <span className="text-xs text-slate-500">
+                  Tổng cộng: <strong className="text-slate-800">{activeEvidenceModal.images.length}</strong> hình ảnh bằng chứng
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveEvidenceModal(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors"
+                >
+                  Đóng cửa sổ
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

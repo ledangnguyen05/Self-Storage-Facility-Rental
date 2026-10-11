@@ -107,16 +107,40 @@ export interface Booking {
 export interface SupportTicket {
   id: string
   ticketCode: string
-  userId: string
+  userId?: string
+  customerId?: string
   customerName: string
+  customerPhone?: string
   bookingId?: string
-  category: 'UNIT' | 'LOCK' | 'ACCESS_CODE' | 'PAYMENT' | 'STORED_ITEMS' | 'OTHER'
+  unitCode?: string
+  category: 'UNIT' | 'LOCK' | 'ACCESS_CODE' | 'PAYMENT' | 'STORED_ITEMS' | 'OTHER' | string
   title: string
   description: string
-  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
-  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED' | string
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT' | string
+  imageEvidence?: string
+  evidenceUrls?: string[]
   resolutionNote?: string
   createdAt: string
+}
+
+export interface SupportTicketCreateRequest {
+  customerId?: string
+  bookingId?: string
+  category: string
+  title: string
+  description: string
+  priority?: string
+  imageEvidence?: string
+  evidenceUrls?: string[]
+}
+
+export interface FileUploadResult {
+  fileName: string
+  fileUrl: string
+  fileType: string
+  fileSize: number
+  uploadedAt: string
 }
 
 export interface HandoverRecord {

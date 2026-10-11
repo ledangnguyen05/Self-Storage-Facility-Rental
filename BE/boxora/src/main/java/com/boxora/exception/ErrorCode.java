@@ -102,6 +102,9 @@ public enum ErrorCode {
 
     // ========================= SUPPORT_TICKET (1200 - 1299) =========================
     TICKET_NOT_FOUND(1200, "Support ticket not found or does not belong to user", HttpStatus.NOT_FOUND),
+    TICKET_IMAGE_UPLOAD_FAILED(1201, "Tải tệp tin ảnh bằng chứng thất bại", HttpStatus.INTERNAL_SERVER_ERROR),
+    TICKET_INVALID_IMAGE_FORMAT(1202, "Định dạng tệp không hợp lệ. Chỉ chấp nhận ảnh JPG, PNG, WEBP, GIF", HttpStatus.BAD_REQUEST),
+    TICKET_IMAGE_SIZE_EXCEEDED(1203, "Kích thước tệp ảnh vượt quá giới hạn cho phép (10MB)", HttpStatus.BAD_REQUEST),
 
     // ========================= ACTIVITY_LOG (1300 - 1399) =========================
     ACTIVITY_LOG_NOT_FOUND(1300, "Activity log entry not found", HttpStatus.NOT_FOUND),
