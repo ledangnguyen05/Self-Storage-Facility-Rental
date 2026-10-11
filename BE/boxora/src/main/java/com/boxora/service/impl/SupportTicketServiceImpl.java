@@ -1,6 +1,7 @@
 package com.boxora.service.impl;
 
 import com.boxora.dto.request.SupportTicketRequest;
+import com.boxora.dto.response.FileUploadResponse;
 import com.boxora.dto.response.SupportTicketResponse;
 import com.boxora.entity.Booking;
 import com.boxora.entity.SupportTicket;
@@ -12,25 +13,28 @@ import com.boxora.exception.ErrorCode;
 import com.boxora.repository.BookingRepository;
 import com.boxora.repository.SupportTicketRepository;
 import com.boxora.repository.UserRepository;
+import com.boxora.service.FileStorageService;
 import com.boxora.service.SupportTicketService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Random;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
+@Slf4j
 public class SupportTicketServiceImpl implements SupportTicketService {
 
     private final SupportTicketRepository supportTicketRepository;
     private final UserRepository userRepository;
     private final BookingRepository bookingRepository;
+    private final FileStorageService fileStorageService;
 
     @Override
     public SupportTicketResponse createTicket(SupportTicketRequest request) {
@@ -57,6 +61,8 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             }
         }
 
+        String combinedEvidence = resolveImageEvidence(request.getImageEvidence(), request.getEvidenceUrls());
+
         SupportTicket ticket = SupportTicket.builder()
                 .ticketCode(ticketCode)
                 .customer(customer)
@@ -66,10 +72,38 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .description(request.getDescription())
                 .status(TicketStatus.OPEN)
                 .priority(request.getPriority() != null ? request.getPriority() : "MEDIUM")
+                .imageEvidence(combinedEvidence)
                 .build();
 
         ticket = supportTicketRepository.save(ticket);
+        log.info("Created support ticket {} with image evidence: {}", ticketCode, combinedEvidence);
         return mapToResponse(ticket);
+    }
+
+    @Override
+    public SupportTicketResponse createTicketWithFiles(SupportTicketRequest request, List<MultipartFile> files) {
+        List<FileUploadResponse> uploadedFiles = fileStorageService.storeFiles(files, "tickets");
+        List<String> uploadedUrls = uploadedFiles.stream()
+                .map(FileUploadResponse::getFileUrl)
+                .collect(Collectors.toList());
+
+        List<String> allUrls = new ArrayList<>(uploadedUrls);
+        if (request.getEvidenceUrls() != null) {
+            allUrls.addAll(request.getEvidenceUrls());
+        }
+
+        request.setEvidenceUrls(allUrls);
+        return createTicket(request);
+    }
+
+    @Override
+    public FileUploadResponse uploadEvidenceImage(MultipartFile file) {
+        return fileStorageService.storeFile(file, "tickets");
+    }
+
+    @Override
+    public List<FileUploadResponse> uploadEvidenceImages(List<MultipartFile> files) {
+        return fileStorageService.storeFiles(files, "tickets");
     }
 
     @Override
@@ -102,7 +136,33 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         return mapToResponse(ticket);
     }
 
+    private String resolveImageEvidence(String singleEvidence, List<String> evidenceUrls) {
+        Set<String> urls = new LinkedHashSet<>();
+        if (singleEvidence != null && !singleEvidence.isBlank()) {
+            for (String part : singleEvidence.split(";")) {
+                if (!part.trim().isEmpty()) {
+                    urls.add(part.trim());
+                }
+            }
+        }
+        if (evidenceUrls != null) {
+            for (String url : evidenceUrls) {
+                if (url != null && !url.trim().isEmpty()) {
+                    urls.add(url.trim());
+                }
+            }
+        }
+        return urls.isEmpty() ? null : String.join(";", urls);
+    }
+
     private SupportTicketResponse mapToResponse(SupportTicket t) {
+        List<String> evidenceUrls = (t.getImageEvidence() != null && !t.getImageEvidence().isBlank())
+                ? Arrays.stream(t.getImageEvidence().split(";"))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .collect(Collectors.toList())
+                : List.of();
+
         return SupportTicketResponse.builder()
                 .id(t.getId())
                 .ticketCode(t.getTicketCode())
@@ -118,6 +178,8 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .description(t.getDescription())
                 .status(t.getStatus() != null ? t.getStatus().name() : TicketStatus.OPEN.name())
                 .priority(t.getPriority() != null ? t.getPriority() : "MEDIUM")
+                .imageEvidence(t.getImageEvidence())
+                .evidenceUrls(evidenceUrls)
                 .resolutionNote(t.getResolutionNote())
                 .createdAt(t.getCreatedAt() != null ? t.getCreatedAt() : LocalDateTime.now())
                 .build();
