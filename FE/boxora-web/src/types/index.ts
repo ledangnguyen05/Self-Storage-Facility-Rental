@@ -432,4 +432,57 @@ export interface FacilityPolicyUpdateRequest {
   minimumRentalMonths?: number
 }
 
+// ==================== BOOKING CANCELLATION & AUTO-CANCEL ====================
+export interface BookingCancellationPreview {
+  bookingId: string
+  bookingCode: string
+  unitCode?: string
+  startDate: string
+  depositPaid: number
+  totalRentalFee: number
+  hoursUntilCheckin: number
+  milestoneStage: 'STAGE_1_FULL_REFUND' | 'STAGE_2_PARTIAL_REFUND' | 'STAGE_3_NO_REFUND' | 'STAGE_PENDING_NO_PAYMENT' | string
+  refundPercentage: number
+  refundAmount: number
+  penaltyAmount: number
+  policyDescription: string
+  refundable: boolean
+}
+
+export interface BookingCancelRequest {
+  cancellationReason?: string
+}
+
+export interface BookingCancelResponse {
+  bookingId: string
+  bookingCode: string
+  status: string
+  milestoneStage: string
+  refundPercentage: number
+  refundAmount: number
+  penaltyAmount: number
+  refundTransactionId?: string
+  unitReleased: boolean
+  cancelledAt: string
+  cancellationReason?: string
+  message: string
+}
+
+export interface AutoCancelDetail {
+  bookingId: string
+  bookingCode: string
+  customerEmail?: string
+  unitCode?: string
+  createdAt: string
+  reason: string
+}
+
+export interface AutoCancelResult {
+  executedAt: string
+  scannedCount: number
+  cancelledCount: number
+  unitsReleasedCount: number
+  cancelledBookings: AutoCancelDetail[]
+}
+
 

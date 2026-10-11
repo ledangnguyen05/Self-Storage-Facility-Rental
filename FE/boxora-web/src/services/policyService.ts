@@ -59,3 +59,4 @@ export const policyService = {
     await api.delete(`/api/v1/facility-policies/${id}`)
   },
 }
+

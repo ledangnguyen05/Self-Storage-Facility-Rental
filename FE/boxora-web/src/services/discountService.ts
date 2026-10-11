@@ -78,3 +78,4 @@ export const discountService = {
     return response.data?.data
   },
 }
+

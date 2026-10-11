@@ -37,3 +37,4 @@ public class DiscountResponse {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
+

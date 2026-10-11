@@ -58,3 +58,4 @@ public class DiscountUpdateRequest {
     @Schema(description = "Trạng thái kích hoạt")
     private Boolean isActive;
 }
+

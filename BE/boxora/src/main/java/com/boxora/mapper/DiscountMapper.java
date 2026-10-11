@@ -40,3 +40,4 @@ public interface DiscountMapper {
         return true;
     }
 }
+

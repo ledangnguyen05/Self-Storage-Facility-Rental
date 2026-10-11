@@ -11,3 +11,4 @@ public interface FeeTypeMapper {
     FeeType toEntity(FeeTypeCreateRequest request);
     FeeTypeResponse toResponse(FeeType entity);
 }
+

@@ -16,3 +16,4 @@ public interface FeeTypeService {
     FeeTypeResponse updateFeeType(UUID id, FeeTypeUpdateRequest request);
     void deleteFeeType(UUID id);
 }
+

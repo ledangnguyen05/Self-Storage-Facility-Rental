@@ -36,3 +36,4 @@ public class DiscountValidateRequest {
     @Schema(description = "ID cơ sở thuê kho")
     private UUID facilityId;
 }
+
