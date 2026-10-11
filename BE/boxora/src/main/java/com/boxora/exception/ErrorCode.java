@@ -134,7 +134,22 @@ public enum ErrorCode {
     SEALING_RECORD_NOT_FOUND(1800, "Sealing record not found", HttpStatus.NOT_FOUND),
     SEALING_ALREADY_SEALED(1801, "Storage unit is already sealed", HttpStatus.BAD_REQUEST),
     SEALING_ALREADY_UNSEALED(1802, "Storage unit is already unsealed", HttpStatus.BAD_REQUEST),
-    SEALING_WITNESS_REQUIRED(1803, "Witness is mandatory for sealing/unsealing under BR-RULE-012", HttpStatus.BAD_REQUEST);
+    SEALING_WITNESS_REQUIRED(1803, "Witness is mandatory for sealing/unsealing under BR-RULE-012", HttpStatus.BAD_REQUEST),
+
+    // ========================= FEE_TYPE (1900 - 1949) =========================
+    FEE_TYPE_NOT_FOUND(1900, "Fee type not found", HttpStatus.NOT_FOUND),
+    FEE_TYPE_CODE_EXISTS(1901, "Fee type code already exists", HttpStatus.CONFLICT),
+    FEE_TYPE_AMOUNT_INVALID(1902, "Fee type default amount must be non-negative", HttpStatus.BAD_REQUEST),
+
+    // ========================= DISCOUNT (1950 - 1999) =========================
+    DISCOUNT_NOT_FOUND(1950, "Discount not found", HttpStatus.NOT_FOUND),
+    DISCOUNT_CODE_EXISTS(1951, "Discount code already exists", HttpStatus.CONFLICT),
+    DISCOUNT_EXPIRED(1952, "Discount code is expired or not yet active", HttpStatus.BAD_REQUEST),
+    DISCOUNT_USAGE_LIMIT_EXCEEDED(1953, "Discount code has reached its maximum usage limit", HttpStatus.BAD_REQUEST),
+    DISCOUNT_MIN_MONTHS_NOT_MET(1954, "Rental period does not meet minimum duration required for this discount", HttpStatus.BAD_REQUEST),
+    DISCOUNT_FACILITY_MISMATCH(1955, "Discount code is not applicable to this facility", HttpStatus.BAD_REQUEST),
+    DISCOUNT_VALUE_INVALID(1956, "Discount value is invalid", HttpStatus.BAD_REQUEST),
+    DISCOUNT_DATE_INVALID(1957, "End date cannot be earlier than start date", HttpStatus.BAD_REQUEST);
 
 
 
