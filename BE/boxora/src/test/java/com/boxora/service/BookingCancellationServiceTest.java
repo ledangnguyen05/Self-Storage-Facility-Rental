@@ -62,6 +62,9 @@ class BookingCancellationServiceTest {
     @Mock
     private RequestContext requestContext;
 
+    @Mock
+    private StorageUnitLockService storageUnitLockService;
+
     @InjectMocks
     private BookingCancellationServiceImpl cancellationService;
 

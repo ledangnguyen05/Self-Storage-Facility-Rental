@@ -66,6 +66,9 @@ class PaymentServiceTest {
     @Mock
     private org.springframework.beans.factory.ObjectProvider<ContractRenewalService> contractRenewalServiceProvider;
 
+    @Mock
+    private com.boxora.service.StorageUnitLockService storageUnitLockService;
+
     @InjectMocks
     private PaymentServiceImpl paymentService;
 

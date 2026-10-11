@@ -50,6 +50,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
     private final PaymentRepository paymentRepository;
     private final ActivityLogService activityLogService;
     private final RequestContext requestContext;
+    private final com.boxora.service.StorageUnitLockService storageUnitLockService;
 
     @Value("${app.scheduling.pending-payment-timeout-minutes:15}")
     private int defaultPendingPaymentTimeoutMinutes;
@@ -207,6 +208,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         if (unit != null) {
             unit.setStatus(UnitStatus.AVAILABLE);
             storageUnitRepository.save(unit);
+            storageUnitLockService.releaseLock(unit.getId());
             unitReleased = true;
         }
 
@@ -327,6 +329,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
             if (unit != null) {
                 unit.setStatus(UnitStatus.AVAILABLE);
                 storageUnitRepository.save(unit);
+                storageUnitLockService.releaseLock(unit.getId());
                 released = true;
                 unitsReleasedCount++;
             }
