@@ -19,3 +19,4 @@ public interface DiscountService {
     void deleteDiscount(UUID id);
     DiscountValidateResponse validateAndCalculateDiscount(DiscountValidateRequest request);
 }
+

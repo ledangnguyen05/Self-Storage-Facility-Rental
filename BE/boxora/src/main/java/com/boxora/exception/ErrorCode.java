@@ -57,6 +57,9 @@ public enum ErrorCode {
     STORAGE_UNIT_NOT_AVAILABLE(711, "Storage unit is currently not available for booking", HttpStatus.CONFLICT),
     UNIT_TYPE_NAME_EXISTED(712, "Unit type name already exists", HttpStatus.BAD_REQUEST),
     UNIT_TYPE_IN_USE(713, "Cannot delete unit type because it is being used by existing storage units", HttpStatus.CONFLICT),
+    BOOKING_ALREADY_CANCELLED(714, "Booking is already cancelled", HttpStatus.BAD_REQUEST),
+    BOOKING_ALREADY_COMPLETED(715, "Completed booking cannot be cancelled", HttpStatus.BAD_REQUEST),
+    BOOKING_CANNOT_BE_CANCELLED(716, "Booking cannot be cancelled in its current state", HttpStatus.BAD_REQUEST),
 
     // ========================= PAYMENT (750 - 799) =========================
     PAYMENT_NOT_FOUND(750, "Payment transaction not found", HttpStatus.NOT_FOUND),

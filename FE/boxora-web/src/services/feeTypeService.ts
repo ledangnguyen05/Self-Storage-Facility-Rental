@@ -59,3 +59,4 @@ export const feeTypeService = {
     await api.delete(`/api/v1/fee-types/${id}`)
   },
 }
+

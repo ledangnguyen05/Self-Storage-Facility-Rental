@@ -26,3 +26,4 @@ public class DiscountValidateResponse {
     private BigDecimal finalAmount;
     private String message;
 }
+

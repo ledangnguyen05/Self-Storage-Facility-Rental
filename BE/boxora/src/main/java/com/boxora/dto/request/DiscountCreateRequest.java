@@ -71,3 +71,4 @@ public class DiscountCreateRequest {
     @Builder.Default
     private Boolean isActive = true;
 }
+

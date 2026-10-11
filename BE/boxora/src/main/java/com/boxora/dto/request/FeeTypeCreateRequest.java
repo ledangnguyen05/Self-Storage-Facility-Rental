@@ -50,3 +50,4 @@ public class FeeTypeCreateRequest {
     @Builder.Default
     private Boolean isActive = true;
 }
+
