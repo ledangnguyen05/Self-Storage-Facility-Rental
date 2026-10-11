@@ -38,3 +38,4 @@ public class FeeTypeUpdateRequest {
     @Schema(description = "Trạng thái kích hoạt")
     private Boolean isActive;
 }
+

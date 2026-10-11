@@ -28,3 +28,4 @@ public class FeeTypeResponse {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
+
