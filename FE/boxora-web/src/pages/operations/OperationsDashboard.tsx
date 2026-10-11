@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 export const OperationsDashboard: React.FC = () => {
   // Policy configuration state
@@ -615,6 +616,13 @@ export const OperationsDashboard: React.FC = () => {
             >
               Khôi phục mặc định
             </button>
+            <Link
+              to="/portal/policies"
+              className="px-3.5 py-2 rounded-lg bg-slate-900 text-white hover:bg-neutral-800 text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm"
+            >
+              <span className="material-symbols-outlined text-[18px] text-orange-400">tune</span>
+              Quản Trị Biểu Phí, Voucher &amp; Chính Sách Chi Tiết
+            </Link>
             <button 
               type="submit" 
               className="px-4 py-2 rounded-lg bg-orange-600 text-white hover:bg-orange-700 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
