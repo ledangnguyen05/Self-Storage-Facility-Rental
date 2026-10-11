@@ -56,6 +56,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final RequestContext requestContext;
     private final com.boxora.security.FacilityAccessGuard facilityAccessGuard;
     private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractRenewalService> contractRenewalServiceProvider;
+    private final com.boxora.service.StorageUnitLockService storageUnitLockService;
 
     private UUID extractFacilityId(Payment payment) {
         if (payment == null) return null;
@@ -177,6 +178,14 @@ public class PaymentServiceImpl implements PaymentService {
                 }
                 if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
                     booking.setStatus(BookingStatus.CONFIRMED);
+                    if (booking.getAccessPin() == null) {
+                        booking.setAccessPin(String.format("%06d", new java.util.Random().nextInt(1000000)));
+                        booking.setQrAccessToken("QR-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase());
+                        booking.setPinUpdatedAt(LocalDateTime.now());
+                    }
+                    if (booking.getStorageUnit() != null) {
+                        storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
+                    }
                 }
                 bookingRepository.save(booking);
             }
@@ -288,6 +297,14 @@ public class PaymentServiceImpl implements PaymentService {
                 }
                 if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
                     booking.setStatus(BookingStatus.CONFIRMED);
+                    if (booking.getAccessPin() == null) {
+                        booking.setAccessPin(String.format("%06d", new java.util.Random().nextInt(1000000)));
+                        booking.setQrAccessToken("QR-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase());
+                        booking.setPinUpdatedAt(LocalDateTime.now());
+                    }
+                    if (booking.getStorageUnit() != null) {
+                        storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
+                    }
                 }
                 bookingRepository.save(booking);
             }

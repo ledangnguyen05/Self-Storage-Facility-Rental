@@ -60,6 +60,10 @@ public enum ErrorCode {
     BOOKING_ALREADY_CANCELLED(714, "Booking is already cancelled", HttpStatus.BAD_REQUEST),
     BOOKING_ALREADY_COMPLETED(715, "Completed booking cannot be cancelled", HttpStatus.BAD_REQUEST),
     BOOKING_CANNOT_BE_CANCELLED(716, "Booking cannot be cancelled in its current state", HttpStatus.BAD_REQUEST),
+    BOOKING_START_DATE_PAST(717, "Start date cannot be in the past", HttpStatus.BAD_REQUEST),
+    BOOKING_ADVANCE_NOTICE_EXCEEDED(718, "Storage unit can only be booked up to 30 days in advance", HttpStatus.BAD_REQUEST),
+    STORAGE_UNIT_SOFT_LOCKED(719, "Storage unit is currently held in a 24-hour soft-lock reservation by another customer", HttpStatus.CONFLICT),
+    BOOKING_MINIMUM_DURATION_INVALID(720, "Rental duration must meet minimum rental months requirement", HttpStatus.BAD_REQUEST),
 
     // ========================= PAYMENT (750 - 799) =========================
     PAYMENT_NOT_FOUND(750, "Payment transaction not found", HttpStatus.NOT_FOUND),
