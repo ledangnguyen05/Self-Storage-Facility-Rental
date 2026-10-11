@@ -144,6 +144,8 @@ export const MOCK_TICKETS: SupportTicket[] = [
     description: 'When typing my PIN 4920 on keypad unit A-101, the digits 2 and 0 do not illuminate clearly at night.',
     status: 'IN_PROGRESS',
     priority: 'MEDIUM',
+    imageEvidence: 'https://images.unsplash.com/photo-1558002038-1055907df827?auto=format&fit=crop&w=600&q=80',
+    evidenceUrls: ['https://images.unsplash.com/photo-1558002038-1055907df827?auto=format&fit=crop&w=600&q=80'],
     createdAt: '2026-09-18 10:15'
   },
   {
@@ -157,6 +159,7 @@ export const MOCK_TICKETS: SupportTicket[] = [
     description: 'Please issue official VAT invoice for contract BX-2026-8822 to my company registration tax code.',
     status: 'RESOLVED',
     priority: 'LOW',
+    evidenceUrls: [],
     resolutionNote: 'VAT invoice e-mailed to mai.tran@gmail.com with serial BX-VAT-2026-09.',
     createdAt: '2026-09-17 14:30'
   }
