@@ -3,6 +3,8 @@ import {
   HandoverPrerequisites,
   HandoverCheckInRequest,
   HandoverRecord,
+  ReturnSettlementPreviewResponse,
+  ReturnSettlementResponse,
 } from '../types'
 
 export const handoverService = {
@@ -28,10 +30,26 @@ export const handoverService = {
   },
 
   /**
-   * Xử lý trả kho và hoàn cọc khi kết thúc hợp đồng
+   * Xem trước quyết toán tiền cọc, nợ quá hạn và 5 tiêu chí thẩm định trả kho (BR-RULE-013/014/015)
+   */
+  async getReturnSettlementPreview(bookingId: string): Promise<ReturnSettlementPreviewResponse> {
+    const response = await api.get(`/api/v1/handovers/booking/${bookingId}/return-preview`)
+    return response.data?.data
+  },
+
+  /**
+   * Xử lý trả kho và hoàn cọc khi kết thúc hợp đồng (BR-RULE-013/014/015)
    */
   async processReturn(request: HandoverCheckInRequest): Promise<HandoverRecord> {
     const response = await api.post('/api/v1/handovers/return', request)
+    return response.data?.data
+  },
+
+  /**
+   * Nghiệm thu trả kho và quyết toán hoàn cọc chi tiết
+   */
+  async processReturnSettlement(request: HandoverCheckInRequest): Promise<ReturnSettlementResponse> {
+    const response = await api.post('/api/v1/handovers/return-settlement', request)
     return response.data?.data
   },
 
