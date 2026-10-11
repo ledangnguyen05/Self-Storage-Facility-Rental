@@ -130,6 +130,15 @@ export interface HandoverRecord {
   accessCode?: string
   handoverDate?: string
   unitCondition: string
+  depositSettled?: number
+  deductionAmount?: number
+  refundAmount?: number
+  reviewStatus?: string
+  depositRefundSlaDays?: number
+  refundTransactionId?: string
+  checklistAllPassed?: boolean
+  checklistSummary?: string
+  evidencePhotos?: string[]
   notes?: string
   recordedAt: string
 }
@@ -517,7 +526,68 @@ export interface HandoverCheckInRequest {
   contractConfirmed?: boolean
   rfidCardNumber?: string
   accessPin?: string
+  depositSettled?: number
+  deductionAmount?: number
+  doorConditionPassed?: boolean
+  cleanlinessPassed?: boolean
+  smartLockPassed?: boolean
+  sensorPassed?: boolean
+  wallStructurePassed?: boolean
+  damageFee?: number
+  cleaningFee?: number
+  lostCardFee?: number
+  overdueDebt?: number
+  damageNotes?: string
+  refundMethod?: string
+  requiresAccountingReview?: boolean
+  evidencePhotos?: string[]
   unitCondition?: string
+  notes?: string
+}
+
+export interface ReturnSettlementPreviewResponse {
+  bookingId: string
+  bookingCode: string
+  customerName: string
+  customerPhone: string
+  unitCode: string
+  facilityName: string
+  contractCode?: string
+  contractStatus?: string
+  rentalEndDate: string
+  actualReturnDate: string
+  overdueDays: number
+  depositPaid: number
+  dailyLateFee: number
+  calculatedOverdueLateFee: number
+  depositRefundSlaDays: number
+  recommendedReviewStatus: 'AUTO_REFUND_APPROVED' | 'PENDING_ACCOUNTING_REVIEW' | string
+  checklistStandardItems: string[]
+}
+
+export interface ReturnSettlementResponse {
+  handoverRecordId: string
+  bookingId: string
+  bookingCode: string
+  unitCode: string
+  customerName: string
+  staffId?: string
+  staffName?: string
+  depositPaid: number
+  damageFee: number
+  cleaningFee: number
+  lostCardFee: number
+  overdueDebt: number
+  totalDeduction: number
+  netRefundAmount: number
+  reviewStatus: 'AUTO_REFUND_APPROVED' | 'PENDING_ACCOUNTING_REVIEW' | string
+  depositRefundSlaDays: number
+  refundTransactionId?: string
+  checklistAllPassed: boolean
+  checklistSummary: string
+  evidencePhotoCount: number
+  evidencePhotos?: string[]
+  recordedAt: string
   notes?: string
 }
 

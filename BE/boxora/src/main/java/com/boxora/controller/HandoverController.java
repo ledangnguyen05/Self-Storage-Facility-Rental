@@ -4,6 +4,8 @@ import com.boxora.common.response.ApiResponse;
 import com.boxora.dto.request.HandoverRequest;
 import com.boxora.dto.response.HandoverPrerequisitesResponse;
 import com.boxora.dto.response.HandoverResponse;
+import com.boxora.dto.response.ReturnSettlementPreviewResponse;
+import com.boxora.dto.response.ReturnSettlementResponse;
 import com.boxora.service.HandoverService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,7 +20,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/handovers")
-@Tag(name = "Handover & Check-in", description = "API quản lý bàn giao kho, kiểm tra 4 điều kiện check-in (BR-RULE-005) và gán kho (BR-RULE-006)")
+@Tag(name = "Handover & Check-in", description = "API quản lý bàn giao kho, kiểm tra 4 điều kiện check-in (BR-RULE-005/006) và nghiệm thu trả kho, quyết toán hoàn cọc (BR-RULE-013/014/015)")
 @RequiredArgsConstructor
 public class HandoverController {
 
@@ -38,10 +40,23 @@ public class HandoverController {
                 .body(ApiResponse.success("Check-in bàn giao kho thành công và kích hoạt mã khóa SmartLock", handoverService.checkIn(request)));
     }
 
+    @GetMapping("/booking/{bookingId}/return-preview")
+    @Operation(summary = "Xem trước quyết toán tiền cọc, hạn thuê và 5 tiêu chí thẩm định trả kho (BR-RULE-013/014/015)")
+    public ResponseEntity<ApiResponse<ReturnSettlementPreviewResponse>> getReturnSettlementPreview(@PathVariable UUID bookingId) {
+        ReturnSettlementPreviewResponse response = handoverService.getReturnSettlementPreview(bookingId);
+        return ResponseEntity.ok(ApiResponse.success("Xem trước thông tin quyết toán cọc và thẩm định trả kho thành công", response));
+    }
+
     @PostMapping("/return")
-    @Operation(summary = "Xử lý trả kho và hoàn cọc")
+    @Operation(summary = "Xử lý trả kho và hoàn cọc (BR-RULE-013/014/015)")
     public ResponseEntity<ApiResponse<HandoverResponse>> processReturn(@Valid @RequestBody HandoverRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Nghiệm thu hoàn trả kho và quyết toán cọc thành công", handoverService.processReturn(request)));
+    }
+
+    @PostMapping("/return-settlement")
+    @Operation(summary = "Nghiệm thu hiện trường trả kho và quyết toán hoàn cọc chi tiết theo BR-RULE-013/014/015")
+    public ResponseEntity<ApiResponse<ReturnSettlementResponse>> processReturnSettlement(@Valid @RequestBody HandoverRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Nghiệm thu hiện trường và quyết toán cọc chi tiết thành công", handoverService.processReturnSettlement(request)));
     }
 
     @GetMapping("/booking/{bookingId}")
