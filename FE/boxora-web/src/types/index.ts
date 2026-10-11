@@ -485,4 +485,40 @@ export interface AutoCancelResult {
   cancelledBookings: AutoCancelDetail[]
 }
 
+// ==================== HANDOVER & CHECK-IN (BR-RULE-005/006) ====================
+export interface HandoverPrerequisites {
+  bookingId: string
+  bookingCode: string
+  customerName: string
+  customerPhone: string
+  unitCode: string
+  facilityName: string
+  depositSatisfied: boolean
+  depositPaid: number
+  requiredDeposit: number
+  firstMonthRentSatisfied: boolean
+  firstMonthRentPaid: number
+  requiredFirstMonthRent: number
+  contractSigned: boolean
+  contractCode?: string
+  contractStatus?: string
+  identityVerified: boolean
+  idCardNumber?: string
+  eligibleForCheckIn: boolean
+  missingPrerequisites: string[]
+}
+
+export interface HandoverCheckInRequest {
+  bookingId: string
+  staffId?: string
+  idCardNumber?: string
+  identityVerified?: boolean
+  firstMonthRentConfirmed?: boolean
+  contractConfirmed?: boolean
+  rfidCardNumber?: string
+  accessPin?: string
+  unitCondition?: string
+  notes?: string
+}
+
 

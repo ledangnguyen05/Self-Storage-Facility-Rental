@@ -64,6 +64,9 @@ public enum ErrorCode {
     BOOKING_ADVANCE_NOTICE_EXCEEDED(718, "Storage unit can only be booked up to 30 days in advance", HttpStatus.BAD_REQUEST),
     STORAGE_UNIT_SOFT_LOCKED(719, "Storage unit is currently held in a 24-hour soft-lock reservation by another customer", HttpStatus.CONFLICT),
     BOOKING_MINIMUM_DURATION_INVALID(720, "Rental duration must meet minimum rental months requirement", HttpStatus.BAD_REQUEST),
+    HANDOVER_PREREQUISITES_NOT_MET(721, "Không đủ 4 điều kiện bàn giao kho vật lý theo BR-RULE-005 (Cọc + Tiền thuê tháng đầu + Hợp đồng ký + Đối soát CCCD)", HttpStatus.BAD_REQUEST),
+    HANDOVER_UNIT_NOT_READY(722, "Ngăn kho không ở trạng thái sẵn sàng để bàn giao theo BR-RULE-006", HttpStatus.CONFLICT),
+    HANDOVER_ALREADY_ACTIVE(723, "Đơn đặt kho đã được check-in bàn giao trước đó", HttpStatus.BAD_REQUEST),
 
     // ========================= PAYMENT (750 - 799) =========================
     PAYMENT_NOT_FOUND(750, "Payment transaction not found", HttpStatus.NOT_FOUND),
