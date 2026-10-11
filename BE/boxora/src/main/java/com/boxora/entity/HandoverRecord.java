@@ -3,6 +3,7 @@ package com.boxora.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -27,6 +28,24 @@ public class HandoverRecord extends BaseEntity {
 
     @Column(name = "unit_condition", columnDefinition = "TEXT")
     private String unitCondition;
+
+    @Column(name = "deposit_settled", precision = 12, scale = 2)
+    private BigDecimal depositSettled;
+
+    @Column(name = "deduction_amount", precision = 12, scale = 2)
+    private BigDecimal deductionAmount;
+
+    @Column(name = "refund_amount", precision = 12, scale = 2)
+    private BigDecimal refundAmount;
+
+    @Column(name = "review_status", length = 50)
+    private String reviewStatus;
+
+    @Column(name = "checklist_summary", columnDefinition = "TEXT")
+    private String checklistSummary;
+
+    @Column(name = "evidence_photos", columnDefinition = "TEXT")
+    private String evidencePhotos;
 
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;

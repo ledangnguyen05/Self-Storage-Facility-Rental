@@ -7,6 +7,14 @@ export const StaffDashboard: React.FC = () => {
 
   // Inspection Return state (Công ty CP Thương mại ABC - #C-302)
   const [returnConfirmed, setReturnConfirmed] = useState(false)
+  const [returnDepositPaid] = useState(2000000)
+  const [damageFee, setDamageFee] = useState(0)
+  const [cleaningFee, setCleaningFee] = useState(0)
+  const [lostCardFee, setLostCardFee] = useState(0)
+  const totalDeduction = damageFee + cleaningFee + lostCardFee
+  const netRefundAmount = Math.max(0, returnDepositPaid - totalDeduction)
+  const reviewState = totalDeduction > 0 ? 'PENDING_ACCOUNTING_REVIEW' : 'AUTO_REFUND_APPROVED'
+  const refundSlaDays = 5
 
   // Ticket status state
   const [tickets, setTickets] = useState([
@@ -553,20 +561,20 @@ export const StaffDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* 4 Inspection Checklist Items */}
+              {/* 5 Inspection Checklist Items (BR-RULE-013) */}
               <div className="flex flex-col gap-2.5">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
-                    Biên bản thẩm định hiện trường
+                    Biên bản thẩm định hiện trường (BR-RULE-013)
                   </span>
-                  <span className="text-xs text-slate-400">4/4 tiêu chuẩn</span>
+                  <span className="text-xs font-semibold text-emerald-600">5/5 tiêu chuẩn</span>
                 </div>
 
                 <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <span className="material-symbols-outlined text-slate-500 text-[18px]">garage</span>
                     <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-slate-800">Tình trạng cửa cuốn</span>
+                      <span className="text-xs font-semibold text-slate-800">1. Tình trạng cửa cuốn</span>
                       <span className="text-[10px] text-slate-400">Mở êm, không móp méo, ray dẫn tốt</span>
                     </div>
                   </div>
@@ -579,7 +587,7 @@ export const StaffDashboard: React.FC = () => {
                   <div className="flex items-center gap-2.5">
                     <span className="material-symbols-outlined text-slate-500 text-[18px]">cleaning_services</span>
                     <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-slate-800">Vệ sinh kho &amp; sàn</span>
+                      <span className="text-xs font-semibold text-slate-800">2. Vệ sinh kho &amp; sàn</span>
                       <span className="text-[10px] text-slate-400">Đã dọn sạch rác, không ẩm ướt</span>
                     </div>
                   </div>
@@ -592,8 +600,8 @@ export const StaffDashboard: React.FC = () => {
                   <div className="flex items-center gap-2.5">
                     <span className="material-symbols-outlined text-slate-500 text-[18px]">lock</span>
                     <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-slate-800">Ổ khóa Smart Lock</span>
-                      <span className="text-[10px] text-slate-400">Cảm biến nhạy, pin 92%</span>
+                      <span className="text-xs font-semibold text-slate-800">3. Ổ khóa Smart Lock</span>
+                      <span className="text-[10px] text-slate-400">Cảm biến nhạy, pin 92%, chốt khóa tốt</span>
                     </div>
                   </div>
                   <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
@@ -605,8 +613,8 @@ export const StaffDashboard: React.FC = () => {
                   <div className="flex items-center gap-2.5">
                     <span className="material-symbols-outlined text-slate-500 text-[18px]">thermostat</span>
                     <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-slate-800">Cảm biến nhiệt / ẩm</span>
-                      <span className="text-[10px] text-slate-400">22°C • 48% RH (Chuẩn)</span>
+                      <span className="text-xs font-semibold text-slate-800">4. Cảm biến nhiệt / ẩm</span>
+                      <span className="text-[10px] text-slate-400">22°C • 48% RH (Chuẩn kỹ thuật)</span>
                     </div>
                   </div>
                   <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
@@ -614,13 +622,26 @@ export const StaffDashboard: React.FC = () => {
                   </span>
                 </div>
 
+                <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="material-symbols-outlined text-slate-500 text-[18px]">grid_view</span>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-semibold text-slate-800">5. Tường vách &amp; kết cấu kho</span>
+                      <span className="text-[10px] text-slate-400">Không nứt vỡ móp méo, nguyên vẹn</span>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                    Nguyên vẹn
+                  </span>
+                </div>
+
                 {/* Proof Photos */}
-                <div className="mt-2 p-3 rounded-lg bg-slate-50 border border-slate-100">
+                <div className="mt-1 p-3 rounded-lg bg-slate-50 border border-slate-100">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[11px] font-bold text-slate-700 uppercase">
-                      Ảnh chụp hiện trường (Bắt buộc)
+                      Ảnh chụp hiện trường (Bắt buộc &ge; 2 ảnh)
                     </span>
-                    <span className="text-[10px] text-slate-500 font-mono">2/2 ảnh</span>
+                    <span className="text-[10px] text-emerald-600 font-bold font-mono">2/2 ảnh đạt</span>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="relative rounded-lg overflow-hidden h-20 shadow-sm bg-slate-200">
@@ -646,19 +667,75 @@ export const StaffDashboard: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Settlement Summary */}
-                <div className="mt-2 p-3 rounded-lg bg-slate-100 border border-slate-200 flex flex-col gap-1 text-xs">
+                {/* Khấu trừ chi phí hư hại / vệ sinh (BR-RULE-014) */}
+                <div className="mt-1 p-3 rounded-lg bg-slate-50 border border-slate-200 flex flex-col gap-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-700">Khấu Trừ Chi Phí (Nếu có)</span>
+                    <span className="text-[10px] text-slate-400">BR-RULE-014</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Phí hư hại (đ)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="50000"
+                        value={damageFee || ''}
+                        onChange={(e) => setDamageFee(Number(e.target.value) || 0)}
+                        placeholder="0"
+                        disabled={returnConfirmed}
+                        className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Phí vệ sinh (đ)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="50000"
+                        value={cleaningFee || ''}
+                        onChange={(e) => setCleaningFee(Number(e.target.value) || 0)}
+                        placeholder="0"
+                        disabled={returnConfirmed}
+                        className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Settlement Summary & Review State (BR-RULE-014 & BR-RULE-015) */}
+                <div className="mt-1 p-3 rounded-lg bg-slate-100 border border-slate-200 flex flex-col gap-1.5 text-xs">
                   <div className="flex items-center justify-between text-slate-600">
                     <span>Tiền cọc giữ ban đầu:</span>
-                    <span className="font-data-tabular font-bold text-slate-800">2.000.000đ</span>
+                    <span className="font-data-tabular font-bold text-slate-800">
+                      {returnDepositPaid.toLocaleString('vi-VN')}đ
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-slate-600">
-                    <span>Khấu trừ vệ sinh/hư hại:</span>
-                    <span className="font-data-tabular text-slate-500">0đ</span>
+                    <span>Tổng khấu trừ (Hư hại/Vệ sinh):</span>
+                    <span className={`font-data-tabular font-semibold ${totalDeduction > 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                      -{totalDeduction.toLocaleString('vi-VN')}đ
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-slate-900 pt-1.5 border-t border-slate-200">
                     <span className="font-bold">Số tiền hoàn trả khách:</span>
-                    <span className="font-unit-code text-sm text-orange-600 font-extrabold">2.000.000đ</span>
+                    <span className="font-unit-code text-sm text-orange-600 font-extrabold">
+                      {netRefundAmount.toLocaleString('vi-VN')}đ
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] pt-1 text-slate-500">
+                    <span>SLA cam kết hoàn tiền:</span>
+                    <span className="font-semibold text-slate-700">{refundSlaDays} ngày làm việc</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500">
+                    <span>Quy trình xét duyệt:</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                      totalDeduction > 0
+                        ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                        : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    }`}>
+                      {totalDeduction > 0 ? 'Chờ Kế Toán Đối Soát (Review State)' : 'Tự Động Hoàn Cọc (Direct SLA)'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -667,7 +744,10 @@ export const StaffDashboard: React.FC = () => {
             <button
               onClick={() => {
                 setReturnConfirmed(true)
-                alert('Đã hoàn tất nghiệm thu trả kho #C-302. Lệnh hoàn cọc 2.000.000đ đã được chuyển sang cổng thanh toán tự động.')
+                const reviewMsg = totalDeduction > 0
+                  ? `Đã khấu trừ ${totalDeduction.toLocaleString('vi-VN')}đ. Hồ sơ hoàn cọc ${netRefundAmount.toLocaleString('vi-VN')}đ đã chuyển sang Kế Toán đối soát duyệt chi (SLA ${refundSlaDays} ngày).`
+                  : `Kho đạt chuẩn 5/5. Lệnh hoàn cọc 100% (${netRefundAmount.toLocaleString('vi-VN')}đ) đã chuyển sang cổng thanh toán tự động (SLA ${refundSlaDays} ngày).`
+                alert(`Nghiệm thu hoàn trả kho #C-302 thành công!\n- Mã PIN SmartLock: ĐÃ THU HỒI\n- Trạng thái kho: AVAILABLE (Sẵn sàng phục vụ khách mới)\n- ${reviewMsg}`)
               }}
               disabled={returnConfirmed}
               className={`mt-4 w-full py-2.5 px-4 rounded-lg text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-all ${

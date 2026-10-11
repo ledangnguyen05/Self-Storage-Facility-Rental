@@ -4,6 +4,8 @@ import com.boxora.dto.request.HandoverRequest;
 import com.boxora.dto.response.HandoverResponse;
 
 import com.boxora.dto.response.HandoverPrerequisitesResponse;
+import com.boxora.dto.response.ReturnSettlementPreviewResponse;
+import com.boxora.dto.response.ReturnSettlementResponse;
 
 import java.util.List;
 import java.util.UUID;
@@ -20,6 +22,21 @@ public interface HandoverService {
     HandoverPrerequisitesResponse getCheckInPrerequisites(UUID bookingId);
 
     HandoverResponse checkIn(HandoverRequest request);
+
+    /**
+     * Xem trước quyết toán tiền cọc và thẩm định hiện trường trả kho (BR-RULE-013/014/015)
+     */
+    ReturnSettlementPreviewResponse getReturnSettlementPreview(UUID bookingId);
+
+    /**
+     * Xử lý nghiệm thu trả kho, quyết toán hoàn cọc, thu hồi mã khóa SmartLock (BR-RULE-013/014/015)
+     */
     HandoverResponse processReturn(HandoverRequest request);
+
+    /**
+     * Chi tiết nghiệm thu quyết toán cọc trả kho với đầy đủ thông tin breakdown
+     */
+    ReturnSettlementResponse processReturnSettlement(HandoverRequest request);
+
     List<HandoverResponse> getByBookingId(UUID bookingId);
 }

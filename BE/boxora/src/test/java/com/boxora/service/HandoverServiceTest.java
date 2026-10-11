@@ -3,6 +3,8 @@ package com.boxora.service;
 import com.boxora.dto.request.HandoverRequest;
 import com.boxora.dto.response.HandoverPrerequisitesResponse;
 import com.boxora.dto.response.HandoverResponse;
+import com.boxora.dto.response.ReturnSettlementPreviewResponse;
+import com.boxora.dto.response.ReturnSettlementResponse;
 import com.boxora.entity.*;
 import com.boxora.enums.*;
 import com.boxora.exception.AppException;
@@ -51,6 +53,9 @@ class HandoverServiceTest {
 
     @Mock
     private RentalContractRepository rentalContractRepository;
+
+    @Mock
+    private FacilityPolicyRepository facilityPolicyRepository;
 
     @Mock
     private ActivityLogService activityLogService;
@@ -283,5 +288,269 @@ class HandoverServiceTest {
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_ALREADY_ACTIVE);
         }
     }
+
+    @Nested
+    @DisplayName("Xem trước quyết toán trả kho (Return Settlement Preview)")
+    class ReturnPreviewTests {
+
+        @Test
+        @DisplayName("Trả kho đúng hạn: Không phạt quá hạn, gợi ý AUTO_REFUND_APPROVED và SLA 5 ngày")
+        void getReturnSettlementPreview_OnTime_FullRefund() {
+            FacilityPolicy policy = FacilityPolicy.builder()
+                    .facility(testFacility)
+                    .depositRefundSlaDays(5)
+                    .dailyLateFee(new BigDecimal("100000.00"))
+                    .overdueGraceDays(1)
+                    .build();
+
+            testBooking.setEndDate(LocalDate.now().plusMonths(1));
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
+            when(facilityPolicyRepository.findByFacilityId(testFacility.getId())).thenReturn(Optional.of(policy));
+
+            ReturnSettlementPreviewResponse preview = handoverService.getReturnSettlementPreview(bookingId);
+
+            assertThat(preview).isNotNull();
+            assertThat(preview.getBookingCode()).isEqualTo("RES-8921");
+            assertThat(preview.getDepositPaid()).isEqualByComparingTo(new BigDecimal("1500000.00"));
+            assertThat(preview.getOverdueDays()).isEqualTo(0);
+            assertThat(preview.getCalculatedOverdueLateFee()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(preview.getDepositRefundSlaDays()).isEqualTo(5);
+            assertThat(preview.getRecommendedReviewStatus()).isEqualTo("AUTO_REFUND_APPROVED");
+            assertThat(preview.getChecklistStandardItems()).hasSize(5);
+        }
+
+        @Test
+        @DisplayName("Trả kho quá hạn 4 ngày (grace 1 ngày): Tính phạt 3 ngày trễ và gợi ý PENDING_ACCOUNTING_REVIEW")
+        void getReturnSettlementPreview_Overdue_CalculatesLateFee() {
+            FacilityPolicy policy = FacilityPolicy.builder()
+                    .facility(testFacility)
+                    .depositRefundSlaDays(5)
+                    .dailyLateFee(new BigDecimal("100000.00"))
+                    .overdueGraceDays(1)
+                    .build();
+
+            testBooking.setEndDate(LocalDate.now().minusDays(4));
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
+            when(facilityPolicyRepository.findByFacilityId(testFacility.getId())).thenReturn(Optional.of(policy));
+
+            ReturnSettlementPreviewResponse preview = handoverService.getReturnSettlementPreview(bookingId);
+
+            assertThat(preview).isNotNull();
+            assertThat(preview.getOverdueDays()).isEqualTo(4);
+            // 4 - 1 = 3 days * 100,000 = 300,000
+            assertThat(preview.getCalculatedOverdueLateFee()).isEqualByComparingTo(new BigDecimal("300000.00"));
+            assertThat(preview.getRecommendedReviewStatus()).isEqualTo("PENDING_ACCOUNTING_REVIEW");
+        }
+    }
+
+    @Nested
+    @DisplayName("Nghiệm thu trả kho và quyết toán cọc (BR-RULE-013/014/015 Execution)")
+    class ReturnExecutionTests {
+
+        @Test
+        @DisplayName("Kho nguyên vẹn 5/5: Hoàn cọc 100%, AUTO_REFUND_APPROVED, xóa PIN, giải phóng kho AVAILABLE, thanh lý hợp đồng")
+        void processReturn_AllClean_FullRefundDirect() {
+            testBooking.setStatus(BookingStatus.ACTIVE);
+            testBooking.setAccessPin("739215");
+            testUnit.setStatus(UnitStatus.OCCUPIED);
+
+            FacilityPolicy policy = FacilityPolicy.builder()
+                    .facility(testFacility)
+                    .depositRefundSlaDays(5)
+                    .build();
+
+            HandoverRequest request = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .staffId(staffId)
+                    .doorConditionPassed(true)
+                    .cleanlinessPassed(true)
+                    .smartLockPassed(true)
+                    .sensorPassed(true)
+                    .wallStructurePassed(true)
+                    .damageFee(BigDecimal.ZERO)
+                    .cleaningFee(BigDecimal.ZERO)
+                    .evidencePhotos(List.of("http://boxora.com/photo1.jpg", "http://boxora.com/photo2.jpg"))
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
+            when(facilityPolicyRepository.findByFacilityId(testFacility.getId())).thenReturn(Optional.of(policy));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
+            when(handoverRecordRepository.save(any(HandoverRecord.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+
+            HandoverResponse response = handoverService.processReturn(request);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getRecordType()).isEqualTo("RETURN");
+            assertThat(response.getReviewStatus()).isEqualTo("AUTO_REFUND_APPROVED");
+            assertThat(response.getRefundAmount()).isEqualByComparingTo(new BigDecimal("1500000.00"));
+            assertThat(response.getDeductionAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(response.getChecklistAllPassed()).isTrue();
+
+            // Verify entity state updates
+            assertThat(testBooking.getStatus()).isEqualTo(BookingStatus.COMPLETED);
+            assertThat(testBooking.getReturnTime()).isNotNull();
+            assertThat(testBooking.getAccessPin()).isNull(); // SmartLock PIN revoked
+            assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.AVAILABLE); // Storage unit released
+            assertThat(testContract.getStatus()).isEqualTo(RentalContractStatus.TERMINATED); // Contract terminated
+
+            // Verify Payment created with REFUNDED status
+            verify(paymentRepository).save(argThat(payment ->
+                    payment.getAmount().compareTo(new BigDecimal("1500000.00")) == 0
+                            && payment.getPaymentType() == PaymentType.DEPOSIT
+                            && payment.getStatus() == PaymentStatus.REFUNDED
+            ));
+
+            // Verify Activity Logs
+            verify(activityLogService).record(
+                    eq(testFacility.getId()),
+                    eq(ActivityAction.CHECKOUT_INSPECTION_COMPLETE),
+                    eq("HandoverRecord"),
+                    any(),
+                    anyString(),
+                    isNull(),
+                    isNull()
+            );
+            verify(activityLogService).record(
+                    eq(testFacility.getId()),
+                    eq(ActivityAction.ACCESS_CREDENTIAL_REVOKE),
+                    eq("Booking"),
+                    eq(bookingId),
+                    anyString(),
+                    isNull(),
+                    isNull()
+            );
+            verify(activityLogService).record(
+                    eq(testFacility.getId()),
+                    eq(ActivityAction.STORAGE_UNIT_RELEASE),
+                    eq("StorageUnit"),
+                    eq(testUnit.getId()),
+                    anyString(),
+                    eq(UnitStatus.OCCUPIED),
+                    eq(UnitStatus.AVAILABLE)
+            );
+        }
+
+        @Test
+        @DisplayName("Có hư hại & vệ sinh: Khấu trừ cọc, sinh reviewStatus PENDING_ACCOUNTING_REVIEW, thanh toán PENDING")
+        void processReturn_WithDamageAndCleaning_PendingAccountingReview() {
+            testBooking.setStatus(BookingStatus.ACTIVE);
+            testBooking.setAccessPin("739215");
+
+            FacilityPolicy policy = FacilityPolicy.builder()
+                    .facility(testFacility)
+                    .depositRefundSlaDays(5)
+                    .build();
+
+            HandoverRequest request = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .staffId(staffId)
+                    .doorConditionPassed(true)
+                    .cleanlinessPassed(false)
+                    .smartLockPassed(true)
+                    .sensorPassed(true)
+                    .wallStructurePassed(false)
+                    .damageFee(new BigDecimal("300000.00"))
+                    .cleaningFee(new BigDecimal("200000.00"))
+                    .damageNotes("Vách kho bị cấn móp, sàn bám bẩn rác cặn")
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
+            when(facilityPolicyRepository.findByFacilityId(testFacility.getId())).thenReturn(Optional.of(policy));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
+            when(handoverRecordRepository.save(any(HandoverRecord.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+
+            HandoverResponse response = handoverService.processReturn(request);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getReviewStatus()).isEqualTo("PENDING_ACCOUNTING_REVIEW");
+            assertThat(response.getDeductionAmount()).isEqualByComparingTo(new BigDecimal("500000.00"));
+            // 1,500,000 - 500,000 = 1,000,000
+            assertThat(response.getRefundAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
+
+            // Verify Payment created with PENDING status for accounting review
+            verify(paymentRepository).save(argThat(payment ->
+                    payment.getAmount().compareTo(new BigDecimal("1000000.00")) == 0
+                            && payment.getPaymentType() == PaymentType.DEPOSIT
+                            && payment.getStatus() == PaymentStatus.PENDING
+            ));
+
+            // Verify DAMAGE_FEE_RECORDED activity log
+            verify(activityLogService).record(
+                    eq(testFacility.getId()),
+                    eq(ActivityAction.DAMAGE_FEE_RECORDED),
+                    eq("Booking"),
+                    eq(bookingId),
+                    anyString(),
+                    isNull(),
+                    isNull()
+            );
+        }
+
+        @Test
+        @DisplayName("Đơn chưa ACTIVE (đang CONFIRMED): Ném BOOKING_NOT_ACTIVE_FOR_RETURN")
+        void processReturn_BookingNotActive_ThrowsException() {
+            testBooking.setStatus(BookingStatus.CONFIRMED);
+
+            HandoverRequest request = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+
+            AppException ex = assertThrows(AppException.class, () -> handoverService.processReturn(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BOOKING_NOT_ACTIVE_FOR_RETURN);
+        }
+
+        @Test
+        @DisplayName("processReturnSettlement trả về ReturnSettlementResponse đầy đủ breakdown")
+        void processReturnSettlement_DetailedResponse_Success() {
+            testBooking.setStatus(BookingStatus.ACTIVE);
+            testBooking.setAccessPin("739215");
+
+            FacilityPolicy policy = FacilityPolicy.builder()
+                    .facility(testFacility)
+                    .depositRefundSlaDays(5)
+                    .build();
+
+            HandoverRequest request = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .staffId(staffId)
+                    .doorConditionPassed(true)
+                    .cleanlinessPassed(true)
+                    .smartLockPassed(true)
+                    .sensorPassed(true)
+                    .wallStructurePassed(true)
+                    .damageFee(BigDecimal.ZERO)
+                    .cleaningFee(BigDecimal.ZERO)
+                    .evidencePhotos(List.of("http://boxora.com/photo1.jpg", "http://boxora.com/photo2.jpg"))
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
+            when(facilityPolicyRepository.findByFacilityId(testFacility.getId())).thenReturn(Optional.of(policy));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
+            when(handoverRecordRepository.save(any(HandoverRecord.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+
+            ReturnSettlementResponse response = handoverService.processReturnSettlement(request);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getBookingCode()).isEqualTo("RES-8921");
+            assertThat(response.getDepositPaid()).isEqualByComparingTo(new BigDecimal("1500000.00"));
+            assertThat(response.getNetRefundAmount()).isEqualByComparingTo(new BigDecimal("1500000.00"));
+            assertThat(response.getReviewStatus()).isEqualTo("AUTO_REFUND_APPROVED");
+            assertThat(response.isChecklistAllPassed()).isTrue();
+            assertThat(response.getEvidencePhotoCount()).isEqualTo(2);
+        }
+    }
 }
+
 
