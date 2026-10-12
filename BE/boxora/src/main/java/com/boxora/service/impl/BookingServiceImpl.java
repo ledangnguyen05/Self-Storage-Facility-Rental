@@ -1,10 +1,13 @@
 package com.boxora.service.impl;
 
 import com.boxora.dto.request.BookingCreateRequest;
+import com.boxora.dto.request.UpdatePinRequest;
+import com.boxora.dto.response.BookingPinResponse;
 import com.boxora.dto.response.BookingResponse;
 import com.boxora.entity.Booking;
 import com.boxora.entity.StorageUnit;
 import com.boxora.entity.User;
+import com.boxora.enums.ActivityAction;
 import com.boxora.enums.BookingStatus;
 import com.boxora.enums.UnitStatus;
 import com.boxora.exception.AppException;
@@ -12,8 +15,11 @@ import com.boxora.exception.ErrorCode;
 import com.boxora.repository.BookingRepository;
 import com.boxora.repository.StorageUnitRepository;
 import com.boxora.repository.UserRepository;
+import com.boxora.service.ActivityLogService;
 import com.boxora.service.BookingService;
+import com.boxora.service.EncryptionService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,12 +33,17 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 @Transactional
 public class BookingServiceImpl implements BookingService {
 
     private final BookingRepository bookingRepository;
     private final StorageUnitRepository storageUnitRepository;
     private final UserRepository userRepository;
+    private final EncryptionService encryptionService;
+    private final ActivityLogService activityLogService;
+    private final com.boxora.security.FacilityAccessGuard facilityAccessGuard;
+    private final com.boxora.security.RequestContext requestContext;
 
     @Override
     public BookingResponse createBooking(BookingCreateRequest request) {
@@ -69,7 +80,9 @@ public class BookingServiceImpl implements BookingService {
                         ? unit.getUnitType().getDepositAmount()
                         : pricePerMonth);
 
-        String pin = String.format("%06d", new Random().nextInt(1000000));
+        // AES-256-GCM PIN Generation & Encryption
+        String plainPin = String.format("%06d", new Random().nextInt(1000000));
+        String encryptedPin = encryptionService.encrypt(plainPin);
         String code = "BX-" + (2025 + new Random().nextInt(2)) + "-" + String.format("%04d", new Random().nextInt(10000));
 
         Booking booking = Booking.builder()
@@ -82,7 +95,7 @@ public class BookingServiceImpl implements BookingService {
                 .totalRentalFee(totalFee)
                 .depositPaid(deposit)
                 .status(BookingStatus.CONFIRMED)
-                .accessPin(pin)
+                .accessPin(encryptedPin)
                 .qrAccessToken("QR-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
                 .pinUpdatedAt(LocalDateTime.now())
                 .build();
@@ -91,6 +104,19 @@ public class BookingServiceImpl implements BookingService {
         storageUnitRepository.save(unit);
 
         booking = bookingRepository.save(booking);
+
+        if (customer != null) {
+            activityLogService.recordForUser(
+                    customer.getId(),
+                    ActivityAction.ACCESS_CREDENTIAL_ISSUE,
+                    "Booking",
+                    booking.getId(),
+                    "Phát hành thông tin định danh và mã PIN bảo mật AES-256-GCM cho đặt kho #" + booking.getBookingCode(),
+                    null,
+                    booking.getBookingCode()
+            );
+        }
+
         return mapToResponse(booking);
     }
 
@@ -132,6 +158,11 @@ public class BookingServiceImpl implements BookingService {
     public BookingResponse remoteUnlock(UUID id) {
         Booking booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        if (booking.getStorageUnit() != null && booking.getStorageUnit().getStatus() == UnitStatus.OVERDUE_LOCKED) {
+            throw new AppException(ErrorCode.UNIT_OVERDUE_LOCKED);
+        }
+
         // Trigger IoT signal simulation
         return mapToResponse(booking);
     }
@@ -142,6 +173,95 @@ public class BookingServiceImpl implements BookingService {
         Booking booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
         return mapToResponse(booking);
+    }
+
+    @Override
+    public BookingPinResponse getBookingPin(UUID id, String currentUserEmail) {
+        Booking booking = bookingRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        User currentUser = currentUserEmail != null ? userRepository.findByEmail(currentUserEmail).orElse(null) : null;
+        validateBookingAccess(booking, currentUser);
+
+        // Decrypt AES-256-GCM PIN
+        String rawPin = booking.getAccessPin();
+        String decryptedPin = encryptionService.decrypt(rawPin);
+
+        if (currentUser != null) {
+            activityLogService.recordForUser(
+                    currentUser.getId(),
+                    ActivityAction.ACCESS_CREDENTIAL_ISSUE,
+                    "Booking",
+                    booking.getId(),
+                    "Truy vấn xem mã PIN bảo mật AES-256-GCM cho đặt kho #" + booking.getBookingCode(),
+                    null,
+                    booking.getBookingCode()
+            );
+        }
+
+        return BookingPinResponse.builder()
+                .bookingId(booking.getId())
+                .bookingCode(booking.getBookingCode())
+                .unitCode(booking.getStorageUnit() != null ? booking.getStorageUnit().getUnitCode() : null)
+                .pin(decryptedPin != null ? decryptedPin : "882914")
+                .qrAccessToken(booking.getQrAccessToken())
+                .pinUpdatedAt(booking.getPinUpdatedAt() != null ? booking.getPinUpdatedAt() : booking.getCreatedAt())
+                .build();
+    }
+
+    @Override
+    public BookingPinResponse updateBookingPin(UUID id, UpdatePinRequest request, String currentUserEmail) {
+        Booking booking = bookingRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        User currentUser = currentUserEmail != null ? userRepository.findByEmail(currentUserEmail).orElse(null) : null;
+        validateBookingAccess(booking, currentUser);
+
+        // Encrypt new PIN with AES-256-GCM
+        String encryptedPin = encryptionService.encrypt(request.getNewPin());
+        booking.setAccessPin(encryptedPin);
+        booking.setPinUpdatedAt(LocalDateTime.now());
+        bookingRepository.save(booking);
+
+        if (currentUser != null) {
+            activityLogService.recordForUser(
+                    currentUser.getId(),
+                    ActivityAction.ACCESS_CREDENTIAL_UPDATE,
+                    "Booking",
+                    booking.getId(),
+                    "Đổi mã PIN truy cập bảo mật AES-256-GCM cho kho #" + (booking.getStorageUnit() != null ? booking.getStorageUnit().getUnitCode() : booking.getBookingCode()),
+                    null,
+                    booking.getBookingCode()
+            );
+        }
+
+        return BookingPinResponse.builder()
+                .bookingId(booking.getId())
+                .bookingCode(booking.getBookingCode())
+                .unitCode(booking.getStorageUnit() != null ? booking.getStorageUnit().getUnitCode() : null)
+                .pin(request.getNewPin())
+                .qrAccessToken(booking.getQrAccessToken())
+                .pinUpdatedAt(booking.getPinUpdatedAt())
+                .build();
+    }
+
+    private void validateBookingAccess(Booking booking, User currentUser) {
+        if (currentUser == null) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
+
+        String role = currentUser.getRole() != null ? currentUser.getRole().getName() : "";
+        if ("CUSTOMER".equalsIgnoreCase(role)) {
+            if (booking.getCustomer() == null || !booking.getCustomer().getId().equals(currentUser.getId())) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        } else if (facilityAccessGuard.isFacilityScoped()) {
+            UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                    ? booking.getStorageUnit().getFacility().getId() : null;
+            if (facilityId != null) {
+                facilityAccessGuard.checkFacilityAccess(facilityId);
+            }
+        }
     }
 
     private BookingResponse mapToResponse(Booking b) {
@@ -164,7 +284,7 @@ public class BookingServiceImpl implements BookingService {
                 .totalRentalFee(b.getTotalRentalFee())
                 .depositPaid(b.getDepositPaid())
                 .status(b.getStatus() != null ? b.getStatus() : BookingStatus.ACTIVE)
-                .accessPin(b.getAccessPin() != null ? b.getAccessPin() : "882914")
+                .accessPin("******") // Masked for security: use dedicated GET /api/v1/bookings/{id}/access-pin to view
                 .qrAccessToken(b.getQrAccessToken() != null ? b.getQrAccessToken() : "QR-A108-SECURE")
                 .handoverTime(b.getHandoverTime())
                 .returnTime(b.getReturnTime())

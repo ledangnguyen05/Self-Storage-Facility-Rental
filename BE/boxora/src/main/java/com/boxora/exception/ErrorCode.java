@@ -111,7 +111,25 @@ public enum ErrorCode {
     CONTRACT_RENEWAL_NOT_FOUND(1506, "Contract renewal request not found", HttpStatus.NOT_FOUND),
     CONTRACT_RENEWAL_ALREADY_COMPLETED(1507, "Contract renewal has already been completed", HttpStatus.BAD_REQUEST),
     CONTRACT_RENEWAL_ALREADY_SIGNED(1508, "Contract renewal is already signed", HttpStatus.BAD_REQUEST),
-    RENEWAL_CONTRACT_NOT_FOUND(1509, "Rental contract not found", HttpStatus.NOT_FOUND);
+    PAYMENT_TARGET_REQUIRED(755, "Vui lòng cung cấp bookingId hoặc contractId hợp lệ để khởi tạo thanh toán", HttpStatus.BAD_REQUEST),
+
+    // ========================= SEALING (1600 - 1699) =========================
+    SEALING_RECORD_NOT_FOUND(1600, "Biên bản niêm phong không tồn tại", HttpStatus.NOT_FOUND),
+    UNIT_ALREADY_SEALED(1601, "Kho lưu trữ này hiện đang trong trạng thái niêm phong", HttpStatus.BAD_REQUEST),
+    UNIT_NOT_SEALED(1602, "Kho lưu trữ này không ở trạng thái niêm phong", HttpStatus.BAD_REQUEST),
+    SEALING_WITNESS_REQUIRED(1603, "Người làm chứng phải khác người thực hiện niêm phong", HttpStatus.BAD_REQUEST),
+    UNIT_OVERDUE_LOCKED(1604, "Kho đang bị niêm phong khóa cưỡng chế do quá hạn thanh toán. Vui lòng thanh toán công nợ", HttpStatus.FORBIDDEN),
+
+    // ========================= REFUND (1700 - 1799) =========================
+    REFUND_REQUEST_NOT_FOUND(1700, "Yêu cầu hoàn tiền không tồn tại", HttpStatus.NOT_FOUND),
+    REFUND_ALREADY_REVIEWED(1701, "Yêu cầu hoàn tiền đã được xem xét/phê duyệt trước đó", HttpStatus.BAD_REQUEST),
+    REFUND_ALREADY_PROCESSED(1702, "Yêu cầu hoàn tiền đã được xử lý chi trả hoàn tất", HttpStatus.BAD_REQUEST),
+    REFUND_NOT_APPROVED(1703, "Yêu cầu hoàn tiền phải được phê duyệt trước khi xử lý chi trả", HttpStatus.BAD_REQUEST),
+    INVALID_REFUND_AMOUNT(1704, "Số tiền hoàn không hợp lệ", HttpStatus.BAD_REQUEST),
+    REFUND_TARGET_REQUIRED(1705, "Vui lòng cung cấp bookingId hoặc contractId hợp lệ cho yêu cầu hoàn tiền", HttpStatus.BAD_REQUEST),
+
+    // ========================= NOTIFICATION (1800 - 1899) =========================
+    NOTIFICATION_NOT_FOUND(1800, "Bản ghi thông báo không tồn tại", HttpStatus.NOT_FOUND);
 
 
 

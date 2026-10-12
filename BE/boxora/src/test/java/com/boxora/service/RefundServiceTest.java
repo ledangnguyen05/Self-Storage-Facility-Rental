@@ -1,0 +1,261 @@
+package com.boxora.service;
+
+import com.boxora.dto.request.RefundCreateRequest;
+import com.boxora.dto.request.RefundProcessRequest;
+import com.boxora.dto.request.RefundReviewRequest;
+import com.boxora.dto.response.RefundRequestResponse;
+import com.boxora.entity.Booking;
+import com.boxora.entity.Facility;
+import com.boxora.entity.RefundRequest;
+import com.boxora.entity.User;
+import com.boxora.enums.RefundStatus;
+import com.boxora.exception.AppException;
+import com.boxora.exception.ErrorCode;
+import com.boxora.repository.BookingRepository;
+import com.boxora.repository.NotificationLogRepository;
+import com.boxora.repository.RefundRequestRepository;
+import com.boxora.repository.RentalContractRepository;
+import com.boxora.repository.UserRepository;
+import com.boxora.security.FacilityAccessGuard;
+import com.boxora.security.RequestContext;
+import com.boxora.service.impl.RefundServiceImpl;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.math.BigDecimal;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class RefundServiceTest {
+
+    @Mock
+    private RefundRequestRepository refundRequestRepository;
+
+    @Mock
+    private BookingRepository bookingRepository;
+
+    @Mock
+    private RentalContractRepository rentalContractRepository;
+
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private NotificationLogRepository notificationLogRepository;
+
+    @Mock
+    private EmailService emailService;
+
+    @Mock
+    private ActivityLogService activityLogService;
+
+    @Mock
+    private FacilityAccessGuard facilityAccessGuard;
+
+    @Mock
+    private RequestContext requestContext;
+
+    @InjectMocks
+    private RefundServiceImpl refundService;
+
+    private User mockCustomer;
+    private User mockStaff;
+    private Booking mockBooking;
+    private Facility mockFacility;
+    private UUID bookingId;
+    private UUID customerId;
+    private UUID staffId;
+
+    @BeforeEach
+    void setUp() {
+        bookingId = UUID.randomUUID();
+        customerId = UUID.randomUUID();
+        staffId = UUID.randomUUID();
+
+        mockFacility = Facility.builder().name("Boxora Quận 7").build();
+        mockFacility.setId(UUID.randomUUID());
+
+        mockCustomer = User.builder()
+                .fullName("Lê Văn C")
+                .email("c.le@example.com")
+                .phone("0912345678")
+                .isActive(true)
+                .build();
+        mockCustomer.setId(customerId);
+
+        mockStaff = User.builder()
+                .username("manager_user")
+                .fullName("Quản Lý Chi Nhánh")
+                .isActive(true)
+                .build();
+        mockStaff.setId(staffId);
+
+        mockBooking = Booking.builder()
+                .bookingCode("BK-REF-100")
+                .customer(mockCustomer)
+                .build();
+        mockBooking.setId(bookingId);
+    }
+
+    @Test
+    @DisplayName("createRefundRequest should create request with status PENDING_REVIEW")
+    void testCreateRefundRequestSuccess() {
+        RefundCreateRequest request = RefundCreateRequest.builder()
+                .bookingId(bookingId)
+                .requestedAmount(new BigDecimal("1000000"))
+                .deductionAmount(new BigDecimal("100000")) // Phí hư hỏng
+                .bankName("Vietcombank")
+                .bankAccountNumber("0123456789")
+                .bankAccountName("LE VAN C")
+                .reason("Hoàn tiền đặt cọc sau khi hoàn trả kho")
+                .build();
+
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(mockBooking));
+        when(requestContext.currentUserId()).thenReturn(customerId);
+        when(userRepository.findById(customerId)).thenReturn(Optional.of(mockCustomer));
+        when(refundRequestRepository.save(any(RefundRequest.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        RefundRequestResponse response = refundService.createRefundRequest(request);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getStatus()).isEqualTo(RefundStatus.PENDING_REVIEW);
+        assertThat(response.getRequestedAmount()).isEqualByComparingTo("1000000");
+        assertThat(response.getDeductionAmount()).isEqualByComparingTo("100000");
+        assertThat(response.getFinalRefundAmount()).isEqualByComparingTo("900000");
+        assertThat(response.getRequestCode()).startsWith("REF-");
+
+        verify(refundRequestRepository).save(any(RefundRequest.class));
+    }
+
+    @Test
+    @DisplayName("reviewRefundRequest with APPROVE should transition to APPROVED")
+    void testReviewRefundApprove() {
+        UUID refundId = UUID.randomUUID();
+        RefundRequest refund = RefundRequest.builder()
+                .requestCode("REF-12345")
+                .customer(mockCustomer)
+                .facility(mockFacility)
+                .requestedAmount(new BigDecimal("500000"))
+                .finalRefundAmount(new BigDecimal("500000"))
+                .bankName("MB Bank")
+                .bankAccountNumber("99999999")
+                .bankAccountName("LE VAN C")
+                .status(RefundStatus.PENDING_REVIEW)
+                .build();
+        refund.setId(refundId);
+
+        when(refundRequestRepository.findById(refundId)).thenReturn(Optional.of(refund));
+        when(requestContext.currentUserId()).thenReturn(staffId);
+        when(userRepository.findById(staffId)).thenReturn(Optional.of(mockStaff));
+        when(refundRequestRepository.save(any(RefundRequest.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        RefundReviewRequest reviewRequest = RefundReviewRequest.builder()
+                .action("APPROVE")
+                .reviewNote("Hồ sơ trả kho hợp lệ, không hư hại")
+                .build();
+
+        RefundRequestResponse response = refundService.reviewRefundRequest(refundId, reviewRequest);
+
+        assertThat(response.getStatus()).isEqualTo(RefundStatus.APPROVED);
+        assertThat(response.getReviewNote()).isEqualTo("Hồ sơ trả kho hợp lệ, không hư hại");
+        verify(emailService).sendRefundStatusEmail(anyString(), anyString(), anyString(), eq("APPROVED"), any(), anyString(), anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("reviewRefundRequest with REJECT should transition to REJECTED")
+    void testReviewRefundReject() {
+        UUID refundId = UUID.randomUUID();
+        RefundRequest refund = RefundRequest.builder()
+                .requestCode("REF-12345")
+                .customer(mockCustomer)
+                .facility(mockFacility)
+                .requestedAmount(new BigDecimal("500000"))
+                .finalRefundAmount(new BigDecimal("500000"))
+                .bankName("MB Bank")
+                .bankAccountNumber("99999999")
+                .bankAccountName("LE VAN C")
+                .status(RefundStatus.PENDING_REVIEW)
+                .build();
+        refund.setId(refundId);
+
+        when(refundRequestRepository.findById(refundId)).thenReturn(Optional.of(refund));
+        when(requestContext.currentUserId()).thenReturn(staffId);
+        when(userRepository.findById(staffId)).thenReturn(Optional.of(mockStaff));
+        when(refundRequestRepository.save(any(RefundRequest.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        RefundReviewRequest reviewRequest = RefundReviewRequest.builder()
+                .action("REJECT")
+                .rejectionReason("Khách hàng chưa thanh toán tiền điện phát sinh")
+                .build();
+
+        RefundRequestResponse response = refundService.reviewRefundRequest(refundId, reviewRequest);
+
+        assertThat(response.getStatus()).isEqualTo(RefundStatus.REJECTED);
+        assertThat(response.getRejectionReason()).isEqualTo("Khách hàng chưa thanh toán tiền điện phát sinh");
+        verify(emailService).sendRefundStatusEmail(anyString(), anyString(), anyString(), eq("REJECTED"), any(), anyString(), anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("processRefund should transition APPROVED request to PROCESSED")
+    void testProcessRefundSuccess() {
+        UUID refundId = UUID.randomUUID();
+        RefundRequest refund = RefundRequest.builder()
+                .requestCode("REF-12345")
+                .customer(mockCustomer)
+                .facility(mockFacility)
+                .requestedAmount(new BigDecimal("500000"))
+                .finalRefundAmount(new BigDecimal("500000"))
+                .bankName("MB Bank")
+                .bankAccountNumber("99999999")
+                .bankAccountName("LE VAN C")
+                .status(RefundStatus.APPROVED) // Đã duyệt
+                .build();
+        refund.setId(refundId);
+
+        when(refundRequestRepository.findById(refundId)).thenReturn(Optional.of(refund));
+        when(requestContext.currentUserId()).thenReturn(staffId);
+        when(userRepository.findById(staffId)).thenReturn(Optional.of(mockStaff));
+        when(refundRequestRepository.save(any(RefundRequest.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        RefundProcessRequest processRequest = RefundProcessRequest.builder()
+                .transactionReference("FT261008000123")
+                .processNotes("Đã chuyển khoản qua Internet Banking MB")
+                .build();
+
+        RefundRequestResponse response = refundService.processRefund(refundId, processRequest);
+
+        assertThat(response.getStatus()).isEqualTo(RefundStatus.PROCESSED);
+        assertThat(response.getTransactionReference()).isEqualTo("FT261008000123");
+        verify(emailService).sendRefundStatusEmail(anyString(), anyString(), anyString(), eq("PROCESSED"), any(), anyString(), anyString(), eq("FT261008000123"), anyString());
+    }
+
+    @Test
+    @DisplayName("processRefund should throw REFUND_NOT_APPROVED when request is still PENDING_REVIEW")
+    void testProcessRefundThrowsIfNotApproved() {
+        UUID refundId = UUID.randomUUID();
+        RefundRequest refund = RefundRequest.builder()
+                .status(RefundStatus.PENDING_REVIEW)
+                .build();
+        refund.setId(refundId);
+
+        when(refundRequestRepository.findById(refundId)).thenReturn(Optional.of(refund));
+
+        RefundProcessRequest processRequest = RefundProcessRequest.builder()
+                .transactionReference("FT123456")
+                .build();
+
+        AppException ex = assertThrows(AppException.class, () -> refundService.processRefund(refundId, processRequest));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.REFUND_NOT_APPROVED);
+    }
+}

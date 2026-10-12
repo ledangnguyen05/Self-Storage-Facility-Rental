@@ -4,5 +4,6 @@ public enum UnitStatus {
     AVAILABLE,
     RESERVED,
     OCCUPIED,
-    UNDER_MAINTENANCE
+    UNDER_MAINTENANCE,
+    OVERDUE_LOCKED
 }

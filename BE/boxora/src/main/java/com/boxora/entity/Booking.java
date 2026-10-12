@@ -51,7 +51,7 @@ public class Booking extends BaseEntity {
     @Column(name = "access_code", length = 20)
     private String accessCode;
 
-    @Column(name = "access_pin", length = 10)
+    @Column(name = "access_pin", length = 255)
     private String accessPin;
 
     @Column(name = "qr_access_token", length = 255)

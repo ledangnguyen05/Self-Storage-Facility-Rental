@@ -44,6 +44,8 @@ public interface StorageUnitRepository extends JpaRepository<StorageUnit, UUID>,
 
     boolean existsByFacility_IdAndUnitCodeAndIdNot(UUID facilityId, String unitCode, UUID id);
 
+    boolean existsByUnitType_Id(UUID unitTypeId);
+
     @Query("""
             SELECT su.facility.id, su.facility.name, su.status, COUNT(su)
             FROM StorageUnit su
