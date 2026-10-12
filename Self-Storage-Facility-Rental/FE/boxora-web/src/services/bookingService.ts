@@ -18,6 +18,11 @@ export const bookingService = {
     return response.data?.data as Booking
   },
 
+  async getAccessCredentials(id: string) {
+    const response = await api.get(`/api/v1/bookings/${id}/access-credentials`)
+    return response.data?.data as { accessPin: string; qrAccessToken: string }
+  },
+
   async createBooking(data: {
     storageUnitId: string
     customerId: string

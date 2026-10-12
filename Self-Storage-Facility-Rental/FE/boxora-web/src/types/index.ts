@@ -76,6 +76,7 @@ export interface Booking {
   storageUnitId: string
   unitCode: string
   facilityName: string
+  floorLevel?: string
   startDate: string
   endDate: string
   rentalMonths: number
@@ -86,8 +87,8 @@ export interface Booking {
   paymentExpiresAt?: string | null
   status: BookingStatusType
   accessCode: string // e.g. "BX-88219"
-  accessPin: string  // e.g. "4920"
-  qrAccessToken: string
+  accessPin?: string | null
+  qrAccessToken?: string | null
   handoverTime?: string
   returnTime?: string
 }

@@ -3,12 +3,14 @@ package com.boxora.controller;
 import com.boxora.common.response.ApiResponse;
 import com.boxora.dto.request.BookingCreateRequest;
 import com.boxora.dto.response.BookingResponse;
+import com.boxora.dto.response.BookingAccessCredentialsResponse;
 import com.boxora.service.BookingService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
 import java.util.UUID;
@@ -27,6 +29,7 @@ public class BookingController {
     }
 
     @GetMapping("/my-active")
+    @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<ApiResponse<List<BookingResponse>>> getMyActive(@RequestParam(required = false) UUID customerId) {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getMyActiveBookings(customerId)));
     }
@@ -39,6 +42,12 @@ public class BookingController {
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<BookingResponse>> getById(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getById(id)));
+    }
+
+    @GetMapping("/{id}/access-credentials")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<ApiResponse<BookingAccessCredentialsResponse>> getAccessCredentials(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getAccessCredentials(id)));
     }
 
     @PostMapping("/{id}/renew")

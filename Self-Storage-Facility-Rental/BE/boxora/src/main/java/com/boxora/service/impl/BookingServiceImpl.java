@@ -2,6 +2,7 @@ package com.boxora.service.impl;
 
 import com.boxora.dto.request.BookingCreateRequest;
 import com.boxora.dto.response.BookingResponse;
+import com.boxora.dto.response.BookingAccessCredentialsResponse;
 import com.boxora.entity.Booking;
 import com.boxora.entity.StorageUnit;
 import com.boxora.entity.User;
@@ -12,6 +13,7 @@ import com.boxora.exception.ErrorCode;
 import com.boxora.repository.BookingRepository;
 import com.boxora.repository.StorageUnitRepository;
 import com.boxora.repository.UserRepository;
+import com.boxora.security.RequestContext;
 import com.boxora.service.BookingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -34,6 +36,7 @@ public class BookingServiceImpl implements BookingService {
     private final BookingRepository bookingRepository;
     private final StorageUnitRepository storageUnitRepository;
     private final UserRepository userRepository;
+    private final RequestContext requestContext;
 
     @Override
     public BookingResponse createBooking(BookingCreateRequest request) {
@@ -86,13 +89,16 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional(readOnly = true)
     public List<BookingResponse> getMyActiveBookings(UUID customerId) {
-        List<Booking> bookings = bookingRepository.findAll();
-        if (customerId != null) {
-            bookings = bookings.stream()
-                    .filter(b -> b.getCustomer() != null && customerId.equals(b.getCustomer().getId()))
-                    .collect(Collectors.toList());
+        UUID authenticatedCustomerId = requestContext.currentUserId();
+        if (authenticatedCustomerId == null
+                || (customerId != null && !authenticatedCustomerId.equals(customerId))) {
+            throw new AppException(ErrorCode.FORBIDDEN);
         }
-        return bookings.stream().map(this::mapToResponse).collect(Collectors.toList());
+        return bookingRepository.findByCustomer_Id(authenticatedCustomerId).stream()
+                .filter(booking -> booking.getStatus() == BookingStatus.CONFIRMED
+                        || booking.getStatus() == BookingStatus.ACTIVE)
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -121,6 +127,14 @@ public class BookingServiceImpl implements BookingService {
     public BookingResponse remoteUnlock(UUID id) {
         Booking booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        UUID authenticatedCustomerId = requestContext.currentUserId();
+        if (authenticatedCustomerId == null || booking.getCustomer() == null
+                || !authenticatedCustomerId.equals(booking.getCustomer().getId())) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+        if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.ACTIVE) {
+            throw new AppException(ErrorCode.BOOKING_NOT_CHECKED_IN);
+        }
         // Trigger IoT signal simulation
         return mapToResponse(booking);
     }
@@ -131,6 +145,28 @@ public class BookingServiceImpl implements BookingService {
         Booking booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
         return mapToResponse(booking);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BookingAccessCredentialsResponse getAccessCredentials(UUID id) {
+        Booking booking = bookingRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        UUID authenticatedCustomerId = requestContext.currentUserId();
+        if (authenticatedCustomerId == null || booking.getCustomer() == null
+                || !authenticatedCustomerId.equals(booking.getCustomer().getId())) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+        if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.ACTIVE) {
+            throw new AppException(ErrorCode.BOOKING_NOT_CHECKED_IN);
+        }
+        if (booking.getAccessPin() == null || booking.getQrAccessToken() == null) {
+            throw new AppException(ErrorCode.BOOKING_NOT_CHECKED_IN);
+        }
+        return BookingAccessCredentialsResponse.builder()
+                .accessPin(booking.getAccessPin())
+                .qrAccessToken(booking.getQrAccessToken())
+                .build();
     }
 
     @Scheduled(fixedDelay = 60_000L)
@@ -158,15 +194,15 @@ public class BookingServiceImpl implements BookingService {
                 .id(b.getId())
                 .bookingCode(b.getBookingCode())
                 .customerId(b.getCustomer() != null ? b.getCustomer().getId() : null)
-                .customerName(b.getCustomer() != null ? b.getCustomer().getFullName() : "Nguyễn Văn An")
-                .customerPhone(b.getCustomer() != null ? b.getCustomer().getPhone() : "0918 234 567")
-                .customerEmail(b.getCustomer() != null ? b.getCustomer().getEmail() : "an.nguyen@gmail.com")
+                .customerName(b.getCustomer() != null ? b.getCustomer().getFullName() : null)
+                .customerPhone(b.getCustomer() != null ? b.getCustomer().getPhone() : null)
+                .customerEmail(b.getCustomer() != null ? b.getCustomer().getEmail() : null)
                 .storageUnitId(b.getStorageUnit() != null ? b.getStorageUnit().getId() : null)
-                .unitCode(b.getStorageUnit() != null ? b.getStorageUnit().getUnitCode() : "A-108")
+                .unitCode(b.getStorageUnit() != null ? b.getStorageUnit().getUnitCode() : null)
                 .facilityName(b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null 
                         ? b.getStorageUnit().getFacility().getName() 
-                        : "Mega Central Tân Bình")
-                .floorLevel(b.getStorageUnit() != null ? b.getStorageUnit().getFloorLevel() : "Tầng 1 - Khu A")
+                        : null)
+                .floorLevel(b.getStorageUnit() != null ? b.getStorageUnit().getFloorLevel() : null)
                 .startDate(b.getStartDate())
                 .endDate(b.getEndDate())
                 .rentalMonths(b.getRentalMonths())
@@ -176,8 +212,8 @@ public class BookingServiceImpl implements BookingService {
                 .initialPaymentAmount(initialPaymentAmount)
                 .paymentExpiresAt(b.getPaymentExpiresAt())
                 .status(b.getStatus() != null ? b.getStatus() : BookingStatus.ACTIVE)
-                .accessPin(hasPaid ? b.getAccessPin() : null)
-                .qrAccessToken(hasPaid ? b.getQrAccessToken() : null)
+                .accessPin(null)
+                .qrAccessToken(null)
                 .handoverTime(b.getHandoverTime())
                 .returnTime(b.getReturnTime())
                 .build();

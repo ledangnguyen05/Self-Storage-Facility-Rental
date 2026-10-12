@@ -6,6 +6,7 @@ import { storageUnitService } from '../../services/storageUnitService'
 import { bookingService } from '../../services/bookingService'
 import { BookingCheckoutModal } from '../../components/modals/BookingCheckoutModal'
 import { ContractOtpModal } from '../../components/modals/ContractOtpModal'
+import { CustomerBookingCard } from '../../components/customer/CustomerBookingCard'
 import { contractService } from '../../services/contractService'
 import { supportTicketService } from '../../services/supportTicketService'
 import { Facility, StorageUnit, Booking, RentalContract, SupportTicket } from '../../types'
@@ -25,19 +26,6 @@ function formatDate(dateStr?: string) {
   }
 }
 
-function calculateDaysLeft(dateStr?: string) {
-  if (!dateStr) return 12
-  try {
-    const d = new Date(dateStr)
-    const now = new Date()
-    const diffTime = d.getTime() - now.getTime()
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    return diffDays > 0 ? diffDays : 0
-  } catch {
-    return 12
-  }
-}
-
 function calculateNewEndDate(dateStr?: string, months: number = 1) {
   try {
     const d = dateStr ? new Date(dateStr) : new Date()
@@ -53,25 +41,16 @@ export const CustomerDashboard: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams()
 
   // Tabs: 'my-units' (default) | 'explore' | 'contracts' | 'support'
-  const tabParam = searchParams.get('tab') as 'my-units' | 'explore' | 'contracts' | 'support' | null
-  const [activeTab, setActiveTab] = useState<'my-units' | 'explore' | 'contracts' | 'support'>(
-    tabParam && ['my-units', 'explore', 'contracts', 'support'].includes(tabParam)
-      ? tabParam
-      : 'my-units'
-  )
-
-  useEffect(() => {
-    if (tabParam && ['my-units', 'explore', 'contracts', 'support'].includes(tabParam)) {
-      setActiveTab(tabParam)
-    }
-  }, [tabParam])
+  const tabParam = searchParams.get('tab')
+  const activeTab = tabParam === 'explore' || tabParam === 'contracts' || tabParam === 'support'
+    ? tabParam
+    : 'my-units'
 
   const handleTabChange = (tab: 'my-units' | 'explore' | 'contracts' | 'support') => {
     if (tab === 'contracts') {
       setIsLoadingContracts(true)
       setContractsError(null)
     }
-    setActiveTab(tab)
     setSearchParams({ tab })
   }
 
@@ -79,19 +58,7 @@ export const CustomerDashboard: React.FC = () => {
   const [unlockingUnit, setUnlockingUnit] = useState<string | null>(null)
   const [unlockedSuccess, setUnlockedSuccess] = useState<string | null>(null)
 
-  // Copy PIN notification
-  const [copiedPin, setCopiedPin] = useState<string | null>(null)
-  // Stitch PIN Reveal State
-  const [revealedPins, setRevealedPins] = useState<Record<string, boolean>>({})
-  const [pinCountdown, setPinCountdown] = useState<number>(59)
-
-  const togglePinReveal = (unitId: string) => {
-    setRevealedPins(prev => ({
-      ...prev,
-      [unitId]: !prev[unitId]
-    }))
-    setPinCountdown(59)
-  }
+  const [unlockErrors, setUnlockErrors] = useState<Record<string, string>>({})
 
   // Booking Modal
   const [selectedBookingUnit, setSelectedBookingUnit] = useState<{
@@ -126,6 +93,7 @@ export const CustomerDashboard: React.FC = () => {
   const [availableUnits, setAvailableUnits] = useState<StorageUnit[]>([])
   const [activeBookings, setActiveBookings] = useState<Booking[]>([])
   const [isLoadingUnits, setIsLoadingUnits] = useState(false)
+  const [bookingsError, setBookingsError] = useState<string | null>(null)
   const [contracts, setContracts] = useState<RentalContract[]>([])
   const [isLoadingContracts, setIsLoadingContracts] = useState(true)
   const [contractsError, setContractsError] = useState<string | null>(null)
@@ -191,9 +159,12 @@ export const CustomerDashboard: React.FC = () => {
         }
         if (bookingsRes.status === 'fulfilled' && bookingsRes.value && Array.isArray(bookingsRes.value)) {
           setActiveBookings(bookingsRes.value)
+          setBookingsError(null)
           if (bookingsRes.value.length > 0) {
             setTicketUnit(bookingsRes.value[0].unitCode)
           }
+        } else if (bookingsRes.status === 'rejected') {
+          setBookingsError('Không thể tải danh sách kho đang thuê. Vui lòng tải lại trang.')
         }
         if (ticketsRes.status === 'fulfilled' && ticketsRes.value && Array.isArray(ticketsRes.value)) {
           setMyTickets(ticketsRes.value)
@@ -244,30 +215,24 @@ export const CustomerDashboard: React.FC = () => {
     })
   }, [availableUnits, filterFacility, filterSize])
 
-  const handleCopy = (id: string, pin: string) => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(pin)
-    }
-    setCopiedPin(id)
-    setTimeout(() => setCopiedPin(null), 2000)
-  }
-
   const handleRemoteUnlock = async (unitId: string, bookingId?: string) => {
     setUnlockingUnit(unitId)
+    setUnlockErrors(current => ({ ...current, [unitId]: '' }))
     try {
-      if (bookingId) {
-        await bookingService.remoteUnlock(bookingId)
-      }
+      if (!bookingId) throw new Error('Booking ID is missing')
+      await bookingService.remoteUnlock(bookingId)
       setUnlockedSuccess(unitId)
       setTimeout(() => setUnlockedSuccess(null), 4000)
     } catch (err) {
-      console.warn('Remote unlock error or simulated:', err)
-      setUnlockedSuccess(unitId)
-      setTimeout(() => setUnlockedSuccess(null), 4000)
+      console.error('Remote unlock failed:', err)
+      setUnlockErrors(current => ({ ...current, [unitId]: 'Không thể gửi lệnh mở khóa. Vui lòng thử lại.' }))
     } finally {
       setUnlockingUnit(null)
     }
   }
+
+  const handleBookingRemoteUnlock = (booking: Booking) =>
+    handleRemoteUnlock(booking.unitCode, booking.id)
 
   const openRenewalModal = (unitCode: string, defaultPrice: string, rawPrice?: number) => {
     const matching = activeBookings.find(b => b.unitCode === unitCode)
@@ -397,9 +362,6 @@ export const CustomerDashboard: React.FC = () => {
     }, 2000)
   }
 
-  const unitABooking = activeBookings.find(b => b.unitCode === 'A-108') || activeBookings[0]
-  const unitBBooking = activeBookings.find(b => b.unitCode === 'B-205' || b.unitCode === 'C-205') || (activeBookings.length > 1 ? activeBookings[1] : undefined)
-
   return (
     <div className="flex flex-col gap-6 text-left max-w-7xl mx-auto pb-12">
       
@@ -445,8 +407,10 @@ export const CustomerDashboard: React.FC = () => {
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Kho đang thuê</span>
-              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">2 Kho Hoạt Động</span>
-              <span className="text-xs text-slate-500 truncate">#A-108 (5m²) &amp; #B-205 (12m²)</span>
+              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{activeBookings.length} kho đang thuê</span>
+              <span className="text-xs text-slate-500 truncate">
+                {activeBookings.map(booking => `#${booking.unitCode}`).join(' • ') || 'Chưa có kho hoạt động'}
+              </span>
             </div>
           </div>
 
@@ -459,8 +423,12 @@ export const CustomerDashboard: React.FC = () => {
                 Bảo mật cửa kho
                 <span className="pulsing-dot bg-emerald-500"></span>
               </span>
-              <span className="font-mono text-xl font-bold text-emerald-700 mt-0.5">Đã Khóa Bảo Vệ</span>
-              <span className="text-xs text-slate-500 truncate">Mã PIN điện tử &amp; Mở khóa từ xa sẵn sàng</span>
+              <span className="font-mono text-xl font-bold text-emerald-700 mt-0.5">
+                {activeBookings.length > 0 ? 'Đã khóa bảo vệ' : 'Chưa có kho'}
+              </span>
+              <span className="text-xs text-slate-500 truncate">
+                {activeBookings.length > 0 ? 'PIN và QR được bảo vệ, chỉ tải khi bạn yêu cầu' : 'Thuê kho để kích hoạt quyền truy cập'}
+              </span>
             </div>
           </div>
 
@@ -470,8 +438,16 @@ export const CustomerDashboard: React.FC = () => {
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Hạn hợp đồng gần nhất</span>
-              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">28/04/2025</span>
-              <span className="text-xs text-amber-700 font-semibold truncate">Kho #A-108 còn 12 ngày (Gia hạn ngay)</span>
+              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">
+                {activeBookings.length > 0
+                  ? formatDate(activeBookings.reduce((nearest, booking) => booking.endDate < nearest.endDate ? booking : nearest).endDate)
+                  : '—'}
+              </span>
+              <span className="text-xs text-amber-700 font-semibold truncate">
+                {activeBookings.length > 0
+                  ? `Kho #${activeBookings.reduce((nearest, booking) => booking.endDate < nearest.endDate ? booking : nearest).unitCode} • gần hết hạn`
+                  : 'Không có hợp đồng sắp hết hạn'}
+              </span>
             </div>
           </div>
         </div>
@@ -490,7 +466,7 @@ export const CustomerDashboard: React.FC = () => {
           <span className="material-symbols-outlined text-[18px]">garage_door</span>
           <span>Kho Của Tôi Đang Thuê</span>
           <span className="px-1.5 py-0.5 rounded-full bg-orange-600 text-white text-[10px] font-bold">
-            2
+            {activeBookings.length}
           </span>
         </button>
 
@@ -531,380 +507,56 @@ export const CustomerDashboard: React.FC = () => {
         </button>
       </div>
 
-      {/* 3. TAB 1: KHO CỦA TÔI ĐANG THUÊ (MY UNITS) */}
       {activeTab === 'my-units' && (
-        <div className="flex flex-col gap-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* Unit A-108 */}
-            <div className="stitch-card p-6 flex flex-col justify-between">
-              <div className="flex flex-col gap-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-cyan-50 text-cyan-700 flex items-center justify-center border border-cyan-100 shadow-xs">
-                      <span className="material-symbols-outlined text-[26px]">garage_door</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-base font-extrabold text-slate-900">KHO #A-108</span>
-                        <span className="stitch-badge stitch-badge-available">
-                          <span className="pulsing-dot bg-emerald-500"></span>
-                          Đang hoạt động
-                        </span>
-                      </div>
-                      <span className="text-xs text-slate-500">Cơ sở Tân Bình • Tầng 1 (Lô Đông, Gần Thang Tải 1)</span>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <span className="text-[10px] uppercase font-bold text-amber-700 block">Hạn hợp đồng</span>
-                    <span className="font-mono text-xs font-bold text-slate-900">{formatDate(unitABooking?.endDate || '2026-10-21')}</span>
-                    <span className="text-[10px] text-amber-600 font-semibold block">(Còn {calculateDaysLeft(unitABooking?.endDate || '2026-10-21')} ngày)</span>
-                  </div>
-                </div>
-
-                {/* IoT Telemetry Strip */}
-                <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono text-slate-600">
-                  <span className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[15px] text-cyan-600">thermostat</span>
-                    23.5°C
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[15px] text-cyan-600">humidity_mid</span>
-                    45% RH
-                  </span>
-                  <span className="flex items-center gap-1.5 text-emerald-700 font-semibold">
-                    <span className="material-symbols-outlined text-[15px] text-emerald-600">security</span>
-                    Smart Lock: SECURE
-                  </span>
-                </div>
-
-                {/* Security PIN Vault Box (Stitch Component - Light Theme with cyan security border) */}
-                <div className="p-4 rounded-xl bg-cyan-50/40 border-2 border-cyan-200/90 shadow-xs flex flex-col gap-3 relative overflow-hidden">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-cyan-100 text-cyan-800 flex items-center justify-center">
-                        <span className="material-symbols-outlined text-[18px]">key</span>
-                      </div>
-                      <span className="text-xs sm:text-sm font-bold text-slate-900">
-                        Mã PIN điện tử truy cập cổng &amp; khóa phòng
-                      </span>
-                    </div>
-                    <span className="px-2 py-0.5 rounded bg-white border border-cyan-200 text-[10px] font-mono text-cyan-800 font-semibold flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[12px]">lock</span> AES-256 Vault
-                    </span>
-                  </div>
-
-                  {!revealedPins['A-108'] ? (
-                    /* PIN Masked View */
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 py-2.5 px-4 rounded-lg bg-white border border-cyan-100">
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2 font-mono text-[16px] text-slate-400 tracking-widest select-none">
-                          <span>●</span><span>●</span><span>●</span><span>●</span><span>●</span><span>●</span>
-                        </div>
-                        <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">(Mã đang được mã hóa)</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => togglePinReveal('A-108')}
-                        className="w-full sm:w-auto px-3.5 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">visibility</span>
-                        <span>Xem mã PIN</span>
-                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-700 text-white font-bold">OTP</span>
-                      </button>
-                    </div>
-                  ) : (
-                    /* PIN Revealed View */
-                    <div className="flex flex-col gap-2.5 py-2.5 px-4 rounded-lg bg-white border border-cyan-200">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] font-mono text-cyan-800 font-semibold">Mã số PIN:</span>
-                          <div className="flex items-center gap-1 font-mono text-base font-bold text-cyan-900 tracking-wider">
-                            {(unitABooking?.accessPin || '849204').split('').map((digit, idx) => (
-                              <span key={idx} className="px-2 py-1 rounded bg-cyan-50 border border-cyan-200 text-cyan-900 shadow-inner">
-                                {digit}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleCopy('A-108', unitABooking?.accessPin || '849204')}
-                            className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {copiedPin === 'A-108' ? 'check' : 'content_copy'}
-                            </span>
-                            <span>{copiedPin === 'A-108' ? 'Đã sao chép' : 'Sao chép'}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => togglePinReveal('A-108')}
-                            className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">visibility_off</span>
-                            <span>Ẩn</span>
-                          </button>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] font-mono text-slate-500">
-                        <span className="flex items-center gap-1 text-emerald-700 font-medium">
-                          <span className="material-symbols-outlined text-[14px]">timer</span> Hiệu lực đếm ngược: <strong className="text-slate-900">{pinCountdown}s</strong>
-                        </span>
-                        <span className="text-cyan-700 text-[10px]">Áp dụng: Cổng Hub &amp; Cửa A-108</span>
-                      </div>
-                    </div>
+        <section className="flex flex-col gap-4">
+          {isLoadingUnits ? (
+            <div className="rounded-2xl border border-slate-200 bg-white py-16 text-center text-sm text-slate-500">
+              Đang tải kho đang thuê...
+            </div>
+          ) : bookingsError ? (
+            <p role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700">
+              {bookingsError}
+            </p>
+          ) : activeBookings.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center">
+              <span className="material-symbols-outlined text-4xl text-slate-300">garage</span>
+              <h2 className="mt-3 font-bold text-slate-800">Bạn chưa có kho đang thuê</h2>
+              <p className="mt-1 text-sm text-slate-500">Các kho đã thanh toán và xác nhận sẽ hiển thị tại đây.</p>
+              <button type="button" onClick={() => handleTabChange('explore')} className="stitch-btn-primary mt-4 text-xs">
+                Tìm kho
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              {activeBookings.map(booking => (
+                <CustomerBookingCard
+                  key={booking.id}
+                  booking={booking}
+                  onRenew={currentBooking => openRenewalModal(
+                    currentBooking.unitCode,
+                    formatVnd(currentBooking.rentalMonths > 0
+                      ? currentBooking.totalRentalFee / currentBooking.rentalMonths
+                      : currentBooking.totalRentalFee),
+                    currentBooking.rentalMonths > 0
+                      ? Math.round(currentBooking.totalRentalFee / currentBooking.rentalMonths)
+                      : currentBooking.totalRentalFee,
                   )}
-
-                  {/* Remote Unlock CTA */}
-                  <div className="flex items-center justify-between pt-1">
-                    <button
-                      type="button"
-                      onClick={() => handleRemoteUnlock('A-108', unitABooking?.id)}
-                      disabled={unlockingUnit === 'A-108'}
-                      className={`w-full font-bold text-xs rounded-lg py-2.5 px-4 flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer ${
-                        unlockedSuccess === 'A-108'
-                          ? 'bg-emerald-600 text-white'
-                          : 'stitch-btn-primary'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-[18px]">
-                        {unlockedSuccess === 'A-108' ? 'lock_open' : 'key'}
-                      </span>
-                      <span>
-                        {unlockingUnit === 'A-108' ? 'Đang gửi lệnh mở IoT...' : 
-                         unlockedSuccess === 'A-108' ? 'CỬA ĐÃ MỞ (TỰ KHÓA SAU 30 GIÂY)' : 'Mở Khóa Từ Xa (Smart Lock)'}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Metrics */}
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                    <span className="text-[10px] text-slate-400 block uppercase font-medium">Diện tích &amp; Thể tích</span>
-                    <span className="font-mono text-xs font-bold text-slate-800">5.0 m² (15 m³)</span>
-                  </div>
-                  <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                    <span className="text-[10px] text-slate-400 block uppercase font-medium">Nhiệt độ phòng</span>
-                    <span className="font-mono text-xs font-bold text-slate-800">23.5°C Chuẩn</span>
-                  </div>
-                  <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                    <span className="text-[10px] text-slate-400 block uppercase font-medium">An toàn PCCC</span>
-                    <span className="font-mono text-xs font-bold text-emerald-600">Bình thường</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 mt-4 border-t border-slate-100 flex items-center gap-3">
-                <button
-                  onClick={() => openRenewalModal('A-108', '1.850.000', unitABooking?.totalRentalFee ? Math.round(unitABooking.totalRentalFee / (unitABooking.rentalMonths || 1)) : 1850000)}
-                  className="stitch-btn-secondary flex-1 text-xs"
-                >
-                  <span className="material-symbols-outlined text-[16px]">autorenew</span>
-                  <span>Gia Hạn Kho (+3 Tháng)</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setTicketUnit('A-108')
+                  onReportIssue={unitCode => {
+                    setTicketUnit(unitCode)
                     setTicketType('lock')
                     handleTabChange('support')
                   }}
-                  className="px-3.5 h-10 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[16px]">report</span>
-                  <span>Báo Sự Cố</span>
-                </button>
-              </div>
+                  onRemoteUnlock={handleBookingRemoteUnlock}
+                  isUnlocking={unlockingUnit === booking.unitCode}
+                  unlockSucceeded={unlockedSuccess === booking.unitCode}
+                  unlockError={unlockErrors[booking.unitCode]}
+                />
+              ))}
             </div>
-
-            {/* Unit B-205 */}
-            <div className="stitch-card p-6 flex flex-col justify-between">
-              <div className="flex flex-col gap-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center border border-teal-100 shadow-xs">
-                      <span className="material-symbols-outlined text-[26px]">ac_unit</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-base font-extrabold text-slate-900">KHO #B-205</span>
-                        <span className="stitch-badge stitch-badge-secure">
-                          <span className="pulsing-dot bg-cyan-500"></span>
-                          Đang thuê
-                        </span>
-                      </div>
-                      <span className="text-xs text-slate-500">Cơ sở Tân Bình • Tầng 2 (Kho Điều Hòa Chuyên Dụng)</span>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Hạn hợp đồng</span>
-                    <span className="font-mono text-xs font-bold text-slate-900">{formatDate(unitBBooking?.endDate || '2027-02-07')}</span>
-                    <span className="text-[10px] text-emerald-600 font-semibold block">(Còn {calculateDaysLeft(unitBBooking?.endDate || '2027-02-07')} ngày)</span>
-                  </div>
-                </div>
-
-                {/* IoT Telemetry Strip */}
-                <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono text-slate-600">
-                  <span className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[15px] text-cyan-600">thermostat</span>
-                    21.2°C (Mát)
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[15px] text-cyan-600">humidity_mid</span>
-                    42% RH
-                  </span>
-                  <span className="flex items-center gap-1.5 text-cyan-700 font-semibold">
-                    <span className="material-symbols-outlined text-[15px] text-cyan-600">sensor_door</span>
-                    Biometric: ONLINE
-                  </span>
-                </div>
-
-                {/* Security PIN Vault Box (Stitch Component - Light Theme with cyan security border) */}
-                <div className="p-4 rounded-xl bg-cyan-50/40 border-2 border-cyan-200/90 shadow-xs flex flex-col gap-3 relative overflow-hidden">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-cyan-100 text-cyan-800 flex items-center justify-center">
-                        <span className="material-symbols-outlined text-[18px]">key</span>
-                      </div>
-                      <span className="text-xs sm:text-sm font-bold text-slate-900">
-                        Mã PIN điện tử truy cập cổng &amp; khóa phòng
-                      </span>
-                    </div>
-                    <span className="px-2 py-0.5 rounded bg-white border border-cyan-200 text-[10px] font-mono text-cyan-800 font-semibold flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[12px]">lock</span> AES-256 Vault
-                    </span>
-                  </div>
-
-                  {!revealedPins['B-205'] ? (
-                    /* PIN Masked View */
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 py-2.5 px-4 rounded-lg bg-white border border-cyan-100">
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2 font-mono text-[16px] text-slate-400 tracking-widest select-none">
-                          <span>●</span><span>●</span><span>●</span><span>●</span><span>●</span><span>●</span>
-                        </div>
-                        <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">(Mã đang được mã hóa)</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => togglePinReveal('B-205')}
-                        className="w-full sm:w-auto px-3.5 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">visibility</span>
-                        <span>Xem mã PIN</span>
-                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-700 text-white font-bold">OTP</span>
-                      </button>
-                    </div>
-                  ) : (
-                    /* PIN Revealed View */
-                    <div className="flex flex-col gap-2.5 py-2.5 px-4 rounded-lg bg-white border border-cyan-200">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] font-mono text-cyan-800 font-semibold">Mã số PIN:</span>
-                          <div className="flex items-center gap-1 font-mono text-base font-bold text-cyan-900 tracking-wider">
-                            {(unitBBooking?.accessPin || '931102').split('').map((digit, idx) => (
-                              <span key={idx} className="px-2 py-1 rounded bg-cyan-50 border border-cyan-200 text-cyan-900 shadow-inner">
-                                {digit}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleCopy('B-205', unitBBooking?.accessPin || '931102')}
-                            className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {copiedPin === 'B-205' ? 'check' : 'content_copy'}
-                            </span>
-                            <span>{copiedPin === 'B-205' ? 'Đã sao chép' : 'Sao chép'}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => togglePinReveal('B-205')}
-                            className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">visibility_off</span>
-                            <span>Ẩn</span>
-                          </button>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] font-mono text-slate-500">
-                        <span className="flex items-center gap-1 text-emerald-700 font-medium">
-                          <span className="material-symbols-outlined text-[14px]">timer</span> Hiệu lực đếm ngược: <strong className="text-slate-900">{pinCountdown}s</strong>
-                        </span>
-                        <span className="text-cyan-700 text-[10px]">Áp dụng: Cổng Hub &amp; Cửa B-205</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Remote Unlock CTA */}
-                  <div className="flex items-center justify-between pt-1">
-                    <button
-                      type="button"
-                      onClick={() => handleRemoteUnlock('B-205', unitBBooking?.id)}
-                      disabled={unlockingUnit === 'B-205'}
-                      className={`w-full font-bold text-xs rounded-lg py-2.5 px-4 flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer ${
-                        unlockedSuccess === 'B-205'
-                          ? 'bg-emerald-600 text-white'
-                          : 'stitch-btn-primary'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-[18px]">
-                        {unlockedSuccess === 'B-205' ? 'lock_open' : 'key'}
-                      </span>
-                      <span>
-                        {unlockingUnit === 'B-205' ? 'Đang gửi lệnh mở IoT...' : 
-                         unlockedSuccess === 'B-205' ? 'CỬA ĐÃ MỞ (TỰ KHÓA SAU 30 GIÂY)' : 'Mở Khóa Từ Xa (Smart Lock)'}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Metrics */}
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                    <span className="text-[10px] text-slate-400 block uppercase font-medium">Diện tích &amp; Thể tích</span>
-                    <span className="font-unit-code text-xs font-bold text-slate-800">12.0 m² (36 m³)</span>
-                  </div>
-                  <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                    <span className="text-[10px] text-slate-400 block uppercase font-medium">Nhiệt độ / Độ ẩm</span>
-                    <span className="font-unit-code text-xs font-bold text-slate-800">21.8°C / 48% RH</span>
-                  </div>
-                  <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                    <span className="text-[10px] text-slate-400 block uppercase font-medium">Lần mở gần nhất</span>
-                    <span className="font-unit-code text-xs font-bold text-slate-800">Hôm qua, 16:20</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 mt-4 border-t border-slate-100 flex items-center gap-3">
-                <button
-                  onClick={() => setShareModalUnit('B-205')}
-                  className="flex-1 h-10 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <span className="material-symbols-outlined text-[16px]">share</span>
-                  <span>Cấp Quyền Cho Người Thân</span>
-                </button>
-                <button
-                  onClick={() => openRenewalModal(unitBBooking?.unitCode || 'B-205', '4.200.000', unitBBooking?.totalRentalFee ? Math.round(unitBBooking.totalRentalFee / (unitBBooking.rentalMonths || 1)) : 4200000)}
-                  className="flex-1 h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[16px]">autorenew</span>
-                  <span>Gia Hạn Hợp Đồng</span>
-                </button>
-              </div>
-            </div>
-
-          </div>
-        </div>
+          )}
+        </section>
       )}
 
-      {/* 4. TAB 2: TÌM & THUÊ THÊM KHO (EXPLORE & BOOK) */}
       {activeTab === 'explore' && (
         <div className="flex flex-col gap-6">
           {/* Quick Filter */}
