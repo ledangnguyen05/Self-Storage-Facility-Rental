@@ -19,6 +19,7 @@ import com.boxora.repository.FacilityPolicyRepository;
 import com.boxora.repository.StorageUnitRepository;
 import com.boxora.repository.UserRepository;
 import com.boxora.security.FacilityAccessGuard;
+import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
 import com.boxora.service.BookingService;
 import com.boxora.service.EncryptionService;
@@ -53,6 +54,7 @@ public class BookingServiceImpl implements BookingService {
     private final ActivityLogService activityLogService;
     private final FacilityAccessGuard facilityAccessGuard;
     private final EncryptionService encryptionService;
+    private final RequestContext requestContext;
 
     @Value("${app.booking.soft-lock-hours:24}")
     private long softLockHours;
@@ -108,9 +110,14 @@ public class BookingServiceImpl implements BookingService {
         User customer = null;
         if (request.getCustomerId() != null) {
             customer = userRepository.findById(request.getCustomerId()).orElse(null);
+        } else if (requestContext != null && requestContext.currentUserId() != null) {
+            customer = userRepository.findById(requestContext.currentUserId()).orElse(null);
         }
         if (customer == null) {
             customer = userRepository.findAll().stream().findFirst().orElse(null);
+        }
+        if (customer == null) {
+            throw new AppException(ErrorCode.USER_NOT_FOUND);
         }
 
         // 6. Tính toán đơn giá và tiền cọc
@@ -181,15 +188,28 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional(readOnly = true)
     public List<BookingResponse> getMyActiveBookings(UUID customerId) {
-        List<Booking> bookings = bookingRepository.findAll();
-        if (customerId != null) {
-            bookings = bookings.stream()
-                    .filter(b -> b.getCustomer() != null && customerId.equals(b.getCustomer().getId()))
-                    .collect(Collectors.toList());
+        UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
+        if (currentUserId != null && customerId != null && !currentUserId.equals(customerId)) {
+            String role = requestContext.currentUserRole();
+            if (!"ADMIN".equalsIgnoreCase(role) && !"FACILITY_MANAGER".equalsIgnoreCase(role) && !"STAFF".equalsIgnoreCase(role)) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        }
+        UUID targetCustomerId = customerId != null ? customerId : currentUserId;
+        List<Booking> bookings;
+        if (targetCustomerId != null) {
+            bookings = bookingRepository.findByCustomer_Id(targetCustomerId);
+        } else {
+            bookings = bookingRepository.findAll();
         }
         return bookings.stream()
                 .filter(b -> b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.ACTIVE)
-                .map(this::mapToResponse)
+                .map(b -> {
+                    BookingResponse resp = mapToResponse(b);
+                    resp.setAccessPin(null);
+                    resp.setQrAccessToken(null);
+                    return resp;
+                })
                 .collect(Collectors.toList());
     }
 
@@ -337,6 +357,13 @@ public class BookingServiceImpl implements BookingService {
         }
         if (booking.getAccessPin() == null || booking.getQrAccessToken() == null) {
             throw new AppException(ErrorCode.BOOKING_NOT_CHECKED_IN);
+        }
+        UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
+        if (currentUserId != null && booking.getCustomer() != null && !booking.getCustomer().getId().equals(currentUserId)) {
+            String role = requestContext.currentUserRole();
+            if (!"ADMIN".equalsIgnoreCase(role) && !"FACILITY_MANAGER".equalsIgnoreCase(role) && !"STAFF".equalsIgnoreCase(role)) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
         }
         return BookingAccessCredentialsResponse.builder()
                 .accessPin(booking.getAccessPin())
