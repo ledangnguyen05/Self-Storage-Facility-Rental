@@ -55,6 +55,21 @@ public enum ErrorCode {
     STORAGE_UNIT_IN_USE(709, "Cannot delete storage unit because it has active contracts or bookings", HttpStatus.CONFLICT),
     STORAGE_UNIT_CANNOT_MAINTAIN(710, "Cannot put storage unit into maintenance while it is occupied or reserved", HttpStatus.BAD_REQUEST),
     STORAGE_UNIT_NOT_AVAILABLE(711, "Storage unit is currently not available for booking", HttpStatus.CONFLICT),
+    UNIT_TYPE_NAME_EXISTED(712, "Unit type name already exists", HttpStatus.BAD_REQUEST),
+    UNIT_TYPE_IN_USE(713, "Cannot delete unit type because it is being used by existing storage units", HttpStatus.CONFLICT),
+    BOOKING_ALREADY_CANCELLED(714, "Booking is already cancelled", HttpStatus.BAD_REQUEST),
+    BOOKING_ALREADY_COMPLETED(715, "Completed booking cannot be cancelled", HttpStatus.BAD_REQUEST),
+    BOOKING_CANNOT_BE_CANCELLED(716, "Booking cannot be cancelled in its current state", HttpStatus.BAD_REQUEST),
+    BOOKING_START_DATE_PAST(717, "Start date cannot be in the past", HttpStatus.BAD_REQUEST),
+    BOOKING_ADVANCE_NOTICE_EXCEEDED(718, "Storage unit can only be booked up to 30 days in advance", HttpStatus.BAD_REQUEST),
+    STORAGE_UNIT_SOFT_LOCKED(719, "Storage unit is currently held in a 24-hour soft-lock reservation by another customer", HttpStatus.CONFLICT),
+    BOOKING_MINIMUM_DURATION_INVALID(720, "Rental duration must meet minimum rental months requirement", HttpStatus.BAD_REQUEST),
+    HANDOVER_PREREQUISITES_NOT_MET(721, "Không đủ 4 điều kiện bàn giao kho vật lý theo BR-RULE-005 (Cọc + Tiền thuê tháng đầu + Hợp đồng ký + Đối soát CCCD)", HttpStatus.BAD_REQUEST),
+    HANDOVER_UNIT_NOT_READY(722, "Ngăn kho không ở trạng thái sẵn sàng để bàn giao theo BR-RULE-006", HttpStatus.CONFLICT),
+    HANDOVER_ALREADY_ACTIVE(723, "Đơn đặt kho đã được check-in bàn giao trước đó", HttpStatus.BAD_REQUEST),
+    RETURN_INSPECTION_CHECKLIST_INCOMPLETE(724, "Chưa hoàn tất đầy đủ 5 tiêu chuẩn kiểm tra hiện trạng trả kho theo BR-RULE-013", HttpStatus.BAD_REQUEST),
+    BOOKING_NOT_ACTIVE_FOR_RETURN(725, "Đơn đặt kho phải ở trạng thái đang hoạt động (ACTIVE) mới được thực hiện trả kho", HttpStatus.BAD_REQUEST),
+    RETURN_PHOTO_EVIDENCE_REQUIRED(726, "Cần tối thiểu 2 ảnh chụp hiện trường để xác nhận nghiệm thu trả kho theo BR-RULE-013", HttpStatus.BAD_REQUEST),
 
     // ========================= PAYMENT (750 - 799) =========================
     PAYMENT_NOT_FOUND(750, "Payment transaction not found", HttpStatus.NOT_FOUND),
@@ -87,6 +102,9 @@ public enum ErrorCode {
 
     // ========================= SUPPORT_TICKET (1200 - 1299) =========================
     TICKET_NOT_FOUND(1200, "Support ticket not found or does not belong to user", HttpStatus.NOT_FOUND),
+    TICKET_IMAGE_UPLOAD_FAILED(1201, "Tải tệp tin ảnh bằng chứng thất bại", HttpStatus.INTERNAL_SERVER_ERROR),
+    TICKET_INVALID_IMAGE_FORMAT(1202, "Định dạng tệp không hợp lệ. Chỉ chấp nhận ảnh JPG, PNG, WEBP, GIF", HttpStatus.BAD_REQUEST),
+    TICKET_IMAGE_SIZE_EXCEEDED(1203, "Kích thước tệp ảnh vượt quá giới hạn cho phép (10MB)", HttpStatus.BAD_REQUEST),
 
     // ========================= ACTIVITY_LOG (1300 - 1399) =========================
     ACTIVITY_LOG_NOT_FOUND(1300, "Activity log entry not found", HttpStatus.NOT_FOUND),
@@ -111,25 +129,43 @@ public enum ErrorCode {
     CONTRACT_RENEWAL_NOT_FOUND(1506, "Contract renewal request not found", HttpStatus.NOT_FOUND),
     CONTRACT_RENEWAL_ALREADY_COMPLETED(1507, "Contract renewal has already been completed", HttpStatus.BAD_REQUEST),
     CONTRACT_RENEWAL_ALREADY_SIGNED(1508, "Contract renewal is already signed", HttpStatus.BAD_REQUEST),
-    PAYMENT_TARGET_REQUIRED(755, "Vui lòng cung cấp bookingId hoặc contractId hợp lệ để khởi tạo thanh toán", HttpStatus.BAD_REQUEST),
+    RENEWAL_CONTRACT_NOT_FOUND(1509, "Rental contract not found", HttpStatus.NOT_FOUND),
 
-    // ========================= SEALING (1600 - 1699) =========================
-    SEALING_RECORD_NOT_FOUND(1600, "Biên bản niêm phong không tồn tại", HttpStatus.NOT_FOUND),
-    UNIT_ALREADY_SEALED(1601, "Kho lưu trữ này hiện đang trong trạng thái niêm phong", HttpStatus.BAD_REQUEST),
-    UNIT_NOT_SEALED(1602, "Kho lưu trữ này không ở trạng thái niêm phong", HttpStatus.BAD_REQUEST),
-    SEALING_WITNESS_REQUIRED(1603, "Người làm chứng phải khác người thực hiện niêm phong", HttpStatus.BAD_REQUEST),
-    UNIT_OVERDUE_LOCKED(1604, "Kho đang bị niêm phong khóa cưỡng chế do quá hạn thanh toán. Vui lòng thanh toán công nợ", HttpStatus.FORBIDDEN),
+    // ========================= PRICE & PRICE HISTORY (BR-RULE-011) (1600 - 1699) =========================
+    PRICE_MUST_BE_GREATER_THAN_ZERO(1600, "Price must be greater than zero", HttpStatus.BAD_REQUEST),
+    PRICE_UNCHANGED(1601, "New price must be different from current price", HttpStatus.BAD_REQUEST),
+    PRICE_ADJUSTMENT_REASON_REQUIRED(1602, "Reason for price adjustment is mandatory under BR-RULE-011", HttpStatus.BAD_REQUEST),
+    PRICE_EFFECTIVE_DATE_INVALID(1603, "Effective date cannot be more than 1 day in the past", HttpStatus.BAD_REQUEST),
+    PRICE_HISTORY_NOT_FOUND(1604, "Storage unit price history not found", HttpStatus.NOT_FOUND),
 
-    // ========================= REFUND (1700 - 1799) =========================
-    REFUND_REQUEST_NOT_FOUND(1700, "Yêu cầu hoàn tiền không tồn tại", HttpStatus.NOT_FOUND),
-    REFUND_ALREADY_REVIEWED(1701, "Yêu cầu hoàn tiền đã được xem xét/phê duyệt trước đó", HttpStatus.BAD_REQUEST),
-    REFUND_ALREADY_PROCESSED(1702, "Yêu cầu hoàn tiền đã được xử lý chi trả hoàn tất", HttpStatus.BAD_REQUEST),
-    REFUND_NOT_APPROVED(1703, "Yêu cầu hoàn tiền phải được phê duyệt trước khi xử lý chi trả", HttpStatus.BAD_REQUEST),
-    INVALID_REFUND_AMOUNT(1704, "Số tiền hoàn không hợp lệ", HttpStatus.BAD_REQUEST),
-    REFUND_TARGET_REQUIRED(1705, "Vui lòng cung cấp bookingId hoặc contractId hợp lệ cho yêu cầu hoàn tiền", HttpStatus.BAD_REQUEST),
+    // ========================= STAFF_ASSIGNMENT (1700 - 1799) =========================
+    STAFF_ASSIGNMENT_NOT_FOUND(1700, "Staff assignment not found", HttpStatus.NOT_FOUND),
+    STAFF_USER_NOT_FOUND(1701, "Staff user not found", HttpStatus.NOT_FOUND),
+    USER_NOT_A_STAFF(1702, "The selected user is not a staff member", HttpStatus.BAD_REQUEST),
+    STAFF_ALREADY_ASSIGNED_SHIFT(1703, "Staff member is already assigned to this shift on the specified date", HttpStatus.CONFLICT),
+    STAFF_ASSIGNMENT_FACILITY_MISMATCH(1704, "Staff member does not belong to the selected facility", HttpStatus.BAD_REQUEST),
+    INVALID_ASSIGNMENT_DATE(1705, "Assignment date cannot be in the past", HttpStatus.BAD_REQUEST),
 
-    // ========================= NOTIFICATION (1800 - 1899) =========================
-    NOTIFICATION_NOT_FOUND(1800, "Bản ghi thông báo không tồn tại", HttpStatus.NOT_FOUND);
+    // ========================= SEALING & OVERDUE (BR-RULE-012) (1800 - 1899) =========================
+    SEALING_RECORD_NOT_FOUND(1800, "Sealing record not found", HttpStatus.NOT_FOUND),
+    SEALING_ALREADY_SEALED(1801, "Storage unit is already sealed", HttpStatus.BAD_REQUEST),
+    SEALING_ALREADY_UNSEALED(1802, "Storage unit is already unsealed", HttpStatus.BAD_REQUEST),
+    SEALING_WITNESS_REQUIRED(1803, "Witness is mandatory for sealing/unsealing under BR-RULE-012", HttpStatus.BAD_REQUEST),
+
+    // ========================= FEE_TYPE (1900 - 1949) =========================
+    FEE_TYPE_NOT_FOUND(1900, "Fee type not found", HttpStatus.NOT_FOUND),
+    FEE_TYPE_CODE_EXISTS(1901, "Fee type code already exists", HttpStatus.CONFLICT),
+    FEE_TYPE_AMOUNT_INVALID(1902, "Fee type default amount must be non-negative", HttpStatus.BAD_REQUEST),
+
+    // ========================= DISCOUNT (1950 - 1999) =========================
+    DISCOUNT_NOT_FOUND(1950, "Discount not found", HttpStatus.NOT_FOUND),
+    DISCOUNT_CODE_EXISTS(1951, "Discount code already exists", HttpStatus.CONFLICT),
+    DISCOUNT_EXPIRED(1952, "Discount code is expired or not yet active", HttpStatus.BAD_REQUEST),
+    DISCOUNT_USAGE_LIMIT_EXCEEDED(1953, "Discount code has reached its maximum usage limit", HttpStatus.BAD_REQUEST),
+    DISCOUNT_MIN_MONTHS_NOT_MET(1954, "Rental period does not meet minimum duration required for this discount", HttpStatus.BAD_REQUEST),
+    DISCOUNT_FACILITY_MISMATCH(1955, "Discount code is not applicable to this facility", HttpStatus.BAD_REQUEST),
+    DISCOUNT_VALUE_INVALID(1956, "Discount value is invalid", HttpStatus.BAD_REQUEST),
+    DISCOUNT_DATE_INVALID(1957, "End date cannot be earlier than start date", HttpStatus.BAD_REQUEST);
 
 
 

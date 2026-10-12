@@ -30,4 +30,14 @@ public class StorageUnit extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "unit_type_id", nullable = false)
     private UnitType unitType;
+
+    @Column(name = "price_per_month", precision = 12, scale = 2)
+    private java.math.BigDecimal pricePerMonth;
+
+    public java.math.BigDecimal getEffectiveBasePrice() {
+        if (pricePerMonth != null) {
+            return pricePerMonth;
+        }
+        return unitType != null ? unitType.getBasePricePerMonth() : null;
+    }
 }

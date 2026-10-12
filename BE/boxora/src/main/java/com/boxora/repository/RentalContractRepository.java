@@ -32,4 +32,24 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
     List<RentalContract> findByStatus(RentalContractStatus status);
 
     boolean existsByUnit_Id(UUID unitId);
+
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "unit", "unit.facility", "facility", "booking"})
+    @org.springframework.data.jpa.repository.Query("""
+            SELECT c FROM RentalContract c
+            WHERE c.status IN (com.boxora.enums.RentalContractStatus.ACTIVE, com.boxora.enums.RentalContractStatus.OVERDUE)
+              AND c.endDate < :currentDate
+            ORDER BY c.endDate ASC
+            """)
+    List<RentalContract> findActiveOrOverdueContractsBeforeDate(
+            @org.springframework.data.repository.query.Param("currentDate") java.time.LocalDate currentDate
+    );
+
+    @org.springframework.data.jpa.repository.Query("""
+            SELECT COUNT(c) FROM RentalContract c
+            WHERE c.status IN (com.boxora.enums.RentalContractStatus.ACTIVE, com.boxora.enums.RentalContractStatus.OVERDUE)
+              AND c.endDate < :currentDate
+            """)
+    long countActiveOrOverdueContractsBeforeDate(
+            @org.springframework.data.repository.query.Param("currentDate") java.time.LocalDate currentDate
+    );
 }
