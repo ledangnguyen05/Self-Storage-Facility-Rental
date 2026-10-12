@@ -72,6 +72,21 @@ public class AuthController {
                 .body(ApiResponse.success("Logged in successfully", response));
     }
 
+    @PostMapping("/google")
+    public ResponseEntity<ApiResponse<AuthResponse>> googleLogin(
+            @Valid @RequestBody GoogleLoginRequest request
+    ) {
+        AuthResponse response = authService.googleLogin(request);
+        String refreshTokenValue = response.getRefreshToken();
+
+        ResponseCookie cookie = createRefreshTokenCookie(refreshTokenValue, REFRESH_TOKEN_MAX_AGE_SECONDS);
+        response.setRefreshToken(null);
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .body(ApiResponse.success("Logged in with Google successfully", response));
+    }
+
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<Void>> logout(
             @CookieValue(name = REFRESH_TOKEN_COOKIE_NAME, required = false) String cookieRefreshToken,

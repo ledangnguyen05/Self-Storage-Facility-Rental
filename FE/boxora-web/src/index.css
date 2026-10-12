@@ -1,12 +1,22 @@
 @import "tailwindcss";
 
 :root {
+  /* Boxora Smart Storage Design System Variables */
+  --font-heading: 'Helvetica Now Display Bold', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --color-text: #0f172a;
+  --color-accent: #0866f5;
+  --color-accent-hover: #0752c9;
+  --color-login-bg: #f1f5f9;
+
   /* Stitch Design System - Boxora Smart Storage Tokens */
-  --brand-teal: #0891b2;
-  --brand-teal-hover: #0e7490;
+  --brand-teal: #0866f5;
+  --brand-teal-hover: #0752c9;
   --brand-navy: #0f172a;
-  --brand-cyan: #06b6d4;
-  --brand-orange: #ea580c;
+  --brand-cyan: #00bfd8;
+  --brand-blue: #0866f5;
+  --brand-lime: #7be33f;
+  --brand-orange: #7be33f;
   --surface-canvas: #f8fafc;
   --surface-card: #ffffff;
   --surface-subtle: #f1f5f9;
@@ -26,10 +36,10 @@
   --inverse-surface: #0f172a;
   --inverse-on-surface: #f8fafc;
   
-  --primary: #0891b2;
+  --primary: #0866f5;
   --on-primary: #ffffff;
-  --primary-container: #ecfeff;
-  --on-primary-container: #0e7490;
+  --primary-container: #eff6ff;
+  --on-primary-container: #174bb8;
   
   --secondary: #0f172a;
   --on-secondary: #ffffff;
@@ -358,6 +368,74 @@ body {
 
 .animate-radar-ripple {
   animation: radar-ripple 4s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+}
+
+@keyframes contact-modal-backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes contact-modal-panel-enter {
+  from { opacity: 0; transform: translateY(12px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.contact-modal-backdrop {
+  animation: contact-modal-backdrop-enter 180ms ease-out both;
+}
+
+.contact-modal-panel {
+  animation: contact-modal-panel-enter 240ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+@keyframes auth-background-drift {
+  from { transform: scale(1.015) translate3d(-0.35%, -0.25%, 0); }
+  to { transform: scale(1.075) translate3d(0.45%, 0.35%, 0); }
+}
+
+@keyframes auth-glow-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: .56; }
+  50% { transform: translate3d(4%, -3%, 0) scale(1.12); opacity: .9; }
+}
+
+@keyframes auth-content-enter {
+  from { opacity: 0; transform: translate3d(0, 14px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+.auth-background-image {
+  animation: auth-background-drift 32s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+.auth-background-glow {
+  filter: blur(70px);
+  animation: auth-glow-drift 18s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.auth-background-glow-blue {
+  background: radial-gradient(circle, rgba(8, 102, 245, .19), rgba(0, 191, 216, .12) 42%, transparent 72%);
+}
+
+.auth-background-glow-lime {
+  background: radial-gradient(circle, rgba(123, 227, 63, .2), rgba(0, 191, 216, .12) 44%, transparent 72%);
+  animation-delay: -9s;
+}
+
+.auth-content-enter {
+  animation: auth-content-enter 650ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contact-modal-backdrop,
+  .contact-modal-panel,
+  .auth-background-image,
+  .auth-background-glow,
+  .auth-content-enter {
+    animation: none;
+    will-change: auto;
+  }
 }
 
 
