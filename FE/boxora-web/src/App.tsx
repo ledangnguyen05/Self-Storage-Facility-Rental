@@ -9,6 +9,7 @@ import { LoginPage } from './pages/public/LoginPage'
 import { RegisterPage } from './pages/public/RegisterPage'
 import { HomePage } from './pages/public/HomePage'
 import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
+import { PaymentResultPage } from './pages/public/PaymentResultPage'
 
 // StorageOps Pro Portals (Matching Prototype Stitch Files)
 import { CustomerDashboard } from './pages/customer/CustomerDashboard'
@@ -69,6 +70,7 @@ function MainContent() {
           {/* Dedicated Storage Units Explorer & Booking Dashboard */}
           <Route path="/units" element={<UnitsExplorerPage />} />
           <Route path="/explore-units" element={<UnitsExplorerPage />} />
+          <Route path="/payment-result" element={<PaymentResultPage />} />
 
           {/* Core StorageOps Pro Portal with RBAC Route Protection */}
           <Route

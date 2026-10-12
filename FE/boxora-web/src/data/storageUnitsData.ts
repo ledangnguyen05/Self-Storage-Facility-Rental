@@ -20,6 +20,7 @@ export interface CustomerLocationOption {
 
 export interface StorageUnitType {
   id: string
+  backendId?: string
   name: string
   category: 'mini' | 'personal' | 'business' | 'special'
   size: string

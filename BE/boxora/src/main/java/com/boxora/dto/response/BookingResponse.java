@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -31,6 +32,9 @@ public class BookingResponse {
     private Integer rentalMonths;
     private BigDecimal totalRentalFee;
     private BigDecimal depositPaid;
+    private BigDecimal depositAmount;
+    private BigDecimal initialPaymentAmount;
+    private Instant paymentExpiresAt;
     private BookingStatus status;
     private String accessPin;
     private String qrAccessToken;

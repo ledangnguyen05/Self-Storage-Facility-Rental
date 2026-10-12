@@ -1,59 +1,32 @@
 import { api } from '../lib/axios'
+import { RentalContract } from '../types'
 
-export interface RentalContract {
-  id: string
-  contractCode: string
-  customerId: string
-  customerName?: string
-  customerEmail?: string
-  customerPhone?: string
-  unitId: string
-  unitCode: string
-  facilityId: string
-  facilityName: string
-  bookingId?: string
-  startDate: string
-  endDate: string
-  monthlyFee: number
-  depositHeld: number
-  status: 'DRAFT' | 'PENDING_SIGNATURE' | 'ACTIVE' | 'EXPIRED' | 'TERMINATED'
-  docusealSubmissionId?: number
-  docusealSubmitterSlug?: string
+export interface ContractOtpResponse {
+  expiresInSeconds: number
+  resendInSeconds: number
   signingUrl?: string
-  signedDocumentUrl?: string
-  signedAt?: string
-  createdAt?: string
-  updatedAt?: string
-}
-
-export interface PageResponse<T> {
-  content: T[]
-  page: number
-  size: number
-  totalElements: number
-  totalPages: number
-  first: boolean
-  last: boolean
 }
 
 export const contractService = {
-  async getMyContracts(params?: { facilityId?: string; status?: string; page?: number; size?: number }) {
-    const response = await api.get('/api/v1/contracts', { params })
-    return response.data?.data as PageResponse<RentalContract>
+  async getMyContracts(customerId: string) {
+    const response = await api.get('/api/v1/contracts', {
+      params: { customerId, page: 0, size: 100, sortBy: 'createdAt', sortDir: 'desc' },
+    })
+    return response.data?.data?.content as RentalContract[]
   },
 
-  async getContractById(id: string) {
-    const response = await api.get(`/api/v1/contracts/${id}`)
-    return response.data?.data as RentalContract
+  async sendSigningOtp(contractId: string) {
+    const response = await api.post(`/api/v1/contracts/${contractId}/otp/send`)
+    return response.data?.data as ContractOtpResponse
   },
 
-  async requestRenewal(contractId: string, cycleMonths: number) {
-    const response = await api.post(`/api/v1/contracts/${contractId}/renew`, { cycleMonths })
-    return response.data?.data
+  async resendSigningOtp(contractId: string) {
+    const response = await api.post(`/api/v1/contracts/${contractId}/otp/resend`)
+    return response.data?.data as ContractOtpResponse
   },
 
-  async getSigningUrl(contractId: string) {
-    const response = await api.get(`/api/v1/contracts/${contractId}/signing-url`)
-    return response.data?.data?.signingUrl as string
-  }
+  async verifySigningOtp(contractId: string, otp: string) {
+    const response = await api.post(`/api/v1/contracts/${contractId}/otp/verify`, { otp })
+    return response.data?.data as ContractOtpResponse
+  },
 }
