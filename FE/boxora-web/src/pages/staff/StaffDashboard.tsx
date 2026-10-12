@@ -789,6 +789,77 @@ export const StaffDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* Evidence Image Preview Modal */}
+      {activeEvidenceModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[20px]">image</span>
+                </span>
+                <div>
+                  <h3 className="font-headline text-base font-bold text-slate-900">
+                    Bằng Chứng Hiện Trường Sự Cố {activeEvidenceModal.ticketId}
+                  </h3>
+                  <p className="text-xs text-slate-500 line-clamp-1">
+                    {activeEvidenceModal.title}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveEvidenceModal(null)}
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto p-1">
+                {activeEvidenceModal.images.map((imgUrl, idx) => (
+                  <div key={idx} className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 group shadow-sm">
+                    <img
+                      src={imgUrl}
+                      alt={`Bằng chứng ${idx + 1}`}
+                      className="w-full h-56 object-cover"
+                    />
+                    <div className="absolute bottom-2 right-2 flex gap-1">
+                      <a
+                        href={imgUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2 py-1 rounded-md bg-slate-900/80 hover:bg-slate-900 text-white text-[11px] font-bold flex items-center gap-1 backdrop-blur-sm transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                        Xem ảnh gốc
+                      </a>
+                    </div>
+                    <span className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/60 text-white font-mono text-[10px]">
+                      Ảnh #{idx + 1}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                <span className="text-xs text-slate-500">
+                  Tổng cộng: <strong className="text-slate-800">{activeEvidenceModal.images.length}</strong> hình ảnh bằng chứng
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveEvidenceModal(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors"
+                >
+                  Đóng cửa sổ
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Real-time HTML5-QRCode Camera Scanner Modal & Check-in API */}
       <QrCameraCheckInModal
         isOpen={isQrScannerOpen}

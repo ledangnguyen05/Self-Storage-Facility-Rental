@@ -32,4 +32,8 @@ public class RegisterRequest {
         message = "Phone must be a valid Vietnamese phone number"
     )
     private String phone;
+
+    private String captchaId;
+
+    private String captchaCode;
 }
