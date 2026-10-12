@@ -13,4 +13,6 @@ public interface BookingService {
     BookingResponse renewBooking(UUID id, int extraMonths);
     BookingResponse remoteUnlock(UUID id);
     BookingResponse getById(UUID id);
+    com.boxora.dto.response.BookingPinResponse getBookingPin(UUID id, String currentUserEmail);
+    com.boxora.dto.response.BookingPinResponse updateBookingPin(UUID id, com.boxora.dto.request.UpdatePinRequest request, String currentUserEmail);
 }

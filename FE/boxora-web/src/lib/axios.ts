@@ -7,6 +7,7 @@ export const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,
 })
 
 // Request Interceptor: Attach JWT Token
@@ -29,23 +30,23 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
       const refreshToken = localStorage.getItem('boxora_refresh_token')
-      if (refreshToken) {
-        try {
-          const res = await axios.post(`${API_BASE_URL}/api/v1/auth/refresh-token`, {
-            refreshToken,
-          })
-          const newAccessToken = res.data?.data?.accessToken
-          if (newAccessToken) {
-            localStorage.setItem('boxora_access_token', newAccessToken)
-            originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
-            return api(originalRequest)
-          }
-        } catch {
-          // Token expired or invalid
-          localStorage.removeItem('boxora_access_token')
-          localStorage.removeItem('boxora_refresh_token')
-          localStorage.removeItem('boxora_user')
+      try {
+        // Send refresh token via HttpOnly Cookie (or body fallback if present)
+        const payload = refreshToken ? { refreshToken } : {}
+        const res = await axios.post(`${API_BASE_URL}/api/v1/auth/refresh-token`, payload, {
+          withCredentials: true,
+        })
+        const newAccessToken = res.data?.data?.accessToken
+        if (newAccessToken) {
+          localStorage.setItem('boxora_access_token', newAccessToken)
+          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
+          return api(originalRequest)
         }
+      } catch {
+        // Token expired or invalid
+        localStorage.removeItem('boxora_access_token')
+        localStorage.removeItem('boxora_refresh_token')
+        localStorage.removeItem('boxora_user')
       }
     }
     return Promise.reject(error)

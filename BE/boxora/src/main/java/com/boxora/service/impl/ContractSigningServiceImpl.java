@@ -13,7 +13,9 @@ import com.boxora.entity.RentalContract;
 import com.boxora.entity.StorageUnit;
 import com.boxora.entity.User;
 import com.boxora.enums.ActivityAction;
+import com.boxora.enums.BookingStatus;
 import com.boxora.enums.RentalContractStatus;
+import com.boxora.enums.UnitStatus;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.RentalContractMapper;
@@ -27,6 +29,8 @@ import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
 import com.boxora.service.ContractRenewalService;
 import com.boxora.service.ContractSigningService;
+import com.boxora.service.EmailService;
+import com.boxora.service.EncryptionService;
 import com.boxora.util.VNPayUtil;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
@@ -64,6 +68,8 @@ public class ContractSigningServiceImpl implements ContractSigningService {
     private final BookingRepository bookingRepository;
     private final RentalContractMapper rentalContractMapper;
     private final ActivityLogService activityLogService;
+    private final EmailService emailService;
+    private final EncryptionService encryptionService;
     private final FacilityAccessGuard facilityAccessGuard;
     private final RequestContext requestContext;
 
@@ -374,6 +380,41 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         contract.setSignedAt(LocalDateTime.now());
         contract.setStatus(RentalContractStatus.ACTIVE);
         rentalContractRepository.save(contract);
+
+        // 1. Transition associated booking to ACTIVE
+        if (contract.getBooking() != null) {
+            Booking booking = contract.getBooking();
+            booking.setStatus(BookingStatus.ACTIVE);
+            bookingRepository.save(booking);
+        }
+
+        // 2. Transition storage unit to OCCUPIED
+        if (contract.getUnit() != null) {
+            StorageUnit unit = contract.getUnit();
+            unit.setStatus(UnitStatus.OCCUPIED);
+            storageUnitRepository.save(unit);
+        }
+
+        // 3. Decrypt PIN and dispatch confirmation email
+        try {
+            String accessPin = "N/A";
+            if (contract.getBooking() != null && contract.getBooking().getAccessPin() != null) {
+                accessPin = encryptionService.decrypt(contract.getBooking().getAccessPin());
+            }
+            User customer = contract.getCustomer();
+            if (customer != null && customer.getEmail() != null) {
+                emailService.sendContractSignedConfirmationEmail(
+                        customer.getEmail(),
+                        customer.getFullName() != null ? customer.getFullName() : customer.getUsername(),
+                        contract.getContractCode(),
+                        contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A",
+                        accessPin,
+                        contract.getSignedDocumentUrl()
+                );
+            }
+        } catch (Exception e) {
+            log.warn("Failed to send signed contract confirmation email: {}", e.getMessage());
+        }
 
         activityLogService.recordSystem(
                 contract.getFacility().getId(),
