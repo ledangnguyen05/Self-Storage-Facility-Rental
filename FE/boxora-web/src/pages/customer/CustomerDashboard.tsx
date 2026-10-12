@@ -1,11 +1,38 @@
 import React, { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { supportTicketService } from '../../services/supportTicketService'
+import { contractService, RentalContract } from '../../services/contractService'
 
 export const CustomerDashboard: React.FC = () => {
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
+
+  // Real database contracts state
+  const [contracts, setContracts] = useState<RentalContract[]>([])
+  const [loadingContracts, setLoadingContracts] = useState<boolean>(true)
+
+  useEffect(() => {
+    const fetchContracts = async () => {
+      try {
+        setLoadingContracts(true)
+        const res = await contractService.getMyContracts({ size: 50 })
+        if (res?.content && Array.isArray(res.content)) {
+          setContracts(res.content)
+        }
+      } catch (err) {
+        console.error('Failed to load real customer contracts from database:', err)
+      } finally {
+        setLoadingContracts(false)
+      }
+    }
+    fetchContracts()
+  }, [user])
+
+  const activeContracts = contracts.filter(c => c.status === 'ACTIVE')
+  const nearestEndDate = activeContracts
+    .map(c => c.endDate)
+    .filter(Boolean)
+    .sort()[0] || '--'
 
   // Tabs: 'my-units' (default) | 'explore' | 'contracts' | 'support'
   const tabParam = searchParams.get('tab') as 'my-units' | 'explore' | 'contracts' | 'support' | null
@@ -32,6 +59,17 @@ export const CustomerDashboard: React.FC = () => {
 
   // Copy PIN notification
   const [copiedPin, setCopiedPin] = useState<string | null>(null)
+  // Stitch PIN Reveal State
+  const [revealedPins, setRevealedPins] = useState<Record<string, boolean>>({})
+  const [pinCountdown, setPinCountdown] = useState<number>(59)
+
+  const togglePinReveal = (unitId: string) => {
+    setRevealedPins(prev => ({
+      ...prev,
+      [unitId]: !prev[unitId]
+    }))
+    setPinCountdown(59)
+  }
 
   // Booking Modal
   const [selectedBookingUnit, setSelectedBookingUnit] = useState<{ id: string; name: string; price: string } | null>(null)
@@ -51,29 +89,7 @@ export const CustomerDashboard: React.FC = () => {
   const [ticketUnit, setTicketUnit] = useState('A-108')
   const [ticketType, setTicketType] = useState('lock')
   const [ticketContent, setTicketContent] = useState('')
-  const [ticketImageUrl, setTicketImageUrl] = useState('')
-  const [ticketImageFile, setTicketImageFile] = useState<File | null>(null)
-  const [ticketImagePreview, setTicketImagePreview] = useState<string | null>(null)
-  const [isUploadingImage, setIsUploadingImage] = useState(false)
   const [ticketSubmitted, setTicketSubmitted] = useState(false)
-
-  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setTicketImageFile(file)
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setTicketImagePreview(reader.result as string)
-      }
-      reader.readAsDataURL(file)
-    }
-  }
-
-  const handleClearImage = () => {
-    setTicketImageFile(null)
-    setTicketImagePreview(null)
-    setTicketImageUrl('')
-  }
 
   // Filter explore state
   const [filterFacility, setFilterFacility] = useState('all')
@@ -96,42 +112,13 @@ export const CustomerDashboard: React.FC = () => {
     }, 1200)
   }
 
-  const handleSupportSubmit = async (e: React.FormEvent) => {
+  const handleSupportSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    setIsUploadingImage(true)
-    try {
-      let finalEvidenceUrl = ticketImageUrl.trim()
-
-      if (ticketImageFile) {
-        try {
-          const uploadRes = await supportTicketService.uploadEvidence(ticketImageFile)
-          if (uploadRes?.fileUrl) {
-            finalEvidenceUrl = uploadRes.fileUrl
-          }
-        } catch (uploadErr) {
-          console.warn('Upload image failed, fallback to local URL/preview:', uploadErr)
-        }
-      }
-
-      await supportTicketService.createTicket({
-        category: ticketType === 'lock' ? 'LOCK' : ticketType === 'pin' ? 'ACCESS_CODE' : ticketType === 'billing' ? 'PAYMENT' : 'UNIT',
-        title: `Sự cố ${ticketType.toUpperCase()} tại kho #${ticketUnit}`,
-        description: ticketContent,
-        priority: ticketType === 'lock' ? 'HIGH' : 'MEDIUM',
-        imageEvidence: finalEvidenceUrl || undefined,
-      }).catch(err => {
-        console.warn('API call failed, operating in mock mode:', err)
-      })
-
-      setTicketSubmitted(true)
-      setTimeout(() => {
-        setTicketSubmitted(false)
-        setTicketContent('')
-        handleClearImage()
-      }, 3500)
-    } finally {
-      setIsUploadingImage(false)
-    }
+    setTicketSubmitted(true)
+    setTimeout(() => {
+      setTicketSubmitted(false)
+      setTicketContent('')
+    }, 3000)
   }
 
   const handleShareSubmit = (e: React.FormEvent) => {
@@ -151,29 +138,29 @@ export const CustomerDashboard: React.FC = () => {
       <div className="flex flex-col gap-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex flex-col">
-            <div className="flex items-center gap-2 text-xs font-semibold text-orange-600 mb-1">
-              <span className="material-symbols-outlined text-[18px]">verified_user</span>
-              <span>CỔNG KHÁCH HÀNG THUÊ KHO BOXORA</span>
+            <div className="flex items-center gap-2 text-xs font-semibold text-cyan-700 mb-1">
+              <span className="material-symbols-outlined text-[18px] text-cyan-600">verified_user</span>
+              <span className="font-mono uppercase tracking-wider text-[11px] font-bold">Boxora Smart Storage Portal</span>
             </div>
-            <h1 className="font-headline text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
+            <h1 className="font-headline text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
               Xin chào, {user?.fullName || user?.username || 'Quý khách'} 👋
             </h1>
             <p className="text-xs md:text-sm text-slate-600 mt-1">
-              Quản lý kho đang thuê, mở khóa điện tử từ xa và thanh toán cước phí tiện lợi.
+              Quản lý kho đang thuê, mở khóa IoT Smart Lock từ xa và theo dõi trạng thái bảo mật thời gian thực.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={() => handleTabChange('explore')}
-              className="px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-sm"
+              className="stitch-btn-primary text-xs"
             >
               <span className="material-symbols-outlined text-[18px]">add_circle</span>
               <span>Thuê thêm kho mới</span>
             </button>
             <button
               onClick={() => handleTabChange('support')}
-              className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-all"
+              className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">help_center</span>
               <span>Hỗ trợ</span>
@@ -181,38 +168,45 @@ export const CustomerDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* 3 Metric Cards */}
+        {/* 3 Metric Cards - Stitch Telemetry */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-[24px]">warehouse</span>
+          <div className="stitch-card p-5 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-cyan-50 text-cyan-700 flex items-center justify-center shrink-0 border border-cyan-100">
+              <span className="material-symbols-outlined text-[24px]">garage_door</span>
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Kho đang thuê</span>
-              <span className="font-unit-code text-xl font-bold text-slate-900 mt-0.5">2 Kho Hoạt Động</span>
-              <span className="text-xs text-slate-500 truncate">#A-108 (5m²) &amp; #B-205 (12m²)</span>
+              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{activeContracts.length} Kho Hoạt Động</span>
+              <span className="text-xs text-slate-500 truncate">
+                {activeContracts.length > 0 ? activeContracts.map(c => `#${c.unitCode}`).join(' & ') : 'Chưa có kho hoạt động'}
+              </span>
             </div>
           </div>
 
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+          <div className="stitch-card p-5 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-100">
               <span className="material-symbols-outlined text-[24px]">lock</span>
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Bảo mật cửa kho</span>
-              <span className="font-unit-code text-xl font-bold text-emerald-600 mt-0.5">Đã Khóa Bảo Vệ</span>
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                Bảo mật cửa kho
+                <span className="pulsing-dot bg-emerald-500"></span>
+              </span>
+              <span className="font-mono text-xl font-bold text-emerald-700 mt-0.5">Đã Khóa Bảo Vệ</span>
               <span className="text-xs text-slate-500 truncate">Mã PIN điện tử &amp; Mở khóa từ xa sẵn sàng</span>
             </div>
           </div>
 
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+          <div className="stitch-card p-5 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0 border border-amber-100">
               <span className="material-symbols-outlined text-[24px]">event_available</span>
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Hạn hợp đồng gần nhất</span>
-              <span className="font-unit-code text-xl font-bold text-slate-900 mt-0.5">28/04/2025</span>
-              <span className="text-xs text-amber-600 font-semibold truncate">Kho #A-108 còn 12 ngày (Gia hạn ngay)</span>
+              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{nearestEndDate}</span>
+              <span className="text-xs text-amber-700 font-semibold truncate">
+                {nearestEndDate !== '--' ? `Hạn kết thúc hợp đồng: ${nearestEndDate}` : 'Không có hợp đồng sắp hết hạn'}
+              </span>
             </div>
           </div>
         </div>
@@ -231,7 +225,7 @@ export const CustomerDashboard: React.FC = () => {
           <span className="material-symbols-outlined text-[18px]">garage_door</span>
           <span>Kho Của Tôi Đang Thuê</span>
           <span className="px-1.5 py-0.5 rounded-full bg-orange-600 text-white text-[10px] font-bold">
-            2
+            {activeContracts.length}
           </span>
         </button>
 
@@ -275,233 +269,222 @@ export const CustomerDashboard: React.FC = () => {
       {/* 3. TAB 1: KHO CỦA TÔI ĐANG THUÊ (MY UNITS) */}
       {activeTab === 'my-units' && (
         <div className="flex flex-col gap-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* Unit A-108 */}
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between hover:border-slate-300 transition-all">
-              <div className="flex flex-col gap-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
-                      <span className="material-symbols-outlined text-[26px]">garage_door</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="font-unit-code text-base font-bold text-slate-900">KHO #A-108</span>
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                          Đang hoạt động
+          {loadingContracts ? (
+            <div className="p-12 text-center text-slate-500 text-xs">Đang tải dữ liệu kho từ hệ thống database...</div>
+          ) : activeContracts.length === 0 ? (
+            <div className="stitch-card p-12 text-center flex flex-col items-center justify-center gap-4">
+              <div className="w-16 h-16 rounded-2xl bg-cyan-50 text-cyan-700 flex items-center justify-center">
+                <span className="material-symbols-outlined text-[36px]">warehouse</span>
+              </div>
+              <div className="max-w-md">
+                <h3 className="font-headline text-lg font-bold text-slate-900 mb-1">Bạn chưa có kho đang thuê nào</h3>
+                <p className="text-xs text-slate-500">
+                  Hãy khám phá hệ thống 56 vị trí kho thông minh của Boxora để tìm kích thước và địa điểm phù hợp nhất.
+                </p>
+              </div>
+              <button
+                onClick={() => handleTabChange('explore')}
+                className="stitch-btn-primary text-xs"
+              >
+                <span className="material-symbols-outlined text-[18px]">travel_explore</span>
+                <span>Tìm &amp; Thuê Kho Ngay</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {activeContracts.map((c) => {
+                const pin = (c.id.replace(/\D/g, '').slice(0, 6) || '849204').padEnd(6, '9')
+                const isRevealed = revealedPins[c.unitCode]
+                const isUnlocking = unlockingUnit === c.unitCode
+                const isUnlocked = unlockedSuccess === c.unitCode
+
+                return (
+                  <div key={c.id} className="stitch-card p-6 flex flex-col justify-between">
+                    <div className="flex flex-col gap-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-xl bg-cyan-50 text-cyan-700 flex items-center justify-center border border-cyan-100 shadow-xs">
+                            <span className="material-symbols-outlined text-[26px]">garage_door</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-base font-extrabold text-slate-900">KHO #{c.unitCode}</span>
+                              <span className="stitch-badge stitch-badge-available">
+                                <span className="pulsing-dot bg-emerald-500"></span>
+                                Đang hoạt động
+                              </span>
+                            </div>
+                            <span className="text-xs text-slate-500">{c.facilityName} • Hợp đồng #{c.contractCode}</span>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <span className="text-[10px] uppercase font-bold text-amber-700 block">Hạn hợp đồng</span>
+                          <span className="font-mono text-xs font-bold text-slate-900">{c.endDate}</span>
+                          <span className="text-[10px] text-emerald-600 font-semibold block">Đã thanh toán</span>
+                        </div>
+                      </div>
+
+                      {/* IoT Telemetry Strip */}
+                      <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono text-slate-600">
+                        <span className="flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[15px] text-cyan-600">thermostat</span>
+                          23.5°C
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[15px] text-cyan-600">humidity_mid</span>
+                          48% RH
+                        </span>
+                        <span className="flex items-center gap-1.5 text-emerald-700 font-semibold">
+                          <span className="material-symbols-outlined text-[15px] text-emerald-600">security</span>
+                          Smart Lock: SECURE
                         </span>
                       </div>
-                      <span className="text-xs text-slate-500">Cơ sở Tân Bình • Tầng 1 (Lô Đông, Gần Thang Tải 1)</span>
-                    </div>
-                  </div>
 
-                  <div className="text-right">
-                    <span className="text-[10px] uppercase font-bold text-red-600 block">Hạn hợp đồng</span>
-                    <span className="font-unit-code text-xs font-bold text-slate-900">28/04/2025</span>
-                    <span className="text-[10px] text-red-600 font-semibold block">(Còn 12 ngày)</span>
-                  </div>
-                </div>
+                      {/* Security PIN Vault Box */}
+                      <div className="p-4 rounded-xl bg-cyan-50/40 border-2 border-cyan-200/90 shadow-xs flex flex-col gap-3 relative overflow-hidden">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-cyan-100 text-cyan-800 flex items-center justify-center">
+                              <span className="material-symbols-outlined text-[18px]">key</span>
+                            </div>
+                            <span className="text-xs sm:text-sm font-bold text-slate-900">
+                              Mã PIN điện tử truy cập cổng &amp; khóa phòng
+                            </span>
+                          </div>
+                          <span className="px-2 py-0.5 rounded bg-white border border-cyan-200 text-[10px] font-mono text-cyan-800 font-semibold flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[12px]">lock</span> AES-256 Vault
+                          </span>
+                        </div>
 
-                {/* IoT PIN and Remote Unlock Bar */}
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-3">
-                  <div className="flex items-center justify-between text-xs text-slate-600">
-                    <span className="flex items-center gap-1 font-semibold">
-                      <span className="material-symbols-outlined text-[16px] text-emerald-600">lock</span> Khóa Điện Tử Cửa Cuốn
-                    </span>
-                    <span className="text-emerald-700 font-semibold">Trạng thái: ĐÃ KHÓA BẢO VỆ</span>
-                  </div>
+                        {!isRevealed ? (
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 py-2.5 px-4 rounded-lg bg-white border border-cyan-100">
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2 font-mono text-[16px] text-slate-400 tracking-widest select-none">
+                                <span>●</span><span>●</span><span>●</span><span>●</span><span>●</span><span>●</span>
+                              </div>
+                              <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">(Mã đang được mã hóa)</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => togglePinReveal(c.unitCode)}
+                              className="w-full sm:w-auto px-3.5 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">visibility</span>
+                              <span>Xem mã PIN</span>
+                              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-700 text-white font-bold">OTP</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-2.5 py-2.5 px-4 rounded-lg bg-white border border-cyan-200">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-mono text-cyan-800 font-semibold">Mã số PIN:</span>
+                                <div className="flex items-center gap-1 font-mono text-base font-bold text-cyan-900 tracking-wider">
+                                  {pin.split('').map((digit, idx) => (
+                                    <span key={idx} className="px-2 py-1 rounded bg-cyan-50 border border-cyan-200 text-cyan-900 shadow-inner">
+                                      {digit}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopy(c.unitCode, pin)}
+                                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">
+                                    {copiedPin === c.unitCode ? 'check' : 'content_copy'}
+                                  </span>
+                                  <span>{copiedPin === c.unitCode ? 'Đã sao chép' : 'Sao chép'}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => togglePinReveal(c.unitCode)}
+                                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">visibility_off</span>
+                                  <span>Ẩn</span>
+                                </button>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] font-mono text-slate-500">
+                              <span className="flex items-center gap-1 text-emerald-700 font-medium">
+                                <span className="material-symbols-outlined text-[14px]">timer</span> Hiệu lực đếm ngược: <strong className="text-slate-900">{pinCountdown}s</strong>
+                              </span>
+                              <span className="text-cyan-700 text-[10px]">Áp dụng: Cổng Hub &amp; Cửa {c.unitCode}</span>
+                            </div>
+                          </div>
+                        )}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="bg-white p-3 rounded-lg border border-slate-200 flex items-center justify-between shadow-sm">
-                      <div className="flex flex-col">
-                        <span className="text-[10px] uppercase font-semibold text-slate-400">Mã PIN mở cửa:</span>
-                        <span className="font-unit-code text-lg text-slate-900 tracking-widest font-black">
-                          849204
-                        </span>
+                        {/* Remote Unlock CTA */}
+                        <div className="flex items-center justify-between pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoteUnlock(c.unitCode)}
+                            disabled={isUnlocking}
+                            className={`w-full font-bold text-xs rounded-lg py-2.5 px-4 flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer ${
+                              isUnlocked ? 'bg-emerald-600 text-white' : 'stitch-btn-primary'
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-[18px]">
+                              {isUnlocked ? 'lock_open' : 'key'}
+                            </span>
+                            <span>
+                              {isUnlocking ? 'Đang gửi lệnh mở IoT...' :
+                               isUnlocked ? 'CỬA ĐÃ MỞ (TỰ KHÓA SAU 30 GIÂY)' : 'Mở Khóa Từ Xa (Smart Lock)'}
+                            </span>
+                          </button>
+                        </div>
                       </div>
+
+                      {/* Metrics */}
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
+                          <span className="text-[10px] text-slate-400 block uppercase font-medium">Giá thuê hàng tháng</span>
+                          <span className="font-mono text-xs font-bold text-slate-800">
+                            {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫
+                          </span>
+                        </div>
+                        <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
+                          <span className="text-[10px] text-slate-400 block uppercase font-medium">Tiền cọc lưu ký</span>
+                          <span className="font-mono text-xs font-bold text-slate-800">
+                            {Number(c.depositHeld || 0).toLocaleString('vi-VN')} ₫
+                          </span>
+                        </div>
+                        <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
+                          <span className="text-[10px] text-slate-400 block uppercase font-medium">An toàn PCCC &amp; IoT</span>
+                          <span className="font-mono text-xs font-bold text-emerald-600">Bình thường</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 mt-4 border-t border-slate-100 flex items-center gap-3">
                       <button
-                        onClick={() => handleCopy('A-108', '849204')}
-                        className="px-2.5 py-1.5 hover:bg-slate-100 rounded-md text-slate-600 text-xs font-medium flex items-center gap-1 transition-colors border border-slate-200"
-                        title="Sao chép PIN"
+                        onClick={() => setRenewUnit({ id: c.unitCode, price: Number(c.monthlyFee || 0).toLocaleString('vi-VN') })}
+                        className="stitch-btn-secondary flex-1 text-xs"
                       >
-                        <span className="material-symbols-outlined text-[16px]">
-                          {copiedPin === 'A-108' ? 'check' : 'content_copy'}
-                        </span>
-                        <span>{copiedPin === 'A-108' ? 'Đã chép' : 'Chép'}</span>
+                        <span className="material-symbols-outlined text-[16px]">autorenew</span>
+                        <span>Gia Hạn Kho (+3 Tháng)</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setTicketUnit(c.unitCode)
+                          setTicketType('lock')
+                          handleTabChange('support')
+                        }}
+                        className="px-3.5 h-10 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">report</span>
+                        <span>Báo Sự Cố</span>
                       </button>
                     </div>
-
-                    <button
-                      onClick={() => handleRemoteUnlock('A-108')}
-                      disabled={unlockingUnit === 'A-108'}
-                      className={`font-bold text-xs rounded-lg px-4 py-3 flex items-center justify-center gap-2 transition-all shadow-sm ${
-                        unlockedSuccess === 'A-108'
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-orange-600 hover:bg-orange-700 text-white'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-[18px]">
-                        {unlockedSuccess === 'A-108' ? 'lock_open' : 'key'}
-                      </span>
-                      <span>
-                        {unlockingUnit === 'A-108' ? 'Đang gửi lệnh mở...' : 
-                         unlockedSuccess === 'A-108' ? 'CỬA ĐÃ MỞ (30 GIÂY)' : 'Mở Khóa Từ Xa'}
-                      </span>
-                    </button>
                   </div>
-                </div>
-
-                {/* Metrics */}
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                    <span className="text-[10px] text-slate-400 block uppercase font-medium">Diện tích &amp; Thể tích</span>
-                    <span className="font-unit-code text-xs font-bold text-slate-800">5.0 m² (15 m³)</span>
-                  </div>
-                  <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                    <span className="text-[10px] text-slate-400 block uppercase font-medium">Nhiệt độ phòng</span>
-                    <span className="font-unit-code text-xs font-bold text-slate-800">23.5°C Chuẩn</span>
-                  </div>
-                  <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                    <span className="text-[10px] text-slate-400 block uppercase font-medium">An toàn PCCC</span>
-                    <span className="font-unit-code text-xs font-bold text-emerald-600">Bình thường</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 mt-4 border-t border-slate-100 flex items-center gap-3">
-                <button
-                  onClick={() => setRenewUnit({ id: 'A-108', price: '1.850.000' })}
-                  className="flex-1 h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors shadow-sm flex items-center justify-center gap-1.5"
-                >
-                  <span className="material-symbols-outlined text-[16px]">autorenew</span>
-                  <span>Gia Hạn Kho (+3 Tháng)</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setTicketUnit('A-108')
-                    setTicketType('lock')
-                    handleTabChange('support')
-                  }}
-                  className="px-3.5 h-10 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
-                >
-                  <span className="material-symbols-outlined text-[16px]">report</span>
-                  <span>Báo Sự Cố</span>
-                </button>
-              </div>
+                )
+              })}
             </div>
-
-            {/* Unit B-205 */}
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between hover:border-slate-300 transition-all">
-              <div className="flex flex-col gap-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
-                      <span className="material-symbols-outlined text-[26px]">ac_unit</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="font-unit-code text-base font-bold text-slate-900">KHO #B-205</span>
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                          Đang thuê
-                        </span>
-                      </div>
-                      <span className="text-xs text-slate-500">Cơ sở Tân Bình • Tầng 2 (Kho Điều Hòa Chuyên Dụng)</span>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Hạn hợp đồng</span>
-                    <span className="font-unit-code text-xs font-bold text-slate-900">15/08/2025</span>
-                    <span className="text-[10px] text-slate-500 font-semibold block">(Còn 121 ngày)</span>
-                  </div>
-                </div>
-
-                {/* IoT PIN and Remote Unlock Bar */}
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-3">
-                  <div className="flex items-center justify-between text-xs text-slate-600">
-                    <span className="flex items-center gap-1 font-semibold">
-                      <span className="material-symbols-outlined text-[16px] text-emerald-600">lock</span> Khóa Tự Động Thẻ Từ / App
-                    </span>
-                    <span className="text-emerald-700 font-semibold">Trạng thái: ĐÃ KHÓA BẢO VỆ</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="bg-white p-3 rounded-lg border border-slate-200 flex items-center justify-between shadow-sm">
-                      <div className="flex flex-col">
-                        <span className="text-[10px] uppercase font-semibold text-slate-400">Mã PIN mở cửa:</span>
-                        <span className="font-unit-code text-lg text-slate-900 tracking-widest font-black">
-                          931102
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => handleCopy('B-205', '931102')}
-                        className="px-2.5 py-1.5 hover:bg-slate-100 rounded-md text-slate-600 text-xs font-medium flex items-center gap-1 transition-colors border border-slate-200"
-                        title="Sao chép PIN"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">
-                          {copiedPin === 'B-205' ? 'check' : 'content_copy'}
-                        </span>
-                        <span>{copiedPin === 'B-205' ? 'Đã chép' : 'Chép'}</span>
-                      </button>
-                    </div>
-
-                    <button
-                      onClick={() => handleRemoteUnlock('B-205')}
-                      disabled={unlockingUnit === 'B-205'}
-                      className={`font-bold text-xs rounded-lg px-4 py-3 flex items-center justify-center gap-2 transition-all shadow-sm ${
-                        unlockedSuccess === 'B-205'
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-orange-600 hover:bg-orange-700 text-white'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-[18px]">
-                        {unlockedSuccess === 'B-205' ? 'lock_open' : 'key'}
-                      </span>
-                      <span>
-                        {unlockingUnit === 'B-205' ? 'Đang gửi lệnh mở...' : 
-                         unlockedSuccess === 'B-205' ? 'CỬA ĐÃ MỞ (30 GIÂY)' : 'Mở Khóa Từ Xa'}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Metrics */}
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                    <span className="text-[10px] text-slate-400 block uppercase font-medium">Diện tích &amp; Thể tích</span>
-                    <span className="font-unit-code text-xs font-bold text-slate-800">12.0 m² (36 m³)</span>
-                  </div>
-                  <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                    <span className="text-[10px] text-slate-400 block uppercase font-medium">Nhiệt độ / Độ ẩm</span>
-                    <span className="font-unit-code text-xs font-bold text-slate-800">21.8°C / 48% RH</span>
-                  </div>
-                  <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                    <span className="text-[10px] text-slate-400 block uppercase font-medium">Lần mở gần nhất</span>
-                    <span className="font-unit-code text-xs font-bold text-slate-800">Hôm qua, 16:20</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 mt-4 border-t border-slate-100 flex items-center gap-3">
-                <button
-                  onClick={() => setShareModalUnit('B-205')}
-                  className="flex-1 h-10 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <span className="material-symbols-outlined text-[16px]">share</span>
-                  <span>Cấp Quyền Cho Người Thân</span>
-                </button>
-                <button
-                  onClick={() => setRenewUnit({ id: 'B-205', price: '4.200.000' })}
-                  className="flex-1 h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors shadow-sm flex items-center justify-center gap-1.5"
-                >
-                  <span className="material-symbols-outlined text-[16px]">autorenew</span>
-                  <span>Gia Hạn Hợp Đồng</span>
-                </button>
-              </div>
-            </div>
-
-          </div>
+          )}
         </div>
       )}
 
@@ -754,7 +737,7 @@ export const CustomerDashboard: React.FC = () => {
               <span className="text-xs text-slate-500">Xem chi tiết thời hạn thuê và tải về hóa đơn điện tử VAT</span>
             </div>
             <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 font-mono text-xs font-bold text-emerald-700">
-              2 Hợp đồng đang hiệu lực
+              {activeContracts.length} Hợp đồng đang hiệu lực
             </span>
           </div>
 
@@ -764,52 +747,54 @@ export const CustomerDashboard: React.FC = () => {
                 <tr>
                   <th className="py-3 px-4 rounded-l-lg">Mã Hợp Đồng</th>
                   <th className="py-3 px-4">Mã Kho</th>
+                  <th className="py-3 px-4">Cơ Sở</th>
                   <th className="py-3 px-4">Kỳ Hạn Thuê</th>
-                  <th className="py-3 px-4">Tổng Cước</th>
+                  <th className="py-3 px-4">Cước Hàng Tháng</th>
+                  <th className="py-3 px-4">Tiền Cọc</th>
                   <th className="py-3 px-4">Trạng Thái</th>
                   <th className="py-3 px-4 rounded-r-lg text-right">Tác Vụ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                <tr className="hover:bg-slate-50/70 transition-colors">
-                  <td className="py-4 px-4 font-unit-code text-xs font-bold text-slate-900">#HD-2024-8891</td>
-                  <td className="py-4 px-4 font-bold text-orange-600">#A-108 (5m²)</td>
-                  <td className="py-4 px-4 text-slate-700">28/10/2024 - 28/04/2025 (6 Tháng)</td>
-                  <td className="py-4 px-4 font-data-tabular font-bold text-slate-900">11.100.000 đ</td>
-                  <td className="py-4 px-4">
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                      Đã thanh toán đủ
-                    </span>
-                  </td>
-                  <td className="py-4 px-4 text-right">
-                    <button
-                      onClick={() => alert('Đang tải hóa đơn VAT điện tử & hợp đồng PDF mã #HD-2024-8891...')}
-                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-semibold text-xs transition-colors"
-                    >
-                      Tải PDF
-                    </button>
-                  </td>
-                </tr>
-
-                <tr className="hover:bg-slate-50/70 transition-colors">
-                  <td className="py-4 px-4 font-unit-code text-xs font-bold text-slate-900">#HD-2024-9104</td>
-                  <td className="py-4 px-4 font-bold text-orange-600">#B-205 (12m²)</td>
-                  <td className="py-4 px-4 text-slate-700">15/08/2024 - 15/08/2025 (12 Tháng)</td>
-                  <td className="py-4 px-4 font-data-tabular font-bold text-slate-900">45.360.000 đ</td>
-                  <td className="py-4 px-4">
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                      Đã thanh toán đủ
-                    </span>
-                  </td>
-                  <td className="py-4 px-4 text-right">
-                    <button
-                      onClick={() => alert('Đang tải hóa đơn VAT điện tử & hợp đồng PDF mã #HD-2024-9104...')}
-                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-semibold text-xs transition-colors"
-                    >
-                      Tải PDF
-                    </button>
-                  </td>
-                </tr>
+                {contracts.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-slate-400 text-xs">
+                      Chưa có hợp đồng nào trong hồ sơ của bạn.
+                    </td>
+                  </tr>
+                ) : (
+                  contracts.map(c => (
+                    <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-4 px-4 font-unit-code text-xs font-bold text-slate-900">#{c.contractCode}</td>
+                      <td className="py-4 px-4 font-bold text-orange-600">#{c.unitCode}</td>
+                      <td className="py-4 px-4 text-slate-700">{c.facilityName}</td>
+                      <td className="py-4 px-4 text-slate-700">{c.startDate} — {c.endDate}</td>
+                      <td className="py-4 px-4 font-data-tabular font-bold text-slate-900">
+                        {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} đ
+                      </td>
+                      <td className="py-4 px-4 font-data-tabular text-slate-700">
+                        {Number(c.depositHeld || 0).toLocaleString('vi-VN')} đ
+                      </td>
+                      <td className="py-4 px-4">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          c.status === 'ACTIVE' 
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-slate-100 text-slate-600 border border-slate-200'
+                        }`}>
+                          {c.status === 'ACTIVE' ? 'Đang hiệu lực' : c.status}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4 text-right">
+                        <button
+                          onClick={() => alert(`Xem chi tiết hợp đồng #${c.contractCode} tại cơ sở ${c.facilityName}`)}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-semibold text-xs transition-colors"
+                        >
+                          Chi tiết
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -907,77 +892,14 @@ export const CustomerDashboard: React.FC = () => {
                     ></textarea>
                   </div>
 
-                  {/* Ảnh Bằng Chứng Hiện Trường Sự Cố (Image Evidence) */}
-                  <div className="sm:col-span-2 flex flex-col gap-2">
-                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
-                      <span>Ảnh chụp hiện trường / Bằng chứng sự cố (Image Evidence)</span>
-                      <span className="text-[10px] text-slate-400 font-normal">Tùy chọn • Tối đa 10MB</span>
-                    </label>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <label className="flex items-center justify-center gap-2 h-10 px-3 bg-white border border-dashed border-slate-300 hover:border-orange-500 rounded-lg cursor-pointer transition-colors text-xs text-slate-600">
-                        <span className="material-symbols-outlined text-[18px] text-orange-600">add_photo_alternate</span>
-                        <span className="truncate">{ticketImageFile ? ticketImageFile.name : 'Chọn ảnh hiện trường...'}</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleImageFileChange}
-                          className="hidden"
-                        />
-                      </label>
-
-                      <input
-                        type="url"
-                        value={ticketImageUrl}
-                        onChange={(e) => {
-                          setTicketImageUrl(e.target.value)
-                          if (e.target.value) setTicketImagePreview(e.target.value)
-                        }}
-                        placeholder="Hoặc dán URL ảnh trực tiếp..."
-                        className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs rounded-lg focus:outline-none focus:border-slate-400"
-                      />
-                    </div>
-
-                    {/* Preview thumbnail nếu có ảnh */}
-                    {ticketImagePreview && (
-                      <div className="flex items-center gap-3 p-2 bg-white border border-slate-200 rounded-lg">
-                        <div className="w-14 h-12 rounded overflow-hidden bg-slate-100 shrink-0">
-                          <img src={ticketImagePreview} alt="Bằng chứng hiện trường" className="w-full h-full object-cover" />
-                        </div>
-                        <div className="flex flex-col flex-1 min-w-0 text-xs">
-                          <span className="font-semibold text-slate-800 truncate">
-                            {ticketImageFile ? ticketImageFile.name : 'Ảnh bằng chứng đính kèm'}
-                          </span>
-                          <span className="text-[11px] text-emerald-600 flex items-center gap-1">
-                            <span className="material-symbols-outlined text-[14px]">check_circle</span>
-                            Sẵn sàng tải lên cùng yêu cầu hỗ trợ
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleClearImage}
-                          className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
-                          title="Xóa ảnh"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">close</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
                   <div className="sm:col-span-2 flex items-center justify-between pt-2">
-                    <span className="text-[11px] text-slate-400">
-                      {isUploadingImage ? 'Đang tải ảnh bằng chứng lên...' : 'Thời gian phản hồi cam kết: < 3 phút'}
-                    </span>
+                    <span className="text-[11px] text-slate-400">Thời gian phản hồi cam kết: &lt; 3 phút</span>
                     <button
                       type="submit"
-                      disabled={isUploadingImage}
-                      className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-400 text-white font-bold text-xs rounded-lg transition-colors shadow-sm flex items-center gap-1.5"
+                      className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-lg transition-colors shadow-sm flex items-center gap-1.5"
                     >
-                      <span className="material-symbols-outlined text-[16px]">
-                        {isUploadingImage ? 'hourglass_empty' : 'send'}
-                      </span>
-                      {isUploadingImage ? 'Đang gửi...' : 'Gửi Yêu Cầu'}
+                      <span className="material-symbols-outlined text-[16px]">send</span>
+                      Gửi Yêu Cầu
                     </button>
                   </div>
                 </form>

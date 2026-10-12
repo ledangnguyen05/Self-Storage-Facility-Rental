@@ -184,7 +184,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 ActivityAction.STORAGE_UNIT_UPDATE,
                 "StorageUnit",
                 unit.getId(),
-                String.format("Cập nhật ngăn kho %s (tầng: %s, loại: %s)", unit.getUnitCode(), unit.getFloorLevel(), unitType.getName()),
+                String.format("Cập nhật ngăn kho %s (tầng: %s, loại: %s)", unit.getUnitCode(), unit.getFloorLevel(), unitType.getTypeName()),
                 null,
                 unit.getStatus()
         );

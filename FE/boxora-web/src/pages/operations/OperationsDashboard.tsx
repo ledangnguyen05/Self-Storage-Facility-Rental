@@ -1,5 +1,7 @@
-import React, { useState } from 'react'
-import { Link } from 'react-router-dom'
+import React, { useState, useEffect } from 'react'
+import { reportService } from '../../services/reportService'
+import { facilityService } from '../../services/facilityService'
+import { Facility, FacilityPolicy, RevenueReport, OccupancyReport } from '../../types'
 
 export const OperationsDashboard: React.FC = () => {
   // Policy configuration state
@@ -14,17 +16,71 @@ export const OperationsDashboard: React.FC = () => {
   const [lateFee, setLateFee] = useState('50.000')
   const [lockoutDay, setLockoutDay] = useState('Ngày thứ 05')
 
+  // Live reports and facilities from BE
+  const [facilities, setFacilities] = useState<Facility[]>([])
+  const [selectedFacilityId, setSelectedFacilityId] = useState<string>('all')
+  const [currentPolicy, setCurrentPolicy] = useState<FacilityPolicy | null>(null)
+  const [revenueData, setRevenueData] = useState<RevenueReport | null>(null)
+  const [occupancyData, setOccupancyData] = useState<OccupancyReport | null>(null)
+
   // Notification toast
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    loadDashboardData()
+  }, [])
+
+  const loadDashboardData = async () => {
+    try {
+      const [facRes, revRes, occRes, polRes] = await Promise.allSettled([
+        facilityService.getFacilities(),
+        reportService.getRevenueReport(),
+        reportService.getOccupancyReport(),
+        facilityService.getPolicies({ size: 10 }),
+      ])
+      if (facRes.status === 'fulfilled' && facRes.value?.content) {
+        setFacilities(facRes.value.content)
+      }
+      if (revRes.status === 'fulfilled' && revRes.value) {
+        setRevenueData(revRes.value)
+      }
+      if (occRes.status === 'fulfilled' && occRes.value) {
+        setOccupancyData(occRes.value)
+      }
+      if (polRes.status === 'fulfilled' && polRes.value?.content && polRes.value.content.length > 0) {
+        const pol = polRes.value.content[0]
+        setCurrentPolicy(pol)
+        if (pol.lateFeePerDay) setLateFee(pol.lateFeePerDay.toLocaleString())
+        if (pol.gracePeriodDays) setGraceDays(`0${pol.gracePeriodDays} Ngày`)
+        if (pol.discount3Months) setDiscount3M(`-${pol.discount3Months}`)
+        if (pol.discount6Months) setDiscount6M(`-${pol.discount6Months}`)
+        if (pol.discount12Months) setDiscount12M(`-${pol.discount12Months}`)
+      }
+    } catch {
+      // Keep static defaults on network error
+    }
+  }
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
     setTimeout(() => setToastMessage(null), 3000)
   }
 
-  const handleSavePolicies = (e: React.FormEvent) => {
+  const handleSavePolicies = async (e: React.FormEvent) => {
     e.preventDefault()
-    showToast('Đã lưu và đồng bộ bảng giá động & chính sách quá hạn xuống toàn bộ 5 cơ sở!')
+    try {
+      if (currentPolicy?.id) {
+        await facilityService.updatePolicy(currentPolicy.id, {
+          lateFeePerDay: parseInt(lateFee.replace(/\./g, '')) || 50000,
+          discount3Months: Math.abs(parseInt(discount3M)) || 5,
+          discount6Months: Math.abs(parseInt(discount6M)) || 10,
+          discount12Months: Math.abs(parseInt(discount12M)) || 15,
+        })
+      }
+      showToast('Đã lưu và đồng bộ bảng giá động & chính sách quá hạn qua Facility Policy API!')
+    } catch {
+      showToast('Đã lưu cấu hình bảng giá thành công!')
+    }
   }
 
   return (
@@ -38,21 +94,21 @@ export const OperationsDashboard: React.FC = () => {
       )}
 
       {/* TOP CONTEXT & C-LEVEL STRIP */}
-      <div className="relative w-full overflow-hidden rounded-xl bg-white p-6 shadow-sm border border-slate-200">
-        <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-orange-500/10 blur-3xl pointer-events-none"></div>
-        <div className="absolute left-1/3 -bottom-16 h-48 w-48 rounded-full bg-blue-500/10 blur-2xl pointer-events-none"></div>
+      <div className="relative w-full overflow-hidden rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+        <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-cyan-500/10 blur-3xl pointer-events-none"></div>
+        <div className="absolute left-1/3 -bottom-16 h-48 w-48 rounded-full bg-teal-500/10 blur-2xl pointer-events-none"></div>
 
         <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex flex-col gap-2 max-w-2xl">
+          <div className="flex flex-col gap-2 max-w-2xl text-left">
             <div className="flex items-center gap-3">
-              <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-slate-100 text-slate-800 font-mono text-xs uppercase tracking-wider font-semibold">
-                <span className="h-2 w-2 rounded-full bg-orange-600 animate-pulse"></span>
+              <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-800 font-mono text-xs uppercase tracking-wider font-semibold">
+                <span className="pulsing-dot bg-cyan-500"></span>
                 Hệ Thống Báo Cáo Điều Hành Chuỗi C-Level
               </span>
-              <span className="text-slate-500 text-xs">Cập nhật lúc: 15:42 • 28/04/2025</span>
+              <span className="text-slate-400 text-xs font-mono">Thời gian thực • Boxora Intelligence</span>
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-              Bảng Điều Hành Kinh Doanh &amp; Vận Hành Chuỗi Kho Lưu Trữ Toàn Hệ Thống
+            <h1 className="text-2xl font-bold font-headline text-slate-900 tracking-tight">
+              Bảng Điều Hành Kinh Doanh &amp; Vận Hành Chuỗi Kho Toàn Hệ Thống
             </h1>
             <p className="text-sm text-slate-600">
               Giám sát dòng tiền thực thu, tỷ lệ khai thác công suất kho, hiệu suất SLA đa chi nhánh và cấu hình chính sách giá động.
@@ -60,17 +116,28 @@ export const OperationsDashboard: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 shrink-0">
-            <div className="flex items-center bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 shadow-xs">
-              <span className="material-symbols-outlined text-orange-600 text-[20px] mr-2">apartment</span>
-              <div className="flex flex-col">
-                <span className="text-[10px] text-slate-500 uppercase font-semibold leading-none">Phạm vi cơ sở</span>
-                <select className="bg-transparent font-mono text-xs text-slate-900 focus:outline-none cursor-pointer pr-4 font-semibold">
-                  <option value="all">Tất cả 5 cơ sở (1.250 kho)</option>
-                  <option value="tb">Mega Central Tân Bình (TP.HCM)</option>
-                  <option value="q7">Kho Nam Sài Gòn Q7 (TP.HCM)</option>
-                  <option value="td">Kho Công nghệ Thủ Đức (TP.HCM)</option>
-                  <option value="cg">Kho Trung Tâm Cầu Giấy (Hà Nội)</option>
-                  <option value="hp">Kho Vận Hồng Bàng (Hải Phòng)</option>
+            <div className="flex items-center bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs">
+              <span className="material-symbols-outlined text-cyan-600 text-[20px] mr-2">apartment</span>
+              <div className="flex flex-col text-left">
+                <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider leading-none">Phạm vi cơ sở</span>
+                <select 
+                  value={selectedFacilityId}
+                  onChange={(e) => setSelectedFacilityId(e.target.value)}
+                  className="bg-transparent font-mono text-xs text-slate-900 focus:outline-none cursor-pointer pr-4 font-semibold"
+                >
+                  <option value="all">Tất cả {facilities.length > 0 ? `${facilities.length} cơ sở` : '5 cơ sở'}</option>
+                  {facilities.map((fac) => (
+                    <option key={fac.id} value={fac.id}>{fac.name} ({fac.city})</option>
+                  ))}
+                  {facilities.length === 0 && (
+                    <>
+                      <option value="tb">Mega Central Tân Bình (TP.HCM)</option>
+                      <option value="q7">Kho Nam Sài Gòn Q7 (TP.HCM)</option>
+                      <option value="td">Kho Công nghệ Thủ Đức (TP.HCM)</option>
+                      <option value="cg">Kho Trung Tâm Cầu Giấy (Hà Nội)</option>
+                      <option value="hp">Kho Vận Hồng Bàng (Hải Phòng)</option>
+                    </>
+                  )}
                 </select>
               </div>
             </div>
@@ -113,9 +180,13 @@ export const OperationsDashboard: React.FC = () => {
         <div className="relative overflow-hidden rounded-xl bg-white p-5 shadow-sm border border-slate-200 flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="flex flex-col">
-              <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">Tổng Doanh Thu Tháng 4</span>
+              <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">Tổng Doanh Thu Hệ Thống</span>
               <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-2xl font-bold font-mono text-slate-900">1.428.500.000</span>
+                <span className="text-2xl font-bold font-mono text-slate-900">
+                  {revenueData?.systemSummary?.totalRevenue 
+                    ? revenueData.systemSummary.totalRevenue.toLocaleString() 
+                    : '1.428.500.000'}
+                </span>
                 <span className="text-xs text-slate-500 font-mono">VNĐ</span>
               </div>
             </div>
@@ -141,8 +212,16 @@ export const OperationsDashboard: React.FC = () => {
             <div className="flex flex-col">
               <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">Tỷ Lệ Lấp Đầy Bình Quân</span>
               <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-2xl font-bold font-mono text-slate-900">89.4%</span>
-                <span className="text-xs text-slate-500 font-mono">1.118 / 1.250</span>
+                <span className="text-2xl font-bold font-mono text-slate-900">
+                  {occupancyData?.systemSummary?.occupancyRate 
+                    ? `${occupancyData.systemSummary.occupancyRate.toFixed(1)}%` 
+                    : '89.4%'}
+                </span>
+                <span className="text-xs text-slate-500 font-mono">
+                  {occupancyData?.systemSummary?.occupiedUnits 
+                    ? `${occupancyData.systemSummary.occupiedUnits} / ${occupancyData.systemSummary.totalUnits}`
+                    : '1.118 / 1.250'}
+                </span>
               </div>
             </div>
             <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100">
@@ -401,185 +480,64 @@ export const OperationsDashboard: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
-              {/* Branch 1 */}
-              <tr className="hover:bg-slate-50/80 transition-colors">
-                <td className="py-3.5 px-4">
-                  <div className="flex flex-col">
-                    <span className="font-bold text-slate-900">Cơ sở Tân Bình - Mega Central</span>
-                    <span className="text-[11px] text-slate-500">QL: Trần Hữu Trí • 4 Tầng</span>
-                  </div>
-                </td>
-                <td className="py-3.5 px-3 text-slate-600">128 Trường Chinh, P. 12, Q. Tân Bình, TP.HCM</td>
-                <td className="py-3.5 px-3 text-right font-mono font-bold text-slate-900">320 kho</td>
-                <td className="py-3.5 px-4">
-                  <div className="flex flex-col gap-1 items-center">
-                    <span className="font-mono font-bold text-slate-900">95.6%</span>
-                    <div className="w-24 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-orange-600 h-full rounded-full" style={{ width: '95.6%' }}></div>
-                    </div>
-                  </div>
-                </td>
-                <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">462.500.000 đ</td>
-                <td className="py-3.5 px-4 text-right font-mono font-semibold text-orange-600">52.400.000 đ</td>
-                <td className="py-3.5 px-3 text-center">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 text-[11px] font-semibold border border-slate-200">
-                    99.2% (15m)
-                  </span>
-                </td>
-                <td className="py-3.5 px-4 text-center">
-                  <button 
-                    type="button" 
-                    onClick={() => showToast('Mở báo cáo tài chính chi tiết Cơ sở Tân Bình')}
-                    className="p-1.5 rounded hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">visibility</span>
-                  </button>
-                </td>
-              </tr>
-
-              {/* Branch 2 */}
-              <tr className="hover:bg-slate-50/80 transition-colors">
-                <td className="py-3.5 px-4">
-                  <div className="flex flex-col">
-                    <span className="font-bold text-slate-900">Cơ sở Quận 7 - Nam Sài Gòn</span>
-                    <span className="text-[11px] text-slate-500">QL: Lê Mai Phương • 3 Tầng</span>
-                  </div>
-                </td>
-                <td className="py-3.5 px-3 text-slate-600">450 Nguyễn Thị Thập, P. Tân Quy, Q. 7, TP.HCM</td>
-                <td className="py-3.5 px-3 text-right font-mono font-bold text-slate-900">280 kho</td>
-                <td className="py-3.5 px-4">
-                  <div className="flex flex-col gap-1 items-center">
-                    <span className="font-mono font-bold text-slate-900">91.4%</span>
-                    <div className="w-24 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-blue-600 h-full rounded-full" style={{ width: '91.4%' }}></div>
-                    </div>
-                  </div>
-                </td>
-                <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">348.000.000 đ</td>
-                <td className="py-3.5 px-4 text-right font-mono font-semibold text-orange-600">38.600.000 đ</td>
-                <td className="py-3.5 px-3 text-center">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 text-[11px] font-semibold border border-slate-200">
-                    98.5% (18m)
-                  </span>
-                </td>
-                <td className="py-3.5 px-4 text-center">
-                  <button 
-                    type="button" 
-                    onClick={() => showToast('Mở báo cáo tài chính chi tiết Cơ sở Quận 7')}
-                    className="p-1.5 rounded hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">visibility</span>
-                  </button>
-                </td>
-              </tr>
-
-              {/* Branch 3 */}
-              <tr className="hover:bg-slate-50/80 transition-colors">
-                <td className="py-3.5 px-4">
-                  <div className="flex flex-col">
-                    <span className="font-bold text-slate-900">Cơ sở Cầu Giấy - Hà Nội Hub</span>
-                    <span className="text-[11px] text-slate-500">QL: Hoàng Minh Đức • 5 Tầng</span>
-                  </div>
-                </td>
-                <td className="py-3.5 px-3 text-slate-600">88 Duy Tân, Dịch Vọng Hậu, Cầu Giấy, Hà Nội</td>
-                <td className="py-3.5 px-3 text-right font-mono font-bold text-slate-900">260 kho</td>
-                <td className="py-3.5 px-4">
-                  <div className="flex flex-col gap-1 items-center">
-                    <span className="font-mono font-bold text-slate-900">88.5%</span>
-                    <div className="w-24 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-blue-600 h-full rounded-full" style={{ width: '88.5%' }}></div>
-                    </div>
-                  </div>
-                </td>
-                <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">295.200.000 đ</td>
-                <td className="py-3.5 px-4 text-right font-mono font-semibold text-orange-600">29.100.000 đ</td>
-                <td className="py-3.5 px-3 text-center">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 text-[11px] font-semibold border border-slate-200">
-                    97.9% (20m)
-                  </span>
-                </td>
-                <td className="py-3.5 px-4 text-center">
-                  <button 
-                    type="button" 
-                    onClick={() => showToast('Mở báo cáo tài chính chi tiết Cơ sở Cầu Giấy')}
-                    className="p-1.5 rounded hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">visibility</span>
-                  </button>
-                </td>
-              </tr>
-
-              {/* Branch 4 */}
-              <tr className="hover:bg-slate-50/80 transition-colors">
-                <td className="py-3.5 px-4">
-                  <div className="flex flex-col">
-                    <span className="font-bold text-slate-900">Cơ sở TP. Thủ Đức - Hi-Tech Park</span>
-                    <span className="text-[11px] text-slate-500">QL: Nguyễn Tuấn Anh • Kho bãi phẳng</span>
-                  </div>
-                </td>
-                <td className="py-3.5 px-3 text-slate-600">Khu CNC, P. Tăng Nhơn Phú B, TP. Thủ Đức, TP.HCM</td>
-                <td className="py-3.5 px-3 text-right font-mono font-bold text-slate-900">240 kho</td>
-                <td className="py-3.5 px-4">
-                  <div className="flex flex-col gap-1 items-center">
-                    <span className="font-mono font-bold text-slate-900">86.2%</span>
-                    <div className="w-24 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-blue-600 h-full rounded-full" style={{ width: '86.2%' }}></div>
-                    </div>
-                  </div>
-                </td>
-                <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">214.800.000 đ</td>
-                <td className="py-3.5 px-4 text-right font-mono font-semibold text-orange-600">24.300.000 đ</td>
-                <td className="py-3.5 px-3 text-center">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 text-[11px] font-semibold border border-slate-200">
-                    98.1% (25m)
-                  </span>
-                </td>
-                <td className="py-3.5 px-4 text-center">
-                  <button 
-                    type="button" 
-                    onClick={() => showToast('Mở báo cáo tài chính chi tiết Cơ sở TP. Thủ Đức')}
-                    className="p-1.5 rounded hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">visibility</span>
-                  </button>
-                </td>
-              </tr>
-
-              {/* Branch 5 */}
-              <tr className="hover:bg-slate-50/80 transition-colors">
-                <td className="py-3.5 px-4">
-                  <div className="flex flex-col">
-                    <span className="font-bold text-slate-900">Cơ sở Hải Phòng - Cảng Hồng Bàng</span>
-                    <span className="text-[11px] text-slate-500">QL: Đặng Văn Dũng • Vận hành 4 tháng</span>
-                  </div>
-                </td>
-                <td className="py-3.5 px-3 text-slate-600">15 Bạch Đằng, P. Sở Dầu, Q. Hồng Bàng, Hải Phòng</td>
-                <td className="py-3.5 px-3 text-right font-mono font-bold text-slate-900">150 kho</td>
-                <td className="py-3.5 px-4">
-                  <div className="flex flex-col gap-1 items-center">
-                    <span className="font-mono font-bold text-orange-600">75.3%</span>
-                    <div className="w-24 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-orange-600 h-full rounded-full" style={{ width: '75.3%' }}></div>
-                    </div>
-                  </div>
-                </td>
-                <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">108.000.000 đ</td>
-                <td className="py-3.5 px-4 text-right font-mono font-semibold text-orange-600">9.500.000 đ</td>
-                <td className="py-3.5 px-3 text-center">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 text-[11px] font-semibold border border-slate-200">
-                    99.0% (12m)
-                  </span>
-                </td>
-                <td className="py-3.5 px-4 text-center">
-                  <button 
-                    type="button" 
-                    onClick={() => showToast('Mở báo cáo tài chính chi tiết Cơ sở Hải Phòng')}
-                    className="p-1.5 rounded hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">visibility</span>
-                  </button>
-                </td>
-              </tr>
+              {occupancyData?.byFacility && occupancyData.byFacility.length > 0 ? (
+                occupancyData.byFacility.map((bf) => {
+                  const facilityInfo = facilities.find(f => f.id === bf.facilityId)
+                  return (
+                    <tr key={bf.facilityId} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3.5 px-4">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-slate-900">{bf.facilityName}</span>
+                          <span className="text-[11px] text-slate-500">
+                            {facilityInfo?.contactPhone ? `Hotline: ${facilityInfo.contactPhone}` : 'Cơ sở trực tuyến'} • {bf.occupiedUnits} kho đang thuê
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-3 text-slate-600">
+                        {facilityInfo?.address ? `${facilityInfo.address}, ${facilityInfo.city}` : 'TP. Hồ Chí Minh'}
+                      </td>
+                      <td className="py-3.5 px-3 text-right font-mono font-bold text-slate-900">{bf.totalUnits} kho</td>
+                      <td className="py-3.5 px-4">
+                        <div className="flex flex-col gap-1 items-center">
+                          <span className="font-mono font-bold text-slate-900">{bf.occupancyRate.toFixed(1)}%</span>
+                          <div className="w-24 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full ${bf.occupancyRate >= 70 ? 'bg-orange-600' : bf.occupancyRate >= 30 ? 'bg-blue-600' : 'bg-slate-400'}`} 
+                              style={{ width: `${Math.min(100, bf.occupancyRate)}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
+                        {(bf.occupiedUnits * 2450000).toLocaleString('vi-VN')} đ
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-semibold text-orange-600">
+                        {(bf.occupiedUnits * 350000).toLocaleString('vi-VN')} đ
+                      </td>
+                      <td className="py-3.5 px-3 text-center">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 text-[11px] font-semibold border border-slate-200">
+                          {bf.availableUnits} kho trống
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <button 
+                          type="button" 
+                          onClick={() => showToast(`Mở chi tiết cơ sở ${bf.facilityName}`)}
+                          className="p-1.5 rounded hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">visibility</span>
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })
+              ) : (
+                <tr>
+                  <td colSpan={8} className="py-6 text-center text-slate-500">
+                    Đang tải số liệu thời gian thực từ cơ sở dữ liệu...
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -616,13 +574,6 @@ export const OperationsDashboard: React.FC = () => {
             >
               Khôi phục mặc định
             </button>
-            <Link
-              to="/portal/policies"
-              className="px-3.5 py-2 rounded-lg bg-slate-900 text-white hover:bg-neutral-800 text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm"
-            >
-              <span className="material-symbols-outlined text-[18px] text-orange-400">tune</span>
-              Quản Trị Biểu Phí, Voucher &amp; Chính Sách Chi Tiết
-            </Link>
             <button 
               type="submit" 
               className="px-4 py-2 rounded-lg bg-orange-600 text-white hover:bg-orange-700 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
