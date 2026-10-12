@@ -51,8 +51,8 @@ public class ReportServiceImpl implements ReportService {
             throw new AppException(ErrorCode.INVALID_REQUEST);
         }
 
-        LocalDateTime from = fromDate != null ? fromDate.atStartOfDay() : null;
-        LocalDateTime to = toDate != null ? toDate.atTime(LocalTime.MAX) : null;
+        LocalDateTime from = fromDate != null ? fromDate.atStartOfDay() : LocalDateTime.of(2000, 1, 1, 0, 0, 0);
+        LocalDateTime to = toDate != null ? toDate.atTime(LocalTime.MAX) : LocalDateTime.of(2099, 12, 31, 23, 59, 59);
 
         List<FacilityRevenueResponse> byFacility = paymentRepository.sumRevenueByFacility(from, to);
         SystemRevenueSummaryResponse systemSummary = paymentRepository.sumSystemRevenue(from, to);

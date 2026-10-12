@@ -1013,6 +1013,10 @@ export const StaffDashboard: React.FC = () => {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
       {/* Evidence Image Preview Modal */}
       {activeEvidenceModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">

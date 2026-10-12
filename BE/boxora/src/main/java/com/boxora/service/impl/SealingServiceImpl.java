@@ -337,21 +337,29 @@ public class SealingServiceImpl implements SealingService {
     }
 
     private SealingRecordResponse toResponse(SealingRecord r) {
+        UUID unitId = r.getUnit() != null ? r.getUnit().getId() : null;
+        String unitCode = r.getUnit() != null ? r.getUnit().getUnitCode() : null;
+        UUID performerId = r.getPerformedBy() != null ? r.getPerformedBy().getId() : null;
+        String performerName = r.getPerformedBy() != null ? r.getPerformedBy().getFullName() : null;
+
         return SealingRecordResponse.builder()
                 .id(r.getId())
                 .protocolNumber(r.getProtocolNumber())
                 .contractId(r.getContract() != null ? r.getContract().getId() : null)
                 .contractCode(r.getContract() != null ? r.getContract().getContractCode() : null)
-                .unitId(r.getUnit() != null ? r.getUnit().getId() : null)
-                .unitCode(r.getUnit() != null ? r.getUnit().getUnitCode() : null)
+                .storageUnitId(unitId)
+                .unitId(unitId)
+                .unitCode(unitCode)
                 .facilityId(r.getFacility() != null ? r.getFacility().getId() : null)
                 .facilityName(r.getFacility() != null ? r.getFacility().getName() : null)
                 .customerId(r.getContract() != null && r.getContract().getCustomer() != null ? r.getContract().getCustomer().getId() : null)
                 .customerName(r.getContract() != null && r.getContract().getCustomer() != null ? r.getContract().getCustomer().getFullName() : null)
                 .customerEmail(r.getContract() != null && r.getContract().getCustomer() != null ? r.getContract().getCustomer().getEmail() : null)
                 .customerPhone(r.getContract() != null && r.getContract().getCustomer() != null ? r.getContract().getCustomer().getPhone() : null)
-                .performedById(r.getPerformedBy() != null ? r.getPerformedBy().getId() : null)
-                .performedByName(r.getPerformedBy() != null ? r.getPerformedBy().getFullName() : null)
+                .sealedById(performerId)
+                .sealedByName(performerName)
+                .performedById(performerId)
+                .performedByName(performerName)
                 .witnessId(r.getWitness() != null ? r.getWitness().getId() : null)
                 .witnessName(r.getWitness() != null ? r.getWitness().getFullName() : null)
                 .sealTagNumber(r.getSealTagNumber())

@@ -5,6 +5,7 @@ public enum RentalContractStatus {
     PENDING_SIGNATURE,
     ACTIVE,
     OVERDUE,
+    OVERDUE_LOCKED,
     EXPIRED,
     TERMINATED,
     CANCELLED

@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { RoleType } from '../../types'
+import { LogoutConfirmModal } from '../ui/LogoutConfirmModal'
 
 export const DashboardLayout: React.FC = () => {
   const { user, role, logout, isAuthenticated } = useAuth()
@@ -10,6 +11,7 @@ export const DashboardLayout: React.FC = () => {
   const [selectedFacility, setSelectedFacility] = useState('tb')
   const [searchQuery, setSearchQuery] = useState('')
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false)
   const isCurrentPath = (path: string) => location.pathname === path
 
   const getRoleBadge = (r: RoleType | null) => {
@@ -132,8 +134,8 @@ export const DashboardLayout: React.FC = () => {
                   </div>
                 </div>
                 <button
-                  onClick={() => logout().then(() => navigate('/login'))}
-                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  onClick={() => setIsLogoutModalOpen(true)}
+                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                   title="Đăng xuất khỏi phiên làm việc"
                 >
                   <span className="material-symbols-outlined text-[18px]">logout</span>
@@ -471,6 +473,19 @@ export const DashboardLayout: React.FC = () => {
           <Outlet />
         </main>
       </div>
+
+      {/* Logout Confirmation Dialog */}
+      <LogoutConfirmModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={async () => {
+          await logout()
+          navigate('/login')
+        }}
+        userName={user?.fullName || user?.username}
+        userEmail={user?.email}
+        role={role || undefined}
+      />
     </div>
   )
 }
