@@ -6,13 +6,13 @@ export interface LoginResponse {
   message: string
   data: {
     accessToken: string
-    refreshToken?: string
+    refreshToken: string
     user: User
   }
 }
 
 export const authService = {
-  async login(emailOrUsername: string, password: string): Promise<LoginResponse> {
+  async login(emailOrUsername: string, password: string):Promise<LoginResponse> {
     const response = await api.post('/api/v1/auth/login', {
       email: emailOrUsername,
       password,
@@ -25,9 +25,9 @@ export const authService = {
     return response.data
   },
 
-  async logout(refreshToken?: string) {
+  async logout(refreshToken: string) {
     try {
-      await api.post('/api/v1/auth/logout', refreshToken ? { refreshToken } : {})
+      await api.post('/api/v1/auth/logout', { refreshToken })
     } catch {
       // Ignore cleanup error
     }
