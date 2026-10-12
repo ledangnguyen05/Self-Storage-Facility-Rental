@@ -2,6 +2,7 @@ package com.boxora.service.impl;
 
 import com.boxora.dto.request.BookingCreateRequest;
 import com.boxora.dto.request.UpdatePinRequest;
+import com.boxora.dto.response.BookingAccessCredentialsResponse;
 import com.boxora.dto.response.BookingPinResponse;
 import com.boxora.dto.response.BookingResponse;
 import com.boxora.entity.Booking;
@@ -25,10 +26,12 @@ import com.boxora.service.StorageUnitLockService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -145,6 +148,8 @@ public class BookingServiceImpl implements BookingService {
                 .rentalMonths(months)
                 .totalRentalFee(totalFee)
                 .depositPaid(BigDecimal.ZERO) // Tiền cọc thực tế đã đóng = 0 cho tới khi thanh toán
+                .depositAmount(deposit)
+                .paymentExpiresAt(Instant.now().plusSeconds(24 * 60 * 60))
                 .status(BookingStatus.PENDING_PAYMENT)
                 .accessPin(null) // Chưa cấp PIN trước khi thanh toán
                 .qrAccessToken(null) // Chưa cấp QR trước khi thanh toán
@@ -182,7 +187,10 @@ public class BookingServiceImpl implements BookingService {
                     .filter(b -> b.getCustomer() != null && customerId.equals(b.getCustomer().getId()))
                     .collect(Collectors.toList());
         }
-        return bookings.stream().map(this::mapToResponse).collect(Collectors.toList());
+        return bookings.stream()
+                .filter(b -> b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.ACTIVE)
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -319,7 +327,43 @@ public class BookingServiceImpl implements BookingService {
         }
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public BookingAccessCredentialsResponse getAccessCredentials(UUID id) {
+        Booking booking = bookingRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.ACTIVE) {
+            throw new AppException(ErrorCode.BOOKING_NOT_CHECKED_IN);
+        }
+        if (booking.getAccessPin() == null || booking.getQrAccessToken() == null) {
+            throw new AppException(ErrorCode.BOOKING_NOT_CHECKED_IN);
+        }
+        return BookingAccessCredentialsResponse.builder()
+                .accessPin(booking.getAccessPin())
+                .qrAccessToken(booking.getQrAccessToken())
+                .build();
+    }
+
+    @Scheduled(fixedDelay = 60_000L)
+    public void expireUnpaidBookings() {
+        List<Booking> expiredBookings = bookingRepository.findByStatusAndPaymentExpiresAtBefore(
+                BookingStatus.PENDING_PAYMENT, Instant.now());
+        for (Booking booking : expiredBookings) {
+            booking.setStatus(BookingStatus.CANCELLED);
+            booking.setPaymentExpiresAt(null);
+            if (booking.getStorageUnit() != null && booking.getStorageUnit().getStatus() == UnitStatus.RESERVED) {
+                booking.getStorageUnit().setStatus(UnitStatus.AVAILABLE);
+                storageUnitRepository.save(booking.getStorageUnit());
+            }
+            bookingRepository.save(booking);
+        }
+    }
+
     private BookingResponse mapToResponse(Booking b) {
+        BigDecimal initialPaymentAmount = b.getTotalRentalFee() != null && b.getRentalMonths() != null && b.getRentalMonths() > 0
+                ? b.getTotalRentalFee().divide(BigDecimal.valueOf(b.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP).add(
+                        b.getDepositAmount() != null ? b.getDepositAmount() : BigDecimal.ZERO)
+                : BigDecimal.ZERO;
         return BookingResponse.builder()
                 .id(b.getId())
                 .bookingCode(b.getBookingCode())
@@ -338,6 +382,9 @@ public class BookingServiceImpl implements BookingService {
                 .rentalMonths(b.getRentalMonths())
                 .totalRentalFee(b.getTotalRentalFee())
                 .depositPaid(b.getDepositPaid())
+                .depositAmount(b.getDepositAmount())
+                .initialPaymentAmount(initialPaymentAmount)
+                .paymentExpiresAt(b.getPaymentExpiresAt())
                 .status(b.getStatus() != null ? b.getStatus() : BookingStatus.PENDING_PAYMENT)
                 .accessPin(b.getAccessPin())
                 .qrAccessToken(b.getQrAccessToken())
