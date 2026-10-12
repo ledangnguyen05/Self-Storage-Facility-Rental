@@ -23,16 +23,6 @@ import com.boxora.service.ContractRenewalService;
 import com.boxora.service.PaymentService;
 import com.boxora.service.VNPayService;
 import com.boxora.util.VNPayUtil;
-import com.boxora.entity.Facility;
-import com.boxora.entity.StorageUnit;
-import com.boxora.entity.User;
-import com.boxora.enums.RentalContractStatus;
-import com.boxora.enums.UnitStatus;
-import com.boxora.repository.RentalContractRepository;
-import com.boxora.repository.StorageUnitRepository;
-import com.boxora.service.EmailService;
-import jakarta.persistence.criteria.Join;
-import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -60,15 +50,13 @@ public class PaymentServiceImpl implements PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final BookingRepository bookingRepository;
-    private final RentalContractRepository rentalContractRepository;
-    private final StorageUnitRepository storageUnitRepository;
     private final PaymentMapper paymentMapper;
     private final VNPayService vnPayService;
     private final ActivityLogService activityLogService;
-    private final EmailService emailService;
     private final RequestContext requestContext;
     private final com.boxora.security.FacilityAccessGuard facilityAccessGuard;
     private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractRenewalService> contractRenewalServiceProvider;
+    private final com.boxora.service.StorageUnitLockService storageUnitLockService;
 
     private UUID extractFacilityId(Payment payment) {
         if (payment == null) return null;
@@ -83,44 +71,8 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     public VNPayPaymentResponse createVNPayPayment(PaymentCreateRequest request, HttpServletRequest httpRequest) {
-        if (request.getBookingId() == null && request.getContractId() == null) {
-            throw new AppException(ErrorCode.PAYMENT_TARGET_REQUIRED);
-        }
-
-        Booking booking = null;
-        RentalContract contract = null;
-        UUID facilityId = null;
-
-        if (request.getBookingId() != null) {
-            booking = bookingRepository.findById(request.getBookingId())
-                    .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
-
-            if (facilityAccessGuard.isFacilityScoped() && booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null) {
-                facilityAccessGuard.checkFacilityAccess(booking.getStorageUnit().getFacility().getId());
-            }
-            if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
-                UUID currentUserId = requestContext.currentUserId();
-                if (currentUserId != null && booking.getCustomer() != null && !currentUserId.equals(booking.getCustomer().getId())) {
-                    throw new AppException(ErrorCode.FORBIDDEN);
-                }
-            }
-            facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
-                    ? booking.getStorageUnit().getFacility().getId() : null;
-        } else {
-            contract = rentalContractRepository.findById(request.getContractId())
-                    .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
-
-            if (facilityAccessGuard.isFacilityScoped() && contract.getFacility() != null) {
-                facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
-            }
-            if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
-                UUID currentUserId = requestContext.currentUserId();
-                if (currentUserId != null && contract.getCustomer() != null && !currentUserId.equals(contract.getCustomer().getId())) {
-                    throw new AppException(ErrorCode.FORBIDDEN);
-                }
-            }
-            facilityId = contract.getFacility() != null ? contract.getFacility().getId() : null;
-        }
+        Booking booking = bookingRepository.findById(request.getBookingId())
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
         // Generate unique transaction reference (e.g. BOX + timestamp + 6 random chars)
         String txnRef = "BOX" + System.currentTimeMillis() + VNPayUtil.randomAlphaNumeric(6);
@@ -140,18 +92,13 @@ public class PaymentServiceImpl implements PaymentService {
 
         String orderInfo = request.getOrderInfo();
         if (orderInfo == null || orderInfo.isBlank()) {
-            if (booking != null) {
-                orderInfo = "Thanh toan don dat cho " + booking.getBookingCode();
-            } else {
-                orderInfo = "Thanh toan hop dong " + contract.getContractCode();
-            }
+            orderInfo = "Thanh toan don dat cho " + booking.getBookingCode();
         }
 
         // Create PENDING payment entity
         Payment payment = Payment.builder()
                 .transactionId(txnRef)
                 .booking(booking)
-                .contract(contract)
                 .amount(request.getAmount())
                 .paymentType(request.getPaymentType())
                 .status(PaymentStatus.PENDING)
@@ -161,13 +108,14 @@ public class PaymentServiceImpl implements PaymentService {
 
         payment = paymentRepository.save(payment);
 
-        String logTarget = booking != null ? "booking " + booking.getBookingCode() : "hop dong " + contract.getContractCode();
+        UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                ? booking.getStorageUnit().getFacility().getId() : null;
         activityLogService.record(
                 facilityId,
                 ActivityAction.PAYMENT_INITIATED,
                 "PAYMENT",
                 payment.getId(),
-                "Khoi tao giao dich thanh toan VNPAY cho " + logTarget + ", so tien: " + request.getAmount(),
+                "Khoi tao giao dich thanh toan VNPAY cho booking " + booking.getBookingCode() + ", so tien: " + request.getAmount(),
                 null,
                 payment.getId()
         );
@@ -179,8 +127,7 @@ public class PaymentServiceImpl implements PaymentService {
                 .paymentUrl(paymentUrl)
                 .transactionId(txnRef)
                 .paymentId(payment.getId())
-                .bookingId(booking != null ? booking.getId() : null)
-                .contractId(contract != null ? contract.getId() : null)
+                .bookingId(booking.getId())
                 .amount(payment.getAmount())
                 .orderInfo(orderInfo)
                 .build();
@@ -220,7 +167,50 @@ public class PaymentServiceImpl implements PaymentService {
         boolean isSuccess = "00".equals(responseCode) && ("00".equals(transactionStatus) || transactionStatus == null);
 
         if (isSuccess) {
-            fulfillSuccessfulPayment(payment, txnRef);
+            payment.setStatus(PaymentStatus.PAID);
+
+            // Update Booking status & deposit amount if applicable
+            Booking booking = payment.getBooking();
+            if (booking != null) {
+                if (payment.getPaymentType() == PaymentType.DEPOSIT) {
+                    BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
+                    booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
+                }
+                if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                    booking.setStatus(BookingStatus.CONFIRMED);
+                    if (booking.getAccessPin() == null) {
+                        booking.setAccessPin(String.format("%06d", new java.util.Random().nextInt(1000000)));
+                        booking.setQrAccessToken("QR-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase());
+                        booking.setPinUpdatedAt(LocalDateTime.now());
+                    }
+                    if (booking.getStorageUnit() != null) {
+                        storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
+                    }
+                }
+                bookingRepository.save(booking);
+            }
+
+            if (payment.getPaymentType() == PaymentType.RENEWAL_FEE) {
+                ContractRenewalService renewalService = contractRenewalServiceProvider.getIfAvailable();
+                if (renewalService != null) {
+                    renewalService.handleRenewalPaid(payment);
+                }
+            }
+
+            String targetDesc = payment.getBooking() != null
+                    ? "booking " + payment.getBooking().getBookingCode()
+                    : "hop dong " + (payment.getContract() != null ? payment.getContract().getId() : "N/A");
+
+            UUID facilityId = extractFacilityId(payment);
+            activityLogService.record(
+                    facilityId,
+                    ActivityAction.PAYMENT_CONFIRMED,
+                    "PAYMENT",
+                    payment.getId(),
+                    "Thanh toan VNPAY thanh cong cho " + targetDesc + ", ma GD: " + txnRef,
+                    PaymentStatus.PENDING,
+                    PaymentStatus.PAID
+            );
         } else {
             payment.setStatus(PaymentStatus.FAILED);
 
@@ -297,7 +287,43 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         if (isSuccess) {
-            fulfillSuccessfulPayment(payment, txnRef);
+            payment.setStatus(PaymentStatus.PAID);
+
+            Booking booking = payment.getBooking();
+            if (booking != null) {
+                if (payment.getPaymentType() == PaymentType.DEPOSIT) {
+                    BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
+                    booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
+                }
+                if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                    booking.setStatus(BookingStatus.CONFIRMED);
+                    if (booking.getAccessPin() == null) {
+                        booking.setAccessPin(String.format("%06d", new java.util.Random().nextInt(1000000)));
+                        booking.setQrAccessToken("QR-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase());
+                        booking.setPinUpdatedAt(LocalDateTime.now());
+                    }
+                    if (booking.getStorageUnit() != null) {
+                        storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
+                    }
+                }
+                bookingRepository.save(booking);
+            }
+
+            if (payment.getPaymentType() == PaymentType.RENEWAL_FEE) {
+                ContractRenewalService renewalService = contractRenewalServiceProvider.getIfAvailable();
+                if (renewalService != null) {
+                    renewalService.handleRenewalPaid(payment);
+                }
+            }
+
+            UUID facilityId = extractFacilityId(payment);
+            activityLogService.recordSystem(
+                    facilityId,
+                    ActivityAction.PAYMENT_CONFIRMED,
+                    "PAYMENT",
+                    payment.getId(),
+                    "IPN VNPAY xac nhan thanh cong cho txnRef=" + txnRef
+            );
         } else {
             payment.setStatus(PaymentStatus.FAILED);
 
@@ -313,103 +339,6 @@ public class PaymentServiceImpl implements PaymentService {
 
         paymentRepository.save(payment);
         return VNPayIpnResponse.success();
-    }
-
-    private void fulfillSuccessfulPayment(Payment payment, String txnRef) {
-        payment.setStatus(PaymentStatus.PAID);
-
-        // 1. Update Booking status & deposit amount if applicable
-        Booking booking = payment.getBooking();
-        if (booking != null) {
-            if (payment.getPaymentType() == PaymentType.DEPOSIT) {
-                BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
-                booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
-            }
-            if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
-                booking.setStatus(BookingStatus.CONFIRMED);
-                if (booking.getStorageUnit() != null) {
-                    StorageUnit unit = booking.getStorageUnit();
-                    unit.setStatus(UnitStatus.RESERVED);
-                    storageUnitRepository.save(unit);
-                }
-            }
-            bookingRepository.save(booking);
-
-            // Auto-create initial RentalContract in PENDING_SIGNATURE if none exists yet
-            if (rentalContractRepository.findByBookingId(booking.getId()).isEmpty()) {
-                StorageUnit unit = booking.getStorageUnit();
-                Facility facility = unit != null ? unit.getFacility() : null;
-                if (unit != null && facility != null) {
-                    BigDecimal monthlyFee = (unit.getUnitType() != null && unit.getUnitType().getBasePricePerMonth() != null)
-                            ? unit.getUnitType().getBasePricePerMonth() : new BigDecimal("1450000");
-
-                    String contractCode = "CTR" + System.currentTimeMillis() + VNPayUtil.randomAlphaNumeric(4);
-                    RentalContract contract = RentalContract.builder()
-                            .contractCode(contractCode)
-                            .customer(booking.getCustomer())
-                            .unit(unit)
-                            .facility(facility)
-                            .booking(booking)
-                            .startDate(booking.getStartDate())
-                            .endDate(booking.getEndDate())
-                            .monthlyFee(monthlyFee)
-                            .depositHeld(booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO)
-                            .status(RentalContractStatus.PENDING_SIGNATURE)
-                            .build();
-                    rentalContractRepository.save(contract);
-                    log.info("Auto-generated RentalContract {} for booking {}", contractCode, booking.getBookingCode());
-                }
-            }
-        }
-
-        // 2. Handle Renewal Fee
-        if (payment.getPaymentType() == PaymentType.RENEWAL_FEE) {
-            ContractRenewalService renewalService = contractRenewalServiceProvider.getIfAvailable();
-            if (renewalService != null) {
-                renewalService.handleRenewalPaid(payment);
-            }
-        }
-
-        // 3. Dispatch receipt email
-        try {
-            User customer = null;
-            if (payment.getBooking() != null) {
-                customer = payment.getBooking().getCustomer();
-            } else if (payment.getContract() != null) {
-                customer = payment.getContract().getCustomer();
-            }
-            if (customer != null && customer.getEmail() != null) {
-                String targetDesc = (payment.getBooking() != null)
-                        ? "Thanh toán đặt kho #" + payment.getBooking().getBookingCode()
-                        : "Thanh toán hợp đồng #" + (payment.getContract() != null ? payment.getContract().getContractCode() : "N/A");
-
-                emailService.sendPaymentSuccessEmail(
-                        customer.getEmail(),
-                        customer.getFullName() != null ? customer.getFullName() : customer.getUsername(),
-                        txnRef,
-                        payment.getAmount(),
-                        targetDesc
-                );
-            }
-        } catch (Exception e) {
-            log.warn("Could not send payment success email: {}", e.getMessage());
-        }
-
-        // 4. Record Activity Log
-        String targetDesc = payment.getBooking() != null
-                ? "booking " + payment.getBooking().getBookingCode()
-                : "hop dong " + (payment.getContract() != null ? payment.getContract().getContractCode() : "N/A");
-
-        UUID facilityId = extractFacilityId(payment);
-        activityLogService.record(
-                facilityId,
-                ActivityAction.PAYMENT_CONFIRMED,
-                "PAYMENT",
-                payment.getId(),
-                "Thanh toan VNPAY thanh cong cho " + targetDesc + ", ma GD: " + txnRef,
-                PaymentStatus.PENDING,
-                PaymentStatus.PAID
-        );
     }
 
     @Override
@@ -457,16 +386,9 @@ public class PaymentServiceImpl implements PaymentService {
             List<Predicate> predicates = new ArrayList<>();
 
             if (scopedFacilityId != null) {
-                Join<Payment, Booking> bJoin = root.join("booking", JoinType.LEFT);
-                Join<Booking, StorageUnit> uJoin = bJoin.join("storageUnit", JoinType.LEFT);
-                Join<StorageUnit, Facility> bfJoin = uJoin.join("facility", JoinType.LEFT);
-
-                Join<Payment, RentalContract> cJoin = root.join("contract", JoinType.LEFT);
-                Join<RentalContract, Facility> cfJoin = cJoin.join("facility", JoinType.LEFT);
-
                 predicates.add(cb.or(
-                        cb.equal(bfJoin.get("id"), scopedFacilityId),
-                        cb.equal(cfJoin.get("id"), scopedFacilityId)
+                        cb.equal(root.get("booking").get("facility").get("id"), scopedFacilityId),
+                        cb.equal(root.get("contract").get("facility").get("id"), scopedFacilityId)
                 ));
             }
 

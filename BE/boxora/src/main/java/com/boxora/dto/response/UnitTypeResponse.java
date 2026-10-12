@@ -1,23 +1,30 @@
 package com.boxora.dto.response;
 
-import lombok.*;
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-@Getter
-@Setter
+@Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
+@Schema(description = "Phản hồi thông tin loại kho lưu trữ (Unit Type)")
 public class UnitTypeResponse {
+
     private UUID id;
     private String typeName;
     private String dimensions;
     private Double areaSqm;
     private BigDecimal basePricePerMonth;
     private BigDecimal depositAmount;
+    private Long activeUnitsCount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
+

@@ -1,58 +1,58 @@
 package com.boxora.dto.response;
 
 import com.boxora.enums.SealingStatus;
-import lombok.*;
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-@Getter
-@Setter
+@Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
+@Schema(description = "Phản hồi thông tin biên bản niêm phong kho lưu trữ (BR-RULE-012)")
 public class SealingRecordResponse {
 
     private UUID id;
-    private String protocolNumber;
 
+    // Unit
+    private UUID storageUnitId;
+    private String unitCode;
+
+    // Contract
     private UUID contractId;
     private String contractCode;
 
-    private UUID unitId;
-    private String unitCode;
-
+    // Facility
     private UUID facilityId;
     private String facilityName;
 
-    private UUID customerId;
-    private String customerName;
-    private String customerEmail;
-    private String customerPhone;
+    // Sealing info
+    private String sealTagNumber;
+    private String reason;
+    private LocalDateTime sealedAt;
 
-    private UUID performedById;
-    private String performedByName;
+    private UUID sealedById;
+    private String sealedByName;
 
     private UUID witnessId;
     private String witnessName;
 
-    private String sealTagNumber;
-    private String reason;
-    private Long overdueDays;
-    private BigDecimal totalDebtAmount;
-
-    private String inventorySummary;
-    private String notes;
-    private String evidenceUrls;
-
     private SealingStatus status;
-    private LocalDateTime sealedAt;
 
+    // Unseal info
     private LocalDateTime unsealedAt;
     private UUID unsealedById;
     private String unsealedByName;
     private String unsealReason;
 
+    private String photoEvidenceUrl;
+    private String notes;
+
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }

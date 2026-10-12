@@ -2,5 +2,7 @@ package com.boxora.enums;
 
 public enum SealingStatus {
     SEALED,
-    UNSEALED
+    UNSEALED,
+    DISPOSED
 }
+

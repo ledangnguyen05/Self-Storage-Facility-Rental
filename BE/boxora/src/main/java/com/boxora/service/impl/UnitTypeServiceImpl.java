@@ -1,20 +1,25 @@
 package com.boxora.service.impl;
 
+import com.boxora.dto.request.StorageUnitPriceAdjustmentRequest;
 import com.boxora.dto.request.UnitTypeCreateRequest;
+import com.boxora.dto.request.UnitTypePriceAdjustmentRequest;
 import com.boxora.dto.request.UnitTypeUpdateRequest;
-import com.boxora.dto.response.PriceHistoryResponse;
+import com.boxora.dto.response.StorageUnitPriceHistoryResponse;
 import com.boxora.dto.response.UnitTypeResponse;
-import com.boxora.entity.StorageUnitPriceHistory;
+import com.boxora.entity.StorageUnit;
 import com.boxora.entity.UnitType;
 import com.boxora.entity.User;
 import com.boxora.enums.ActivityAction;
+import com.boxora.enums.UnitStatus;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
-import com.boxora.repository.StorageUnitPriceHistoryRepository;
+import com.boxora.mapper.UnitTypeMapper;
 import com.boxora.repository.StorageUnitRepository;
 import com.boxora.repository.UnitTypeRepository;
 import com.boxora.repository.UserRepository;
+import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
+import com.boxora.service.StorageUnitPriceHistoryService;
 import com.boxora.service.UnitTypeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +30,6 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -34,34 +38,25 @@ import java.util.stream.Collectors;
 public class UnitTypeServiceImpl implements UnitTypeService {
 
     private final UnitTypeRepository unitTypeRepository;
-    private final StorageUnitPriceHistoryRepository priceHistoryRepository;
     private final StorageUnitRepository storageUnitRepository;
     private final UserRepository userRepository;
+    private final UnitTypeMapper unitTypeMapper;
+    private final StorageUnitPriceHistoryService storageUnitPriceHistoryService;
     private final ActivityLogService activityLogService;
+    private final RequestContext requestContext;
 
     @Override
-    @Transactional(readOnly = true)
-    public List<UnitTypeResponse> getAllUnitTypes() {
-        return unitTypeRepository.findAll().stream()
-                .map(this::mapToResponse)
-                .collect(Collectors.toList());
-    }
+    public UnitTypeResponse createUnitType(UnitTypeCreateRequest request) {
+        log.info("Creating new unit type: {}", request.getTypeName());
 
-    @Override
-    @Transactional(readOnly = true)
-    public UnitTypeResponse getUnitTypeById(UUID id) {
-        UnitType unitType = unitTypeRepository.findById(id)
-                .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND));
-        return mapToResponse(unitType);
-    }
-
-    @Override
-    public UnitTypeResponse createUnitType(UnitTypeCreateRequest request, String currentUserEmail) {
-        User currentUser = findUserByEmail(currentUserEmail);
+        String trimmedName = request.getTypeName().trim();
+        if (unitTypeRepository.existsByTypeNameIgnoreCase(trimmedName)) {
+            throw new AppException(ErrorCode.UNIT_TYPE_NAME_EXISTED);
+        }
 
         UnitType unitType = UnitType.builder()
-                .typeName(request.getTypeName())
-                .dimensions(request.getDimensions())
+                .typeName(trimmedName)
+                .dimensions(request.getDimensions().trim())
                 .areaSqm(request.getAreaSqm())
                 .basePricePerMonth(request.getBasePricePerMonth())
                 .depositAmount(request.getDepositAmount())
@@ -69,177 +64,166 @@ public class UnitTypeServiceImpl implements UnitTypeService {
 
         UnitType saved = unitTypeRepository.save(unitType);
 
-        // Record initial price entry in StorageUnitPriceHistory (BR-RULE-011)
-        StorageUnitPriceHistory initialHistory = StorageUnitPriceHistory.builder()
-                .unitType(saved)
-                .oldPrice(saved.getBasePricePerMonth())
-                .newPrice(saved.getBasePricePerMonth())
-                .effectiveFrom(LocalDateTime.now())
-                .effectiveTo(null)
-                .reason("Thiết lập biểu giá cơ sở ban đầu (BR-RULE-011)")
-                .changedBy(currentUser)
-                .build();
-        priceHistoryRepository.save(initialHistory);
-
-        if (currentUser != null) {
-            activityLogService.recordForUser(
-                    currentUser.getId(),
-                    ActivityAction.UNIT_TYPE_CREATE,
-                    "UnitType",
-                    saved.getId(),
-                    "Tạo loại kho mới: " + saved.getTypeName() + " với giá " + saved.getBasePricePerMonth() + " VNĐ/tháng",
-                    null,
-                    saved.getBasePricePerMonth()
-            );
+        // Khởi tạo lịch sử giá niêm yết ban đầu cho loại kho
+        User currentUser = null;
+        UUID currentUserId = requestContext.currentUserId();
+        if (currentUserId != null) {
+            currentUser = userRepository.findById(currentUserId).orElse(null);
         }
+        storageUnitPriceHistoryService.recordInitialUnitTypePrice(saved, saved.getBasePricePerMonth(), currentUser);
 
-        log.info("Created unit type: {} with initial price {}", saved.getTypeName(), saved.getBasePricePerMonth());
-        return mapToResponse(saved);
+        activityLogService.record(
+                ActivityAction.UNIT_TYPE_CREATE,
+                "UnitType",
+                saved.getId(),
+                "Tạo mới danh mục loại kho: " + saved.getTypeName(),
+                null,
+                saved.getId().toString()
+        );
+
+        return unitTypeMapper.toResponse(saved, 0L);
     }
 
     @Override
-    public UnitTypeResponse updateUnitType(UUID id, UnitTypeUpdateRequest request, String currentUserEmail) {
+    public UnitTypeResponse updateUnitType(UUID id, UnitTypeUpdateRequest request) {
+        log.info("Updating unit type id={}", id);
+
         UnitType unitType = unitTypeRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND));
 
-        User currentUser = findUserByEmail(currentUserEmail);
-        BigDecimal oldPrice = unitType.getBasePricePerMonth();
-
         if (request.getTypeName() != null && !request.getTypeName().isBlank()) {
-            unitType.setTypeName(request.getTypeName());
+            String trimmedName = request.getTypeName().trim();
+            if (unitTypeRepository.existsByTypeNameIgnoreCaseAndIdNot(trimmedName, id)) {
+                throw new AppException(ErrorCode.UNIT_TYPE_NAME_EXISTED);
+            }
+            unitType.setTypeName(trimmedName);
         }
+
         if (request.getDimensions() != null && !request.getDimensions().isBlank()) {
-            unitType.setDimensions(request.getDimensions());
+            unitType.setDimensions(request.getDimensions().trim());
         }
-        if (request.getAreaSqm() != null && request.getAreaSqm() > 0) {
+
+        if (request.getAreaSqm() != null) {
             unitType.setAreaSqm(request.getAreaSqm());
         }
-        if (request.getDepositAmount() != null && request.getDepositAmount().compareTo(BigDecimal.ZERO) >= 0) {
+
+        if (request.getDepositAmount() != null) {
             unitType.setDepositAmount(request.getDepositAmount());
         }
 
-        // =====================================================================
-        // BR-RULE-011: STORAGE UNIT PRICE ADJUSTMENT & AUDIT TRAIL PRESERVATION
-        // 1. Changes in unit type base price do not affect existing active contracts.
-        // 2. The previous active price record is closed (effectiveTo = now).
-        // 3. A new price history record is created with effectiveFrom = now and effectiveTo = null.
-        // 4. Audit trail is permanently recorded.
-        // =====================================================================
-        if (request.getBasePricePerMonth() != null &&
-                request.getBasePricePerMonth().compareTo(BigDecimal.ZERO) > 0 &&
-                request.getBasePricePerMonth().compareTo(oldPrice) != 0) {
+        // BR-RULE-011: Nếu có cập nhật basePricePerMonth, lưu vào lịch sử giá
+        if (request.getBasePricePerMonth() != null) {
+            BigDecimal currentPrice = unitType.getBasePricePerMonth();
+            if (currentPrice == null || currentPrice.compareTo(request.getBasePricePerMonth()) != 0) {
+                String reason = request.getPriceChangeReason() != null && !request.getPriceChangeReason().isBlank()
+                        ? request.getPriceChangeReason().trim()
+                        : "Cập nhật đơn giá niêm yết khi chỉnh sửa thông tin loại kho";
 
-            LocalDateTime now = LocalDateTime.now();
-
-            // Close previously active price history
-            priceHistoryRepository.findFirstByUnitType_IdAndEffectiveToIsNullOrderByEffectiveFromDesc(unitType.getId())
-                    .ifPresent(prevHistory -> {
-                        prevHistory.setEffectiveTo(now);
-                        priceHistoryRepository.save(prevHistory);
-                    });
-
-            String reason = (request.getChangeReason() != null && !request.getChangeReason().isBlank())
-                    ? request.getChangeReason()
-                    : "Điều chỉnh biểu giá cơ sở theo quyết định quản lý (BR-RULE-011)";
-
-            // Open new price history record
-            StorageUnitPriceHistory newHistory = StorageUnitPriceHistory.builder()
-                    .unitType(unitType)
-                    .oldPrice(oldPrice)
-                    .newPrice(request.getBasePricePerMonth())
-                    .effectiveFrom(now)
-                    .effectiveTo(null)
-                    .reason(reason)
-                    .changedBy(currentUser)
-                    .build();
-            priceHistoryRepository.save(newHistory);
-
-            unitType.setBasePricePerMonth(request.getBasePricePerMonth());
-
-            if (currentUser != null) {
-                activityLogService.recordForUser(
-                        currentUser.getId(),
-                        ActivityAction.PRICE_UPDATE,
-                        "UnitType",
-                        unitType.getId(),
-                        String.format("BR-RULE-011: Điều chỉnh giá loại kho [%s] từ %s sang %s. Lý do: %s",
-                                unitType.getTypeName(), oldPrice, request.getBasePricePerMonth(), reason),
-                        oldPrice,
-                        request.getBasePricePerMonth()
-                );
+                storageUnitPriceHistoryService.adjustUnitTypePrice(id, StorageUnitPriceAdjustmentRequest.builder()
+                        .newPrice(request.getBasePricePerMonth())
+                        .reason(reason)
+                        .effectiveFrom(LocalDateTime.now())
+                        .build());
             }
-
-            log.info("BR-RULE-011: Adjusted price for UnitType {} from {} to {}",
-                    unitType.getTypeName(), oldPrice, request.getBasePricePerMonth());
         }
 
         UnitType updated = unitTypeRepository.save(unitType);
-        return mapToResponse(updated);
+        long activeUnitsCount = storageUnitRepository.countByUnitType_Id(id);
+
+        activityLogService.record(
+                ActivityAction.UNIT_TYPE_UPDATE,
+                "UnitType",
+                updated.getId(),
+                "Cập nhật danh mục loại kho: " + updated.getTypeName(),
+                null,
+                updated.getId().toString()
+        );
+
+        return unitTypeMapper.toResponse(updated, activeUnitsCount);
+    }
+
+    @Override
+    public UnitTypeResponse adjustPrice(UUID id, UnitTypePriceAdjustmentRequest request) {
+        log.info("Adjusting price for unit type id={} under BR-RULE-011", id);
+
+        UnitType unitType = unitTypeRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND));
+
+        // Gọi service điều chỉnh giá chuẩn BR-RULE-011
+        storageUnitPriceHistoryService.adjustUnitTypePrice(id, StorageUnitPriceAdjustmentRequest.builder()
+                .newPrice(request.getNewPrice())
+                .reason(request.getReason())
+                .effectiveFrom(request.getEffectiveFrom())
+                .build());
+
+        // Nếu bật cascadeToAvailableUnits, cập nhật giá cho các kho đang AVAILABLE thuộc loại này
+        if (Boolean.TRUE.equals(request.getCascadeToAvailableUnits())) {
+            List<StorageUnit> units = storageUnitRepository.findByUnitType_Id(id);
+            for (StorageUnit unit : units) {
+                if (unit.getStatus() == UnitStatus.AVAILABLE) {
+                    unit.setPricePerMonth(request.getNewPrice());
+                    storageUnitRepository.save(unit);
+                }
+            }
+            log.info("Cascaded new price {} to available storage units of unit type {}", request.getNewPrice(), id);
+        }
+
+        UnitType reloaded = unitTypeRepository.findById(id).orElse(unitType);
+        long activeUnitsCount = storageUnitRepository.countByUnitType_Id(id);
+
+        return unitTypeMapper.toResponse(reloaded, activeUnitsCount);
     }
 
     @Override
     public void deleteUnitType(UUID id) {
+        log.info("Deleting unit type id={}", id);
+
         UnitType unitType = unitTypeRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND));
 
+        // Kiểm tra xem có kho nào đang thuộc loại kho này không
         if (storageUnitRepository.existsByUnitType_Id(id)) {
-            throw new AppException(ErrorCode.STORAGE_UNIT_IN_USE);
+            throw new AppException(ErrorCode.UNIT_TYPE_IN_USE);
         }
 
         unitTypeRepository.delete(unitType);
-        log.info("Deleted unit type: {}", unitType.getTypeName());
+
+        activityLogService.record(
+                ActivityAction.UNIT_TYPE_DELETE,
+                "UnitType",
+                id,
+                "Xóa danh mục loại kho: " + unitType.getTypeName(),
+                id.toString(),
+                null
+        );
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<PriceHistoryResponse> getPriceHistoriesByUnitType(UUID unitTypeId) {
-        if (!unitTypeRepository.existsById(unitTypeId)) {
-            throw new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND);
-        }
-        return priceHistoryRepository.findByUnitType_IdOrderByEffectiveFromDesc(unitTypeId).stream()
-                .map(this::mapToPriceHistoryResponse)
-                .collect(Collectors.toList());
+    public UnitTypeResponse getById(UUID id) {
+        UnitType unitType = unitTypeRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND));
+
+        long count = storageUnitRepository.countByUnitType_Id(id);
+        return unitTypeMapper.toResponse(unitType, count);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<PriceHistoryResponse> getAllPriceHistories() {
-        return priceHistoryRepository.findAllByOrderByEffectiveFromDesc().stream()
-                .map(this::mapToPriceHistoryResponse)
-                .collect(Collectors.toList());
+    public List<UnitTypeResponse> getAll() {
+        List<UnitType> list = unitTypeRepository.findAllByOrderByCreatedAtAsc();
+        return list.stream()
+                .map(ut -> {
+                    long count = storageUnitRepository.countByUnitType_Id(ut.getId());
+                    return unitTypeMapper.toResponse(ut, count);
+                })
+                .toList();
     }
 
-    private User findUserByEmail(String email) {
-        if (email == null) return null;
-        return userRepository.findByEmail(email).orElse(null);
-    }
-
-    private UnitTypeResponse mapToResponse(UnitType ut) {
-        return UnitTypeResponse.builder()
-                .id(ut.getId())
-                .typeName(ut.getTypeName())
-                .dimensions(ut.getDimensions())
-                .areaSqm(ut.getAreaSqm())
-                .basePricePerMonth(ut.getBasePricePerMonth())
-                .depositAmount(ut.getDepositAmount())
-                .createdAt(ut.getCreatedAt())
-                .updatedAt(ut.getUpdatedAt())
-                .build();
-    }
-
-    private PriceHistoryResponse mapToPriceHistoryResponse(StorageUnitPriceHistory h) {
-        return PriceHistoryResponse.builder()
-                .id(h.getId())
-                .unitTypeId(h.getUnitType() != null ? h.getUnitType().getId() : null)
-                .unitTypeName(h.getUnitType() != null ? h.getUnitType().getTypeName() : null)
-                .oldPrice(h.getOldPrice())
-                .newPrice(h.getNewPrice())
-                .effectiveFrom(h.getEffectiveFrom())
-                .effectiveTo(h.getEffectiveTo())
-                .reason(h.getReason())
-                .changedById(h.getChangedBy() != null ? h.getChangedBy().getId() : null)
-                .changedByName(h.getChangedBy() != null ? h.getChangedBy().getFullName() : "Hệ thống")
-                .createdAt(h.getCreatedAt())
-                .build();
+    @Override
+    @Transactional(readOnly = true)
+    public List<StorageUnitPriceHistoryResponse> getPriceHistory(UUID id) {
+        return storageUnitPriceHistoryService.getPriceHistoryByUnitType(id);
     }
 }
+
