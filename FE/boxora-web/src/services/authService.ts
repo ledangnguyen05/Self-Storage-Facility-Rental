@@ -20,7 +20,20 @@ export const authService = {
     return response.data
   },
 
-  async register(data: { username: string; email: string; password: string; phone: string; fullName: string }) {
+  async getCaptcha(): Promise<{ success: boolean; data: { captchaId: string; captchaImage: string } }> {
+    const response = await api.get('/api/v1/auth/captcha')
+    return response.data
+  },
+
+  async register(data: {
+    username: string
+    email: string
+    password: string
+    phone: string
+    fullName: string
+    captchaId?: string
+    captchaCode?: string
+  }) {
     const response = await api.post('/api/v1/auth/register', data)
     return response.data
   },
