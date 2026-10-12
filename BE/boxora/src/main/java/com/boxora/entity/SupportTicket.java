@@ -48,6 +48,9 @@ public class SupportTicket extends BaseEntity {
     @JoinColumn(name = "assigned_staff_id")
     private User assignedStaff;
 
+    @Column(name = "image_evidence", columnDefinition = "TEXT")
+    private String imageEvidence;
+
     @Column(name = "resolution_note", columnDefinition = "TEXT")
     private String resolutionNote;
 }

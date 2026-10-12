@@ -7,6 +7,14 @@ export const StaffDashboard: React.FC = () => {
 
   // Inspection Return state (Công ty CP Thương mại ABC - #C-302)
   const [returnConfirmed, setReturnConfirmed] = useState(false)
+  const [returnDepositPaid] = useState(2000000)
+  const [damageFee, setDamageFee] = useState(0)
+  const [cleaningFee, setCleaningFee] = useState(0)
+  const [lostCardFee, setLostCardFee] = useState(0)
+  const totalDeduction = damageFee + cleaningFee + lostCardFee
+  const netRefundAmount = Math.max(0, returnDepositPaid - totalDeduction)
+  const reviewState = totalDeduction > 0 ? 'PENDING_ACCOUNTING_REVIEW' : 'AUTO_REFUND_APPROVED'
+  const refundSlaDays = 5
 
   // Ticket status state
   const [tickets, setTickets] = useState([
@@ -18,7 +26,10 @@ export const StaffDashboard: React.FC = () => {
       priority: 'HIGH',
       staff: 'Hoàng Nam (Kỹ thuật)',
       time: '12 phút trước',
-      status: 'IN_PROGRESS'
+      status: 'IN_PROGRESS',
+      evidenceUrls: [
+        'https://images.unsplash.com/photo-1558002038-1055907df827?auto=format&fit=crop&w=800&q=80'
+      ]
     },
     {
       id: '#TK-405',
@@ -28,7 +39,10 @@ export const StaffDashboard: React.FC = () => {
       priority: 'MEDIUM',
       staff: 'Nguyễn Quỳnh Anh (Trực ca)',
       time: '28 phút trước',
-      status: 'IN_PROGRESS'
+      status: 'IN_PROGRESS',
+      evidenceUrls: [
+        'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80'
+      ]
     },
     {
       id: '#TK-408',
@@ -38,9 +52,17 @@ export const StaffDashboard: React.FC = () => {
       priority: 'LOW',
       staff: 'Quỳnh Anh (NV-842)',
       time: 'Vừa xong',
-      status: 'RESOLVED'
+      status: 'RESOLVED',
+      evidenceUrls: [] as string[]
     }
   ])
+
+  // Evidence image preview modal state
+  const [activeEvidenceModal, setActiveEvidenceModal] = useState<{
+    ticketId: string
+    title: string
+    images: string[]
+  } | null>(null)
 
   // Quick Walkin Modal
   const [isWalkinOpen, setIsWalkinOpen] = useState(false)
@@ -553,20 +575,20 @@ export const StaffDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* 4 Inspection Checklist Items */}
+              {/* 5 Inspection Checklist Items (BR-RULE-013) */}
               <div className="flex flex-col gap-2.5">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
-                    Biên bản thẩm định hiện trường
+                    Biên bản thẩm định hiện trường (BR-RULE-013)
                   </span>
-                  <span className="text-xs text-slate-400">4/4 tiêu chuẩn</span>
+                  <span className="text-xs font-semibold text-emerald-600">5/5 tiêu chuẩn</span>
                 </div>
 
                 <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <span className="material-symbols-outlined text-slate-500 text-[18px]">garage</span>
                     <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-slate-800">Tình trạng cửa cuốn</span>
+                      <span className="text-xs font-semibold text-slate-800">1. Tình trạng cửa cuốn</span>
                       <span className="text-[10px] text-slate-400">Mở êm, không móp méo, ray dẫn tốt</span>
                     </div>
                   </div>
@@ -579,7 +601,7 @@ export const StaffDashboard: React.FC = () => {
                   <div className="flex items-center gap-2.5">
                     <span className="material-symbols-outlined text-slate-500 text-[18px]">cleaning_services</span>
                     <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-slate-800">Vệ sinh kho &amp; sàn</span>
+                      <span className="text-xs font-semibold text-slate-800">2. Vệ sinh kho &amp; sàn</span>
                       <span className="text-[10px] text-slate-400">Đã dọn sạch rác, không ẩm ướt</span>
                     </div>
                   </div>
@@ -592,8 +614,8 @@ export const StaffDashboard: React.FC = () => {
                   <div className="flex items-center gap-2.5">
                     <span className="material-symbols-outlined text-slate-500 text-[18px]">lock</span>
                     <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-slate-800">Ổ khóa Smart Lock</span>
-                      <span className="text-[10px] text-slate-400">Cảm biến nhạy, pin 92%</span>
+                      <span className="text-xs font-semibold text-slate-800">3. Ổ khóa Smart Lock</span>
+                      <span className="text-[10px] text-slate-400">Cảm biến nhạy, pin 92%, chốt khóa tốt</span>
                     </div>
                   </div>
                   <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
@@ -605,8 +627,8 @@ export const StaffDashboard: React.FC = () => {
                   <div className="flex items-center gap-2.5">
                     <span className="material-symbols-outlined text-slate-500 text-[18px]">thermostat</span>
                     <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-slate-800">Cảm biến nhiệt / ẩm</span>
-                      <span className="text-[10px] text-slate-400">22°C • 48% RH (Chuẩn)</span>
+                      <span className="text-xs font-semibold text-slate-800">4. Cảm biến nhiệt / ẩm</span>
+                      <span className="text-[10px] text-slate-400">22°C • 48% RH (Chuẩn kỹ thuật)</span>
                     </div>
                   </div>
                   <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
@@ -614,13 +636,26 @@ export const StaffDashboard: React.FC = () => {
                   </span>
                 </div>
 
+                <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="material-symbols-outlined text-slate-500 text-[18px]">grid_view</span>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-semibold text-slate-800">5. Tường vách &amp; kết cấu kho</span>
+                      <span className="text-[10px] text-slate-400">Không nứt vỡ móp méo, nguyên vẹn</span>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                    Nguyên vẹn
+                  </span>
+                </div>
+
                 {/* Proof Photos */}
-                <div className="mt-2 p-3 rounded-lg bg-slate-50 border border-slate-100">
+                <div className="mt-1 p-3 rounded-lg bg-slate-50 border border-slate-100">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[11px] font-bold text-slate-700 uppercase">
-                      Ảnh chụp hiện trường (Bắt buộc)
+                      Ảnh chụp hiện trường (Bắt buộc &ge; 2 ảnh)
                     </span>
-                    <span className="text-[10px] text-slate-500 font-mono">2/2 ảnh</span>
+                    <span className="text-[10px] text-emerald-600 font-bold font-mono">2/2 ảnh đạt</span>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="relative rounded-lg overflow-hidden h-20 shadow-sm bg-slate-200">
@@ -646,19 +681,75 @@ export const StaffDashboard: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Settlement Summary */}
-                <div className="mt-2 p-3 rounded-lg bg-slate-100 border border-slate-200 flex flex-col gap-1 text-xs">
+                {/* Khấu trừ chi phí hư hại / vệ sinh (BR-RULE-014) */}
+                <div className="mt-1 p-3 rounded-lg bg-slate-50 border border-slate-200 flex flex-col gap-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-700">Khấu Trừ Chi Phí (Nếu có)</span>
+                    <span className="text-[10px] text-slate-400">BR-RULE-014</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Phí hư hại (đ)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="50000"
+                        value={damageFee || ''}
+                        onChange={(e) => setDamageFee(Number(e.target.value) || 0)}
+                        placeholder="0"
+                        disabled={returnConfirmed}
+                        className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Phí vệ sinh (đ)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="50000"
+                        value={cleaningFee || ''}
+                        onChange={(e) => setCleaningFee(Number(e.target.value) || 0)}
+                        placeholder="0"
+                        disabled={returnConfirmed}
+                        className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Settlement Summary & Review State (BR-RULE-014 & BR-RULE-015) */}
+                <div className="mt-1 p-3 rounded-lg bg-slate-100 border border-slate-200 flex flex-col gap-1.5 text-xs">
                   <div className="flex items-center justify-between text-slate-600">
                     <span>Tiền cọc giữ ban đầu:</span>
-                    <span className="font-data-tabular font-bold text-slate-800">2.000.000đ</span>
+                    <span className="font-data-tabular font-bold text-slate-800">
+                      {returnDepositPaid.toLocaleString('vi-VN')}đ
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-slate-600">
-                    <span>Khấu trừ vệ sinh/hư hại:</span>
-                    <span className="font-data-tabular text-slate-500">0đ</span>
+                    <span>Tổng khấu trừ (Hư hại/Vệ sinh):</span>
+                    <span className={`font-data-tabular font-semibold ${totalDeduction > 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                      -{totalDeduction.toLocaleString('vi-VN')}đ
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-slate-900 pt-1.5 border-t border-slate-200">
                     <span className="font-bold">Số tiền hoàn trả khách:</span>
-                    <span className="font-unit-code text-sm text-orange-600 font-extrabold">2.000.000đ</span>
+                    <span className="font-unit-code text-sm text-orange-600 font-extrabold">
+                      {netRefundAmount.toLocaleString('vi-VN')}đ
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] pt-1 text-slate-500">
+                    <span>SLA cam kết hoàn tiền:</span>
+                    <span className="font-semibold text-slate-700">{refundSlaDays} ngày làm việc</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500">
+                    <span>Quy trình xét duyệt:</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                      totalDeduction > 0
+                        ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                        : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    }`}>
+                      {totalDeduction > 0 ? 'Chờ Kế Toán Đối Soát (Review State)' : 'Tự Động Hoàn Cọc (Direct SLA)'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -667,7 +758,10 @@ export const StaffDashboard: React.FC = () => {
             <button
               onClick={() => {
                 setReturnConfirmed(true)
-                alert('Đã hoàn tất nghiệm thu trả kho #C-302. Lệnh hoàn cọc 2.000.000đ đã được chuyển sang cổng thanh toán tự động.')
+                const reviewMsg = totalDeduction > 0
+                  ? `Đã khấu trừ ${totalDeduction.toLocaleString('vi-VN')}đ. Hồ sơ hoàn cọc ${netRefundAmount.toLocaleString('vi-VN')}đ đã chuyển sang Kế Toán đối soát duyệt chi (SLA ${refundSlaDays} ngày).`
+                  : `Kho đạt chuẩn 5/5. Lệnh hoàn cọc 100% (${netRefundAmount.toLocaleString('vi-VN')}đ) đã chuyển sang cổng thanh toán tự động (SLA ${refundSlaDays} ngày).`
+                alert(`Nghiệm thu hoàn trả kho #C-302 thành công!\n- Mã PIN SmartLock: ĐÃ THU HỒI\n- Trạng thái kho: AVAILABLE (Sẵn sàng phục vụ khách mới)\n- ${reviewMsg}`)
               }}
               disabled={returnConfirmed}
               className={`mt-4 w-full py-2.5 px-4 rounded-lg text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-all ${
@@ -715,7 +809,10 @@ export const StaffDashboard: React.FC = () => {
                 priority: 'MEDIUM',
                 staff: 'Nguyễn Quỳnh Anh (Trực ca)',
                 time: 'Vừa xong',
-                status: 'IN_PROGRESS'
+                status: 'IN_PROGRESS',
+                evidenceUrls: [
+                  'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80'
+                ]
               }
               setTickets([newTk, ...tickets])
             }}
@@ -732,6 +829,7 @@ export const StaffDashboard: React.FC = () => {
               <tr className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider">
                 <th className="py-2.5 px-3 rounded-l-lg">Mã Ticket</th>
                 <th className="py-2.5 px-3">Mô Tả Chi Tiết Sự Cố</th>
+                <th className="py-2.5 px-3">Ảnh Hiện Trường</th>
                 <th className="py-2.5 px-3">Vị Trí &amp; Kho</th>
                 <th className="py-2.5 px-3">Mức Độ</th>
                 <th className="py-2.5 px-3">Nhân Viên Phụ Trách</th>
@@ -753,6 +851,49 @@ export const StaffDashboard: React.FC = () => {
                   <td className="py-3 px-3 max-w-xs">
                     <span className="font-bold text-slate-900 block">{tk.title}</span>
                     <span className="text-[11px] text-slate-500 line-clamp-1">{tk.detail}</span>
+                  </td>
+                  <td className="py-3 px-3">
+                    {tk.evidenceUrls && tk.evidenceUrls.length > 0 ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setActiveEvidenceModal({
+                            ticketId: tk.id,
+                            title: tk.title,
+                            images: tk.evidenceUrls
+                          })}
+                          className="group relative block w-10 h-10 rounded-lg overflow-hidden border border-slate-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500 shrink-0"
+                          title="Nhấn để phóng to ảnh hiện trường"
+                        >
+                          <img
+                            src={tk.evidenceUrls[0]}
+                            alt="Ảnh hiện trường"
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200"
+                          />
+                          <span className="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition-colors" />
+                          <span className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded bg-black/60 text-white flex items-center justify-center">
+                            <span className="material-symbols-outlined text-[10px]">zoom_in</span>
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveEvidenceModal({
+                            ticketId: tk.id,
+                            title: tk.title,
+                            images: tk.evidenceUrls
+                          })}
+                          className="text-[11px] font-semibold text-orange-600 hover:text-orange-700 flex items-center gap-0.5"
+                        >
+                          <span>{tk.evidenceUrls.length} ảnh</span>
+                          <span className="material-symbols-outlined text-[13px]">open_in_new</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-slate-400 text-[11px] italic flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px]">hide_image</span>
+                        Chưa có ảnh
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 px-3">
                     <span className="font-bold text-slate-800">{tk.location}</span>
@@ -872,6 +1013,73 @@ export const StaffDashboard: React.FC = () => {
                 </div>
               </form>
             )}
+      {/* Evidence Image Preview Modal */}
+      {activeEvidenceModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[20px]">image</span>
+                </span>
+                <div>
+                  <h3 className="font-headline text-base font-bold text-slate-900">
+                    Bằng Chứng Hiện Trường Sự Cố {activeEvidenceModal.ticketId}
+                  </h3>
+                  <p className="text-xs text-slate-500 line-clamp-1">
+                    {activeEvidenceModal.title}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveEvidenceModal(null)}
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto p-1">
+                {activeEvidenceModal.images.map((imgUrl, idx) => (
+                  <div key={idx} className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 group shadow-sm">
+                    <img
+                      src={imgUrl}
+                      alt={`Bằng chứng ${idx + 1}`}
+                      className="w-full h-56 object-cover"
+                    />
+                    <div className="absolute bottom-2 right-2 flex gap-1">
+                      <a
+                        href={imgUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2 py-1 rounded-md bg-slate-900/80 hover:bg-slate-900 text-white text-[11px] font-bold flex items-center gap-1 backdrop-blur-sm transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                        Xem ảnh gốc
+                      </a>
+                    </div>
+                    <span className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/60 text-white font-mono text-[10px]">
+                      Ảnh #{idx + 1}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                <span className="text-xs text-slate-500">
+                  Tổng cộng: <strong className="text-slate-800">{activeEvidenceModal.images.length}</strong> hình ảnh bằng chứng
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveEvidenceModal(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors"
+                >
+                  Đóng cửa sổ
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

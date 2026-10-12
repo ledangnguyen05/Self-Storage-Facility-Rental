@@ -23,4 +23,8 @@ public class StorageUnitUpdateRequest {
 
     @NotNull(message = "Unit type ID is required")
     private UUID unitTypeId;
+
+    private java.math.BigDecimal pricePerMonth;
+
+    private String priceChangeReason;
 }

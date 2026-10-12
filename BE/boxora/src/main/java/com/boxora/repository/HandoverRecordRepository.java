@@ -10,4 +10,9 @@ import java.util.UUID;
 @Repository
 public interface HandoverRecordRepository extends JpaRepository<HandoverRecord, UUID> {
     List<HandoverRecord> findByBooking_Id(UUID bookingId);
+
+    default List<HandoverRecord> findByBookingId(UUID bookingId) {
+        return findByBooking_Id(bookingId);
+    }
 }
+

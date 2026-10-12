@@ -15,6 +15,7 @@ import { StaffDashboard } from './pages/staff/StaffDashboard'
 import { ManagerDashboard } from './pages/manager/ManagerDashboard'
 import { OperationsDashboard } from './pages/operations/OperationsDashboard'
 import { AdminDashboard } from './pages/admin/AdminDashboard'
+import { PolicyAndFeeManagement } from './pages/operations/PolicyAndFeeManagement'
 
 // Root redirect handler based on user role
 function RootRedirect() {
@@ -121,6 +122,16 @@ function MainContent() {
                 </ProtectedRoute>
               }
             />
+
+            {/* 6. Policy, Fee & Discount Portal */}
+            <Route
+              path="policies"
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER']}>
+                  <PolicyAndFeeManagement />
+                </ProtectedRoute>
+              }
+            />
           </Route>
 
           {/* Direct Friendly URLs with Automatic Route Guards */}
@@ -131,6 +142,9 @@ function MainContent() {
           <Route path="/operations" element={<Navigate to="/portal/business-manager" replace />} />
           <Route path="/business" element={<Navigate to="/portal/business-manager" replace />} />
           <Route path="/admin" element={<Navigate to="/portal/admin" replace />} />
+          <Route path="/policies" element={<Navigate to="/portal/policies" replace />} />
+          <Route path="/fees" element={<Navigate to="/portal/policies" replace />} />
+          <Route path="/discounts" element={<Navigate to="/portal/policies" replace />} />
 
           {/* Fallback */}
           <Route path="*" element={<RootRedirect />} />
