@@ -90,6 +90,11 @@ export const StaffDashboard: React.FC = () => {
   const [walkinName, setWalkinName] = useState('')
   const [walkinPhone, setWalkinPhone] = useState('')
   const [walkinSuccess, setWalkinSuccess] = useState(false)
+  const [activeEvidenceModal, setActiveEvidenceModal] = useState<{
+    ticketId: string
+    title: string
+    images: string[]
+  } | null>(null)
 
   const handleWalkinSubmit = (e: React.FormEvent) => {
     e.preventDefault()
