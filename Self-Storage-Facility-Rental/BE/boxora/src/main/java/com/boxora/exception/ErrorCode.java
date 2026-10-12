@@ -55,6 +55,7 @@ public enum ErrorCode {
     STORAGE_UNIT_IN_USE(709, "Cannot delete storage unit because it has active contracts or bookings", HttpStatus.CONFLICT),
     STORAGE_UNIT_CANNOT_MAINTAIN(710, "Cannot put storage unit into maintenance while it is occupied or reserved", HttpStatus.BAD_REQUEST),
     STORAGE_UNIT_NOT_AVAILABLE(711, "Storage unit is currently not available for booking", HttpStatus.CONFLICT),
+    BOOKING_PAYMENT_EXPIRED(712, "The 24-hour booking payment window has expired", HttpStatus.CONFLICT),
 
     // ========================= PAYMENT (750 - 799) =========================
     PAYMENT_NOT_FOUND(750, "Payment transaction not found", HttpStatus.NOT_FOUND),
@@ -111,7 +112,12 @@ public enum ErrorCode {
     CONTRACT_RENEWAL_NOT_FOUND(1506, "Contract renewal request not found", HttpStatus.NOT_FOUND),
     CONTRACT_RENEWAL_ALREADY_COMPLETED(1507, "Contract renewal has already been completed", HttpStatus.BAD_REQUEST),
     CONTRACT_RENEWAL_ALREADY_SIGNED(1508, "Contract renewal is already signed", HttpStatus.BAD_REQUEST),
-    RENEWAL_CONTRACT_NOT_FOUND(1509, "Rental contract not found", HttpStatus.NOT_FOUND);
+    RENEWAL_CONTRACT_NOT_FOUND(1509, "Rental contract not found", HttpStatus.NOT_FOUND),
+    CONTRACT_OTP_NOT_FOUND(1510, "No active contract OTP request was found", HttpStatus.BAD_REQUEST),
+    CONTRACT_OTP_INVALID(1511, "The contract OTP is invalid or has expired", HttpStatus.BAD_REQUEST),
+    CONTRACT_OTP_RESEND_TOO_SOON(1512, "Please wait before requesting another contract OTP", HttpStatus.TOO_MANY_REQUESTS),
+    CONTRACT_OTP_ALREADY_VERIFIED(1513, "The contract OTP has already been verified", HttpStatus.BAD_REQUEST),
+    CONTRACT_OTP_ATTEMPTS_EXCEEDED(1514, "Too many invalid contract OTP attempts", HttpStatus.TOO_MANY_REQUESTS);
 
 
 

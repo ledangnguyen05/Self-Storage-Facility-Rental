@@ -20,11 +20,9 @@ export const bookingService = {
 
   async createBooking(data: {
     storageUnitId: string
-    customerId?: string
+    customerId: string
     startDate: string
     rentalMonths: number
-    totalRentalFee?: number
-    depositPaid?: number
   }) {
     const response = await api.post('/api/v1/bookings', data)
     return response.data?.data as Booking
@@ -47,4 +45,3 @@ export const bookingService = {
     return response.data?.data as Booking
   },
 }
-

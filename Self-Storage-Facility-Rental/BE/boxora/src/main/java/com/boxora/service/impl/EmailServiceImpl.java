@@ -76,6 +76,20 @@ public class EmailServiceImpl implements EmailService {
         sendHtmlEmail(toEmail, subject, content);
     }
 
+    @Override
+    public void sendContractSigningOtp(String toEmail, String otp) {
+        String content = """
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2>Xác thực ký hợp đồng Boxora</h2>
+                    <p>Mã OTP của bạn là:</p>
+                    <p style="font-size: 28px; font-weight: bold; letter-spacing: 8px;">%s</p>
+                    <p>Mã có hiệu lực trong 5 phút. Không chia sẻ mã này với bất kỳ ai.</p>
+                    <p>Nếu bạn không yêu cầu ký hợp đồng, hãy bỏ qua email này.</p>
+                </div>
+                """.formatted(otp);
+        sendHtmlEmail(toEmail, "Mã OTP ký hợp đồng Boxora", content);
+    }
+
 
     private void sendHtmlEmail(String to, String subject, String htmlContent) {
         try {

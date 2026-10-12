@@ -11,11 +11,11 @@ import {
   calculateDistanceKm,
   estimateTravelMinutes
 } from '../../data/storageUnitsData'
-import { checkCustomerPortalAccess, activateCustomerRental } from '../../utils/rentalAccess'
+import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import { FloatingContactWidget } from '../../components/common/FloatingContactWidget'
+import { BookingCheckoutModal } from '../../components/modals/BookingCheckoutModal'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
-import { bookingService } from '../../services/bookingService'
 
 const FACILITY_COORDS: Record<string, { lat: number; lng: number }> = {
   'HCM-D1': { lat: 10.7745, lng: 106.7025 },
@@ -110,10 +110,6 @@ export const UnitsExplorerPage: React.FC = () => {
   // Selected Unit & Modal State
   const [selectedUnit, setSelectedUnit] = useState<StorageUnitType>(STORAGE_UNITS[0])
   const [rentalModalUnit, setRentalModalUnit] = useState<StorageUnitType | null>(null)
-  const [isActivatingRental, setIsActivatingRental] = useState(false)
-  const [activationDone, setActivationDone] = useState(false)
-  const [activatedPin, setActivatedPin] = useState('841 902')
-  const [copiedPin, setCopiedPin] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
 
   // Load facilities and available units from real API
@@ -277,35 +273,7 @@ export const UnitsExplorerPage: React.FC = () => {
       navigate(`/register?unit=${unit.id}`)
       return
     }
-    const randomPin = `${Math.floor(100 + Math.random() * 900)} ${Math.floor(100 + Math.random() * 900)}`
-    setActivatedPin(randomPin)
-    setActivationDone(false)
-    setIsActivatingRental(false)
     setRentalModalUnit(unit)
-  }
-
-  const handleConfirmRentalActivation = async () => {
-    if (!rentalModalUnit || !user) return
-    setIsActivatingRental(true)
-    try {
-      if (rentalModalUnit.backendId) {
-        await bookingService.createBooking({
-          storageUnitId: rentalModalUnit.backendId,
-          customerId: user.id,
-          startDate: new Date().toISOString().split('T')[0],
-          rentalMonths: 1,
-          totalRentalFee: rentalModalUnit.monthlyPriceNumeric,
-          depositPaid: rentalModalUnit.monthlyPriceNumeric,
-        }).catch(err => {
-          console.warn('Backend booking API notice:', err)
-        })
-      }
-    } finally {
-      activateCustomerRental(user, rentalModalUnit.id, rentalModalUnit.name)
-      setIsActivatingRental(false)
-      setActivationDone(true)
-      setCustomerAccess(checkCustomerPortalAccess(user))
-    }
   }
 
   return (
@@ -1010,248 +978,20 @@ export const UnitsExplorerPage: React.FC = () => {
 
       </section>
 
-      {/* ============================================================ */}
-      {/* 6. RENTAL BOOKING & APP ACTIVATION MODAL                    */}
-      {/* ============================================================ */}
-      {rentalModalUnit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden text-left animate-in zoom-in-95 duration-200">
-            
-            {/* Modal Header */}
-            <div className="p-6 bg-slate-900 text-white flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[var(--brand-teal,#0891b2)] flex items-center justify-center text-white">
-                  <span className="material-symbols-outlined text-[22px]">verified</span>
-                </div>
-                <div>
-                  <h3 className="font-headline text-lg font-bold">
-                    {activationDone ? 'Xác Nhận Kích Hoạt Mở App Thành Công' : 'Thuê Kho & Bàn Giao Mã Kích Hoạt App'}
-                  </h3>
-                  <p className="text-xs text-slate-400">Hệ thống kho thông minh Boxora Cloud</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setRentalModalUnit(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 space-y-5">
-              {!activationDone ? (
-                <>
-                  {/* Unit summary */}
-                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-800">
-                          {rentalModalUnit.id}
-                        </span>
-                        <span className="font-headline font-bold text-sm text-slate-900">
-                          {rentalModalUnit.name}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 font-mono">
-                        {rentalModalUnit.size} • {rentalModalUnit.volume} • Nhiệt ẩm {rentalModalUnit.temp}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span className="font-mono text-base font-bold text-[var(--brand-teal,#0891b2)] block">
-                        {rentalModalUnit.monthlyPrice}
-                      </span>
-                      <span className="text-[10px] text-slate-500">/ tháng</span>
-                    </div>
-                  </div>
-
-                  {/* Location & Routing Summary */}
-                  <div className="p-4 rounded-xl bg-gradient-to-br from-slate-50 to-cyan-50/40 border border-slate-200 text-xs space-y-2.5">
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-200/70">
-                      <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-[16px] text-cyan-600">location_on</span>
-                        <span>Đối Chiếu Vị Trí &amp; Lộ Trình Di Chuyển</span>
-                      </span>
-                      <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-cyan-100 text-cyan-900 border border-cyan-200 flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[13px] text-cyan-700">directions_car</span>
-                        {rentalModalUnit.distanceKm ?? calculateDistanceKm(customerLocation.coords.lat, customerLocation.coords.lng, rentalModalUnit.coords.lat, rentalModalUnit.coords.lng)} km • ~{rentalModalUnit.travelMins ?? estimateTravelMinutes(1)}p
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
-                      {/* Customer Location */}
-                      <div className="space-y-0.5">
-                        <span className="text-slate-400 font-semibold block uppercase text-[10px]">Vị trí của bạn (Khách thuê):</span>
-                        <div className="text-slate-800 font-medium flex items-start gap-1">
-                          <span className="material-symbols-outlined text-[13px] text-cyan-600 shrink-0 mt-0.5">person_pin</span>
-                          <span>{customerLocation.detailAddress}</span>
-                        </div>
-                      </div>
-
-                      {/* Storage Unit Location */}
-                      <div className="space-y-0.5">
-                        <span className="text-slate-400 font-semibold block uppercase text-[10px]">Vị trí kho muốn thuê:</span>
-                        <div className="text-slate-800 font-medium flex items-start gap-1">
-                          <span className="material-symbols-outlined text-[13px] text-[var(--brand-teal,#0891b2)] shrink-0 mt-0.5">warehouse</span>
-                          <span><strong>{rentalModalUnit.facilityName}</strong></span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="pt-2 border-t border-slate-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px]">
-                      <div className="text-slate-600 flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px] text-amber-600 shrink-0">door_front</span>
-                        <span>{rentalModalUnit.floorLocation}</span>
-                      </div>
-                      <a
-                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rentalModalUnit.facilityAddress)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[var(--brand-teal,#0891b2)] hover:text-cyan-800 font-semibold flex items-center gap-0.5 hover:underline self-end sm:self-auto"
-                      >
-                        <span>Mở bản đồ chỉ đường</span>
-                        <span className="material-symbols-outlined text-[13px]">open_in_new</span>
-                      </a>
-                    </div>
-                  </div>
-
-                  {/* Customer Info */}
-                  <div className="p-3.5 rounded-xl bg-cyan-50/50 border border-cyan-100 text-xs text-slate-700 space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Khách thuê:</span>
-                      <strong className="text-slate-900">{user?.fullName || user?.username}</strong>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Email:</span>
-                      <span className="font-mono text-slate-900">{user?.email || 'customer@boxora.vn'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Thời gian bắt đầu:</span>
-                      <span className="font-mono text-slate-900">{new Date().toLocaleDateString('vi-VN')}</span>
-                    </div>
-                  </div>
-
-                  {/* Checklist Items */}
-                  <div className="space-y-2.5 text-xs">
-                    <span className="font-semibold text-slate-900 block">Quy trình cấp quyền truy cập:</span>
-                    <div className="flex items-start gap-2.5 text-slate-600">
-                      <span className="material-symbols-outlined text-[18px] text-emerald-600 shrink-0">check_circle</span>
-                      <span>Ký kết thỏa thuận hợp đồng điện tử tự quản thông minh.</span>
-                    </div>
-                    <div className="flex items-start gap-2.5 text-slate-600">
-                      <span className="material-symbols-outlined text-[18px] text-emerald-600 shrink-0">check_circle</span>
-                      <span>Cấp mã PIN mở cửa tự động 24/7 bảo mật AES-256.</span>
-                    </div>
-                    <div className="flex items-start gap-2.5 text-slate-600">
-                      <span className="material-symbols-outlined text-[18px] text-emerald-600 shrink-0">check_circle</span>
-                      <span><strong>Kích hoạt dịch vụ &amp; quyền mở app:</strong> Mở toàn quyền quản lý kho trên Cổng khách hàng (Customer Portal).</span>
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="pt-2 flex items-center justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setRentalModalUnit(null)}
-                      className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors cursor-pointer"
-                    >
-                      Hủy Bỏ
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isActivatingRental}
-                      onClick={handleConfirmRentalActivation}
-                      className="px-5 py-2.5 rounded-xl bg-[var(--brand-teal,#0891b2)] hover:bg-[var(--brand-teal-hover,#0e7490)] text-white text-xs font-bold flex items-center gap-2 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      {isActivatingRental ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          <span>Đang kích hoạt hợp đồng &amp; mở app...</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="material-symbols-outlined text-[16px]">key</span>
-                          <span>Xác Nhận Thuê &amp; Kích Hoạt Mở App</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                /* Success State */
-                <div className="py-2 space-y-5 text-center">
-                  <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
-                    <span className="material-symbols-outlined text-[32px]">task_alt</span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <h4 className="font-headline text-lg font-extrabold text-slate-900">
-                      Thuê Kho &amp; Kích Hoạt App Thành Công!
-                    </h4>
-                    <p className="text-xs text-slate-600 max-w-sm mx-auto">
-                      Phòng kho <strong>{rentalModalUnit.name} ({rentalModalUnit.id})</strong> đã được cấp quyền sở hữu. 
-                      Vị trí tại: <strong>{rentalModalUnit.floorLocation}</strong> — <em>{rentalModalUnit.facilityName}</em> ({rentalModalUnit.facilityAddress}).
-                    </p>
-                  </div>
-
-                  {/* PIN Display Card */}
-                  <div className="p-4 rounded-xl bg-slate-950 text-white space-y-2 max-w-xs mx-auto shadow-md">
-                    <span className="font-mono text-[10px] uppercase text-cyan-400 tracking-widest font-semibold block">
-                      MÃ PIN MỞ CỬA IOT TỰ QUẢN
-                    </span>
-                    <div className="flex items-center justify-center gap-3">
-                      <span className="font-mono text-2xl font-bold tracking-widest text-white">
-                        {activatedPin}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard?.writeText(activatedPin)
-                          setCopiedPin(true)
-                          setTimeout(() => setCopiedPin(false), 2000)
-                        }}
-                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
-                        title="Sao chép mã PIN"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">
-                          {copiedPin ? 'check' : 'content_copy'}
-                        </span>
-                      </button>
-                    </div>
-                    <span className="text-[10px] text-emerald-400 block font-medium">
-                      ✓ Đã xác nhận quyền mở app &amp; Portal
-                    </span>
-                  </div>
-
-                  {/* Navigation CTAs */}
-                  <div className="pt-3 flex flex-col sm:flex-row items-center justify-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRentalModalUnit(null)
-                        navigate('/portal/customer')
-                      }}
-                      className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-neutral-800 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[18px] text-emerald-400">dashboard</span>
-                      <span>Truy Cập Customer Portal Ngay</span>
-                      <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRentalModalUnit(null)}
-                      className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-semibold transition-colors cursor-pointer"
-                    >
-                      Đóng
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-          </div>
-        </div>
+      {rentalModalUnit && user && (
+        <BookingCheckoutModal
+          unit={{
+            backendId: rentalModalUnit.backendId,
+            code: rentalModalUnit.id,
+            name: rentalModalUnit.name,
+            facilityName: rentalModalUnit.facilityName,
+            monthlyPrice: rentalModalUnit.monthlyPriceNumeric,
+            size: rentalModalUnit.size,
+            address: rentalModalUnit.facilityAddress,
+          }}
+          user={user}
+          onClose={() => setRentalModalUnit(null)}
+        />
       )}
 
       {/* Floating Action Speed-Dial Widget (Scroll Top, Zalo, Hotline, Maps) */}

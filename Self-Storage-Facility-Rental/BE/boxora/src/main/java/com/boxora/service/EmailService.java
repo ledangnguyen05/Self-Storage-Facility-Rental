@@ -3,6 +3,7 @@ package com.boxora.service;
 public interface EmailService {
     void sendPasswordResetEmail(String toEmail, String fullName, String resetToken);
     void sendWelcomeEmail(String toEmail, String fullName);
+    void sendContractSigningOtp(String toEmail, String otp);
 
     // Gửi cảnh báo khẩn cấp khi Master Key được sử dụng - cho Business Manager & Admin
     void sendMasterKeyAlertEmail(String toEmail, String recipientName, String facilityName,

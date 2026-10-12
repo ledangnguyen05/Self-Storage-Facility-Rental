@@ -4,8 +4,11 @@ import { useAuth } from '../../context/AuthContext'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { bookingService } from '../../services/bookingService'
+import { BookingCheckoutModal } from '../../components/modals/BookingCheckoutModal'
+import { ContractOtpModal } from '../../components/modals/ContractOtpModal'
+import { contractService } from '../../services/contractService'
 import { supportTicketService } from '../../services/supportTicketService'
-import { Facility, StorageUnit, Booking, SupportTicket } from '../../types'
+import { Facility, StorageUnit, Booking, RentalContract, SupportTicket } from '../../types'
 
 function formatVnd(amount: number) {
   return new Intl.NumberFormat('vi-VN').format(Math.round(amount))
@@ -64,6 +67,10 @@ export const CustomerDashboard: React.FC = () => {
   }, [tabParam])
 
   const handleTabChange = (tab: 'my-units' | 'explore' | 'contracts' | 'support') => {
+    if (tab === 'contracts') {
+      setIsLoadingContracts(true)
+      setContractsError(null)
+    }
     setActiveTab(tab)
     setSearchParams({ tab })
   }
@@ -95,11 +102,6 @@ export const CustomerDashboard: React.FC = () => {
     rawPrice?: number
     facilityName?: string
   } | null>(null)
-  const [bookingSuccess, setBookingSuccess] = useState(false)
-  const [bookingCode, setBookingCode] = useState('RES-2025-9988')
-  const [selectedRentalMonths, setSelectedRentalMonths] = useState(1)
-  const [isSubmittingBooking, setIsSubmittingBooking] = useState(false)
-
   // Renewal Modal
   const [renewUnit, setRenewUnit] = useState<{
     id: string
@@ -124,6 +126,10 @@ export const CustomerDashboard: React.FC = () => {
   const [availableUnits, setAvailableUnits] = useState<StorageUnit[]>([])
   const [activeBookings, setActiveBookings] = useState<Booking[]>([])
   const [isLoadingUnits, setIsLoadingUnits] = useState(false)
+  const [contracts, setContracts] = useState<RentalContract[]>([])
+  const [isLoadingContracts, setIsLoadingContracts] = useState(true)
+  const [contractsError, setContractsError] = useState<string | null>(null)
+  const [otpContract, setOtpContract] = useState<RentalContract | null>(null)
 
   // Support Tickets State
   const [myTickets, setMyTickets] = useState<SupportTicket[]>([])
@@ -203,6 +209,24 @@ export const CustomerDashboard: React.FC = () => {
       isMounted = false
     }
   }, [user?.id])
+
+  useEffect(() => {
+    if (activeTab !== 'contracts' || !user?.id) return
+    let isMounted = true
+    contractService.getMyContracts(user.id)
+      .then(result => {
+        if (isMounted) setContracts(Array.isArray(result) ? result : [])
+      })
+      .catch(() => {
+        if (isMounted) setContractsError('Không thể tải danh sách hợp đồng. Vui lòng thử lại.')
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingContracts(false)
+      })
+    return () => {
+      isMounted = false
+    }
+  }, [activeTab, user?.id])
 
   // Filter explore state
   const [filterFacility, setFilterFacility] = useState('all')
@@ -1041,65 +1065,92 @@ export const CustomerDashboard: React.FC = () => {
               <span className="text-xs text-slate-500">Xem chi tiết thời hạn thuê và tải về hóa đơn điện tử VAT</span>
             </div>
             <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 font-mono text-xs font-bold text-emerald-700">
-              2 Hợp đồng đang hiệu lực
+              {contracts.filter(contract => contract.status === 'ACTIVE').length} hợp đồng đang hiệu lực
             </span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider">
-                <tr>
-                  <th className="py-3 px-4 rounded-l-lg">Mã Hợp Đồng</th>
-                  <th className="py-3 px-4">Mã Kho</th>
-                  <th className="py-3 px-4">Kỳ Hạn Thuê</th>
-                  <th className="py-3 px-4">Tổng Cước</th>
-                  <th className="py-3 px-4">Trạng Thái</th>
-                  <th className="py-3 px-4 rounded-r-lg text-right">Tác Vụ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                <tr className="hover:bg-slate-50/70 transition-colors">
-                  <td className="py-4 px-4 font-unit-code text-xs font-bold text-slate-900">#HD-2024-8891</td>
-                  <td className="py-4 px-4 font-bold text-orange-600">#A-108 (5m²)</td>
-                  <td className="py-4 px-4 text-slate-700">28/10/2024 - 28/04/2025 (6 Tháng)</td>
-                  <td className="py-4 px-4 font-data-tabular font-bold text-slate-900">11.100.000 đ</td>
-                  <td className="py-4 px-4">
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                      Đã thanh toán đủ
-                    </span>
-                  </td>
-                  <td className="py-4 px-4 text-right">
-                    <button
-                      onClick={() => alert('Đang tải hóa đơn VAT điện tử & hợp đồng PDF mã #HD-2024-8891...')}
-                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-semibold text-xs transition-colors"
-                    >
-                      Tải PDF
-                    </button>
-                  </td>
-                </tr>
-
-                <tr className="hover:bg-slate-50/70 transition-colors">
-                  <td className="py-4 px-4 font-unit-code text-xs font-bold text-slate-900">#HD-2024-9104</td>
-                  <td className="py-4 px-4 font-bold text-orange-600">#B-205 (12m²)</td>
-                  <td className="py-4 px-4 text-slate-700">15/08/2024 - 15/08/2025 (12 Tháng)</td>
-                  <td className="py-4 px-4 font-data-tabular font-bold text-slate-900">45.360.000 đ</td>
-                  <td className="py-4 px-4">
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                      Đã thanh toán đủ
-                    </span>
-                  </td>
-                  <td className="py-4 px-4 text-right">
-                    <button
-                      onClick={() => alert('Đang tải hóa đơn VAT điện tử & hợp đồng PDF mã #HD-2024-9104...')}
-                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-semibold text-xs transition-colors"
-                    >
-                      Tải PDF
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          {isLoadingContracts ? (
+            <p className="py-10 text-center text-sm text-slate-500">Đang tải hợp đồng...</p>
+          ) : contractsError ? (
+            <p role="alert" className="rounded-lg bg-rose-50 p-4 text-sm text-rose-700">{contractsError}</p>
+          ) : contracts.length === 0 ? (
+            <p className="py-10 text-center text-sm text-slate-500">Bạn chưa có hợp đồng nào.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider">
+                  <tr>
+                    <th className="py-3 px-4 rounded-l-lg">Mã Hợp Đồng</th>
+                    <th className="py-3 px-4">Mã Kho</th>
+                    <th className="py-3 px-4">Thời Hạn</th>
+                    <th className="py-3 px-4">Giá Thuê / Tháng</th>
+                    <th className="py-3 px-4">Trạng Thái</th>
+                    <th className="py-3 px-4 rounded-r-lg text-right">Tác Vụ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {contracts.map(contract => {
+                    const statusLabels: Record<RentalContract['status'], string> = {
+                      DRAFT: 'Bản nháp',
+                      PENDING_SIGNATURE: 'Chờ ký',
+                      ACTIVE: 'Đang hiệu lực',
+                      EXPIRED: 'Đã hết hạn',
+                      TERMINATED: 'Đã chấm dứt',
+                      CANCELLED: 'Đã hủy',
+                    }
+                    const isActive = contract.status === 'ACTIVE'
+                    return (
+                      <tr key={contract.id} className="transition-colors hover:bg-slate-50/70">
+                        <td className="py-4 px-4 font-unit-code text-xs font-bold text-slate-900">
+                          {contract.contractCode}
+                        </td>
+                        <td className="py-4 px-4 font-bold text-orange-600">{contract.unitCode}</td>
+                        <td className="py-4 px-4 text-slate-700">
+                          {formatDate(contract.startDate)} - {formatDate(contract.endDate)}
+                        </td>
+                        <td className="py-4 px-4 font-data-tabular font-bold text-slate-900">
+                          {formatVnd(contract.monthlyFee)} đ
+                        </td>
+                        <td className="py-4 px-4">
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                            isActive
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              : contract.status === 'PENDING_SIGNATURE'
+                                ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                : 'border-slate-200 bg-slate-50 text-slate-600'
+                          }`}>
+                            {statusLabels[contract.status]}
+                          </span>
+                        </td>
+                        <td className="py-4 px-4 text-right">
+                          {contract.status === 'PENDING_SIGNATURE' ? (
+                            <button
+                              type="button"
+                              onClick={() => setOtpContract(contract)}
+                              className="rounded-md bg-cyan-700 px-3 py-1.5 font-semibold text-white transition-colors hover:bg-cyan-800"
+                            >
+                              Ký hợp đồng
+                            </button>
+                          ) : contract.signedDocumentUrl ? (
+                            <a
+                              href={contract.signedDocumentUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-block rounded-md bg-slate-100 px-3 py-1.5 font-semibold text-slate-800 transition-colors hover:bg-slate-200"
+                            >
+                              Xem hợp đồng
+                            </a>
+                          ) : (
+                            <span className="text-slate-400">Không có tài liệu</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -1424,133 +1475,19 @@ export const CustomerDashboard: React.FC = () => {
         </section>
       )}
 
-      {/* Booking Modal */}
-      {selectedBookingUnit && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
-            {bookingSuccess ? (
-              <div className="py-8 text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-                  <span className="material-symbols-outlined text-[28px]">check_circle</span>
-                </div>
-                <h3 className="font-headline text-lg font-bold text-slate-900">
-                  Đặt Giữ Chỗ Thành Công!
-                </h3>
-                <p className="text-xs text-slate-600">
-                  Mã đặt chỗ của bạn: <strong>#{bookingCode}</strong>. Hợp đồng điện tử và mã PIN đã sẵn sàng.
-                </p>
-                <button
-                  onClick={() => {
-                    setBookingSuccess(false)
-                    setSelectedBookingUnit(null)
-                    handleTabChange('my-units')
-                  }}
-                  className="mt-2 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer"
-                >
-                  Đến Danh Sách Kho Của Tôi
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <div>
-                    <h3 className="font-headline text-base font-bold text-slate-900">
-                      Xác Nhận Thuê Kho Online
-                    </h3>
-                    <span className="text-xs text-slate-500">
-                      Mã kho: #{selectedBookingUnit.id} • {selectedBookingUnit.facilityName || 'Boxora'}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setSelectedBookingUnit(null)}
-                    className="text-slate-400 hover:text-slate-600 cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">close</span>
-                  </button>
-                </div>
-
-                <div className="p-3 bg-slate-50 rounded-xl space-y-2 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Loại kho:</span>
-                    <span className="font-bold text-slate-900">{selectedBookingUnit.name}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Đơn giá tháng:</span>
-                    <span className="font-unit-code font-bold text-orange-600">{selectedBookingUnit.price} đ</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Tiền cọc an ninh (hoàn lại):</span>
-                    <span className="font-unit-code font-bold text-slate-900">{selectedBookingUnit.price} đ</span>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase">Kỳ hạn thuê</label>
-                  <select
-                    value={selectedRentalMonths}
-                    onChange={(e) => setSelectedRentalMonths(parseInt(e.target.value))}
-                    className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-400"
-                  >
-                    <option value={1}>1 Tháng</option>
-                    <option value={3}>3 Tháng (Giảm 5%)</option>
-                    <option value={6}>6 Tháng (Giảm 10%)</option>
-                    <option value={12}>12 Tháng (Giảm 15%)</option>
-                  </select>
-                </div>
-
-                <div className="pt-3 flex gap-2">
-                  <button
-                    onClick={() => setSelectedBookingUnit(null)}
-                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                  >
-                    Hủy bỏ
-                  </button>
-                  <button
-                    disabled={isSubmittingBooking}
-                    onClick={async () => {
-                      if (!selectedBookingUnit) return
-                      setIsSubmittingBooking(true)
-                      try {
-                        if (selectedBookingUnit.backendId) {
-                          const resp = await bookingService.createBooking({
-                            storageUnitId: selectedBookingUnit.backendId,
-                            customerId: user?.id,
-                            startDate: new Date().toISOString().split('T')[0],
-                            rentalMonths: selectedRentalMonths,
-                            totalRentalFee: (selectedBookingUnit.rawPrice || 1500000) * selectedRentalMonths,
-                            depositPaid: selectedBookingUnit.rawPrice || 1500000,
-                          }).catch(err => {
-                            console.warn('Booking API call:', err)
-                            return null
-                          })
-                          if (resp?.bookingCode) {
-                            setBookingCode(resp.bookingCode)
-                          } else {
-                            setBookingCode(`BX-${Math.floor(1000 + Math.random() * 9000)}`)
-                          }
-                        }
-                      } finally {
-                        setIsSubmittingBooking(false)
-                        setBookingSuccess(true)
-                        storageUnitService.getUnits({ status: 'AVAILABLE' }).then(u => {
-                          if (u) setAvailableUnits(u)
-                        })
-                      }
-                    }}
-                    className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-sm transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    {isSubmittingBooking ? (
-                      <span>Đang xử lý...</span>
-                    ) : (
-                      <span>Ký Online &amp; Thanh Toán</span>
-                    )}
-                  </button>
-                </div>
-              </div>
-            )}
-
-          </div>
-        </div>
+      {/* Booking checkout and payment */}
+      {selectedBookingUnit && user && (
+        <BookingCheckoutModal
+          unit={{
+            backendId: selectedBookingUnit.backendId,
+            code: selectedBookingUnit.id,
+            name: selectedBookingUnit.name,
+            facilityName: selectedBookingUnit.facilityName,
+            monthlyPrice: selectedBookingUnit.rawPrice || 1500000,
+          }}
+          user={user}
+          onClose={() => setSelectedBookingUnit(null)}
+        />
       )}
 
       {/* Renewal Modal */}
@@ -1771,6 +1708,10 @@ export const CustomerDashboard: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+
+      {otpContract && (
+        <ContractOtpModal contract={otpContract} onClose={() => setOtpContract(null)} />
       )}
 
     </div>

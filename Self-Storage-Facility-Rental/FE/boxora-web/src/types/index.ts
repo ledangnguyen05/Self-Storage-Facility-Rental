@@ -64,7 +64,7 @@ export interface StorageUnit {
   dueDate?: string
 }
 
-export type BookingStatusType = 'PENDING_PAYMENT' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
+export type BookingStatusType = 'PENDING_PAYMENT' | 'CONFIRMED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
 
 export interface Booking {
   id: string
@@ -81,12 +81,38 @@ export interface Booking {
   rentalMonths: number
   totalRentalFee: number
   depositPaid: number
+  depositAmount?: number
+  initialPaymentAmount?: number
+  paymentExpiresAt?: string | null
   status: BookingStatusType
   accessCode: string // e.g. "BX-88219"
   accessPin: string  // e.g. "4920"
   qrAccessToken: string
   handoverTime?: string
   returnTime?: string
+}
+
+export type RentalContractStatus =
+  | 'DRAFT'
+  | 'PENDING_SIGNATURE'
+  | 'ACTIVE'
+  | 'EXPIRED'
+  | 'TERMINATED'
+  | 'CANCELLED'
+
+export interface RentalContract {
+  id: string
+  contractCode: string
+  customerId: string
+  customerEmail: string
+  unitCode: string
+  facilityName: string
+  startDate: string
+  endDate: string
+  monthlyFee: number
+  depositHeld: number
+  status: RentalContractStatus
+  signedDocumentUrl?: string | null
 }
 
 export interface SupportTicket {
@@ -222,4 +248,3 @@ export interface OccupancyReport {
     occupancyRate: number
   }>
 }
-

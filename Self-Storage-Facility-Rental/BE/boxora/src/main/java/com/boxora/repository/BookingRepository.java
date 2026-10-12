@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import java.time.Instant;
 
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpecificationExecutor<Booking> {
@@ -16,6 +17,8 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     List<Booking> findByCustomer_Id(UUID customerId);
 
     List<Booking> findByStatusIn(Collection<BookingStatus> statuses);
+
+    List<Booking> findByStatusAndPaymentExpiresAtBefore(BookingStatus status, Instant expiresAt);
 
     boolean existsByStorageUnit_Id(UUID storageUnitId);
 

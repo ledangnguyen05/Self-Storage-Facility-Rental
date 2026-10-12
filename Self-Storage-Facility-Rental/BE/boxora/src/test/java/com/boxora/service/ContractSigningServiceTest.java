@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
@@ -144,6 +145,10 @@ class ContractSigningServiceTest {
         assertThat(mockContract.getDocusealSubmissionId()).isEqualTo(9999L);
         assertThat(mockContract.getDocusealSubmitterSlug()).isEqualTo("slug-abc-123");
 
+        ArgumentCaptor<DocuSealSubmissionRequest> requestCaptor =
+                ArgumentCaptor.forClass(DocuSealSubmissionRequest.class);
+        verify(docuSealClient).createSubmission(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().isSend_email()).isFalse();
         verify(rentalContractRepository).save(mockContract);
         verify(activityLogService).record(any(UUID.class), eq(ActivityAction.CONTRACT_CREATE), anyString(), any(), anyString(), any(), any());
     }

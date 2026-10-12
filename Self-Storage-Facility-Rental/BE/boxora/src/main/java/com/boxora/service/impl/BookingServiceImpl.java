@@ -18,12 +18,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.scheduling.annotation.Scheduled;
 
 @Service
 @RequiredArgsConstructor
@@ -36,40 +37,29 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     public BookingResponse createBooking(BookingCreateRequest request) {
-        StorageUnit unit = storageUnitRepository.findWithDetailsById(request.getStorageUnitId())
+        StorageUnit unit = storageUnitRepository.findWithDetailsByIdForUpdate(request.getStorageUnitId())
                 .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
 
         if (unit.getStatus() != UnitStatus.AVAILABLE) {
             throw new AppException(ErrorCode.STORAGE_UNIT_NOT_AVAILABLE);
         }
 
-        User customer = null;
-        if (request.getCustomerId() != null) {
-            customer = userRepository.findById(request.getCustomerId()).orElse(null);
-        }
-        if (customer == null) {
-            customer = userRepository.findAll().stream().findFirst().orElse(null);
-        }
+        User customer = userRepository.findById(request.getCustomerId())
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
 
-        LocalDate startDate = request.getStartDate() != null ? request.getStartDate() : LocalDate.now();
-        int months = request.getRentalMonths() != null ? request.getRentalMonths() : 1;
+        LocalDate startDate = request.getStartDate();
+        int months = request.getRentalMonths();
         LocalDate endDate = startDate.plusMonths(months);
 
         BigDecimal pricePerMonth = (unit.getUnitType() != null && unit.getUnitType().getBasePricePerMonth() != null)
                 ? unit.getUnitType().getBasePricePerMonth()
                 : new BigDecimal("1450000");
 
-        BigDecimal totalFee = request.getTotalRentalFee() != null 
-                ? request.getTotalRentalFee() 
-                : pricePerMonth.multiply(BigDecimal.valueOf(months));
+        BigDecimal totalFee = pricePerMonth.multiply(BigDecimal.valueOf(months));
+        BigDecimal deposit = unit.getUnitType() != null && unit.getUnitType().getDepositAmount() != null
+                ? unit.getUnitType().getDepositAmount()
+                : pricePerMonth;
 
-        BigDecimal deposit = request.getDepositPaid() != null 
-                ? request.getDepositPaid() 
-                : ((unit.getUnitType() != null && unit.getUnitType().getDepositAmount() != null)
-                        ? unit.getUnitType().getDepositAmount()
-                        : pricePerMonth);
-
-        String pin = String.format("%06d", new Random().nextInt(1000000));
         String code = "BX-" + (2025 + new Random().nextInt(2)) + "-" + String.format("%04d", new Random().nextInt(10000));
 
         Booking booking = Booking.builder()
@@ -80,11 +70,10 @@ public class BookingServiceImpl implements BookingService {
                 .endDate(endDate)
                 .rentalMonths(months)
                 .totalRentalFee(totalFee)
-                .depositPaid(deposit)
-                .status(BookingStatus.CONFIRMED)
-                .accessPin(pin)
-                .qrAccessToken("QR-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
-                .pinUpdatedAt(LocalDateTime.now())
+                .depositPaid(BigDecimal.ZERO)
+                .depositAmount(deposit)
+                .paymentExpiresAt(Instant.now().plusSeconds(24 * 60 * 60))
+                .status(BookingStatus.PENDING_PAYMENT)
                 .build();
 
         unit.setStatus(UnitStatus.RESERVED);
@@ -144,7 +133,27 @@ public class BookingServiceImpl implements BookingService {
         return mapToResponse(booking);
     }
 
+    @Scheduled(fixedDelay = 60_000L)
+    public void expireUnpaidBookings() {
+        List<Booking> expiredBookings = bookingRepository.findByStatusAndPaymentExpiresAtBefore(
+                BookingStatus.PENDING_PAYMENT, Instant.now());
+        for (Booking booking : expiredBookings) {
+            booking.setStatus(BookingStatus.CANCELLED);
+            booking.setPaymentExpiresAt(null);
+            if (booking.getStorageUnit() != null && booking.getStorageUnit().getStatus() == UnitStatus.RESERVED) {
+                booking.getStorageUnit().setStatus(UnitStatus.AVAILABLE);
+                storageUnitRepository.save(booking.getStorageUnit());
+            }
+            bookingRepository.save(booking);
+        }
+    }
+
     private BookingResponse mapToResponse(Booking b) {
+        boolean hasPaid = b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.ACTIVE;
+        BigDecimal initialPaymentAmount = b.getTotalRentalFee() != null && b.getRentalMonths() != null && b.getRentalMonths() > 0
+                ? b.getTotalRentalFee().divide(BigDecimal.valueOf(b.getRentalMonths())).add(
+                        b.getDepositAmount() != null ? b.getDepositAmount() : BigDecimal.ZERO)
+                : BigDecimal.ZERO;
         return BookingResponse.builder()
                 .id(b.getId())
                 .bookingCode(b.getBookingCode())
@@ -163,9 +172,12 @@ public class BookingServiceImpl implements BookingService {
                 .rentalMonths(b.getRentalMonths())
                 .totalRentalFee(b.getTotalRentalFee())
                 .depositPaid(b.getDepositPaid())
+                .depositAmount(b.getDepositAmount())
+                .initialPaymentAmount(initialPaymentAmount)
+                .paymentExpiresAt(b.getPaymentExpiresAt())
                 .status(b.getStatus() != null ? b.getStatus() : BookingStatus.ACTIVE)
-                .accessPin(b.getAccessPin() != null ? b.getAccessPin() : "882914")
-                .qrAccessToken(b.getQrAccessToken() != null ? b.getQrAccessToken() : "QR-A108-SECURE")
+                .accessPin(hasPaid ? b.getAccessPin() : null)
+                .qrAccessToken(hasPaid ? b.getQrAccessToken() : null)
                 .handoverTime(b.getHandoverTime())
                 .returnTime(b.getReturnTime())
                 .build();

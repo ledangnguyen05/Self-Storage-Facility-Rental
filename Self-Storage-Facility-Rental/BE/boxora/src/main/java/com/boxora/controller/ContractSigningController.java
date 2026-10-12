@@ -4,7 +4,9 @@ import com.boxora.common.response.ApiResponse;
 import com.boxora.common.response.PageResponse;
 import com.boxora.config.DocuSealConfig;
 import com.boxora.dto.request.ContractCreateRequest;
+import com.boxora.dto.request.ContractOtpVerifyRequest;
 import com.boxora.dto.request.ContractRenewalCreateRequest;
+import com.boxora.dto.response.ContractOtpResponse;
 import com.boxora.dto.response.ContractRenewalResponse;
 import com.boxora.dto.response.RentalContractResponse;
 import com.boxora.dto.response.VNPayPaymentResponse;
@@ -12,6 +14,7 @@ import com.boxora.enums.RentalContractStatus;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.service.ContractRenewalService;
+import com.boxora.service.ContractOtpService;
 import com.boxora.service.ContractSigningService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -36,6 +39,7 @@ import java.util.UUID;
 public class ContractSigningController {
 
     private final ContractSigningService contractSigningService;
+    private final ContractOtpService contractOtpService;
     private final ContractRenewalService contractRenewalService;
     private final DocuSealConfig docuSealConfig;
 
@@ -79,6 +83,7 @@ public class ContractSigningController {
     @Operation(summary = "Gửi hợp đồng sang DocuSeal để khách ký, trả về link ký")
     public ResponseEntity<ApiResponse<Map<String, String>>> sendForSignature(
             @PathVariable UUID contractId) {
+        contractOtpService.requireVerified(contractId);
         String signingUrl = contractSigningService.createSigningRequest(contractId);
         return ResponseEntity.ok(ApiResponse.success("Đã gửi yêu cầu ký DocuSeal", Map.of("signingUrl", signingUrl)));
     }
@@ -88,8 +93,40 @@ public class ContractSigningController {
     @Operation(summary = "Lấy link ký DocuSeal của hợp đồng")
     public ResponseEntity<ApiResponse<Map<String, String>>> getSigningUrl(
             @PathVariable UUID contractId) {
+        contractOtpService.requireVerified(contractId);
         String signingUrl = contractSigningService.getSigningUrl(contractId);
         return ResponseEntity.ok(ApiResponse.success(Map.of("signingUrl", signingUrl)));
+    }
+
+    @PostMapping("{contractId}/otp/send")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(summary = "Gửi OTP email để xác thực trước khi ký hợp đồng")
+    public ResponseEntity<ApiResponse<ContractOtpResponse>> sendContractOtp(
+            @PathVariable UUID contractId) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Mã OTP ký hợp đồng đã được gửi tới email của bạn",
+                contractOtpService.sendOtp(contractId)));
+    }
+
+    @PostMapping("{contractId}/otp/resend")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(summary = "Gửi lại OTP xác thực ký hợp đồng")
+    public ResponseEntity<ApiResponse<ContractOtpResponse>> resendContractOtp(
+            @PathVariable UUID contractId) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Đã gửi lại mã OTP ký hợp đồng",
+                contractOtpService.resendOtp(contractId)));
+    }
+
+    @PostMapping("{contractId}/otp/verify")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(summary = "Xác thực OTP và lấy liên kết ký DocuSeal")
+    public ResponseEntity<ApiResponse<ContractOtpResponse>> verifyContractOtp(
+            @PathVariable UUID contractId,
+            @Valid @RequestBody ContractOtpVerifyRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Xác thực OTP thành công",
+                contractOtpService.verifyOtp(contractId, request.getOtp())));
     }
 
     // =========================================================================

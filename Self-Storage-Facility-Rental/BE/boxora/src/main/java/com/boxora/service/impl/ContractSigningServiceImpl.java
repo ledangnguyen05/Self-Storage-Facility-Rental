@@ -141,7 +141,8 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         }
 
         RentalContractResponse response = rentalContractMapper.toResponse(contract);
-        if (contract.getDocusealSubmitterSlug() != null) {
+        if (!"CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())
+                && contract.getDocusealSubmitterSlug() != null) {
             response.setSigningUrl(signingUrl(contract.getDocusealSubmitterSlug()));
         }
         return response;
@@ -187,7 +188,8 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         Page<RentalContract> result = rentalContractRepository.findAll(spec, pageable);
         return PageResponse.from(result.map(c -> {
             RentalContractResponse res = rentalContractMapper.toResponse(c);
-            if (c.getDocusealSubmitterSlug() != null) {
+            if (!"CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())
+                    && c.getDocusealSubmitterSlug() != null) {
                 res.setSigningUrl(signingUrl(c.getDocusealSubmitterSlug()));
             }
             return res;
@@ -233,7 +235,7 @@ public class ContractSigningServiceImpl implements ContractSigningService {
 
         DocuSealSubmissionRequest request = DocuSealSubmissionRequest.builder()
                 .template_id(docuSealConfig.getTemplateId())
-                .send_email(true)
+                .send_email(false)
                 .submitters(List.of(
                         DocuSealSubmissionRequest.Submitter.builder()
                                 .role("Customer")
