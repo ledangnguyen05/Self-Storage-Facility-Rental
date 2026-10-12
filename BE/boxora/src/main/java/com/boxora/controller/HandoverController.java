@@ -13,6 +13,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -27,6 +28,7 @@ public class HandoverController {
     private final HandoverService handoverService;
 
     @GetMapping("/booking/{bookingId}/prerequisites")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Đối soát 4 điều kiện tiên quyết trước khi check-in bàn giao (BR-RULE-005: Cọc + Tiền thuê tháng đầu + Ký hợp đồng + Đối soát CCCD)")
     public ResponseEntity<ApiResponse<HandoverPrerequisitesResponse>> getCheckInPrerequisites(@PathVariable UUID bookingId) {
         HandoverPrerequisitesResponse response = handoverService.getCheckInPrerequisites(bookingId);
@@ -34,6 +36,7 @@ public class HandoverController {
     }
 
     @PostMapping("/check-in")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Thực hiện check-in bàn giao kho vật lý (BR-RULE-005/006: yêu cầu đủ 4 điều kiện, cấp PIN SmartLock và chuyển trạng thái kho sang OCCUPIED)")
     public ResponseEntity<ApiResponse<HandoverResponse>> checkIn(@Valid @RequestBody HandoverRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -41,6 +44,7 @@ public class HandoverController {
     }
 
     @GetMapping("/booking/{bookingId}/return-preview")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN', 'CUSTOMER')")
     @Operation(summary = "Xem trước quyết toán tiền cọc, hạn thuê và 5 tiêu chí thẩm định trả kho (BR-RULE-013/014/015)")
     public ResponseEntity<ApiResponse<ReturnSettlementPreviewResponse>> getReturnSettlementPreview(@PathVariable UUID bookingId) {
         ReturnSettlementPreviewResponse response = handoverService.getReturnSettlementPreview(bookingId);
@@ -48,18 +52,21 @@ public class HandoverController {
     }
 
     @PostMapping("/return")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Xử lý trả kho và hoàn cọc (BR-RULE-013/014/015)")
     public ResponseEntity<ApiResponse<HandoverResponse>> processReturn(@Valid @RequestBody HandoverRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Nghiệm thu hoàn trả kho và quyết toán cọc thành công", handoverService.processReturn(request)));
     }
 
     @PostMapping("/return-settlement")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Nghiệm thu hiện trường trả kho và quyết toán hoàn cọc chi tiết theo BR-RULE-013/014/015")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> processReturnSettlement(@Valid @RequestBody HandoverRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Nghiệm thu hiện trường và quyết toán cọc chi tiết thành công", handoverService.processReturnSettlement(request)));
     }
 
     @GetMapping("/booking/{bookingId}")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN', 'CUSTOMER')")
     @Operation(summary = "Lấy lịch sử các biên bản bàn giao của đơn đặt kho")
     public ResponseEntity<ApiResponse<List<HandoverResponse>>> getByBookingId(@PathVariable UUID bookingId) {
         return ResponseEntity.ok(ApiResponse.success(handoverService.getByBookingId(bookingId)));

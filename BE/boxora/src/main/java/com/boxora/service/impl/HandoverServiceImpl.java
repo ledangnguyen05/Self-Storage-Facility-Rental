@@ -512,10 +512,19 @@ public class HandoverServiceImpl implements HandoverService {
         }
 
         BigDecimal netRefundAmount = depositPaid.subtract(totalDeduction);
+        BigDecimal actualRefund = netRefundAmount.compareTo(BigDecimal.ZERO) > 0 ? netRefundAmount : BigDecimal.ZERO;
+        BigDecimal customerDebt = netRefundAmount.compareTo(BigDecimal.ZERO) < 0 ? totalDeduction.subtract(depositPaid) : BigDecimal.ZERO;
+
+        if (customerDebt.compareTo(BigDecimal.ZERO) > 0) {
+            log.warn("[BR-RULE-015] Total deductions ({}) exceeded deposit ({}) for booking {}. Unrecovered debt: {}",
+                    totalDeduction, depositPaid, booking.getBookingCode(), customerDebt);
+        }
 
         // 3. Trạng thái xét duyệt hoàn tiền cọc & SLA (BR-RULE-015)
         String reviewStatus;
-        if (totalDeduction.compareTo(BigDecimal.ZERO) > 0 || Boolean.TRUE.equals(request.getRequiresAccountingReview())) {
+        if (totalDeduction.compareTo(BigDecimal.ZERO) > 0
+                || customerDebt.compareTo(BigDecimal.ZERO) > 0
+                || Boolean.TRUE.equals(request.getRequiresAccountingReview())) {
             reviewStatus = "PENDING_ACCOUNTING_REVIEW";
         } else {
             reviewStatus = "AUTO_REFUND_APPROVED";
@@ -523,7 +532,7 @@ public class HandoverServiceImpl implements HandoverService {
 
         // 4. Sinh bản ghi giao dịch hoàn tiền Payment
         String refundTxnId = null;
-        if (netRefundAmount.compareTo(BigDecimal.ZERO) > 0) {
+        if (actualRefund.compareTo(BigDecimal.ZERO) > 0) {
             PaymentStatus refundPaymentStatus = "AUTO_REFUND_APPROVED".equals(reviewStatus)
                     ? PaymentStatus.REFUNDED
                     : PaymentStatus.PENDING;
@@ -532,7 +541,7 @@ public class HandoverServiceImpl implements HandoverService {
             Payment refundPayment = Payment.builder()
                     .transactionId(refundTxnId)
                     .booking(booking)
-                    .amount(netRefundAmount)
+                    .amount(actualRefund)
                     .paymentType(PaymentType.DEPOSIT)
                     .status(refundPaymentStatus)
                     .paymentMethod(request.getRefundMethod() != null ? request.getRefundMethod()
@@ -569,12 +578,14 @@ public class HandoverServiceImpl implements HandoverService {
                 ? ("Ghi chú hư hại: " + request.getDamageNotes() + ". ") : "";
         String extraNoteStr = (request.getNotes() != null && !request.getNotes().isBlank())
                 ? request.getNotes() : "Đã nghiệm thu hoàn trả kho thành công";
+        String debtWarningStr = customerDebt.compareTo(BigDecimal.ZERO) > 0
+                ? String.format(" [CẢNH BÁO: Khấu trừ vượt quá tiền cọc! Khách hàng nợ thêm: %s VNĐ. Chuyển kế toán thu hồi công nợ]", customerDebt) : "";
 
         String fullNotes = String.format(
-                "Nghiệm thu trả kho & Quyết toán cọc. Trạng thái duyệt: %s (SLA: %d ngày). Cọc gốc: %s VNĐ, Khấu trừ: %s VNĐ (Hư hại: %s, Vệ sinh: %s, Thẻ/khóa: %s, Quá hạn: %s), Thực hoàn: %s VNĐ. %s%s",
+                "Nghiệm thu trả kho & Quyết toán cọc. Trạng thái duyệt: %s (SLA: %d ngày). Cọc gốc: %s VNĐ, Khấu trừ: %s VNĐ (Hư hại: %s, Vệ sinh: %s, Thẻ/khóa: %s, Quá hạn: %s), Thực hoàn: %s VNĐ. %s%s%s",
                 reviewStatus, refundSlaDays, depositPaid, totalDeduction,
-                damageFee, cleaningFee, lostCardFee, overdueDebt, netRefundAmount,
-                damageNoteStr, extraNoteStr
+                damageFee, cleaningFee, lostCardFee, overdueDebt, actualRefund,
+                damageNoteStr, extraNoteStr, debtWarningStr
         );
 
         HandoverRecord record = HandoverRecord.builder()
@@ -584,7 +595,7 @@ public class HandoverServiceImpl implements HandoverService {
                 .unitCondition(request.getUnitCondition() != null ? request.getUnitCondition() : checklistSummary)
                 .depositSettled(depositPaid)
                 .deductionAmount(totalDeduction)
-                .refundAmount(netRefundAmount)
+                .refundAmount(actualRefund)
                 .reviewStatus(reviewStatus)
                 .checklistSummary(checklistSummary)
                 .evidencePhotos(evidencePhotos.isEmpty() ? null : String.join(";", evidencePhotos))
