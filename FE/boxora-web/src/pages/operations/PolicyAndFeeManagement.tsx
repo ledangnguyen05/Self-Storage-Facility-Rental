@@ -113,7 +113,12 @@ export const PolicyAndFeeManagement: React.FC = () => {
         setFeeTypes(feeTypes.map(f => f.id === editingFeeId ? { ...f, ...feeForm } : f))
         showToast('Đã lưu cập nhật loại phí (local)!')
       } else {
-        const newFee: FeeType = { ...feeForm, id: `f-${Date.now()}` }
+        const newFee: FeeType = {
+          ...feeForm,
+          id: `f-${Date.now()}`,
+          isRecurring: feeForm.isRecurring ?? false,
+          isActive: feeForm.isActive ?? true,
+        }
         setFeeTypes([...feeTypes, newFee])
         showToast('Đã thêm loại phí mới (local)!')
       }
@@ -236,7 +241,14 @@ export const PolicyAndFeeManagement: React.FC = () => {
         setDiscounts(discounts.map(d => d.id === editingDiscountId ? { ...d, ...discountForm } : d))
         showToast('Đã lưu cập nhật khuyến mãi (local)!')
       } else {
-        const newD: Discount = { ...discountForm, id: `d-${Date.now()}`, usedCount: 0, isCurrentlyValid: true }
+        const newD: Discount = {
+          ...discountForm,
+          id: `d-${Date.now()}`,
+          minRentalMonths: discountForm.minRentalMonths ?? 1,
+          isActive: discountForm.isActive ?? true,
+          usedCount: 0,
+          isCurrentlyValid: true,
+        }
         setDiscounts([...discounts, newD])
         showToast('Đã thêm voucher mới (local)!')
       }

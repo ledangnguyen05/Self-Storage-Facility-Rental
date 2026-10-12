@@ -41,8 +41,8 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
             JOIN b.storageUnit su
             JOIN su.facility f
             WHERE p.status = com.boxora.enums.PaymentStatus.PAID
-            AND (:fromDate IS NULL OR p.paymentTime >= :fromDate)
-            AND (:toDate IS NULL OR p.paymentTime <= :toDate)
+            AND (CAST(:fromDate AS timestamp) IS NULL OR p.paymentTime >= :fromDate)
+            AND (CAST(:toDate AS timestamp) IS NULL OR p.paymentTime <= :toDate)
             GROUP BY f.id, f.name
             ORDER BY f.name
             """)
@@ -64,8 +64,8 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
             )
             FROM Payment p
             WHERE p.status = com.boxora.enums.PaymentStatus.PAID
-            AND (:fromDate IS NULL OR p.paymentTime >= :fromDate)
-            AND (:toDate IS NULL OR p.paymentTime <= :toDate)
+            AND (CAST(:fromDate AS timestamp) IS NULL OR p.paymentTime >= :fromDate)
+            AND (CAST(:toDate AS timestamp) IS NULL OR p.paymentTime <= :toDate)
             """)
     SystemRevenueSummaryResponse sumSystemRevenue(
             @Param("fromDate") LocalDateTime fromDate,

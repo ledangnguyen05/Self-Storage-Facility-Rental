@@ -15,6 +15,7 @@ import com.boxora.repository.BookingRepository;
 import com.boxora.repository.FacilityPolicyRepository;
 import com.boxora.repository.StorageUnitRepository;
 import com.boxora.repository.UserRepository;
+import com.boxora.security.FacilityAccessGuard;
 import com.boxora.service.ActivityLogService;
 import com.boxora.service.BookingService;
 import com.boxora.service.StorageUnitLockService;
@@ -43,6 +44,7 @@ public class BookingServiceImpl implements BookingService {
     private final FacilityPolicyRepository facilityPolicyRepository;
     private final StorageUnitLockService storageUnitLockService;
     private final ActivityLogService activityLogService;
+    private final FacilityAccessGuard facilityAccessGuard;
 
     @Value("${app.booking.soft-lock-hours:24}")
     private long softLockHours;
@@ -181,8 +183,10 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional(readOnly = true)
     public List<BookingResponse> getUpcomingArrivals() {
+        UUID scopedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
         List<Booking> list = bookingRepository.findAll().stream()
                 .filter(b -> b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.PENDING_PAYMENT)
+                .filter(b -> scopedFacilityId == null || (b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null && scopedFacilityId.equals(b.getStorageUnit().getFacility().getId())))
                 .collect(Collectors.toList());
         return list.stream().map(this::mapToResponse).collect(Collectors.toList());
     }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { userService } from '../../services/userService'
+import { activityLogService } from '../../services/activityLogService'
 import { User, RoleType } from '../../types'
 
 export const AdminDashboard: React.FC = () => {
@@ -28,9 +29,36 @@ export const AdminDashboard: React.FC = () => {
     { id: 'u-5', username: 'biz_ops', email: 'csuite.mai@boxora.com', fullName: 'Trần Mai Phương', role: { name: 'BUSINESS_MANAGER', description: 'Business Operations Director' }, isActive: true, createdAt: '2026-09-05' },
   ]
 
+  // Live security audit telemetry fallback
+  const fallbackAuditLogs = [
+    { time: '16:14:22', user: 'admin@boxora.com', action: 'Cập nhật phân quyền Matrix cho FACILITY_MANAGER', ip: '192.168.1.1' },
+    { time: '15:48:10', user: 'staff.nam@boxora.com', action: 'Xác thực CCCD & ký hợp đồng số #HD-2025-4421', ip: '192.168.1.45' },
+    { time: '14:20:05', user: 'nguyenvana@gmail.com', action: 'Tạo mã truy cập SmartLock IoT cho Kho #A-108', ip: '113.161.78.22' },
+    { time: '11:05:40', user: 'csuite.mai@boxora.com', action: 'Đồng bộ chính sách nợ quá hạn: 50.000đ/ngày toàn chuỗi', ip: '192.168.1.12' }
+  ]
+  const [auditLogsList, setAuditLogsList] = useState(fallbackAuditLogs)
+
   useEffect(() => {
     fetchUsers()
+    fetchAuditLogs()
   }, [])
+
+  const fetchAuditLogs = async () => {
+    try {
+      const res = await activityLogService.getAll({ size: 6, sortBy: 'createdAt', sortDir: 'desc' })
+      if (res?.content && Array.isArray(res.content) && res.content.length > 0) {
+        const mapped = res.content.map((item: any) => ({
+          time: item.createdAt ? new Date(item.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Vừa xong',
+          user: item.actorName || (item.userId ? `User #${item.userId.substring(0, 8)}` : 'Hệ thống Boxora'),
+          action: item.detail || `${item.action} trên ${item.resourceType || 'tài nguyên'}`,
+          ip: item.ipAddress || '127.0.0.1'
+        }))
+        setAuditLogsList(mapped)
+      }
+    } catch {
+      // Keep fallback audit logs
+    }
+  }
 
   const fetchUsers = async () => {
     try {
@@ -83,13 +111,6 @@ export const AdminDashboard: React.FC = () => {
     return matchQuery && matchRole
   })
 
-  // Live security audit telemetry
-  const auditLogs = [
-    { time: '16:14:22', user: 'admin@boxora.com', action: 'Cập nhật phân quyền Matrix cho FACILITY_MANAGER', ip: '192.168.1.1' },
-    { time: '15:48:10', user: 'staff.nam@boxora.com', action: 'Xác thực CCCD & ký hợp đồng số #HD-2025-4421', ip: '192.168.1.45' },
-    { time: '14:20:05', user: 'nguyenvana@gmail.com', action: 'Tạo mã truy cập SmartLock IoT cho Kho #A-108', ip: '113.161.78.22' },
-    { time: '11:05:40', user: 'csuite.mai@boxora.com', action: 'Đồng bộ chính sách nợ quá hạn: 50.000đ/ngày toàn chuỗi', ip: '192.168.1.12' }
-  ]
 
   const getRoleBadge = (roleName?: string) => {
     switch (roleName) {
@@ -227,7 +248,7 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         <div className="divide-y divide-slate-100 font-mono text-xs">
-          {auditLogs.map((log, idx) => (
+          {auditLogsList.map((log, idx) => (
             <div key={idx} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="flex items-center gap-3">
                 <span className="text-slate-400 font-semibold">{log.time}</span>
