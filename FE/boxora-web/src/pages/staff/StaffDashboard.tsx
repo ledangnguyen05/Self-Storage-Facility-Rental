@@ -1,20 +1,55 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { bookingService } from '../../services/bookingService'
+import { handoverService } from '../../services/handoverService'
+import { reportService } from '../../services/reportService'
+import { Booking, OccupancyReport } from '../../types'
+import { HandoverCheckInWorkbench } from './components/HandoverCheckInWorkbench'
+import { QrCameraCheckInModal } from './components/QrCameraCheckInModal'
 
 export const StaffDashboard: React.FC = () => {
   // Stepper state for Spotlight Handover (Trần Minh Tuấn - #A-112)
   const [handoverStep, setHandoverStep] = useState(4)
   const [handoverCompleted, setHandoverCompleted] = useState(false)
+  const [isCheckInApiCalling, setIsCheckInApiCalling] = useState(false)
+  const [checkInSuccessMsg, setCheckInSuccessMsg] = useState<string | null>(null)
+
+  // QR Code Scanner State
+  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false)
+
+  // Dynamic arrivals from BE
+  const [arrivals, setArrivals] = useState<Booking[]>([])
+  const [activeBookingId, setActiveBookingId] = useState<string>('00000000-0000-0000-0000-000000000001')
+  const [occupancyData, setOccupancyData] = useState<OccupancyReport | null>(null)
+
+  useEffect(() => {
+    fetchArrivals()
+    fetchOccupancy()
+  }, [])
+
+  const fetchOccupancy = async () => {
+    try {
+      const res = await reportService.getOccupancyReport()
+      if (res) {
+        setOccupancyData(res)
+      }
+    } catch {
+      // Keep static defaults on network error
+    }
+  }
+
+  const fetchArrivals = async () => {
+    try {
+      const res = await bookingService.getUpcomingArrivals()
+      if (res && Array.isArray(res) && res.length > 0) {
+        setArrivals(res)
+      }
+    } catch {
+      // Fallback to static arrivals
+    }
+  }
 
   // Inspection Return state (Công ty CP Thương mại ABC - #C-302)
   const [returnConfirmed, setReturnConfirmed] = useState(false)
-  const [returnDepositPaid] = useState(2000000)
-  const [damageFee, setDamageFee] = useState(0)
-  const [cleaningFee, setCleaningFee] = useState(0)
-  const [lostCardFee, setLostCardFee] = useState(0)
-  const totalDeduction = damageFee + cleaningFee + lostCardFee
-  const netRefundAmount = Math.max(0, returnDepositPaid - totalDeduction)
-  const reviewState = totalDeduction > 0 ? 'PENDING_ACCOUNTING_REVIEW' : 'AUTO_REFUND_APPROVED'
-  const refundSlaDays = 5
 
   // Ticket status state
   const [tickets, setTickets] = useState([
@@ -26,10 +61,7 @@ export const StaffDashboard: React.FC = () => {
       priority: 'HIGH',
       staff: 'Hoàng Nam (Kỹ thuật)',
       time: '12 phút trước',
-      status: 'IN_PROGRESS',
-      evidenceUrls: [
-        'https://images.unsplash.com/photo-1558002038-1055907df827?auto=format&fit=crop&w=800&q=80'
-      ]
+      status: 'IN_PROGRESS'
     },
     {
       id: '#TK-405',
@@ -39,10 +71,7 @@ export const StaffDashboard: React.FC = () => {
       priority: 'MEDIUM',
       staff: 'Nguyễn Quỳnh Anh (Trực ca)',
       time: '28 phút trước',
-      status: 'IN_PROGRESS',
-      evidenceUrls: [
-        'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80'
-      ]
+      status: 'IN_PROGRESS'
     },
     {
       id: '#TK-408',
@@ -52,17 +81,9 @@ export const StaffDashboard: React.FC = () => {
       priority: 'LOW',
       staff: 'Quỳnh Anh (NV-842)',
       time: 'Vừa xong',
-      status: 'RESOLVED',
-      evidenceUrls: [] as string[]
+      status: 'RESOLVED'
     }
   ])
-
-  // Evidence image preview modal state
-  const [activeEvidenceModal, setActiveEvidenceModal] = useState<{
-    ticketId: string
-    title: string
-    images: string[]
-  } | null>(null)
 
   // Quick Walkin Modal
   const [isWalkinOpen, setIsWalkinOpen] = useState(false)
@@ -84,159 +105,180 @@ export const StaffDashboard: React.FC = () => {
   return (
     <div className="flex flex-col gap-6 text-left max-w-7xl mx-auto">
       
-      {/* Top Operational Banner: Live Status & Staff Shift Context */}
-      <div className="w-full bg-white border border-slate-200 shadow-sm rounded-2xl p-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
+      {/* 1. TOP OPERATIONAL SHIFT HEADER */}
+      <div className="w-full bg-white border border-slate-200/90 shadow-2xs rounded-2xl p-5 sm:p-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-slate-900 flex items-center justify-center text-white shrink-0 shadow-md">
-              <span className="material-symbols-outlined text-[26px]">desktop_windows</span>
+            <div className="w-12 h-12 rounded-xl bg-slate-900 flex items-center justify-center text-white shrink-0 shadow-xs">
+              <span className="material-symbols-outlined text-[26px] text-cyan-400">desktop_windows</span>
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-headline text-xl font-bold text-slate-900">
+                <h1 className="font-headline text-xl font-bold text-slate-900">
                   Bàn Vận Hành Quầy &amp; Tiếp Đón Thực Địa
-                </span>
+                </h1>
                 <span className="px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-mono font-bold uppercase tracking-wider">
                   Ca sáng: 08:00 - 16:30
                 </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Đang trực ca
+                </span>
               </div>
               <span className="text-xs text-slate-500 mt-1">
-                Trực ca: <strong className="text-slate-900">Nguyễn Quỳnh Anh (NV-842)</strong> • Phụ trách tiếp đón, kiểm toán hiện trường và giải quyết sự cố phát sinh.
+                Trực ca: <strong className="text-slate-900">Nguyễn Quỳnh Anh (NV-842)</strong> • Phụ trách tiếp đón, kiểm toán hiện trường và xử lý sự cố phát sinh.
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
             <button
+              type="button"
+              onClick={() => setIsQrScannerOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-[var(--brand-teal,#0891b2)] hover:bg-[var(--brand-teal-hover,#0e7490)] text-white text-xs font-bold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">qr_code_scanner</span>
+              <span>Quét QR Check-in</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setIsWalkinOpen(true)}
-              className="px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-colors border border-slate-200"
+              className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-colors border border-slate-200 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">person_add</span>
               <span>Khách Walk-in Vãng Lai</span>
             </button>
             <button
+              type="button"
               onClick={() => alert('Lệnh khẩn cấp: Cửa sảnh và cửa kiểm soát Barrier đã được mở cưỡng bức trong 60 giây.')}
-              className="px-4 py-2.5 rounded-lg bg-orange-600 text-white hover:bg-orange-700 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"
+              className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">lock_open</span>
-              <span>Mở Cửa Sảnh Khẩn Cấp</span>
+              <span>Mở Cửa Khẩn Cấp</span>
             </button>
           </div>
         </div>
+      </div>
 
-        {/* 4 Quick Stats Metric Tiles */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          
-          {/* Metric 1 */}
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500">
-                Lịch Check-in Hôm Nay
-              </span>
-              <span className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-700">
-                <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
-              </span>
-            </div>
-            <div className="mt-3 flex items-baseline gap-1.5">
-              <span className="font-headline text-3xl font-extrabold text-slate-900">12</span>
-              <span className="text-xs text-slate-500">lịch hẹn</span>
-            </div>
-            <div className="mt-2 flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-orange-500"></span>
-              <span className="text-xs text-slate-800 font-semibold">4 khách đã tới sảnh</span>
-            </div>
+      {/* 2. AUTONOMOUS 4-METRIC KPI DASHBOARD ROW (Eliminating Card-in-Card Nesting) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        
+        {/* Metric 1 */}
+        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 font-mono">
+              Lịch Check-in Hôm Nay
+            </span>
+            <span className="w-8 h-8 rounded-lg bg-cyan-50 border border-cyan-100 flex items-center justify-center text-[var(--brand-teal,#0891b2)]">
+              <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
+            </span>
           </div>
-
-          {/* Metric 2 */}
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500">
-                Yêu Cầu Trả Kho Cần Khảo Sát
-              </span>
-              <span className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-orange-600">
-                <span className="material-symbols-outlined text-[18px]">assignment_return</span>
-              </span>
-            </div>
-            <div className="mt-3 flex items-baseline gap-1.5">
-              <span className="font-headline text-3xl font-extrabold text-orange-600">5</span>
-              <span className="text-xs text-slate-500">hợp đồng tất toán</span>
-            </div>
-            <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
-              <span>2 đơn đang chờ thủ kho nghiệm thu</span>
-            </div>
+          <div className="mt-4 flex items-baseline gap-1.5">
+            <span className="font-headline text-3xl font-extrabold text-slate-900 tabular-nums">12</span>
+            <span className="text-xs text-slate-500">lịch hẹn</span>
           </div>
-
-          {/* Metric 3 */}
-          <div className="p-4 rounded-xl bg-red-50/60 border border-red-200 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] uppercase tracking-wider font-bold text-red-700">
-                Sự Cố Tại Chỗ (On-site)
-              </span>
-              <span className="w-8 h-8 rounded-lg bg-white border border-red-200 flex items-center justify-center text-red-600">
-                <span className="material-symbols-outlined text-[18px]">warning</span>
-              </span>
-            </div>
-            <div className="mt-3 flex items-baseline gap-1.5">
-              <span className="font-headline text-3xl font-extrabold text-red-600">3</span>
-              <span className="text-xs text-slate-500">ticket đang mở</span>
-            </div>
-            <div className="mt-2 flex items-center gap-1.5 text-xs text-red-700 font-bold">
-              <span>1 ca mức độ Cao (Cần giải quyết ngay)</span>
-            </div>
+          <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-700 font-semibold">
+            <span className="h-2 w-2 rounded-full bg-[var(--brand-teal,#0891b2)]"></span>
+            <span>4 khách đã tới sảnh</span>
           </div>
-
-          {/* Metric 4 */}
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500">
-                Tỷ Lệ Lấp Đầy Hiện Hữu
-              </span>
-              <span className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-700">
-                <span className="material-symbols-outlined text-[18px]">pie_chart</span>
-              </span>
-            </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="font-headline text-3xl font-extrabold text-slate-900">92.5%</span>
-              <span className="font-unit-code text-xs text-slate-500">148/160 KHO</span>
-            </div>
-            <div className="mt-2 w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-              <div className="bg-slate-900 h-full rounded-full" style={{ width: '92.5%' }}></div>
-            </div>
-          </div>
-
         </div>
 
-        {/* Quick Search & Filters */}
-        <div className="mt-6 pt-4 border-t border-slate-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-          <div className="flex-1 relative">
-            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
-              search
+        {/* Metric 2 */}
+        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 font-mono">
+              Yêu Cầu Nghiệm Thu Trả Kho
             </span>
-            <input
-              type="text"
-              placeholder="Tìm kiếm nhanh tên khách hàng, SĐT, mã đặt chỗ #RES-2025-XXXX, hoặc mã số kho..."
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 text-slate-900 text-xs rounded-lg border border-slate-200 focus:outline-none focus:bg-white focus:border-slate-400 transition-all"
-            />
+            <span className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-700">
+              <span className="material-symbols-outlined text-[18px]">assignment_return</span>
+            </span>
+          </div>
+          <div className="mt-4 flex items-baseline gap-1.5">
+            <span className="font-headline text-3xl font-extrabold text-amber-700 tabular-nums">5</span>
+            <span className="text-xs text-slate-500">hợp đồng tất toán</span>
+          </div>
+          <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-500">
+            <span>2 đơn đang chờ thủ kho nghiệm thu</span>
+          </div>
+        </div>
+
+        {/* Metric 3 */}
+        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] uppercase tracking-wider font-bold text-rose-700 font-mono">
+              Sự Cố Tại Chỗ (On-site)
+            </span>
+            <span className="w-8 h-8 rounded-lg bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600">
+              <span className="material-symbols-outlined text-[18px]">warning</span>
+            </span>
+          </div>
+          <div className="mt-4 flex items-baseline gap-1.5">
+            <span className="font-headline text-3xl font-extrabold text-rose-600 tabular-nums">3</span>
+            <span className="text-xs text-slate-500">ticket đang mở</span>
+          </div>
+          <div className="mt-3 flex items-center gap-1.5 text-xs text-rose-700 font-bold">
+            <span>1 ca mức độ Cao (Cần xử lý ngay)</span>
+          </div>
+        </div>
+
+        {/* Metric 4 */}
+        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 font-mono">
+              Tỷ Lệ Lấp Đầy Hiện Hữu
+            </span>
+            <span className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700">
+              <span className="material-symbols-outlined text-[18px]">pie_chart</span>
+            </span>
+          </div>
+          <div className="mt-4 flex items-baseline gap-2">
+            <span className="font-headline text-3xl font-extrabold text-slate-900 tabular-nums">
+              {occupancyData?.systemSummary?.occupancyRate ? `${occupancyData.systemSummary.occupancyRate.toFixed(1)}%` : '64.3%'}
+            </span>
+            <span className="font-mono text-xs text-slate-500">
+              {occupancyData?.systemSummary?.occupiedUnits ?? 36}/{occupancyData?.systemSummary?.totalUnits ?? 56} KHO
+            </span>
+          </div>
+          <div className="mt-3 w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+            <div 
+              className="bg-[var(--brand-teal,#0891b2)] h-full rounded-full transition-all" 
+              style={{ width: `${occupancyData?.systemSummary?.occupancyRate ?? 64.3}%` }}
+            ></div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* 3. TACTICAL SEARCH & LOCATION FILTER RIBBON */}
+      <div className="w-full bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        <div className="flex-1 relative">
+          <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
+            search
+          </span>
+          <input
+            type="text"
+            placeholder="Tìm kiếm nhanh tên khách hàng, SĐT, mã đặt chỗ #RES-XXXX, hoặc mã số kho..."
+            className="w-full pl-10 pr-3 py-2 bg-slate-50 text-slate-900 text-xs rounded-xl border border-slate-200 focus:outline-none focus:bg-white focus:border-[var(--brand-teal,#0891b2)] transition-all"
+          />
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
+            <span className="text-slate-500 font-medium">Khu vực:</span>
+            <select className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer">
+              <option value="all">Tất cả tầng (Mega Central)</option>
+              <option value="f1">Tầng 1 (Kho Standard &amp; Garage)</option>
+              <option value="f2">Tầng 2 (Kho Climate Control)</option>
+              <option value="f3">Tầng 3 (Locker cá nhân)</option>
+            </select>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-xs">
-              <span className="text-slate-500">Khu vực kho:</span>
-              <select className="bg-transparent font-semibold text-slate-900 focus:outline-none cursor-pointer">
-                <option value="all">Tất cả tầng (Mega Central)</option>
-                <option value="f1">Tầng 1 (Kho Standard &amp; Garage)</option>
-                <option value="f2">Tầng 2 (Kho Climate Control)</option>
-                <option value="f3">Tầng 3 (Locker cá nhân)</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-xs">
-              <span className="text-slate-500">Khung giờ:</span>
-              <select className="bg-transparent font-semibold text-slate-900 focus:outline-none cursor-pointer">
-                <option value="current">Ca Hiện Tại (08:00 - 12:00)</option>
-                <option value="today">Trọn Vẹn Hôm Nay</option>
-              </select>
-            </div>
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
+            <span className="text-slate-500 font-medium">Khung giờ:</span>
+            <select className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer">
+              <option value="current">Ca Hiện Tại (08:00 - 12:00)</option>
+              <option value="today">Trọn Vẹn Hôm Nay</option>
+            </select>
           </div>
         </div>
       </div>
@@ -246,213 +288,60 @@ export const StaffDashboard: React.FC = () => {
         
         {/* Left Side: Live Check-in & Handover Stepper Card (Col 8) */}
         <div className="xl:col-span-8 flex flex-col gap-6">
+          {/* Handover & Check-in Operator Workbench */}
+          <HandoverCheckInWorkbench
+            onOpenQrScanner={() => setIsQrScannerOpen(true)}
+            activeBookingId={activeBookingId}
+            onHandoverComplete={(bookingId) => {
+              setCheckInSuccessMsg(`Hoàn tất quy trình check-in bàn giao buồng kho cho đơn #${bookingId}`)
+            }}
+          />
+
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-orange-600 text-[24px]">badge</span>
-                <div>
-                  <h2 className="font-headline text-lg font-bold text-slate-900">
-                    Lịch Tiếp Đón Check-in &amp; Bàn Giao Mặt Bằng
-                  </h2>
-                  <span className="text-xs text-slate-500">
-                    Thực hiện tuần tự quy trình bàn giao 4 bước và cấp phát mã truy cập số
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-orange-500 animate-ping"></span>
-                <span className="font-unit-code text-xs text-orange-600 font-bold">1 ĐANG CHECK-IN TẠI QUẦY</span>
-              </div>
-            </div>
-
-            {/* Spotlight Active Session: Trần Minh Tuấn */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-6">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
-                <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-base shadow-sm">
-                    TT
-                  </div>
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-headline text-base font-bold text-slate-900">Trần Minh Tuấn</span>
-                      <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-800 font-unit-code text-[11px] font-bold">
-                        #RES-8921
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[10px] font-medium">
-                        Đến lúc: 09:18 AM
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3 mt-1 text-slate-600 text-xs">
-                      <span className="flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">call</span> 0912.345.678
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">domain</span> Kho Tiêu Chuẩn 6m²
-                      </span>
-                      <span className="flex items-center gap-1 font-unit-code text-slate-900 font-bold">
-                        <span className="material-symbols-outlined text-[14px] text-orange-600">meeting_room</span>
-                        Kho #A-112 (Tầng 1)
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">schedule</span> Giờ hẹn: 09:30 Sáng
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex md:flex-col items-end justify-between shrink-0">
-                  <span className="px-2.5 py-1 rounded-full bg-orange-100 text-orange-800 font-bold text-[10px] uppercase">
-                    Khách Đã Tới Quầy
-                  </span>
-                  <span className="text-[11px] text-slate-500 mt-1">Hợp đồng thuê 12 tháng</span>
-                </div>
-              </div>
-
-              {/* The 4-Step Handover Stepper Pipeline */}
-              <div className="mt-4 pt-2 grid grid-cols-1 md:grid-cols-4 gap-3">
-                {/* Step 1 */}
-                <div className="bg-white border border-slate-200 p-3 rounded-xl shadow-sm flex flex-col justify-between">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Bước 1</span>
-                    <span className="material-symbols-outlined text-orange-600 text-[18px]">check_circle</span>
-                  </div>
-                  <span className="text-xs font-bold text-slate-900">Đối chiếu CCCD</span>
-                  <span className="text-[11px] text-slate-500">Số: 001092003891</span>
-                  <span className="mt-2 text-[10px] font-bold text-emerald-600 font-mono">✓ ĐÃ DUYỆT OCR</span>
-                </div>
-
-                {/* Step 2 */}
-                <div className="bg-white border border-slate-200 p-3 rounded-xl shadow-sm flex flex-col justify-between">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Bước 2</span>
-                    <span className="material-symbols-outlined text-orange-600 text-[18px]">check_circle</span>
-                  </div>
-                  <span className="text-xs font-bold text-slate-900">Thu Tiền Cọc</span>
-                  <span className="text-[11px] text-slate-500">Cọc kho + Thẻ từ</span>
-                  <span className="mt-2 text-[10px] font-bold text-slate-800 font-mono">✓ ĐÃ THU 1.500.000đ</span>
-                </div>
-
-                {/* Step 3 */}
-                <div className="bg-white border border-slate-200 p-3 rounded-xl shadow-sm flex flex-col justify-between">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Bước 3</span>
-                    <span className="material-symbols-outlined text-orange-600 text-[18px]">key</span>
-                  </div>
-                  <span className="text-xs font-bold text-slate-900">Cấp Thẻ &amp; PIN Smart</span>
-                  <div className="bg-slate-50 px-2 py-0.5 rounded mt-1 flex items-center justify-between border border-slate-100">
-                    <span className="font-unit-code text-xs text-orange-600 font-bold tracking-wider">739215</span>
-                    <span 
-                      onClick={() => alert('Mã PIN 739215 đã được sao chép!')}
-                      className="material-symbols-outlined text-[14px] text-slate-400 cursor-pointer" 
-                      title="Sao chép PIN"
-                    >
-                      content_copy
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-slate-500 mt-1">Thẻ RFID: #RF-409</span>
-                </div>
-
-                {/* Step 4 */}
-                <div className={`p-3 rounded-xl shadow-sm flex flex-col justify-between transition-all ${
-                  handoverCompleted 
-                    ? 'bg-emerald-50 border border-emerald-200 text-emerald-900' 
-                    : 'bg-slate-900 text-white'
-                }`}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className={`text-[10px] uppercase font-bold ${handoverCompleted ? 'text-emerald-700' : 'text-slate-400'}`}>
-                      Bước 4
-                    </span>
-                    <span className="material-symbols-outlined text-[18px]">
-                      {handoverCompleted ? 'check_circle' : 'draw'}
-                    </span>
-                  </div>
-                  <span className="text-xs font-bold">Bàn Giao Thực Địa</span>
-                  <span className={`text-[11px] ${handoverCompleted ? 'text-emerald-700' : 'text-slate-300'}`}>
-                    Dẫn khách tới kho #A-112
-                  </span>
-                  <button
-                    onClick={() => {
-                      setHandoverCompleted(true)
-                      alert('Đã xác nhận hoàn tất bàn giao thực địa kho #A-112 cho anh Trần Minh Tuấn!')
-                    }}
-                    disabled={handoverCompleted}
-                    className={`mt-2 py-1 px-2 rounded text-[11px] font-bold text-center transition-all ${
-                      handoverCompleted
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-orange-600 hover:bg-orange-700 text-white'
-                    }`}
-                  >
-                    {handoverCompleted ? 'ĐÃ BÀN GIAO XONG' : 'Hoàn Tất Bàn Giao'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Handover Notes & Quick Actions */}
-              <div className="mt-4 pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[16px] text-orange-600">info</span>
-                  <span>Ghi chú của khách: Cần hỗ trợ mượn xe đẩy tải trọng 300kg khi dỡ đồ vào kho.</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => alert('Đang in phiếu bàn giao & nghiệm thu kho #A-112 (PDF)...')}
-                    className="px-3 py-1 bg-slate-200 hover:bg-slate-300 rounded text-slate-800 text-xs font-semibold transition-colors"
-                  >
-                    In Phiếu Nhận Kho (PDF)
-                  </button>
-                  <button
-                    onClick={() => alert('Đã gửi tin nhắn Zalo kèm mã QR và hướng dẫn tự mở khóa cho anh Tuấn!')}
-                    className="px-3 py-1 bg-slate-200 hover:bg-slate-300 rounded text-slate-800 text-xs font-semibold transition-colors"
-                  >
-                    Gửi Hướng Dẫn Qua Zalo/SMS
-                  </button>
-                </div>
-              </div>
-            </div>
 
             {/* Upcoming Appointments Table */}
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-800">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-900 font-mono">
                 Danh sách hẹn tiếp theo trong ngày
               </span>
-              <span className="text-xs text-slate-400">Hiển thị 3 / 11 lịch còn lại</span>
+              <span className="text-xs text-slate-500 font-mono">Hiển thị 3 / 11 lịch còn lại</span>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider">
-                    <th className="py-2.5 px-3 rounded-l-lg">Khách hàng</th>
-                    <th className="py-2.5 px-3">Mã Hẹn</th>
-                    <th className="py-2.5 px-3">Kho Đăng Ký</th>
-                    <th className="py-2.5 px-3">Giờ Hẹn</th>
-                    <th className="py-2.5 px-3">Hồ sơ CCCD</th>
-                    <th className="py-2.5 px-3">Cọc Giữ Chỗ</th>
-                    <th className="py-2.5 px-3 rounded-r-lg text-right">Hành động</th>
+                  <tr className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider text-[11px]">
+                    <th className="py-2.5 px-3 rounded-l-lg font-semibold">Khách hàng</th>
+                    <th className="py-2.5 px-3 font-semibold">Mã Hẹn</th>
+                    <th className="py-2.5 px-3 font-semibold">Kho Đăng Ký</th>
+                    <th className="py-2.5 px-3 font-semibold">Giờ Hẹn</th>
+                    <th className="py-2.5 px-3 font-semibold">Hồ sơ CCCD</th>
+                    <th className="py-2.5 px-3 font-semibold">Cọc Giữ Chỗ</th>
+                    <th className="py-2.5 px-3 rounded-r-lg text-right font-semibold">Hành động</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   <tr className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3 px-3">
-                      <div className="font-bold text-slate-900">Lê Thị Hoàng Yến</div>
-                      <div className="text-slate-400 font-data-tabular text-[11px]">0988.219.002</div>
+                    <td className="py-3.5 px-3">
+                      <div className="font-bold text-slate-900 text-xs">Lê Thị Hoàng Yến</div>
+                      <div className="text-slate-500 font-mono text-[11px] tabular-nums mt-0.5">0988.219.002</div>
                     </td>
-                    <td className="py-3 px-3 font-unit-code text-slate-800">#RES-8924</td>
-                    <td className="py-3 px-3">
-                      <span className="font-unit-code font-bold text-slate-900">Kho #B-205</span>
-                      <span className="text-slate-400 block text-[10px]">Climate Control 12m²</span>
+                    <td className="py-3.5 px-3 font-mono font-bold text-slate-900">#RES-8924</td>
+                    <td className="py-3.5 px-3">
+                      <span className="font-mono font-bold text-cyan-700">Kho #B-205</span>
+                      <span className="text-slate-500 block text-[10px]">Climate Control 12m²</span>
                     </td>
-                    <td className="py-3 px-3 font-data-tabular">10:15 Sáng</td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold">
+                    <td className="py-3.5 px-3 font-mono tabular-nums text-slate-700">10:15 Sáng</td>
+                    <td className="py-3.5 px-3">
+                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-semibold">
                         Đã tải lên app
                       </span>
                     </td>
-                    <td className="py-3 px-3 font-data-tabular font-bold text-slate-900">2.500.000đ (Đã TT)</td>
-                    <td className="py-3 px-3 text-right">
+                    <td className="py-3.5 px-3 font-mono font-bold text-slate-900 tabular-nums">2.500.000đ (Đã TT)</td>
+                    <td className="py-3.5 px-3 text-right">
                       <button
                         onClick={() => alert('Đã chuẩn bị hồ sơ cho chị Lê Thị Hoàng Yến')}
-                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-semibold text-[11px]"
+                        className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-semibold text-[11px] transition-colors cursor-pointer"
                       >
                         Tiếp đón
                       </button>
@@ -460,26 +349,26 @@ export const StaffDashboard: React.FC = () => {
                   </tr>
 
                   <tr className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3 px-3">
-                      <div className="font-bold text-slate-900">Cty TNHH Logistics Vận Phát</div>
-                      <div className="text-slate-400 font-data-tabular text-[11px]">0903.111.458 (Anh Hùng)</div>
+                    <td className="py-3.5 px-3">
+                      <div className="font-bold text-slate-900 text-xs">Cty TNHH Logistics Vận Phát</div>
+                      <div className="text-slate-500 font-mono text-[11px] tabular-nums mt-0.5">0903.111.458 (Anh Hùng)</div>
                     </td>
-                    <td className="py-3 px-3 font-unit-code text-slate-800">#RES-8930</td>
-                    <td className="py-3 px-3">
-                      <span className="font-unit-code font-bold text-slate-900">Kho #A-004</span>
-                      <span className="text-slate-400 block text-[10px]">Kho sỉ thương mại 35m²</span>
+                    <td className="py-3.5 px-3 font-mono font-bold text-slate-900">#RES-8930</td>
+                    <td className="py-3.5 px-3">
+                      <span className="font-mono font-bold text-cyan-700">Kho #A-004</span>
+                      <span className="text-slate-500 block text-[10px]">Kho sỉ thương mại 35m²</span>
                     </td>
-                    <td className="py-3 px-3 font-data-tabular">11:00 Sáng</td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-semibold">
+                    <td className="py-3.5 px-3 font-mono tabular-nums text-slate-700">11:00 Sáng</td>
+                    <td className="py-3.5 px-3">
+                      <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-semibold">
                         Chưa xuất trình ĐKKD
                       </span>
                     </td>
-                    <td className="py-3 px-3 font-data-tabular font-bold text-orange-600">6.000.000đ (Chờ thu)</td>
-                    <td className="py-3 px-3 text-right">
+                    <td className="py-3.5 px-3 font-mono font-bold text-amber-700 tabular-nums">6.000.000đ (Chờ thu)</td>
+                    <td className="py-3.5 px-3 text-right">
                       <button
                         onClick={() => alert('Đang mở file hồ sơ của công ty Vận Phát')}
-                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-semibold text-[11px]"
+                        className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-semibold text-[11px] transition-colors cursor-pointer"
                       >
                         Chuẩn bị hồ sơ
                       </button>
@@ -487,26 +376,26 @@ export const StaffDashboard: React.FC = () => {
                   </tr>
 
                   <tr className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3 px-3">
-                      <div className="font-bold text-slate-900">Vũ Đức Thắng</div>
-                      <div className="text-slate-400 font-data-tabular text-[11px]">0944.890.123</div>
+                    <td className="py-3.5 px-3">
+                      <div className="font-bold text-slate-900 text-xs">Vũ Đức Thắng</div>
+                      <div className="text-slate-500 font-mono text-[11px] tabular-nums mt-0.5">0944.890.123</div>
                     </td>
-                    <td className="py-3 px-3 font-unit-code text-slate-800">#RES-8935</td>
-                    <td className="py-3 px-3">
-                      <span className="font-unit-code font-bold text-slate-900">Kho #C-118</span>
-                      <span className="text-slate-400 block text-[10px]">Kho mini gia dụng 4m²</span>
+                    <td className="py-3.5 px-3 font-mono font-bold text-slate-900">#RES-8935</td>
+                    <td className="py-3.5 px-3">
+                      <span className="font-mono font-bold text-cyan-700">Kho #C-118</span>
+                      <span className="text-slate-500 block text-[10px]">Kho mini gia dụng 4m²</span>
                     </td>
-                    <td className="py-3 px-3 font-data-tabular">14:00 Chiều</td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold">
+                    <td className="py-3.5 px-3 font-mono tabular-nums text-slate-700">14:00 Chiều</td>
+                    <td className="py-3.5 px-3">
+                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-semibold">
                         Đã duyệt hợp đồng
                       </span>
                     </td>
-                    <td className="py-3 px-3 font-data-tabular font-bold text-slate-900">1.000.000đ (Đã TT)</td>
-                    <td className="py-3 px-3 text-right">
+                    <td className="py-3.5 px-3 font-mono font-bold text-slate-900 tabular-nums">1.000.000đ (Đã TT)</td>
+                    <td className="py-3.5 px-3 text-right">
                       <button
                         onClick={() => alert('Mở chi tiết đặt chỗ #RES-8935')}
-                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-semibold text-[11px]"
+                        className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-semibold text-[11px] transition-colors cursor-pointer"
                       >
                         Xem chi tiết
                       </button>
@@ -515,6 +404,7 @@ export const StaffDashboard: React.FC = () => {
                 </tbody>
               </table>
             </div>
+
 
             {/* Radar Block A Floor Indicator */}
             <div className="mt-6 pt-4 border-t border-slate-100">
@@ -533,7 +423,7 @@ export const StaffDashboard: React.FC = () => {
                 <div className="p-2 rounded bg-slate-200 text-slate-600 text-xs">#A-109<br/><span className="text-[10px] text-slate-400 font-normal">Đang thuê</span></div>
                 <div className="p-2 rounded bg-slate-200 text-slate-600 text-xs">#A-110<br/><span className="text-[10px] text-slate-400 font-normal">Đang thuê</span></div>
                 <div className="p-2 rounded bg-slate-200 text-slate-600 text-xs">#A-111<br/><span className="text-[10px] text-slate-400 font-normal">Đang thuê</span></div>
-                <div className="p-2 rounded bg-orange-600 text-white font-bold text-xs shadow-sm animate-pulse">#A-112<br/><span className="text-[10px] uppercase">BÀN GIAO</span></div>
+                <div className="p-2 rounded bg-[var(--brand-teal,#0891b2)] text-white font-bold text-xs shadow-xs animate-pulse">#A-112<br/><span className="text-[10px] uppercase font-semibold">BÀN GIAO</span></div>
                 <div className="p-2 rounded bg-white border border-slate-200 text-slate-800 text-xs">#A-113<br/><span className="text-[10px] text-emerald-600 font-bold">TRỐNG</span></div>
                 <div className="p-2 rounded bg-white border border-slate-200 text-slate-800 text-xs">#A-114<br/><span className="text-[10px] text-emerald-600 font-bold">TRỐNG</span></div>
                 <div className="p-2 rounded bg-slate-200 text-slate-600 text-xs">#A-115<br/><span className="text-[10px] text-slate-400 font-normal">Đang thuê</span></div>
@@ -549,7 +439,7 @@ export const StaffDashboard: React.FC = () => {
             <div>
               <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
                 <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-orange-600 text-[22px]">fact_check</span>
+                  <span className="material-symbols-outlined text-[var(--brand-teal,#0891b2)] text-[22px]">fact_check</span>
                   <h2 className="font-headline text-base font-bold text-slate-900">Nghiệm Thu Trả Kho</h2>
                 </div>
                 <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px] font-bold">
@@ -569,30 +459,30 @@ export const StaffDashboard: React.FC = () => {
                   <span className="font-bold text-slate-900 text-sm block">Công ty CP Thương mại ABC</span>
                   <span className="text-xs text-slate-500">Đại diện: Hoàng Văn Nam (0977.654.321)</span>
                 </div>
-                <div className="mt-2 flex items-center justify-between pt-2 border-t border-slate-200 text-xs font-unit-code">
-                  <span className="text-slate-800">Vị trí: <strong>Kho #C-302 (15m²)</strong></span>
-                  <span className="text-orange-600 font-bold">Hết hạn: Hôm nay</span>
+                <div className="mt-2 flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
+                  <span className="text-slate-800">Vị trí: <strong className="font-mono text-slate-900">Kho #C-302 (15m²)</strong></span>
+                  <span className="text-amber-700 font-mono font-bold text-[11px]">Hết hạn: Hôm nay</span>
                 </div>
               </div>
 
-              {/* 5 Inspection Checklist Items (BR-RULE-013) */}
+              {/* 4 Inspection Checklist Items */}
               <div className="flex flex-col gap-2.5">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
-                    Biên bản thẩm định hiện trường (BR-RULE-013)
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-900 font-mono">
+                    Biên bản thẩm định hiện trường
                   </span>
-                  <span className="text-xs font-semibold text-emerald-600">5/5 tiêu chuẩn</span>
+                  <span className="text-xs text-slate-500 font-mono">4/4 tiêu chuẩn</span>
                 </div>
 
                 <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <span className="material-symbols-outlined text-slate-500 text-[18px]">garage</span>
                     <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-slate-800">1. Tình trạng cửa cuốn</span>
-                      <span className="text-[10px] text-slate-400">Mở êm, không móp méo, ray dẫn tốt</span>
+                      <span className="text-xs font-semibold text-slate-900">Tình trạng cửa cuốn</span>
+                      <span className="text-[10px] text-slate-500">Mở êm, không móp méo, ray dẫn tốt</span>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                  <span className="px-2 py-0.5 rounded font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 text-[10px] font-bold">
                     Tốt
                   </span>
                 </div>
@@ -601,11 +491,11 @@ export const StaffDashboard: React.FC = () => {
                   <div className="flex items-center gap-2.5">
                     <span className="material-symbols-outlined text-slate-500 text-[18px]">cleaning_services</span>
                     <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-slate-800">2. Vệ sinh kho &amp; sàn</span>
-                      <span className="text-[10px] text-slate-400">Đã dọn sạch rác, không ẩm ướt</span>
+                      <span className="text-xs font-semibold text-slate-900">Vệ sinh kho &amp; sàn</span>
+                      <span className="text-[10px] text-slate-500">Đã dọn sạch rác, không ẩm ướt</span>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                  <span className="px-2 py-0.5 rounded font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 text-[10px] font-bold">
                     Sạch sẽ
                   </span>
                 </div>
@@ -614,11 +504,11 @@ export const StaffDashboard: React.FC = () => {
                   <div className="flex items-center gap-2.5">
                     <span className="material-symbols-outlined text-slate-500 text-[18px]">lock</span>
                     <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-slate-800">3. Ổ khóa Smart Lock</span>
-                      <span className="text-[10px] text-slate-400">Cảm biến nhạy, pin 92%, chốt khóa tốt</span>
+                      <span className="text-xs font-semibold text-slate-900">Ổ khóa Smart Lock</span>
+                      <span className="text-[10px] text-slate-500">Cảm biến nhạy, pin 92%</span>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                  <span className="px-2 py-0.5 rounded font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 text-[10px] font-bold">
                     Bình thường
                   </span>
                 </div>
@@ -627,35 +517,22 @@ export const StaffDashboard: React.FC = () => {
                   <div className="flex items-center gap-2.5">
                     <span className="material-symbols-outlined text-slate-500 text-[18px]">thermostat</span>
                     <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-slate-800">4. Cảm biến nhiệt / ẩm</span>
-                      <span className="text-[10px] text-slate-400">22°C • 48% RH (Chuẩn kỹ thuật)</span>
+                      <span className="text-xs font-semibold text-slate-900">Cảm biến nhiệt / ẩm</span>
+                      <span className="text-[10px] text-slate-500 font-mono">22°C • 48% RH (Chuẩn)</span>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                  <span className="px-2 py-0.5 rounded font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 text-[10px] font-bold">
                     Chuẩn
                   </span>
                 </div>
 
-                <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <span className="material-symbols-outlined text-slate-500 text-[18px]">grid_view</span>
-                    <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-slate-800">5. Tường vách &amp; kết cấu kho</span>
-                      <span className="text-[10px] text-slate-400">Không nứt vỡ móp méo, nguyên vẹn</span>
-                    </div>
-                  </div>
-                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                    Nguyên vẹn
-                  </span>
-                </div>
-
                 {/* Proof Photos */}
-                <div className="mt-1 p-3 rounded-lg bg-slate-50 border border-slate-100">
+                <div className="mt-2 p-3 rounded-lg bg-slate-50 border border-slate-100">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-[11px] font-bold text-slate-700 uppercase">
-                      Ảnh chụp hiện trường (Bắt buộc &ge; 2 ảnh)
+                    <span className="text-[11px] font-bold text-slate-900 uppercase font-mono">
+                      Ảnh chụp hiện trường (Bắt buộc)
                     </span>
-                    <span className="text-[10px] text-emerald-600 font-bold font-mono">2/2 ảnh đạt</span>
+                    <span className="text-[10px] text-slate-500 font-mono">2/2 ảnh</span>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="relative rounded-lg overflow-hidden h-20 shadow-sm bg-slate-200">
@@ -681,75 +558,19 @@ export const StaffDashboard: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Khấu trừ chi phí hư hại / vệ sinh (BR-RULE-014) */}
-                <div className="mt-1 p-3 rounded-lg bg-slate-50 border border-slate-200 flex flex-col gap-2 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-700">Khấu Trừ Chi Phí (Nếu có)</span>
-                    <span className="text-[10px] text-slate-400">BR-RULE-014</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[10px] text-slate-500 block mb-0.5">Phí hư hại (đ)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="50000"
-                        value={damageFee || ''}
-                        onChange={(e) => setDamageFee(Number(e.target.value) || 0)}
-                        placeholder="0"
-                        disabled={returnConfirmed}
-                        className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-slate-500 block mb-0.5">Phí vệ sinh (đ)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="50000"
-                        value={cleaningFee || ''}
-                        onChange={(e) => setCleaningFee(Number(e.target.value) || 0)}
-                        placeholder="0"
-                        disabled={returnConfirmed}
-                        className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white text-slate-800"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Settlement Summary & Review State (BR-RULE-014 & BR-RULE-015) */}
-                <div className="mt-1 p-3 rounded-lg bg-slate-100 border border-slate-200 flex flex-col gap-1.5 text-xs">
+                {/* Settlement Summary */}
+                <div className="mt-2 p-3.5 rounded-xl bg-slate-100 border border-slate-200 flex flex-col gap-1.5 text-xs">
                   <div className="flex items-center justify-between text-slate-600">
                     <span>Tiền cọc giữ ban đầu:</span>
-                    <span className="font-data-tabular font-bold text-slate-800">
-                      {returnDepositPaid.toLocaleString('vi-VN')}đ
-                    </span>
+                    <span className="font-mono tabular-nums font-bold text-slate-800">2.000.000đ</span>
                   </div>
                   <div className="flex items-center justify-between text-slate-600">
-                    <span>Tổng khấu trừ (Hư hại/Vệ sinh):</span>
-                    <span className={`font-data-tabular font-semibold ${totalDeduction > 0 ? 'text-red-600' : 'text-slate-500'}`}>
-                      -{totalDeduction.toLocaleString('vi-VN')}đ
-                    </span>
+                    <span>Khấu trừ vệ sinh/hư hại:</span>
+                    <span className="font-mono tabular-nums text-slate-500">0đ</span>
                   </div>
-                  <div className="flex items-center justify-between text-slate-900 pt-1.5 border-t border-slate-200">
+                  <div className="flex items-center justify-between text-slate-900 pt-2 border-t border-slate-200">
                     <span className="font-bold">Số tiền hoàn trả khách:</span>
-                    <span className="font-unit-code text-sm text-orange-600 font-extrabold">
-                      {netRefundAmount.toLocaleString('vi-VN')}đ
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] pt-1 text-slate-500">
-                    <span>SLA cam kết hoàn tiền:</span>
-                    <span className="font-semibold text-slate-700">{refundSlaDays} ngày làm việc</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-slate-500">
-                    <span>Quy trình xét duyệt:</span>
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                      totalDeduction > 0
-                        ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                        : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                    }`}>
-                      {totalDeduction > 0 ? 'Chờ Kế Toán Đối Soát (Review State)' : 'Tự Động Hoàn Cọc (Direct SLA)'}
-                    </span>
+                    <span className="font-mono tabular-nums text-base text-emerald-600 font-extrabold">2.000.000đ</span>
                   </div>
                 </div>
               </div>
@@ -758,13 +579,10 @@ export const StaffDashboard: React.FC = () => {
             <button
               onClick={() => {
                 setReturnConfirmed(true)
-                const reviewMsg = totalDeduction > 0
-                  ? `Đã khấu trừ ${totalDeduction.toLocaleString('vi-VN')}đ. Hồ sơ hoàn cọc ${netRefundAmount.toLocaleString('vi-VN')}đ đã chuyển sang Kế Toán đối soát duyệt chi (SLA ${refundSlaDays} ngày).`
-                  : `Kho đạt chuẩn 5/5. Lệnh hoàn cọc 100% (${netRefundAmount.toLocaleString('vi-VN')}đ) đã chuyển sang cổng thanh toán tự động (SLA ${refundSlaDays} ngày).`
-                alert(`Nghiệm thu hoàn trả kho #C-302 thành công!\n- Mã PIN SmartLock: ĐÃ THU HỒI\n- Trạng thái kho: AVAILABLE (Sẵn sàng phục vụ khách mới)\n- ${reviewMsg}`)
+                alert('Đã hoàn tất nghiệm thu trả kho #C-302. Lệnh hoàn cọc 2.000.000đ đã được chuyển sang cổng thanh toán tự động.')
               }}
               disabled={returnConfirmed}
-              className={`mt-4 w-full py-2.5 px-4 rounded-lg text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-all ${
+              className={`mt-4 w-full py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer ${
                 returnConfirmed
                   ? 'bg-emerald-600 text-white'
                   : 'bg-slate-900 hover:bg-slate-800 text-white'
@@ -786,7 +604,7 @@ export const StaffDashboard: React.FC = () => {
       <div className="w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 mb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-red-100 text-red-600 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center">
               <span className="material-symbols-outlined text-[20px]">build_circle</span>
             </div>
             <div>
@@ -809,14 +627,11 @@ export const StaffDashboard: React.FC = () => {
                 priority: 'MEDIUM',
                 staff: 'Nguyễn Quỳnh Anh (Trực ca)',
                 time: 'Vừa xong',
-                status: 'IN_PROGRESS',
-                evidenceUrls: [
-                  'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80'
-                ]
+                status: 'IN_PROGRESS'
               }
               setTickets([newTk, ...tickets])
             }}
-            className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-colors border border-slate-200"
+            className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-colors border border-slate-200 cursor-pointer"
           >
             <span className="material-symbols-outlined text-[18px]">add_alert</span>
             <span>Tạo Báo Cáo Mới</span>
@@ -826,15 +641,14 @@ export const StaffDashboard: React.FC = () => {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider">
-                <th className="py-2.5 px-3 rounded-l-lg">Mã Ticket</th>
-                <th className="py-2.5 px-3">Mô Tả Chi Tiết Sự Cố</th>
-                <th className="py-2.5 px-3">Ảnh Hiện Trường</th>
-                <th className="py-2.5 px-3">Vị Trí &amp; Kho</th>
-                <th className="py-2.5 px-3">Mức Độ</th>
-                <th className="py-2.5 px-3">Nhân Viên Phụ Trách</th>
-                <th className="py-2.5 px-3">Thời Gian</th>
-                <th className="py-2.5 px-3 rounded-r-lg text-right">Thao tác xử lý</th>
+              <tr className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider text-[11px]">
+                <th className="py-2.5 px-3 rounded-l-lg font-semibold">Mã Ticket</th>
+                <th className="py-2.5 px-3 font-semibold">Mô Tả Chi Tiết Sự Cố</th>
+                <th className="py-2.5 px-3 font-semibold">Vị Trí &amp; Kho</th>
+                <th className="py-2.5 px-3 font-semibold">Mức Độ</th>
+                <th className="py-2.5 px-3 font-semibold">Nhân Viên Phụ Trách</th>
+                <th className="py-2.5 px-3 font-semibold">Thời Gian</th>
+                <th className="py-2.5 px-3 rounded-r-lg text-right font-semibold">Thao tác xử lý</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
@@ -842,88 +656,45 @@ export const StaffDashboard: React.FC = () => {
                 <tr 
                   key={tk.id} 
                   className={`hover:bg-slate-50/70 transition-colors ${
-                    tk.priority === 'HIGH' ? 'bg-red-50/30' : ''
+                    tk.priority === 'HIGH' ? 'bg-rose-50/40' : ''
                   }`}
                 >
-                  <td className="py-3 px-3 font-unit-code text-xs font-bold text-slate-900">
+                  <td className="py-3 px-3 font-mono text-xs font-bold text-slate-900">
                     {tk.id}
                   </td>
                   <td className="py-3 px-3 max-w-xs">
-                    <span className="font-bold text-slate-900 block">{tk.title}</span>
-                    <span className="text-[11px] text-slate-500 line-clamp-1">{tk.detail}</span>
+                    <span className="font-bold text-slate-900 block text-xs">{tk.title}</span>
+                    <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">{tk.detail}</span>
                   </td>
                   <td className="py-3 px-3">
-                    {tk.evidenceUrls && tk.evidenceUrls.length > 0 ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setActiveEvidenceModal({
-                            ticketId: tk.id,
-                            title: tk.title,
-                            images: tk.evidenceUrls
-                          })}
-                          className="group relative block w-10 h-10 rounded-lg overflow-hidden border border-slate-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500 shrink-0"
-                          title="Nhấn để phóng to ảnh hiện trường"
-                        >
-                          <img
-                            src={tk.evidenceUrls[0]}
-                            alt="Ảnh hiện trường"
-                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200"
-                          />
-                          <span className="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition-colors" />
-                          <span className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded bg-black/60 text-white flex items-center justify-center">
-                            <span className="material-symbols-outlined text-[10px]">zoom_in</span>
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setActiveEvidenceModal({
-                            ticketId: tk.id,
-                            title: tk.title,
-                            images: tk.evidenceUrls
-                          })}
-                          className="text-[11px] font-semibold text-orange-600 hover:text-orange-700 flex items-center gap-0.5"
-                        >
-                          <span>{tk.evidenceUrls.length} ảnh</span>
-                          <span className="material-symbols-outlined text-[13px]">open_in_new</span>
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-slate-400 text-[11px] italic flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">hide_image</span>
-                        Chưa có ảnh
-                      </span>
-                    )}
+                    <span className="font-mono font-bold text-slate-800">{tk.location}</span>
                   </td>
                   <td className="py-3 px-3">
-                    <span className="font-bold text-slate-800">{tk.location}</span>
-                  </td>
-                  <td className="py-3 px-3">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase inline-flex items-center gap-1 ${
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase inline-flex items-center gap-1 ${
                       tk.priority === 'HIGH'
-                        ? 'bg-red-100 text-red-700 border border-red-200'
+                        ? 'bg-rose-100 text-rose-700 border border-rose-200'
                         : tk.priority === 'MEDIUM'
                         ? 'bg-amber-100 text-amber-700 border border-amber-200'
                         : 'bg-slate-100 text-slate-600'
                     }`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${
-                        tk.priority === 'HIGH' ? 'bg-red-600' : tk.priority === 'MEDIUM' ? 'bg-amber-600' : 'bg-slate-400'
+                        tk.priority === 'HIGH' ? 'bg-rose-600' : tk.priority === 'MEDIUM' ? 'bg-amber-600' : 'bg-slate-400'
                       }`}></span>
                       {tk.priority === 'HIGH' ? 'Ưu tiên Cao' : tk.priority === 'MEDIUM' ? 'Bình thường' : 'Thấp'}
                     </span>
                   </td>
-                  <td className="py-3 px-3 text-slate-700">{tk.staff}</td>
-                  <td className="py-3 px-3 text-slate-400 font-mono">{tk.time}</td>
+                  <td className="py-3 px-3 text-slate-700 font-medium">{tk.staff}</td>
+                  <td className="py-3 px-3 text-slate-500 font-mono text-[11px] tabular-nums">{tk.time}</td>
                   <td className="py-3 px-3 text-right">
                     {tk.status === 'RESOLVED' ? (
-                      <span className="text-emerald-600 font-bold text-[11px]">✓ Đã giải quyết</span>
+                      <span className="text-emerald-600 font-mono font-bold text-[11px]">✓ Đã giải quyết</span>
                     ) : (
                       <button
                         onClick={() => {
                           setTickets(prev => prev.map(t => t.id === tk.id ? { ...t, status: 'RESOLVED' } : t))
                           alert(`Đã hoàn tất xử lý ticket ${tk.id}`)
                         }}
-                        className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded font-bold text-[11px] transition-colors"
+                        className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-[11px] transition-colors cursor-pointer"
                       >
                         Xong tại chỗ
                       </button>
@@ -934,6 +705,7 @@ export const StaffDashboard: React.FC = () => {
             </tbody>
           </table>
         </div>
+
       </div>
 
       {/* Walkin Modal */}
@@ -1006,7 +778,7 @@ export const StaffDashboard: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-sm"
+                    className="flex-1 py-2.5 bg-[var(--brand-teal,#0891b2)] hover:bg-[var(--brand-teal-hover,#0e7490)] text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
                   >
                     Cấp Thẻ Tham Quan
                   </button>
@@ -1017,76 +789,18 @@ export const StaffDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Evidence Image Preview Modal */}
-      {activeEvidenceModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-[20px]">image</span>
-                </span>
-                <div>
-                  <h3 className="font-headline text-base font-bold text-slate-900">
-                    Bằng Chứng Hiện Trường Sự Cố {activeEvidenceModal.ticketId}
-                  </h3>
-                  <p className="text-xs text-slate-500 line-clamp-1">
-                    {activeEvidenceModal.title}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveEvidenceModal(null)}
-                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center"
-              >
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto p-1">
-                {activeEvidenceModal.images.map((imgUrl, idx) => (
-                  <div key={idx} className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 group shadow-sm">
-                    <img
-                      src={imgUrl}
-                      alt={`Bằng chứng ${idx + 1}`}
-                      className="w-full h-56 object-cover"
-                    />
-                    <div className="absolute bottom-2 right-2 flex gap-1">
-                      <a
-                        href={imgUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-2 py-1 rounded-md bg-slate-900/80 hover:bg-slate-900 text-white text-[11px] font-bold flex items-center gap-1 backdrop-blur-sm transition-colors"
-                      >
-                        <span className="material-symbols-outlined text-[14px]">open_in_new</span>
-                        Xem ảnh gốc
-                      </a>
-                    </div>
-                    <span className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/60 text-white font-mono text-[10px]">
-                      Ảnh #{idx + 1}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                <span className="text-xs text-slate-500">
-                  Tổng cộng: <strong className="text-slate-800">{activeEvidenceModal.images.length}</strong> hình ảnh bằng chứng
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setActiveEvidenceModal(null)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors"
-                >
-                  Đóng cửa sổ
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Real-time HTML5-QRCode Camera Scanner Modal & Check-in API */}
+      <QrCameraCheckInModal
+        isOpen={isQrScannerOpen}
+        onClose={() => setIsQrScannerOpen(false)}
+        onCheckInSuccess={(bookingId, result) => {
+          setActiveBookingId(bookingId)
+          setCheckInSuccessMsg(`Check-in qua QR Camera thành công! PIN cấp: ${result.accessPin} (Thẻ: ${result.rfidCard})`)
+        }}
+        onSelectBookingForWorkbench={(bookingId) => {
+          setActiveBookingId(bookingId)
+        }}
+      />
 
     </div>
   )
