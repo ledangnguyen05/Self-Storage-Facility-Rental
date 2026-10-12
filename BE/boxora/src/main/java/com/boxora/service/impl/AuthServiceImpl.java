@@ -42,10 +42,13 @@ public class AuthServiceImpl implements AuthService {
     private final AuthenticationManager authenticationManager;
     private final EmailService emailService;
     private final com.boxora.service.ActivityLogService activityLogService;
+    private final com.boxora.service.CaptchaService captchaService;
 
 
     @Override
     public AuthResponse register(RegisterRequest request) {
+
+        captchaService.validate(request.getCaptchaId(), request.getCaptchaCode());
 
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new AppException(ErrorCode.EMAIL_ALREADY_EXISTS);
