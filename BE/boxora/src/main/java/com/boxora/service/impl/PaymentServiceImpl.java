@@ -74,6 +74,21 @@ public class PaymentServiceImpl implements PaymentService {
         Booking booking = bookingRepository.findById(request.getBookingId())
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
+        if (request.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
+            if (booking.getStatus() != BookingStatus.PENDING_PAYMENT) {
+                throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED);
+            }
+            if (booking.getPaymentExpiresAt() == null || !booking.getPaymentExpiresAt().isAfter(java.time.Instant.now())) {
+                throw new AppException(ErrorCode.BOOKING_PAYMENT_EXPIRED);
+            }
+            BigDecimal monthlyFee = booking.getTotalRentalFee()
+                    .divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP);
+            BigDecimal expectedAmount = monthlyFee.add(booking.getDepositAmount());
+            if (request.getAmount().compareTo(expectedAmount) != 0) {
+                throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
+            }
+        }
+
         // Generate unique transaction reference (e.g. BOX + timestamp + 6 random chars)
         String txnRef = "BOX" + System.currentTimeMillis() + VNPayUtil.randomAlphaNumeric(6);
 
@@ -146,6 +161,18 @@ public class PaymentServiceImpl implements PaymentService {
         Payment payment = paymentRepository.findByTransactionId(txnRef)
                 .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND));
 
+        String amountStr = params.get("vnp_Amount");
+        if (amountStr != null && !amountStr.isBlank()) {
+            try {
+                BigDecimal vnpAmount = new BigDecimal(amountStr).divide(BigDecimal.valueOf(100));
+                if (payment.getAmount().compareTo(vnpAmount) != 0) {
+                    throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
+                }
+            } catch (NumberFormatException e) {
+                throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
+            }
+        }
+
         // 2. Idempotency check: if already confirmed as PAID, return existing
         if (payment.getStatus() == PaymentStatus.PAID) {
             log.info("Payment with txnRef={} has already been marked as PAID.", txnRef);
@@ -172,12 +199,27 @@ public class PaymentServiceImpl implements PaymentService {
             // Update Booking status & deposit amount if applicable
             Booking booking = payment.getBooking();
             if (booking != null) {
-                if (payment.getPaymentType() == PaymentType.DEPOSIT) {
+                if (payment.getPaymentType() == PaymentType.BOOKING_PAYMENT
+                        && booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                    booking.setDepositPaid(booking.getDepositAmount());
+                    booking.setStatus(BookingStatus.CONFIRMED);
+                    booking.setPaymentExpiresAt(null);
+                    if (booking.getAccessPin() == null) {
+                        booking.setAccessPin(String.format("%06d", new java.util.Random().nextInt(1000000)));
+                        booking.setQrAccessToken("QR-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase());
+                        booking.setPinUpdatedAt(LocalDateTime.now());
+                    }
+                    if (booking.getStorageUnit() != null) {
+                        storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
+                    }
+                } else if (payment.getPaymentType() == PaymentType.DEPOSIT) {
                     BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
                     booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
                 }
-                if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                if (payment.getPaymentType() != PaymentType.BOOKING_PAYMENT
+                        && booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
                     booking.setStatus(BookingStatus.CONFIRMED);
+                    booking.setPaymentExpiresAt(null);
                     if (booking.getAccessPin() == null) {
                         booking.setAccessPin(String.format("%06d", new java.util.Random().nextInt(1000000)));
                         booking.setQrAccessToken("QR-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase());
@@ -291,12 +333,27 @@ public class PaymentServiceImpl implements PaymentService {
 
             Booking booking = payment.getBooking();
             if (booking != null) {
-                if (payment.getPaymentType() == PaymentType.DEPOSIT) {
+                if (payment.getPaymentType() == PaymentType.BOOKING_PAYMENT
+                        && booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                    booking.setDepositPaid(booking.getDepositAmount());
+                    booking.setStatus(BookingStatus.CONFIRMED);
+                    booking.setPaymentExpiresAt(null);
+                    if (booking.getAccessPin() == null) {
+                        booking.setAccessPin(String.format("%06d", new java.util.Random().nextInt(1000000)));
+                        booking.setQrAccessToken("QR-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase());
+                        booking.setPinUpdatedAt(LocalDateTime.now());
+                    }
+                    if (booking.getStorageUnit() != null) {
+                        storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
+                    }
+                } else if (payment.getPaymentType() == PaymentType.DEPOSIT) {
                     BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
                     booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
                 }
-                if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                if (payment.getPaymentType() != PaymentType.BOOKING_PAYMENT
+                        && booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
                     booking.setStatus(BookingStatus.CONFIRMED);
+                    booking.setPaymentExpiresAt(null);
                     if (booking.getAccessPin() == null) {
                         booking.setAccessPin(String.format("%06d", new java.util.Random().nextInt(1000000)));
                         booking.setQrAccessToken("QR-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase());

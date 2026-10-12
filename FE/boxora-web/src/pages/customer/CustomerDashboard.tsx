@@ -1,55 +1,56 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { contractService, RentalContract } from '../../services/contractService'
+import { facilityService } from '../../services/facilityService'
+import { storageUnitService } from '../../services/storageUnitService'
+import { bookingService } from '../../services/bookingService'
+import { BookingCheckoutModal } from '../../components/modals/BookingCheckoutModal'
+import { ContractOtpModal } from '../../components/modals/ContractOtpModal'
+import { CustomerBookingCard } from '../../components/customer/CustomerBookingCard'
+import { contractService } from '../../services/contractService'
+import { supportTicketService } from '../../services/supportTicketService'
+import { Facility, StorageUnit, Booking, RentalContract, SupportTicket } from '../../types'
+
+function formatVnd(amount: number) {
+  return new Intl.NumberFormat('vi-VN').format(Math.round(amount))
+}
+
+function formatDate(dateStr?: string) {
+  if (!dateStr) return '28/04/2025'
+  try {
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return dateStr
+    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  } catch {
+    return dateStr
+  }
+}
+
+function calculateNewEndDate(dateStr?: string, months: number = 1) {
+  try {
+    const d = dateStr ? new Date(dateStr) : new Date()
+    d.setMonth(d.getMonth() + months)
+    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  } catch {
+    return `+${months} tháng`
+  }
+}
 
 export const CustomerDashboard: React.FC = () => {
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
 
-  // Real database contracts state
-  const [contracts, setContracts] = useState<RentalContract[]>([])
-  const [loadingContracts, setLoadingContracts] = useState<boolean>(true)
-
-  useEffect(() => {
-    const fetchContracts = async () => {
-      try {
-        setLoadingContracts(true)
-        const res = await contractService.getMyContracts({ size: 50 })
-        if (res?.content && Array.isArray(res.content)) {
-          setContracts(res.content)
-        }
-      } catch (err) {
-        console.error('Failed to load real customer contracts from database:', err)
-      } finally {
-        setLoadingContracts(false)
-      }
-    }
-    fetchContracts()
-  }, [user])
-
-  const activeContracts = contracts.filter(c => c.status === 'ACTIVE')
-  const nearestEndDate = activeContracts
-    .map(c => c.endDate)
-    .filter(Boolean)
-    .sort()[0] || '--'
-
   // Tabs: 'my-units' (default) | 'explore' | 'contracts' | 'support'
-  const tabParam = searchParams.get('tab') as 'my-units' | 'explore' | 'contracts' | 'support' | null
-  const [activeTab, setActiveTab] = useState<'my-units' | 'explore' | 'contracts' | 'support'>(
-    tabParam && ['my-units', 'explore', 'contracts', 'support'].includes(tabParam)
-      ? tabParam
-      : 'my-units'
-  )
-
-  useEffect(() => {
-    if (tabParam && ['my-units', 'explore', 'contracts', 'support'].includes(tabParam)) {
-      setActiveTab(tabParam)
-    }
-  }, [tabParam])
+  const tabParam = searchParams.get('tab')
+  const activeTab = tabParam === 'explore' || tabParam === 'contracts' || tabParam === 'support'
+    ? tabParam
+    : 'my-units'
 
   const handleTabChange = (tab: 'my-units' | 'explore' | 'contracts' | 'support') => {
-    setActiveTab(tab)
+    if (tab === 'contracts') {
+      setIsLoadingContracts(true)
+      setContractsError(null)
+    }
     setSearchParams({ tab })
   }
 
@@ -57,68 +58,298 @@ export const CustomerDashboard: React.FC = () => {
   const [unlockingUnit, setUnlockingUnit] = useState<string | null>(null)
   const [unlockedSuccess, setUnlockedSuccess] = useState<string | null>(null)
 
-  // Copy PIN notification
-  const [copiedPin, setCopiedPin] = useState<string | null>(null)
-  // Stitch PIN Reveal State
-  const [revealedPins, setRevealedPins] = useState<Record<string, boolean>>({})
-  const [pinCountdown, setPinCountdown] = useState<number>(59)
-
-  const togglePinReveal = (unitId: string) => {
-    setRevealedPins(prev => ({
-      ...prev,
-      [unitId]: !prev[unitId]
-    }))
-    setPinCountdown(59)
-  }
+  const [unlockErrors, setUnlockErrors] = useState<Record<string, string>>({})
 
   // Booking Modal
-  const [selectedBookingUnit, setSelectedBookingUnit] = useState<{ id: string; name: string; price: string } | null>(null)
-  const [bookingSuccess, setBookingSuccess] = useState(false)
-
+  const [selectedBookingUnit, setSelectedBookingUnit] = useState<{
+    id: string
+    backendId?: string
+    name: string
+    price: string
+    rawPrice?: number
+    facilityName?: string
+  } | null>(null)
   // Renewal Modal
-  const [renewUnit, setRenewUnit] = useState<{ id: string; price: string } | null>(null)
+  const [renewUnit, setRenewUnit] = useState<{
+    id: string
+    bookingId?: string
+    price: string
+    rawPrice?: number
+    facilityName?: string
+    endDate?: string
+  } | null>(null)
   const [renewMonths, setRenewMonths] = useState(3)
   const [renewSuccess, setRenewSuccess] = useState(false)
+  const [isRenewing, setIsRenewing] = useState(false)
+  const [renewalError, setRenewalError] = useState<string | null>(null)
 
   // Share Access Modal
   const [shareModalUnit, setShareModalUnit] = useState<string | null>(null)
   const [sharePhone, setSharePhone] = useState('')
   const [shareSuccess, setShareSuccess] = useState(false)
 
-  // Support Ticket Form State
+  // Live API data for explore tab & active units
+  const [facilities, setFacilities] = useState<Facility[]>([])
+  const [availableUnits, setAvailableUnits] = useState<StorageUnit[]>([])
+  const [activeBookings, setActiveBookings] = useState<Booking[]>([])
+  const [isLoadingUnits, setIsLoadingUnits] = useState(false)
+  const [bookingsError, setBookingsError] = useState<string | null>(null)
+  const [contracts, setContracts] = useState<RentalContract[]>([])
+  const [isLoadingContracts, setIsLoadingContracts] = useState(true)
+  const [contractsError, setContractsError] = useState<string | null>(null)
+  const [otpContract, setOtpContract] = useState<RentalContract | null>(null)
+
+  // Support Tickets State
+  const [myTickets, setMyTickets] = useState<SupportTicket[]>([])
+  const [isLoadingTickets, setIsLoadingTickets] = useState(false)
   const [ticketUnit, setTicketUnit] = useState('A-108')
   const [ticketType, setTicketType] = useState('lock')
+  const [ticketTitle, setTicketTitle] = useState('')
   const [ticketContent, setTicketContent] = useState('')
+  const [ticketPriority, setTicketPriority] = useState('MEDIUM')
+  const [ticketFile, setTicketFile] = useState<File | null>(null)
+  const [ticketFilePreview, setTicketFilePreview] = useState<string | null>(null)
+  const [isSubmittingTicket, setIsSubmittingTicket] = useState(false)
   const [ticketSubmitted, setTicketSubmitted] = useState(false)
+  const [ticketError, setTicketError] = useState<string | null>(null)
+  const [selectedTicketImage, setSelectedTicketImage] = useState<string | null>(null)
+
+  const loadActiveBookings = async () => {
+    try {
+      const bookingsRes = await bookingService.getMyActive(user?.id)
+      if (bookingsRes && Array.isArray(bookingsRes)) {
+        setActiveBookings(bookingsRes)
+      }
+    } catch (err) {
+      console.warn('Error loading active bookings:', err)
+    }
+  }
+
+  const loadTickets = async () => {
+    try {
+      setIsLoadingTickets(true)
+      const ticketsRes = await supportTicketService.getMyTickets(user?.id)
+      if (ticketsRes && Array.isArray(ticketsRes)) {
+        setMyTickets(ticketsRes)
+      }
+    } catch (err) {
+      console.warn('Error loading support tickets:', err)
+    } finally {
+      setIsLoadingTickets(false)
+    }
+  }
+
+  useEffect(() => {
+    let isMounted = true
+    async function loadData() {
+      try {
+        setIsLoadingUnits(true)
+        const [facRes, unitsRes, bookingsRes, ticketsRes] = await Promise.allSettled([
+          facilityService.getFacilities({ size: 100 }),
+          storageUnitService.getUnits({ status: 'AVAILABLE' }),
+          bookingService.getMyActive(user?.id),
+          supportTicketService.getMyTickets(user?.id),
+        ])
+        if (!isMounted) return
+        if (facRes.status === 'fulfilled' && facRes.value?.content) {
+          setFacilities(facRes.value.content)
+        }
+        if (unitsRes.status === 'fulfilled' && unitsRes.value) {
+          setAvailableUnits(unitsRes.value)
+        }
+        if (bookingsRes.status === 'fulfilled' && bookingsRes.value && Array.isArray(bookingsRes.value)) {
+          setActiveBookings(bookingsRes.value)
+          setBookingsError(null)
+          if (bookingsRes.value.length > 0) {
+            setTicketUnit(bookingsRes.value[0].unitCode)
+          }
+        } else if (bookingsRes.status === 'rejected') {
+          setBookingsError('Không thể tải danh sách kho đang thuê. Vui lòng tải lại trang.')
+        }
+        if (ticketsRes.status === 'fulfilled' && ticketsRes.value && Array.isArray(ticketsRes.value)) {
+          setMyTickets(ticketsRes.value)
+        }
+      } catch (err) {
+        console.warn('Error loading dashboard data:', err)
+      } finally {
+        if (isMounted) setIsLoadingUnits(false)
+      }
+    }
+    loadData()
+    return () => {
+      isMounted = false
+    }
+  }, [user?.id])
+
+  useEffect(() => {
+    if (activeTab !== 'contracts' || !user?.id) return
+    let isMounted = true
+    contractService.getMyContracts(user.id)
+      .then(result => {
+        if (isMounted) setContracts(Array.isArray(result) ? result : [])
+      })
+      .catch(() => {
+        if (isMounted) setContractsError('Không thể tải danh sách hợp đồng. Vui lòng thử lại.')
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingContracts(false)
+      })
+    return () => {
+      isMounted = false
+    }
+  }, [activeTab, user?.id])
 
   // Filter explore state
   const [filterFacility, setFilterFacility] = useState('all')
   const [filterSize, setFilterSize] = useState('all')
 
-  const handleCopy = (id: string, pin: string) => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(pin)
-    }
-    setCopiedPin(id)
-    setTimeout(() => setCopiedPin(null), 2000)
-  }
+  const filteredExploreUnits = useMemo(() => {
+    return availableUnits.filter((unit) => {
+      const matchFac = filterFacility === 'all' || unit.facilityId === filterFacility
+      let matchSize = true
+      const area = unit.areaSqMeters || 6
+      if (filterSize === 'mini') matchSize = area <= 5
+      else if (filterSize === 'family') matchSize = area > 5 && area <= 10
+      else if (filterSize === 'business') matchSize = area > 10
+      return matchFac && matchSize
+    })
+  }, [availableUnits, filterFacility, filterSize])
 
-  const handleRemoteUnlock = (unitId: string) => {
+  const handleRemoteUnlock = async (unitId: string, bookingId?: string) => {
     setUnlockingUnit(unitId)
-    setTimeout(() => {
-      setUnlockingUnit(null)
+    setUnlockErrors(current => ({ ...current, [unitId]: '' }))
+    try {
+      if (!bookingId) throw new Error('Booking ID is missing')
+      await bookingService.remoteUnlock(bookingId)
       setUnlockedSuccess(unitId)
       setTimeout(() => setUnlockedSuccess(null), 4000)
-    }, 1200)
+    } catch (err) {
+      console.error('Remote unlock failed:', err)
+      setUnlockErrors(current => ({ ...current, [unitId]: 'Không thể gửi lệnh mở khóa. Vui lòng thử lại.' }))
+    } finally {
+      setUnlockingUnit(null)
+    }
   }
 
-  const handleSupportSubmit = (e: React.FormEvent) => {
+  const handleBookingRemoteUnlock = (booking: Booking) =>
+    handleRemoteUnlock(booking.unitCode, booking.id)
+
+  const openRenewalModal = (unitCode: string, defaultPrice: string, rawPrice?: number) => {
+    const matching = activeBookings.find(b => b.unitCode === unitCode)
+    setRenewUnit({
+      id: unitCode,
+      bookingId: matching?.id,
+      price: defaultPrice,
+      rawPrice: rawPrice || (matching?.totalRentalFee ? Math.round(matching.totalRentalFee / (matching.rentalMonths || 1)) : 1850000),
+      facilityName: matching?.facilityName || 'Cơ sở Tân Bình - Mega Central',
+      endDate: matching?.endDate || '2026-10-21',
+    })
+    setRenewMonths(3)
+    setRenewSuccess(false)
+    setRenewalError(null)
+  }
+
+  const handleConfirmRenewal = async () => {
+    if (!renewUnit) return
+    setIsRenewing(true)
+    setRenewalError(null)
+    try {
+      if (renewUnit.bookingId) {
+        await bookingService.renewBooking(renewUnit.bookingId, renewMonths)
+      } else {
+        const fallback = activeBookings.find(b => b.unitCode === renewUnit.id) || activeBookings[0]
+        if (fallback?.id) {
+          await bookingService.renewBooking(fallback.id, renewMonths)
+        }
+      }
+      await loadActiveBookings()
+      setRenewSuccess(true)
+    } catch (err: any) {
+      console.error('Failed to renew booking:', err)
+      setRenewalError(err.response?.data?.message || 'Có lỗi xảy ra khi gia hạn hợp đồng. Vui lòng thử lại.')
+    } finally {
+      setIsRenewing(false)
+    }
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      alert('Vui lòng chỉ tải lên tệp hình ảnh (PNG, JPG, WEBP)')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Kích thước ảnh tối đa là 10MB')
+      return
+    }
+    setTicketFile(file)
+    const previewUrl = URL.createObjectURL(file)
+    setTicketFilePreview(previewUrl)
+  }
+
+  const handleRemoveFile = () => {
+    if (ticketFilePreview) {
+      URL.revokeObjectURL(ticketFilePreview)
+    }
+    setTicketFile(null)
+    setTicketFilePreview(null)
+  }
+
+  const handleSupportSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setTicketSubmitted(true)
-    setTimeout(() => {
-      setTicketSubmitted(false)
+    if (!ticketContent.trim()) return
+
+    setIsSubmittingTicket(true)
+    setTicketError(null)
+
+    try {
+      let attachmentUrl: string | undefined = undefined
+      if (ticketFile) {
+        attachmentUrl = await supportTicketService.uploadAttachment(ticketFile)
+      }
+
+      let category = 'OTHER'
+      if (ticketType === 'lock') category = 'LOCK_ISSUE'
+      else if (ticketType === 'pin') category = 'PIN_CODE'
+      else if (ticketType === 'climate' || ticketType === 'damage') category = 'FACILITY_DAMAGE'
+      else if (ticketType === 'billing') category = 'PAYMENT_ISSUE'
+
+      const relatedBooking = activeBookings.find(b => b.unitCode === ticketUnit)
+
+      const defaultTitle = ticketTitle.trim() || 
+        (ticketType === 'lock' ? `Sự cố khóa kho #${ticketUnit}` :
+         ticketType === 'pin' ? `Cấp lại mã PIN kho #${ticketUnit}` :
+         ticketType === 'billing' ? `Yêu cầu hóa đơn/thanh toán #${ticketUnit}` :
+         ticketType === 'climate' ? `Kiểm tra nhiệt độ/độ ẩm #${ticketUnit}` :
+         `Hỗ trợ yêu cầu kho #${ticketUnit}`)
+
+      await supportTicketService.createTicket({
+        customerId: user?.id,
+        bookingId: relatedBooking?.id,
+        category,
+        title: defaultTitle,
+        description: ticketContent.trim(),
+        priority: ticketPriority,
+        attachmentUrl,
+      })
+
+      setTicketSubmitted(true)
+      handleRemoveFile()
       setTicketContent('')
-    }, 3000)
+      setTicketTitle('')
+
+      await loadTickets()
+
+      setTimeout(() => {
+        setTicketSubmitted(false)
+      }, 4000)
+    } catch (err: any) {
+      console.error('Failed to submit ticket:', err)
+      setTicketError(err.response?.data?.message || 'Có lỗi xảy ra khi gửi yêu cầu hỗ trợ. Vui lòng thử lại.')
+    } finally {
+      setIsSubmittingTicket(false)
+    }
   }
 
   const handleShareSubmit = (e: React.FormEvent) => {
@@ -176,9 +407,9 @@ export const CustomerDashboard: React.FC = () => {
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Kho đang thuê</span>
-              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{activeContracts.length} Kho Hoạt Động</span>
+              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{activeBookings.length} kho đang thuê</span>
               <span className="text-xs text-slate-500 truncate">
-                {activeContracts.length > 0 ? activeContracts.map(c => `#${c.unitCode}`).join(' & ') : 'Chưa có kho hoạt động'}
+                {activeBookings.map(booking => `#${booking.unitCode}`).join(' • ') || 'Chưa có kho hoạt động'}
               </span>
             </div>
           </div>
@@ -192,8 +423,12 @@ export const CustomerDashboard: React.FC = () => {
                 Bảo mật cửa kho
                 <span className="pulsing-dot bg-emerald-500"></span>
               </span>
-              <span className="font-mono text-xl font-bold text-emerald-700 mt-0.5">Đã Khóa Bảo Vệ</span>
-              <span className="text-xs text-slate-500 truncate">Mã PIN điện tử &amp; Mở khóa từ xa sẵn sàng</span>
+              <span className="font-mono text-xl font-bold text-emerald-700 mt-0.5">
+                {activeBookings.length > 0 ? 'Đã khóa bảo vệ' : 'Chưa có kho'}
+              </span>
+              <span className="text-xs text-slate-500 truncate">
+                {activeBookings.length > 0 ? 'PIN và QR được bảo vệ, chỉ tải khi bạn yêu cầu' : 'Thuê kho để kích hoạt quyền truy cập'}
+              </span>
             </div>
           </div>
 
@@ -203,9 +438,15 @@ export const CustomerDashboard: React.FC = () => {
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Hạn hợp đồng gần nhất</span>
-              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{nearestEndDate}</span>
+              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">
+                {activeBookings.length > 0
+                  ? formatDate(activeBookings.reduce((nearest, booking) => booking.endDate < nearest.endDate ? booking : nearest).endDate)
+                  : '—'}
+              </span>
               <span className="text-xs text-amber-700 font-semibold truncate">
-                {nearestEndDate !== '--' ? `Hạn kết thúc hợp đồng: ${nearestEndDate}` : 'Không có hợp đồng sắp hết hạn'}
+                {activeBookings.length > 0
+                  ? `Kho #${activeBookings.reduce((nearest, booking) => booking.endDate < nearest.endDate ? booking : nearest).unitCode} • gần hết hạn`
+                  : 'Không có hợp đồng sắp hết hạn'}
               </span>
             </div>
           </div>
@@ -225,7 +466,7 @@ export const CustomerDashboard: React.FC = () => {
           <span className="material-symbols-outlined text-[18px]">garage_door</span>
           <span>Kho Của Tôi Đang Thuê</span>
           <span className="px-1.5 py-0.5 rounded-full bg-orange-600 text-white text-[10px] font-bold">
-            {activeContracts.length}
+            {activeBookings.length}
           </span>
         </button>
 
@@ -266,236 +507,63 @@ export const CustomerDashboard: React.FC = () => {
         </button>
       </div>
 
-      {/* 3. TAB 1: KHO CỦA TÔI ĐANG THUÊ (MY UNITS) */}
       {activeTab === 'my-units' && (
-        <div className="flex flex-col gap-6">
-          {loadingContracts ? (
-            <div className="p-12 text-center text-slate-500 text-xs">Đang tải dữ liệu kho từ hệ thống database...</div>
-          ) : activeContracts.length === 0 ? (
-            <div className="stitch-card p-12 text-center flex flex-col items-center justify-center gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-cyan-50 text-cyan-700 flex items-center justify-center">
-                <span className="material-symbols-outlined text-[36px]">warehouse</span>
-              </div>
-              <div className="max-w-md">
-                <h3 className="font-headline text-lg font-bold text-slate-900 mb-1">Bạn chưa có kho đang thuê nào</h3>
-                <p className="text-xs text-slate-500">
-                  Hãy khám phá hệ thống 56 vị trí kho thông minh của Boxora để tìm kích thước và địa điểm phù hợp nhất.
-                </p>
-              </div>
-              <button
-                onClick={() => handleTabChange('explore')}
-                className="stitch-btn-primary text-xs"
-              >
-                <span className="material-symbols-outlined text-[18px]">travel_explore</span>
-                <span>Tìm &amp; Thuê Kho Ngay</span>
+        <section className="flex flex-col gap-4">
+          {isLoadingUnits ? (
+            <div className="rounded-2xl border border-slate-200 bg-white py-16 text-center text-sm text-slate-500">
+              Đang tải kho đang thuê...
+            </div>
+          ) : bookingsError ? (
+            <p role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700">
+              {bookingsError}
+            </p>
+          ) : activeBookings.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center">
+              <span className="material-symbols-outlined text-4xl text-slate-300">garage</span>
+              <h2 className="mt-3 font-bold text-slate-800">Bạn chưa có kho đang thuê</h2>
+              <p className="mt-1 text-sm text-slate-500">Các kho đã thanh toán và xác nhận sẽ hiển thị tại đây.</p>
+              <button type="button" onClick={() => handleTabChange('explore')} className="stitch-btn-primary mt-4 text-xs">
+                Tìm kho
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {activeContracts.map((c) => {
-                const pin = (c.id.replace(/\D/g, '').slice(0, 6) || '849204').padEnd(6, '9')
-                const isRevealed = revealedPins[c.unitCode]
-                const isUnlocking = unlockingUnit === c.unitCode
-                const isUnlocked = unlockedSuccess === c.unitCode
-
-                return (
-                  <div key={c.id} className="stitch-card p-6 flex flex-col justify-between">
-                    <div className="flex flex-col gap-4">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-xl bg-cyan-50 text-cyan-700 flex items-center justify-center border border-cyan-100 shadow-xs">
-                            <span className="material-symbols-outlined text-[26px]">garage_door</span>
-                          </div>
-                          <div className="flex flex-col">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-base font-extrabold text-slate-900">KHO #{c.unitCode}</span>
-                              <span className="stitch-badge stitch-badge-available">
-                                <span className="pulsing-dot bg-emerald-500"></span>
-                                Đang hoạt động
-                              </span>
-                            </div>
-                            <span className="text-xs text-slate-500">{c.facilityName} • Hợp đồng #{c.contractCode}</span>
-                          </div>
-                        </div>
-
-                        <div className="text-right">
-                          <span className="text-[10px] uppercase font-bold text-amber-700 block">Hạn hợp đồng</span>
-                          <span className="font-mono text-xs font-bold text-slate-900">{c.endDate}</span>
-                          <span className="text-[10px] text-emerald-600 font-semibold block">Đã thanh toán</span>
-                        </div>
-                      </div>
-
-                      {/* IoT Telemetry Strip */}
-                      <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono text-slate-600">
-                        <span className="flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-[15px] text-cyan-600">thermostat</span>
-                          23.5°C
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-[15px] text-cyan-600">humidity_mid</span>
-                          48% RH
-                        </span>
-                        <span className="flex items-center gap-1.5 text-emerald-700 font-semibold">
-                          <span className="material-symbols-outlined text-[15px] text-emerald-600">security</span>
-                          Smart Lock: SECURE
-                        </span>
-                      </div>
-
-                      {/* Security PIN Vault Box */}
-                      <div className="p-4 rounded-xl bg-cyan-50/40 border-2 border-cyan-200/90 shadow-xs flex flex-col gap-3 relative overflow-hidden">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-lg bg-cyan-100 text-cyan-800 flex items-center justify-center">
-                              <span className="material-symbols-outlined text-[18px]">key</span>
-                            </div>
-                            <span className="text-xs sm:text-sm font-bold text-slate-900">
-                              Mã PIN điện tử truy cập cổng &amp; khóa phòng
-                            </span>
-                          </div>
-                          <span className="px-2 py-0.5 rounded bg-white border border-cyan-200 text-[10px] font-mono text-cyan-800 font-semibold flex items-center gap-1">
-                            <span className="material-symbols-outlined text-[12px]">lock</span> AES-256 Vault
-                          </span>
-                        </div>
-
-                        {!isRevealed ? (
-                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 py-2.5 px-4 rounded-lg bg-white border border-cyan-100">
-                            <div className="flex items-center gap-3">
-                              <div className="flex items-center gap-2 font-mono text-[16px] text-slate-400 tracking-widest select-none">
-                                <span>●</span><span>●</span><span>●</span><span>●</span><span>●</span><span>●</span>
-                              </div>
-                              <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">(Mã đang được mã hóa)</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => togglePinReveal(c.unitCode)}
-                              className="w-full sm:w-auto px-3.5 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                            >
-                              <span className="material-symbols-outlined text-[16px]">visibility</span>
-                              <span>Xem mã PIN</span>
-                              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-700 text-white font-bold">OTP</span>
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-2.5 py-2.5 px-4 rounded-lg bg-white border border-cyan-200">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[11px] font-mono text-cyan-800 font-semibold">Mã số PIN:</span>
-                                <div className="flex items-center gap-1 font-mono text-base font-bold text-cyan-900 tracking-wider">
-                                  {pin.split('').map((digit, idx) => (
-                                    <span key={idx} className="px-2 py-1 rounded bg-cyan-50 border border-cyan-200 text-cyan-900 shadow-inner">
-                                      {digit}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => handleCopy(c.unitCode, pin)}
-                                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
-                                >
-                                  <span className="material-symbols-outlined text-[14px]">
-                                    {copiedPin === c.unitCode ? 'check' : 'content_copy'}
-                                  </span>
-                                  <span>{copiedPin === c.unitCode ? 'Đã sao chép' : 'Sao chép'}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => togglePinReveal(c.unitCode)}
-                                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
-                                >
-                                  <span className="material-symbols-outlined text-[14px]">visibility_off</span>
-                                  <span>Ẩn</span>
-                                </button>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between text-[11px] font-mono text-slate-500">
-                              <span className="flex items-center gap-1 text-emerald-700 font-medium">
-                                <span className="material-symbols-outlined text-[14px]">timer</span> Hiệu lực đếm ngược: <strong className="text-slate-900">{pinCountdown}s</strong>
-                              </span>
-                              <span className="text-cyan-700 text-[10px]">Áp dụng: Cổng Hub &amp; Cửa {c.unitCode}</span>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Remote Unlock CTA */}
-                        <div className="flex items-center justify-between pt-1">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoteUnlock(c.unitCode)}
-                            disabled={isUnlocking}
-                            className={`w-full font-bold text-xs rounded-lg py-2.5 px-4 flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer ${
-                              isUnlocked ? 'bg-emerald-600 text-white' : 'stitch-btn-primary'
-                            }`}
-                          >
-                            <span className="material-symbols-outlined text-[18px]">
-                              {isUnlocked ? 'lock_open' : 'key'}
-                            </span>
-                            <span>
-                              {isUnlocking ? 'Đang gửi lệnh mở IoT...' :
-                               isUnlocked ? 'CỬA ĐÃ MỞ (TỰ KHÓA SAU 30 GIÂY)' : 'Mở Khóa Từ Xa (Smart Lock)'}
-                            </span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Metrics */}
-                      <div className="grid grid-cols-3 gap-2 text-center">
-                        <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                          <span className="text-[10px] text-slate-400 block uppercase font-medium">Giá thuê hàng tháng</span>
-                          <span className="font-mono text-xs font-bold text-slate-800">
-                            {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫
-                          </span>
-                        </div>
-                        <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                          <span className="text-[10px] text-slate-400 block uppercase font-medium">Tiền cọc lưu ký</span>
-                          <span className="font-mono text-xs font-bold text-slate-800">
-                            {Number(c.depositHeld || 0).toLocaleString('vi-VN')} ₫
-                          </span>
-                        </div>
-                        <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                          <span className="text-[10px] text-slate-400 block uppercase font-medium">An toàn PCCC &amp; IoT</span>
-                          <span className="font-mono text-xs font-bold text-emerald-600">Bình thường</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="pt-4 mt-4 border-t border-slate-100 flex items-center gap-3">
-                      <button
-                        onClick={() => setRenewUnit({ id: c.unitCode, price: Number(c.monthlyFee || 0).toLocaleString('vi-VN') })}
-                        className="stitch-btn-secondary flex-1 text-xs"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">autorenew</span>
-                        <span>Gia Hạn Kho (+3 Tháng)</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setTicketUnit(c.unitCode)
-                          setTicketType('lock')
-                          handleTabChange('support')
-                        }}
-                        className="px-3.5 h-10 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">report</span>
-                        <span>Báo Sự Cố</span>
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              {activeBookings.map(booking => (
+                <CustomerBookingCard
+                  key={booking.id}
+                  booking={booking}
+                  onRenew={currentBooking => openRenewalModal(
+                    currentBooking.unitCode,
+                    formatVnd(currentBooking.rentalMonths > 0
+                      ? currentBooking.totalRentalFee / currentBooking.rentalMonths
+                      : currentBooking.totalRentalFee),
+                    currentBooking.rentalMonths > 0
+                      ? Math.round(currentBooking.totalRentalFee / currentBooking.rentalMonths)
+                      : currentBooking.totalRentalFee,
+                  )}
+                  onReportIssue={unitCode => {
+                    setTicketUnit(unitCode)
+                    setTicketType('lock')
+                    handleTabChange('support')
+                  }}
+                  onRemoteUnlock={handleBookingRemoteUnlock}
+                  isUnlocking={unlockingUnit === booking.unitCode}
+                  unlockSucceeded={unlockedSuccess === booking.unitCode}
+                  unlockError={unlockErrors[booking.unitCode]}
+                />
+              ))}
             </div>
           )}
-        </div>
+        </section>
       )}
 
-      {/* 4. TAB 2: TÌM & THUÊ THÊM KHO (EXPLORE & BOOK) */}
       {activeTab === 'explore' && (
         <div className="flex flex-col gap-6">
           {/* Quick Filter */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-orange-600">tune</span>
-              <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">Lọc kho trống</span>
+              <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">Lọc kho trống trực tiếp</span>
             </div>
 
             <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
@@ -504,11 +572,12 @@ export const CustomerDashboard: React.FC = () => {
                 onChange={(e) => setFilterFacility(e.target.value)}
                 className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
               >
-                <option value="all">Tất cả cơ sở</option>
-                <option value="tb">Cơ sở Tân Bình (TP.HCM)</option>
-                <option value="q7">Cơ sở Quận 7 (TP.HCM)</option>
-                <option value="bt">Cơ sở Bình Thạnh (TP.HCM)</option>
-                <option value="cg">Cơ sở Cầu Giấy (Hà Nội)</option>
+                <option value="all">Tất cả cơ sở ({facilities.length} chi nhánh)</option>
+                {facilities.map((fac) => (
+                  <option key={fac.id} value={fac.id}>
+                    {fac.name} ({fac.city || fac.address})
+                  </option>
+                ))}
               </select>
 
               <select
@@ -519,212 +588,123 @@ export const CustomerDashboard: React.FC = () => {
                 <option value="all">Tất cả kích cỡ</option>
                 <option value="mini">Kho Mini (2 - 5 m²)</option>
                 <option value="family">Kho Gia Đình (6 - 10 m²)</option>
-                <option value="business">Kho Doanh Nghiệp (15 - 30 m²)</option>
+                <option value="business">Kho Doanh Nghiệp (&gt; 10 m²)</option>
               </select>
             </div>
           </div>
 
           {/* Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            
-            {/* Card 1: Kho Mini Standard #A-112 */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-              <div>
-                <div className="relative h-44 overflow-hidden bg-slate-800">
-                  <div 
-                    className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105 opacity-90"
-                    style={{ backgroundImage: "url('https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80')" }}
-                  ></div>
-                  <div className="absolute top-3 left-3 flex gap-1.5">
-                    <span className="bg-slate-900/90 backdrop-blur text-white font-unit-code text-xs px-2 py-1 rounded-md">
-                      #A-112
-                    </span>
-                    <span className="bg-orange-600 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
-                      Tầng Trệt
-                    </span>
-                  </div>
-                  <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
-                    <span className="material-symbols-outlined text-orange-600 text-[16px]">thermostat</span>
-                    22°C Ổn định
-                  </div>
-                </div>
-
-                <div className="p-5 flex flex-col gap-3">
-                  <div className="flex items-baseline justify-between">
-                    <span className="font-headline text-base font-bold text-slate-900">Kho Mini Standard</span>
-                    <span className="font-headline text-base font-bold text-orange-600">
-                      1.850.000 đ<span className="text-xs font-normal text-slate-500">/tháng</span>
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Phù hợp lưu trữ đồ gia dụng, vali cá nhân, thiết bị văn phòng cỡ vừa.
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">aspect_ratio</span>
-                      <span className="font-data-tabular text-slate-700">2.0m × 2.5m (5m²)</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">deployed_code</span>
-                      <span className="font-data-tabular text-slate-700">Thể tích 15m³</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">pin</span>
-                      <span className="text-slate-700 font-medium">Cửa cuốn + Smart PIN</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">videocam</span>
-                      <span className="text-slate-700 font-medium">CCTV 24/7 an toàn</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-5 pt-0">
-                <button
-                  onClick={() => setSelectedBookingUnit({ id: 'A-112', name: 'Kho Mini Standard 5m²', price: '1.850.000' })}
-                  className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm"
-                >
-                  <span>Đặt Giữ Chỗ Ngay</span>
-                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                </button>
-              </div>
+          {isLoadingUnits ? (
+            <div className="py-20 text-center bg-white rounded-2xl border border-slate-200">
+              <div className="w-8 h-8 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-xs text-slate-500">Đang tải danh sách kho trống từ hệ thống...</p>
             </div>
-
-            {/* Card 2: Kho Gia Đình Plus #B-104 */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-              <div>
-                <div className="relative h-44 overflow-hidden bg-slate-800">
-                  <div 
-                    className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105 opacity-90"
-                    style={{ backgroundImage: "url('https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=800&q=80')" }}
-                  ></div>
-                  <div className="absolute top-3 left-3 flex gap-1.5">
-                    <span className="bg-slate-900/90 backdrop-blur text-white font-unit-code text-xs px-2 py-1 rounded-md">
-                      #B-104
-                    </span>
-                    <span className="bg-blue-600 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
-                      Tầng 2 (Thang tải)
-                    </span>
-                  </div>
-                  <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
-                    <span className="material-symbols-outlined text-blue-600 text-[16px]">ac_unit</span>
-                    Lạnh 20-22°C
-                  </div>
-                </div>
-
-                <div className="p-5 flex flex-col gap-3">
-                  <div className="flex items-baseline justify-between">
-                    <span className="font-headline text-base font-bold text-slate-900">Kho Gia Đình Plus</span>
-                    <span className="font-headline text-base font-bold text-orange-600">
-                      3.400.000 đ<span className="text-xs font-normal text-slate-500">/tháng</span>
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Lưu kho nội thất căn hộ 2 phòng ngủ, nệm, sofa, đàn piano chống ẩm tiêu chuẩn.
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">aspect_ratio</span>
-                      <span className="font-data-tabular text-slate-700">3.0m × 3.0m (9m²)</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">deployed_code</span>
-                      <span className="font-data-tabular text-slate-700">Thể tích 27m³</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">sensors</span>
-                      <span className="text-slate-700 font-medium">Khóa Thông Minh</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">dry</span>
-                      <span className="text-slate-700 font-medium">Độ ẩm &lt; 55% RH</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-5 pt-0">
-                <button
-                  onClick={() => setSelectedBookingUnit({ id: 'B-104', name: 'Kho Gia Đình Plus 9m²', price: '3.400.000' })}
-                  className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm"
-                >
-                  <span>Đặt Giữ Chỗ Ngay</span>
-                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                </button>
-              </div>
+          ) : filteredExploreUnits.length === 0 ? (
+            <div className="py-20 text-center bg-white rounded-2xl border border-slate-200 space-y-2">
+              <span className="material-symbols-outlined text-4xl text-slate-300">inventory_2</span>
+              <p className="text-xs font-bold text-slate-700">Không có vị trí kho trống phù hợp tại cơ sở đã chọn</p>
+              <p className="text-[11px] text-slate-400">Vui lòng chọn cơ sở khác hoặc liên hệ hotline để nhận tư vấn giữ chỗ.</p>
             </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              {filteredExploreUnits.map((unit) => {
+                const cardImage =
+                  unit.unitTypeName?.includes('Climate') || unit.unitTypeName?.includes('Cold')
+                    ? 'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=800&q=80'
+                    : (unit.areaSqMeters || 6) > 10
+                    ? 'https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&w=800&q=80'
+                    : 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80'
 
-            {/* Card 3: Kho Doanh Nghiệp Pro #C-005 */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-              <div>
-                <div className="relative h-44 overflow-hidden bg-slate-800">
-                  <div 
-                    className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105 opacity-90"
-                    style={{ backgroundImage: "url('https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&w=800&q=80')" }}
-                  ></div>
-                  <div className="absolute top-3 left-3 flex gap-1.5">
-                    <span className="bg-slate-900/90 backdrop-blur text-white font-unit-code text-xs px-2 py-1 rounded-md">
-                      #C-005
-                    </span>
-                    <span className="bg-emerald-600 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
-                      Cửa đôi xe tải
-                    </span>
-                  </div>
-                  <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
-                    <span className="material-symbols-outlined text-orange-600 text-[16px]">forklift</span>
-                    Xe tải vào tận cửa
-                  </div>
-                </div>
+                const priceStr = Number(unit.pricePerMonth || 1500000).toLocaleString('vi-VN')
+                const area = unit.areaSqMeters || 6
+                const vol = Math.round(area * 2.8)
 
-                <div className="p-5 flex flex-col gap-3">
-                  <div className="flex items-baseline justify-between">
-                    <span className="font-headline text-base font-bold text-slate-900">Kho Doanh Nghiệp Pro</span>
-                    <span className="font-headline text-base font-bold text-orange-600">
-                      6.900.000 đ<span className="text-xs font-normal text-slate-500">/tháng</span>
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Dành cho công ty thương mại điện tử, nhập khẩu phụ tùng hoặc hàng hóa lưu kho.
-                  </p>
+                return (
+                  <div
+                    key={unit.id}
+                    className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group"
+                  >
+                    <div>
+                      <div className="relative h-44 overflow-hidden bg-slate-800">
+                        <div
+                          className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105 opacity-90"
+                          style={{ backgroundImage: `url('${cardImage}')` }}
+                        />
+                        <div className="absolute top-3 left-3 flex gap-1.5">
+                          <span className="bg-slate-900/90 backdrop-blur text-white font-mono text-xs px-2 py-1 rounded-md font-bold">
+                            #{unit.unitCode}
+                          </span>
+                          <span className="bg-orange-600 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
+                            {unit.floorLevel || 'Tầng 1'}
+                          </span>
+                        </div>
+                        <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
+                          <span className="material-symbols-outlined text-orange-600 text-[16px]">thermostat</span>
+                          21.5°C Ổn định
+                        </div>
+                      </div>
 
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">aspect_ratio</span>
-                      <span className="font-data-tabular text-slate-700">4.0m × 5.0m (20m²)</span>
+                      <div className="p-5 flex flex-col gap-3">
+                        <div className="flex items-baseline justify-between">
+                          <span className="font-headline text-base font-bold text-slate-900">
+                            {unit.unitTypeName || 'Kho Tiêu Chuẩn'}
+                          </span>
+                          <span className="font-headline text-base font-bold text-orange-600">
+                            {priceStr} đ<span className="text-xs font-normal text-slate-500">/tháng</span>
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[14px] text-slate-400">domain</span>
+                          <span className="truncate">{unit.facilityName || 'Cơ sở Boxora'}</span>
+                        </p>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
+                            <span className="material-symbols-outlined text-orange-600 text-[18px]">aspect_ratio</span>
+                            <span className="text-slate-700 font-medium">Diện tích {area}m²</span>
+                          </div>
+                          <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
+                            <span className="material-symbols-outlined text-orange-600 text-[18px]">deployed_code</span>
+                            <span className="text-slate-700 font-medium">Thể tích ~{vol}m³</span>
+                          </div>
+                          <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
+                            <span className="material-symbols-outlined text-orange-600 text-[18px]">pin</span>
+                            <span className="text-slate-700 font-medium">SmartLock {unit.smartLockSerial || 'IoT'}</span>
+                          </div>
+                          <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
+                            <span className="material-symbols-outlined text-orange-600 text-[18px]">videocam</span>
+                            <span className="text-slate-700 font-medium">CCTV 24/7 an toàn</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">deployed_code</span>
-                      <span className="font-data-tabular text-slate-700">Thể tích 65m³</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">security</span>
-                      <span className="text-slate-700 font-medium">Bảo hiểm tài sản 200tr</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">pallet</span>
-                      <span className="text-slate-700 font-medium">Sức chứa 6 Pallet</span>
+
+                    <div className="p-5 pt-0">
+                      <button
+                        onClick={() =>
+                          setSelectedBookingUnit({
+                            id: unit.unitCode,
+                            backendId: unit.id,
+                            name: `${unit.unitTypeName || 'Kho'} (${area}m²)`,
+                            price: priceStr,
+                            rawPrice: Number(unit.pricePerMonth || 1500000),
+                            facilityName: unit.facilityName,
+                          })
+                        }
+                        className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
+                      >
+                        <span>Đặt Giữ Chỗ Ngay</span>
+                        <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                      </button>
                     </div>
                   </div>
-                </div>
-              </div>
-
-              <div className="p-5 pt-0">
-                <button
-                  onClick={() => setSelectedBookingUnit({ id: 'C-005', name: 'Kho Doanh Nghiệp Pro 20m²', price: '6.900.000' })}
-                  className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm"
-                >
-                  <span>Đặt Giữ Chỗ Ngay</span>
-                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                </button>
-              </div>
+                )
+              })}
             </div>
-
-          </div>
+          )}
         </div>
       )}
+
 
       {/* 5. TAB 3: HỢP ĐỒNG & HÓA ĐƠN (CONTRACTS & BILLING) */}
       {activeTab === 'contracts' && (
@@ -737,67 +717,92 @@ export const CustomerDashboard: React.FC = () => {
               <span className="text-xs text-slate-500">Xem chi tiết thời hạn thuê và tải về hóa đơn điện tử VAT</span>
             </div>
             <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 font-mono text-xs font-bold text-emerald-700">
-              {activeContracts.length} Hợp đồng đang hiệu lực
+              {contracts.filter(contract => contract.status === 'ACTIVE').length} hợp đồng đang hiệu lực
             </span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider">
-                <tr>
-                  <th className="py-3 px-4 rounded-l-lg">Mã Hợp Đồng</th>
-                  <th className="py-3 px-4">Mã Kho</th>
-                  <th className="py-3 px-4">Cơ Sở</th>
-                  <th className="py-3 px-4">Kỳ Hạn Thuê</th>
-                  <th className="py-3 px-4">Cước Hàng Tháng</th>
-                  <th className="py-3 px-4">Tiền Cọc</th>
-                  <th className="py-3 px-4">Trạng Thái</th>
-                  <th className="py-3 px-4 rounded-r-lg text-right">Tác Vụ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {contracts.length === 0 ? (
+          {isLoadingContracts ? (
+            <p className="py-10 text-center text-sm text-slate-500">Đang tải hợp đồng...</p>
+          ) : contractsError ? (
+            <p role="alert" className="rounded-lg bg-rose-50 p-4 text-sm text-rose-700">{contractsError}</p>
+          ) : contracts.length === 0 ? (
+            <p className="py-10 text-center text-sm text-slate-500">Bạn chưa có hợp đồng nào.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider">
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-slate-400 text-xs">
-                      Chưa có hợp đồng nào trong hồ sơ của bạn.
-                    </td>
+                    <th className="py-3 px-4 rounded-l-lg">Mã Hợp Đồng</th>
+                    <th className="py-3 px-4">Mã Kho</th>
+                    <th className="py-3 px-4">Thời Hạn</th>
+                    <th className="py-3 px-4">Giá Thuê / Tháng</th>
+                    <th className="py-3 px-4">Trạng Thái</th>
+                    <th className="py-3 px-4 rounded-r-lg text-right">Tác Vụ</th>
                   </tr>
-                ) : (
-                  contracts.map(c => (
-                    <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-4 px-4 font-unit-code text-xs font-bold text-slate-900">#{c.contractCode}</td>
-                      <td className="py-4 px-4 font-bold text-orange-600">#{c.unitCode}</td>
-                      <td className="py-4 px-4 text-slate-700">{c.facilityName}</td>
-                      <td className="py-4 px-4 text-slate-700">{c.startDate} — {c.endDate}</td>
-                      <td className="py-4 px-4 font-data-tabular font-bold text-slate-900">
-                        {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} đ
-                      </td>
-                      <td className="py-4 px-4 font-data-tabular text-slate-700">
-                        {Number(c.depositHeld || 0).toLocaleString('vi-VN')} đ
-                      </td>
-                      <td className="py-4 px-4">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          c.status === 'ACTIVE' 
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-slate-100 text-slate-600 border border-slate-200'
-                        }`}>
-                          {c.status === 'ACTIVE' ? 'Đang hiệu lực' : c.status}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4 text-right">
-                        <button
-                          onClick={() => alert(`Xem chi tiết hợp đồng #${c.contractCode} tại cơ sở ${c.facilityName}`)}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-semibold text-xs transition-colors"
-                        >
-                          Chi tiết
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {contracts.map(contract => {
+                    const statusLabels: Record<RentalContract['status'], string> = {
+                      DRAFT: 'Bản nháp',
+                      PENDING_SIGNATURE: 'Chờ ký',
+                      ACTIVE: 'Đang hiệu lực',
+                      EXPIRED: 'Đã hết hạn',
+                      TERMINATED: 'Đã chấm dứt',
+                      CANCELLED: 'Đã hủy',
+                    }
+                    const isActive = contract.status === 'ACTIVE'
+                    return (
+                      <tr key={contract.id} className="transition-colors hover:bg-slate-50/70">
+                        <td className="py-4 px-4 font-unit-code text-xs font-bold text-slate-900">
+                          {contract.contractCode}
+                        </td>
+                        <td className="py-4 px-4 font-bold text-orange-600">{contract.unitCode}</td>
+                        <td className="py-4 px-4 text-slate-700">
+                          {formatDate(contract.startDate)} - {formatDate(contract.endDate)}
+                        </td>
+                        <td className="py-4 px-4 font-data-tabular font-bold text-slate-900">
+                          {formatVnd(contract.monthlyFee)} đ
+                        </td>
+                        <td className="py-4 px-4">
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                            isActive
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              : contract.status === 'PENDING_SIGNATURE'
+                                ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                : 'border-slate-200 bg-slate-50 text-slate-600'
+                          }`}>
+                            {statusLabels[contract.status]}
+                          </span>
+                        </td>
+                        <td className="py-4 px-4 text-right">
+                          {contract.status === 'PENDING_SIGNATURE' ? (
+                            <button
+                              type="button"
+                              onClick={() => setOtpContract(contract)}
+                              className="rounded-md bg-cyan-700 px-3 py-1.5 font-semibold text-white transition-colors hover:bg-cyan-800"
+                            >
+                              Ký hợp đồng
+                            </button>
+                          ) : contract.signedDocumentUrl ? (
+                            <a
+                              href={contract.signedDocumentUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-block rounded-md bg-slate-100 px-3 py-1.5 font-semibold text-slate-800 transition-colors hover:bg-slate-200"
+                            >
+                              Xem hợp đồng
+                            </a>
+                          ) : (
+                            <span className="text-slate-400">Không có tài liệu</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -855,8 +860,18 @@ export const CustomerDashboard: React.FC = () => {
                       onChange={(e) => setTicketUnit(e.target.value)}
                       className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
                     >
-                      <option value="A-108">Kho #A-108 (Cơ sở Tân Bình)</option>
-                      <option value="B-205">Kho #B-205 (Cơ sở Tân Bình)</option>
+                      {activeBookings.length > 0 ? (
+                        activeBookings.map((b) => (
+                          <option key={b.id} value={b.unitCode}>
+                            Kho #{b.unitCode} ({b.facilityName || 'Cơ sở Tân Bình'})
+                          </option>
+                        ))
+                      ) : (
+                        <>
+                          <option value="A-108">Kho #A-108 (Cơ sở Tân Bình)</option>
+                          <option value="B-205">Kho #B-205 (Cơ sở Tân Bình)</option>
+                        </>
+                      )}
                       <option value="general">Khác / Thắc mắc chung</option>
                     </select>
                   </div>
@@ -872,15 +887,43 @@ export const CustomerDashboard: React.FC = () => {
                     >
                       <option value="lock">Sự cố khóa thông minh / Kẹt cửa cuốn</option>
                       <option value="pin">Yêu cầu cấp lại mã PIN mới</option>
-                      <option value="delegate">Ủy quyền mở kho cho tài xế/người thân</option>
                       <option value="climate">Kiểm tra nhiệt độ / độ ẩm phòng</option>
                       <option value="billing">Hỗ trợ thanh toán &amp; Hóa đơn VAT</option>
+                      <option value="other">Ủy quyền mở kho / Thắc mắc chung</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      Tiêu đề sự cố
+                    </label>
+                    <input
+                      type="text"
+                      value={ticketTitle}
+                      onChange={(e) => setTicketTitle(e.target.value)}
+                      placeholder="VD: Khóa không nhận mã PIN hoặc kẹt then cài..."
+                      className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs rounded-lg focus:outline-none focus:border-slate-400"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      Mức độ ưu tiên
+                    </label>
+                    <select
+                      value={ticketPriority}
+                      onChange={(e) => setTicketPriority(e.target.value)}
+                      className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
+                    >
+                      <option value="MEDIUM">Bình thường (Phản hồi &lt; 30 phút)</option>
+                      <option value="HIGH">Ưu tiên cao (Phản hồi &lt; 10 phút)</option>
+                      <option value="URGENT">Khẩn cấp - Đang kẹt tại kho (Phản hồi &lt; 3 phút)</option>
                     </select>
                   </div>
 
                   <div className="sm:col-span-2 flex flex-col gap-1.5">
                     <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      Mô tả chi tiết nội dung
+                      Mô tả chi tiết nội dung <span className="text-rose-500">*</span>
                     </label>
                     <textarea
                       rows={3}
@@ -892,183 +935,343 @@ export const CustomerDashboard: React.FC = () => {
                     ></textarea>
                   </div>
 
+                  {/* Image Upload Dropzone / Picker */}
+                  <div className="sm:col-span-2 flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                      <span>Đính kèm hình ảnh minh chứng</span>
+                      <span className="text-slate-400 font-normal lowercase">(Tùy chọn - PNG, JPG, tối đa 10MB)</span>
+                    </label>
+
+                    {ticketFilePreview ? (
+                      <div className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl">
+                        <div className="flex items-center gap-3 overflow-hidden">
+                          <img
+                            src={ticketFilePreview}
+                            alt="Ảnh xem trước"
+                            className="w-14 h-14 object-cover rounded-lg border border-slate-200 shadow-xs"
+                          />
+                          <div className="flex flex-col truncate">
+                            <span className="text-xs font-bold text-slate-800 truncate">
+                              {ticketFile?.name}
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              {ticketFile ? (ticketFile.size / 1024).toFixed(1) + ' KB' : ''}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleRemoveFile}
+                          className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                          <span>Xóa ảnh</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="border-2 border-dashed border-slate-200 hover:border-orange-400 bg-white hover:bg-orange-50/20 rounded-xl p-4 flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-colors group">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileChange}
+                          className="hidden"
+                        />
+                        <div className="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-orange-100 text-slate-500 group-hover:text-orange-600 flex items-center justify-center transition-colors">
+                          <span className="material-symbols-outlined text-[20px]">add_photo_alternate</span>
+                        </div>
+                        <span className="text-xs font-semibold text-slate-700 group-hover:text-orange-600">
+                          Tải ảnh sự cố hoặc chụp trực tiếp
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Hỗ trợ kỹ thuật viên kiểm tra từ xa nhanh hơn
+                        </span>
+                      </label>
+                    )}
+                  </div>
+
+                  {ticketError && (
+                    <div className="sm:col-span-2 p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[16px]">error</span>
+                      <span>{ticketError}</span>
+                    </div>
+                  )}
+
                   <div className="sm:col-span-2 flex items-center justify-between pt-2">
                     <span className="text-[11px] text-slate-400">Thời gian phản hồi cam kết: &lt; 3 phút</span>
                     <button
                       type="submit"
-                      className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-lg transition-colors shadow-sm flex items-center gap-1.5"
+                      disabled={isSubmittingTicket}
+                      className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-lg transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                     >
-                      <span className="material-symbols-outlined text-[16px]">send</span>
-                      Gửi Yêu Cầu
+                      {isSubmittingTicket ? (
+                        <>
+                          <span className="animate-spin material-symbols-outlined text-[16px]">progress_activity</span>
+                          <span>Đang gửi yêu cầu...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="material-symbols-outlined text-[16px]">send</span>
+                          <span>Gửi Yêu Cầu Hỗ Trợ</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>
               )}
             </div>
           </div>
-        </section>
-      )}
 
-      {/* Booking Modal */}
-      {selectedBookingUnit && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
-            {bookingSuccess ? (
-              <div className="py-8 text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-                  <span className="material-symbols-outlined text-[28px]">check_circle</span>
-                </div>
-                <h3 className="font-headline text-lg font-bold text-slate-900">
-                  Đặt Giữ Chỗ Thành Công!
-                </h3>
-                <p className="text-xs text-slate-600">
-                  Mã đặt chỗ của bạn: <strong>#RES-2025-9988</strong>. Hợp đồng điện tử và mã PIN đã sẵn sàng.
-                </p>
-                <button
-                  onClick={() => {
-                    setBookingSuccess(false)
-                    setSelectedBookingUnit(null)
-                    handleTabChange('my-units')
-                  }}
-                  className="mt-2 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors"
-                >
-                  Đến Danh Sách Kho Của Tôi
-                </button>
+          {/* Lịch Sử Yêu Cầu Hỗ Trợ Gần Đây */}
+          <div className="mt-8 pt-8 border-t border-slate-200 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[20px] text-slate-600">history</span>
+                <h4 className="font-headline text-base font-bold text-slate-900">
+                  Lịch Sử Yêu Cầu Hỗ Trợ Gần Đây
+                </h4>
+                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px] font-bold">
+                  {myTickets.length}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={loadTickets}
+                className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[14px]">refresh</span>
+                <span>Làm mới</span>
+              </button>
+            </div>
+
+            {isLoadingTickets ? (
+              <div className="py-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                <span className="animate-spin material-symbols-outlined text-[18px]">progress_activity</span>
+                <span>Đang tải danh sách yêu cầu...</span>
+              </div>
+            ) : myTickets.length === 0 ? (
+              <div className="p-8 text-center bg-slate-50 border border-slate-100 rounded-xl text-slate-500 text-xs">
+                Bạn chưa có yêu cầu hỗ trợ nào. Khi gửi yêu cầu, thông tin tiếp nhận sẽ hiển thị tại đây.
               </div>
             ) : (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <div>
-                    <h3 className="font-headline text-base font-bold text-slate-900">
-                      Xác Nhận Thuê Kho Online
-                    </h3>
-                    <span className="text-xs text-slate-500">Mã kho: #{selectedBookingUnit.id}</span>
-                  </div>
-                  <button
-                    onClick={() => setSelectedBookingUnit(null)}
-                    className="text-slate-400 hover:text-slate-600"
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {myTickets.map((t) => (
+                  <div
+                    key={t.id}
+                    className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-col gap-3 hover:border-slate-300 transition-all"
                   >
-                    <span className="material-symbols-outlined text-[20px]">close</span>
-                  </button>
-                </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded bg-orange-50 border border-orange-200 text-orange-700 font-mono text-[11px] font-bold">
+                          #{t.ticketCode}
+                        </span>
+                        {t.unitCode && (
+                          <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-semibold">
+                            Kho #{t.unitCode}
+                          </span>
+                        )}
+                      </div>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                          t.status === 'RESOLVED'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : t.status === 'IN_PROGRESS'
+                            ? 'bg-sky-50 text-sky-700 border border-sky-200'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}
+                      >
+                        {t.status === 'RESOLVED'
+                          ? 'Đã Giải Quyết'
+                          : t.status === 'IN_PROGRESS'
+                          ? 'Đang Xử Lý'
+                          : 'Chờ Tiếp Nhận'}
+                      </span>
+                    </div>
 
-                <div className="p-3 bg-slate-50 rounded-xl space-y-2 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Loại kho:</span>
-                    <span className="font-bold text-slate-900">{selectedBookingUnit.name}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Đơn giá tháng:</span>
-                    <span className="font-unit-code font-bold text-orange-600">{selectedBookingUnit.price} đ</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Tiền cọc an ninh (hoàn lại):</span>
-                    <span className="font-unit-code font-bold text-slate-900">{selectedBookingUnit.price} đ</span>
-                  </div>
-                </div>
+                    <div className="flex flex-col gap-1">
+                      <h5 className="text-xs font-bold text-slate-900 line-clamp-1">{t.title}</h5>
+                      <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">{t.description}</p>
+                    </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase">Kỳ hạn thuê</label>
-                  <select className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-400">
-                    <option value="1">1 Tháng</option>
-                    <option value="3">3 Tháng (Giảm 5%)</option>
-                    <option value="6">6 Tháng (Giảm 10%)</option>
-                    <option value="12">12 Tháng (Giảm 15%)</option>
-                  </select>
-                </div>
+                    {t.attachmentUrl && (
+                      <div className="pt-1 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTicketImage(`http://localhost:8080${t.attachmentUrl}`)}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[11px] text-slate-700 font-medium transition-colors cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[14px] text-orange-600">image</span>
+                          <span>Xem ảnh đính kèm</span>
+                        </button>
+                      </div>
+                    )}
 
-                <div className="pt-3 flex gap-2">
-                  <button
-                    onClick={() => setSelectedBookingUnit(null)}
-                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
-                  >
-                    Hủy bỏ
-                  </button>
-                  <button
-                    onClick={() => setBookingSuccess(true)}
-                    className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
-                  >
-                    Ký Online &amp; Thanh Toán
-                  </button>
-                </div>
+                    {t.resolutionNote && (
+                      <div className="p-2.5 bg-emerald-50/70 border border-emerald-200 rounded-lg text-[11px] text-emerald-800 flex items-start gap-1.5">
+                        <span className="material-symbols-outlined text-[15px] text-emerald-600 shrink-0">check_circle</span>
+                        <div>
+                          <strong className="block font-semibold">Ghi chú xử lý:</strong>
+                          <span>{t.resolutionNote}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                      <span>Ưu tiên: <strong>{t.priority || 'MEDIUM'}</strong></span>
+                      <span>{formatDate(t.createdAt)}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
-        </div>
+        </section>
+      )}
+
+      {/* Booking checkout and payment */}
+      {selectedBookingUnit && user && (
+        <BookingCheckoutModal
+          unit={{
+            backendId: selectedBookingUnit.backendId,
+            code: selectedBookingUnit.id,
+            name: selectedBookingUnit.name,
+            facilityName: selectedBookingUnit.facilityName,
+            monthlyPrice: selectedBookingUnit.rawPrice || 1500000,
+          }}
+          user={user}
+          onClose={() => setSelectedBookingUnit(null)}
+        />
       )}
 
       {/* Renewal Modal */}
-      {renewUnit && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
-            {renewSuccess ? (
-              <div className="py-8 text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-                  <span className="material-symbols-outlined text-[28px]">check_circle</span>
-                </div>
-                <h3 className="font-headline text-lg font-bold text-slate-900">
-                  Gia Hạn Hợp Đồng Thành Công!
-                </h3>
-                <p className="text-xs text-slate-600">
-                  Hạn thuê kho #{renewUnit.id} đã được tự động cộng thêm {renewMonths} tháng.
-                </p>
-                <button
-                  onClick={() => {
-                    setRenewSuccess(false)
-                    setRenewUnit(null)
-                  }}
-                  className="mt-2 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors"
-                >
-                  Đóng
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <div>
-                    <h3 className="font-headline text-base font-bold text-slate-900">
-                      Gia Hạn Thuê Kho #{renewUnit.id}
-                    </h3>
-                    <span className="text-xs text-slate-500">Cơ sở Tân Bình - Mega Central</span>
+      {renewUnit && (() => {
+        const basePrice = renewUnit.rawPrice || 1850000
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
+              {renewSuccess ? (
+                <div className="py-8 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+                    <span className="material-symbols-outlined text-[28px]">check_circle</span>
                   </div>
+                  <h3 className="font-headline text-lg font-bold text-slate-900">
+                    Gia Hạn Hợp Đồng Thành Công!
+                  </h3>
+                  <p className="text-xs text-slate-600">
+                    Hạn thuê kho #{renewUnit.id} đã được tự động cộng thêm {renewMonths} tháng.
+                  </p>
+                  <p className="text-xs text-emerald-700 font-semibold bg-emerald-50 py-1.5 px-3 rounded-lg border border-emerald-100">
+                    Hạn hợp đồng mới: {calculateNewEndDate(renewUnit.endDate, renewMonths)}
+                  </p>
                   <button
-                    onClick={() => setRenewUnit(null)}
-                    className="text-slate-400 hover:text-slate-600"
+                    onClick={() => {
+                      setRenewSuccess(false)
+                      setRenewUnit(null)
+                    }}
+                    className="mt-2 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-[20px]">close</span>
+                    Đóng
                   </button>
                 </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div>
+                      <h3 className="font-headline text-base font-bold text-slate-900">
+                        Gia Hạn Thuê Kho #{renewUnit.id}
+                      </h3>
+                      <span className="text-xs text-slate-500">{renewUnit.facilityName || 'Cơ sở Tân Bình - Mega Central'}</span>
+                    </div>
+                    <button
+                      onClick={() => setRenewUnit(null)}
+                      className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">close</span>
+                    </button>
+                  </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase">Thời gian gia hạn thêm</label>
-                  <select
-                    value={renewMonths}
-                    onChange={(e) => setRenewMonths(parseInt(e.target.value))}
-                    className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-400"
-                  >
-                    <option value={1}>1 Tháng (+1.850.000 đ)</option>
-                    <option value={3}>3 Tháng (+5.272.500 đ - Tiết kiệm 5%)</option>
-                    <option value={6}>6 Tháng (+9.990.000 đ - Tiết kiệm 10%)</option>
-                    <option value={12}>12 Tháng (+18.870.000 đ - Tiết kiệm 15%)</option>
-                  </select>
-                </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase">Thời gian gia hạn thêm</label>
+                    <select
+                      value={renewMonths}
+                      onChange={(e) => setRenewMonths(parseInt(e.target.value))}
+                      className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-400"
+                    >
+                      <option value={1}>1 Tháng (+{formatVnd(basePrice)} đ)</option>
+                      <option value={3}>3 Tháng (+{formatVnd(basePrice * 3 * 0.95)} đ - Tiết kiệm 5%)</option>
+                      <option value={6}>6 Tháng (+{formatVnd(basePrice * 6 * 0.9)} đ - Tiết kiệm 10%)</option>
+                      <option value={12}>12 Tháng (+{formatVnd(basePrice * 12 * 0.85)} đ - Tiết kiệm 15%)</option>
+                    </select>
+                  </div>
 
-                <div className="pt-3 flex gap-2">
-                  <button
-                    onClick={() => setRenewUnit(null)}
-                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
-                  >
-                    Hủy bỏ
-                  </button>
-                  <button
-                    onClick={() => setRenewSuccess(true)}
-                    className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
-                  >
-                    Xác Nhận Gia Hạn
-                  </button>
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1.5">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Hạn hợp đồng hiện tại:</span>
+                      <strong className="text-slate-900 font-mono">{formatDate(renewUnit.endDate)}</strong>
+                    </div>
+                    <div className="flex justify-between text-emerald-700 font-medium">
+                      <span>Hạn mới sau khi gia hạn:</span>
+                      <strong className="font-mono">{calculateNewEndDate(renewUnit.endDate, renewMonths)}</strong>
+                    </div>
+                  </div>
+
+                  {renewalError && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[16px]">error</span>
+                      <span>{renewalError}</span>
+                    </div>
+                  )}
+
+                  <div className="pt-3 flex gap-2">
+                    <button
+                      onClick={() => setRenewUnit(null)}
+                      className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                    >
+                      Hủy bỏ
+                    </button>
+                    <button
+                      onClick={handleConfirmRenewal}
+                      disabled={isRenewing}
+                      className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-sm transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      {isRenewing ? (
+                        <>
+                          <span className="animate-spin material-symbols-outlined text-[16px]">progress_activity</span>
+                          <span>Đang gia hạn...</span>
+                        </>
+                      ) : (
+                        'Xác Nhận Gia Hạn'
+                      )}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Image Lightbox Modal */}
+      {selectedTicketImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer"
+          onClick={() => setSelectedTicketImage(null)}
+        >
+          <div
+            className="relative max-w-3xl max-h-[90vh] bg-white rounded-2xl overflow-hidden shadow-2xl p-2 cursor-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setSelectedTicketImage(null)}
+              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-900/70 hover:bg-slate-900 text-white flex items-center justify-center transition-colors z-10 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
+            <img
+              src={selectedTicketImage}
+              alt="Hình ảnh sự cố"
+              className="w-full h-auto max-h-[80vh] object-contain rounded-xl"
+            />
           </div>
         </div>
       )}
@@ -1157,6 +1360,10 @@ export const CustomerDashboard: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+
+      {otpContract && (
+        <ContractOtpModal contract={otpContract} onClose={() => setOtpContract(null)} />
       )}
 
     </div>

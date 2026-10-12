@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -43,6 +44,13 @@ public class Booking extends BaseEntity {
 
     @Column(name = "deposit_paid", nullable = false, precision = 12, scale = 2)
     private BigDecimal depositPaid;
+
+    @Column(name = "deposit_amount", nullable = false, precision = 12, scale = 2)
+    @Builder.Default
+    private BigDecimal depositAmount = BigDecimal.ZERO;
+
+    @Column(name = "payment_expires_at")
+    private Instant paymentExpiresAt;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)
