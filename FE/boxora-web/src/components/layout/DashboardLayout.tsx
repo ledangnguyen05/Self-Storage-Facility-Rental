@@ -2,7 +2,8 @@ import React, { useState } from 'react'
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { RoleType } from '../../types'
-import { LogoutConfirmModal } from '../ui/LogoutConfirmModal'
+import { FacilityScopingModal, FacilityScopingData } from '../modals/FacilityScopingModal'
+import { BrandLogo } from '../common/BrandLogo'
 
 export const DashboardLayout: React.FC = () => {
   const { user, role, logout, isAuthenticated } = useAuth()
@@ -11,7 +12,7 @@ export const DashboardLayout: React.FC = () => {
   const [selectedFacility, setSelectedFacility] = useState('tb')
   const [searchQuery, setSearchQuery] = useState('')
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false)
+  const [isScopingModalOpen, setIsScopingModalOpen] = useState(false)
   const isCurrentPath = (path: string) => location.pathname === path
 
   const getRoleBadge = (r: RoleType | null) => {
@@ -51,40 +52,36 @@ export const DashboardLayout: React.FC = () => {
               </span>
             </button>
 
-            <Link to="/" className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm">
-                <span className="material-symbols-outlined text-orange-500 text-[22px]">warehouse</span>
-              </div>
-              <div className="flex flex-col text-left">
-                <span className="font-headline text-lg font-bold text-slate-900 tracking-tight leading-none">
-                  BOXORA<span className="text-orange-600">.</span>
-                </span>
-                <span className="font-mono text-[10px] text-slate-500 font-semibold tracking-wider uppercase mt-1">
-                  Self-Storage Portal
-                </span>
-              </div>
-            </Link>
+            <BrandLogo size="md" subtitle="AUTOMATED VAULT NETWORK" />
 
             <div className="h-8 w-[1px] bg-slate-200 hidden md:block"></div>
 
-            {/* Facility Selector (Only for internal staff/managers) */}
+            {/* Facility Selector & Scoping Modal Trigger (Only for internal staff/managers) */}
             {role && role !== 'CUSTOMER' && (
-              <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg">
-                <span className="material-symbols-outlined text-orange-600 text-[18px]">location_on</span>
+              <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
+                <span className="material-symbols-outlined text-cyan-600 text-[18px]">location_on</span>
                 <div className="flex flex-col text-left">
-                  <span className="text-[10px] uppercase font-bold text-slate-500">Cơ sở trực thuộc</span>
+                  <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Cơ sở trực thuộc</span>
                   <select
                     value={selectedFacility}
                     onChange={(e) => setSelectedFacility(e.target.value)}
-                    className="bg-transparent font-unit-code text-xs text-slate-800 font-semibold focus:outline-none cursor-pointer pr-2"
+                    className="bg-transparent font-mono text-xs text-slate-900 font-bold focus:outline-none cursor-pointer pr-1"
                   >
-                    <option value="tb">Cơ sở Tân Bình - Mega Central (TP.HCM)</option>
-                    <option value="q7">Cơ sở Quận 7 - Nam Sài Gòn (TP.HCM)</option>
-                    <option value="bt">Cơ sở Bình Thạnh - Landmark (TP.HCM)</option>
-                    <option value="cg">Cơ sở Cầu Giấy - Hà Nội Hub (Hà Nội)</option>
-                    <option value="hp">Cơ sở Hải Phòng - Hồng Bàng Port</option>
+                    <option value="tb">Cơ sở Tân Bình - Mega Central</option>
+                    <option value="q7">Cơ sở Quận 7 - Nam Sài Gòn</option>
+                    <option value="bt">Cơ sở Bình Thạnh - Landmark</option>
+                    <option value="cg">Cơ sở Cầu Giấy - Hà Nội Hub</option>
+                    <option value="hp">Cơ sở Hải Phòng - Hồng Bàng</option>
                   </select>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setIsScopingModalOpen(true)}
+                  title="Mở bảng phân công cơ sở (Facility Scoping Modal)"
+                  className="ml-1 p-1 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 transition-colors cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[18px]">domain_verification</span>
+                </button>
               </div>
             )}
           </div>
@@ -134,8 +131,8 @@ export const DashboardLayout: React.FC = () => {
                   </div>
                 </div>
                 <button
-                  onClick={() => setIsLogoutModalOpen(true)}
-                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                  onClick={() => logout().then(() => navigate('/login'))}
+                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                   title="Đăng xuất khỏi phiên làm việc"
                 >
                   <span className="material-symbols-outlined text-[18px]">logout</span>
@@ -350,18 +347,6 @@ export const DashboardLayout: React.FC = () => {
                   <span className="material-symbols-outlined text-[18px]">apartment</span>
                   <span>Theo dõi Các Cơ sở Kho</span>
                 </Link>
-
-                <Link
-                  to="/portal/policies"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-                    isCurrentPath('/portal/policies')
-                      ? 'bg-slate-100 text-slate-900 font-bold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">policy</span>
-                  <span>Chính sách, Biểu phí &amp; Voucher</span>
-                </Link>
               </nav>
             </div>
           )}
@@ -430,17 +415,6 @@ export const DashboardLayout: React.FC = () => {
                     <span className="material-symbols-outlined text-[18px]">badge</span>
                     <span>Vận hành Quầy Bàn giao</span>
                   </Link>
-                  <Link
-                    to="/portal/policies"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-                      isCurrentPath('/portal/policies')
-                        ? 'bg-slate-100 text-slate-900 font-bold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">policy</span>
-                    <span>Chính sách, Biểu phí &amp; Voucher</span>
-                  </Link>
                 </nav>
               </div>
             </>
@@ -473,18 +447,20 @@ export const DashboardLayout: React.FC = () => {
           <Outlet />
         </main>
       </div>
-
-      {/* Logout Confirmation Dialog */}
-      <LogoutConfirmModal
-        isOpen={isLogoutModalOpen}
-        onClose={() => setIsLogoutModalOpen(false)}
-        onConfirm={async () => {
-          await logout()
-          navigate('/login')
+      {/* Facility Scoping Modal */}
+      <FacilityScopingModal
+        isOpen={isScopingModalOpen}
+        onClose={() => setIsScopingModalOpen(false)}
+        initialUser={{
+          id: user?.id || 'u-active',
+          fullName: user?.fullName || 'Người dùng hiện tại',
+          email: user?.email || '',
+          roleName: role || 'STAFF',
+          facilityId: selectedFacility
         }}
-        userName={user?.fullName || user?.username}
-        userEmail={user?.email}
-        role={role || undefined}
+        onSave={(data) => {
+          setSelectedFacility(data.facilityId)
+        }}
       />
     </div>
   )

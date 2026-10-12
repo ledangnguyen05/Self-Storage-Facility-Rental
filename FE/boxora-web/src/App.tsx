@@ -8,6 +8,7 @@ import { ProtectedRoute } from './components/auth/ProtectedRoute'
 import { LoginPage } from './pages/public/LoginPage'
 import { RegisterPage } from './pages/public/RegisterPage'
 import { HomePage } from './pages/public/HomePage'
+import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
 
 // StorageOps Pro Portals (Matching Prototype Stitch Files)
 import { CustomerDashboard } from './pages/customer/CustomerDashboard'
@@ -15,11 +16,11 @@ import { StaffDashboard } from './pages/staff/StaffDashboard'
 import { ManagerDashboard } from './pages/manager/ManagerDashboard'
 import { OperationsDashboard } from './pages/operations/OperationsDashboard'
 import { AdminDashboard } from './pages/admin/AdminDashboard'
-import { PolicyAndFeeManagement } from './pages/operations/PolicyAndFeeManagement'
+import { checkCustomerPortalAccess } from './utils/rentalAccess'
 
 // Root redirect handler based on user role
 function RootRedirect() {
-  const { isAuthenticated, role, isLoading } = useAuth()
+  const { isAuthenticated, role, user, isLoading } = useAuth()
 
   if (isLoading) {
     return (
@@ -44,8 +45,13 @@ function RootRedirect() {
     case 'STAFF':
       return <Navigate to="/portal/staff" replace />
     case 'CUSTOMER':
-    default:
+    default: {
+      const access = checkCustomerPortalAccess(user)
+      if (!access.hasAccess) {
+        return <Navigate to="/units" replace />
+      }
       return <Navigate to="/portal/customer" replace />
+    }
   }
 }
 
@@ -54,13 +60,15 @@ function MainContent() {
     <div className="min-h-screen flex flex-col bg-[#F8FAFC] font-sans antialiased text-slate-900">
       <main className="flex-1">
         <Routes>
-          {/* Root '/' routes to Login (if anonymous) or Role Dashboard (if authenticated) */}
-          <Route path="/" element={<RootRedirect />} />
-
-          {/* Authentication & Standalone Pages */}
+          {/* Public Landing Page & Authentication */}
+          <Route path="/" element={<HomePage />} />
+          <Route path="/landing" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
-          <Route path="/landing" element={<HomePage />} />
+
+          {/* Dedicated Storage Units Explorer & Booking Dashboard */}
+          <Route path="/units" element={<UnitsExplorerPage />} />
+          <Route path="/explore-units" element={<UnitsExplorerPage />} />
 
           {/* Core StorageOps Pro Portal with RBAC Route Protection */}
           <Route
@@ -122,16 +130,6 @@ function MainContent() {
                 </ProtectedRoute>
               }
             />
-
-            {/* 6. Policy, Fee & Discount Portal */}
-            <Route
-              path="policies"
-              element={
-                <ProtectedRoute allowedRoles={['ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER']}>
-                  <PolicyAndFeeManagement />
-                </ProtectedRoute>
-              }
-            />
           </Route>
 
           {/* Direct Friendly URLs with Automatic Route Guards */}
@@ -142,9 +140,6 @@ function MainContent() {
           <Route path="/operations" element={<Navigate to="/portal/business-manager" replace />} />
           <Route path="/business" element={<Navigate to="/portal/business-manager" replace />} />
           <Route path="/admin" element={<Navigate to="/portal/admin" replace />} />
-          <Route path="/policies" element={<Navigate to="/portal/policies" replace />} />
-          <Route path="/fees" element={<Navigate to="/portal/policies" replace />} />
-          <Route path="/discounts" element={<Navigate to="/portal/policies" replace />} />
 
           {/* Fallback */}
           <Route path="*" element={<RootRedirect />} />
