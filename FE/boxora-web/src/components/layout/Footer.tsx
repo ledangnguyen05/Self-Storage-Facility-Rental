@@ -78,9 +78,9 @@ export const Footer: React.FC = () => {
         <div className="pt-8 border-t border-[#E5E5E1] flex flex-col sm:flex-row items-center justify-between text-[13px] text-[#8A8A8A]">
           <div>© 2026 Boxora Self-Storage Systems Inc. All rights reserved.</div>
           <div className="flex items-center gap-6 mt-4 sm:mt-0">
-            <a href="#" className="hover:text-[#111111] transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-[#111111] transition-colors">Terms of Service</a>
-            <a href="#" className="hover:text-[#111111] transition-colors">Facility Safety Regulations</a>
+            <Link to="/terms" className="hover:text-[#111111] transition-colors">Chính sách bảo mật</Link>
+            <Link to="/terms" className="hover:text-[#111111] transition-colors">Điều khoản dịch vụ</Link>
+            <Link to="/terms" className="hover:text-[#111111] transition-colors">Quy chuẩn an toàn kho</Link>
           </div>
         </div>
       </div>
