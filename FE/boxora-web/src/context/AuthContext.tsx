@@ -67,6 +67,7 @@ interface AuthContextType {
   isLoading: boolean
   isAuthenticated: boolean
   login: (emailOrUsername: string, password: string) => Promise<User>
+  loginWithGoogle: (idToken: string, mode?: 'LOGIN' | 'REGISTER') => Promise<User>
   logout: () => Promise<void>
   setSessionUser: (user: User) => void
   switchRole: (targetRole: RoleType) => Promise<User>
@@ -138,6 +139,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
+  const loginWithGoogle = async (idToken: string, mode: 'LOGIN' | 'REGISTER' = 'LOGIN'): Promise<User> => {
+    setIsLoading(true)
+    try {
+      const res = await authService.googleLogin(idToken, mode)
+      if (res.data) {
+        const { accessToken, refreshToken, user: rawUser } = res.data
+        const jwtRole = parseJwtRole(accessToken)
+        const enrichedUser: User = {
+          ...rawUser,
+          role: rawUser?.role || (jwtRole ? { name: jwtRole } : undefined)
+        }
+        localStorage.setItem('boxora_access_token', accessToken)
+        if (refreshToken) {
+          localStorage.setItem('boxora_refresh_token', refreshToken)
+        }
+        localStorage.setItem('boxora_user', JSON.stringify(enrichedUser))
+        setToken(accessToken)
+        setUser(enrichedUser)
+        return enrichedUser
+      }
+      throw new Error('Đăng nhập với Google không thành công, vui lòng thử lại.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const switchRole = async (targetRole: RoleType): Promise<User> => {
     const preset = ROLE_PRESETS.find(p => p.role === targetRole)
     if (!preset) throw new Error(`Role ${targetRole} not found`)
@@ -200,6 +227,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         isAuthenticated: !!user,
         login,
+        loginWithGoogle,
         logout,
         setSessionUser,
         switchRole,
