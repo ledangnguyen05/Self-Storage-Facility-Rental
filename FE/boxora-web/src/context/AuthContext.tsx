@@ -126,11 +126,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           role: rawUser?.role || (jwtRole ? { name: jwtRole } : undefined)
         }
         localStorage.setItem('boxora_access_token', accessToken)
-        if (refreshToken) {
-          localStorage.setItem('boxora_refresh_token', refreshToken)
-        } else {
-          localStorage.removeItem('boxora_refresh_token')
-        }
+        localStorage.setItem('boxora_refresh_token', refreshToken)
         localStorage.setItem('boxora_user', JSON.stringify(enrichedUser))
         setToken(accessToken)
         setUser(enrichedUser)
@@ -173,7 +169,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     const refreshToken = localStorage.getItem('boxora_refresh_token')
-    await authService.logout(refreshToken || undefined)
+    if (refreshToken) {
+      await authService.logout(refreshToken)
+    }
     localStorage.removeItem('boxora_access_token')
     localStorage.removeItem('boxora_refresh_token')
     localStorage.removeItem('boxora_user')
