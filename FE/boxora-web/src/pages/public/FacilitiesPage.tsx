@@ -1,24 +1,81 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Building2, MapPin, Phone, Filter } from 'lucide-react'
+import { Building2, MapPin, Phone, Filter, Loader2 } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
-import { MOCK_FACILITIES, MOCK_STORAGE_UNITS } from '../../services/mockData'
+import { facilityService } from '../../services/facilityService'
+import { storageUnitService } from '../../services/storageUnitService'
+import { Facility, StorageUnit } from '../../types'
+import { BrandLogo } from '../../components/common/BrandLogo'
+
+const FACILITY_IMAGES = [
+  'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&q=80&w=800',
+  'https://images.unsplash.com/photo-1549488344-1f9b8d2bd1f3?auto=format&fit=crop&q=80&w=800',
+  'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&q=80&w=800'
+]
 
 export const FacilitiesPage: React.FC = () => {
-  const [selectedFacilityId, setSelectedFacilityId] = useState<string>(MOCK_FACILITIES[0].id)
+  const [facilities, setFacilities] = useState<Facility[]>([])
+  const [units, setUnits] = useState<StorageUnit[]>([])
+  const [selectedFacilityId, setSelectedFacilityId] = useState<string>('')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
+  const [isLoading, setIsLoading] = useState<boolean>(true)
 
-  const selectedFacility = MOCK_FACILITIES.find(f => f.id === selectedFacilityId) || MOCK_FACILITIES[0]
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setIsLoading(true)
+        const [facRes, unitRes] = await Promise.all([
+          facilityService.getFacilities({ size: 100 }),
+          storageUnitService.getUnits()
+        ])
+        const facList = facRes?.content || []
+        const unitList = Array.isArray(unitRes) ? unitRes : []
+        setFacilities(facList)
+        setUnits(unitList)
+        if (facList.length > 0) {
+          setSelectedFacilityId(facList[0].id)
+        }
+      } catch (err) {
+        console.error('Failed to load facilities/units from database:', err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    fetchData()
+  }, [])
+
+  const selectedFacility = facilities.find(f => f.id === selectedFacilityId) || facilities[0]
   
-  const facilityUnits = MOCK_STORAGE_UNITS.filter(u => {
+  const facilityUnits = units.filter(u => {
     const matchFac = u.facilityId === selectedFacilityId
     const matchStatus = statusFilter === 'ALL' || u.status === statusFilter
     return matchFac && matchStatus
   })
 
   return (
-    <div className="bg-slate-50 min-h-screen py-12 text-slate-900 font-sans antialiased text-left">
+    <div className="bg-slate-50 min-h-screen pb-16 text-slate-900 font-sans antialiased text-left">
+      {/* Top Brand Header */}
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 mb-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between">
+          <BrandLogo subtitle="HỆ THỐNG CƠ SỞ" />
+          <div className="flex items-center gap-3">
+            <Link
+              to="/units"
+              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+            >
+              <span>Tìm &amp; Thuê Kho</span>
+            </Link>
+            <Link
+              to="/"
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all"
+            >
+              Trang Chủ
+            </Link>
+          </div>
+        </div>
+      </header>
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Header */}
@@ -36,54 +93,66 @@ export const FacilitiesPage: React.FC = () => {
         </div>
 
         {/* Facility Cards Selector */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-          {MOCK_FACILITIES.map(facility => {
-            const isSelected = facility.id === selectedFacilityId
-            return (
-              <div
-                key={facility.id}
-                onClick={() => setSelectedFacilityId(facility.id)}
-                className={`cursor-pointer rounded-2xl border p-5 transition-all ${
-                  isSelected 
-                    ? 'border-orange-500 bg-white shadow-md ring-2 ring-orange-500/20' 
-                    : 'border-slate-200 bg-white hover:border-slate-300 shadow-sm'
-                }`}
-              >
-                <div className="h-44 rounded-xl overflow-hidden mb-4 relative">
-                  <img 
-                    src={facility.imageUrl} 
-                    alt={facility.name} 
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute top-2.5 right-2.5">
-                    <Badge variant="success" className="font-semibold">{facility.availableUnits} Kho Trống</Badge>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12 gap-2 text-slate-500 text-sm">
+            <Loader2 className="w-5 h-5 animate-spin text-orange-500" />
+            <span>Đang tải dữ liệu từ database...</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+            {facilities.map((facility, idx) => {
+              const isSelected = facility.id === selectedFacilityId
+              const facUnits = units.filter(u => u.facilityId === facility.id)
+              const availableUnits = facUnits.filter(u => u.status === 'AVAILABLE').length
+              const totalUnits = facUnits.length
+              const imageUrl = facility.imageUrl || FACILITY_IMAGES[idx % FACILITY_IMAGES.length]
+
+              return (
+                <div
+                  key={facility.id}
+                  onClick={() => setSelectedFacilityId(facility.id)}
+                  className={`cursor-pointer rounded-2xl border p-5 transition-all ${
+                    isSelected 
+                      ? 'border-orange-500 bg-white shadow-md ring-2 ring-orange-500/20' 
+                      : 'border-slate-200 bg-white hover:border-slate-300 shadow-sm'
+                  }`}
+                >
+                  <div className="h-44 rounded-xl overflow-hidden mb-4 relative">
+                    <img 
+                      src={imageUrl} 
+                      alt={facility.name} 
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute top-2.5 right-2.5">
+                      <Badge variant="success" className="font-semibold">{availableUnits} Kho Trống</Badge>
+                    </div>
+                  </div>
+
+                  <h3 className="font-bold text-base text-slate-900 mb-1">{facility.name}</h3>
+                  <p className="text-xs text-slate-600 flex items-center gap-1.5 mb-2">
+                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    {facility.address}
+                  </p>
+                  <p className="text-xs text-slate-500 font-mono flex items-center gap-1.5 mb-4">
+                    <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    {facility.contactPhone}
+                  </p>
+
+                  <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-xs">
+                    <span className="text-slate-500">Tổng quy mô:</span>
+                    <span className="font-unit-code font-bold text-slate-900">{totalUnits} Kho</span>
                   </div>
                 </div>
-
-                <h3 className="font-bold text-base text-slate-900 mb-1">{facility.name}</h3>
-                <p className="text-xs text-slate-600 flex items-center gap-1.5 mb-2">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  {facility.address}
-                </p>
-                <p className="text-xs text-slate-500 font-mono flex items-center gap-1.5 mb-4">
-                  <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  {facility.contactPhone}
-                </p>
-
-                <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-xs">
-                  <span className="text-slate-500">Tổng quy mô:</span>
-                  <span className="font-unit-code font-bold text-slate-900">{facility.totalUnits} Kho</span>
-                </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        )}
 
         {/* Selected Facility Unit Inventory Grid */}
         <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
             <div>
-              <h2 className="text-xl font-bold text-slate-900">{selectedFacility.name} • Danh Sách Kho</h2>
+              <h2 className="text-xl font-bold text-slate-900">{selectedFacility?.name || 'Chi nhánh'} • Danh Sách Kho</h2>
               <p className="text-xs text-slate-500 mt-1">Cập nhật trực tiếp tình trạng từng vị trí kho tại cơ sở này.</p>
             </div>
 
@@ -127,7 +196,7 @@ export const FacilitiesPage: React.FC = () => {
 
                 <div className="border-t border-slate-200/80 pt-3 flex items-center justify-between">
                   <span className="font-unit-code font-bold text-xs text-orange-600">
-                    {unit.pricePerMonth.toLocaleString()} ₫<span className="text-[10px] font-normal text-slate-500">/tháng</span>
+                    {Number(unit.pricePerMonth || 0).toLocaleString('vi-VN')} ₫<span className="text-[10px] font-normal text-slate-500">/tháng</span>
                   </span>
                   {unit.status === 'AVAILABLE' ? (
                     <Link to="/portal/customer?tab=explore">
