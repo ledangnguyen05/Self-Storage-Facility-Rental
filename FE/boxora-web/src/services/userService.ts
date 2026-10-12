@@ -32,6 +32,11 @@ export const userService = {
     return response.data?.data as User
   },
 
+  async updateUser(id: string, data: any) {
+    const response = await api.put(`/api/v1/users/${id}`, data)
+    return response.data?.data as User
+  },
+
   async deleteUser(id: string) {
     const response = await api.delete(`/api/v1/users/${id}`)
     return response.data
