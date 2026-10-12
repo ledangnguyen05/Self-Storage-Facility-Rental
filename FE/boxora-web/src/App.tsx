@@ -9,6 +9,8 @@ import { LoginPage } from './pages/public/LoginPage'
 import { RegisterPage } from './pages/public/RegisterPage'
 import { HomePage } from './pages/public/HomePage'
 import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
+import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
+import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
 
 // StorageOps Pro Portals (Matching Prototype Stitch Files)
 import { CustomerDashboard } from './pages/customer/CustomerDashboard'
@@ -65,10 +67,16 @@ function MainContent() {
           <Route path="/landing" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           {/* Dedicated Storage Units Explorer & Booking Dashboard */}
           <Route path="/units" element={<UnitsExplorerPage />} />
           <Route path="/explore-units" element={<UnitsExplorerPage />} />
+
+          {/* Boxora Terms & Standards Dashboard */}
+          <Route path="/terms" element={<TermsAndStandardsPage />} />
+          <Route path="/standards" element={<TermsAndStandardsPage />} />
+          <Route path="/policies" element={<TermsAndStandardsPage />} />
 
           {/* Core StorageOps Pro Portal with RBAC Route Protection */}
           <Route
