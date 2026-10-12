@@ -1,0 +1,541 @@
+-- =========================================================
+-- ROLES
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS roles
+(
+    id          UUID         NOT NULL,
+    created_at  TIMESTAMP    NOT NULL,
+    updated_at  TIMESTAMP    NOT NULL,
+    name        VARCHAR(50)  NOT NULL,
+    description VARCHAR(255),
+    is_active   BOOLEAN      NOT NULL,
+
+    CONSTRAINT pk_roles PRIMARY KEY (id),
+    CONSTRAINT uc_roles_name UNIQUE (name)
+    );
+
+
+-- =========================================================
+-- PERMISSIONS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS permissions
+(
+    id                UUID         NOT NULL,
+    created_at        TIMESTAMP    NOT NULL,
+    updated_at        TIMESTAMP    NOT NULL,
+    name              VARCHAR(255) NOT NULL,
+    permission_group  VARCHAR(255) NOT NULL,
+    description       VARCHAR(255),
+    is_active         BOOLEAN      NOT NULL,
+
+    CONSTRAINT pk_permissions PRIMARY KEY (id),
+    CONSTRAINT uc_permissions_name UNIQUE (name)
+    );
+
+
+-- =========================================================
+-- USERS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS users
+(
+    id           UUID         NOT NULL,
+    created_at   TIMESTAMP    NOT NULL,
+    updated_at   TIMESTAMP    NOT NULL,
+    username     VARCHAR(30)  NOT NULL,
+    email        VARCHAR(255) NOT NULL,
+    password     VARCHAR(255) NOT NULL,
+    phone        VARCHAR(20)  NOT NULL,
+    full_name    VARCHAR(30),
+    is_active    BOOLEAN      NOT NULL,
+    avatar       VARCHAR(255),
+    assigned_by  UUID,
+    assigned_at  TIMESTAMP,
+    role_id      UUID,
+    facility_id  UUID,
+
+    CONSTRAINT pk_users PRIMARY KEY (id),
+    CONSTRAINT uc_users_username UNIQUE (username),
+    CONSTRAINT uc_users_email UNIQUE (email),
+
+    CONSTRAINT fk_users_role
+    FOREIGN KEY (role_id)
+    REFERENCES roles(id),
+
+    CONSTRAINT fk_users_assigned_by
+    FOREIGN KEY (assigned_by)
+    REFERENCES users(id)
+    );
+
+
+-- =========================================================
+-- REFRESH TOKENS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS refresh_tokens
+(
+    id            UUID         NOT NULL,
+    created_at    TIMESTAMP    NOT NULL,
+    updated_at    TIMESTAMP    NOT NULL,
+    user_id       UUID         NOT NULL,
+    token         VARCHAR(255) NOT NULL,
+    type          VARCHAR(255) NOT NULL,
+    expired_at    TIMESTAMP    NOT NULL,
+    last_used_at  TIMESTAMP    NOT NULL,
+    revoked       BOOLEAN      NOT NULL,
+
+    CONSTRAINT pk_refresh_tokens PRIMARY KEY (id),
+    CONSTRAINT uc_refresh_tokens_token UNIQUE (token),
+
+    CONSTRAINT fk_refresh_tokens_user
+    FOREIGN KEY (user_id)
+    REFERENCES users(id)
+    );
+
+
+-- =========================================================
+-- ROLE PERMISSIONS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS role_permissions
+(
+    id             UUID         NOT NULL,
+    created_at     TIMESTAMP    NOT NULL,
+    updated_at     TIMESTAMP    NOT NULL,
+    role_id        UUID         NOT NULL,
+    permission_id  UUID         NOT NULL,
+    is_active      BOOLEAN      NOT NULL,
+    description    VARCHAR(255),
+
+    CONSTRAINT pk_role_permissions PRIMARY KEY (id),
+
+    CONSTRAINT uc_role_permissions_role_permission
+    UNIQUE (role_id, permission_id),
+
+    CONSTRAINT fk_role_permissions_role
+    FOREIGN KEY (role_id)
+    REFERENCES roles(id),
+
+    CONSTRAINT fk_role_permissions_permission
+    FOREIGN KEY (permission_id)
+    REFERENCES permissions(id)
+    );
+
+
+-- =========================================================
+-- FACILITIES
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS facilities
+(
+    id             UUID         NOT NULL,
+    created_at     TIMESTAMP    NOT NULL,
+    updated_at     TIMESTAMP    NOT NULL,
+    name           VARCHAR(150) NOT NULL,
+    code           VARCHAR(30)  NOT NULL,
+    address        VARCHAR(255) NOT NULL,
+    city           VARCHAR(50),
+    contact_phone  VARCHAR(20),
+    email          VARCHAR(150),
+    manager_id     UUID,
+    status         VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
+    open_time      TIME         NOT NULL DEFAULT '08:00',
+    close_time     TIME         NOT NULL DEFAULT '20:00',
+    description    TEXT,
+
+    CONSTRAINT pk_facilities PRIMARY KEY (id),
+    CONSTRAINT uc_facilities_code UNIQUE (code),
+
+    CONSTRAINT fk_facilities_manager
+    FOREIGN KEY (manager_id)
+    REFERENCES users(id)
+    );
+
+ALTER TABLE users
+    ADD CONSTRAINT fk_users_facility
+    FOREIGN KEY (facility_id)
+    REFERENCES facilities(id);
+
+CREATE INDEX IF NOT EXISTS idx_users_facility_id ON users(facility_id);
+
+
+-- =========================================================
+-- UNIT TYPES
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS unit_types
+(
+    id                    UUID           NOT NULL,
+    created_at            TIMESTAMP      NOT NULL,
+    updated_at            TIMESTAMP      NOT NULL,
+    type_name             VARCHAR(100)   NOT NULL,
+    dimensions            VARCHAR(50)    NOT NULL,
+    area_sqm              DOUBLE PRECISION NOT NULL,
+    base_price_per_month  NUMERIC(12,2)  NOT NULL,
+    deposit_amount        NUMERIC(12,2)  NOT NULL,
+
+    CONSTRAINT pk_unit_types PRIMARY KEY (id)
+    );
+
+
+-- =========================================================
+-- STORAGE UNITS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS storage_units
+(
+    id             UUID        NOT NULL,
+    created_at     TIMESTAMP   NOT NULL,
+    updated_at     TIMESTAMP   NOT NULL,
+    unit_code      VARCHAR(30) NOT NULL,
+    floor_level    VARCHAR(50),
+    status         VARCHAR(30) NOT NULL,
+    facility_id    UUID        NOT NULL,
+    unit_type_id   UUID        NOT NULL,
+
+    CONSTRAINT pk_storage_units PRIMARY KEY (id),
+
+    CONSTRAINT fk_storage_units_facility
+    FOREIGN KEY (facility_id)
+    REFERENCES facilities(id),
+
+    CONSTRAINT fk_storage_units_unit_type
+    FOREIGN KEY (unit_type_id)
+    REFERENCES unit_types(id)
+    );
+
+
+-- =========================================================
+-- FACILITY POLICIES
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS facility_policies
+(
+    id                                   UUID             NOT NULL,
+    created_at                           TIMESTAMP        NOT NULL,
+    updated_at                           TIMESTAMP        NOT NULL,
+    facility_id                          UUID             NOT NULL,
+    deposit_percentage                   DOUBLE PRECISION NOT NULL,
+    renewal_window_days                  INTEGER          NOT NULL DEFAULT 3,
+    cancellation_full_refund_hours       INTEGER          NOT NULL DEFAULT 48,
+    cancellation_partial_refund_hours    INTEGER          NOT NULL DEFAULT 24,
+    cancellation_partial_refund_percent  DOUBLE PRECISION NOT NULL DEFAULT 50.0,
+    return_notice_days                  INTEGER          NOT NULL DEFAULT 0,
+    deposit_refund_sla_days              INTEGER          NOT NULL DEFAULT 5,
+    daily_late_fee                       NUMERIC(12,2)    NOT NULL,
+    overdue_grace_days                   INTEGER          NOT NULL DEFAULT 1,
+    overdue_access_disable_days          INTEGER          NOT NULL DEFAULT 3,
+    overdue_sealing_days                 INTEGER          NOT NULL DEFAULT 7,
+    minimum_rental_months                INTEGER          NOT NULL DEFAULT 1,
+
+    CONSTRAINT pk_facility_policies PRIMARY KEY (id),
+
+    CONSTRAINT uc_facility_policies_facility
+    UNIQUE (facility_id),
+
+    CONSTRAINT fk_facility_policies_facility
+    FOREIGN KEY (facility_id)
+    REFERENCES facilities(id)
+    );
+
+
+-- =========================================================
+-- BOOKINGS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS bookings
+(
+    id                       UUID         NOT NULL,
+    created_at               TIMESTAMP    NOT NULL,
+    updated_at               TIMESTAMP    NOT NULL,
+    booking_code             VARCHAR(30)  NOT NULL,
+    customer_id              UUID         NOT NULL,
+    storage_unit_id          UUID         NOT NULL,
+    start_date               DATE         NOT NULL,
+    end_date                 DATE         NOT NULL,
+    rental_months            INTEGER      NOT NULL,
+    total_rental_fee         NUMERIC(12,2) NOT NULL,
+    deposit_paid             NUMERIC(12,2) NOT NULL,
+    status                   VARCHAR(30)  NOT NULL,
+    access_code              VARCHAR(20),
+    handed_over_by_staff_id  UUID,
+    handover_time            TIMESTAMP,
+    return_time              TIMESTAMP,
+    access_pin               VARCHAR(10),
+    qr_access_token          VARCHAR(255),
+    pin_updated_at           TIMESTAMP,
+
+    CONSTRAINT pk_bookings PRIMARY KEY (id),
+
+    CONSTRAINT uc_bookings_booking_code
+    UNIQUE (booking_code),
+
+    CONSTRAINT fk_bookings_customer
+    FOREIGN KEY (customer_id)
+    REFERENCES users(id),
+
+    CONSTRAINT fk_bookings_storage_unit
+    FOREIGN KEY (storage_unit_id)
+    REFERENCES storage_units(id),
+
+    CONSTRAINT fk_bookings_staff
+    FOREIGN KEY (handed_over_by_staff_id)
+    REFERENCES users(id)
+    );
+
+
+-- =========================================================
+-- RENTAL CONTRACTS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS rental_contracts
+(
+    id                       UUID          NOT NULL,
+    created_at               TIMESTAMP     NOT NULL,
+    updated_at               TIMESTAMP     NOT NULL,
+
+    contract_code            VARCHAR(50),
+    customer_id              UUID          NOT NULL,
+    unit_id                  UUID          NOT NULL,
+    facility_id              UUID          NOT NULL,
+    booking_id               UUID,
+
+    start_date               DATE          NOT NULL,
+    end_date                 DATE          NOT NULL,
+    monthly_fee              NUMERIC(15,2) NOT NULL,
+    deposit_held             NUMERIC(15,2) NOT NULL DEFAULT 0,
+
+    status                   VARCHAR(30)   NOT NULL DEFAULT 'PENDING_SIGNATURE',
+
+    docuseal_submission_id   BIGINT,
+    docuseal_submitter_slug  VARCHAR(100),
+    signed_document_url      VARCHAR(500),
+    signed_at                TIMESTAMP,
+
+    CONSTRAINT pk_rental_contracts
+    PRIMARY KEY (id),
+
+    CONSTRAINT fk_rental_contracts_customer
+    FOREIGN KEY (customer_id)
+    REFERENCES users(id),
+
+    CONSTRAINT fk_rental_contracts_unit
+    FOREIGN KEY (unit_id)
+    REFERENCES storage_units(id),
+
+    CONSTRAINT fk_rental_contracts_facility
+    FOREIGN KEY (facility_id)
+    REFERENCES facilities(id),
+
+    CONSTRAINT fk_rental_contracts_booking
+    FOREIGN KEY (booking_id)
+    REFERENCES bookings(id)
+);
+
+-- =========================================================
+-- PAYMENTS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS payments
+(
+    id              UUID          NOT NULL,
+    created_at      TIMESTAMP     NOT NULL,
+    updated_at      TIMESTAMP     NOT NULL,
+    transaction_id  VARCHAR(60)   NOT NULL,
+    booking_id      UUID,
+    contract_id     UUID,
+    renewal_months  INTEGER,
+    amount          NUMERIC(12,2) NOT NULL,
+    payment_type    VARCHAR(30)   NOT NULL,
+    status          VARCHAR(30)   NOT NULL,
+    payment_method  VARCHAR(50),
+    payment_time    TIMESTAMP     NOT NULL,
+
+    CONSTRAINT pk_payments
+    PRIMARY KEY (id),
+
+    CONSTRAINT uc_payments_transaction_id
+    UNIQUE (transaction_id),
+
+    CONSTRAINT fk_payments_booking
+    FOREIGN KEY (booking_id)
+    REFERENCES bookings(id),
+
+    CONSTRAINT fk_payments_contract
+    FOREIGN KEY (contract_id)
+    REFERENCES rental_contracts(id)
+);
+
+-- =========================================================
+-- ACTIVITY_LOGS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS activity_logs
+(
+    id                UUID         NOT NULL,
+    created_at        TIMESTAMP    NOT NULL,
+    updated_at        TIMESTAMP    NOT NULL,
+    user_id           UUID,
+    facility_id       UUID,
+    log_type          VARCHAR(20)  NOT NULL,
+    action            VARCHAR(100) NOT NULL,
+    email_attempted   VARCHAR(150),
+    resource_type     VARCHAR(100),
+    resource_id       UUID,
+    description       VARCHAR(500),
+    old_value         TEXT,
+    new_value         TEXT,
+    status            VARCHAR(20)  NOT NULL,
+    ip_address        VARCHAR(45),
+    user_agent        VARCHAR(255),
+
+    CONSTRAINT pk_activity_logs PRIMARY KEY (id),
+
+    CONSTRAINT fk_activity_logs_user
+    FOREIGN KEY (user_id)
+    REFERENCES users(id),
+
+    CONSTRAINT fk_activity_logs_facility
+    FOREIGN KEY (facility_id)
+    REFERENCES facilities(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_activity_logs_user_id ON activity_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_facility_id ON activity_logs(facility_id);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_log_type ON activity_logs(log_type);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at ON activity_logs(created_at);
+
+-- =========================================================
+-- HANDOVER RECORDS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS handover_records
+(
+    id             UUID        NOT NULL,
+    created_at     TIMESTAMP   NOT NULL,
+    updated_at     TIMESTAMP   NOT NULL,
+    booking_id     UUID        NOT NULL,
+    staff_id       UUID        NOT NULL,
+    record_type    VARCHAR(30) NOT NULL,
+    unit_condition TEXT,
+    notes          TEXT,
+    recorded_at    TIMESTAMP   NOT NULL,
+
+    CONSTRAINT pk_handover_records PRIMARY KEY (id),
+
+    CONSTRAINT fk_handover_records_booking
+    FOREIGN KEY (booking_id)
+    REFERENCES bookings(id),
+
+    CONSTRAINT fk_handover_records_staff
+    FOREIGN KEY (staff_id)
+    REFERENCES users(id)
+    );
+
+
+-- =========================================================
+-- SUPPORT_TICKETS
+-- =========================================================
+CREATE TABLE IF NOT EXISTS support_tickets
+(
+    id                  UUID         NOT NULL,
+    ticket_code         VARCHAR(50)  NOT NULL,
+    user_id             UUID         NOT NULL,
+    booking_id          UUID,
+    category            VARCHAR(50)  NOT NULL,
+    title               VARCHAR(255) NOT NULL,
+    description         TEXT         NOT NULL,
+    status              VARCHAR(30)  NOT NULL DEFAULT 'OPEN',
+    priority            VARCHAR(20)  NOT NULL DEFAULT 'MEDIUM',
+    assigned_staff_id   UUID,
+    resolution_note     TEXT,
+    created_at          TIMESTAMP    NOT NULL,
+    updated_at          TIMESTAMP    NOT NULL,
+
+    CONSTRAINT pk_support_tickets
+    PRIMARY KEY (id),
+
+    CONSTRAINT uc_support_tickets_code
+    UNIQUE (ticket_code),
+
+    CONSTRAINT fk_support_tickets_user
+    FOREIGN KEY (user_id)
+    REFERENCES users(id),
+
+    CONSTRAINT fk_support_tickets_booking
+    FOREIGN KEY (booking_id)
+    REFERENCES bookings(id),
+
+    CONSTRAINT fk_support_tickets_staff
+    FOREIGN KEY (assigned_staff_id)
+    REFERENCES users(id)
+    );
+
+-- =========================================================
+-- MASTER_KEY_OVERRIDE
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS master_key_overrides
+(
+    id                 UUID         NOT NULL,
+    created_at         TIMESTAMP    NOT NULL,
+    updated_at         TIMESTAMP    NOT NULL,
+    facility_id        UUID         NOT NULL,
+    performed_by_id    UUID         NOT NULL,
+    witness_id         UUID         NOT NULL,
+    category           VARCHAR(50)  NOT NULL,
+    severity           VARCHAR(30)  NOT NULL,
+    reason             VARCHAR(500) NOT NULL,
+    document_reference VARCHAR(100),
+    resource_type      VARCHAR(100),
+    resource_id        UUID,
+
+    CONSTRAINT pk_master_key_overrides PRIMARY KEY (id),
+
+    CONSTRAINT fk_mko_facility
+    FOREIGN KEY (facility_id) REFERENCES facilities(id),
+    CONSTRAINT fk_mko_performed_by
+    FOREIGN KEY (performed_by_id) REFERENCES users(id),
+    CONSTRAINT fk_mko_witness
+    FOREIGN KEY (witness_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mko_facility_id ON master_key_overrides(facility_id);
+CREATE INDEX IF NOT EXISTS idx_mko_created_at ON master_key_overrides(created_at);
+
+-- =========================================================
+-- RENEWAL CONTRACTS
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS contract_renewals
+(
+    id                      UUID          NOT NULL,
+    created_at              TIMESTAMP     NOT NULL,
+    updated_at              TIMESTAMP     NOT NULL,
+
+    contract_id             UUID          NOT NULL,
+    payment_id              UUID,
+    old_end_date            DATE          NOT NULL,
+    new_end_date            DATE          NOT NULL,
+    cycle_months            INTEGER       NOT NULL,
+    renewal_fee             NUMERIC(12,2) NOT NULL,
+    status                  VARCHAR(30)   NOT NULL DEFAULT 'PENDING_SIGNATURE',
+
+    docuseal_submission_id  BIGINT,
+    docuseal_submitter_slug VARCHAR(100),
+    signed_document_url     VARCHAR(500),
+    signed_at               TIMESTAMP,
+
+    CONSTRAINT pk_contract_renewals
+    PRIMARY KEY (id),
+
+    CONSTRAINT fk_contract_renewals_contract
+    FOREIGN KEY (contract_id)
+    REFERENCES rental_contracts(id),
+
+    CONSTRAINT fk_contract_renewals_payment
+    FOREIGN KEY (payment_id)
+    REFERENCES payments(id)
+);
