@@ -24,6 +24,8 @@ public enum ErrorCode {
     INVALID_CREDENTIALS(300, "Invalid email or password", HttpStatus.UNAUTHORIZED),
     UNAUTHORIZED(301, "Authentication is required", HttpStatus.UNAUTHORIZED),
     FORBIDDEN(302, "You do not have permission to access this resource", HttpStatus.FORBIDDEN),
+    INVALID_CAPTCHA(303, "Mã xác thực Captcha không chính xác hoặc đã hết hạn", HttpStatus.BAD_REQUEST),
+    CAPTCHA_REQUIRED(304, "Vui lòng nhập mã xác thực Captcha để chống bot tự động", HttpStatus.BAD_REQUEST),
 
     // ========================= TOKEN (400 - 499) =========================
     INVALID_TOKEN(400, "Invalid refresh token", HttpStatus.UNAUTHORIZED),

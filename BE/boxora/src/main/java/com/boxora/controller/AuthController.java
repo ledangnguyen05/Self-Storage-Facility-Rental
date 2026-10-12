@@ -30,6 +30,13 @@ public class AuthController {
     private boolean cookieSecure;
 
     private final AuthService authService;
+    private final com.boxora.service.CaptchaService captchaService;
+
+    @GetMapping("/captcha")
+    public ResponseEntity<ApiResponse<com.boxora.dto.response.CaptchaResponse>> getCaptcha() {
+        com.boxora.dto.response.CaptchaResponse response = captchaService.generateCaptcha();
+        return ResponseEntity.ok(ApiResponse.success("Captcha generated successfully", response));
+    }
 
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<AuthResponse>> register(
