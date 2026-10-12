@@ -72,6 +72,12 @@ class ContractSigningServiceTest {
     private ActivityLogService activityLogService;
 
     @Mock
+    private EmailService emailService;
+
+    @Mock
+    private EncryptionService encryptionService;
+
+    @Mock
     private ContractRenewalService contractRenewalService;
 
     @Mock

@@ -13,8 +13,9 @@ import java.util.UUID;
 @Builder
 public class PaymentCreateRequest {
 
-    @NotNull(message = "Booking id is required")
     private UUID bookingId;
+
+    private UUID contractId;
 
     @NotNull(message = "Payment type is required")
     private PaymentType paymentType;

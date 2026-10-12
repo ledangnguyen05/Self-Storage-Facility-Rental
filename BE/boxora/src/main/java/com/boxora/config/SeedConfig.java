@@ -39,10 +39,16 @@ public class SeedConfig implements ApplicationRunner {
     private final RoleRepository roleRepository;
     private final FacilityRepository facilityRepository;
     private final PasswordEncoder passwordEncoder;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        try {
+            jdbcTemplate.execute("ALTER TABLE bookings ALTER COLUMN access_pin TYPE VARCHAR(255)");
+        } catch (Exception e) {
+            log.warn("Notice altering bookings.access_pin: {}", e.getMessage());
+        }
         seedUsers();
     }
 

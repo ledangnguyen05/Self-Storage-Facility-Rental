@@ -132,26 +132,62 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public AuthResponse refreshToken(RefreshTokenRequest request) {
 
+        // 1. Look up token regardless of revoked status to detect reuse attempts
         RefreshToken storedToken = refreshTokenRepository
-                .findByTokenAndTypeAndRevokedFalse(request.getRefreshToken(), TokenType.REFRESH)
+                .findByTokenAndType(request.getRefreshToken(), TokenType.REFRESH)
                 .orElseThrow(() -> new AppException(ErrorCode.INVALID_REFRESH_TOKEN));
 
+        // 2. Token Reuse Detection: If token is already revoked, potential token theft / replay attack
+        if (Boolean.TRUE.equals(storedToken.getRevoked())) {
+            log.warn("Security Alert: Replay attack detected! Attempted reuse of revoked refresh token for user: {}",
+                    storedToken.getUser() != null ? storedToken.getUser().getEmail() : "unknown");
+            if (storedToken.getUser() != null) {
+                refreshTokenRepository.revokeAllUserTokensByType(storedToken.getUser(), TokenType.REFRESH);
+                activityLogService.recordForUser(
+                        storedToken.getUser().getId(),
+                        ActivityAction.USER_UPDATE,
+                        "RefreshToken",
+                        storedToken.getId(),
+                        "Phat hien su dung lai refresh token da thu hoi - Huy tat ca phien dang nhap de bao ve tai khoan",
+                        null,
+                        null
+                );
+            }
+            throw new AppException(ErrorCode.TOKEN_REVOKED);
+        }
+
+        // 3. Expiration Check
         if (storedToken.getExpiredAt().isBefore(LocalDateTime.now())) {
             storedToken.setRevoked(true);
             refreshTokenRepository.save(storedToken);
             throw new AppException(ErrorCode.TOKEN_EXPIRED);
         }
 
+        // 4. Invalidate current token (Rotation)
+        storedToken.setRevoked(true);
         storedToken.setLastUsedAt(LocalDateTime.now());
         refreshTokenRepository.save(storedToken);
 
+        // 5. Issue new access token AND new rotated refresh token
         User user = storedToken.getUser();
         String newAccessToken = jwtService.generateAccessToken(user);
+        String newRefreshToken = jwtService.generateRefreshToken(user);
+
+        RefreshToken newTokenEntity = RefreshToken.builder()
+                .user(user)
+                .token(newRefreshToken)
+                .type(TokenType.REFRESH)
+                .expiredAt(LocalDateTime.now().plusDays(7))
+                .lastUsedAt(LocalDateTime.now())
+                .revoked(false)
+                .build();
+        refreshTokenRepository.save(newTokenEntity);
+
         UserResponse userResponse = userMapper.toResponse(user);
 
         return AuthResponse.builder()
                 .accessToken(newAccessToken)
-                .refreshToken(request.getRefreshToken())
+                .refreshToken(newRefreshToken)
                 .user(userResponse)
                 .build();
     }

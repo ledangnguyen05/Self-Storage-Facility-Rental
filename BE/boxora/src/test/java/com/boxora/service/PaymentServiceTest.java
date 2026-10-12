@@ -15,7 +15,10 @@ import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.PaymentMapper;
 import com.boxora.repository.BookingRepository;
 import com.boxora.repository.PaymentRepository;
+import com.boxora.repository.RentalContractRepository;
+import com.boxora.repository.StorageUnitRepository;
 import com.boxora.security.RequestContext;
+import com.boxora.service.EmailService;
 import com.boxora.service.impl.PaymentServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -59,6 +62,15 @@ class PaymentServiceTest {
 
     @Mock
     private RequestContext requestContext;
+
+    @Mock
+    private RentalContractRepository rentalContractRepository;
+
+    @Mock
+    private StorageUnitRepository storageUnitRepository;
+
+    @Mock
+    private EmailService emailService;
 
     @Mock
     private com.boxora.security.FacilityAccessGuard facilityAccessGuard;

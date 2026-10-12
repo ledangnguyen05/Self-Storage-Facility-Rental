@@ -33,6 +33,7 @@ public class HandoverServiceImpl implements HandoverService {
     private final BookingRepository bookingRepository;
     private final StorageUnitRepository storageUnitRepository;
     private final UserRepository userRepository;
+    private final com.boxora.service.EncryptionService encryptionService;
 
     @Override
     public HandoverResponse checkIn(HandoverRequest request) {
@@ -47,7 +48,8 @@ public class HandoverServiceImpl implements HandoverService {
         booking.setStatus(BookingStatus.ACTIVE);
         booking.setHandoverTime(LocalDateTime.now());
         if (request.getAccessPin() != null && !request.getAccessPin().isBlank()) {
-            booking.setAccessPin(request.getAccessPin());
+            booking.setAccessPin(encryptionService.encrypt(request.getAccessPin()));
+            booking.setPinUpdatedAt(LocalDateTime.now());
         }
         bookingRepository.save(booking);
 
