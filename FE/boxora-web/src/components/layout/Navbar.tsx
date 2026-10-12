@@ -4,11 +4,13 @@ import { Box, User as UserIcon, LogOut, LayoutDashboard, ArrowRight, Menu, X } f
 import { useAuth } from '../../context/AuthContext'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
+import { LogoutConfirmModal } from '../ui/LogoutConfirmModal'
 
 export const Navbar: React.FC = () => {
   const { user, role, logout } = useAuth()
   const navigate = useNavigate()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false)
 
   const handleDashboardRedirect = () => {
     if (!role) return
@@ -84,7 +86,7 @@ export const Navbar: React.FC = () => {
               </button>
 
               <button
-                onClick={() => logout()}
+                onClick={() => setIsLogoutModalOpen(true)}
                 className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
                 title="Đăng xuất"
               >
@@ -170,8 +172,8 @@ export const Navbar: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
-                    logout()
                     setIsMobileMenuOpen(false)
+                    setIsLogoutModalOpen(true)
                   }}
                   className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-red-600 bg-red-50 hover:bg-red-100 font-medium text-sm transition-colors cursor-pointer"
                 >
@@ -196,6 +198,19 @@ export const Navbar: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Logout Confirmation Dialog */}
+      <LogoutConfirmModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={async () => {
+          await logout()
+          navigate('/login')
+        }}
+        userName={user?.fullName || user?.username}
+        userEmail={user?.email}
+        role={role || undefined}
+      />
     </header>
   )
 }

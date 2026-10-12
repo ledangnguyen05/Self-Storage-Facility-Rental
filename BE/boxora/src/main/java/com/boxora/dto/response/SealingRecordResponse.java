@@ -53,6 +53,31 @@ public class SealingRecordResponse {
     private String photoEvidenceUrl;
     private String notes;
 
+    private String protocolNumber;
+    private UUID unitId;
+    private UUID customerId;
+    private String customerName;
+    private String customerEmail;
+    private String customerPhone;
+    private UUID performedById;
+    private String performedByName;
+    private Long overdueDays;
+    private java.math.BigDecimal totalDebtAmount;
+    private String inventorySummary;
+    private String evidenceUrls;
+
+    public UUID getUnitId() {
+        return unitId != null ? unitId : storageUnitId;
+    }
+
+    public UUID getPerformedById() {
+        return performedById != null ? performedById : sealedById;
+    }
+
+    public String getPerformedByName() {
+        return performedByName != null ? performedByName : sealedByName;
+    }
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

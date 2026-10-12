@@ -63,10 +63,56 @@ public class SealingRecord extends BaseEntity {
     @Column(name = "unseal_reason", length = 500)
     private String unsealReason;
 
+    @Column(name = "protocol_number", length = 60)
+    private String protocolNumber;
+
+    @Column(name = "overdue_days")
+    @Builder.Default
+    private Long overdueDays = 0L;
+
+    @Column(name = "total_debt_amount", precision = 15, scale = 2)
+    @Builder.Default
+    private java.math.BigDecimal totalDebtAmount = java.math.BigDecimal.ZERO;
+
+    @Column(name = "inventory_summary", columnDefinition = "TEXT")
+    private String inventorySummary;
+
+    @Column(name = "evidence_urls", columnDefinition = "TEXT")
+    private String evidenceUrls;
+
     @Column(name = "photo_evidence_url", length = 500)
     private String photoEvidenceUrl;
 
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
+
+    // Helper alias methods for backwards compatibility
+    public StorageUnit getUnit() {
+        return this.storageUnit;
+    }
+
+    public void setUnit(StorageUnit unit) {
+        this.storageUnit = unit;
+    }
+
+    public User getPerformedBy() {
+        return this.sealedBy;
+    }
+
+    public void setPerformedBy(User user) {
+        this.sealedBy = user;
+    }
+
+    public static class SealingRecordBuilder {
+        public SealingRecordBuilder unit(StorageUnit unit) {
+            this.storageUnit = unit;
+            return this;
+        }
+
+        public SealingRecordBuilder performedBy(User user) {
+            this.sealedBy = user;
+            return this;
+        }
+    }
 }
 

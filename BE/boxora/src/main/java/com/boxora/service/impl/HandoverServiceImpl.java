@@ -42,6 +42,7 @@ public class HandoverServiceImpl implements HandoverService {
     private final RentalContractRepository rentalContractRepository;
     private final FacilityPolicyRepository facilityPolicyRepository;
     private final ActivityLogService activityLogService;
+    private final com.boxora.security.FacilityAccessGuard facilityAccessGuard;
 
     /**
      * Đối soát 4 điều kiện tiên quyết trước khi check-in bàn giao (BR-RULE-005):
@@ -58,6 +59,10 @@ public class HandoverServiceImpl implements HandoverService {
 
         StorageUnit unit = booking.getStorageUnit();
         User customer = booking.getCustomer();
+
+        if (unit != null && unit.getFacility() != null) {
+            facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
+        }
 
         // 1. Tính toán Điều kiện 1: Đủ tiền cọc (Full deposit)
         BigDecimal requiredDeposit = getRequiredDeposit(booking, unit);
@@ -147,6 +152,10 @@ public class HandoverServiceImpl implements HandoverService {
         StorageUnit unit = booking.getStorageUnit();
         if (unit == null) {
             throw new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND);
+        }
+
+        if (unit.getFacility() != null) {
+            facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
         }
 
         // =========================================================================
@@ -297,6 +306,10 @@ public class HandoverServiceImpl implements HandoverService {
         User customer = booking.getCustomer();
         Facility facility = (unit != null) ? unit.getFacility() : null;
 
+        if (facility != null) {
+            facilityAccessGuard.checkFacilityAccess(facility.getId());
+        }
+
         Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
         String contractCode = contractOpt.map(RentalContract::getContractCode).orElse(null);
         String contractStatus = contractOpt.map(c -> c.getStatus().name()).orElse("N/A");
@@ -435,6 +448,10 @@ public class HandoverServiceImpl implements HandoverService {
 
         StorageUnit unit = booking.getStorageUnit();
         Facility facility = (unit != null) ? unit.getFacility() : null;
+
+        if (facility != null) {
+            facilityAccessGuard.checkFacilityAccess(facility.getId());
+        }
 
         Optional<FacilityPolicy> policyOpt = (facility != null)
                 ? facilityPolicyRepository.findByFacilityId(facility.getId())

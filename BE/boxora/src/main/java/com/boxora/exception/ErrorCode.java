@@ -165,7 +165,20 @@ public enum ErrorCode {
     DISCOUNT_MIN_MONTHS_NOT_MET(1954, "Rental period does not meet minimum duration required for this discount", HttpStatus.BAD_REQUEST),
     DISCOUNT_FACILITY_MISMATCH(1955, "Discount code is not applicable to this facility", HttpStatus.BAD_REQUEST),
     DISCOUNT_VALUE_INVALID(1956, "Discount value is invalid", HttpStatus.BAD_REQUEST),
-    DISCOUNT_DATE_INVALID(1957, "End date cannot be earlier than start date", HttpStatus.BAD_REQUEST);
+    DISCOUNT_DATE_INVALID(1957, "End date cannot be earlier than start date", HttpStatus.BAD_REQUEST),
+
+    // ========================= RESTORED PAYMENT / SEALING / REFUND / NOTIFICATION =========================
+    PAYMENT_TARGET_REQUIRED(755, "Vui lòng cung cấp bookingId hoặc contractId hợp lệ để khởi tạo thanh toán", HttpStatus.BAD_REQUEST),
+    UNIT_ALREADY_SEALED(1810, "Kho lưu trữ này hiện đang trong trạng thái niêm phong", HttpStatus.BAD_REQUEST),
+    UNIT_NOT_SEALED(1811, "Kho lưu trữ này không ở trạng thái niêm phong", HttpStatus.BAD_REQUEST),
+    UNIT_OVERDUE_LOCKED(1812, "Kho đang bị niêm phong khóa cưỡng chế do quá hạn thanh toán. Vui lòng thanh toán công nợ", HttpStatus.FORBIDDEN),
+    REFUND_REQUEST_NOT_FOUND(2000, "Yêu cầu hoàn tiền không tồn tại", HttpStatus.NOT_FOUND),
+    REFUND_ALREADY_REVIEWED(2001, "Yêu cầu hoàn tiền đã được xem xét/phê duyệt trước đó", HttpStatus.BAD_REQUEST),
+    REFUND_ALREADY_PROCESSED(2002, "Yêu cầu hoàn tiền đã được xử lý chi trả hoàn tất", HttpStatus.BAD_REQUEST),
+    REFUND_NOT_APPROVED(2003, "Yêu cầu hoàn tiền phải được phê duyệt trước khi xử lý chi trả", HttpStatus.BAD_REQUEST),
+    INVALID_REFUND_AMOUNT(2004, "Số tiền hoàn không hợp lệ", HttpStatus.BAD_REQUEST),
+    REFUND_TARGET_REQUIRED(2005, "Vui lòng cung cấp bookingId hoặc contractId hợp lệ cho yêu cầu hoàn tiền", HttpStatus.BAD_REQUEST),
+    NOTIFICATION_NOT_FOUND(2100, "Bản ghi thông báo không tồn tại", HttpStatus.NOT_FOUND);
 
 
 

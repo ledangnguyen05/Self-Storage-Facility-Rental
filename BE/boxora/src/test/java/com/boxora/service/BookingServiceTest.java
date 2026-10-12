@@ -58,6 +58,9 @@ class BookingServiceTest {
     @Mock
     private ActivityLogService activityLogService;
 
+    @Mock
+    private com.boxora.security.FacilityAccessGuard facilityAccessGuard;
+
     @InjectMocks
     private BookingServiceImpl bookingService;
 

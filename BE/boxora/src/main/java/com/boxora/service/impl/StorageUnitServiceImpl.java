@@ -6,6 +6,7 @@ import com.boxora.dto.response.StorageUnitResponse;
 import com.boxora.entity.Facility;
 import com.boxora.entity.StorageUnit;
 import com.boxora.entity.UnitType;
+import com.boxora.enums.ActivityAction;
 import com.boxora.enums.UnitStatus;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
@@ -15,6 +16,7 @@ import com.boxora.repository.RentalContractRepository;
 import com.boxora.repository.StorageUnitRepository;
 import com.boxora.repository.UnitTypeRepository;
 import com.boxora.security.FacilityAccessGuard;
+import com.boxora.service.ActivityLogService;
 import com.boxora.service.StorageUnitService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +42,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
     private final RentalContractRepository rentalContractRepository;
     private final FacilityAccessGuard facilityAccessGuard;
     private final com.boxora.service.StorageUnitPriceHistoryService storageUnitPriceHistoryService;
+    private final ActivityLogService activityLogService;
 
     @Override
     @Transactional(readOnly = true)
@@ -126,6 +129,17 @@ public class StorageUnitServiceImpl implements StorageUnitService {
         // Khởi tạo lịch sử giá ban đầu cho kho
         storageUnitPriceHistoryService.recordInitialPrice(unit, initialPrice, null);
 
+        // Ghi Audit Trail ActivityLog
+        activityLogService.record(
+                facility.getId(),
+                ActivityAction.STORAGE_UNIT_CREATE,
+                "StorageUnit",
+                unit.getId(),
+                String.format("Khởi tạo ngăn kho mới %s tại cơ sở %s", unit.getUnitCode(), facility.getName()),
+                null,
+                unit.getStatus()
+        );
+
         return mapToResponse(unit);
     }
 
@@ -164,6 +178,17 @@ public class StorageUnitServiceImpl implements StorageUnitService {
         }
 
         unit = storageUnitRepository.save(unit);
+
+        activityLogService.record(
+                unit.getFacility() != null ? unit.getFacility().getId() : null,
+                ActivityAction.STORAGE_UNIT_UPDATE,
+                "StorageUnit",
+                unit.getId(),
+                String.format("Cập nhật ngăn kho %s (tầng: %s, loại: %s)", unit.getUnitCode(), unit.getFloorLevel(), unitType.getName()),
+                null,
+                unit.getStatus()
+        );
+
         return mapToResponse(unit);
     }
 
@@ -184,6 +209,16 @@ public class StorageUnitServiceImpl implements StorageUnitService {
             throw new AppException(ErrorCode.STORAGE_UNIT_IN_USE);
         }
 
+        activityLogService.record(
+                unit.getFacility() != null ? unit.getFacility().getId() : null,
+                ActivityAction.STORAGE_UNIT_RELEASE,
+                "StorageUnit",
+                unit.getId(),
+                String.format("Xóa bỏ ngăn kho %s khỏi cơ sở", unit.getUnitCode()),
+                unit.getStatus(),
+                null
+        );
+
         storageUnitRepository.delete(unit);
     }
 
@@ -198,6 +233,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
             throw new AppException(ErrorCode.STORAGE_UNIT_CANNOT_MAINTAIN);
         }
 
+        UnitStatus oldStatus = unit.getStatus();
         if (unit.getStatus() == UnitStatus.AVAILABLE) {
             unit.setStatus(UnitStatus.UNDER_MAINTENANCE);
         } else if (unit.getStatus() == UnitStatus.UNDER_MAINTENANCE) {
@@ -205,6 +241,17 @@ public class StorageUnitServiceImpl implements StorageUnitService {
         }
 
         unit = storageUnitRepository.save(unit);
+
+        activityLogService.record(
+                unit.getFacility() != null ? unit.getFacility().getId() : null,
+                ActivityAction.STORAGE_UNIT_STATUS_CHANGE,
+                "StorageUnit",
+                unit.getId(),
+                String.format("Chuyển trạng thái bảo trì ngăn kho %s từ %s sang %s", unit.getUnitCode(), oldStatus, unit.getStatus()),
+                oldStatus,
+                unit.getStatus()
+        );
+
         return mapToResponse(unit);
     }
 

@@ -1,5 +1,5 @@
 -- =========================================================================
--- V6: CREATE 5 NEW SPRINT TABLES & SEED DATA
+-- V8: CREATE 5 SPRINT TABLES & SEED DATA
 -- 1. storage_unit_price_histories (Lịch sử biến động giá kho - BR-RULE-011)
 -- 2. fee_types (Danh mục các loại phí phụ trợ / phạt vi phạm)
 -- 3. discounts (Chính sách chiết khấu kỳ hạn & Voucher khuyến mãi)
@@ -19,8 +19,8 @@ CREATE TABLE IF NOT EXISTS storage_unit_price_histories
     id              UUID          NOT NULL,
     created_at      TIMESTAMP     NOT NULL,
     updated_at      TIMESTAMP     NOT NULL,
-    storage_unit_id UUID,                       -- Nullable khi ghi nhận lịch sử giá cho cả Loại kho (UnitType)
-    unit_type_id    UUID,                       -- Liên kết loại kho tương ứng
+    storage_unit_id UUID,
+    unit_type_id    UUID,
     old_price       NUMERIC(12,2),
     new_price       NUMERIC(12,2) NOT NULL,
     effective_from  TIMESTAMP     NOT NULL,
@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS storage_unit_price_histories
         REFERENCES users(id)
 );
 
+ALTER TABLE storage_unit_price_histories ADD COLUMN IF NOT EXISTS storage_unit_id UUID;
+
 DO $$
 BEGIN
     IF EXISTS (
@@ -53,6 +55,29 @@ BEGIN
           AND is_nullable = 'NO'
     ) THEN
         ALTER TABLE storage_unit_price_histories ALTER COLUMN storage_unit_id DROP NOT NULL;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'storage_unit_price_histories' 
+          AND column_name = 'unit_type_id' 
+          AND is_nullable = 'NO'
+    ) THEN
+        ALTER TABLE storage_unit_price_histories ALTER COLUMN unit_type_id DROP NOT NULL;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'storage_unit_price_histories' 
+          AND column_name = 'old_price' 
+          AND is_nullable = 'NO'
+    ) THEN
+        ALTER TABLE storage_unit_price_histories ALTER COLUMN old_price DROP NOT NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'fk_suph_storage_unit'
+    ) THEN
+        ALTER TABLE storage_unit_price_histories
+            ADD CONSTRAINT fk_suph_storage_unit
+            FOREIGN KEY (storage_unit_id) REFERENCES storage_units(id) ON DELETE CASCADE;
     END IF;
 END $$;
 
@@ -211,9 +236,52 @@ CREATE TABLE IF NOT EXISTS sealing_records
         REFERENCES users(id)
 );
 
+ALTER TABLE sealing_records ADD COLUMN IF NOT EXISTS storage_unit_id UUID;
+ALTER TABLE sealing_records ADD COLUMN IF NOT EXISTS sealed_by_id UUID;
+ALTER TABLE sealing_records ADD COLUMN IF NOT EXISTS photo_evidence_url VARCHAR(500);
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'sealing_records' AND column_name = 'protocol_number'
+    ) THEN
+        ALTER TABLE sealing_records ALTER COLUMN protocol_number DROP NOT NULL;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'sealing_records' AND column_name = 'unit_id'
+    ) THEN
+        ALTER TABLE sealing_records ALTER COLUMN unit_id DROP NOT NULL;
+        UPDATE sealing_records SET storage_unit_id = unit_id WHERE storage_unit_id IS NULL;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'sealing_records' AND column_name = 'performed_by_id'
+    ) THEN
+        ALTER TABLE sealing_records ALTER COLUMN performed_by_id DROP NOT NULL;
+        UPDATE sealing_records SET sealed_by_id = performed_by_id WHERE sealed_by_id IS NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'fk_sr_storage_unit'
+    ) THEN
+        ALTER TABLE sealing_records
+            ADD CONSTRAINT fk_sr_storage_unit
+            FOREIGN KEY (storage_unit_id) REFERENCES storage_units(id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'fk_sr_sealed_by'
+    ) THEN
+        ALTER TABLE sealing_records
+            ADD CONSTRAINT fk_sr_sealed_by
+            FOREIGN KEY (sealed_by_id) REFERENCES users(id);
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_sr_storage_unit ON sealing_records(storage_unit_id);
 CREATE INDEX IF NOT EXISTS idx_sr_facility ON sealing_records(facility_id);
 CREATE INDEX IF NOT EXISTS idx_sr_status ON sealing_records(status);
+CREATE UNIQUE INDEX IF NOT EXISTS uc_sealing_records_tag ON sealing_records(seal_tag_number);
 
 -- =========================================================================
 -- 6. PERMISSIONS & ROLE PERMISSIONS
@@ -404,5 +472,4 @@ LEFT JOIN rental_contracts rc ON rc.unit_id = su.id
 CROSS JOIN (SELECT id FROM users WHERE role_id IN (SELECT id FROM roles WHERE name = 'STAFF') LIMIT 1) staff_user
 CROSS JOIN (SELECT id FROM users WHERE role_id IN (SELECT id FROM roles WHERE name = 'FACILITY_MANAGER') LIMIT 1) mgr_user
 WHERE f.code = 'HCM-D1'
-LIMIT 1;
-
+ON CONFLICT (seal_tag_number) DO NOTHING;
