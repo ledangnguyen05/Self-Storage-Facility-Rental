@@ -11,6 +11,7 @@ import java.util.List;
 public class DocuSealSubmissionRequest {
     private Long template_id;
     private boolean send_email;
+    private String completed_redirect_url;
     private List<Submitter> submitters;
 
     @Data

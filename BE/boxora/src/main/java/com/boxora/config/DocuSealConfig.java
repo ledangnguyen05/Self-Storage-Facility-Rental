@@ -15,6 +15,11 @@ public class DocuSealConfig {
     private Long templateId;
     private Long renewalTemplateId;
     private String webhookToken;
+    private Boolean mockEnabled = false;
+
+    public boolean isMockActive() {
+        return Boolean.TRUE.equals(mockEnabled) || (apiKey == null || apiKey.trim().isEmpty());
+    }
 
     public Long getEffectiveRenewalTemplateId() {
         return renewalTemplateId != null ? renewalTemplateId : templateId;
@@ -30,6 +35,9 @@ public class DocuSealConfig {
         }
         if (cleanUrl.endsWith("/api")) {
             cleanUrl = cleanUrl.substring(0, cleanUrl.length() - 4);
+        }
+        if (cleanUrl.contains("api.docuseal.com")) {
+            return "https://docuseal.com";
         }
         return cleanUrl;
     }

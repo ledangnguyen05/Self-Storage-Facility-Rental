@@ -12,4 +12,6 @@ public class DocuSealSubmitterResponse {
     private String slug;       // dùng ghép link ký: {apiUrl gốc web, không phải /api}/s/{slug}
     private String status;
     private String external_id;
+    private String embed_src;
+    private String link;
 }

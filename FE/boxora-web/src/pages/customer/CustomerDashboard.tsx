@@ -6,6 +6,7 @@ import { storageUnitService } from '../../services/storageUnitService'
 import { bookingService } from '../../services/bookingService'
 import { BookingCheckoutModal } from '../../components/modals/BookingCheckoutModal'
 import { ContractOtpModal } from '../../components/modals/ContractOtpModal'
+import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
 import { CustomerBookingCard } from '../../components/customer/CustomerBookingCard'
 import { contractService } from '../../services/contractService'
 import { supportTicketService } from '../../services/supportTicketService'
@@ -98,6 +99,8 @@ export const CustomerDashboard: React.FC = () => {
   const [isLoadingContracts, setIsLoadingContracts] = useState(true)
   const [contractsError, setContractsError] = useState<string | null>(null)
   const [otpContract, setOtpContract] = useState<RentalContract | null>(null)
+  const [simulationSignContract, setSimulationSignContract] = useState<RentalContract | null>(null)
+  const [signSuccessMessage, setSignSuccessMessage] = useState<string | null>(null)
 
   // Support Tickets State
   const [myTickets, setMyTickets] = useState<SupportTicket[]>([])
@@ -198,6 +201,20 @@ export const CustomerDashboard: React.FC = () => {
       isMounted = false
     }
   }, [activeTab, user?.id])
+
+  useEffect(() => {
+    const mockSignId = searchParams.get('mockSignContractId')
+    if (mockSignId && contracts.length > 0) {
+      const found = contracts.find(c => c.id === mockSignId)
+      if (found) {
+        setSimulationSignContract(found)
+      }
+    }
+    if (searchParams.get('signed') === 'true') {
+      setSignSuccessMessage('Hợp đồng điện tử DocuSeal đã được ký kết thành công! Ngăn kho của bạn đã sẵn sàng sử dụng.')
+      window.history.replaceState({}, '', '/portal/customer?tab=contracts')
+    }
+  }, [searchParams, contracts])
 
   // Filter explore state
   const [filterFacility, setFilterFacility] = useState('all')
@@ -720,6 +737,22 @@ export const CustomerDashboard: React.FC = () => {
               {contracts.filter(contract => contract.status === 'ACTIVE').length} hợp đồng đang hiệu lực
             </span>
           </div>
+
+          {signSuccessMessage && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs font-semibold text-emerald-800 flex items-center justify-between animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-emerald-600">check_circle</span>
+                <span>{signSuccessMessage}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSignSuccessMessage(null)}
+                className="text-emerald-700 hover:text-emerald-900"
+              >
+                <span className="material-symbols-outlined text-sm">close</span>
+              </button>
+            </div>
+          )}
 
           {isLoadingContracts ? (
             <p className="py-10 text-center text-sm text-slate-500">Đang tải hợp đồng...</p>
@@ -1363,7 +1396,25 @@ export const CustomerDashboard: React.FC = () => {
       )}
 
       {otpContract && (
-        <ContractOtpModal contract={otpContract} onClose={() => setOtpContract(null)} />
+        <ContractOtpModal
+          contract={otpContract}
+          onClose={() => setOtpContract(null)}
+          onOpenSimulationSign={(c) => setSimulationSignContract(c)}
+        />
+      )}
+
+      {simulationSignContract && (
+        <DocuSealSimulationModal
+          contract={simulationSignContract}
+          onClose={() => setSimulationSignContract(null)}
+          onSignedSuccess={(updated) => {
+            setContracts(prev => prev.map(c => c.id === updated.id ? updated : c))
+            setSimulationSignContract(null)
+            setSignSuccessMessage('Hợp đồng điện tử đã được ký kết thành công! Ngăn kho của bạn đã được kích hoạt sử dụng.')
+            loadActiveBookings()
+            window.history.replaceState({}, '', '/portal/customer?tab=contracts')
+          }}
+        />
       )}
 
     </div>
