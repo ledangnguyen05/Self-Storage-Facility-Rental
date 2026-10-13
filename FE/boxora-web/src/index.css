@@ -212,9 +212,9 @@ body {
 }
 
 .stitch-badge-secure {
-  background-color: #ecfeff;
-  border: 1px solid #a5f3fc;
-  color: #0891b2;
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #0866f5;
 }
 
 .stitch-badge-available {
@@ -236,7 +236,7 @@ body {
 }
 
 .stitch-btn-primary {
-  background-color: #0891b2;
+  background-color: #0866f5;
   color: #ffffff;
   font-weight: 600;
   border-radius: 0.5rem;
@@ -250,8 +250,8 @@ body {
 }
 
 .stitch-btn-primary:hover {
-  background-color: #0e7490;
-  box-shadow: 0 4px 12px rgba(8, 145, 178, 0.25);
+  background-color: #0752c9;
+  box-shadow: 0 4px 12px rgba(8, 102, 245, 0.25);
   transform: translateY(-1px);
 }
 

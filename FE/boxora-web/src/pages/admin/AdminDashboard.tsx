@@ -618,7 +618,7 @@ export const AdminDashboard: React.FC = () => {
                   fetchLogs()
                 }}
                 className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
-                  isLoginHistoryMode ? 'bg-orange-600 text-white border-orange-600' : 'bg-slate-50 text-slate-700 border-slate-200'
+                  isLoginHistoryMode ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-50 text-slate-700 border-slate-200'
                 }`}
               >
                 {isLoginHistoryMode ? 'Chỉ lịch sử Login' : 'Tất cả thao tác'}
@@ -785,7 +785,7 @@ export const AdminDashboard: React.FC = () => {
                   </button>
                   <button 
                     type="submit" 
-                    className="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold hover:bg-orange-700 transition-all shadow-sm"
+                    className="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-all shadow-sm"
                   >
                     Tạo Tài Khoản
                   </button>

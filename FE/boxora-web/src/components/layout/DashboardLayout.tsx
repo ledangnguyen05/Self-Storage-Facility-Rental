@@ -52,14 +52,14 @@ export const DashboardLayout: React.FC = () => {
               </span>
             </button>
 
-            <BrandLogo size="md" subtitle="AUTOMATED VAULT NETWORK" />
+            <BrandLogo size="md" subtitle="KHO TỰ QUẢN THÔNG MINH" />
 
             <div className="h-8 w-[1px] bg-slate-200 hidden md:block"></div>
 
             {/* Facility Selector & Scoping Modal Trigger (Only for internal staff/managers) */}
             {role && role !== 'CUSTOMER' && (
               <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
-                <span className="material-symbols-outlined text-cyan-600 text-[18px]">location_on</span>
+                <span className="material-symbols-outlined text-blue-600 text-[18px]">location_on</span>
                 <div className="flex flex-col text-left">
                   <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Cơ sở trực thuộc</span>
                   <select
@@ -77,8 +77,8 @@ export const DashboardLayout: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsScopingModalOpen(true)}
-                  title="Mở bảng phân công cơ sở (Facility Scoping Modal)"
-                  className="ml-1 p-1 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 transition-colors cursor-pointer"
+                  title="Mở bảng phân công cơ sở"
+                  className="ml-1 p-1 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[18px]">domain_verification</span>
                 </button>
@@ -107,7 +107,7 @@ export const DashboardLayout: React.FC = () => {
             {/* Notification Badge */}
             <div className="relative flex items-center justify-center w-9 h-9 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer transition-colors">
               <span className="material-symbols-outlined text-[20px]">notifications</span>
-              <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-orange-600 px-1 text-[10px] text-white font-bold leading-none">
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] text-white font-bold leading-none">
                 3
               </span>
             </div>

@@ -140,7 +140,7 @@ export const StaffDashboard: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsQrScannerOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-[var(--brand-teal,#0891b2)] hover:bg-[var(--brand-teal-hover,#0e7490)] text-white text-xs font-bold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+              className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">qr_code_scanner</span>
               <span>Quét QR Check-in</span>
@@ -174,7 +174,7 @@ export const StaffDashboard: React.FC = () => {
             <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 font-mono">
               Lịch Check-in Hôm Nay
             </span>
-            <span className="w-8 h-8 rounded-lg bg-cyan-50 border border-cyan-100 flex items-center justify-center text-[var(--brand-teal,#0891b2)]">
+            <span className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
               <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
             </span>
           </div>
@@ -183,7 +183,7 @@ export const StaffDashboard: React.FC = () => {
             <span className="text-xs text-slate-500">lịch hẹn</span>
           </div>
           <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-700 font-semibold">
-            <span className="h-2 w-2 rounded-full bg-[var(--brand-teal,#0891b2)]"></span>
+            <span className="h-2 w-2 rounded-full bg-blue-600"></span>
             <span>4 khách đã tới sảnh</span>
           </div>
         </div>
@@ -246,7 +246,7 @@ export const StaffDashboard: React.FC = () => {
           </div>
           <div className="mt-3 w-full bg-slate-100 rounded-full h-2 overflow-hidden">
             <div 
-              className="bg-[var(--brand-teal,#0891b2)] h-full rounded-full transition-all" 
+              className="bg-blue-600 h-full rounded-full transition-all" 
               style={{ width: `${occupancyData?.systemSummary?.occupancyRate ?? 64.3}%` }}
             ></div>
           </div>
@@ -263,7 +263,7 @@ export const StaffDashboard: React.FC = () => {
           <input
             type="text"
             placeholder="Tìm kiếm nhanh tên khách hàng, SĐT, mã đặt chỗ #RES-XXXX, hoặc mã số kho..."
-            className="w-full pl-10 pr-3 py-2 bg-slate-50 text-slate-900 text-xs rounded-xl border border-slate-200 focus:outline-none focus:bg-white focus:border-[var(--brand-teal,#0891b2)] transition-all"
+            className="w-full pl-10 pr-3 py-2 bg-slate-50 text-slate-900 text-xs rounded-xl border border-slate-200 focus:outline-none focus:bg-white focus:border-blue-600 transition-all"
           />
         </div>
 
@@ -428,7 +428,7 @@ export const StaffDashboard: React.FC = () => {
                 <div className="p-2 rounded bg-slate-200 text-slate-600 text-xs">#A-109<br/><span className="text-[10px] text-slate-400 font-normal">Đang thuê</span></div>
                 <div className="p-2 rounded bg-slate-200 text-slate-600 text-xs">#A-110<br/><span className="text-[10px] text-slate-400 font-normal">Đang thuê</span></div>
                 <div className="p-2 rounded bg-slate-200 text-slate-600 text-xs">#A-111<br/><span className="text-[10px] text-slate-400 font-normal">Đang thuê</span></div>
-                <div className="p-2 rounded bg-[var(--brand-teal,#0891b2)] text-white font-bold text-xs shadow-xs animate-pulse">#A-112<br/><span className="text-[10px] uppercase font-semibold">BÀN GIAO</span></div>
+                <div className="p-2 rounded bg-blue-600 text-white font-bold text-xs shadow-xs">#A-112<br/><span className="text-[10px] uppercase font-semibold">BÀN GIAO</span></div>
                 <div className="p-2 rounded bg-white border border-slate-200 text-slate-800 text-xs">#A-113<br/><span className="text-[10px] text-emerald-600 font-bold">TRỐNG</span></div>
                 <div className="p-2 rounded bg-white border border-slate-200 text-slate-800 text-xs">#A-114<br/><span className="text-[10px] text-emerald-600 font-bold">TRỐNG</span></div>
                 <div className="p-2 rounded bg-slate-200 text-slate-600 text-xs">#A-115<br/><span className="text-[10px] text-slate-400 font-normal">Đang thuê</span></div>
@@ -444,7 +444,7 @@ export const StaffDashboard: React.FC = () => {
             <div>
               <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
                 <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[var(--brand-teal,#0891b2)] text-[22px]">fact_check</span>
+                  <span className="material-symbols-outlined text-blue-600 text-[22px]">fact_check</span>
                   <h2 className="font-headline text-base font-bold text-slate-900">Nghiệm Thu Trả Kho</h2>
                 </div>
                 <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px] font-bold">
@@ -783,7 +783,7 @@ export const StaffDashboard: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-2.5 bg-[var(--brand-teal,#0891b2)] hover:bg-[var(--brand-teal-hover,#0e7490)] text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
+                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
                   >
                     Cấp Thẻ Tham Quan
                   </button>
@@ -800,7 +800,7 @@ export const StaffDashboard: React.FC = () => {
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
+                <span className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
                   <span className="material-symbols-outlined text-[20px]">image</span>
                 </span>
                 <div>

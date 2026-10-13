@@ -576,10 +576,9 @@ export const OperationsDashboard: React.FC = () => {
             </button>
             <button 
               type="submit" 
-              className="px-4 py-2 rounded-lg bg-orange-600 text-white hover:bg-orange-700 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
             >
-              <span className="material-symbols-outlined text-[18px]">save</span>
-              Lưu &amp; Phổ Biến Toàn Chuỗi
+              <span>Lưu &amp; Áp Dụng Toàn Hệ Thống</span>
             </button>
           </div>
         </div>

@@ -138,15 +138,14 @@ export const CustomerDashboard: React.FC = () => {
       <div className="flex flex-col gap-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex flex-col">
-            <div className="flex items-center gap-2 text-xs font-semibold text-cyan-700 mb-1">
-              <span className="material-symbols-outlined text-[18px] text-cyan-600">verified_user</span>
+            <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 mb-1">
               <span className="font-mono uppercase tracking-wider text-[11px] font-bold">Boxora Smart Storage Portal</span>
             </div>
             <h1 className="font-headline text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
               Xin chào, {user?.fullName || user?.username || 'Quý khách'} 👋
             </h1>
             <p className="text-xs md:text-sm text-slate-600 mt-1">
-              Quản lý kho đang thuê, mở khóa IoT Smart Lock từ xa và theo dõi trạng thái bảo mật thời gian thực.
+              Quản lý kho đang thuê, mở khóa Smart Lock từ xa và theo dõi trạng thái bảo mật thời gian thực.
             </p>
           </div>
 
@@ -155,23 +154,21 @@ export const CustomerDashboard: React.FC = () => {
               onClick={() => handleTabChange('explore')}
               className="stitch-btn-primary text-xs"
             >
-              <span className="material-symbols-outlined text-[18px]">add_circle</span>
-              <span>Thuê thêm kho mới</span>
+              <span>Thuê thêm kho</span>
             </button>
             <button
               onClick={() => handleTabChange('support')}
               className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
             >
-              <span className="material-symbols-outlined text-[18px]">help_center</span>
-              <span>Hỗ trợ</span>
+              <span>Hỗ trợ kỹ thuật</span>
             </button>
           </div>
         </div>
 
-        {/* 3 Metric Cards - Stitch Telemetry */}
+        {/* 3 Metric Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="stitch-card p-5 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-cyan-50 text-cyan-700 flex items-center justify-center shrink-0 border border-cyan-100">
+            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
               <span className="material-symbols-outlined text-[24px]">garage_door</span>
             </div>
             <div className="flex flex-col min-w-0">
@@ -192,7 +189,7 @@ export const CustomerDashboard: React.FC = () => {
                 Bảo mật cửa kho
                 <span className="pulsing-dot bg-emerald-500"></span>
               </span>
-              <span className="font-mono text-xl font-bold text-emerald-700 mt-0.5">Đã Khóa Bảo Vệ</span>
+              <span className="font-mono text-xl font-bold text-emerald-700 mt-0.5">Đã Khóa An Toàn</span>
               <span className="text-xs text-slate-500 truncate">Mã PIN điện tử &amp; Mở khóa từ xa sẵn sàng</span>
             </div>
           </div>
@@ -205,7 +202,7 @@ export const CustomerDashboard: React.FC = () => {
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Hạn hợp đồng gần nhất</span>
               <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{nearestEndDate}</span>
               <span className="text-xs text-amber-700 font-semibold truncate">
-                {nearestEndDate !== '--' ? `Hạn kết thúc hợp đồng: ${nearestEndDate}` : 'Không có hợp đồng sắp hết hạn'}
+                {nearestEndDate !== '--' ? `Hạn kết thúc: ${nearestEndDate}` : 'Không có hợp đồng sắp hết hạn'}
               </span>
             </div>
           </div>
@@ -222,9 +219,8 @@ export const CustomerDashboard: React.FC = () => {
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span className="material-symbols-outlined text-[18px]">garage_door</span>
-          <span>Kho Của Tôi Đang Thuê</span>
-          <span className="px-1.5 py-0.5 rounded-full bg-orange-600 text-white text-[10px] font-bold">
+          <span>Kho Của Tôi</span>
+          <span className="px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold">
             {activeContracts.length}
           </span>
         </button>
@@ -237,7 +233,6 @@ export const CustomerDashboard: React.FC = () => {
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span className="material-symbols-outlined text-[18px]">travel_explore</span>
           <span>Tìm &amp; Thuê Thêm Kho</span>
         </button>
 
@@ -249,7 +244,6 @@ export const CustomerDashboard: React.FC = () => {
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span className="material-symbols-outlined text-[18px]">receipt_long</span>
           <span>Hợp Đồng &amp; Hóa Đơn</span>
         </button>
 
@@ -261,7 +255,6 @@ export const CustomerDashboard: React.FC = () => {
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span className="material-symbols-outlined text-[18px]">support_agent</span>
           <span>Hỗ Trợ &amp; Báo Sự Cố</span>
         </button>
       </div>
@@ -273,20 +266,19 @@ export const CustomerDashboard: React.FC = () => {
             <div className="p-12 text-center text-slate-500 text-xs">Đang tải dữ liệu kho từ hệ thống database...</div>
           ) : activeContracts.length === 0 ? (
             <div className="stitch-card p-12 text-center flex flex-col items-center justify-center gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-cyan-50 text-cyan-700 flex items-center justify-center">
+              <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
                 <span className="material-symbols-outlined text-[36px]">warehouse</span>
               </div>
               <div className="max-w-md">
                 <h3 className="font-headline text-lg font-bold text-slate-900 mb-1">Bạn chưa có kho đang thuê nào</h3>
                 <p className="text-xs text-slate-500">
-                  Hãy khám phá hệ thống 56 vị trí kho thông minh của Boxora để tìm kích thước và địa điểm phù hợp nhất.
+                  Hãy khám phá hệ thống vị trí kho tự quản của Boxora để tìm kích thước và cơ sở thuận tiện nhất.
                 </p>
               </div>
               <button
                 onClick={() => handleTabChange('explore')}
                 className="stitch-btn-primary text-xs"
               >
-                <span className="material-symbols-outlined text-[18px]">travel_explore</span>
                 <span>Tìm &amp; Thuê Kho Ngay</span>
               </button>
             </div>
@@ -303,7 +295,7 @@ export const CustomerDashboard: React.FC = () => {
                     <div className="flex flex-col gap-4">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-xl bg-cyan-50 text-cyan-700 flex items-center justify-center border border-cyan-100 shadow-xs">
+                          <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-xs">
                             <span className="material-symbols-outlined text-[26px]">garage_door</span>
                           </div>
                           <div className="flex flex-col">
@@ -325,64 +317,57 @@ export const CustomerDashboard: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* IoT Telemetry Strip */}
+                      {/* Climate & Status Strip */}
                       <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono text-slate-600">
                         <span className="flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-[15px] text-cyan-600">thermostat</span>
-                          23.5°C
+                          <span className="text-slate-400">Nhiệt độ:</span> 23.5°C
                         </span>
                         <span className="flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-[15px] text-cyan-600">humidity_mid</span>
-                          48% RH
+                          <span className="text-slate-400">Độ ẩm:</span> 48% RH
                         </span>
                         <span className="flex items-center gap-1.5 text-emerald-700 font-semibold">
-                          <span className="material-symbols-outlined text-[15px] text-emerald-600">security</span>
-                          Smart Lock: SECURE
+                          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                          Khóa thông minh: Đã khóa
                         </span>
                       </div>
 
-                      {/* Security PIN Vault Box */}
-                      <div className="p-4 rounded-xl bg-cyan-50/40 border-2 border-cyan-200/90 shadow-xs flex flex-col gap-3 relative overflow-hidden">
+                      {/* Security PIN Box */}
+                      <div className="p-4 rounded-xl bg-blue-50/40 border border-blue-200 shadow-xs flex flex-col gap-3 relative overflow-hidden">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-lg bg-cyan-100 text-cyan-800 flex items-center justify-center">
-                              <span className="material-symbols-outlined text-[18px]">key</span>
-                            </div>
                             <span className="text-xs sm:text-sm font-bold text-slate-900">
-                              Mã PIN điện tử truy cập cổng &amp; khóa phòng
+                              Mã PIN truy cập cửa kho
                             </span>
                           </div>
-                          <span className="px-2 py-0.5 rounded bg-white border border-cyan-200 text-[10px] font-mono text-cyan-800 font-semibold flex items-center gap-1">
-                            <span className="material-symbols-outlined text-[12px]">lock</span> AES-256 Vault
+                          <span className="px-2 py-0.5 rounded bg-white border border-blue-200 text-[10px] font-mono text-blue-700 font-semibold">
+                            Bảo mật tự động
                           </span>
                         </div>
 
                         {!isRevealed ? (
-                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 py-2.5 px-4 rounded-lg bg-white border border-cyan-100">
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 py-2.5 px-4 rounded-lg bg-white border border-slate-200">
                             <div className="flex items-center gap-3">
                               <div className="flex items-center gap-2 font-mono text-[16px] text-slate-400 tracking-widest select-none">
                                 <span>●</span><span>●</span><span>●</span><span>●</span><span>●</span><span>●</span>
                               </div>
-                              <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">(Mã đang được mã hóa)</span>
+                              <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">(Nhấn để hiển thị)</span>
                             </div>
                             <button
                               type="button"
                               onClick={() => togglePinReveal(c.unitCode)}
-                              className="w-full sm:w-auto px-3.5 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                              className="w-full sm:w-auto px-3.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
                             >
-                              <span className="material-symbols-outlined text-[16px]">visibility</span>
                               <span>Xem mã PIN</span>
-                              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-700 text-white font-bold">OTP</span>
                             </button>
                           </div>
                         ) : (
-                          <div className="flex flex-col gap-2.5 py-2.5 px-4 rounded-lg bg-white border border-cyan-200">
+                          <div className="flex flex-col gap-2.5 py-2.5 px-4 rounded-lg bg-white border border-blue-200">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <div className="flex items-center gap-2">
-                                <span className="text-[11px] font-mono text-cyan-800 font-semibold">Mã số PIN:</span>
-                                <div className="flex items-center gap-1 font-mono text-base font-bold text-cyan-900 tracking-wider">
+                                <span className="text-[11px] font-mono text-slate-600 font-semibold">Mã số PIN:</span>
+                                <div className="flex items-center gap-1 font-mono text-base font-bold text-blue-900 tracking-wider">
                                   {pin.split('').map((digit, idx) => (
-                                    <span key={idx} className="px-2 py-1 rounded bg-cyan-50 border border-cyan-200 text-cyan-900 shadow-inner">
+                                    <span key={idx} className="px-2 py-1 rounded bg-blue-50 border border-blue-200 text-blue-900">
                                       {digit}
                                     </span>
                                   ))}
@@ -394,9 +379,6 @@ export const CustomerDashboard: React.FC = () => {
                                   onClick={() => handleCopy(c.unitCode, pin)}
                                   className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
                                 >
-                                  <span className="material-symbols-outlined text-[14px]">
-                                    {copiedPin === c.unitCode ? 'check' : 'content_copy'}
-                                  </span>
                                   <span>{copiedPin === c.unitCode ? 'Đã sao chép' : 'Sao chép'}</span>
                                 </button>
                                 <button
@@ -404,16 +386,15 @@ export const CustomerDashboard: React.FC = () => {
                                   onClick={() => togglePinReveal(c.unitCode)}
                                   className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
                                 >
-                                  <span className="material-symbols-outlined text-[14px]">visibility_off</span>
                                   <span>Ẩn</span>
                                 </button>
                               </div>
                             </div>
                             <div className="flex items-center justify-between text-[11px] font-mono text-slate-500">
                               <span className="flex items-center gap-1 text-emerald-700 font-medium">
-                                <span className="material-symbols-outlined text-[14px]">timer</span> Hiệu lực đếm ngược: <strong className="text-slate-900">{pinCountdown}s</strong>
+                                Hiệu lực: <strong className="text-slate-900">{pinCountdown}s</strong>
                               </span>
-                              <span className="text-cyan-700 text-[10px]">Áp dụng: Cổng Hub &amp; Cửa {c.unitCode}</span>
+                              <span className="text-slate-500 text-[10px]">Áp dụng tại: Cổng chính &amp; Cửa kho {c.unitCode}</span>
                             </div>
                           </div>
                         )}
@@ -428,12 +409,9 @@ export const CustomerDashboard: React.FC = () => {
                               isUnlocked ? 'bg-emerald-600 text-white' : 'stitch-btn-primary'
                             }`}
                           >
-                            <span className="material-symbols-outlined text-[18px]">
-                              {isUnlocked ? 'lock_open' : 'key'}
-                            </span>
                             <span>
-                              {isUnlocking ? 'Đang gửi lệnh mở IoT...' :
-                               isUnlocked ? 'CỬA ĐÃ MỞ (TỰ KHÓA SAU 30 GIÂY)' : 'Mở Khóa Từ Xa (Smart Lock)'}
+                              {isUnlocking ? 'Đang gửi lệnh mở khóa...' :
+                               isUnlocked ? 'CỬA ĐÃ MỞ (TỰ KHÓA SAU 30 GIÂY)' : 'Mở Khóa Từ Xa'}
                             </span>
                           </button>
                         </div>
@@ -494,7 +472,6 @@ export const CustomerDashboard: React.FC = () => {
           {/* Quick Filter */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-orange-600">tune</span>
               <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">Lọc kho trống</span>
             </div>
 
@@ -539,20 +516,19 @@ export const CustomerDashboard: React.FC = () => {
                     <span className="bg-slate-900/90 backdrop-blur text-white font-unit-code text-xs px-2 py-1 rounded-md">
                       #A-112
                     </span>
-                    <span className="bg-orange-600 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
+                    <span className="bg-slate-800 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
                       Tầng Trệt
                     </span>
                   </div>
                   <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
-                    <span className="material-symbols-outlined text-orange-600 text-[16px]">thermostat</span>
-                    22°C Ổn định
+                    <span className="text-slate-500">Nhiệt độ:</span> 22°C Ổn định
                   </div>
                 </div>
 
                 <div className="p-5 flex flex-col gap-3">
                   <div className="flex items-baseline justify-between">
                     <span className="font-headline text-base font-bold text-slate-900">Kho Mini Standard</span>
-                    <span className="font-headline text-base font-bold text-orange-600">
+                    <span className="font-headline text-base font-bold text-blue-600">
                       1.850.000 đ<span className="text-xs font-normal text-slate-500">/tháng</span>
                     </span>
                   </div>
@@ -561,21 +537,21 @@ export const CustomerDashboard: React.FC = () => {
                   </p>
 
                   <div className="grid grid-cols-2 gap-2 pt-2">
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">aspect_ratio</span>
-                      <span className="font-data-tabular text-slate-700">2.0m × 2.5m (5m²)</span>
+                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Diện tích</span>
+                      <span className="font-data-tabular font-semibold text-slate-800">2.0m × 2.5m (5m²)</span>
                     </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">deployed_code</span>
-                      <span className="font-data-tabular text-slate-700">Thể tích 15m³</span>
+                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Thể tích</span>
+                      <span className="font-data-tabular font-semibold text-slate-800">15m³</span>
                     </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">pin</span>
-                      <span className="text-slate-700 font-medium">Cửa cuốn + Smart PIN</span>
+                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Khóa cửa</span>
+                      <span className="text-slate-800 font-semibold">Cửa cuốn + Smart PIN</span>
                     </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">videocam</span>
-                      <span className="text-slate-700 font-medium">CCTV 24/7 an toàn</span>
+                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                      <span className="text-slate-400 block text-[10px] uppercase font-medium">An ninh</span>
+                      <span className="text-slate-800 font-semibold">CCTV 24/7 chuyên dụng</span>
                     </div>
                   </div>
                 </div>
@@ -586,8 +562,7 @@ export const CustomerDashboard: React.FC = () => {
                   onClick={() => setSelectedBookingUnit({ id: 'A-112', name: 'Kho Mini Standard 5m²', price: '1.850.000' })}
                   className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm"
                 >
-                  <span>Đặt Giữ Chỗ Ngay</span>
-                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                  <span>Đặt Giữ Chỗ</span>
                 </button>
               </div>
             </div>
@@ -609,15 +584,14 @@ export const CustomerDashboard: React.FC = () => {
                     </span>
                   </div>
                   <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
-                    <span className="material-symbols-outlined text-blue-600 text-[16px]">ac_unit</span>
-                    Lạnh 20-22°C
+                    <span className="text-slate-500">Môi trường:</span> 20-22°C Khô thoáng
                   </div>
                 </div>
 
                 <div className="p-5 flex flex-col gap-3">
                   <div className="flex items-baseline justify-between">
                     <span className="font-headline text-base font-bold text-slate-900">Kho Gia Đình Plus</span>
-                    <span className="font-headline text-base font-bold text-orange-600">
+                    <span className="font-headline text-base font-bold text-blue-600">
                       3.400.000 đ<span className="text-xs font-normal text-slate-500">/tháng</span>
                     </span>
                   </div>
@@ -626,21 +600,21 @@ export const CustomerDashboard: React.FC = () => {
                   </p>
 
                   <div className="grid grid-cols-2 gap-2 pt-2">
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">aspect_ratio</span>
-                      <span className="font-data-tabular text-slate-700">3.0m × 3.0m (9m²)</span>
+                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Diện tích</span>
+                      <span className="font-data-tabular font-semibold text-slate-800">3.0m × 3.0m (9m²)</span>
                     </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">deployed_code</span>
-                      <span className="font-data-tabular text-slate-700">Thể tích 27m³</span>
+                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Thể tích</span>
+                      <span className="font-data-tabular font-semibold text-slate-800">27m³</span>
                     </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">sensors</span>
-                      <span className="text-slate-700 font-medium">Khóa Thông Minh</span>
+                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Kiểm soát</span>
+                      <span className="text-slate-800 font-semibold">Khóa điện tử thông minh</span>
                     </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">dry</span>
-                      <span className="text-slate-700 font-medium">Độ ẩm &lt; 55% RH</span>
+                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Độ ẩm</span>
+                      <span className="text-slate-800 font-semibold">&lt; 55% RH</span>
                     </div>
                   </div>
                 </div>
@@ -651,8 +625,7 @@ export const CustomerDashboard: React.FC = () => {
                   onClick={() => setSelectedBookingUnit({ id: 'B-104', name: 'Kho Gia Đình Plus 9m²', price: '3.400.000' })}
                   className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm"
                 >
-                  <span>Đặt Giữ Chỗ Ngay</span>
-                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                  <span>Đặt Giữ Chỗ</span>
                 </button>
               </div>
             </div>
@@ -669,20 +642,19 @@ export const CustomerDashboard: React.FC = () => {
                     <span className="bg-slate-900/90 backdrop-blur text-white font-unit-code text-xs px-2 py-1 rounded-md">
                       #C-005
                     </span>
-                    <span className="bg-emerald-600 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
+                    <span className="bg-slate-800 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
                       Cửa đôi xe tải
                     </span>
                   </div>
                   <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
-                    <span className="material-symbols-outlined text-orange-600 text-[16px]">forklift</span>
-                    Xe tải vào tận cửa
+                    <span className="text-slate-500">Giao nhận:</span> Xe tải tận cửa
                   </div>
                 </div>
 
                 <div className="p-5 flex flex-col gap-3">
                   <div className="flex items-baseline justify-between">
                     <span className="font-headline text-base font-bold text-slate-900">Kho Doanh Nghiệp Pro</span>
-                    <span className="font-headline text-base font-bold text-orange-600">
+                    <span className="font-headline text-base font-bold text-blue-600">
                       6.900.000 đ<span className="text-xs font-normal text-slate-500">/tháng</span>
                     </span>
                   </div>
@@ -691,21 +663,21 @@ export const CustomerDashboard: React.FC = () => {
                   </p>
 
                   <div className="grid grid-cols-2 gap-2 pt-2">
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">aspect_ratio</span>
-                      <span className="font-data-tabular text-slate-700">4.0m × 5.0m (20m²)</span>
+                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Diện tích</span>
+                      <span className="font-data-tabular font-semibold text-slate-800">4.0m × 5.0m (20m²)</span>
                     </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">deployed_code</span>
-                      <span className="font-data-tabular text-slate-700">Thể tích 65m³</span>
+                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Thể tích</span>
+                      <span className="font-data-tabular font-semibold text-slate-800">65m³</span>
                     </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">security</span>
-                      <span className="text-slate-700 font-medium">Bảo hiểm tài sản 200tr</span>
+                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Bảo hiểm</span>
+                      <span className="text-slate-800 font-semibold">Tài sản 200 triệu</span>
                     </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">pallet</span>
-                      <span className="text-slate-700 font-medium">Sức chứa 6 Pallet</span>
+                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Sức chứa</span>
+                      <span className="text-slate-800 font-semibold">6 Pallet tiêu chuẩn</span>
                     </div>
                   </div>
                 </div>
@@ -716,8 +688,7 @@ export const CustomerDashboard: React.FC = () => {
                   onClick={() => setSelectedBookingUnit({ id: 'C-005', name: 'Kho Doanh Nghiệp Pro 20m²', price: '6.900.000' })}
                   className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm"
                 >
-                  <span>Đặt Giữ Chỗ Ngay</span>
-                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                  <span>Đặt Giữ Chỗ</span>
                 </button>
               </div>
             </div>
@@ -766,7 +737,7 @@ export const CustomerDashboard: React.FC = () => {
                   contracts.map(c => (
                     <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-4 px-4 font-unit-code text-xs font-bold text-slate-900">#{c.contractCode}</td>
-                      <td className="py-4 px-4 font-bold text-orange-600">#{c.unitCode}</td>
+                      <td className="py-4 px-4 font-bold text-blue-600">#{c.unitCode}</td>
                       <td className="py-4 px-4 text-slate-700">{c.facilityName}</td>
                       <td className="py-4 px-4 text-slate-700">{c.startDate} — {c.endDate}</td>
                       <td className="py-4 px-4 font-data-tabular font-bold text-slate-900">
@@ -806,9 +777,8 @@ export const CustomerDashboard: React.FC = () => {
         <section className="bg-white rounded-2xl p-6 md:p-8 border border-slate-200 shadow-sm">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             <div className="lg:col-span-5 flex flex-col gap-4">
-              <div className="flex items-center gap-1.5 text-orange-600 font-unit-code text-xs font-bold">
-                <span className="material-symbols-outlined text-[18px]">support_agent</span>
-                <span>TRUNG TÂM PHẢN ỨNG NHANH 24/7</span>
+              <div className="flex items-center gap-1.5 text-blue-600 font-unit-code text-xs font-bold">
+                <span>TRUNG TÂM PHẢN HỒI KHÁCH HÀNG 24/7</span>
               </div>
               <h3 className="font-headline text-xl font-bold text-slate-900">
                 Hỗ Trợ Kỹ Thuật &amp; Khóa Kho
@@ -818,17 +788,14 @@ export const CustomerDashboard: React.FC = () => {
               </p>
 
               <div className="mt-2 flex flex-col gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px] text-orange-600">call</span>
-                  <span>Hotline khẩn cấp: <strong className="text-slate-900 font-bold">1900 6828 (Ext. 1)</strong></span>
+                <div>
+                  Hotline khẩn cấp: <strong className="text-slate-900 font-bold">1900 6828 (Ext. 1)</strong>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px] text-orange-600">schedule</span>
-                  <span>Thời gian tiếp nhận: <strong>24/7 không ngày nghỉ</strong></span>
+                <div>
+                  Thời gian tiếp nhận: <strong>24/7 không ngày nghỉ</strong>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px] text-orange-600">shield</span>
-                  <span>Bảo vệ chốt cổng hỗ trợ người thân &amp; xe tải ra vào</span>
+                <div>
+                  Bảo vệ chốt cổng hỗ trợ người thân &amp; xe tải ra vào
                 </div>
               </div>
             </div>
@@ -896,9 +863,8 @@ export const CustomerDashboard: React.FC = () => {
                     <span className="text-[11px] text-slate-400">Thời gian phản hồi cam kết: &lt; 3 phút</span>
                     <button
                       type="submit"
-                      className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-lg transition-colors shadow-sm flex items-center gap-1.5"
+                      className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-colors shadow-sm cursor-pointer"
                     >
-                      <span className="material-symbols-outlined text-[16px]">send</span>
                       Gửi Yêu Cầu
                     </button>
                   </div>
@@ -946,9 +912,9 @@ export const CustomerDashboard: React.FC = () => {
                   </div>
                   <button
                     onClick={() => setSelectedBookingUnit(null)}
-                    className="text-slate-400 hover:text-slate-600"
+                    className="text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-[20px]">close</span>
+                    ✕
                   </button>
                 </div>
 
@@ -959,7 +925,7 @@ export const CustomerDashboard: React.FC = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500">Đơn giá tháng:</span>
-                    <span className="font-unit-code font-bold text-orange-600">{selectedBookingUnit.price} đ</span>
+                    <span className="font-unit-code font-bold text-blue-600">{selectedBookingUnit.price} đ</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500">Tiền cọc an ninh (hoàn lại):</span>
@@ -980,13 +946,13 @@ export const CustomerDashboard: React.FC = () => {
                 <div className="pt-3 flex gap-2">
                   <button
                     onClick={() => setSelectedBookingUnit(null)}
-                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
+                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
                   >
                     Hủy bỏ
                   </button>
                   <button
                     onClick={() => setBookingSuccess(true)}
-                    className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
+                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors cursor-pointer"
                   >
                     Ký Online &amp; Thanh Toán
                   </button>
@@ -1017,7 +983,7 @@ export const CustomerDashboard: React.FC = () => {
                     setRenewSuccess(false)
                     setRenewUnit(null)
                   }}
-                  className="mt-2 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors"
+                  className="mt-2 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer"
                 >
                   Đóng
                 </button>
@@ -1033,9 +999,9 @@ export const CustomerDashboard: React.FC = () => {
                   </div>
                   <button
                     onClick={() => setRenewUnit(null)}
-                    className="text-slate-400 hover:text-slate-600"
+                    className="text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-[20px]">close</span>
+                    ✕
                   </button>
                 </div>
 
@@ -1056,13 +1022,13 @@ export const CustomerDashboard: React.FC = () => {
                 <div className="pt-3 flex gap-2">
                   <button
                     onClick={() => setRenewUnit(null)}
-                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
+                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
                   >
                     Hủy bỏ
                   </button>
                   <button
                     onClick={() => setRenewSuccess(true)}
-                    className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
+                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors cursor-pointer"
                   >
                     Xác Nhận Gia Hạn
                   </button>
@@ -1094,7 +1060,7 @@ export const CustomerDashboard: React.FC = () => {
                     setShareModalUnit(null)
                     setSharePhone('')
                   }}
-                  className="mt-2 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors"
+                  className="mt-2 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer"
                 >
                   Hoàn tất
                 </button>
@@ -1111,9 +1077,9 @@ export const CustomerDashboard: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShareModalUnit(null)}
-                    className="text-slate-400 hover:text-slate-600"
+                    className="text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-[20px]">close</span>
+                    ✕
                   </button>
                 </div>
 
@@ -1142,13 +1108,13 @@ export const CustomerDashboard: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShareModalUnit(null)}
-                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
+                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
                   >
                     Hủy bỏ
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
+                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors cursor-pointer"
                   >
                     Gửi Mã Truy Cập
                   </button>

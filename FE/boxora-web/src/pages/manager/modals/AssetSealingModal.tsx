@@ -155,7 +155,7 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
               type="button"
               onClick={handleConfirm}
               disabled={isSubmitting}
-              className="px-4 py-2 rounded-lg bg-orange-600 text-white text-xs font-bold hover:bg-orange-700 transition-all shadow-sm cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-all shadow-sm cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
             >
               <span className={`material-symbols-outlined text-[16px] ${isSubmitting ? 'animate-spin' : ''}`}>
                 {isSubmitting ? 'sync' : 'verified'}
