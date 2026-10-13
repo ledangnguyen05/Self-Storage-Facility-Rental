@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { contractService, RentalContract } from '../../services/contractService'
+import { bookingService } from '../../services/bookingService'
+import { storageUnitService } from '../../services/storageUnitService'
+import { supportTicketService, SupportTicketCategory } from '../../services/supportTicketService'
+import { Booking, StorageUnit } from '../../types'
 
 export const CustomerDashboard: React.FC = () => {
   const { user } = useAuth()
@@ -29,10 +33,13 @@ export const CustomerDashboard: React.FC = () => {
   }, [user])
 
   const activeContracts = contracts.filter(c => c.status === 'ACTIVE')
-  const nearestEndDate = activeContracts
+  const nearestEndDateValue = activeContracts
     .map(c => c.endDate)
     .filter(Boolean)
     .sort()[0] || '--'
+  const nearestEndDate = nearestEndDateValue === '--'
+    ? '--'
+    : new Date(`${nearestEndDateValue.slice(0, 10)}T00:00:00`).toLocaleDateString('vi-VN')
 
   // Tabs: 'my-units' (default) | 'explore' | 'contracts' | 'support'
   const tabParam = searchParams.get('tab') as 'my-units' | 'explore' | 'contracts' | 'support' | null
@@ -56,79 +63,242 @@ export const CustomerDashboard: React.FC = () => {
   // IoT Remote Unlock state
   const [unlockingUnit, setUnlockingUnit] = useState<string | null>(null)
   const [unlockedSuccess, setUnlockedSuccess] = useState<string | null>(null)
+  const [unlockError, setUnlockError] = useState<string | null>(null)
 
   // Copy PIN notification
   const [copiedPin, setCopiedPin] = useState<string | null>(null)
   // Stitch PIN Reveal State
-  const [revealedPins, setRevealedPins] = useState<Record<string, boolean>>({})
-  const [pinCountdown, setPinCountdown] = useState<number>(59)
-
-  const togglePinReveal = (unitId: string) => {
-    setRevealedPins(prev => ({
-      ...prev,
-      [unitId]: !prev[unitId]
-    }))
-    setPinCountdown(59)
-  }
+  const [revealedPins, setRevealedPins] = useState<Record<string, string>>({})
+  const [loadingPinUnit, setLoadingPinUnit] = useState<string | null>(null)
+  const [pinErrors, setPinErrors] = useState<Record<string, string>>({})
 
   // Booking Modal
-  const [selectedBookingUnit, setSelectedBookingUnit] = useState<{ id: string; name: string; price: string } | null>(null)
+  const [selectedBookingUnit, setSelectedBookingUnit] = useState<StorageUnit | null>(null)
   const [bookingSuccess, setBookingSuccess] = useState(false)
+  const [bookingResult, setBookingResult] = useState<Booking | null>(null)
+  const [bookingMonths, setBookingMonths] = useState(1)
+  const [bookingError, setBookingError] = useState<string | null>(null)
+  const [isSubmittingBooking, setIsSubmittingBooking] = useState(false)
 
   // Renewal Modal
-  const [renewUnit, setRenewUnit] = useState<{ id: string; price: string } | null>(null)
+  const [renewUnit, setRenewUnit] = useState<{ id: string; contractId: string; price: string } | null>(null)
   const [renewMonths, setRenewMonths] = useState(3)
   const [renewSuccess, setRenewSuccess] = useState(false)
+  const [renewSigningUrl, setRenewSigningUrl] = useState<string | null>(null)
+  const [renewError, setRenewError] = useState<string | null>(null)
+  const [isRenewing, setIsRenewing] = useState(false)
 
   // Share Access Modal
   const [shareModalUnit, setShareModalUnit] = useState<string | null>(null)
   const [sharePhone, setSharePhone] = useState('')
   const [shareSuccess, setShareSuccess] = useState(false)
+  const [shareError, setShareError] = useState<string | null>(null)
+  const [isSubmittingShare, setIsSubmittingShare] = useState(false)
 
   // Support Ticket Form State
-  const [ticketUnit, setTicketUnit] = useState('A-108')
+  const [ticketUnit, setTicketUnit] = useState('general')
   const [ticketType, setTicketType] = useState('lock')
   const [ticketContent, setTicketContent] = useState('')
   const [ticketSubmitted, setTicketSubmitted] = useState(false)
+  const [ticketCode, setTicketCode] = useState<string | null>(null)
+  const [ticketError, setTicketError] = useState<string | null>(null)
+  const [isSubmittingTicket, setIsSubmittingTicket] = useState(false)
 
   // Filter explore state
   const [filterFacility, setFilterFacility] = useState('all')
   const [filterSize, setFilterSize] = useState('all')
+  const [availableUnits, setAvailableUnits] = useState<StorageUnit[]>([])
+  const [isLoadingAvailableUnits, setIsLoadingAvailableUnits] = useState(false)
+  const [availableUnitsError, setAvailableUnitsError] = useState(false)
 
-  const handleCopy = (id: string, pin: string) => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(pin)
+  const fetchAvailableUnits = async () => {
+    setIsLoadingAvailableUnits(true)
+    setAvailableUnitsError(false)
+    try {
+      const units = await storageUnitService.getUnits({ status: 'AVAILABLE' })
+      setAvailableUnits(Array.isArray(units) ? units : [])
+    } catch {
+      setAvailableUnits([])
+      setAvailableUnitsError(true)
+    } finally {
+      setIsLoadingAvailableUnits(false)
     }
-    setCopiedPin(id)
-    setTimeout(() => setCopiedPin(null), 2000)
   }
 
-  const handleRemoteUnlock = (unitId: string) => {
-    setUnlockingUnit(unitId)
-    setTimeout(() => {
+  useEffect(() => {
+    if (activeTab === 'explore') void fetchAvailableUnits()
+  }, [activeTab])
+
+  const filteredAvailableUnits = availableUnits.filter(unit => {
+    const matchesFacility = filterFacility === 'all' || unit.facilityId === filterFacility
+    const area = unit.areaSqMeters
+    const matchesSize = filterSize === 'all' || (area !== undefined && (
+      (filterSize === 'mini' && area >= 2 && area <= 5) ||
+      (filterSize === 'family' && area > 5 && area <= 10) ||
+      (filterSize === 'business' && area >= 15 && area <= 30)
+    ))
+    return matchesFacility && matchesSize
+  })
+
+  const handleCreateBooking = async () => {
+    if (!selectedBookingUnit) return
+    if (!user?.id) {
+      setBookingError('Phiên đăng nhập không còn hợp lệ. Hãy đăng nhập lại để đặt kho.')
+      return
+    }
+    const today = new Date()
+    const startDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    setIsSubmittingBooking(true)
+    setBookingError(null)
+    try {
+      const result = await bookingService.create({
+        storageUnitId: selectedBookingUnit.id,
+        customerId: user.id,
+        startDate,
+        rentalMonths: bookingMonths,
+        totalRentalFee: selectedBookingUnit.pricePerMonth * bookingMonths,
+      })
+      setBookingResult(result)
+      setBookingSuccess(true)
+      void fetchAvailableUnits()
+    } catch (error) {
+      const responseMessage = (error as { response?: { data?: { message?: string } } })?.response?.data?.message
+      setBookingError(responseMessage || 'Không tạo được yêu cầu giữ kho. Kho có thể vừa được khách khác đặt hoặc kỳ hạn chưa đáp ứng chính sách; hãy kiểm tra và thử lại.')
+    } finally {
+      setIsSubmittingBooking(false)
+    }
+  }
+
+  const handleCopy = async (id: string, pin: string) => {
+    try {
+      await navigator.clipboard.writeText(pin)
+      setCopiedPin(id)
+      setTimeout(() => setCopiedPin(null), 2000)
+    } catch {
+      setPinErrors(prev => ({ ...prev, [id]: 'Không thể sao chép. Hãy chọn và sao chép mã thủ công.' }))
+    }
+  }
+
+  const togglePinReveal = async (contract: RentalContract) => {
+    if (revealedPins[contract.unitCode]) {
+      setRevealedPins(prev => {
+        const next = { ...prev }
+        delete next[contract.unitCode]
+        return next
+      })
+      return
+    }
+    if (!contract.bookingId) {
+      setPinErrors(prev => ({ ...prev, [contract.unitCode]: 'Hợp đồng này chưa liên kết lượt đặt kho để lấy mã PIN.' }))
+      return
+    }
+    setPinErrors(prev => ({ ...prev, [contract.unitCode]: '' }))
+    setLoadingPinUnit(contract.unitCode)
+    try {
+      const pinRecord = await bookingService.getAccessPin(contract.bookingId)
+      setRevealedPins(prev => ({ ...prev, [contract.unitCode]: pinRecord.pin }))
+    } catch {
+      setPinErrors(prev => ({ ...prev, [contract.unitCode]: 'Không lấy được mã PIN. Hãy thử lại hoặc liên hệ hỗ trợ.' }))
+    } finally {
+      setLoadingPinUnit(null)
+    }
+  }
+
+  const handleRemoteUnlock = async (contract: RentalContract) => {
+    if (!contract.bookingId) {
+      setUnlockError('Hợp đồng này chưa liên kết lượt đặt kho để gửi lệnh mở khóa.')
+      return
+    }
+    setUnlockError(null)
+    setUnlockingUnit(contract.unitCode)
+    try {
+      await bookingService.remoteUnlock(contract.bookingId)
+      setUnlockedSuccess(contract.unitCode)
+      setTimeout(() => setUnlockedSuccess(current => current === contract.unitCode ? null : current), 5000)
+    } catch {
+      setUnlockError(`Không gửi được lệnh mở khóa cho kho ${contract.unitCode}. Vui lòng thử lại hoặc liên hệ nhân viên.`)
+    } finally {
       setUnlockingUnit(null)
-      setUnlockedSuccess(unitId)
-      setTimeout(() => setUnlockedSuccess(null), 4000)
-    }, 1200)
+    }
   }
 
-  const handleSupportSubmit = (e: React.FormEvent) => {
+  const handleSupportSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setTicketSubmitted(true)
-    setTimeout(() => {
-      setTicketSubmitted(false)
+    setTicketError(null)
+    setIsSubmittingTicket(true)
+    const categoryMap: Record<string, SupportTicketCategory> = {
+      lock: 'LOCK_ISSUE',
+      pin: 'PIN_CODE',
+      delegate: 'OTHER',
+      climate: 'FACILITY_DAMAGE',
+      billing: 'PAYMENT_ISSUE',
+    }
+    const titleMap: Record<string, string> = {
+      lock: 'Sự cố khóa thông minh / cửa cuốn',
+      pin: 'Yêu cầu hỗ trợ mã PIN',
+      delegate: 'Yêu cầu hỗ trợ quyền truy cập',
+      climate: 'Yêu cầu kiểm tra điều kiện kho',
+      billing: 'Yêu cầu hỗ trợ thanh toán',
+    }
+    const relatedContract = activeContracts.find(contract => contract.unitCode === ticketUnit)
+    try {
+      const result = await supportTicketService.create({
+        customerId: user?.id,
+        bookingId: relatedContract?.bookingId,
+        category: categoryMap[ticketType] || 'OTHER',
+        title: titleMap[ticketType] || 'Yêu cầu hỗ trợ',
+        description: ticketContent.trim(),
+        priority: ticketType === 'lock' ? 'HIGH' : 'MEDIUM',
+      })
+      setTicketCode(result.ticketCode)
+      setTicketSubmitted(true)
       setTicketContent('')
-    }, 3000)
+    } catch {
+      setTicketError('Chưa gửi được yêu cầu. Kiểm tra kết nối và thử lại; yêu cầu chưa được ghi nhận.')
+    } finally {
+      setIsSubmittingTicket(false)
+    }
   }
 
-  const handleShareSubmit = (e: React.FormEvent) => {
+  const handleShareSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setShareSuccess(true)
-    setTimeout(() => {
-      setShareSuccess(false)
-      setShareModalUnit(null)
-      setSharePhone('')
-    }, 2000)
+    const relatedContract = activeContracts.find(contract => contract.unitCode === shareModalUnit)
+    if (!relatedContract?.bookingId) {
+      setShareError('Hợp đồng này chưa liên kết lượt đặt kho. Vui lòng gửi yêu cầu qua mục Hỗ trợ.')
+      return
+    }
+    setIsSubmittingShare(true)
+    setShareError(null)
+    try {
+      await supportTicketService.create({
+        customerId: user?.id,
+        bookingId: relatedContract.bookingId,
+        category: 'OTHER',
+        title: 'Yêu cầu cấp quyền truy cập tạm thời',
+        description: `Khách hàng đề nghị cấp quyền truy cập tạm thời cho số điện thoại ${sharePhone}. Vui lòng xác minh và xử lý yêu cầu.`,
+        priority: 'MEDIUM',
+      })
+      setShareSuccess(true)
+    } catch {
+      setShareError('Chưa gửi được yêu cầu ủy quyền. Thử lại sau; hiện chưa có quyền nào được cấp.')
+    } finally {
+      setIsSubmittingShare(false)
+    }
+  }
+
+  const handleRenewSubmit = async () => {
+    if (!renewUnit) return
+    setRenewError(null)
+    setIsRenewing(true)
+    try {
+      const result = await contractService.requestRenewal(renewUnit.contractId, renewMonths) as { signingUrl?: string; status?: string }
+      setRenewSigningUrl(result?.signingUrl || null)
+      setRenewSuccess(true)
+    } catch {
+      setRenewError('Chưa tạo được yêu cầu gia hạn. Hợp đồng có thể chưa đến kỳ gia hạn; hãy kiểm tra trạng thái và thử lại.')
+    } finally {
+      setIsRenewing(false)
+    }
   }
 
   return (
@@ -176,9 +346,15 @@ export const CustomerDashboard: React.FC = () => {
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Kho đang thuê</span>
-              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{activeContracts.length} Kho Hoạt Động</span>
+              <span className="font-mono text-lg font-bold text-slate-900 mt-0.5 sm:text-xl">
+                {loadingContracts ? 'Đang tải' : `${activeContracts.length} kho đang thuê`}
+              </span>
               <span className="text-xs text-slate-500 truncate">
-                {activeContracts.length > 0 ? activeContracts.map(c => `#${c.unitCode}`).join(' & ') : 'Chưa có kho hoạt động'}
+                {loadingContracts
+                  ? 'Đang lấy danh sách kho'
+                  : activeContracts.length > 0
+                    ? activeContracts.map(c => `#${c.unitCode}`).join(' & ')
+                    : 'Chưa có kho hoạt động'}
               </span>
             </div>
           </div>
@@ -203,9 +379,11 @@ export const CustomerDashboard: React.FC = () => {
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Hạn hợp đồng gần nhất</span>
-              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{nearestEndDate}</span>
+              <span className="font-mono text-lg font-bold text-slate-900 mt-0.5 sm:text-xl">
+                {loadingContracts ? 'Đang tải' : nearestEndDate}
+              </span>
               <span className="text-xs text-amber-700 font-semibold truncate">
-                {nearestEndDate !== '--' ? `Hạn kết thúc hợp đồng: ${nearestEndDate}` : 'Không có hợp đồng sắp hết hạn'}
+                {loadingContracts ? 'Đang lấy thông tin hợp đồng' : nearestEndDateValue !== '--' ? 'Ngày kết thúc gần nhất' : 'Không có hợp đồng hoạt động'}
               </span>
             </div>
           </div>
@@ -225,7 +403,7 @@ export const CustomerDashboard: React.FC = () => {
           <span className="material-symbols-outlined text-[18px]">garage_door</span>
           <span>Kho Của Tôi Đang Thuê</span>
           <span className="px-1.5 py-0.5 rounded-full bg-orange-600 text-white text-[10px] font-bold">
-            {activeContracts.length}
+            {loadingContracts ? '…' : activeContracts.length}
           </span>
         </button>
 
@@ -293,8 +471,8 @@ export const CustomerDashboard: React.FC = () => {
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {activeContracts.map((c) => {
-                const pin = (c.id.replace(/\D/g, '').slice(0, 6) || '849204').padEnd(6, '9')
-                const isRevealed = revealedPins[c.unitCode]
+                const pin = revealedPins[c.unitCode] || ''
+                const isRevealed = Boolean(pin)
                 const isUnlocking = unlockingUnit === c.unitCode
                 const isUnlocked = unlockedSuccess === c.unitCode
 
@@ -320,24 +498,24 @@ export const CustomerDashboard: React.FC = () => {
 
                         <div className="text-right">
                           <span className="text-[10px] uppercase font-bold text-amber-700 block">Hạn hợp đồng</span>
-                          <span className="font-mono text-xs font-bold text-slate-900">{c.endDate}</span>
-                          <span className="text-[10px] text-emerald-600 font-semibold block">Đã thanh toán</span>
+                          <span className="font-mono text-xs font-bold text-slate-900">{new Date(`${c.endDate.slice(0, 10)}T00:00:00`).toLocaleDateString('vi-VN')}</span>
+                          <span className="text-[10px] text-slate-600 font-semibold block">{c.status === 'ACTIVE' ? 'Đang hiệu lực' : c.status === 'PENDING_SIGNATURE' ? 'Chờ ký' : c.status}</span>
                         </div>
                       </div>
 
                       {/* IoT Telemetry Strip */}
                       <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono text-slate-600">
                         <span className="flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-[15px] text-cyan-600">thermostat</span>
-                          23.5°C
+                        <span className="material-symbols-outlined text-[15px] text-slate-400">thermostat</span>
+                          Cảm biến: —
                         </span>
                         <span className="flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-[15px] text-cyan-600">humidity_mid</span>
-                          48% RH
+                          <span className="material-symbols-outlined text-[15px] text-slate-400">humidity_mid</span>
+                          Độ ẩm: —
                         </span>
-                        <span className="flex items-center gap-1.5 text-emerald-700 font-semibold">
-                          <span className="material-symbols-outlined text-[15px] text-emerald-600">security</span>
-                          Smart Lock: SECURE
+                        <span className="flex items-center gap-1.5 text-slate-500 font-semibold">
+                          <span className="material-symbols-outlined text-[15px] text-slate-400">security</span>
+                          Trạng thái IoT: —
                         </span>
                       </div>
 
@@ -353,7 +531,7 @@ export const CustomerDashboard: React.FC = () => {
                             </span>
                           </div>
                           <span className="px-2 py-0.5 rounded bg-white border border-cyan-200 text-[10px] font-mono text-cyan-800 font-semibold flex items-center gap-1">
-                            <span className="material-symbols-outlined text-[12px]">lock</span> AES-256 Vault
+                            <span className="material-symbols-outlined text-[12px]">lock</span> Mã PIN hệ thống
                           </span>
                         </div>
 
@@ -367,12 +545,12 @@ export const CustomerDashboard: React.FC = () => {
                             </div>
                             <button
                               type="button"
-                              onClick={() => togglePinReveal(c.unitCode)}
+                              onClick={() => void togglePinReveal(c)}
+                              disabled={!c.bookingId || loadingPinUnit === c.unitCode}
                               className="w-full sm:w-auto px-3.5 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
                             >
-                              <span className="material-symbols-outlined text-[16px]">visibility</span>
-                              <span>Xem mã PIN</span>
-                              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-700 text-white font-bold">OTP</span>
+                              <span className="material-symbols-outlined text-[16px]">{loadingPinUnit === c.unitCode ? 'progress_activity' : 'visibility'}</span>
+                              <span>{loadingPinUnit === c.unitCode ? 'Đang tải mã...' : 'Xem mã PIN'}</span>
                             </button>
                           </div>
                         ) : (
@@ -401,7 +579,7 @@ export const CustomerDashboard: React.FC = () => {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => togglePinReveal(c.unitCode)}
+                                  onClick={() => void togglePinReveal(c)}
                                   className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
                                 >
                                   <span className="material-symbols-outlined text-[14px]">visibility_off</span>
@@ -410,20 +588,24 @@ export const CustomerDashboard: React.FC = () => {
                               </div>
                             </div>
                             <div className="flex items-center justify-between text-[11px] font-mono text-slate-500">
-                              <span className="flex items-center gap-1 text-emerald-700 font-medium">
-                                <span className="material-symbols-outlined text-[14px]">timer</span> Hiệu lực đếm ngược: <strong className="text-slate-900">{pinCountdown}s</strong>
+                              <span className="flex items-center gap-1 text-slate-600 font-medium">
+                                <span className="material-symbols-outlined text-[14px]">verified_user</span> Mã được xác thực từ hệ thống
                               </span>
                               <span className="text-cyan-700 text-[10px]">Áp dụng: Cổng Hub &amp; Cửa {c.unitCode}</span>
                             </div>
                           </div>
                         )}
 
+                        {pinErrors[c.unitCode] && (
+                          <p role="alert" className="text-[11px] text-rose-700">{pinErrors[c.unitCode]}</p>
+                        )}
+
                         {/* Remote Unlock CTA */}
                         <div className="flex items-center justify-between pt-1">
                           <button
                             type="button"
-                            onClick={() => handleRemoteUnlock(c.unitCode)}
-                            disabled={isUnlocking}
+                            onClick={() => void handleRemoteUnlock(c)}
+                            disabled={!c.bookingId || isUnlocking}
                             className={`w-full font-bold text-xs rounded-lg py-2.5 px-4 flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer ${
                               isUnlocked ? 'bg-emerald-600 text-white' : 'stitch-btn-primary'
                             }`}
@@ -433,10 +615,13 @@ export const CustomerDashboard: React.FC = () => {
                             </span>
                             <span>
                               {isUnlocking ? 'Đang gửi lệnh mở IoT...' :
-                               isUnlocked ? 'CỬA ĐÃ MỞ (TỰ KHÓA SAU 30 GIÂY)' : 'Mở Khóa Từ Xa (Smart Lock)'}
+                               isUnlocked ? 'Đã gửi lệnh mở khóa' : 'Mở Khóa Từ Xa (Smart Lock)'}
                             </span>
                           </button>
                         </div>
+                        {unlockError && (
+                          <p role="alert" className="text-[11px] text-rose-700">{unlockError}</p>
+                        )}
                       </div>
 
                       {/* Metrics */}
@@ -455,14 +640,18 @@ export const CustomerDashboard: React.FC = () => {
                         </div>
                         <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
                           <span className="text-[10px] text-slate-400 block uppercase font-medium">An toàn PCCC &amp; IoT</span>
-                          <span className="font-mono text-xs font-bold text-emerald-600">Bình thường</span>
+                          <span className="font-mono text-xs font-bold text-slate-500">Chưa có dữ liệu</span>
                         </div>
                       </div>
                     </div>
 
                     <div className="pt-4 mt-4 border-t border-slate-100 flex items-center gap-3">
                       <button
-                        onClick={() => setRenewUnit({ id: c.unitCode, price: Number(c.monthlyFee || 0).toLocaleString('vi-VN') })}
+                        onClick={() => {
+                          setRenewUnit({ id: c.unitCode, contractId: c.id, price: Number(c.monthlyFee || 0).toLocaleString('vi-VN') })
+                          setRenewError(null)
+                          setRenewSigningUrl(null)
+                        }}
                         className="stitch-btn-secondary flex-1 text-xs"
                       >
                         <span className="material-symbols-outlined text-[16px]">autorenew</span>
@@ -491,241 +680,80 @@ export const CustomerDashboard: React.FC = () => {
       {/* 4. TAB 2: TÌM & THUÊ THÊM KHO (EXPLORE & BOOK) */}
       {activeTab === 'explore' && (
         <div className="flex flex-col gap-6">
-          {/* Quick Filter */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-orange-600">tune</span>
-              <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">Lọc kho trống</span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-              <select
-                value={filterFacility}
-                onChange={(e) => setFilterFacility(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
-              >
-                <option value="all">Tất cả cơ sở</option>
-                <option value="tb">Cơ sở Tân Bình (TP.HCM)</option>
-                <option value="q7">Cơ sở Quận 7 (TP.HCM)</option>
-                <option value="bt">Cơ sở Bình Thạnh (TP.HCM)</option>
-                <option value="cg">Cơ sở Cầu Giấy (Hà Nội)</option>
-              </select>
-
-              <select
-                value={filterSize}
-                onChange={(e) => setFilterSize(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
-              >
-                <option value="all">Tất cả kích cỡ</option>
-                <option value="mini">Kho Mini (2 - 5 m²)</option>
-                <option value="family">Kho Gia Đình (6 - 10 m²)</option>
-                <option value="business">Kho Doanh Nghiệp (15 - 30 m²)</option>
-              </select>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Kho đang trống</h3>
+                <p className="mt-1 text-xs text-slate-500">Chọn kho còn khả dụng theo dữ liệu hệ thống.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <select value={filterFacility} onChange={event => setFilterFacility(event.target.value)} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-800">
+                  <option value="all">Tất cả cơ sở</option>
+                  {[...new Map(availableUnits.map(unit => [unit.facilityId, unit.facilityName])).entries()].map(([facilityId, facilityName]) => (
+                    <option key={facilityId} value={facilityId}>{facilityName || 'Cơ sở chưa cập nhật'}</option>
+                  ))}
+                </select>
+                <select value={filterSize} onChange={event => setFilterSize(event.target.value)} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-800">
+                  <option value="all">Mọi diện tích</option>
+                  <option value="mini">2–5 m²</option>
+                  <option value="family">Trên 5–10 m²</option>
+                  <option value="business">15–30 m²</option>
+                </select>
+                <button type="button" onClick={() => void fetchAvailableUnits()} disabled={isLoadingAvailableUnits} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+                  <span className={`material-symbols-outlined text-[16px] ${isLoadingAvailableUnits ? 'animate-spin' : ''}`}>refresh</span>
+                  Tải lại
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            
-            {/* Card 1: Kho Mini Standard #A-112 */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-              <div>
-                <div className="relative h-44 overflow-hidden bg-slate-800">
-                  <div 
-                    className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105 opacity-90"
-                    style={{ backgroundImage: "url('https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80')" }}
-                  ></div>
-                  <div className="absolute top-3 left-3 flex gap-1.5">
-                    <span className="bg-slate-900/90 backdrop-blur text-white font-unit-code text-xs px-2 py-1 rounded-md">
-                      #A-112
-                    </span>
-                    <span className="bg-orange-600 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
-                      Tầng Trệt
-                    </span>
-                  </div>
-                  <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
-                    <span className="material-symbols-outlined text-orange-600 text-[16px]">thermostat</span>
-                    22°C Ổn định
-                  </div>
-                </div>
-
-                <div className="p-5 flex flex-col gap-3">
-                  <div className="flex items-baseline justify-between">
-                    <span className="font-headline text-base font-bold text-slate-900">Kho Mini Standard</span>
-                    <span className="font-headline text-base font-bold text-orange-600">
-                      1.850.000 đ<span className="text-xs font-normal text-slate-500">/tháng</span>
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Phù hợp lưu trữ đồ gia dụng, vali cá nhân, thiết bị văn phòng cỡ vừa.
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">aspect_ratio</span>
-                      <span className="font-data-tabular text-slate-700">2.0m × 2.5m (5m²)</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">deployed_code</span>
-                      <span className="font-data-tabular text-slate-700">Thể tích 15m³</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">pin</span>
-                      <span className="text-slate-700 font-medium">Cửa cuốn + Smart PIN</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">videocam</span>
-                      <span className="text-slate-700 font-medium">CCTV 24/7 an toàn</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-5 pt-0">
-                <button
-                  onClick={() => setSelectedBookingUnit({ id: 'A-112', name: 'Kho Mini Standard 5m²', price: '1.850.000' })}
-                  className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm"
-                >
-                  <span>Đặt Giữ Chỗ Ngay</span>
-                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                </button>
-              </div>
+          {isLoadingAvailableUnits ? (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Đang tải kho trống">
+              {[0, 1, 2].map(item => <div key={item} className="h-52 rounded-2xl border border-slate-200 bg-white animate-pulse" />)}
             </div>
-
-            {/* Card 2: Kho Gia Đình Plus #B-104 */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-              <div>
-                <div className="relative h-44 overflow-hidden bg-slate-800">
-                  <div 
-                    className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105 opacity-90"
-                    style={{ backgroundImage: "url('https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=800&q=80')" }}
-                  ></div>
-                  <div className="absolute top-3 left-3 flex gap-1.5">
-                    <span className="bg-slate-900/90 backdrop-blur text-white font-unit-code text-xs px-2 py-1 rounded-md">
-                      #B-104
-                    </span>
-                    <span className="bg-blue-600 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
-                      Tầng 2 (Thang tải)
-                    </span>
-                  </div>
-                  <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
-                    <span className="material-symbols-outlined text-blue-600 text-[16px]">ac_unit</span>
-                    Lạnh 20-22°C
-                  </div>
-                </div>
-
-                <div className="p-5 flex flex-col gap-3">
-                  <div className="flex items-baseline justify-between">
-                    <span className="font-headline text-base font-bold text-slate-900">Kho Gia Đình Plus</span>
-                    <span className="font-headline text-base font-bold text-orange-600">
-                      3.400.000 đ<span className="text-xs font-normal text-slate-500">/tháng</span>
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Lưu kho nội thất căn hộ 2 phòng ngủ, nệm, sofa, đàn piano chống ẩm tiêu chuẩn.
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">aspect_ratio</span>
-                      <span className="font-data-tabular text-slate-700">3.0m × 3.0m (9m²)</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">deployed_code</span>
-                      <span className="font-data-tabular text-slate-700">Thể tích 27m³</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">sensors</span>
-                      <span className="text-slate-700 font-medium">Khóa Thông Minh</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">dry</span>
-                      <span className="text-slate-700 font-medium">Độ ẩm &lt; 55% RH</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-5 pt-0">
-                <button
-                  onClick={() => setSelectedBookingUnit({ id: 'B-104', name: 'Kho Gia Đình Plus 9m²', price: '3.400.000' })}
-                  className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm"
-                >
-                  <span>Đặt Giữ Chỗ Ngay</span>
-                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                </button>
-              </div>
+          ) : availableUnitsError ? (
+            <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center">
+              <p className="text-sm font-semibold text-rose-900">Không tải được danh sách kho trống.</p>
+              <p className="mt-1 text-xs text-rose-700">Thử tải lại sau khi kết nối dịch vụ được khôi phục.</p>
+              <button type="button" onClick={() => void fetchAvailableUnits()} className="mt-3 rounded-lg bg-white px-4 py-2 text-xs font-semibold text-rose-800 border border-rose-200">Thử lại</button>
             </div>
-
-            {/* Card 3: Kho Doanh Nghiệp Pro #C-005 */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-              <div>
-                <div className="relative h-44 overflow-hidden bg-slate-800">
-                  <div 
-                    className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105 opacity-90"
-                    style={{ backgroundImage: "url('https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&w=800&q=80')" }}
-                  ></div>
-                  <div className="absolute top-3 left-3 flex gap-1.5">
-                    <span className="bg-slate-900/90 backdrop-blur text-white font-unit-code text-xs px-2 py-1 rounded-md">
-                      #C-005
-                    </span>
-                    <span className="bg-emerald-600 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
-                      Cửa đôi xe tải
-                    </span>
-                  </div>
-                  <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
-                    <span className="material-symbols-outlined text-orange-600 text-[16px]">forklift</span>
-                    Xe tải vào tận cửa
-                  </div>
-                </div>
-
-                <div className="p-5 flex flex-col gap-3">
-                  <div className="flex items-baseline justify-between">
-                    <span className="font-headline text-base font-bold text-slate-900">Kho Doanh Nghiệp Pro</span>
-                    <span className="font-headline text-base font-bold text-orange-600">
-                      6.900.000 đ<span className="text-xs font-normal text-slate-500">/tháng</span>
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Dành cho công ty thương mại điện tử, nhập khẩu phụ tùng hoặc hàng hóa lưu kho.
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">aspect_ratio</span>
-                      <span className="font-data-tabular text-slate-700">4.0m × 5.0m (20m²)</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">deployed_code</span>
-                      <span className="font-data-tabular text-slate-700">Thể tích 65m³</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">security</span>
-                      <span className="text-slate-700 font-medium">Bảo hiểm tài sản 200tr</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs">
-                      <span className="material-symbols-outlined text-orange-600 text-[18px]">pallet</span>
-                      <span className="text-slate-700 font-medium">Sức chứa 6 Pallet</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-5 pt-0">
-                <button
-                  onClick={() => setSelectedBookingUnit({ id: 'C-005', name: 'Kho Doanh Nghiệp Pro 20m²', price: '6.900.000' })}
-                  className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm"
-                >
-                  <span>Đặt Giữ Chỗ Ngay</span>
-                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                </button>
-              </div>
+          ) : filteredAvailableUnits.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-12 text-center">
+              <span className="material-symbols-outlined text-3xl text-slate-400">inventory_2</span>
+              <p className="mt-2 text-sm font-semibold text-slate-700">{availableUnits.length ? 'Không có kho phù hợp bộ lọc.' : 'Hiện chưa có kho trống.'}</p>
+              <p className="mt-1 text-xs text-slate-500">Danh sách được lấy trực tiếp từ tình trạng kho hiện tại.</p>
+              {availableUnits.length > 0 && <button type="button" onClick={() => { setFilterFacility('all'); setFilterSize('all') }} className="mt-3 text-xs font-semibold text-cyan-700 hover:underline">Xóa bộ lọc</button>}
             </div>
-
-          </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {filteredAvailableUnits.map(unit => (
+                <article key={unit.id} className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-mono text-xs font-bold text-slate-500">#{unit.unitCode}</p>
+                      <h4 className="mt-1 text-base font-bold text-slate-900">{unit.unitTypeName || 'Kho lưu trữ'}</h4>
+                      <p className="mt-1 text-xs text-slate-500">{unit.facilityName || 'Cơ sở chưa cập nhật'}</p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700 border border-emerald-200">Còn trống</span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-xs">
+                    <div><span className="block text-slate-500">Diện tích</span><strong className="mt-1 block text-slate-900">{unit.areaSqMeters != null ? `${unit.areaSqMeters} m²` : 'Chưa cập nhật'}</strong></div>
+                    <div><span className="block text-slate-500">Tầng</span><strong className="mt-1 block text-slate-900">{unit.floorLevel || '—'}</strong></div>
+                  </div>
+                  <div className="mt-4 flex items-baseline justify-between gap-2">
+                    <span className="text-xs text-slate-500">Giá thuê / tháng</span>
+                    <strong className="text-base font-bold text-orange-700">{Number(unit.pricePerMonth || 0).toLocaleString('vi-VN')} ₫</strong>
+                  </div>
+                  <button type="button" onClick={() => { setSelectedBookingUnit(unit); setBookingError(null); setBookingSuccess(false); setBookingResult(null); setBookingMonths(1) }} className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-xs font-bold text-white transition-colors hover:bg-slate-800">
+                    Yêu cầu giữ kho
+                    <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
         </div>
       )}
-
       {/* 5. TAB 3: HỢP ĐỒNG & HÓA ĐƠN (CONTRACTS & BILLING) */}
       {activeTab === 'contracts' && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col gap-4">
@@ -814,7 +842,7 @@ export const CustomerDashboard: React.FC = () => {
                 Hỗ Trợ Kỹ Thuật &amp; Khóa Kho
               </h3>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Đội ngũ kỹ thuật và bảo vệ trực ca tại trạm sẵn sàng xử lý yêu cầu của bạn nhanh chóng. Các sự cố kẹt cửa cuốn hoặc quên mã PIN được giải quyết trong vòng 3 phút.
+                Gửi yêu cầu tại đây để hệ thống ghi nhận và chuyển cho nhân viên phụ trách. Với sự cố cần hỗ trợ ngay, vui lòng gọi hotline.
               </p>
 
               <div className="mt-2 flex flex-col gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700">
@@ -824,7 +852,7 @@ export const CustomerDashboard: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-[18px] text-orange-600">schedule</span>
-                  <span>Thời gian tiếp nhận: <strong>24/7 không ngày nghỉ</strong></span>
+                  <span>Thời gian tiếp nhận: <strong>Vui lòng xác nhận qua hotline</strong></span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-[18px] text-orange-600">shield</span>
@@ -841,8 +869,9 @@ export const CustomerDashboard: React.FC = () => {
                   </div>
                   <h4 className="font-bold text-slate-900 text-sm">Yêu Cầu Đã Được Tiếp Nhận!</h4>
                   <p className="text-xs text-slate-500 max-w-xs">
-                    Nhân viên phụ trách đang xử lý và sẽ phản hồi hoặc liên hệ lại với bạn ngay lập tức.
+                    Yêu cầu đã được lưu{ticketCode ? ` với mã ${ticketCode}` : ''}. Nhân viên sẽ cập nhật trạng thái xử lý.
                   </p>
+                  <button type="button" onClick={() => { setTicketSubmitted(false); setTicketCode(null) }} className="mt-3 text-xs font-semibold text-cyan-700 hover:text-cyan-900">Gửi yêu cầu khác</button>
                 </div>
               ) : (
                 <form className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left" onSubmit={handleSupportSubmit}>
@@ -855,8 +884,9 @@ export const CustomerDashboard: React.FC = () => {
                       onChange={(e) => setTicketUnit(e.target.value)}
                       className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
                     >
-                      <option value="A-108">Kho #A-108 (Cơ sở Tân Bình)</option>
-                      <option value="B-205">Kho #B-205 (Cơ sở Tân Bình)</option>
+                      {activeContracts.map(contract => (
+                        <option key={contract.id} value={contract.unitCode}>Kho #{contract.unitCode} ({contract.facilityName})</option>
+                      ))}
                       <option value="general">Khác / Thắc mắc chung</option>
                     </select>
                   </div>
@@ -893,15 +923,17 @@ export const CustomerDashboard: React.FC = () => {
                   </div>
 
                   <div className="sm:col-span-2 flex items-center justify-between pt-2">
-                    <span className="text-[11px] text-slate-400">Thời gian phản hồi cam kết: &lt; 3 phút</span>
+                    <span className="text-[11px] text-slate-500">Yêu cầu được lưu và chuyển đến hàng đợi hỗ trợ.</span>
                     <button
                       type="submit"
-                      className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-lg transition-colors shadow-sm flex items-center gap-1.5"
+                      disabled={isSubmittingTicket}
+                      className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-60 text-white font-bold text-xs rounded-lg transition-colors shadow-sm flex items-center gap-1.5"
                     >
-                      <span className="material-symbols-outlined text-[16px]">send</span>
-                      Gửi Yêu Cầu
+                      <span className="material-symbols-outlined text-[16px]">{isSubmittingTicket ? 'progress_activity' : 'send'}</span>
+                      {isSubmittingTicket ? 'Đang gửi...' : 'Gửi Yêu Cầu'}
                     </button>
                   </div>
+                  {ticketError && <p role="alert" className="sm:col-span-2 text-xs text-rose-700">{ticketError}</p>}
                 </form>
               )}
             </div>
@@ -911,92 +943,59 @@ export const CustomerDashboard: React.FC = () => {
 
       {/* Booking Modal */}
       {selectedBookingUnit && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
-            {bookingSuccess ? (
-              <div className="py-8 text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+          <div role="dialog" aria-modal="true" aria-labelledby="booking-dialog-title" className="w-full max-w-md space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+            {bookingSuccess && bookingResult ? (
+              <div className="space-y-3 py-6 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
                   <span className="material-symbols-outlined text-[28px]">check_circle</span>
                 </div>
-                <h3 className="font-headline text-lg font-bold text-slate-900">
-                  Đặt Giữ Chỗ Thành Công!
-                </h3>
-                <p className="text-xs text-slate-600">
-                  Mã đặt chỗ của bạn: <strong>#RES-2025-9988</strong>. Hợp đồng điện tử và mã PIN đã sẵn sàng.
-                </p>
-                <button
-                  onClick={() => {
-                    setBookingSuccess(false)
-                    setSelectedBookingUnit(null)
-                    handleTabChange('my-units')
-                  }}
-                  className="mt-2 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors"
-                >
-                  Đến Danh Sách Kho Của Tôi
-                </button>
+                <h3 id="booking-dialog-title" className="text-lg font-bold text-slate-900">Đã tạo yêu cầu giữ kho</h3>
+                <p className="text-xs text-slate-600">Mã yêu cầu: <strong className="font-mono">{bookingResult.bookingCode}</strong></p>
+                <p className="text-xs leading-relaxed text-slate-500">Trạng thái hiện tại: chờ thanh toán. Hợp đồng và mã truy cập chỉ được cấp sau khi hoàn tất thanh toán.</p>
+                <button type="button" onClick={() => { setBookingSuccess(false); setBookingResult(null); setSelectedBookingUnit(null) }} className="mt-2 w-full rounded-lg bg-slate-900 py-2.5 text-xs font-bold text-white transition-colors hover:bg-slate-800">Đóng</button>
               </div>
             ) : (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <form onSubmit={event => { event.preventDefault(); void handleCreateBooking() }} className="space-y-4">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
                   <div>
-                    <h3 className="font-headline text-base font-bold text-slate-900">
-                      Xác Nhận Thuê Kho Online
-                    </h3>
-                    <span className="text-xs text-slate-500">Mã kho: #{selectedBookingUnit.id}</span>
+                    <h3 id="booking-dialog-title" className="text-base font-bold text-slate-900">Yêu cầu giữ kho</h3>
+                    <span className="text-xs text-slate-500">#{selectedBookingUnit.unitCode} · {selectedBookingUnit.facilityName}</span>
                   </div>
-                  <button
-                    onClick={() => setSelectedBookingUnit(null)}
-                    className="text-slate-400 hover:text-slate-600"
-                  >
+                  <button type="button" onClick={() => setSelectedBookingUnit(null)} aria-label="Đóng" className="text-slate-400 hover:text-slate-700">
                     <span className="material-symbols-outlined text-[20px]">close</span>
                   </button>
                 </div>
 
-                <div className="p-3 bg-slate-50 rounded-xl space-y-2 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Loại kho:</span>
-                    <span className="font-bold text-slate-900">{selectedBookingUnit.name}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Đơn giá tháng:</span>
-                    <span className="font-unit-code font-bold text-orange-600">{selectedBookingUnit.price} đ</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Tiền cọc an ninh (hoàn lại):</span>
-                    <span className="font-unit-code font-bold text-slate-900">{selectedBookingUnit.price} đ</span>
-                  </div>
+                <div className="space-y-2 rounded-xl bg-slate-50 p-3 text-xs">
+                  <div className="flex justify-between gap-3"><span className="text-slate-500">Loại kho</span><strong className="text-right text-slate-900">{selectedBookingUnit.unitTypeName || 'Kho lưu trữ'}</strong></div>
+                  <div className="flex justify-between gap-3"><span className="text-slate-500">Giá thuê / tháng</span><strong className="text-orange-700">{Number(selectedBookingUnit.pricePerMonth || 0).toLocaleString('vi-VN')} ₫</strong></div>
+                  <p className="border-t border-slate-200 pt-2 text-slate-500">Tiền cọc sẽ được xác nhận ở bước thanh toán theo chính sách cơ sở.</p>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase">Kỳ hạn thuê</label>
-                  <select className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-400">
-                    <option value="1">1 Tháng</option>
-                    <option value="3">3 Tháng (Giảm 5%)</option>
-                    <option value="6">6 Tháng (Giảm 10%)</option>
-                    <option value="12">12 Tháng (Giảm 15%)</option>
+                <label className="block space-y-1.5">
+                  <span className="text-[11px] font-bold uppercase text-slate-500">Kỳ hạn thuê</span>
+                  <select value={bookingMonths} onChange={event => setBookingMonths(Number(event.target.value))} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-800 focus:border-slate-400 focus:outline-none">
+                    <option value={1}>1 tháng</option>
+                    <option value={3}>3 tháng</option>
+                    <option value={6}>6 tháng</option>
+                    <option value={12}>12 tháng</option>
                   </select>
-                </div>
+                </label>
+                <div className="flex justify-between rounded-lg border border-slate-200 px-3 py-2 text-xs"><span className="text-slate-500">Tạm tính tiền thuê</span><strong className="text-slate-900">{(selectedBookingUnit.pricePerMonth * bookingMonths).toLocaleString('vi-VN')} ₫</strong></div>
+                {bookingError && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">{bookingError}</p>}
 
-                <div className="pt-3 flex gap-2">
-                  <button
-                    onClick={() => setSelectedBookingUnit(null)}
-                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
-                  >
-                    Hủy bỏ
-                  </button>
-                  <button
-                    onClick={() => setBookingSuccess(true)}
-                    className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
-                  >
-                    Ký Online &amp; Thanh Toán
+                <div className="flex gap-2 border-t border-slate-100 pt-3">
+                  <button type="button" onClick={() => setSelectedBookingUnit(null)} disabled={isSubmittingBooking} className="flex-1 rounded-lg bg-slate-100 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-60">Hủy</button>
+                  <button type="submit" disabled={isSubmittingBooking} className="flex-1 rounded-lg bg-orange-600 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60">
+                    {isSubmittingBooking ? 'Đang gửi…' : 'Gửi yêu cầu giữ kho'}
                   </button>
                 </div>
-              </div>
+              </form>
             )}
           </div>
         </div>
       )}
-
       {/* Renewal Modal */}
       {renewUnit && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1007,11 +1006,12 @@ export const CustomerDashboard: React.FC = () => {
                   <span className="material-symbols-outlined text-[28px]">check_circle</span>
                 </div>
                 <h3 className="font-headline text-lg font-bold text-slate-900">
-                  Gia Hạn Hợp Đồng Thành Công!
+                  Đã tạo yêu cầu gia hạn
                 </h3>
                 <p className="text-xs text-slate-600">
-                  Hạn thuê kho #{renewUnit.id} đã được tự động cộng thêm {renewMonths} tháng.
+                  Yêu cầu gia hạn kho #{renewUnit.id} ({renewMonths} tháng) đã được ghi nhận. Hợp đồng chỉ có hiệu lực sau khi hoàn tất bước ký.
                 </p>
+                {renewSigningUrl && <a href={renewSigningUrl} target="_blank" rel="noreferrer" className="inline-flex text-xs font-semibold text-cyan-700 hover:underline">Mở liên kết ký phụ lục</a>}
                 <button
                   onClick={() => {
                     setRenewSuccess(false)
@@ -1029,7 +1029,7 @@ export const CustomerDashboard: React.FC = () => {
                     <h3 className="font-headline text-base font-bold text-slate-900">
                       Gia Hạn Thuê Kho #{renewUnit.id}
                     </h3>
-                    <span className="text-xs text-slate-500">Cơ sở Tân Bình - Mega Central</span>
+                  <span className="text-xs text-slate-500">{contracts.find(contract => contract.id === renewUnit.contractId)?.facilityName || 'Cơ sở'}</span>
                   </div>
                   <button
                     onClick={() => setRenewUnit(null)}
@@ -1046,10 +1046,10 @@ export const CustomerDashboard: React.FC = () => {
                     onChange={(e) => setRenewMonths(parseInt(e.target.value))}
                     className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-400"
                   >
-                    <option value={1}>1 Tháng (+1.850.000 đ)</option>
-                    <option value={3}>3 Tháng (+5.272.500 đ - Tiết kiệm 5%)</option>
-                    <option value={6}>6 Tháng (+9.990.000 đ - Tiết kiệm 10%)</option>
-                    <option value={12}>12 Tháng (+18.870.000 đ - Tiết kiệm 15%)</option>
+                    <option value={1}>1 Tháng</option>
+                    <option value={3}>3 Tháng</option>
+                    <option value={6}>6 Tháng</option>
+                    <option value={12}>12 Tháng</option>
                   </select>
                 </div>
 
@@ -1061,12 +1061,14 @@ export const CustomerDashboard: React.FC = () => {
                     Hủy bỏ
                   </button>
                   <button
-                    onClick={() => setRenewSuccess(true)}
-                    className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
+                    onClick={() => void handleRenewSubmit()}
+                    disabled={isRenewing}
+                    className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-60 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
                   >
-                    Xác Nhận Gia Hạn
+                    {isRenewing ? 'Đang gửi yêu cầu...' : 'Gửi yêu cầu gia hạn'}
                   </button>
                 </div>
+                {renewError && <p role="alert" className="text-xs text-rose-700">{renewError}</p>}
               </div>
             )}
           </div>
@@ -1083,16 +1085,17 @@ export const CustomerDashboard: React.FC = () => {
                   <span className="material-symbols-outlined text-[28px]">check_circle</span>
                 </div>
                 <h3 className="font-headline text-lg font-bold text-slate-900">
-                  Cấp Quyền Thành Công!
+                  Đã gửi yêu cầu ủy quyền
                 </h3>
                 <p className="text-xs text-slate-600">
-                  Mã token và hướng dẫn mở cửa tạm thời đã được gửi tới số <strong>{sharePhone}</strong>.
+                  Yêu cầu cấp quyền cho số <strong>{sharePhone}</strong> đã được chuyển cho nhân viên. Chưa có quyền truy cập nào được cấp cho đến khi được duyệt.
                 </p>
                 <button
                   onClick={() => {
                     setShareSuccess(false)
                     setShareModalUnit(null)
                     setSharePhone('')
+                    setShareError(null)
                   }}
                   className="mt-2 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors"
                 >
@@ -1106,7 +1109,7 @@ export const CustomerDashboard: React.FC = () => {
                     <h3 className="font-headline text-base font-bold text-slate-900">
                       Cấp Quyền Mở Kho #{shareModalUnit}
                     </h3>
-                    <span className="text-xs text-slate-500">Tạo mã truy cập tạm thời cho tài xế hoặc người thân</span>
+                    <span className="text-xs text-slate-500">Gửi yêu cầu để nhân viên xác minh và cấp quyền</span>
                   </div>
                   <button
                     type="button"
@@ -1148,11 +1151,13 @@ export const CustomerDashboard: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
+                    disabled={isSubmittingShare}
+                    className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-60 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
                   >
-                    Gửi Mã Truy Cập
+                    {isSubmittingShare ? 'Đang gửi yêu cầu...' : 'Gửi yêu cầu xác minh'}
                   </button>
                 </div>
+                {shareError && <p role="alert" className="text-xs text-rose-700">{shareError}</p>}
               </form>
             )}
           </div>
