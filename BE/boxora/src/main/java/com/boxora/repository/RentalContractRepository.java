@@ -33,6 +33,9 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
 
     boolean existsByUnit_Id(UUID unitId);
 
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "unit", "facility", "booking"})
+    Optional<RentalContract> findFirstByUnit_IdOrderByCreatedAtDesc(UUID unitId);
+
     @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "unit", "unit.facility", "facility", "booking"})
     @org.springframework.data.jpa.repository.Query("""
             SELECT c FROM RentalContract c

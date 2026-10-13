@@ -16,5 +16,7 @@ public interface BookingService {
     BookingResponse getById(UUID id);
     com.boxora.dto.response.BookingPinResponse getBookingPin(UUID id, String currentUserEmail);
     com.boxora.dto.response.BookingPinResponse updateBookingPin(UUID id, com.boxora.dto.request.UpdatePinRequest request, String currentUserEmail);
+    com.boxora.dto.response.BookingPinResponse getBookingPinByUnitId(UUID unitId, String currentUserEmail);
+    com.boxora.dto.response.BookingPinResponse updateBookingPinByUnitId(UUID unitId, com.boxora.dto.request.UpdatePinRequest request, String currentUserEmail);
     BookingAccessCredentialsResponse getAccessCredentials(UUID id);
 }

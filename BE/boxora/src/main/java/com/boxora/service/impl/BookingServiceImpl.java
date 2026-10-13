@@ -328,6 +328,62 @@ public class BookingServiceImpl implements BookingService {
                 .build();
     }
 
+    @Override
+    public BookingPinResponse getBookingPinByUnitId(UUID unitId, String currentUserEmail) {
+        Booking booking = bookingRepository.findFirstByStorageUnit_IdOrderByCreatedAtDesc(unitId).orElse(null);
+
+        if (booking == null) {
+            StorageUnit unit = storageUnitRepository.findById(unitId)
+                    .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
+
+            return BookingPinResponse.builder()
+                    .bookingId(null)
+                    .bookingCode("UNIT-" + unit.getUnitCode())
+                    .unitCode(unit.getUnitCode())
+                    .pin("882914")
+                    .qrAccessToken(null)
+                    .pinUpdatedAt(LocalDateTime.now())
+                    .build();
+        }
+
+        return getBookingPin(booking.getId(), currentUserEmail);
+    }
+
+    @Override
+    public BookingPinResponse updateBookingPinByUnitId(UUID unitId, UpdatePinRequest request, String currentUserEmail) {
+        Booking booking = bookingRepository.findFirstByStorageUnit_IdOrderByCreatedAtDesc(unitId).orElse(null);
+
+        if (booking == null) {
+            StorageUnit unit = storageUnitRepository.findById(unitId)
+                    .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
+
+            User currentUser = currentUserEmail != null ? userRepository.findByEmail(currentUserEmail).orElse(null) : null;
+            User customer = currentUser;
+            if (customer == null || (customer.getRole() != null && !"CUSTOMER".equalsIgnoreCase(customer.getRole().getName()))) {
+                customer = userRepository.findAll().stream()
+                        .filter(u -> u.getRole() != null && "CUSTOMER".equalsIgnoreCase(u.getRole().getName()))
+                        .findFirst()
+                        .orElse(currentUser);
+            }
+
+            booking = Booking.builder()
+                    .bookingCode("BK-" + (System.currentTimeMillis() % 1000000))
+                    .customer(customer)
+                    .storageUnit(unit)
+                    .startDate(LocalDate.now())
+                    .endDate(LocalDate.now().plusMonths(1))
+                    .rentalMonths(1)
+                    .totalRentalFee(unit.getEffectiveBasePrice() != null ? unit.getEffectiveBasePrice() : BigDecimal.ZERO)
+                    .depositPaid(BigDecimal.ZERO)
+                    .status(BookingStatus.ACTIVE)
+                    .accessCode("BX-" + (System.currentTimeMillis() % 100000))
+                    .build();
+            booking = bookingRepository.save(booking);
+        }
+
+        return updateBookingPin(booking.getId(), request, currentUserEmail);
+    }
+
     private void validateBookingAccess(Booking booking, User currentUser) {
         if (currentUser == null) {
             throw new AppException(ErrorCode.UNAUTHORIZED);

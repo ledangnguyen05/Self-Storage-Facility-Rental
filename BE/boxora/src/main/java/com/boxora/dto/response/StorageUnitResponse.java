@@ -26,4 +26,9 @@ public class StorageUnitResponse {
     private String batteryLevel;
     private String smartLockSerial;
     private String lastAccessTime;
+    private UUID bookingId;
+    private String tenantName;
+    private String contractCode;
+    private UUID contractId;
+    private String dueDate;
 }

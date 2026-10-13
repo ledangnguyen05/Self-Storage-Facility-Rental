@@ -106,6 +106,20 @@ export const FacilitySurveyModal: React.FC<FacilitySurveyModalProps> = ({
           </button>
         </div>
 
+        {/* Development State Warning Banner */}
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3 text-amber-900 text-xs">
+          <span className="material-symbols-outlined text-[20px] text-amber-600 shrink-0">construction</span>
+          <div>
+            <div className="font-bold flex items-center gap-1.5">
+              <span>TÍNH NĂNG ĐANG PHÁT TRIỂN &bull; CHƯA KẾT NỐI PHẦN CỨNG THỰC TẾ</span>
+              <span className="px-1.5 py-0.2 bg-amber-200 text-amber-900 font-mono text-[10px] rounded font-bold uppercase">Thử nghiệm</span>
+            </div>
+            <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+              Biểu mẫu kiểm định an toàn PCCC và vi khí hậu đang trong giai đoạn phát triển tích hợp với thiết bị đo đạc cầm tay. Kết quả khảo sát hiện tại mang tính chất xem trước quy trình số hóa.
+            </p>
+          </div>
+        </div>
+
         {/* Content Form Scrollable */}
         <form onSubmit={handleSave} className="flex flex-col gap-4 overflow-y-auto pr-1">
           {/* Surveyor Info */}

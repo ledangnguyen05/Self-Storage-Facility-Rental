@@ -227,6 +227,7 @@ public class UserServiceImpl implements UserService {
             String search,
             Boolean isActive,
             UUID roleId,
+            String role,
             UUID facilityId,
             int page,
             int size,
@@ -246,7 +247,7 @@ public class UserServiceImpl implements UserService {
         }
 
         Page<UserResponse> result = userRepository
-                .findAllWithFilters(search, isActive, roleId, effectiveFacilityId, pageable)
+                .findAllWithFilters(search, isActive, roleId, role, effectiveFacilityId, pageable)
                 .map(userMapper::toResponse);
 
         return PageResponse.from(result);
