@@ -67,8 +67,10 @@ interface AuthContextType {
   isLoading: boolean
   isAuthenticated: boolean
   login: (emailOrUsername: string, password: string) => Promise<User>
+  loginWithGoogle: (idToken: string, mode?: 'LOGIN' | 'REGISTER') => Promise<User>
   logout: () => Promise<void>
   setSessionUser: (user: User) => void
+  updateProfile: (profile: { fullName: string; phone: string }) => Promise<User>
   switchRole: (targetRole: RoleType) => Promise<User>
   hasPermission: (allowedRoles: RoleType[]) => boolean
 }
@@ -166,6 +168,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
+  const loginWithGoogle = async (idToken: string, mode: 'LOGIN' | 'REGISTER' = 'LOGIN'): Promise<User> => {
+    setIsLoading(true)
+    try {
+      const res = await authService.googleLogin(idToken, mode)
+      if (res.data) {
+        const { accessToken, refreshToken, user: rawUser } = res.data
+        const jwtRole = parseJwtRole(accessToken)
+        const enrichedUser: User = {
+          ...rawUser,
+          role: rawUser?.role || (jwtRole ? { name: jwtRole } : undefined)
+        }
+        localStorage.setItem('boxora_access_token', accessToken)
+        if (refreshToken) {
+          localStorage.setItem('boxora_refresh_token', refreshToken)
+        }
+        localStorage.setItem('boxora_user', JSON.stringify(enrichedUser))
+        setToken(accessToken)
+        setUser(enrichedUser)
+        return enrichedUser
+      }
+      throw new Error('Đăng nhập với Google không thành công, vui lòng thử lại.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const switchRole = async (targetRole: RoleType): Promise<User> => {
     const preset = ROLE_PRESETS.find(p => p.role === targetRole)
     if (!preset) throw new Error(`Role ${targetRole} not found`)
@@ -212,6 +240,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('boxora_user', JSON.stringify(updatedUser))
   }
 
+  const updateProfile = async (profile: { fullName: string; phone: string }) => {
+    if (!user) throw new Error('Bạn cần đăng nhập để cập nhật hồ sơ.')
+
+    if (user.id.startsWith('mock-')) {
+      const updatedUser = { ...user, fullName: profile.fullName.trim(), phone: profile.phone.trim() }
+      setSessionUser(updatedUser)
+      return updatedUser
+    }
+
+    const updatedProfile = await authService.updateProfile({
+      fullName: profile.fullName.trim(),
+      phone: profile.phone.trim()
+    })
+    const updatedUser: User = {
+      ...user,
+      ...updatedProfile,
+      role: updatedProfile.role || user.role
+    }
+    setSessionUser(updatedUser)
+    return updatedUser
+  }
+
   const role: RoleType | null = (user?.role?.name as RoleType) || null
 
   const hasPermission = (allowedRoles: RoleType[]): boolean => {
@@ -228,8 +278,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         isAuthenticated: !!user,
         login,
+        loginWithGoogle,
         logout,
         setSessionUser,
+        updateProfile,
         switchRole,
         hasPermission
       }}

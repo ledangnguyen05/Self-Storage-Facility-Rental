@@ -11,6 +11,8 @@ export const AdminDashboard: React.FC = () => {
 
   // User state
   const [users, setUsers] = useState<User[]>([])
+  const [isSampleUserData, setIsSampleUserData] = useState(true)
+  const [isSampleRoleData, setIsSampleRoleData] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('ALL')
 
@@ -37,9 +39,13 @@ export const AdminDashboard: React.FC = () => {
   const [assignedPermIds, setAssignedPermIds] = useState<string[]>([])
   const [roleSaving, setRoleSaving] = useState(false)
   const [roleSaveSuccess, setRoleSaveSuccess] = useState(false)
+  const [roleSaveError, setRoleSaveError] = useState<string | null>(null)
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null)
+  const [userActionLoadingId, setUserActionLoadingId] = useState<string | null>(null)
 
   // Activity Log state
   const [logs, setLogs] = useState<ActivityLog[]>([])
+  const [logsError, setLogsError] = useState(false)
   const [logTypeFilter, setLogTypeFilter] = useState<string>('ALL')
   const [logSearch, setLogSearch] = useState('')
   const [isLoginHistoryMode, setIsLoginHistoryMode] = useState(false)
@@ -72,13 +78,6 @@ export const AdminDashboard: React.FC = () => {
     { id: 'p-8', name: 'Xem nhật ký kiểm toán', code: 'AUDIT_LOG_READ', module: 'AUDIT' },
   ]
 
-  const fallbackLogs: ActivityLog[] = [
-    { id: 'l-1', username: 'admin', logType: 'SECURITY', action: 'ROLE_PERMISSION_ASSIGN', status: 'SUCCESS', details: 'Cập nhật phân quyền Matrix cho FACILITY_MANAGER', ipAddress: '192.168.1.1', createdAt: '2026-10-07 16:14:22' },
-    { id: 'l-2', username: 'staff.nam', logType: 'HANDOVER', action: 'HANDOVER_CHECKIN', status: 'SUCCESS', details: 'Xác thực CCCD & check-in hợp đồng #HD-2025-4421', ipAddress: '192.168.1.45', createdAt: '2026-10-07 15:48:10' },
-    { id: 'l-3', username: 'nguyenvana', logType: 'AUTH', action: 'LOGIN_PASSWORD', status: 'SUCCESS', details: 'Đăng nhập thành công từ Web Portal', ipAddress: '113.161.78.22', createdAt: '2026-10-07 14:20:05' },
-    { id: 'l-4', username: 'csuite.mai', logType: 'POLICY', action: 'POLICY_UPDATE', status: 'SUCCESS', details: 'Đồng bộ chính sách nợ quá hạn: 50.000đ/ngày', ipAddress: '192.168.1.12', createdAt: '2026-10-07 11:05:40' },
-  ]
-
   useEffect(() => {
     fetchUsers()
     fetchRolesAndPermissions()
@@ -90,11 +89,14 @@ export const AdminDashboard: React.FC = () => {
       const res = await userService.getAllUsers()
       if (res?.data && Array.isArray(res.data) && res.data.length > 0) {
         setUsers(res.data)
+        setIsSampleUserData(false)
       } else {
         setUsers(fallbackUsers)
+        setIsSampleUserData(true)
       }
     } catch {
       setUsers(fallbackUsers)
+      setIsSampleUserData(true)
     }
   }
 
@@ -102,31 +104,35 @@ export const AdminDashboard: React.FC = () => {
     try {
       const rRes = await roleService.getAll({ size: 50 })
       const pRes = await permissionService.getAll({ size: 100 })
+      setIsSampleRoleData(!(rRes?.content?.length && pRes?.content?.length))
       const loadedRoles = rRes?.content && rRes.content.length > 0 ? rRes.content : fallbackRoles
       const loadedPerms = pRes?.content && pRes.content.length > 0 ? pRes.content : fallbackPermissions
       setRoles(loadedRoles)
       setPermissions(loadedPerms)
       if (loadedRoles.length > 0) {
-        selectRole(loadedRoles[0])
+        void selectRole(loadedRoles[0], loadedPerms)
       }
     } catch {
+      setIsSampleRoleData(true)
       setRoles(fallbackRoles)
       setPermissions(fallbackPermissions)
-      selectRole(fallbackRoles[0])
+      void selectRole(fallbackRoles[0], fallbackPermissions)
     }
   }
 
-  const selectRole = async (role: Role) => {
+  const selectRole = async (role: Role, availablePermissions = permissions) => {
+    setRoleSaveError(null)
+    setRoleSaveSuccess(false)
     setSelectedRole(role)
     try {
       const rolePerms = await roleService.getPermissionsByRoleId(role.id)
       if (rolePerms && Array.isArray(rolePerms)) {
         setAssignedPermIds(rolePerms.map(rp => rp.permissionId))
       } else {
-        setAssignedPermIds(role.name === 'ADMIN' ? permissions.map(p => p.id) : ['p-1', 'p-4'])
+        setAssignedPermIds(role.name === 'ADMIN' ? availablePermissions.map(p => p.id) : ['p-1', 'p-4'])
       }
     } catch {
-      setAssignedPermIds(role.name === 'ADMIN' ? permissions.map(p => p.id) : ['p-1', 'p-4'])
+      setAssignedPermIds(role.name === 'ADMIN' ? availablePermissions.map(p => p.id) : ['p-1', 'p-4'])
     }
   }
 
@@ -142,29 +148,28 @@ export const AdminDashboard: React.FC = () => {
     try {
       await roleService.bulkAssignPermissions(selectedRole.id, assignedPermIds)
       setRoleSaveSuccess(true)
+      setRoleSaveError(null)
       setTimeout(() => setRoleSaveSuccess(false), 2500)
     } catch {
-      // Local simulated success
-      setRoleSaveSuccess(true)
-      setTimeout(() => setRoleSaveSuccess(false), 2500)
+      setRoleSaveError('Không lưu được phân quyền. Thay đổi chưa được áp dụng.')
     } finally {
       setRoleSaving(false)
     }
   }
 
-  const fetchLogs = async () => {
+  const fetchLogs = async (loginHistoryMode = isLoginHistoryMode) => {
+    setLogsError(false)
     try {
-      if (isLoginHistoryMode) {
+      if (loginHistoryMode) {
         const res = await activityLogService.getLoginHistory({ size: 30 })
-        if (res?.content && res.content.length > 0) setLogs(res.content)
-        else setLogs(fallbackLogs.filter(l => l.logType === 'AUTH'))
+        setLogs(res?.content || [])
       } else {
         const res = await activityLogService.getAll({ size: 30 })
-        if (res?.content && res.content.length > 0) setLogs(res.content)
-        else setLogs(fallbackLogs)
+        setLogs(res?.content || [])
       }
     } catch {
-      setLogs(fallbackLogs)
+      setLogs([])
+      setLogsError(true)
     }
   }
 
@@ -179,22 +184,7 @@ export const AdminDashboard: React.FC = () => {
         fetchUsers()
       }, 1200)
     } catch {
-      const localUser: User = {
-        id: `u-${Date.now()}`,
-        username: newUser.username,
-        email: newUser.email,
-        fullName: newUser.fullName,
-        phone: newUser.phone,
-        role: { name: newUser.roleName },
-        isActive: true,
-        createdAt: new Date().toISOString().split('T')[0]
-      }
-      setUsers([localUser, ...users])
-      setCreateSuccess(true)
-      setTimeout(() => {
-        setCreateSuccess(false)
-        setIsCreateModalOpen(false)
-      }, 1200)
+      setFeedbackMessage('Không tạo được tài khoản. Dữ liệu chưa được lưu; hãy kiểm tra kết nối và thử lại.')
     }
   }
 
@@ -214,6 +204,43 @@ export const AdminDashboard: React.FC = () => {
     return matchSearch && matchType
   })
 
+  const summaryCards = [
+    {
+      label: 'Tài khoản đang hiển thị',
+      value: users.length,
+      helper: isSampleUserData ? 'Dữ liệu mẫu' : 'Tổng trong danh sách',
+      icon: 'group',
+      tone: 'cyan',
+    },
+    {
+      label: 'Quản lý cơ sở',
+      value: users.filter(user => user.role?.name === 'FACILITY_MANAGER').length,
+      helper: 'Theo vai trò tài khoản',
+      icon: 'badge',
+      tone: 'teal',
+    },
+    {
+      label: 'Vai trò hệ thống',
+      value: roles.length,
+      helper: 'Vai trò đã cấu hình',
+      icon: 'admin_panel_settings',
+      tone: 'indigo',
+    },
+    {
+      label: 'Tài khoản không hoạt động',
+      value: users.filter(user => user.isActive === false).length,
+      helper: 'Đang tạm khóa hoặc ngưng',
+      icon: 'gpp_bad',
+      tone: 'rose',
+    },
+  ]
+  const summaryToneClasses: Record<string, string> = {
+    cyan: 'bg-cyan-50 text-cyan-700 border-cyan-100',
+    teal: 'bg-teal-50 text-teal-700 border-teal-100',
+    indigo: 'bg-indigo-50 text-indigo-700 border-indigo-100',
+    rose: 'bg-rose-50 text-rose-700 border-rose-100',
+  }
+
   const getRoleBadge = (roleName?: string) => {
     switch (roleName) {
       case 'ADMIN':
@@ -231,19 +258,26 @@ export const AdminDashboard: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 w-full">
+      {feedbackMessage && (
+        <div role="alert" className="fixed right-5 top-24 z-50 flex max-w-sm items-start gap-2 rounded-xl border border-rose-200 bg-white px-4 py-3 text-xs font-semibold text-rose-700 shadow-lg">
+          <span className="material-symbols-outlined text-[18px]">error</span>
+          <span>{feedbackMessage}</span>
+          <button type="button" aria-label="Đóng thông báo" onClick={() => setFeedbackMessage(null)} className="ml-2 text-slate-400 hover:text-slate-700">×</button>
+        </div>
+      )}
       {/* Top Banner - Stitch Header Style */}
-      <div className="relative w-full overflow-hidden rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+      <div className="relative w-full overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-sm border border-slate-200">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-800 text-xs font-mono font-semibold uppercase tracking-wider mb-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span>
-              RBAC &amp; FACILITY SCOPING MATRIX // ENTERPRISE
+            <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold mb-2 ${isSampleUserData ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-cyan-50 border-cyan-200 text-cyan-800'}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${isSampleUserData ? 'bg-amber-500' : 'bg-cyan-500'}`}></span>
+              {isSampleUserData ? 'Đang hiển thị dữ liệu mẫu' : 'Quản trị hệ thống'}
             </div>
             <h1 className="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight font-headline">
-              Quản Trị Người Dùng, Phân Quyền &amp; Nhật Ký Kiểm Toán
+              Quản lý người dùng &amp; phân quyền
             </h1>
-            <p className="text-xs text-slate-600 mt-1 max-w-3xl">
-              Kiểm soát danh tính số, phân quyền vai trò chuyên sâu và cơ chế cô lập dữ liệu (data boundary isolation) theo từng cơ sở kho tự quản Boxora.
+            <p className="text-sm text-slate-600 mt-1 max-w-3xl">
+              Tạo tài khoản, cấu hình vai trò và tra cứu nhật ký hoạt động hệ thống.
             </p>
           </div>
 
@@ -259,89 +293,26 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* 4 KPI Summary Cards (Stitch Spec) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mt-6 pt-6 border-t border-slate-100">
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between hover:border-cyan-400 transition-all">
-            <div className="flex items-start justify-between">
-              <div>
-                <span className="font-mono text-[10px] uppercase font-bold text-slate-400">Tổng tài khoản hệ thống</span>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="font-mono text-2xl font-extrabold text-slate-900">{users.length > 5 ? users.length : 1420}</span>
-                  <span className="font-mono text-[11px] text-cyan-700 font-bold">+14 tuần này</span>
+        {/* Tóm tắt tài khoản: số liệu lấy từ danh sách đang hiển thị */}
+        <div className="mt-6 grid grid-cols-1 gap-3 border-t border-slate-100 pt-5 sm:grid-cols-2 xl:grid-cols-4">
+          {summaryCards.map((card) => (
+            <div key={card.label} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition-colors hover:border-slate-300">
+              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${summaryToneClasses[card.tone]}`}>
+                <span className="material-symbols-outlined text-[21px]">{card.icon}</span>
+              </span>
+              <div className="min-w-0">
+                <div className="truncate text-xs font-semibold text-slate-500" title={card.label}>{card.label}</div>
+                <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span className="font-mono text-2xl font-extrabold tabular-nums text-slate-900">{card.value}</span>
+                  <span className="text-[11px] text-slate-500">{card.helper}</span>
                 </div>
               </div>
-              <span className="p-2 rounded-lg bg-cyan-50 text-cyan-700 border border-cyan-100">
-                <span className="material-symbols-outlined text-[20px]">group</span>
-              </span>
             </div>
-            <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px] font-mono text-slate-500">
-              <span className="flex items-center gap-1 text-emerald-700 font-semibold">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 98 online
-              </span>
-              <span>Phủ 100% chi nhánh</span>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between hover:border-teal-400 transition-all">
-            <div className="flex items-start justify-between">
-              <div>
-                <span className="font-mono text-[10px] uppercase font-bold text-slate-400">Quản lý cơ sở (Managers)</span>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="font-mono text-2xl font-extrabold text-teal-700">24</span>
-                  <span className="font-mono text-[11px] text-slate-500">nhân sự</span>
-                </div>
-              </div>
-              <span className="p-2 rounded-lg bg-teal-50 text-teal-700 border border-teal-100">
-                <span className="material-symbols-outlined text-[20px]">badge</span>
-              </span>
-            </div>
-            <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px] font-mono text-teal-700 font-semibold">
-              <span>100% đã gán kho</span>
-              <span className="text-slate-500 font-normal">4 trực ca đêm</span>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between hover:border-indigo-400 transition-all">
-            <div className="flex items-start justify-between">
-              <div>
-                <span className="font-mono text-[10px] uppercase font-bold text-slate-400">Cơ sở áp dụng Scoping</span>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="font-mono text-2xl font-extrabold text-slate-900">5</span>
-                  <span className="font-mono text-[11px] text-indigo-700 font-bold">Hub thông minh</span>
-                </div>
-              </div>
-              <span className="p-2 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-100">
-                <span className="material-symbols-outlined text-[20px]">domain</span>
-              </span>
-            </div>
-            <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px] font-mono text-slate-500">
-              <span>Phân quyền độc lập</span>
-              <span className="text-indigo-700 font-bold">100% Active</span>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between hover:border-rose-400 transition-all">
-            <div className="flex items-start justify-between">
-              <div>
-                <span className="font-mono text-[10px] uppercase font-bold text-slate-400">Tài khoản bị giới hạn</span>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="font-mono text-2xl font-extrabold text-rose-600">03</span>
-                  <span className="font-mono text-[11px] text-rose-600 font-bold">Cảnh báo</span>
-                </div>
-              </div>
-              <span className="p-2 rounded-lg bg-rose-50 text-rose-700 border border-rose-100">
-                <span className="material-symbols-outlined text-[20px]">gpp_bad</span>
-              </span>
-            </div>
-            <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px] font-mono text-rose-700 font-semibold">
-              <span>1 vi phạm ngoài giờ</span>
-              <span className="text-slate-500 font-normal">2 chờ OTP</span>
-            </div>
-          </div>
+          ))}
         </div>
 
         {/* Tab Controls */}
-        <div className="flex items-center gap-2 mt-6 border-b border-slate-200 pb-1">
+        <div className="mt-6 flex w-full items-center gap-2 overflow-x-auto border-b border-slate-200 pb-1 sm:w-fit">
           <button
             onClick={() => setActiveTab('users')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
@@ -452,34 +423,40 @@ export const AdminDashboard: React.FC = () => {
                         {user.isActive !== false ? 'Đang hoạt động' : 'Tạm khóa'}
                       </span>
                     </td>
-                    <td className="py-3 px-4 font-mono text-slate-500 text-[11px]">{user.createdAt || '2026-10-01'}</td>
+                    <td className="py-3 px-4 font-mono text-slate-500 text-[11px]">{user.createdAt ? new Date(user.createdAt).toLocaleDateString('vi-VN') : '—'}</td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           type="button"
+                          disabled={isSampleUserData}
                           onClick={() => {
                             setScopingUser(user)
                             setIsScopingModalOpen(true)
                           }}
-                          title="Phân công cơ sở & phạm vi quyền hạn (Facility Scoping Modal)"
-                          className="text-cyan-700 hover:text-cyan-900 font-semibold px-2 py-1 rounded hover:bg-cyan-50 transition-colors flex items-center gap-1 cursor-pointer"
+                          title={isSampleUserData ? 'Không thể sửa tài khoản minh họa' : 'Gán cơ sở cho tài khoản'}
+                          className="text-cyan-700 hover:text-cyan-900 disabled:text-slate-400 disabled:cursor-not-allowed font-semibold px-2 py-1 rounded hover:bg-cyan-50 transition-colors flex items-center gap-1 cursor-pointer"
                         >
                           <span className="material-symbols-outlined text-[15px]">domain_verification</span>
                           <span>Phân công</span>
                         </button>
                         <button
                           type="button"
+                          disabled={isSampleUserData || userActionLoadingId === user.id}
                           onClick={async () => {
+                            const nextIsActive = user.isActive === false
+                            setUserActionLoadingId(user.id)
                             try {
-                              await userService.updateUser(user.id, { isActive: !user.isActive })
-                              setUsers(users.map(u => u.id === user.id ? { ...u, isActive: !u.isActive } : u))
+                              await userService.updateUser(user.id, { isActive: nextIsActive })
+                              setUsers(current => current.map(u => u.id === user.id ? { ...u, isActive: nextIsActive } : u))
                             } catch {
-                              setUsers(users.map(u => u.id === user.id ? { ...u, isActive: !u.isActive } : u))
+                              setFeedbackMessage('Không cập nhật được trạng thái tài khoản. Trạng thái trên hệ thống chưa thay đổi.')
+                            } finally {
+                              setUserActionLoadingId(null)
                             }
                           }}
-                          className="text-slate-500 hover:text-red-600 font-semibold px-2 py-1 rounded hover:bg-slate-100 transition-colors cursor-pointer"
+                          className="text-slate-500 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed font-semibold px-2 py-1 rounded hover:bg-slate-100 transition-colors cursor-pointer"
                         >
-                          {user.isActive !== false ? 'Khóa' : 'Kích hoạt'}
+                          {userActionLoadingId === user.id ? 'Đang lưu...' : user.isActive !== false ? 'Khóa' : 'Kích hoạt'}
                         </button>
                       </div>
                     </td>
@@ -494,6 +471,11 @@ export const AdminDashboard: React.FC = () => {
       {/* TAB 2: ROLES & PERMISSION MATRIX */}
       {activeTab === 'roles' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {isSampleRoleData && (
+            <div className="lg:col-span-12 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+              Đang hiển thị vai trò và quyền minh họa vì chưa tải được dữ liệu hệ thống. Không thể lưu thay đổi ở chế độ này.
+            </div>
+          )}
           {/* Roles list (4 cols) */}
           <div className="lg:col-span-4 bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
             <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center justify-between">
@@ -546,6 +528,12 @@ export const AdminDashboard: React.FC = () => {
                   <span>Đã lưu ma trận phân quyền thành công qua RolePermission API!</span>
                 </div>
               )}
+              {roleSaveError && (
+                <div role="alert" className="p-3 mb-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px]">error</span>
+                  <span>{roleSaveError}</span>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[480px] overflow-y-auto pr-2">
                 {permissions.map((p) => {
@@ -583,8 +571,9 @@ export const AdminDashboard: React.FC = () => {
               <button
                 type="button"
                 onClick={handleSaveRolePermissions}
-                disabled={roleSaving}
-                className="px-5 py-2 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-semibold flex items-center gap-2 shadow-sm transition-all"
+                disabled={roleSaving || isSampleRoleData}
+                title={isSampleRoleData ? 'Không thể lưu dữ liệu vai trò minh họa' : undefined}
+                className="px-5 py-2 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-semibold flex items-center gap-2 shadow-sm transition-all disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span className="material-symbols-outlined text-[16px]">save</span>
                 <span>{roleSaving ? 'Đang lưu...' : 'Lưu Thay Đổi Quyền'}</span>
@@ -597,6 +586,7 @@ export const AdminDashboard: React.FC = () => {
       {/* TAB 3: ACTIVITY & AUDIT LOGS */}
       {activeTab === 'logs' && (
         <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+          {logsError && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800">Không tải được nhật ký hệ thống. Danh sách hiện không có dữ liệu mới.</p>}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 mb-4">
             <div className="flex items-center gap-3 flex-1 max-w-md">
               <div className="relative w-full">
@@ -614,8 +604,9 @@ export const AdminDashboard: React.FC = () => {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => {
-                  setIsLoginHistoryMode(!isLoginHistoryMode)
-                  fetchLogs()
+                  const nextMode = !isLoginHistoryMode
+                  setIsLoginHistoryMode(nextMode)
+                  void fetchLogs(nextMode)
                 }}
                 className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
                   isLoginHistoryMode ? 'bg-orange-600 text-white border-orange-600' : 'bg-slate-50 text-slate-700 border-slate-200'
@@ -661,7 +652,7 @@ export const AdminDashboard: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-3 px-4 font-sans text-slate-700">{log.details || log.action}</td>
-                    <td className="py-3 px-4 text-slate-400">{log.ipAddress || '127.0.0.1'}</td>
+                    <td className="py-3 px-4 text-slate-400">{log.ipAddress || '—'}</td>
                     <td className="py-3 px-4">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
                         log.status === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
@@ -671,6 +662,9 @@ export const AdminDashboard: React.FC = () => {
                     </td>
                   </tr>
                 ))}
+                {filteredLogs.length === 0 && (
+                  <tr><td colSpan={6} className="px-4 py-10 text-center font-sans text-slate-500">{logsError ? 'Không thể hiển thị nhật ký khi dịch vụ chưa phản hồi.' : 'Không có nhật ký phù hợp với bộ lọc.'}</td></tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -810,15 +804,9 @@ export const AdminDashboard: React.FC = () => {
           facilityId: scopingUser.facilityId
         } : null}
         onSave={async (data) => {
-          if (scopingUser) {
-            try {
-              await userService.updateUser(scopingUser.id, { facilityId: data.facilityId })
-              setUsers(users.map(u => u.id === scopingUser.id ? { ...u, facilityId: data.facilityId } : u))
-            } catch {
-              // fallback state update
-              setUsers(users.map(u => u.id === scopingUser.id ? { ...u, facilityId: data.facilityId } : u))
-            }
-          }
+          if (!scopingUser) return
+          await userService.updateUser(scopingUser.id, { facilityId: data.facilityId })
+          setUsers(current => current.map(user => user.id === scopingUser.id ? { ...user, facilityId: data.facilityId } : user))
         }}
       />
     </div>

@@ -1,58 +1,206 @@
-import React, { useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import React, { useState, useEffect, useRef } from 'react'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
+import {
+  User,
+  Mail,
+  Phone,
+  Lock,
+  ArrowRight,
+  CheckCircle2,
+  AlertCircle,
+  ShieldCheck,
+  RefreshCw,
+  Bot,
+  Sliders,
+  Box,
+  Clock,
+  Wifi,
+  Cloud,
+  Check,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  X,
+  ExternalLink
+} from 'lucide-react'
 import { authService } from '../../services/authService'
-import { markUserAsNewCustomer } from '../../utils/rentalAccess'
-import { BrandLogo } from '../../components/common/BrandLogo'
+import { useAuth } from '../../context/AuthContext'
+import { AuthAnimatedBackground } from '../../components/auth/AuthAnimatedBackground'
+
+import boxoraLogo from '../../assets/boxora-logo.png'
+import { TermsAndStandardsModal } from '../../components/common/TermsAndStandardsModal'
+import { GoogleAuthButton } from '../../components/auth/GoogleAuthButton'
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const preselectedUnit = searchParams.get('unit')
+  const location = useLocation()
+  const { loginWithGoogle } = useAuth()
 
+  const googleRedirectState = location.state as {
+    fromGoogleLogin?: boolean
+    email?: string
+    fullName?: string
+    googleIdToken?: string
+    message?: string
+  } | null
+
+  // Form data: Pre-filled automatically if redirected from Google Login
   const [formData, setFormData] = useState({
-    fullName: '',
-    username: '',
-    email: '',
+    fullName: googleRedirectState?.fullName || '',
+    email: googleRedirectState?.email || '',
     phone: '',
     password: '',
     confirmPassword: ''
   })
-  const [agreeTerms, setAgreeTerms] = useState(true)
   const [showPassword, setShowPassword] = useState(false)
+  const [googleNotice, setGoogleNotice] = useState<string | null>(
+    googleRedirectState?.message || null
+  )
+
+  // Anti-bot & Captcha states
+  const [captchaId, setCaptchaId] = useState<string>('')
+  const [captchaImage, setCaptchaImage] = useState<string>('')
+  const [captchaInput, setCaptchaInput] = useState<string>('')
+  const [isCaptchaLoading, setIsCaptchaLoading] = useState<boolean>(false)
+  const [honeypot, setHoneypot] = useState<string>('') // Bot trap field
+  const pageLoadedAt = useRef<number>(0)
+
+  // Circular toggle for terms
+  const [agreeTerms, setAgreeTerms] = useState(true)
+  const [showTermsModal, setShowTermsModal] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [socialNotice, setSocialNotice] = useState<string | null>(null)
+
+  const handleGoogleSuccess = async (idToken: string) => {
+    setError(null)
+    setSocialNotice('Đang hoàn tất đăng ký tài khoản mới với Google...')
+    try {
+      const user = await loginWithGoogle(idToken, 'REGISTER')
+      setSocialNotice(null)
+      const userRole = user?.role?.name || 'CUSTOMER'
+      if (userRole === 'ADMIN') {
+        navigate('/portal/admin')
+      } else {
+        navigate('/portal/customer')
+      }
+    } catch (err: any) {
+      console.error('Google register error:', err)
+      setSocialNotice(null)
+      const serverMsg = err?.response?.data?.message
+      if (serverMsg) {
+        setError(serverMsg)
+      } else if (!err?.response) {
+        setError('Không thể kết nối đến máy chủ Boxora (Backend). Vui lòng đảm bảo máy chủ đang hoạt động và thử lại.')
+      } else {
+        setError('Đăng ký nhanh qua tài khoản Google thất bại. Vui lòng thử lại.')
+      }
+    }
+  }
+
+  const handleGoogleError = (errMsg: string) => {
+    setError(errMsg)
+  }
+
+  // Local client-side fallback SVG captcha in case network is offline
+  const generateFallbackCaptcha = () => {
+    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
+    let code = ''
+    for (let i = 0; i < 5; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="160" height="50" viewBox="0 0 160 50">
+        <rect width="160" height="50" rx="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+        <path d="M 5 20 Q 80 5 155 35" stroke="#38bdf8" stroke-width="2" fill="none" opacity="0.6"/>
+        <path d="M 10 35 Q 90 45 150 15" stroke="#94a3b8" stroke-width="1.5" fill="none" opacity="0.5"/>
+        <text x="20" y="34" font-family="monospace, sans-serif" font-size="24" font-weight="bold" fill="#0284c7" letter-spacing="4">${code}</text>
+      </svg>
+    `.trim()
+    const base64 = `data:image/svg+xml;base64,${btoa(svg)}`
+    return { id: `local-${Date.now()}`, image: base64, code }
+  }
+
+  const loadCaptcha = async () => {
+    setIsCaptchaLoading(true)
+    setCaptchaInput('')
+    try {
+      const res = await authService.getCaptcha()
+      if (res?.data?.captchaId && res?.data?.captchaImage) {
+        setCaptchaId(res.data.captchaId)
+        setCaptchaImage(res.data.captchaImage)
+      } else {
+        const fallback = generateFallbackCaptcha()
+        setCaptchaId(fallback.id)
+        setCaptchaImage(fallback.image)
+      }
+    } catch {
+      const fallback = generateFallbackCaptcha()
+      setCaptchaId(fallback.id)
+      setCaptchaImage(fallback.image)
+    } finally {
+      setIsCaptchaLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    const initCaptcha = async () => {
+      await loadCaptcha()
+      pageLoadedAt.current = Date.now()
+    }
+    initCaptcha()
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
 
-    if (!agreeTerms) {
-      setError('Vui lòng đồng ý với Điều khoản dịch vụ và Chính sách bảo mật của Boxora.')
+    // 1. Anti-bot honeypot detection
+    if (honeypot) {
+      setError('Hệ thống phát hiện hành vi tự động từ bot. Thao tác bị từ chối.')
       return
     }
 
+    // 2. Anti-bot rapid submission check
+    if (Date.now() - pageLoadedAt.current < 1200) {
+      setError('Thao tác quá nhanh. Vui lòng kiểm tra lại thông tin và thử lại.')
+      return
+    }
+
+    // 3. Password matching check
     if (formData.password !== formData.confirmPassword) {
       setError('Mật khẩu nhập lại không trùng khớp. Vui lòng kiểm tra lại.')
       return
     }
 
-    if (formData.password.length < 6) {
-      setError('Mật khẩu phải có độ dài tối thiểu 6 ký tự.')
+    // 4. Captcha validation
+    if (!captchaInput.trim()) {
+      setError('Vui lòng nhập mã xác thực Captcha để hoàn tất đăng ký.')
       return
     }
 
+    // 5. Terms check
+    if (!agreeTerms) {
+      setError('Vui lòng đồng ý với Điều khoản & Quy chuẩn an toàn kho Boxora.')
+      return
+    }
+
+    // Derive username automatically from email
+    const emailPrefix = formData.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '').toLowerCase()
+    const derivedUsername = (emailPrefix.length >= 3 ? emailPrefix : `user_${Date.now().toString().slice(-6)}`).slice(0, 30)
+
     setIsLoading(true)
     try {
-      const res = await authService.register({
-        username: formData.username,
-        email: formData.email,
+      await authService.register({
+        username: derivedUsername,
+        email: formData.email.trim(),
         password: formData.password,
-        fullName: formData.fullName,
-        phone: formData.phone
+        fullName: formData.fullName.trim(),
+        phone: formData.phone.trim(),
+        captchaId,
+        captchaCode: captchaInput.trim().toUpperCase()
       })
-      const userId = (res as any)?.data?.id || (res as any)?.data?.user?.id || formData.username
-      markUserAsNewCustomer(userId, formData.username, formData.email)
       setSuccess(true)
       setTimeout(() => {
         navigate('/login')
@@ -60,369 +208,560 @@ export const RegisterPage: React.FC = () => {
     } catch (err: any) {
       console.error(err)
       setError(err?.response?.data?.message || 'Đăng ký không thành công. Vui lòng kiểm tra lại thông tin.')
+      loadCaptcha()
     } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <div className="relative w-full min-h-screen grid grid-cols-1 lg:grid-cols-12 overflow-hidden bg-[var(--surface-canvas,#f8fafc)] selection:bg-[#0891b2] selection:text-white">
+    <div className="min-h-screen w-full relative flex flex-col justify-between overflow-x-hidden font-sans text-slate-800 bg-[#f4f8ff]">
       
+      {/* 1. BACKGROUND                                                */}
       {/* ============================================================ */}
-      {/* LEFT PANEL: High-Tech Vault Visual Showcase (50% on Desktop) */}
+      <AuthAnimatedBackground />
+
       {/* ============================================================ */}
-      <div className="hidden lg:flex lg:col-span-6 min-h-screen flex-col justify-between p-8 lg:p-14 overflow-hidden bg-slate-950 relative">
+      {/* 2. TOP BRAND & SECURITY HEADER                               */}
+      {/* ============================================================ */}
+      <header className="relative z-20 w-full px-6 sm:px-10 lg:px-14 py-4 sm:py-6 flex items-center justify-between">
         
-        {/* Full-bleed Background Image with Futuristic Vault Mood */}
-        <div 
-          className="absolute inset-0 bg-cover bg-center transition-transform duration-1000 scale-105 opacity-80"
-          style={{
-            backgroundImage: `url('https://lh3.googleusercontent.com/aida/AEtjO1WpXWU4-MiCijB27t4tqXDrKPJfgXkQ8CXQ8B2MINWg3Dyb1gHA7mUasFsYwxQhb-y3hYq8WtjdhOtX-W7LKgAeuGblLkeN5uLNb8X8yjzLJ13t9l8msjA02JA2zED32X63sHrjW6l0b9zppRUJPgRS6f2N4VyjBGQu-z_cPVSuCW7p_7Zb0sX6_F7FRhOS_YZ6Bo1yFTDiyfsNt80qp10d95zslNs_H9kMeiPpntU2')`
-          }}
-        />
-
-        {/* Ambient Dark Gradients */}
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/95 via-slate-950/75 to-slate-950/40 mix-blend-multiply" />
-        <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-950/50 to-transparent" />
-        <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-[var(--brand-cyan,#06b6d4)]/20 blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-20 left-10 w-80 h-80 rounded-full bg-blue-600/20 blur-3xl pointer-events-none" />
-
-        {/* Top Status Indicator */}
-        <div className="relative z-10 flex items-center justify-between">
-          <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-slate-900/85 backdrop-blur-md shadow-lg border border-slate-700/60">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
-            </span>
-            <span className="font-mono text-[11px] uppercase text-cyan-300 tracking-widest font-semibold">
-              BOXORA ONBOARDING // VAULT GRID
-            </span>
-          </div>
-
-          <Link
-            to="/"
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-900/70 hover:bg-slate-900/95 backdrop-blur-md border border-slate-700/60 text-slate-300 hover:text-white text-xs font-medium tracking-normal transition-colors"
-          >
-            <span className="material-symbols-outlined text-[16px]">home</span>
-            <span className="hidden sm:inline">Trang chủ</span>
+        {/* Brand Logo & Slogan Glass Pill */}
+        <div className="inline-flex items-center px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-2xl bg-white/90 hover:bg-white/95 backdrop-blur-md border border-white/80 shadow-xs transition-all">
+          <Link to="/" className="flex items-center group cursor-pointer" title="Về trang chủ Boxora">
+            <img
+              src={boxoraLogo}
+              alt="BOXORA Smart Storage System"
+              className="h-9 sm:h-11 w-auto object-contain drop-shadow-xs group-hover:scale-105 transition-transform"
+            />
           </Link>
-        </div>
 
-        {/* Center Showcase Content */}
-        <div className="relative z-10 my-auto py-10 max-w-xl text-left space-y-6">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-300">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-            <span className="font-mono text-[11px] uppercase tracking-wider font-bold">
-              ĐĂNG KÝ KHÁCH THUÊ KHO TỰ QUẢN
+          {/* Vertical divider */}
+          <div className="hidden sm:block h-7 w-[1.5px] bg-slate-200 mx-3" />
+
+          {/* Slogan */}
+          <div className="hidden sm:flex flex-col text-left justify-center">
+            <span className="font-extrabold text-xs sm:text-[13px] text-slate-900 tracking-wider uppercase font-mono leading-tight">
+              KHO TỰ QUẢN THÔNG MINH
             </span>
-          </div>
-
-          <div className="space-y-3">
-            <h1 className="font-headline text-3xl lg:text-4xl text-white font-extrabold tracking-tight leading-[1.2]">
-              Khởi Tạo Không Gian <br />
-              <span className="text-[#06b6d4]">Lưu Trữ Chuẩn Xác</span>
-            </h1>
-            <p className="text-sm text-slate-300 leading-relaxed max-w-lg font-normal">
-              Mở tài khoản khách thuê chỉ trong 60 giây: Nhận mã PIN tức thời, cấp quyền ra vào 24/7 và bảo chứng an ninh đa lớp cho tài sản của bạn.
-            </p>
-          </div>
-
-          {/* Telemetry Stats */}
-          <div className="grid grid-cols-3 gap-6 pt-5 border-t border-slate-800/80">
-            <div>
-              <div className="flex items-center gap-1.5 text-cyan-400 mb-1">
-                <span className="material-symbols-outlined text-[18px]">timer</span>
-                <span className="font-mono text-lg font-bold text-white tabular-nums tracking-tight">60 Giây</span>
-              </div>
-              <p className="font-mono text-[10px] text-slate-400 uppercase tracking-wider font-medium">Cấp mã PIN</p>
-            </div>
-
-            <div>
-              <div className="flex items-center gap-1.5 text-teal-400 mb-1">
-                <span className="material-symbols-outlined text-[18px]">key</span>
-                <span className="font-mono text-lg font-bold text-white tabular-nums tracking-tight">24/7</span>
-              </div>
-              <p className="font-mono text-[10px] text-slate-400 uppercase tracking-wider font-medium">Vào kho tự do</p>
-            </div>
-
-            <div>
-              <div className="flex items-center gap-1.5 text-blue-400 mb-1">
-                <span className="material-symbols-outlined text-[18px]">verified_user</span>
-                <span className="font-mono text-lg font-bold text-white tabular-nums tracking-tight">100%</span>
-              </div>
-              <p className="font-mono text-[10px] text-slate-400 uppercase tracking-wider font-medium">Bảo hiểm tài sản</p>
-            </div>
+            <span className="text-[10px] font-bold text-teal-700 tracking-widest uppercase mt-0.5 leading-tight">
+              IoT • AI • BẢO MẬT TUYỆT ĐỐI
+            </span>
           </div>
         </div>
 
-        {/* Left Bottom Metadata */}
-        <div className="relative z-10 flex items-center justify-between text-slate-300 pt-4 border-t border-slate-800/60">
-          <div className="flex items-center gap-3 font-mono text-xs">
-            <span className="flex items-center gap-1.5 text-cyan-300">
-              <span className="material-symbols-outlined text-[15px]">lock_open</span> Cửa tự động
+        {/* Security Badge (Top Right) */}
+        <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full bg-white/95 hover:bg-white backdrop-blur-md border border-teal-200 shadow-[0_4px_16px_rgba(15,23,42,0.08)] transition-all">
+          <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-700 shrink-0">
+            <Lock className="w-3.5 h-3.5" />
+          </div>
+          <div className="text-left leading-tight">
+            <span className="block text-[11px] sm:text-xs font-black text-slate-900 font-mono">
+              AES-256 GCM
             </span>
-            <span className="text-slate-600">•</span>
-            <span className="flex items-center gap-1.5 text-teal-300 tabular-nums">
-              <span className="material-symbols-outlined text-[15px]">thermostat</span> 21.5°C / 45% RH
+            <span className="block text-[9px] sm:text-[10px] font-semibold text-slate-500">
+              Bảo mật cấp quân sự
             </span>
           </div>
-          <span className="font-mono text-[10px] text-slate-400 uppercase tracking-wider">
-            © 2026 BOXORA CLOUD
-          </span>
         </div>
 
-      </div>
+      </header>
 
       {/* ============================================================ */}
-      {/* RIGHT PANEL: Registration Form (50% on Desktop)             */}
+      {/* 3. MAIN CONTENT: 2-COLUMN BALANCED LAYOUT                    */}
       {/* ============================================================ */}
-      <div className="col-span-12 lg:col-span-6 min-h-screen flex flex-col justify-center items-center px-6 sm:px-10 lg:px-14 py-10 lg:py-14 bg-white z-10 relative">
+      <main className="auth-content-enter flex-1 w-full relative z-20 px-6 sm:px-10 lg:px-14 py-2 sm:py-4 flex flex-col lg:flex-row items-center justify-between gap-8 lg:gap-12 max-w-[1580px] mx-auto">
         
-        {/* Auth Form Container */}
-        <div className="w-full max-w-xl mx-auto space-y-6 relative z-20 text-left">
+        {/* ========================================================== */}
+        {/* LEFT COLUMN: Glass status panel and Boxora content          */}
+        {/* ========================================================== */}
+        <div className="w-full lg:w-[52%] xl:w-[54%] flex flex-col justify-between py-2 sm:py-6 space-y-8 lg:space-y-10">
           
-          {/* Header with Brand Logo & Title */}
-          <div className="space-y-3">
+          {/* Translucent glass status panel */}
+          <div className="w-full max-w-sm rounded-2xl bg-gradient-to-br from-white/90 via-white/75 to-teal-50/85 backdrop-blur-md border border-white/90 p-4 sm:p-4.5 shadow-[0_12px_36px_rgba(15,23,42,0.08),inset_0_1px_2px_rgba(255,255,255,0.7)] space-y-3.5 transition-all">
+            
+            {/* HUD Item 1: Hệ thống IoT */}
             <div className="flex items-center justify-between">
-              
-              {/* Brand Logo */}
-              <BrandLogo subtitle="SMART STORAGE" />
-
-              {/* Status Badge */}
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold font-mono tracking-wide">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span>ONLINE</span>
+              <div className="flex items-center gap-3">
+                <div className="w-8.5 h-8.5 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-700 shrink-0">
+                  <Wifi className="w-4.5 h-4.5 stroke-[2.5]" />
+                </div>
+                <div className="text-left">
+                  <p className="text-xs sm:text-[13px] font-black text-slate-900 tracking-wide">
+                    Hệ thống IoT
+                  </p>
+                  <p className="text-[11px] text-slate-600 font-semibold">
+                    Hoạt động ổn định
+                  </p>
+                </div>
               </div>
-            </div>
-
-            <div className="pt-2">
-              <h2 className="font-headline text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-snug">
-                Tạo Tài Khoản <span className="text-[var(--brand-teal,#0891b2)]">Khách Thuê Kho</span>
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed mt-1">
-                Điền thông tin bên dưới để đăng ký phòng kho và nhận mã PIN vào cửa 24/7 tức thì.
-              </p>
-            </div>
-          </div>
-
-          {/* Preselected Unit Notice if coming from Home Page */}
-          {preselectedUnit && (
-            <div className="p-3.5 rounded-xl bg-cyan-50 border border-cyan-200 text-cyan-950 text-xs flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[20px] text-[var(--brand-teal,#0891b2)]">warehouse</span>
-                <span>Đang đăng ký giữ chỗ phòng kho: <strong className="font-mono text-cyan-950 font-bold">{preselectedUnit}</strong></span>
-              </div>
-              <span className="font-mono text-[10px] uppercase font-bold text-[var(--brand-teal,#0891b2)] bg-white px-2 py-0.5 rounded border border-cyan-200">
-                Ưu tiên
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-mono font-black">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse " />
+                Hoạt động
               </span>
             </div>
-          )}
 
-          {/* Form Container */}
-          <div className="p-6 sm:p-8 rounded-2xl bg-white border border-slate-200 shadow-[0_4px_24px_-4px_rgba(15,23,42,0.06),0_1px_3px_rgba(15,23,42,0.04)] space-y-5">
+            {/* HUD Item 2: Bảo mật */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8.5 h-8.5 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-700 shrink-0">
+                  <ShieldCheck className="w-4.5 h-4.5 stroke-[2.5]" />
+                </div>
+                <div className="text-left">
+                  <p className="text-xs sm:text-[13px] font-black text-slate-900 tracking-wide">
+                    Bảo mật
+                  </p>
+                  <p className="text-[11px] text-slate-600 font-semibold">
+                    AES-256 GCM
+                  </p>
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-mono font-black">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                Đã bật
+              </span>
+            </div>
+
+            {/* HUD Item 3: Trạng thái kho */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8.5 h-8.5 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-700 shrink-0">
+                  <Cloud className="w-4.5 h-4.5 stroke-[2.5]" />
+                </div>
+                <div className="text-left">
+                  <p className="text-xs sm:text-[13px] font-black text-slate-900 tracking-wide">
+                    Trạng thái kho
+                  </p>
+                  <p className="text-[11px] text-slate-600 font-semibold">
+                    Đồng bộ real-time
+                  </p>
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-mono font-black">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                100% online
+              </span>
+            </div>
+
+          </div>
+
+          {/* Hero Headlines & Content directly on canvas - no enclosing frame */}
+          <div className="max-w-xl space-y-4 text-left">
             
-            {error && (
-              <div role="alert" aria-live="polite" className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium flex items-start gap-2 leading-relaxed">
-                <span className="material-symbols-outlined text-[18px] text-rose-600 shrink-0">error</span>
-                <span>{error}</span>
+            {/* Tagline label */}
+            <div className="flex items-center gap-2.5 text-teal-700 font-black text-xs sm:text-sm tracking-[0.2em] uppercase font-mono ">
+              <span>BOXORA</span>
+              <span className="w-10 h-0.5 bg-teal-600 rounded-full shadow-[0_0_8px_rgba(13,148,136,0.25)]" />
+            </div>
+
+            {/* Clean & Punchy Headings directly on background */}
+            <div className="space-y-2">
+              <h1
+                className="text-3xl sm:text-4xl lg:text-[42px] font-black text-slate-950 tracking-tight leading-[1.12]"
+               
+              >
+                KHÔNG GIAN LƯU TRỮ THÔNG MINH
+              </h1>
+              <h2
+                className="text-xl sm:text-2xl lg:text-[28px] font-black tracking-tight leading-snug text-teal-700"
+               
+              >
+                AN TOÀN • TIỆN NGHI • HIỆN ĐẠI
+              </h2>
+            </div>
+
+            {/* Description */}
+            <p
+              className="text-sm sm:text-[15px] text-slate-700 leading-relaxed font-medium max-w-lg"
+             
+            >
+              Đăng ký tài khoản khách thuê chỉ trong 1 phút để sở hữu ô kho cá nhân an toàn, riêng tư tuyệt đối và trải nghiệm hệ sinh thái kho số tự động hóa toàn diện.
+            </p>
+
+            {/* Feature highlights */}
+            <div className="flex flex-wrap items-center gap-y-3 pt-3">
+              
+              {/* Badge 1: Bảo mật đa lớp */}
+              <div className="flex items-center gap-3 pr-4 sm:pr-6 border-r border-teal-200/80">
+                <div className="w-8 h-8 rounded-xl bg-teal-50/80 border border-teal-200 flex items-center justify-center text-teal-700 shrink-0 shadow-[0_2px_8px_rgba(13,148,136,0.12)]">
+                  <ShieldCheck className="w-5 h-5 stroke-[2.2]" />
+                </div>
+                <div className="text-left leading-tight">
+                  <span
+                    className="block text-xs sm:text-[13px] font-black text-slate-950"
+                   
+                  >
+                    Bảo mật
+                  </span>
+                  <span
+                    className="block text-[10px] sm:text-[11px] font-semibold text-slate-600"
+                   
+                  >
+                    đa lớp
+                  </span>
+                </div>
+              </div>
+
+              {/* Badge 2: Quản lý thông minh */}
+              <div className="flex items-center gap-3 px-4 sm:px-6 border-r border-teal-200/80">
+                <div className="w-8 h-8 rounded-xl bg-teal-50/80 border border-teal-200 flex items-center justify-center text-teal-700 shrink-0 shadow-[0_2px_8px_rgba(13,148,136,0.12)]">
+                  <Sliders className="w-5 h-5 stroke-[2.2]" />
+                </div>
+                <div className="text-left leading-tight">
+                  <span
+                    className="block text-xs sm:text-[13px] font-black text-slate-950"
+                   
+                  >
+                    Quản lý
+                  </span>
+                  <span
+                    className="block text-[10px] sm:text-[11px] font-semibold text-slate-600"
+                   
+                  >
+                    thông minh
+                  </span>
+                </div>
+              </div>
+
+              {/* Badge 3: Tiết kiệm thời gian */}
+              <div className="flex items-center gap-3 px-4 sm:px-6 border-r border-teal-200/80">
+                <div className="w-8 h-8 rounded-xl bg-teal-50/80 border border-teal-200 flex items-center justify-center text-teal-700 shrink-0 shadow-[0_2px_8px_rgba(13,148,136,0.12)]">
+                  <Clock className="w-5 h-5 stroke-[2.2]" />
+                </div>
+                <div className="text-left leading-tight">
+                  <span
+                    className="block text-xs sm:text-[13px] font-black text-slate-950"
+                   
+                  >
+                    Tiết kiệm
+                  </span>
+                  <span
+                    className="block text-[10px] sm:text-[11px] font-semibold text-slate-600"
+                   
+                  >
+                    thời gian
+                  </span>
+                </div>
+              </div>
+
+              {/* Badge 4: Tối ưu không gian */}
+              <div className="flex items-center gap-3 pl-4 sm:pl-6">
+                <div className="w-8 h-8 rounded-xl bg-teal-50/80 border border-teal-200 flex items-center justify-center text-teal-700 shrink-0 shadow-[0_2px_8px_rgba(13,148,136,0.12)]">
+                  <Box className="w-5 h-5 stroke-[2.2]" />
+                </div>
+                <div className="text-left leading-tight">
+                  <span
+                    className="block text-xs sm:text-[13px] font-black text-slate-950"
+                   
+                  >
+                    Tối ưu
+                  </span>
+                  <span
+                    className="block text-[10px] sm:text-[11px] font-semibold text-slate-600"
+                   
+                  >
+                    không gian
+                  </span>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        {/* ========================================================== */}
+        {/* RIGHT COLUMN: Floating Register Card                      */}
+        {/* ========================================================== */}
+        <div className="w-full max-w-[490px] lg:w-[470px] xl:w-[490px] shrink-0 my-auto">
+          
+          <div className="w-full bg-white/98 backdrop-blur-md rounded-[32px] sm:rounded-[36px] border-2 border-teal-100 shadow-[0_20px_50px_rgba(15,23,42,0.12),0_0_40px_rgba(13,148,136,0.08)] p-6 sm:p-8 lg:p-8 relative z-30 transition-all text-left space-y-3.5">
+            
+            {/* Top Logo inside the Card */}
+            <div className="flex items-center justify-start">
+              <img
+                src={boxoraLogo}
+                alt="BOXORA"
+                className="h-10 sm:h-11 w-auto object-contain drop-shadow-xs"
+              />
+            </div>
+
+            {/* Header Title */}
+            <div className="space-y-1">
+              <h2 className="text-2xl sm:text-[28px] font-black text-slate-950 tracking-tight">
+                Khởi tạo tài khoản kho
+              </h2>
+              <p className="text-xs sm:text-[13px] text-slate-600 font-medium">
+                Sở hữu không gian lưu trữ số cá nhân an toàn chỉ sau 1 phút
+              </p>
+            </div>
+
+
+            {/* Notice when redirected from Google Login */}
+            {googleNotice && (
+              <div className="p-3.5 rounded-2xl bg-teal-50 border border-teal-200 text-teal-950 text-xs flex items-start justify-between gap-2 shadow-xs animate-fadeIn">
+                <div className="flex items-start gap-2.5">
+                  <ShieldCheck className="w-4.5 h-4.5 shrink-0 text-teal-700 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-slate-900 block mb-0.5">Tài khoản chưa được đăng ký:</span>
+                    <p className="text-[11px] text-slate-700 leading-relaxed font-medium">
+                      {googleNotice}
+                    </p>
+                    <p className="text-[10px] text-teal-700 font-bold mt-1">
+                      👉 Bạn có thể bấm nút <u>"Đăng ký bằng Google"</u> bên dưới để hoàn tất ngay, hoặc hoàn thiện thông tin form.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setGoogleNotice(null)}
+                  className="text-slate-400 hover:text-slate-700 p-0.5 rounded cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
             )}
 
+            {/* Error banner */}
+            {error && (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2 shadow-xs">
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
+                <span className="font-medium">{error}</span>
+              </div>
+            )}
+
+            {/* Success View */}
             {success ? (
               <div className="py-8 text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-                  <span className="material-symbols-outlined text-[28px]">check_circle</span>
+                <div className="w-14 h-14 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
+                  <CheckCircle2 className="w-7 h-7" />
                 </div>
-                <h3 className="font-headline text-lg font-bold text-slate-900">Đăng Ký Thành Công!</h3>
-                <p className="text-xs text-slate-600">
-                  Tài khoản đã sẵn sàng. Đang tự động chuyển hướng bạn tới trang đăng nhập...
-                </p>
+                <div className="space-y-1">
+                  <h3 className="text-xl font-bold text-slate-900">Đăng Ký Thành Công!</h3>
+                  <p className="text-xs text-slate-600 max-w-xs mx-auto">
+                    Tài khoản của bạn đã được kích hoạt. Đang chuyển hướng bạn tới trang đăng nhập...
+                  </p>
+                </div>
+                <div className="pt-2">
+                  <div className="w-6 h-6 border-2 border-teal-700 border-t-transparent rounded-full animate-spin mx-auto" />
+                </div>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-3">
                 
-                {/* Row 1: Full Name & Username */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-800 tracking-tight" htmlFor="fullName">
-                      Họ và tên *
-                    </label>
-                    <div className="relative group">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-[var(--brand-teal,#0891b2)] transition-colors">
-                        <span className="material-symbols-outlined text-[18px]">person</span>
-                      </div>
-                      <input
-                        id="fullName"
-                        type="text"
-                        required
-                        value={formData.fullName}
-                        onChange={(e) => setFormData({...formData, fullName: e.target.value})}
-                        placeholder="Nguyễn Văn A"
-                        className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 text-slate-900 rounded-lg border border-slate-200 placeholder:text-slate-400 text-xs sm:text-sm focus:outline-none focus:bg-white focus:border-[var(--brand-teal,#0891b2)] focus:ring-2 focus:ring-[var(--brand-teal,#0891b2)]/20 transition-all"
-                      />
-                    </div>
-                  </div>
+                {/* Anti-bot invisible honeypot field */}
+                <div className="hidden opacity-0 pointer-events-none absolute -left-[9999px]" aria-hidden="true">
+                  <input
+                    type="text"
+                    name="bot_trap_company_field"
+                    tabIndex={-1}
+                    value={honeypot}
+                    onChange={(e) => setHoneypot(e.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
 
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-800 tracking-tight" htmlFor="username">
-                      Tên đăng nhập *
-                    </label>
-                    <div className="relative group">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-[var(--brand-teal,#0891b2)] transition-colors">
-                        <span className="material-symbols-outlined text-[18px]">badge</span>
-                      </div>
-                      <input
-                        id="username"
-                        type="text"
-                        required
-                        value={formData.username}
-                        onChange={(e) => setFormData({...formData, username: e.target.value})}
-                        placeholder="nguyenvana"
-                        className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 text-slate-900 rounded-lg border border-slate-200 placeholder:text-slate-400 text-xs sm:text-sm focus:outline-none focus:bg-white focus:border-[var(--brand-teal,#0891b2)] focus:ring-2 focus:ring-[var(--brand-teal,#0891b2)]/20 transition-all font-mono"
-                      />
+                {/* Field 1: Họ và tên */}
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-800">
+                    Họ và tên
+                  </label>
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3.5 text-slate-400 pointer-events-none">
+                      <User className="w-4 h-4" />
                     </div>
+                    <input
+                      type="text"
+                      value={formData.fullName}
+                      onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                      placeholder="Nguyễn Văn A"
+                      required
+                      className="w-full h-10.5 pl-10 pr-4 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
+                    />
                   </div>
                 </div>
 
-                {/* Row 2: Email & Phone */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-800 tracking-tight" htmlFor="email">
-                      Địa chỉ Email *
+                {/* Field 2 & 3: Email & Số điện thoại (2 columns) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-bold text-slate-800">
+                      Địa chỉ Email
                     </label>
-                    <div className="relative group">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-[var(--brand-teal,#0891b2)] transition-colors">
-                        <span className="material-symbols-outlined text-[18px]">mail</span>
+                    <div className="relative flex items-center">
+                      <div className="absolute left-3 text-slate-400 pointer-events-none">
+                        <Mail className="w-4 h-4" />
                       </div>
                       <input
-                        id="email"
                         type="email"
-                        required
-                        autoComplete="email"
                         value={formData.email}
-                        onChange={(e) => setFormData({...formData, email: e.target.value})}
-                        placeholder="nguyen@example.com"
-                        className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 text-slate-900 rounded-lg border border-slate-200 placeholder:text-slate-400 text-xs sm:text-sm focus:outline-none focus:bg-white focus:border-[var(--brand-teal,#0891b2)] focus:ring-2 focus:ring-[var(--brand-teal,#0891b2)]/20 transition-all"
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        placeholder="nguyen@gmail.com"
+                        required
+                        className="w-full h-10.5 pl-9 pr-3.5 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
                       />
                     </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-800 tracking-tight" htmlFor="phone">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-bold text-slate-800">
                       Số điện thoại
                     </label>
-                    <div className="relative group">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-[var(--brand-teal,#0891b2)] transition-colors">
-                        <span className="material-symbols-outlined text-[18px]">call</span>
+                    <div className="relative flex items-center">
+                      <div className="absolute left-3 text-slate-400 pointer-events-none">
+                        <Phone className="w-4 h-4" />
                       </div>
                       <input
-                        id="phone"
                         type="tel"
-                        autoComplete="tel"
                         value={formData.phone}
-                        onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                         placeholder="0912 345 678"
-                        className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 text-slate-900 rounded-lg border border-slate-200 placeholder:text-slate-400 text-xs sm:text-sm focus:outline-none focus:bg-white focus:border-[var(--brand-teal,#0891b2)] focus:ring-2 focus:ring-[var(--brand-teal,#0891b2)]/20 transition-all font-mono"
+                        required
+                        className="w-full h-10.5 pl-9 pr-3.5 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* Row 3: Password & Confirm Password */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-800 tracking-tight" htmlFor="password">
-                      Mật khẩu *
+                {/* Field 4 & 5: Mật khẩu & Nhập lại mật khẩu (2 columns) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-bold text-slate-800">
+                      Mật khẩu
                     </label>
-                    <div className="relative group">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-[var(--brand-teal,#0891b2)] transition-colors">
-                        <span className="material-symbols-outlined text-[18px]">lock</span>
+                    <div className="relative flex items-center">
+                      <div className="absolute left-3 text-slate-400 pointer-events-none">
+                        <Lock className="w-4 h-4" />
                       </div>
                       <input
-                        id="password"
                         type={showPassword ? 'text' : 'password'}
-                        required
-                        autoComplete="new-password"
                         value={formData.password}
-                        onChange={(e) => setFormData({...formData, password: e.target.value})}
-                        placeholder="••••••••••••"
-                        className="w-full pl-10 pr-10 py-2.5 bg-slate-50 text-slate-900 rounded-lg border border-slate-200 placeholder:text-slate-400 text-xs sm:text-sm focus:outline-none focus:bg-white focus:border-[var(--brand-teal,#0891b2)] focus:ring-2 focus:ring-[var(--brand-teal,#0891b2)]/20 transition-all font-mono"
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        placeholder="••••••••"
+                        required
+                        className="w-full h-10.5 pl-9 pr-8 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
                       />
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                        aria-pressed={showPassword}
-                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-[var(--brand-teal,#0891b2)] focus-visible:text-[var(--brand-teal,#0891b2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-teal,#0891b2)]/30 rounded transition-colors cursor-pointer"
+                        className="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer"
                       >
-                        <span className="material-symbols-outlined text-[18px]">
-                          {showPassword ? 'visibility_off' : 'visibility'}
-                        </span>
+                        {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                       </button>
                     </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-800 tracking-tight" htmlFor="confirmPassword">
-                      Xác nhận mật khẩu *
+                  <div className="space-y-1">
+                    <label className="block text-xs font-bold text-slate-800">
+                      Xác nhận mật khẩu
                     </label>
-                    <div className="relative group">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-[var(--brand-teal,#0891b2)] transition-colors">
-                        <span className="material-symbols-outlined text-[18px]">verified</span>
+                    <div className="relative flex items-center">
+                      <div className="absolute left-3 text-slate-400 pointer-events-none">
+                        <Lock className="w-4 h-4" />
                       </div>
                       <input
-                        id="confirmPassword"
                         type={showPassword ? 'text' : 'password'}
-                        required
-                        autoComplete="new-password"
                         value={formData.confirmPassword}
-                        onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
-                        placeholder="••••••••••••"
-                        className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 text-slate-900 rounded-lg border border-slate-200 placeholder:text-slate-400 text-xs sm:text-sm focus:outline-none focus:bg-white focus:border-[var(--brand-teal,#0891b2)] focus:ring-2 focus:ring-[var(--brand-teal,#0891b2)]/20 transition-all font-mono"
+                        onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                        placeholder="••••••••"
+                        required
+                        className="w-full h-10.5 pl-9 pr-3.5 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* Agreement Checkbox */}
-                <div className="pt-1">
-                  <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={agreeTerms}
-                      onChange={(e) => setAgreeTerms(e.target.checked)}
-                      className="w-4 h-4 mt-0.5 rounded border-slate-300 text-[var(--brand-teal,#0891b2)] focus:ring-[var(--brand-teal,#0891b2)]/30 cursor-pointer"
-                    />
-                    <span className="text-xs text-slate-600 leading-relaxed">
-                      Tôi đồng ý với{' '}
-                      <span className="text-[var(--brand-teal,#0891b2)] font-semibold hover:underline">
-                        Điều khoản dịch vụ
-                      </span>{' '}
-                      và{' '}
-                      <span className="text-[var(--brand-teal,#0891b2)] font-semibold hover:underline">
-                        Chính sách bảo mật kho Boxora
-                      </span>.
+                {/* Anti-Bot Captcha Security Box */}
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                      <ShieldCheck className="w-3.5 h-3.5 text-teal-700" />
+                      <span>Xác thực Captcha chống bot</span>
+                    </div>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200">
+                      <Bot className="w-3 h-3 text-slate-400" />
+                      Mã bảo vệ
                     </span>
-                  </label>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-shrink-0 bg-white rounded-lg border border-slate-200 p-0.5 shadow-2xs overflow-hidden h-[40px] flex items-center justify-center min-w-[120px]">
+                      {captchaImage ? (
+                        <img
+                          src={captchaImage}
+                          alt="Mã Captcha"
+                          className="h-full w-auto select-none pointer-events-none object-contain"
+                        />
+                      ) : (
+                        <div className="text-[10px] text-slate-400 px-2 py-1 flex items-center gap-1">
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                          Đang tải mã...
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={loadCaptcha}
+                      disabled={isCaptchaLoading}
+                      title="Đổi mã khác"
+                      className="p-2 text-slate-500 hover:text-teal-800 hover:bg-white bg-white border border-slate-200 rounded-lg transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isCaptchaLoading ? 'animate-spin text-teal-700' : ''}`} />
+                    </button>
+
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        required
+                        value={captchaInput}
+                        onChange={(e) => setCaptchaInput(e.target.value.toUpperCase())}
+                        placeholder="MÃ 5 KÝ TỰ"
+                        maxLength={6}
+                        className="w-full h-[40px] px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold tracking-widest text-slate-800 placeholder:text-xs placeholder:font-sans placeholder:font-normal placeholder:tracking-normal focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all uppercase"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                {/* Submit Button */}
+                {/* Circular Selection: Đồng ý với điều khoản kho Boxora */}
+                <div
+                  onClick={() => setAgreeTerms(!agreeTerms)}
+                  className="flex items-start gap-2.5 cursor-pointer text-xs text-slate-700 font-medium select-none group pt-0.5"
+                >
+                  <div className={`w-4.5 h-4.5 mt-0.5 rounded-full flex items-center justify-center transition-all shrink-0 ${
+                    agreeTerms ? 'bg-teal-700 text-white shadow-xs' : 'border-2 border-slate-300 bg-white group-hover:border-slate-400'
+                  }`}>
+                    {agreeTerms && <Check className="w-3 h-3 stroke-[3]" />}
+                  </div>
+                  <span className="leading-snug">
+                    Tôi đồng ý với{' '}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setShowTermsModal(true)
+                      }}
+                      className="text-teal-700 hover:text-teal-800 hover:underline font-bold inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Điều khoản &amp; Quy chuẩn an toàn kho Boxora</span>
+                      <ExternalLink className="w-3 h-3 text-teal-600 inline" />
+                    </button>
+                  </span>
+                </div>
+
+                {/* Submit CTA Button */}
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full relative group overflow-hidden py-3 px-6 rounded-lg bg-[var(--brand-teal,#0891b2)] hover:bg-[var(--brand-teal-hover,#0e7490)] active:scale-[0.99] text-white font-semibold text-xs sm:text-sm shadow-sm hover:shadow-md btn-tactile transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-teal,#0891b2)] focus-visible:ring-offset-2"
+                  className="w-full h-11 sm:h-12 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs sm:text-sm tracking-wider uppercase shadow-lg shadow-slate-900/15 hover:shadow-slate-900/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed mt-1.5"
                 >
                   {isLoading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Đang tạo tài khoản...</span>
-                    </>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   ) : (
                     <>
-                      <span className="tracking-wide">Đăng Ký Tài Khoản Khách Thuê</span>
-                      <span className="material-symbols-outlined text-[18px] transition-transform group-hover:translate-x-1">
-                        arrow_forward
-                      </span>
+                      <span>ĐĂNG KÝ TÀI KHOẢN MỚI</span>
+                      <ArrowRight className="w-4 h-4 stroke-[2.5]" />
                     </>
                   )}
                 </button>
@@ -430,50 +769,77 @@ export const RegisterPage: React.FC = () => {
               </form>
             )}
 
-            {/* Divider */}
-            <div className="relative flex items-center justify-center my-4">
-              <div className="w-full h-px bg-slate-200" />
-              <span className="absolute bg-white px-3 font-mono text-[10px] text-slate-400 uppercase tracking-widest font-semibold">
-                Hoặc tiếp tục với
+            {!success && (
+              <>
+                {/* Divider */}
+                <div className="relative py-1 text-center my-1">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-slate-200" />
+                  </div>
+                  <div className="relative inline-block px-3 bg-white text-[10px] font-mono tracking-widest text-slate-400 uppercase font-bold">
+                    HOẶC TIẾP TỤC VỚI
+                  </div>
+                </div>
+
+                {/* Quick Google Register Button */}
+                <GoogleAuthButton
+                  onSuccess={handleGoogleSuccess}
+                  onError={handleGoogleError}
+                  mode="signup"
+                  text="Đăng ký nhanh bằng tài khoản Google"
+                  disabled={isLoading}
+                />
+              </>
+            )}
+
+            {/* Social notice feedback */}
+            {socialNotice && (
+              <div className="p-2 rounded-xl bg-teal-50 border border-teal-200 text-teal-800 text-[11px] font-mono text-center flex items-center justify-between">
+                <span>{socialNotice}</span>
+                <button onClick={() => setSocialNotice(null)} className="text-teal-700 hover:text-slate-800">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Back to Login Link */}
+            <div className="pt-2 border-t border-slate-100 text-center">
+              <span className="text-xs text-slate-600">
+                Đã có tài khoản lưu kho?{' '}
+                <Link
+                  to="/login"
+                  className="font-bold text-teal-700 hover:text-teal-800 hover:underline inline-flex items-center gap-1"
+                >
+                  <span>Đăng nhập ngay</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
               </span>
             </div>
 
-            {/* Social Google */}
-            <button
-              type="button"
-              onClick={() => alert('Khởi tạo liên kết an toàn qua Google Identity Services với hệ thống Boxora.')}
-              className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-lg bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 text-xs sm:text-sm font-medium transition-all active:scale-[0.99] shadow-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
-            >
-              <svg aria-hidden="true" className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                <path d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.65v3.03h3.88c2.27-2.09 3.665-5.17 3.665-9.12z" fill="#4285F4" />
-                <path d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.03c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.26v3.13C3.25 21.31 7.33 24 12 24z" fill="#34A853" />
-                <path d="M5.28 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.58H1.26C.46 8.18 0 9.99 0 12s.46 3.82 1.26 5.42l4.02-3.13z" fill="#FBBC05" />
-                <path d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.25 2.69 1.26 6.58l4.02 3.13c.95-2.83 3.6-4.96 6.72-4.96z" fill="#EA4335" />
-              </svg>
-              <span>Đăng ký với Google</span>
-            </button>
-
-          </div>
-
-          {/* Footer Notice & Sign In Link */}
-          <div className="text-center space-y-2.5 pt-1">
-            <p className="text-xs text-slate-600">
-              Đã có tài khoản kho lưu trữ?{' '}
-              <Link to="/login" className="text-[var(--brand-teal,#0891b2)] hover:text-[var(--brand-teal-hover,#0e7490)] font-bold underline decoration-cyan-400 underline-offset-4">
-                Đăng nhập ngay
-              </Link>
-            </p>
-
-            {/* Cryptographic Assurance Badge */}
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-600 font-mono text-[11px]">
-              <span className="material-symbols-outlined text-[14px] text-[var(--brand-teal,#0891b2)]">enhanced_encryption</span>
-              <span className="font-medium">Bảo mật chuẩn mã hóa AES-256 GCM</span>
-            </div>
           </div>
 
         </div>
 
-      </div>
+      </main>
+
+      {/* ============================================================ */}
+      {/* 4. FOOTER (CLEAN & PROFESSIONAL)                             */}
+      {/* ============================================================ */}
+      <footer className="relative z-20 w-full px-6 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-600 font-mono">
+        <span className="bg-white/75 backdrop-blur-md px-3.5 py-1 rounded-full border border-slate-200/60 shadow-2xs">
+          BOXORA Smart Storage System • Tiêu chuẩn an ninh ISO/IEC 27001
+        </span>
+        <span className="text-slate-600 font-medium bg-white/75 backdrop-blur-md px-3.5 py-1 rounded-full border border-slate-200/60 shadow-2xs">
+          Hotline hỗ trợ 24/7: <strong className="text-teal-700 font-bold">1900-6868</strong>
+        </span>
+      </footer>
+
+      {/* Terms & Standards Dashboard Modal */}
+      <TermsAndStandardsModal
+        isOpen={showTermsModal}
+        onClose={() => setShowTermsModal(false)}
+        onAccept={() => setAgreeTerms(true)}
+      />
 
     </div>
   )
