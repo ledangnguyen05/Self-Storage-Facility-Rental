@@ -16,6 +16,9 @@ export interface HandoverPayload {
 
 export const handoverService = {
   async checkIn(data: HandoverPayload) {
+    if (data.recordType === 'RETURN') {
+      return this.processReturn(data)
+    }
     const response = await api.post('/api/v1/handovers/check-in', data)
     return response.data?.data as HandoverRecord
   },

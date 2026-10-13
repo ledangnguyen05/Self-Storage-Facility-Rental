@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { contractService, RentalContract } from '../../services/contractService'
@@ -7,30 +7,51 @@ import { storageUnitService } from '../../services/storageUnitService'
 import { supportTicketService, SupportTicketCategory } from '../../services/supportTicketService'
 import { Booking, StorageUnit } from '../../types'
 
-export const CustomerDashboard: React.FC = () => {
-  const { user } = useAuth()
-  const [searchParams, setSearchParams] = useSearchParams()
+function formatDate(dateStr?: string) {
+  if (!dateStr) return '28/04/2025'
+  try {
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return dateStr
+    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  } catch {
+    return dateStr
+  }
+}
 
-  // Real database contracts state
-  const [contracts, setContracts] = useState<RentalContract[]>([])
-  const [loadingContracts, setLoadingContracts] = useState<boolean>(true)
+function calculateNewEndDate(dateStr?: string, months: number = 1) {
+  try {
+    const d = dateStr ? new Date(dateStr) : new Date()
+    d.setMonth(d.getMonth() + months)
+    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  } catch {
+    return `+${months} tháng`
+  }
+}
 
-  useEffect(() => {
-    const fetchContracts = async () => {
-      try {
-        setLoadingContracts(true)
-        const res = await contractService.getMyContracts({ size: 50 })
-        if (res?.content && Array.isArray(res.content)) {
-          setContracts(res.content)
-        }
-      } catch (err) {
-        console.error('Failed to load real customer contracts from database:', err)
-      } finally {
-        setLoadingContracts(false)
-      }
-    }
-    fetchContracts()
-  }, [user])
+function mapRentalsToBookings(rentals: CustomerRentalRecord[], currentUser: any): Booking[] {
+  return rentals.map((r, idx) => ({
+    id: `mock-booking-${r.unitCode.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+    bookingCode: r.contractCode ? `BK-${r.contractCode}` : `BK-RENTAL-${r.unitCode}`,
+    customerId: currentUser?.id || 'demo-user-1',
+    customerName: currentUser?.fullName || currentUser?.username || 'Khách hàng Boxora',
+    customerEmail: currentUser?.email || 'customer@boxora.com',
+    customerPhone: currentUser?.phone || '0901 234 567',
+    storageUnitId: `unit-${r.unitCode}`,
+    unitCode: r.unitCode,
+    facilityName: 'Cơ sở Tân Bình - Mega Central',
+    floorLevel: idx % 2 === 0 ? 'Tầng 1 (Khu A)' : 'Tầng 2 (Khu B)',
+    startDate: r.startDate || new Date().toISOString().split('T')[0],
+    endDate: new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString().split('T')[0],
+    rentalMonths: 3,
+    totalRentalFee: 1850000,
+    depositPaid: 1000000,
+    depositAmount: 1000000,
+    status: 'ACTIVE',
+    accessCode: `BX-${r.unitCode.replace(/[^a-zA-Z0-9]/g, '')}`,
+    accessPin: '582194',
+    qrAccessToken: `QR-ACCESS-${r.unitCode}-BOXORA-2025`,
+  }))
+}
 
   const activeContracts = contracts.filter(c => c.status === 'ACTIVE')
   const nearestEndDateValue = activeContracts
@@ -42,21 +63,16 @@ export const CustomerDashboard: React.FC = () => {
     : new Date(`${nearestEndDateValue.slice(0, 10)}T00:00:00`).toLocaleDateString('vi-VN')
 
   // Tabs: 'my-units' (default) | 'explore' | 'contracts' | 'support'
-  const tabParam = searchParams.get('tab') as 'my-units' | 'explore' | 'contracts' | 'support' | null
-  const [activeTab, setActiveTab] = useState<'my-units' | 'explore' | 'contracts' | 'support'>(
-    tabParam && ['my-units', 'explore', 'contracts', 'support'].includes(tabParam)
-      ? tabParam
-      : 'my-units'
-  )
-
-  useEffect(() => {
-    if (tabParam && ['my-units', 'explore', 'contracts', 'support'].includes(tabParam)) {
-      setActiveTab(tabParam)
-    }
-  }, [tabParam])
+  const tabParam = searchParams.get('tab')
+  const activeTab = tabParam === 'explore' || tabParam === 'contracts' || tabParam === 'support'
+    ? tabParam
+    : 'my-units'
 
   const handleTabChange = (tab: 'my-units' | 'explore' | 'contracts' | 'support') => {
-    setActiveTab(tab)
+    if (tab === 'contracts') {
+      setIsLoadingContracts(true)
+      setContractsError(null)
+    }
     setSearchParams({ tab })
   }
 
@@ -98,7 +114,12 @@ export const CustomerDashboard: React.FC = () => {
   // Support Ticket Form State
   const [ticketUnit, setTicketUnit] = useState('general')
   const [ticketType, setTicketType] = useState('lock')
+  const [ticketTitle, setTicketTitle] = useState('')
   const [ticketContent, setTicketContent] = useState('')
+  const [ticketPriority, setTicketPriority] = useState('MEDIUM')
+  const [ticketFile, setTicketFile] = useState<File | null>(null)
+  const [ticketFilePreview, setTicketFilePreview] = useState<string | null>(null)
+  const [isSubmittingTicket, setIsSubmittingTicket] = useState(false)
   const [ticketSubmitted, setTicketSubmitted] = useState(false)
   const [ticketCode, setTicketCode] = useState<string | null>(null)
   const [ticketError, setTicketError] = useState<string | null>(null)
@@ -368,8 +389,12 @@ export const CustomerDashboard: React.FC = () => {
                 Bảo mật cửa kho
                 <span className="pulsing-dot bg-emerald-500"></span>
               </span>
-              <span className="font-mono text-xl font-bold text-emerald-700 mt-0.5">Đã Khóa Bảo Vệ</span>
-              <span className="text-xs text-slate-500 truncate">Mã PIN điện tử &amp; Mở khóa từ xa sẵn sàng</span>
+              <span className="font-mono text-xl font-bold text-emerald-700 mt-0.5">
+                {activeBookings.length > 0 ? 'Đã khóa bảo vệ' : 'Chưa có kho'}
+              </span>
+              <span className="text-xs text-slate-500 truncate">
+                {activeBookings.length > 0 ? 'PIN và QR được bảo vệ, chỉ tải khi bạn yêu cầu' : 'Thuê kho để kích hoạt quyền truy cập'}
+              </span>
             </div>
           </div>
 
@@ -444,28 +469,23 @@ export const CustomerDashboard: React.FC = () => {
         </button>
       </div>
 
-      {/* 3. TAB 1: KHO CỦA TÔI ĐANG THUÊ (MY UNITS) */}
       {activeTab === 'my-units' && (
-        <div className="flex flex-col gap-6">
-          {loadingContracts ? (
-            <div className="p-12 text-center text-slate-500 text-xs">Đang tải dữ liệu kho từ hệ thống database...</div>
-          ) : activeContracts.length === 0 ? (
-            <div className="stitch-card p-12 text-center flex flex-col items-center justify-center gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-cyan-50 text-cyan-700 flex items-center justify-center">
-                <span className="material-symbols-outlined text-[36px]">warehouse</span>
-              </div>
-              <div className="max-w-md">
-                <h3 className="font-headline text-lg font-bold text-slate-900 mb-1">Bạn chưa có kho đang thuê nào</h3>
-                <p className="text-xs text-slate-500">
-                  Hãy khám phá hệ thống 56 vị trí kho thông minh của Boxora để tìm kích thước và địa điểm phù hợp nhất.
-                </p>
-              </div>
-              <button
-                onClick={() => handleTabChange('explore')}
-                className="stitch-btn-primary text-xs"
-              >
-                <span className="material-symbols-outlined text-[18px]">travel_explore</span>
-                <span>Tìm &amp; Thuê Kho Ngay</span>
+        <section className="flex flex-col gap-4">
+          {isLoadingUnits ? (
+            <div className="rounded-2xl border border-slate-200 bg-white py-16 text-center text-sm text-slate-500">
+              Đang tải kho đang thuê...
+            </div>
+          ) : bookingsError ? (
+            <p role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700">
+              {bookingsError}
+            </p>
+          ) : activeBookings.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center">
+              <span className="material-symbols-outlined text-4xl text-slate-300">garage</span>
+              <h2 className="mt-3 font-bold text-slate-800">Bạn chưa có kho đang thuê</h2>
+              <p className="mt-1 text-sm text-slate-500">Các kho đã thanh toán và xác nhận sẽ hiển thị tại đây.</p>
+              <button type="button" onClick={() => handleTabChange('explore')} className="stitch-btn-primary mt-4 text-xs">
+                Tìm kho
               </button>
             </div>
           ) : (
@@ -674,10 +694,9 @@ export const CustomerDashboard: React.FC = () => {
               })}
             </div>
           )}
-        </div>
+        </section>
       )}
 
-      {/* 4. TAB 2: TÌM & THUÊ THÊM KHO (EXPLORE & BOOK) */}
       {activeTab === 'explore' && (
         <div className="flex flex-col gap-6">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -765,67 +784,108 @@ export const CustomerDashboard: React.FC = () => {
               <span className="text-xs text-slate-500">Xem chi tiết thời hạn thuê và tải về hóa đơn điện tử VAT</span>
             </div>
             <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 font-mono text-xs font-bold text-emerald-700">
-              {activeContracts.length} Hợp đồng đang hiệu lực
+              {contracts.filter(contract => contract.status === 'ACTIVE').length} hợp đồng đang hiệu lực
             </span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider">
-                <tr>
-                  <th className="py-3 px-4 rounded-l-lg">Mã Hợp Đồng</th>
-                  <th className="py-3 px-4">Mã Kho</th>
-                  <th className="py-3 px-4">Cơ Sở</th>
-                  <th className="py-3 px-4">Kỳ Hạn Thuê</th>
-                  <th className="py-3 px-4">Cước Hàng Tháng</th>
-                  <th className="py-3 px-4">Tiền Cọc</th>
-                  <th className="py-3 px-4">Trạng Thái</th>
-                  <th className="py-3 px-4 rounded-r-lg text-right">Tác Vụ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {contracts.length === 0 ? (
+          {signSuccessMessage && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs font-semibold text-emerald-800 flex items-center justify-between animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-emerald-600">check_circle</span>
+                <span>{signSuccessMessage}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSignSuccessMessage(null)}
+                className="text-emerald-700 hover:text-emerald-900"
+              >
+                <span className="material-symbols-outlined text-sm">close</span>
+              </button>
+            </div>
+          )}
+
+          {isLoadingContracts ? (
+            <p className="py-10 text-center text-sm text-slate-500">Đang tải hợp đồng...</p>
+          ) : contractsError ? (
+            <p role="alert" className="rounded-lg bg-rose-50 p-4 text-sm text-rose-700">{contractsError}</p>
+          ) : contracts.length === 0 ? (
+            <p className="py-10 text-center text-sm text-slate-500">Bạn chưa có hợp đồng nào.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider">
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-slate-400 text-xs">
-                      Chưa có hợp đồng nào trong hồ sơ của bạn.
-                    </td>
+                    <th className="py-3 px-4 rounded-l-lg">Mã Hợp Đồng</th>
+                    <th className="py-3 px-4">Mã Kho</th>
+                    <th className="py-3 px-4">Thời Hạn</th>
+                    <th className="py-3 px-4">Giá Thuê / Tháng</th>
+                    <th className="py-3 px-4">Trạng Thái</th>
+                    <th className="py-3 px-4 rounded-r-lg text-right">Tác Vụ</th>
                   </tr>
-                ) : (
-                  contracts.map(c => (
-                    <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-4 px-4 font-unit-code text-xs font-bold text-slate-900">#{c.contractCode}</td>
-                      <td className="py-4 px-4 font-bold text-orange-600">#{c.unitCode}</td>
-                      <td className="py-4 px-4 text-slate-700">{c.facilityName}</td>
-                      <td className="py-4 px-4 text-slate-700">{c.startDate} — {c.endDate}</td>
-                      <td className="py-4 px-4 font-data-tabular font-bold text-slate-900">
-                        {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} đ
-                      </td>
-                      <td className="py-4 px-4 font-data-tabular text-slate-700">
-                        {Number(c.depositHeld || 0).toLocaleString('vi-VN')} đ
-                      </td>
-                      <td className="py-4 px-4">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          c.status === 'ACTIVE' 
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-slate-100 text-slate-600 border border-slate-200'
-                        }`}>
-                          {c.status === 'ACTIVE' ? 'Đang hiệu lực' : c.status}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4 text-right">
-                        <button
-                          onClick={() => alert(`Xem chi tiết hợp đồng #${c.contractCode} tại cơ sở ${c.facilityName}`)}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-semibold text-xs transition-colors"
-                        >
-                          Chi tiết
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {contracts.map(contract => {
+                    const statusLabels: Record<RentalContract['status'], string> = {
+                      DRAFT: 'Bản nháp',
+                      PENDING_SIGNATURE: 'Chờ ký',
+                      ACTIVE: 'Đang hiệu lực',
+                      EXPIRED: 'Đã hết hạn',
+                      TERMINATED: 'Đã chấm dứt',
+                      CANCELLED: 'Đã hủy',
+                    }
+                    const isActive = contract.status === 'ACTIVE'
+                    return (
+                      <tr key={contract.id} className="transition-colors hover:bg-slate-50/70">
+                        <td className="py-4 px-4 font-unit-code text-xs font-bold text-slate-900">
+                          {contract.contractCode}
+                        </td>
+                        <td className="py-4 px-4 font-bold text-orange-600">{contract.unitCode}</td>
+                        <td className="py-4 px-4 text-slate-700">
+                          {formatDate(contract.startDate)} - {formatDate(contract.endDate)}
+                        </td>
+                        <td className="py-4 px-4 font-data-tabular font-bold text-slate-900">
+                          {formatVnd(contract.monthlyFee)} đ
+                        </td>
+                        <td className="py-4 px-4">
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                            isActive
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              : contract.status === 'PENDING_SIGNATURE'
+                                ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                : 'border-slate-200 bg-slate-50 text-slate-600'
+                          }`}>
+                            {statusLabels[contract.status]}
+                          </span>
+                        </td>
+                        <td className="py-4 px-4 text-right">
+                          {contract.status === 'PENDING_SIGNATURE' ? (
+                            <button
+                              type="button"
+                              onClick={() => setOtpContract(contract)}
+                              className="rounded-md bg-cyan-700 px-3 py-1.5 font-semibold text-white transition-colors hover:bg-cyan-800"
+                            >
+                              Ký hợp đồng
+                            </button>
+                          ) : contract.signedDocumentUrl ? (
+                            <a
+                              href={contract.signedDocumentUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-block rounded-md bg-slate-100 px-3 py-1.5 font-semibold text-slate-800 transition-colors hover:bg-slate-200"
+                            >
+                              Xem hợp đồng
+                            </a>
+                          ) : (
+                            <span className="text-slate-400">Không có tài liệu</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -902,15 +962,43 @@ export const CustomerDashboard: React.FC = () => {
                     >
                       <option value="lock">Sự cố khóa thông minh / Kẹt cửa cuốn</option>
                       <option value="pin">Yêu cầu cấp lại mã PIN mới</option>
-                      <option value="delegate">Ủy quyền mở kho cho tài xế/người thân</option>
                       <option value="climate">Kiểm tra nhiệt độ / độ ẩm phòng</option>
                       <option value="billing">Hỗ trợ thanh toán &amp; Hóa đơn VAT</option>
+                      <option value="other">Ủy quyền mở kho / Thắc mắc chung</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      Tiêu đề sự cố
+                    </label>
+                    <input
+                      type="text"
+                      value={ticketTitle}
+                      onChange={(e) => setTicketTitle(e.target.value)}
+                      placeholder="VD: Khóa không nhận mã PIN hoặc kẹt then cài..."
+                      className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs rounded-lg focus:outline-none focus:border-slate-400"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      Mức độ ưu tiên
+                    </label>
+                    <select
+                      value={ticketPriority}
+                      onChange={(e) => setTicketPriority(e.target.value)}
+                      className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
+                    >
+                      <option value="MEDIUM">Bình thường (Phản hồi &lt; 30 phút)</option>
+                      <option value="HIGH">Ưu tiên cao (Phản hồi &lt; 10 phút)</option>
+                      <option value="URGENT">Khẩn cấp - Đang kẹt tại kho (Phản hồi &lt; 3 phút)</option>
                     </select>
                   </div>
 
                   <div className="sm:col-span-2 flex flex-col gap-1.5">
                     <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      Mô tả chi tiết nội dung
+                      Mô tả chi tiết nội dung <span className="text-rose-500">*</span>
                     </label>
                     <textarea
                       rows={3}
@@ -921,6 +1009,67 @@ export const CustomerDashboard: React.FC = () => {
                       className="p-3 bg-white border border-slate-200 text-slate-900 text-xs rounded-lg focus:outline-none focus:border-slate-400"
                     ></textarea>
                   </div>
+
+                  {/* Image Upload Dropzone / Picker */}
+                  <div className="sm:col-span-2 flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                      <span>Đính kèm hình ảnh minh chứng</span>
+                      <span className="text-slate-400 font-normal lowercase">(Tùy chọn - PNG, JPG, tối đa 10MB)</span>
+                    </label>
+
+                    {ticketFilePreview ? (
+                      <div className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl">
+                        <div className="flex items-center gap-3 overflow-hidden">
+                          <img
+                            src={ticketFilePreview}
+                            alt="Ảnh xem trước"
+                            className="w-14 h-14 object-cover rounded-lg border border-slate-200 shadow-xs"
+                          />
+                          <div className="flex flex-col truncate">
+                            <span className="text-xs font-bold text-slate-800 truncate">
+                              {ticketFile?.name}
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              {ticketFile ? (ticketFile.size / 1024).toFixed(1) + ' KB' : ''}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleRemoveFile}
+                          className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                          <span>Xóa ảnh</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="border-2 border-dashed border-slate-200 hover:border-orange-400 bg-white hover:bg-orange-50/20 rounded-xl p-4 flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-colors group">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileChange}
+                          className="hidden"
+                        />
+                        <div className="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-orange-100 text-slate-500 group-hover:text-orange-600 flex items-center justify-center transition-colors">
+                          <span className="material-symbols-outlined text-[20px]">add_photo_alternate</span>
+                        </div>
+                        <span className="text-xs font-semibold text-slate-700 group-hover:text-orange-600">
+                          Tải ảnh sự cố hoặc chụp trực tiếp
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Hỗ trợ kỹ thuật viên kiểm tra từ xa nhanh hơn
+                        </span>
+                      </label>
+                    )}
+                  </div>
+
+                  {ticketError && (
+                    <div className="sm:col-span-2 p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[16px]">error</span>
+                      <span>{ticketError}</span>
+                    </div>
+                  )}
 
                   <div className="sm:col-span-2 flex items-center justify-between pt-2">
                     <span className="text-[11px] text-slate-500">Yêu cầu được lưu và chuyển đến hàng đợi hỗ trợ.</span>
@@ -938,8 +1087,6 @@ export const CustomerDashboard: React.FC = () => {
               )}
             </div>
           </div>
-        </section>
-      )}
 
       {/* Booking Modal */}
       {selectedBookingUnit && (
@@ -994,7 +1141,22 @@ export const CustomerDashboard: React.FC = () => {
               </form>
             )}
           </div>
-        </div>
+        </section>
+      )}
+
+      {/* Booking checkout and payment */}
+      {selectedBookingUnit && user && (
+        <BookingCheckoutModal
+          unit={{
+            backendId: selectedBookingUnit.backendId,
+            code: selectedBookingUnit.id,
+            name: selectedBookingUnit.name,
+            facilityName: selectedBookingUnit.facilityName,
+            monthlyPrice: selectedBookingUnit.rawPrice || 1500000,
+          }}
+          user={user}
+          onClose={() => setSelectedBookingUnit(null)}
+        />
       )}
       {/* Renewal Modal */}
       {renewUnit && (
@@ -1031,6 +1193,15 @@ export const CustomerDashboard: React.FC = () => {
                     </h3>
                   <span className="text-xs text-slate-500">{contracts.find(contract => contract.id === renewUnit.contractId)?.facilityName || 'Cơ sở'}</span>
                   </div>
+                  <h3 className="font-headline text-lg font-bold text-slate-900">
+                    Gia Hạn Hợp Đồng Thành Công!
+                  </h3>
+                  <p className="text-xs text-slate-600">
+                    Hạn thuê kho #{renewUnit.id} đã được tự động cộng thêm {renewMonths} tháng.
+                  </p>
+                  <p className="text-xs text-emerald-700 font-semibold bg-emerald-50 py-1.5 px-3 rounded-lg border border-emerald-100">
+                    Hạn hợp đồng mới: {calculateNewEndDate(renewUnit.endDate, renewMonths)}
+                  </p>
                   <button
                     onClick={() => setRenewUnit(null)}
                     className="text-slate-400 hover:text-slate-600"
@@ -1111,35 +1282,24 @@ export const CustomerDashboard: React.FC = () => {
                     </h3>
                     <span className="text-xs text-slate-500">Gửi yêu cầu để nhân viên xác minh và cấp quyền</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setShareModalUnit(null)}
-                    className="text-slate-400 hover:text-slate-600"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">close</span>
-                  </button>
-                </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase">Số điện thoại người nhận</label>
-                  <input
-                    type="tel"
-                    required
-                    value={sharePhone}
-                    onChange={(e) => setSharePhone(e.target.value)}
-                    placeholder="Ví dụ: 0912 345 678"
-                    className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-400"
-                  />
-                </div>
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1.5">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Hạn hợp đồng hiện tại:</span>
+                      <strong className="text-slate-900 font-mono">{formatDate(renewUnit.endDate)}</strong>
+                    </div>
+                    <div className="flex justify-between text-emerald-700 font-medium">
+                      <span>Hạn mới sau khi gia hạn:</span>
+                      <strong className="font-mono">{calculateNewEndDate(renewUnit.endDate, renewMonths)}</strong>
+                    </div>
+                  </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase">Thời hạn hiệu lực của mã</label>
-                  <select className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-400">
-                    <option value="4h">Trong 4 Giờ (Giao nhận gấp)</option>
-                    <option value="24h">Trong 24 Giờ (1 Ngày)</option>
-                    <option value="7d">Trong 7 Ngày</option>
-                  </select>
-                </div>
+                  {renewalError && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[16px]">error</span>
+                      <span>{renewalError}</span>
+                    </div>
+                  )}
 
                 <div className="pt-3 flex gap-2">
                   <button
@@ -1162,6 +1322,28 @@ export const CustomerDashboard: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+
+      {otpContract && (
+        <ContractOtpModal
+          contract={otpContract}
+          onClose={() => setOtpContract(null)}
+          onOpenSimulationSign={(c) => setSimulationSignContract(c)}
+        />
+      )}
+
+      {simulationSignContract && (
+        <DocuSealSimulationModal
+          contract={simulationSignContract}
+          onClose={() => setSimulationSignContract(null)}
+          onSignedSuccess={(updated) => {
+            setContracts(prev => prev.map(c => c.id === updated.id ? updated : c))
+            setSimulationSignContract(null)
+            setSignSuccessMessage('Hợp đồng điện tử đã được ký kết thành công! Ngăn kho của bạn đã được kích hoạt sử dụng.')
+            loadActiveBookings()
+            window.history.replaceState({}, '', '/portal/customer?tab=contracts')
+          }}
+        />
       )}
 
     </div>

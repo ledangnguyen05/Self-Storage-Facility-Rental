@@ -20,6 +20,7 @@ export interface CustomerLocationOption {
 
 export interface StorageUnitType {
   id: string
+  backendId?: string
   name: string
   category: 'mini' | 'personal' | 'business' | 'special'
   size: string
@@ -42,34 +43,34 @@ export interface StorageUnitType {
 
 export const BOXORA_FACILITIES: FacilityLocation[] = [
   {
-    id: 'fac-1',
-    name: 'Boxora Central Landmark — Quận 1',
-    shortName: 'Boxora Quận 1',
+    id: 'HCM-D1',
+    name: 'StoreHub District 1',
+    shortName: 'StoreHub Quận 1',
     district: 'Quận 1',
-    address: '142 Nguyễn Thị Minh Khai, P. Bến Thành, Quận 1, TP.HCM',
-    coords: { lat: 10.7745, lng: 106.6925 },
-    contactPhone: '028 3822 9901',
-    highlight: 'Trung tâm Quận 1 • Mở cửa 24/7 • Thang máy tải hàng'
+    address: '123 Nguyễn Huệ, P. Bến Nghé, Quận 1, TP.HCM',
+    coords: { lat: 10.7745, lng: 106.7025 },
+    contactPhone: '0901234567',
+    highlight: 'HCM-D1 • Mở cửa 08:00 - 20:00 • Trung tâm Quận 1 • Chuẩn An Ninh 24/7'
   },
   {
-    id: 'fac-3',
-    name: 'Boxora Riverside — Bình Thạnh',
-    shortName: 'Boxora Bình Thạnh',
-    district: 'Bình Thạnh',
-    address: '208 Nguyễn Hữu Cảnh, Phường 22, Quận Bình Thạnh, TP.HCM',
-    coords: { lat: 10.7925, lng: 106.7195 },
-    contactPhone: '028 3514 6677',
-    highlight: 'Ven sông Sài Gòn • Xe tải tiếp vận đỗ tận cửa • Kho mát vi khí hậu'
+    id: 'HCM-D7',
+    name: 'StoreHub District 7',
+    shortName: 'StoreHub Quận 7',
+    district: 'Quận 7',
+    address: '456 Nguyễn Hữu Thọ, P. Tân Hưng, Quận 7, TP.HCM',
+    coords: { lat: 10.7325, lng: 106.7005 },
+    contactPhone: '0902345678',
+    highlight: 'HCM-D7 • Mở cửa 08:00 - 20:00 • Đỗ xe tải tận cửa • Kho mát vi khí hậu'
   },
   {
-    id: 'fac-2',
-    name: 'Boxora Tech Park — TP. Thủ Đức',
-    shortName: 'Boxora Thủ Đức',
+    id: 'HCM-TD',
+    name: 'StoreHub Thu Duc',
+    shortName: 'StoreHub Thủ Đức',
     district: 'TP. Thủ Đức',
-    address: 'Lô E2a-7, Đường D1, Khu Công Nghệ Cao, TP. Thủ Đức, TP.HCM',
+    address: '789 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức, TP.HCM',
     coords: { lat: 10.8540, lng: 106.7865 },
-    contactPhone: '028 7300 8822',
-    highlight: 'Khu Công Nghệ Cao • Kho pallet logistics • Cửa cuốn trợ lực'
+    contactPhone: '0903456789',
+    highlight: 'HCM-TD • Mở cửa 08:00 - 20:00 • Khu Công Nghệ Cao • Kho pallet logistics'
   }
 ]
 
@@ -155,11 +156,11 @@ export const STORAGE_UNITS: StorageUnitType[] = [
     temp: '21.5°C',
     humidity: '44%',
     status: 'Sẵn sàng',
-    facilityId: 'fac-1',
-    facilityName: 'Boxora Central Landmark — Quận 1',
-    facilityAddress: '142 Nguyễn Thị Minh Khai, P. Bến Thành, Quận 1, TP.HCM',
+    facilityId: 'HCM-D1',
+    facilityName: 'StoreHub District 1',
+    facilityAddress: '123 Nguyễn Huệ, P. Bến Nghé, Quận 1, TP.HCM',
     floorLocation: 'Tầng 1 • Dãy Locker A1 (Sát sảnh chính & Thang máy tải)',
-    coords: { lat: 10.7745, lng: 106.6925 }
+    coords: { lat: 10.7745, lng: 106.7025 }
   },
   {
     id: 'BX-102',
@@ -174,11 +175,11 @@ export const STORAGE_UNITS: StorageUnitType[] = [
     temp: '21.8°C',
     humidity: '45%',
     status: 'Sẵn sàng',
-    facilityId: 'fac-3',
-    facilityName: 'Boxora Riverside — Bình Thạnh',
-    facilityAddress: '208 Nguyễn Hữu Cảnh, Phường 22, Quận Bình Thạnh, TP.HCM',
+    facilityId: 'HCM-D7',
+    facilityName: 'StoreHub District 7',
+    facilityAddress: '456 Nguyễn Hữu Thọ, P. Tân Hưng, Quận 7, TP.HCM',
     floorLocation: 'Tầng 2 • Khu Buồng B2 (Hành lang đối lưu gió, xe đẩy sảnh)',
-    coords: { lat: 10.7925, lng: 106.7195 }
+    coords: { lat: 10.7325, lng: 106.7005 }
   },
   {
     id: 'BX-103',
@@ -193,11 +194,11 @@ export const STORAGE_UNITS: StorageUnitType[] = [
     temp: '22.0°C',
     humidity: '43%',
     status: 'Đang thuê',
-    facilityId: 'fac-1',
-    facilityName: 'Boxora Central Landmark — Quận 1',
-    facilityAddress: '142 Nguyễn Thị Minh Khai, P. Bến Thành, Quận 1, TP.HCM',
+    facilityId: 'HCM-D1',
+    facilityName: 'StoreHub District 1',
+    facilityAddress: '123 Nguyễn Huệ, P. Bến Nghé, Quận 1, TP.HCM',
     floorLocation: 'Tầng 3 • Dãy C1 (Khóa số thông minh, trần cao 3.2m rộng thoáng)',
-    coords: { lat: 10.7745, lng: 106.6925 }
+    coords: { lat: 10.7745, lng: 106.7025 }
   },
   {
     id: 'BX-104',
@@ -212,11 +213,11 @@ export const STORAGE_UNITS: StorageUnitType[] = [
     temp: '16.0°C',
     humidity: '60%',
     status: 'Sẵn sàng',
-    facilityId: 'fac-1',
-    facilityName: 'Boxora Central Landmark — Quận 1',
-    facilityAddress: '142 Nguyễn Thị Minh Khai, P. Bến Thành, Quận 1, TP.HCM',
+    facilityId: 'HCM-D1',
+    facilityName: 'StoreHub District 1',
+    facilityAddress: '123 Nguyễn Huệ, P. Bến Nghé, Quận 1, TP.HCM',
     floorLocation: 'Tầng Hầm B1 • Phòng Vi Khí Hậu Kép (Kiểm soát nhiệt ẩm chuẩn hầm rượu)',
-    coords: { lat: 10.7745, lng: 106.6925 }
+    coords: { lat: 10.7745, lng: 106.7025 }
   },
   {
     id: 'BX-201',
@@ -231,9 +232,9 @@ export const STORAGE_UNITS: StorageUnitType[] = [
     temp: '22.2°C',
     humidity: '46%',
     status: 'Sẵn sàng',
-    facilityId: 'fac-2',
-    facilityName: 'Boxora Tech Park — TP. Thủ Đức',
-    facilityAddress: 'Lô E2a-7, Đường D1, Khu Công Nghệ Cao, TP. Thủ Đức, TP.HCM',
+    facilityId: 'HCM-TD',
+    facilityName: 'StoreHub Thu Duc',
+    facilityAddress: '789 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức, TP.HCM',
     floorLocation: 'Tầng Trệt G • Khoang E2 (Sát Dock tải hàng container & xe nâng)',
     coords: { lat: 10.8540, lng: 106.7865 }
   },
@@ -250,15 +251,15 @@ export const STORAGE_UNITS: StorageUnitType[] = [
     temp: '21.4°C',
     humidity: '45%',
     status: 'Đang thuê',
-    facilityId: 'fac-2',
-    facilityName: 'Boxora Tech Park — TP. Thủ Đức',
-    facilityAddress: 'Lô E2a-7, Đường D1, Khu Công Nghệ Cao, TP. Thủ Đức, TP.HCM',
+    facilityId: 'HCM-TD',
+    facilityName: 'StoreHub Thu Duc',
+    facilityAddress: '789 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức, TP.HCM',
     floorLocation: 'Tầng Trệt G • Khoang E5 (Cửa cuốn trợ lực, xe tải 5 tấn tiếp cận thẳng)',
     coords: { lat: 10.8540, lng: 106.7865 }
   },
   {
     id: 'BX-301',
-    name: 'Kho Gia Đình Riverside',
+    name: 'Kho Gia Đình District 7',
     category: 'personal',
     size: '6.5 m²',
     volume: '17.5 m³',
@@ -269,15 +270,15 @@ export const STORAGE_UNITS: StorageUnitType[] = [
     temp: '22.0°C',
     humidity: '44%',
     status: 'Sẵn sàng',
-    facilityId: 'fac-3',
-    facilityName: 'Boxora Riverside — Bình Thạnh',
-    facilityAddress: '208 Nguyễn Hữu Cảnh, Phường 22, Quận Bình Thạnh, TP.HCM',
+    facilityId: 'HCM-D7',
+    facilityName: 'StoreHub District 7',
+    facilityAddress: '456 Nguyễn Hữu Thọ, P. Tân Hưng, Quận 7, TP.HCM',
     floorLocation: 'Tầng 1 • Khu R-102 (Đường nội bộ rộng, bốc dỡ xe ô tô trực tiếp)',
-    coords: { lat: 10.7925, lng: 106.7195 }
+    coords: { lat: 10.7325, lng: 106.7005 }
   },
   {
     id: 'BX-302',
-    name: 'Locker Tiện Ích Sông Sài Gòn',
+    name: 'Locker Tiện Ích Phú Mỹ Hưng',
     category: 'mini',
     size: '1.8 m²',
     volume: '4.8 m³',
@@ -288,10 +289,10 @@ export const STORAGE_UNITS: StorageUnitType[] = [
     temp: '21.6°C',
     humidity: '45%',
     status: 'Sẵn sàng',
-    facilityId: 'fac-3',
-    facilityName: 'Boxora Riverside — Bình Thạnh',
-    facilityAddress: '208 Nguyễn Hữu Cảnh, Phường 22, Quận Bình Thạnh, TP.HCM',
+    facilityId: 'HCM-D7',
+    facilityName: 'StoreHub District 7',
+    facilityAddress: '456 Nguyễn Hữu Thọ, P. Tân Hưng, Quận 7, TP.HCM',
     floorLocation: 'Tầng 1 • Dãy Locker R-Mini (Gần sảnh lễ tân & Quầy bảo vệ)',
-    coords: { lat: 10.7925, lng: 106.7195 }
+    coords: { lat: 10.7325, lng: 106.7005 }
   }
 ]

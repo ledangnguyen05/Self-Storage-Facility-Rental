@@ -35,6 +35,7 @@ import com.boxora.util.VNPayUtil;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import java.util.Optional;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -75,6 +76,9 @@ public class ContractSigningServiceImpl implements ContractSigningService {
 
     @Lazy
     private final ContractRenewalService contractRenewalService;
+
+    @org.springframework.beans.factory.annotation.Value("${app.frontend-url:http://localhost:5173}")
+    private String frontendUrl;
 
     @Override
     @Transactional
@@ -147,8 +151,9 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         }
 
         RentalContractResponse response = rentalContractMapper.toResponse(contract);
-        if (contract.getDocusealSubmitterSlug() != null) {
-            response.setSigningUrl(signingUrl(contract.getDocusealSubmitterSlug()));
+        if (!"CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())
+                && contract.getDocusealSubmitterSlug() != null) {
+            response.setSigningUrl(signingUrl(contract, contract.getDocusealSubmitterSlug()));
         }
         return response;
     }
@@ -176,6 +181,10 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         final UUID queryFacilityId = effectiveFacilityId;
         final UUID queryCustomerId = effectiveCustomerId;
 
+        if (queryCustomerId != null) {
+            autoGenerateContractsForOrphanConfirmedBookings(queryCustomerId);
+        }
+
         Specification<RentalContract> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (queryCustomerId != null) {
@@ -193,8 +202,9 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         Page<RentalContract> result = rentalContractRepository.findAll(spec, pageable);
         return PageResponse.from(result.map(c -> {
             RentalContractResponse res = rentalContractMapper.toResponse(c);
-            if (c.getDocusealSubmitterSlug() != null) {
-                res.setSigningUrl(signingUrl(c.getDocusealSubmitterSlug()));
+            if (!"CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())
+                    && c.getDocusealSubmitterSlug() != null) {
+                res.setSigningUrl(signingUrl(c, c.getDocusealSubmitterSlug()));
             }
             return res;
         }));
@@ -231,7 +241,7 @@ public class ContractSigningServiceImpl implements ContractSigningService {
 
         // Nếu đã có slug tạo trước đó và chưa ký, có thể tái sử dụng signing URL
         if (contract.getDocusealSubmitterSlug() != null) {
-            return signingUrl(contract.getDocusealSubmitterSlug());
+            return signingUrl(contract, contract.getDocusealSubmitterSlug());
         }
 
         String customerName = contract.getCustomer().getFullName() != null ? contract.getCustomer().getFullName() : contract.getCustomer().getUsername();
@@ -239,7 +249,8 @@ public class ContractSigningServiceImpl implements ContractSigningService {
 
         DocuSealSubmissionRequest request = DocuSealSubmissionRequest.builder()
                 .template_id(docuSealConfig.getTemplateId())
-                .send_email(true)
+                .send_email(false)
+                .completed_redirect_url(frontendUrl + "/portal/customer?tab=contracts&signed=true")
                 .submitters(List.of(
                         DocuSealSubmissionRequest.Submitter.builder()
                                 .role("Customer")
@@ -282,7 +293,10 @@ public class ContractSigningServiceImpl implements ContractSigningService {
                 submitter.getSubmission_id()
         );
 
-        return signingUrl(submitter.getSlug());
+        if (submitter.getLink() != null && !submitter.getLink().isBlank()) {
+            return submitter.getLink();
+        }
+        return signingUrl(contract, submitter.getSlug());
     }
 
     @Override
@@ -302,12 +316,15 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         }
 
         if (contract.getDocusealSubmitterSlug() != null) {
-            return signingUrl(contract.getDocusealSubmitterSlug());
+            return signingUrl(contract, contract.getDocusealSubmitterSlug());
         }
         return createSigningRequest(contract);
     }
 
-    private String signingUrl(String slug) {
+    private String signingUrl(RentalContract contract, String slug) {
+        if (slug != null && slug.startsWith("mock-")) {
+            return frontendUrl + "/portal/customer?tab=contracts&mockSignContractId=" + contract.getId();
+        }
         return docuSealConfig.getWebBaseUrl() + "/s/" + slug;
     }
 
@@ -376,7 +393,36 @@ public class ContractSigningServiceImpl implements ContractSigningService {
             return;
         }
 
-        contract.setSignedDocumentUrl(documentUrl);
+        completeContractSigning(contract, documentUrl);
+    }
+
+    @Override
+    @Transactional
+    public RentalContractResponse mockSign(UUID contractId) {
+        RentalContract contract = rentalContractRepository.findById(contractId)
+                .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
+
+        if (facilityAccessGuard.isFacilityScoped()) {
+            facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
+        }
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            UUID currentUserId = requestContext.currentUserId();
+            if (currentUserId != null && !currentUserId.equals(contract.getCustomer().getId())) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        }
+
+        if (contract.getSignedAt() != null && contract.getStatus() == RentalContractStatus.ACTIVE) {
+            return rentalContractMapper.toResponse(contract);
+        }
+
+        String sampleDocUrl = "https://docuseal.com/documents/contract-" + contract.getContractCode() + "-signed.pdf";
+        completeContractSigning(contract, sampleDocUrl);
+        return rentalContractMapper.toResponse(contract);
+    }
+
+    private void completeContractSigning(RentalContract contract, String documentUrl) {
+        contract.setSignedDocumentUrl(documentUrl != null ? documentUrl : "https://docuseal.com/documents/contract-" + contract.getContractCode() + "-signed.pdf");
         contract.setSignedAt(LocalDateTime.now());
         contract.setStatus(RentalContractStatus.ACTIVE);
         rentalContractRepository.save(contract);
@@ -423,6 +469,56 @@ public class ContractSigningServiceImpl implements ContractSigningService {
                 contract.getId(),
                 "Hop dong e-Contract da duoc khach hang ky qua DocuSeal: " + contract.getContractCode()
         );
+    }
+
+    @Override
+    @Transactional
+    public RentalContract ensureContractForBooking(Booking booking) {
+        if (booking == null) return null;
+        Optional<RentalContract> existing = rentalContractRepository.findByBookingId(booking.getId());
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
+        StorageUnit unit = booking.getStorageUnit();
+        Facility facility = unit != null ? unit.getFacility() : null;
+        BigDecimal monthlyFee = (unit != null && unit.getEffectiveBasePrice() != null)
+                ? unit.getEffectiveBasePrice()
+                : (booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
+                ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), java.math.RoundingMode.HALF_UP)
+                : BigDecimal.valueOf(1500000));
+
+        RentalContract contract = RentalContract.builder()
+                .contractCode("CTR-" + booking.getBookingCode())
+                .customer(booking.getCustomer())
+                .unit(unit)
+                .facility(facility)
+                .booking(booking)
+                .startDate(booking.getStartDate())
+                .endDate(booking.getEndDate())
+                .monthlyFee(monthlyFee)
+                .depositHeld(booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO)
+                .status(booking.getStatus() == BookingStatus.ACTIVE ? RentalContractStatus.ACTIVE : RentalContractStatus.PENDING_SIGNATURE)
+                .build();
+
+        contract = rentalContractRepository.save(contract);
+        log.info("Auto-generated RentalContract {} for booking {}", contract.getContractCode(), booking.getBookingCode());
+        return contract;
+    }
+
+    private void autoGenerateContractsForOrphanConfirmedBookings(UUID customerId) {
+        try {
+            List<Booking> bookings = bookingRepository.findByCustomer_Id(customerId);
+            for (Booking booking : bookings) {
+                if (booking.getStatus() == BookingStatus.CONFIRMED || booking.getStatus() == BookingStatus.ACTIVE) {
+                    if (rentalContractRepository.findByBookingId(booking.getId()).isEmpty()) {
+                        ensureContractForBooking(booking);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Notice auto-generating contracts for customer {}: {}", customerId, e.getMessage());
+        }
     }
 
     @SuppressWarnings("unchecked")

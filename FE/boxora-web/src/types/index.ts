@@ -27,6 +27,8 @@ export interface Facility {
   availableUnits: number
   imageUrl?: string
   code?: string
+  openTime?: string
+  closeTime?: string
 }
 
 export interface UnitType {
@@ -61,7 +63,7 @@ export interface StorageUnit {
   dueDate?: string
 }
 
-export type BookingStatusType = 'PENDING_PAYMENT' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
+export type BookingStatusType = 'PENDING_PAYMENT' | 'CONFIRMED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
 
 export interface Booking {
   id: string
@@ -73,31 +75,65 @@ export interface Booking {
   storageUnitId: string
   unitCode: string
   facilityName: string
+  floorLevel?: string
   startDate: string
   endDate: string
   rentalMonths: number
   totalRentalFee: number
   depositPaid: number
+  depositAmount?: number
+  initialPaymentAmount?: number
+  paymentExpiresAt?: string | null
   status: BookingStatusType
   accessCode: string // e.g. "BX-88219"
-  accessPin: string  // e.g. "4920"
-  qrAccessToken: string
+  accessPin?: string | null
+  qrAccessToken?: string | null
   handoverTime?: string
   returnTime?: string
+}
+
+export type RentalContractStatus =
+  | 'DRAFT'
+  | 'PENDING_SIGNATURE'
+  | 'ACTIVE'
+  | 'EXPIRED'
+  | 'TERMINATED'
+  | 'CANCELLED'
+
+export interface RentalContract {
+  id: string
+  contractCode: string
+  customerId: string
+  customerEmail: string
+  customerName?: string
+  customerPhone?: string
+  unitCode: string
+  facilityName: string
+  startDate: string
+  endDate: string
+  monthlyFee: number
+  depositHeld: number
+  status: RentalContractStatus
+  signedDocumentUrl?: string | null
 }
 
 export interface SupportTicket {
   id: string
   ticketCode: string
-  userId: string
-  customerName: string
+  userId?: string
+  customerId?: string
+  customerName?: string
+  customerPhone?: string
   bookingId?: string
-  category: 'UNIT' | 'LOCK' | 'ACCESS_CODE' | 'PAYMENT' | 'STORED_ITEMS' | 'OTHER'
+  unitCode?: string
+  category: 'UNIT' | 'LOCK' | 'ACCESS_CODE' | 'PAYMENT' | 'STORED_ITEMS' | 'OTHER' | string
   title: string
   description: string
-  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
-  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED' | string
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT' | string
   resolutionNote?: string
+  attachmentUrl?: string
+  imageEvidence?: string
   createdAt: string
 }
 
