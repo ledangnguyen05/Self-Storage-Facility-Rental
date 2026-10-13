@@ -573,6 +573,7 @@ body {
   }
 }
 
+<<<<<<< HEAD
 /* Brand-colored rotating gradient effect for the hero booking CTA */
 .book-now-effect-button {
   --book-now-blue: var(--brand-blue, #0866f5);
@@ -743,4 +744,6 @@ body {
   }
 }
 
+=======
+>>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
 
