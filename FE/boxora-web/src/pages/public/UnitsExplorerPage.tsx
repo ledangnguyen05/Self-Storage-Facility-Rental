@@ -15,6 +15,7 @@ import { FloatingContactWidget } from '../../components/common/FloatingContactWi
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { BrandLogo } from '../../components/common/BrandLogo'
+import { AccountProfileModal } from '../../components/common/AccountProfileModal'
 import { Facility, StorageUnit } from '../../types'
 
 export const UnitsExplorerPage: React.FC = () => {
@@ -53,6 +54,7 @@ export const UnitsExplorerPage: React.FC = () => {
   const [activatedPin, setActivatedPin] = useState('841 902')
   const [copiedPin, setCopiedPin] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
 
   // Fetch real data from backend database
   useEffect(() => {
@@ -344,6 +346,17 @@ export const UnitsExplorerPage: React.FC = () => {
                       </div>
                     </div>
 
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDropdownOpen(false)
+                        setIsProfileModalOpen(true)
+                      }}
+                      className="w-full py-1.5 px-3 rounded-lg text-left text-slate-700 hover:bg-slate-50 font-semibold text-xs transition-colors cursor-pointer"
+                    >
+                      Chỉnh sửa hồ sơ
+                    </button>
+
                     {canAccessPortal && (
                       <button
                         type="button"
@@ -396,6 +409,7 @@ export const UnitsExplorerPage: React.FC = () => {
 
         </div>
       </header>
+      <AccountProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
 
       {/* ============================================================ */}
       {/* 2. DASHBOARD HERO BANNER                                     */}

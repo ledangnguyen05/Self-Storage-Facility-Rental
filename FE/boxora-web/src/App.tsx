@@ -11,6 +11,8 @@ import { HomePage } from './pages/public/HomePage'
 import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
 import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
 import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
+import { CustomerDashboard } from './pages/customer/CustomerDashboard'
+import { StaffDashboard } from './pages/staff/StaffDashboard'
 import { ManagerDashboard } from './pages/manager/ManagerDashboard'
 import { OperationsDashboard } from './pages/operations/OperationsDashboard'
 import { AdminDashboard } from './pages/admin/AdminDashboard'
@@ -55,7 +57,7 @@ function RootRedirect() {
 
 function MainContent() {
   return (
-    <div className="min-h-screen flex flex-col bg-[#F8FAFC] font-sans antialiased text-slate-900">
+    <div className="min-h-screen flex flex-col bg-[var(--background)] font-sans antialiased text-[var(--on-surface)]">
       <main className="flex-1">
         <Routes>
           {/* Public Landing Page & Authentication */}

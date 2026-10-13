@@ -70,6 +70,7 @@ interface AuthContextType {
   loginWithGoogle: (idToken: string, mode?: 'LOGIN' | 'REGISTER') => Promise<User>
   logout: () => Promise<void>
   setSessionUser: (user: User) => void
+  updateProfile: (profile: { fullName: string; phone: string }) => Promise<User>
   switchRole: (targetRole: RoleType) => Promise<User>
   hasPermission: (allowedRoles: RoleType[]) => boolean
 }
@@ -211,6 +212,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('boxora_user', JSON.stringify(updatedUser))
   }
 
+  const updateProfile = async (profile: { fullName: string; phone: string }) => {
+    if (!user) throw new Error('Bạn cần đăng nhập để cập nhật hồ sơ.')
+
+    if (user.id.startsWith('mock-')) {
+      const updatedUser = { ...user, fullName: profile.fullName.trim(), phone: profile.phone.trim() }
+      setSessionUser(updatedUser)
+      return updatedUser
+    }
+
+    const updatedProfile = await authService.updateProfile({
+      fullName: profile.fullName.trim(),
+      phone: profile.phone.trim()
+    })
+    const updatedUser: User = {
+      ...user,
+      ...updatedProfile,
+      role: updatedProfile.role || user.role
+    }
+    setSessionUser(updatedUser)
+    return updatedUser
+  }
+
   const role: RoleType | null = (user?.role?.name as RoleType) || null
 
   const hasPermission = (allowedRoles: RoleType[]): boolean => {
@@ -230,6 +253,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loginWithGoogle,
         logout,
         setSessionUser,
+        updateProfile,
         switchRole,
         hasPermission
       }}
