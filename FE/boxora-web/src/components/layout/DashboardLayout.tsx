@@ -1,19 +1,23 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { RoleType } from '../../types'
-import { FacilityScopingModal, FacilityScopingData } from '../modals/FacilityScopingModal'
 import { BrandLogo } from '../common/BrandLogo'
+import { AccountProfileModal } from '../common/AccountProfileModal'
+import NotificationCenter from './NotificationCenter'
 
 export const DashboardLayout: React.FC = () => {
   const { user, role, logout, isAuthenticated } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
-  const [selectedFacility, setSelectedFacility] = useState('tb')
   const [searchQuery, setSearchQuery] = useState('')
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const [isScopingModalOpen, setIsScopingModalOpen] = useState(false)
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
   const isCurrentPath = (path: string) => location.pathname === path
+
+  useEffect(() => {
+    setIsMobileMenuOpen(false)
+  }, [location.pathname, location.search])
 
   const getRoleBadge = (r: RoleType | null) => {
     switch (r) {
@@ -56,39 +60,11 @@ export const DashboardLayout: React.FC = () => {
 
             <div className="h-8 w-[1px] bg-slate-200 hidden md:block"></div>
 
-            {/* Facility Selector & Scoping Modal Trigger (Only for internal staff/managers) */}
-            {role && role !== 'CUSTOMER' && (
-              <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
-                <span className="material-symbols-outlined text-cyan-600 text-[18px]">location_on</span>
-                <div className="flex flex-col text-left">
-                  <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Cơ sở trực thuộc</span>
-                  <select
-                    value={selectedFacility}
-                    onChange={(e) => setSelectedFacility(e.target.value)}
-                    className="bg-transparent font-mono text-xs text-slate-900 font-bold focus:outline-none cursor-pointer pr-1"
-                  >
-                    <option value="tb">Cơ sở Tân Bình - Mega Central</option>
-                    <option value="q7">Cơ sở Quận 7 - Nam Sài Gòn</option>
-                    <option value="bt">Cơ sở Bình Thạnh - Landmark</option>
-                    <option value="cg">Cơ sở Cầu Giấy - Hà Nội Hub</option>
-                    <option value="hp">Cơ sở Hải Phòng - Hồng Bàng</option>
-                  </select>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsScopingModalOpen(true)}
-                  title="Mở bảng phân công cơ sở (Facility Scoping Modal)"
-                  className="ml-1 p-1 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 transition-colors cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[18px]">domain_verification</span>
-                </button>
-              </div>
-            )}
           </div>
 
 
           {/* Right Tools: Notifications, Search, User Profile */}
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
 
             {/* Quick search */}
             <div className="relative hidden md:block">
@@ -104,13 +80,7 @@ export const DashboardLayout: React.FC = () => {
               />
             </div>
 
-            {/* Notification Badge */}
-            <div className="relative flex items-center justify-center w-9 h-9 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer transition-colors">
-              <span className="material-symbols-outlined text-[20px]">notifications</span>
-              <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-orange-600 px-1 text-[10px] text-white font-bold leading-none">
-                3
-              </span>
-            </div>
+            <NotificationCenter userId={user?.id} />
 
             <div className="h-8 w-[1px] bg-slate-200 hidden sm:block"></div>
 
@@ -130,6 +100,15 @@ export const DashboardLayout: React.FC = () => {
                     </span>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setIsProfileModalOpen(true)}
+                  className="p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                  title="Chỉnh sửa hồ sơ"
+                  aria-label="Chỉnh sửa hồ sơ"
+                >
+                  <span className="material-symbols-outlined text-[18px]">edit</span>
+                </button>
                 <button
                   onClick={() => logout().then(() => navigate('/login'))}
                   className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -162,10 +141,10 @@ export const DashboardLayout: React.FC = () => {
       )}
 
       {/* Sidebar (Responsive drawer on mobile, fixed column on lg) */}
-      <aside className={`fixed left-0 top-20 bottom-0 w-64 bg-white z-40 border-r border-slate-200 flex flex-col justify-between py-4 shadow-[0_1px_8px_rgba(0,0,0,0.02)] transition-transform duration-200 ease-in-out ${
+      <aside className={`fixed left-0 top-20 bottom-0 w-64 bg-white z-40 border-r border-slate-200 flex flex-col py-4 shadow-[0_1px_8px_rgba(0,0,0,0.02)] transition-transform duration-200 ease-in-out ${
         isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       }`}>
-        <div className="flex flex-col gap-4 px-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4">
           
           {/* Active Account Summary Card */}
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-left">
@@ -423,7 +402,7 @@ export const DashboardLayout: React.FC = () => {
         </div>
 
         {/* Bottom Status Widget */}
-        <div className="px-4">
+        <div className="mt-auto px-4 pt-3">
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-1 text-left">
             <div className="flex items-center justify-between">
               <span className="font-mono text-[10px] text-slate-500 font-bold uppercase">
@@ -443,25 +422,13 @@ export const DashboardLayout: React.FC = () => {
 
       {/* Main Canvas Area */}
       <div className="lg:pl-64 pt-20 flex-1 min-w-0">
-        <main className="w-full min-h-[calc(100vh-5rem)] p-4 sm:p-6 md:p-8 bg-[#F8FAFC]">
-          <Outlet />
+        <main className="min-h-[calc(100vh-5rem)] w-full bg-slate-50 p-4 sm:p-6 lg:p-8">
+          <div className="mx-auto w-full max-w-[1600px]">
+            <Outlet />
+          </div>
         </main>
       </div>
-      {/* Facility Scoping Modal */}
-      <FacilityScopingModal
-        isOpen={isScopingModalOpen}
-        onClose={() => setIsScopingModalOpen(false)}
-        initialUser={{
-          id: user?.id || 'u-active',
-          fullName: user?.fullName || 'Người dùng hiện tại',
-          email: user?.email || '',
-          roleName: role || 'STAFF',
-          facilityId: selectedFacility
-        }}
-        onSave={(data) => {
-          setSelectedFacility(data.facilityId)
-        }}
-      />
+      <AccountProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
     </div>
   )
 }

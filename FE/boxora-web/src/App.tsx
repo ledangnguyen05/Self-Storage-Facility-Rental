@@ -9,9 +9,11 @@ import { LoginPage } from './pages/public/LoginPage'
 import { RegisterPage } from './pages/public/RegisterPage'
 import { HomePage } from './pages/public/HomePage'
 import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
-import { PaymentResultPage } from './pages/public/PaymentResultPage'
+import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
+import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
 
 // StorageOps Pro Portals (Matching Prototype Stitch Files)
+
 import { CustomerDashboard } from './pages/customer/CustomerDashboard'
 import { StaffDashboard } from './pages/staff/StaffDashboard'
 import { ManagerDashboard } from './pages/manager/ManagerDashboard'
@@ -58,7 +60,7 @@ function RootRedirect() {
 
 function MainContent() {
   return (
-    <div className="min-h-screen flex flex-col bg-[#F8FAFC] font-sans antialiased text-slate-900">
+    <div className="min-h-screen flex flex-col bg-[var(--background)] font-sans antialiased text-[var(--on-surface)]">
       <main className="flex-1">
         <Routes>
           {/* Public Landing Page & Authentication */}
@@ -66,11 +68,17 @@ function MainContent() {
           <Route path="/landing" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           {/* Dedicated Storage Units Explorer & Booking Dashboard */}
           <Route path="/units" element={<UnitsExplorerPage />} />
           <Route path="/explore-units" element={<UnitsExplorerPage />} />
           <Route path="/payment-result" element={<PaymentResultPage />} />
+
+          {/* Boxora Terms & Standards Dashboard */}
+          <Route path="/terms" element={<TermsAndStandardsPage />} />
+          <Route path="/standards" element={<TermsAndStandardsPage />} />
+          <Route path="/policies" element={<TermsAndStandardsPage />} />
 
           {/* Core StorageOps Pro Portal with RBAC Route Protection */}
           <Route

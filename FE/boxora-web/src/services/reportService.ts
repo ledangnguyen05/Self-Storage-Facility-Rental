@@ -1,5 +1,5 @@
 import { api } from '../lib/axios'
-import { RevenueReport, OccupancyReport } from '../types'
+import { RevenueReport, OccupancyReport, OverdueDebtReport } from '../types'
 
 export const reportService = {
   async getRevenueReport(fromDate?: string, toDate?: string) {
@@ -12,5 +12,10 @@ export const reportService = {
   async getOccupancyReport() {
     const response = await api.get('/api/v1/reports/occupancy')
     return response.data?.data as OccupancyReport
+  },
+
+  async getOverdueDebtReport(params?: { facilityId?: string }) {
+    const response = await api.get('/api/v1/reports/overdue-debt', { params })
+    return response.data?.data as OverdueDebtReport
   },
 }
