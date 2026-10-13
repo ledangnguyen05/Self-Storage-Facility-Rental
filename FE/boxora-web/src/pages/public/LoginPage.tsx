@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth, ROLE_PRESETS } from '../../context/AuthContext'
 import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import { BrandLogo } from '../../components/common/BrandLogo'
 
@@ -15,6 +15,25 @@ export const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const handleQuickLogin = async (preset: typeof ROLE_PRESETS[0]) => {
+    setError(null)
+    setIdentifier(preset.email)
+    setPassword(preset.password)
+    try {
+      const user = await login(preset.email, preset.password)
+      const userRole = user?.role?.name || preset.role
+      if (preset.role === 'CUSTOMER') {
+        const customerAccess = checkCustomerPortalAccess(user)
+        navigate(customerAccess.hasAccess ? '/portal/customer' : '/units')
+      } else {
+        navigate(preset.portalPath)
+      }
+    } catch (err: any) {
+      console.error('Quick login error:', err)
+      setError('Đăng nhập nhanh thất bại. Vui lòng thử lại.')
+    }
+  }
 
   const handleStandardSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -330,24 +349,40 @@ export const LoginPage: React.FC = () => {
             <div className="relative flex items-center justify-center my-4">
               <div className="w-full h-px bg-slate-200" />
               <span className="absolute bg-white px-3 font-mono text-[10px] text-slate-400 uppercase tracking-widest font-semibold">
-                Hoặc đăng nhập nhanh bằng
+                Đăng nhập nhanh theo 5 vai trò (1-Click Demo)
               </span>
             </div>
 
-            {/* Social Login: Google SSO */}
-            <button
-              type="button"
-              onClick={() => alert('Khởi tạo liên kết an toàn qua Google Identity Services với hệ thống Boxora.')}
-              className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-lg bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 text-xs sm:text-sm font-medium transition-all active:scale-[0.99] shadow-xs cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1"
-            >
-              <svg aria-hidden="true" className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                <path d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.65v3.03h3.88c2.27-2.09 3.665-5.17 3.665-9.12z" fill="#4285F4" />
-                <path d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.03c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.26v3.13C3.25 21.31 7.33 24 12 24z" fill="#34A853" />
-                <path d="M5.28 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.58H1.26C.46 8.18 0 9.99 0 12s.46 3.82 1.26 5.42l4.02-3.13z" fill="#FBBC05" />
-                <path d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.25 2.69 1.26 6.58l4.02 3.13c.95-2.83 3.6-4.96 6.72-4.96z" fill="#EA4335" />
-              </svg>
-              <span>Tiếp tục với Google</span>
-            </button>
+            {/* Quick Demo Role Selector */}
+            <div className="grid grid-cols-2 gap-2">
+              {ROLE_PRESETS.map((preset) => (
+                <button
+                  key={preset.role}
+                  type="button"
+                  onClick={() => handleQuickLogin(preset)}
+                  disabled={isLoading}
+                  className={`p-2.5 rounded-lg border text-left transition-all active:scale-[0.98] cursor-pointer hover:shadow-xs flex flex-col justify-between ${
+                    preset.role === 'CUSTOMER' ? 'col-span-2 bg-emerald-50/70 border-emerald-200 hover:bg-emerald-100/60' :
+                    preset.role === 'ADMIN' ? 'bg-rose-50/70 border-rose-200 hover:bg-rose-100/60' :
+                    preset.role === 'BUSINESS_MANAGER' ? 'bg-purple-50/70 border-purple-200 hover:bg-purple-100/60' :
+                    preset.role === 'FACILITY_MANAGER' ? 'bg-blue-50/70 border-blue-200 hover:bg-blue-100/60' :
+                    'bg-amber-50/70 border-amber-200 hover:bg-amber-100/60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-900 tracking-tight">
+                      {preset.label}
+                    </span>
+                    <span className="font-mono text-[9px] uppercase px-1.5 py-0.5 rounded font-semibold bg-white/80 border border-slate-200 text-slate-600">
+                      {preset.role}
+                    </span>
+                  </div>
+                  <div className="font-mono text-[10px] text-slate-500 truncate mt-1">
+                    {preset.email} • pass: {preset.password}
+                  </div>
+                </button>
+              ))}
+            </div>
 
           </div>
 
