@@ -714,9 +714,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     <span className="font-headline text-base font-bold text-white">
                       Mã PIN Mở Cửa Kho Số Hóa
                     </span>
-                    <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-500/30">
-                      BẢO MẬT SỐ HÓA
-                    </span>
                   </div>
                   <span className="text-xs text-slate-400">
                     Mã khóa truy cập điện tử dành riêng cho phòng kho {selectedCustomer.unitCode}
@@ -757,7 +754,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 ))}
               </div>
               <div className="mt-3 flex items-center gap-2 text-xs text-slate-400 font-mono">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                 <span>Mã có hiệu lực ngay khi ký bàn giao • Thẻ RFID cấp phát: </span>
                 <input
                   type="text"

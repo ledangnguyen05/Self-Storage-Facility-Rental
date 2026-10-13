@@ -113,29 +113,29 @@ export const TermsAndStandardsModal: React.FC<TermsAndStandardsModalProps> = ({
       },
       {
         id: 'security',
-        badge: 'ISO/IEC 27001',
+        badge: 'Bảo mật 24/7',
         badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-400/30',
-        title: '3. An Ninh & Bảo Mật IoT',
-        subtitle: 'Khóa điện tử độc lập & Camera AI hành lang',
+        title: '3. An Ninh & Khóa Điện Tử',
+        subtitle: 'Khóa điện tử độc lập & Camera giám sát hành lang',
         icon: Lock,
         iconBg: 'bg-cyan-500/20',
         iconColor: 'text-cyan-300',
         borderColor: 'hover:border-cyan-500/50',
         accentColor: 'text-cyan-400',
         kpiLabel: 'Nhật ký truy cập',
-        kpiValue: 'Real-time Audit Log',
-        tag: 'Bảo mật đa tầng',
+        kpiValue: 'Lưu trữ tự động',
+        tag: 'Bảo mật riêng tư',
         items: [
           {
             label: 'Khóa độc lập tuyệt đối',
             detail: 'Nhân viên Boxora không giữ chìa khóa dự phòng của ô kho, bảo mật riêng tư 100%.'
           },
           {
-            label: 'Mã hóa AES-256 GCM',
-            detail: 'Dữ liệu từ khóa điện tử về máy chủ đạt tiêu chuẩn bảo mật cấp ngân hàng và quân sự.'
+            label: 'Mã hóa truyền dữ liệu',
+            detail: 'Dữ liệu điều khiển khóa được mã hóa bảo mật an toàn giữa máy chủ và thiết bị.'
           },
           {
-            label: 'Camera AI 4K hành lang',
+            label: 'Camera giám sát hành lang',
             detail: 'Giám sát lối đi 24/7 (cam kết tuyệt đối không đặt camera quay vào bên trong ô kho cá nhân).'
           }
         ]
@@ -322,7 +322,7 @@ export const TermsAndStandardsModal: React.FC<TermsAndStandardsModalProps> = ({
             </div>
             <div>
               <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">An ninh &amp; Khóa</span>
-              <span className="block text-xs font-black text-white">ISO/IEC 27001 • Khóa độc lập</span>
+              <span className="block text-xs font-black text-white">Khóa điện tử độc lập</span>
             </div>
           </div>
 
@@ -414,7 +414,7 @@ export const TermsAndStandardsModal: React.FC<TermsAndStandardsModalProps> = ({
             <div className="flex items-center gap-3">
               <Sparkles className="w-5 h-5 text-cyan-400 shrink-0" />
               <p className="text-xs text-[#F1F5F9]">
-                Toàn bộ các quy chuẩn trên đều được giám sát tự động bằng hệ thống quản trị <strong>StorageOps Pro</strong> và lưu trữ trên cơ sở dữ liệu phân tán chuẩn ISO/IEC 27001.
+                Toàn bộ các quy chuẩn trên đều được áp dụng thống nhất trên toàn hệ thống kho Boxora.
               </p>
             </div>
             <a

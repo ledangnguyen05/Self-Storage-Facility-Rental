@@ -254,10 +254,10 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
       </div>
 
       <a
-        href="#telemetry"
+        href="#process"
         onClick={(event) => {
           event.preventDefault()
-          document.getElementById('telemetry')?.scrollIntoView({
+          document.getElementById('process')?.scrollIntoView({
             behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
             block: 'start',
           })

@@ -1,66 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence, MotionConfig, useInView } from 'framer-motion'
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion'
 import { useAuth } from '../../context/AuthContext'
 import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import { FloatingContactWidget } from '../../components/common/FloatingContactWidget'
-import { facilityService } from '../../services/facilityService'
-import { storageUnitService } from '../../services/storageUnitService'
 import { BrandLogo } from '../../components/common/BrandLogo'
 import { SmartLockerDynamicHero } from '../../components/home/SmartLockerDynamicHero'
-
-// ============================================================================
-// ANIMATED COUNTER COMPONENT (Counts up smoothly when scrolled into view)
-// ============================================================================
-interface AnimatedCounterProps {
-  value: number
-  duration?: number
-  decimals?: number
-  prefix?: string
-  suffix?: string
-}
-
-const AnimatedCounter: React.FC<AnimatedCounterProps> = ({
-  value,
-  duration = 1.4,
-  decimals = 0,
-  prefix = '',
-  suffix = ''
-}) => {
-  const [displayValue, setDisplayValue] = useState(0)
-  const ref = useRef<HTMLSpanElement>(null)
-  const inView = useInView(ref, { once: true, amount: 0.3 })
-
-  useEffect(() => {
-    if (!inView) return
-    let startTimestamp: number | null = null
-    const startValue = 0
-    const endValue = value
-
-    const step = (timestamp: number) => {
-      if (!startTimestamp) startTimestamp = timestamp
-      const progress = Math.min((timestamp - startTimestamp) / (duration * 1000), 1)
-      const easeProgress = 1 - Math.pow(1 - progress, 3) // easeOutCubic
-      const current = startValue + (endValue - startValue) * easeProgress
-      setDisplayValue(current)
-      if (progress < 1) {
-        frameId = window.requestAnimationFrame(step)
-      } else {
-        setDisplayValue(endValue)
-      }
-    }
-    let frameId = window.requestAnimationFrame(step)
-    return () => window.cancelAnimationFrame(frameId)
-  }, [inView, value, duration])
-
-  return (
-    <span ref={ref} className="tabular-nums">
-      {prefix}
-      {decimals > 0 ? displayValue.toFixed(decimals) : Math.round(displayValue)}
-      {suffix}
-    </span>
-  )
-}
 
 // ============================================================================
 // MAIN HOMEPAGE COMPONENT
@@ -72,41 +17,6 @@ export const HomePage: React.FC = () => {
   const [notifySetting, setNotifySetting] = useState(true)
   const [soundSetting, setSoundSetting] = useState(true)
   const [langSetting, setLangSetting] = useState<'vi' | 'en'>('vi')
-
-  // Real Database Metrics State
-  const [telemetry, setTelemetry] = useState({
-    totalUnits: 56,
-    availableUnits: 14,
-    facilitiesCount: 3,
-    occupancyRate: 64
-  })
-
-  useEffect(() => {
-    const fetchTelemetry = async () => {
-      try {
-        const [facRes, unitRes] = await Promise.all([
-          facilityService.getFacilities({ size: 100 }),
-          storageUnitService.getUnits()
-        ])
-        const facList = facRes?.content || []
-        const unitList = Array.isArray(unitRes) ? unitRes : []
-        if (unitList.length > 0) {
-          const avail = unitList.filter(u => u.status === 'AVAILABLE').length
-          const occ = unitList.filter(u => u.status === 'OCCUPIED').length
-          const rate = Math.round((occ / unitList.length) * 100)
-          setTelemetry({
-            totalUnits: unitList.length,
-            availableUnits: avail,
-            facilitiesCount: facList.length || 3,
-            occupancyRate: rate
-          })
-        }
-      } catch (e) {
-        console.error('Failed to load real telemetry in HomePage:', e)
-      }
-    }
-    fetchTelemetry()
-  }, [])
 
   // Customer rental access state
   const isCustomer = user?.role?.name === 'CUSTOMER'
@@ -240,7 +150,7 @@ export const HomePage: React.FC = () => {
     {
       cat: 'IOT',
       q: 'Mã PIN của tôi có bảo mật không? Nhân viên Boxora có biết mã mở khóa không?',
-      a: 'Mã PIN mở khóa được mã hóa theo kiến trúc Zero-Knowledge Encryption (AES-256 GCM). Nhân viên Boxora và nhân sự quản trị cơ sở không thể xem được mã PIN cá nhân của bạn. Chỉ duy nhất bạn sở hữu mã và có thể chủ động đổi mã số mới trực tiếp trên điện thoại bất cứ lúc nào.'
+      a: 'Mã PIN mở khóa được mã hóa bảo mật trực tiếp trên hệ thống. Nhân viên Boxora không thể xem hoặc can thiệp vào mã PIN cá nhân của bạn. Chỉ duy nhất bạn sở hữu mã và có thể chủ động đổi mã số mới trực tiếp trên điện thoại bất cứ lúc nào.'
     },
     {
       cat: 'FACILITY',
@@ -504,99 +414,7 @@ export const HomePage: React.FC = () => {
     <SmartLockerDynamicHero onBookNow={() => navigate('/units')} />
 
     {/* ============================================================ */}
-    {/* 3. REALTIME TELEMETRY STRIP (LIVE DATABASE METRICS HUD)      */}
-    {/* ============================================================ */}
-    <section id="telemetry" className="scroll-mt-16 relative bg-gradient-to-b from-[#eff7ff] via-[#f3fbff] to-white py-8 sm:py-10">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.3 }}
-          variants={staggerContainer}
-          className="grid grid-cols-2 lg:grid-cols-4 gap-4 max-w-5xl mx-auto"
-        >
-          {/* Card 1: Facilities */}
-          <motion.div
-            variants={cardItem}
-            whileHover={{ y: -6, scale: 1.02 }}
-            className="p-5 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-sm hover:shadow-lg hover:border-cyan-300 text-left space-y-1.5 transition-all group cursor-default"
-          >
-            <div className="flex items-center justify-between text-slate-400 mb-1">
-              <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500 font-bold">Cơ Sở Trực Tuyến</span>
-              <span className="material-symbols-outlined text-[20px] text-cyan-600 group-hover:scale-110 transition-transform">power</span>
-            </div>
-            <div className="font-mono text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-baseline gap-1">
-              <AnimatedCounter value={telemetry.facilitiesCount} />
-              <span className="text-base sm:text-lg font-sans font-semibold text-slate-600">Chi Nhánh</span>
-            </div>
-            <p className="text-xs text-slate-500 font-normal flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Hoạt động liên tục 24/7</span>
-            </p>
-          </motion.div>
-
-          {/* Card 2: Units Ready */}
-          <motion.div
-            variants={cardItem}
-            whileHover={{ y: -6, scale: 1.02 }}
-            className="p-5 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-sm hover:shadow-lg hover:border-cyan-300 text-left space-y-1.5 transition-all group cursor-default"
-          >
-            <div className="flex items-center justify-between text-slate-400 mb-1">
-              <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500 font-bold">Kho Phòng Sẵn Sàng</span>
-              <span className="material-symbols-outlined text-[20px] text-cyan-600 group-hover:scale-110 transition-transform">warehouse</span>
-            </div>
-            <div className="font-mono text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-baseline gap-1">
-              <AnimatedCounter value={telemetry.availableUnits} />
-              <span className="text-slate-400 font-light">/</span>
-              <span className="text-slate-700">{telemetry.totalUnits}</span>
-            </div>
-            <p className="text-xs text-slate-500 font-normal">
-              Tỷ lệ lấp đầy <strong className="text-cyan-800 font-mono"><AnimatedCounter value={telemetry.occupancyRate} suffix="%" /></strong>
-            </p>
-          </motion.div>
-
-          {/* Card 3: Climate Sensor */}
-          <motion.div
-            variants={cardItem}
-            whileHover={{ y: -6, scale: 1.02 }}
-            className="p-5 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-sm hover:shadow-lg hover:border-cyan-300 text-left space-y-1.5 transition-all group cursor-default"
-          >
-            <div className="flex items-center justify-between text-slate-400 mb-1">
-              <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500 font-bold">Vi Khí Hậu Tối Ưu</span>
-              <span className="material-symbols-outlined text-[20px] text-blue-600 group-hover:scale-110 transition-transform">thermostat</span>
-            </div>
-            <div className="font-mono text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              21.5°C
-            </div>
-            <p className="text-xs text-slate-500 font-normal">
-              Độ ẩm kiểm soát <strong className="text-blue-800 font-mono">45% RH</strong>
-            </p>
-          </motion.div>
-
-          {/* Card 4: Security Standard */}
-          <motion.div
-            variants={cardItem}
-            whileHover={{ y: -6, scale: 1.02 }}
-            className="p-5 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-sm hover:shadow-lg hover:border-cyan-300 text-left space-y-1.5 transition-all group cursor-default"
-          >
-            <div className="flex items-center justify-between text-slate-400 mb-1">
-              <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500 font-bold">Chuẩn Bảo Mật</span>
-              <span className="material-symbols-outlined text-[20px] text-blue-600 group-hover:scale-110 transition-transform">encrypted</span>
-            </div>
-            <div className="font-mono text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              Bảo Mật 24/7
-            </div>
-            <p className="text-xs text-slate-500 font-normal">
-              Khóa IoT &amp; Mã PIN riêng biệt
-            </p>
-          </motion.div>
-
-        </motion.div>
-      </div>
-    </section>
-
-    {/* ============================================================ */}
-    {/* 4. SEAMLESS 3-STEP PROCESS (QUY TRÌNH THUÊ KHO KHÉP KÍN)     */}
+    {/* 3. SEAMLESS 3-STEP PROCESS (QUY TRÌNH THUÊ KHO KHÉP KÍN)     */}
     {/* ============================================================ */}
     <section id="process" className="py-20 lg:py-24 border-b border-slate-200/80 bg-white relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-14">
