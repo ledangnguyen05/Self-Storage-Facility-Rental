@@ -58,7 +58,6 @@ public class PaymentServiceImpl implements PaymentService {
     private final com.boxora.security.FacilityAccessGuard facilityAccessGuard;
     private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractRenewalService> contractRenewalServiceProvider;
     private final com.boxora.service.StorageUnitLockService storageUnitLockService;
-    private final com.boxora.repository.RentalContractRepository rentalContractRepository;
 
     private UUID extractFacilityId(Payment payment) {
         if (payment == null) return null;
@@ -232,9 +231,6 @@ public class PaymentServiceImpl implements PaymentService {
                     }
                 }
                 bookingRepository.save(booking);
-                if (booking.getStatus() == BookingStatus.CONFIRMED) {
-                    ensureContractForConfirmedBooking(booking);
-                }
             }
 
             if (payment.getPaymentType() == PaymentType.RENEWAL_FEE) {
@@ -534,39 +530,5 @@ public class PaymentServiceImpl implements PaymentService {
                 .amount(payment.getAmount())
                 .orderInfo(orderInfo)
                 .build();
-    }
-
-    private void ensureContractForConfirmedBooking(Booking booking) {
-        if (booking == null) return;
-        try {
-            if (rentalContractRepository.findByBookingId(booking.getId()).isEmpty()) {
-                com.boxora.entity.StorageUnit unit = booking.getStorageUnit();
-                com.boxora.entity.Facility facility = unit != null ? unit.getFacility() : null;
-                BigDecimal monthlyFee = (unit != null && unit.getEffectiveBasePrice() != null)
-                        ? unit.getEffectiveBasePrice()
-                        : (booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
-                        ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), java.math.RoundingMode.HALF_UP)
-                        : BigDecimal.valueOf(1500000));
-
-                RentalContract contract = RentalContract.builder()
-                        .contractCode("CTR-" + booking.getBookingCode())
-                        .customer(booking.getCustomer())
-                        .unit(unit)
-                        .facility(facility)
-                        .booking(booking)
-                        .startDate(booking.getStartDate())
-                        .endDate(booking.getEndDate())
-                        .monthlyFee(monthlyFee)
-                        .depositHeld(booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO)
-                        .status(com.boxora.enums.RentalContractStatus.PENDING_SIGNATURE)
-                        .build();
-
-                rentalContractRepository.save(contract);
-                log.info("Auto-created RentalContract {} in PENDING_SIGNATURE for confirmed booking {}",
-                        contract.getContractCode(), booking.getBookingCode());
-            }
-        } catch (Exception e) {
-            log.warn("Notice ensuring contract for booking {}: {}", booking.getBookingCode(), e.getMessage());
-        }
     }
 }
