@@ -64,6 +64,9 @@ class BookingServiceTest {
     @Mock
     private EncryptionService encryptionService;
 
+    @Mock
+    private com.boxora.security.RequestContext requestContext;
+
     @InjectMocks
     private BookingServiceImpl bookingService;
 

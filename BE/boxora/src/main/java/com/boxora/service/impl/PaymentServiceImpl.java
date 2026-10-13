@@ -47,6 +47,7 @@ import java.util.*;
 public class PaymentServiceImpl implements PaymentService {
 
     private static final DateTimeFormatter VNP_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    private static final java.security.SecureRandom SECURE_RANDOM = new java.security.SecureRandom();
 
     private final PaymentRepository paymentRepository;
     private final BookingRepository bookingRepository;
@@ -205,7 +206,7 @@ public class PaymentServiceImpl implements PaymentService {
                     booking.setStatus(BookingStatus.CONFIRMED);
                     booking.setPaymentExpiresAt(null);
                     if (booking.getAccessPin() == null) {
-                        booking.setAccessPin(String.format("%06d", new java.util.Random().nextInt(1000000)));
+                        booking.setAccessPin(String.format("%06d", SECURE_RANDOM.nextInt(1000000)));
                         booking.setQrAccessToken("QR-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase());
                         booking.setPinUpdatedAt(LocalDateTime.now());
                     }
@@ -221,7 +222,7 @@ public class PaymentServiceImpl implements PaymentService {
                     booking.setStatus(BookingStatus.CONFIRMED);
                     booking.setPaymentExpiresAt(null);
                     if (booking.getAccessPin() == null) {
-                        booking.setAccessPin(String.format("%06d", new java.util.Random().nextInt(1000000)));
+                        booking.setAccessPin(String.format("%06d", SECURE_RANDOM.nextInt(1000000)));
                         booking.setQrAccessToken("QR-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase());
                         booking.setPinUpdatedAt(LocalDateTime.now());
                     }
@@ -339,7 +340,7 @@ public class PaymentServiceImpl implements PaymentService {
                     booking.setStatus(BookingStatus.CONFIRMED);
                     booking.setPaymentExpiresAt(null);
                     if (booking.getAccessPin() == null) {
-                        booking.setAccessPin(String.format("%06d", new java.util.Random().nextInt(1000000)));
+                        booking.setAccessPin(String.format("%06d", SECURE_RANDOM.nextInt(1000000)));
                         booking.setQrAccessToken("QR-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase());
                         booking.setPinUpdatedAt(LocalDateTime.now());
                     }
@@ -355,7 +356,7 @@ public class PaymentServiceImpl implements PaymentService {
                     booking.setStatus(BookingStatus.CONFIRMED);
                     booking.setPaymentExpiresAt(null);
                     if (booking.getAccessPin() == null) {
-                        booking.setAccessPin(String.format("%06d", new java.util.Random().nextInt(1000000)));
+                        booking.setAccessPin(String.format("%06d", SECURE_RANDOM.nextInt(1000000)));
                         booking.setQrAccessToken("QR-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase());
                         booking.setPinUpdatedAt(LocalDateTime.now());
                     }
