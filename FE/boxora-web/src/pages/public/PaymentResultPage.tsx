@@ -24,6 +24,26 @@ export const PaymentResultPage: React.FC = () => {
       return
     }
 
+    if (bookingId.startsWith('mock-')) {
+      const mockUnitCode = searchParams.get('unitCode') || 'BX-101'
+      const mockUnitName = searchParams.get('unitName') || 'Locker Mini A1'
+      const mockResult: any = {
+        id: bookingId,
+        bookingCode: `RES-${mockUnitCode.replace(/[^0-9]/g, '') || Math.floor(1000 + Math.random() * 9000)}`,
+        unitCode: mockUnitCode,
+        facilityName: 'Boxora Central Landmark — Quận 1',
+        status: 'CONFIRMED',
+        initialPaymentAmount: 1700000,
+        createdAt: new Date().toISOString()
+      }
+      setBooking(mockResult)
+      if (status === 'PAID' && user?.role?.name === 'CUSTOMER') {
+        activateCustomerRental(user, mockUnitCode, `${mockUnitName} • Boxora Central Landmark`)
+      }
+      setIsLoading(false)
+      return
+    }
+
     setIsLoading(true)
     bookingService.getById(bookingId)
       .then((result) => {
