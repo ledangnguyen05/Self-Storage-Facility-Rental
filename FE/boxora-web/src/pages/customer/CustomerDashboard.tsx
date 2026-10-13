@@ -110,10 +110,7 @@ export const CustomerDashboard: React.FC = () => {
   const [isRenewing, setIsRenewing] = useState(false)
   const [renewalError, setRenewalError] = useState<string | null>(null)
 
-  // Share Access Modal
-  const [shareModalUnit, setShareModalUnit] = useState<string | null>(null)
-  const [sharePhone, setSharePhone] = useState('')
-  const [shareSuccess, setShareSuccess] = useState(false)
+
 
   // Live API data for explore tab & active units
   const [facilities, setFacilities] = useState<Facility[]>([])
@@ -251,9 +248,14 @@ export const CustomerDashboard: React.FC = () => {
     const handleRentalUpdated = () => {
       loadActiveBookings()
     }
+    const handleTicketUpdated = () => {
+      loadTickets()
+    }
     window.addEventListener('boxora_rental_updated', handleRentalUpdated)
+    window.addEventListener('boxora_ticket_updated', handleTicketUpdated)
     return () => {
       window.removeEventListener('boxora_rental_updated', handleRentalUpdated)
+      window.removeEventListener('boxora_ticket_updated', handleTicketUpdated)
     }
   }, [user])
 
@@ -474,6 +476,7 @@ export const CustomerDashboard: React.FC = () => {
       setTicketTitle('')
 
       await loadTickets()
+      window.dispatchEvent(new Event('boxora_ticket_updated'))
 
       setTimeout(() => {
         setTicketSubmitted(false)
@@ -484,16 +487,6 @@ export const CustomerDashboard: React.FC = () => {
     } finally {
       setIsSubmittingTicket(false)
     }
-  }
-
-  const handleShareSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    setShareSuccess(true)
-    setTimeout(() => {
-      setShareSuccess(false)
-      setShareModalUnit(null)
-      setSharePhone('')
-    }, 2000)
   }
 
   return (
@@ -1422,92 +1415,6 @@ export const CustomerDashboard: React.FC = () => {
               alt="Hình ảnh sự cố"
               className="w-full h-auto max-h-[80vh] object-contain rounded-xl"
             />
-          </div>
-        </div>
-      )}
-
-      {/* Share Access Modal */}
-      {shareModalUnit && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
-            {shareSuccess ? (
-              <div className="py-8 text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-                  <span className="material-symbols-outlined text-[28px]">check_circle</span>
-                </div>
-                <h3 className="font-headline text-lg font-bold text-slate-900">
-                  Cấp Quyền Thành Công!
-                </h3>
-                <p className="text-xs text-slate-600">
-                  Mã token và hướng dẫn mở cửa tạm thời đã được gửi tới số <strong>{sharePhone}</strong>.
-                </p>
-                <button
-                  onClick={() => {
-                    setShareSuccess(false)
-                    setShareModalUnit(null)
-                    setSharePhone('')
-                  }}
-                  className="mt-2 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors"
-                >
-                  Hoàn tất
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleShareSubmit} className="space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <div>
-                    <h3 className="font-headline text-base font-bold text-slate-900">
-                      Cấp Quyền Mở Kho #{shareModalUnit}
-                    </h3>
-                    <span className="text-xs text-slate-500">Tạo mã truy cập tạm thời cho tài xế hoặc người thân</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShareModalUnit(null)}
-                    className="text-slate-400 hover:text-slate-600"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">close</span>
-                  </button>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase">Số điện thoại người nhận</label>
-                  <input
-                    type="tel"
-                    required
-                    value={sharePhone}
-                    onChange={(e) => setSharePhone(e.target.value)}
-                    placeholder="Ví dụ: 0912 345 678"
-                    className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-400"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase">Thời hạn hiệu lực của mã</label>
-                  <select className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-400">
-                    <option value="4h">Trong 4 Giờ (Giao nhận gấp)</option>
-                    <option value="24h">Trong 24 Giờ (1 Ngày)</option>
-                    <option value="7d">Trong 7 Ngày</option>
-                  </select>
-                </div>
-
-                <div className="pt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShareModalUnit(null)}
-                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
-                  >
-                    Hủy bỏ
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
-                  >
-                    Gửi Mã Truy Cập
-                  </button>
-                </div>
-              </form>
-            )}
           </div>
         </div>
       )}
