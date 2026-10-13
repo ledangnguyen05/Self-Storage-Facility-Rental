@@ -609,9 +609,6 @@ export const HomePage: React.FC = () => {
           variants={sectionFadeIn}
           className="text-center max-w-2xl mx-auto space-y-3"
         >
-          <span className="text-[var(--brand-teal,#0866f5)] font-mono text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200">
-            Quy trình thuê kho 3 bước đơn giản
-          </span>
           <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             Bắt Đầu Thuê Kho Chỉ Trong 3 Bước
           </h2>
@@ -788,9 +785,6 @@ export const HomePage: React.FC = () => {
           variants={sectionFadeIn}
           className="text-center max-w-3xl mx-auto space-y-3"
         >
-          <span className="text-[var(--brand-teal,#0866f5)] font-mono text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200">
-            An ninh &amp; Bảo mật đa tầng
-          </span>
           <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             Công Nghệ Khóa Điện Tử IoT &amp; Bảo Mật Đa Tầng
           </h2>
@@ -930,9 +924,6 @@ export const HomePage: React.FC = () => {
           variants={sectionFadeIn}
           className="text-center max-w-3xl mx-auto space-y-3"
         >
-          <span className="text-[var(--brand-teal,#0866f5)] font-mono text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200">
-            Danh mục dịch vụ
-          </span>
           <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             Giải Pháp Lưu Trữ Toàn Diện Cho Cá Nhân &amp; Doanh Nghiệp
           </h2>
@@ -1118,9 +1109,6 @@ export const HomePage: React.FC = () => {
           variants={sectionFadeIn}
           className="text-center max-w-3xl mx-auto space-y-3"
         >
-          <span className="text-[var(--brand-teal,#0866f5)] font-mono text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200">
-            Quy cách buồng kho
-          </span>
           <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             Bộ Ước Tính Kích Cỡ &amp; Sức Chứa Buồng Kho Chuẩn
           </h2>
@@ -1258,9 +1246,6 @@ export const HomePage: React.FC = () => {
           variants={sectionFadeIn}
           className="text-center max-w-3xl mx-auto space-y-3"
         >
-          <span className="text-[var(--brand-teal,#0866f5)] font-mono text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200">
-            Chính sách minh bạch
-          </span>
           <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             Chính Sách Thuê Kho Rõ Ràng &amp; Minh Bạch Tuyệt Đối
           </h2>
@@ -1536,9 +1521,6 @@ export const HomePage: React.FC = () => {
           variants={sectionFadeIn}
           className="text-center max-w-3xl mx-auto space-y-3"
         >
-          <span className="text-[var(--brand-teal,#0866f5)] font-mono text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200">
-            Hỏi đáp &amp; Hỗ trợ
-          </span>
           <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             Câu Hỏi Thường Gặp &amp; Kênh Hỗ Trợ Khách Hàng
           </h2>
@@ -1693,15 +1675,6 @@ export const HomePage: React.FC = () => {
     {/* ============================================================ */}
     <section className="py-20 lg:py-24 bg-[var(--surface-canvas,#f8fafc)] text-center relative overflow-hidden">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 space-y-6 relative z-10">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          whileInView={{ opacity: 1, scale: 1 }}
-          viewport={{ once: true }}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-cyan-100 text-[var(--brand-teal,#0866f5)] text-xs font-semibold shadow-2xs"
-        >
-          <span>Ưu đãi tháng đầu tiên cho khách hàng mới</span>
-        </motion.div>
-
         <h2 className="font-headline text-3xl sm:text-5xl font-extrabold text-slate-900 tracking-tight leading-tight">
           Sẵn Sàng Mở Rộng Không Gian Sống Của Bạn?
         </h2>

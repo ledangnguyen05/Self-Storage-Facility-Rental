@@ -177,14 +177,6 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
       />
 
       <div data-scroll-copy className="relative z-10 mx-auto flex min-h-[calc(100svh_-_64px)] max-w-[1440px] flex-col items-center px-5 pb-3 pt-[clamp(1.25rem,5svh,4rem)] text-center sm:px-8 sm:pb-4 sm:pt-[clamp(1.75rem,6svh,4.5rem)] lg:px-12 lg:pt-[clamp(1.5rem,5svh,3.75rem)]">
-        <div data-hero-copy className="mb-4 inline-flex items-center gap-2.5 rounded-full border border-blue-900/10 bg-white/85 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-800 shadow-sm backdrop-blur-sm sm:mb-5 sm:py-2.5 sm:text-xs">
-          <span className="relative flex h-2.5 w-2.5 items-center justify-center">
-            <span className="absolute h-full w-full animate-ping rounded-full bg-lime-500/35 motion-reduce:animate-none" />
-            <span className="relative h-2 w-2 rounded-full bg-lime-500" />
-          </span>
-          Không gian lưu trữ thông minh
-        </div>
-
         <h1 data-hero-copy id="boxora-hero-title" className="max-w-6xl text-[clamp(2.2rem,min(7.4vw,10svh),6.4rem)] font-semibold leading-[0.96] tracking-[-0.045em] text-slate-950">
           Kho lưu trữ thông minh
           <img
