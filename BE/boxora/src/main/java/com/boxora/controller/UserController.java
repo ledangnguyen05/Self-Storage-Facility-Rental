@@ -46,11 +46,12 @@ public class UserController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     public ResponseEntity<ApiResponse<PageResponse<UserResponse>>> getAll(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Boolean isActive,
             @RequestParam(required = false) UUID roleId,
+            @RequestParam(required = false) String role,
             @RequestParam(required = false) UUID facilityId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
@@ -58,7 +59,7 @@ public class UserController {
             @RequestParam(defaultValue = "desc") String sortDir
     ) {
         PageResponse<UserResponse> response = userService.findAllWithFilters(
-                search, isActive, roleId, facilityId, page, size, sortBy, sortDir
+                search, isActive, roleId, role, facilityId, page, size, sortBy, sortDir
         );
         return ResponseEntity.ok(ApiResponse.success(response));
     }
