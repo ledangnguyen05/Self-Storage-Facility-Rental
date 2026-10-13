@@ -1,0 +1,854 @@
+Project Code: funef21205 (Project ID: 2)
+Project Name: Hệ thống Quản lý và Cho thuê Cơ sở Kho Tự quản
+English Name: Boxora - Self-Storage Facility Rental and Management System
+
+Acknowledgement
+
+We would like to express our deepest gratitude to our project supervisor and mentors for their guidance, valuable insights, and continuous support throughout the development of the Boxora - Self-Storage Facility Rental and Management System. We also thank FPT University for providing an environment that fosters practical engineering, collaboration, and innovation.
+
+---
+
+I. Project Introduction
+
+1. Overview
+Boxora is a web-based Self-Storage Facility Rental and Management System designed to centralize the rental and operational management of storage facilities. The system supports the rental lifecycle from facility and unit discovery, reservation and payment to contract confirmation, check-in, handover, access management, renewal, overdue handling, checkout, and deposit refund.
+The platform is designed for multiple facilities and supports different operational roles, including Storage Customer, Facility Staff, Facility Manager, Business Operations Manager, and System Administrator.
+
+2. Product Background
+Self-storage facilities require the management of physical storage units, customer reservations, rental contracts, payments, deposits, access credentials, unit handover, inspections, and contract expiry. When these activities are handled separately, staff must spend significant time checking records, updating unit status, communicating with customers, and reconciling payments.
+Boxora addresses these operational requirements by connecting the major activities into one rental lifecycle. Customers can discover facilities and available units, create reservations, make payments, confirm contracts, schedule check-in, manage active rentals, renew contracts, request checkout, and submit support requests. Staff and managers receive operational functions for verification, unit assignment, handover, inspection, overdue handling, and reporting.
+
+3. Existing Systems
+3.1 Traditional Manual Self-Storage Management
+In a traditional self-storage operation, facility information, unit availability, customer information, contracts, payments, and handover records may be maintained through paper documents, spreadsheets, phone calls, or separate internal records.
+This approach can make it difficult to obtain a real-time view of unit availability and rental status. Reservation processing, unit assignment, contract expiry monitoring, payment reconciliation, and checkout inspection also require repeated manual work. Errors or delayed updates can lead to inconsistent records between staff and the actual physical condition or status of a unit.
+
+3.2 Fragmented Digital Storage Management
+Some storage operations may use digital tools for individual activities such as customer registration, payment recording, spreadsheets, or communication. However, when these tools are not integrated into a single rental workflow, staff may still need to transfer information between systems or maintain duplicate records.
+A fragmented approach can also make facility-scoped authorization, end-to-end rental tracking, overdue processing, access-credential management, support requests, and auditability harder to manage consistently. Boxora therefore focuses on integrating these activities into a centralized platform.
+
+4. Business Opportunity
+The self-storage service model creates an operational need for convenient online discovery and reservation as well as reliable facility-side management. Customers need clear information about facility locations, unit types, prices, availability, rental duration, payments, and access. Facility operators need tools to control inventory, contracts, staff activities, overdue cases, revenue, and facility performance.
+Boxora provides an opportunity to digitize these processes in one system. The platform can reduce repeated manual operations, improve visibility of storage inventory and rental status, standardize operational workflows, and provide structured data for revenue, occupancy, overdue, and activity reporting.
+The system is also designed with multi-facility operation in mind. Facility-scoped authorization allows operational users to work within their assigned facilities while Business Operations Managers and System Administrators can manage information at the appropriate broader scope.
+
+5. Software Product Vision
+Boxora aims to provide a centralized and traceable digital platform for self-storage rental operations. The product vision is to make storage rental easier for customers while giving operators a consistent way to manage facilities, storage units, contracts, payments, access, staff operations, and customer support.
+For customers, Boxora provides a clear digital journey from searching for a suitable storage unit to reservation, payment, contract confirmation, check-in, active rental, renewal, and checkout. For facility operators, the system provides structured workflows, authorization by facility scope, scheduled processing, operational dashboards, reporting, and audit logging.
+The Phase 1 product focuses on software-based rental and operational management. Direct integration with smart-lock hardware, transportation services, online liquidation, and sub-user access sharing are excluded from the MVP scope.
+
+6. Project Scope & Limitations
+The project scope covers the core software functions required to manage the self-storage rental lifecycle and supporting facility operations. The system is designed as a web-based application with separate capabilities according to user roles.
+
+6.1 Major Features
+1. Customer facility and unit discovery: browse facilities, unit types, dimensions, prices, availability, and relevant facility information.
+2. Reservation management: select a facility, unit type, start date and rental duration; create and manage reservations; apply a 24-hour soft-lock for pending reservations.
+3. Reservation payment: support deposit and first-rental payments through a sandbox payment provider and reconcile payment results through signed webhooks.
+4. Rental contract management: create and confirm rental contracts and maintain contract status and rental information.
+5. Check-in and handover: schedule check-in, verify customer information, verify payment and contract eligibility, assign an appropriate physical unit, record handover conditions, and complete the rental start process.
+6. Access credential management: manage storage-unit access PINs and credential status according to the active contract and access-control workflow.
+7. Rented storage unit management: allow customers to view active rented units, contract information, payment information, expiry dates, and access information.
+8. Renewal and overdue management: provide renewal options, reminders, overdue detection, penalties, PIN disabling, sealing workflow, and offline legal-processing stages.
+9. Checkout and deposit refund: request checkout, perform inspection, record unit condition and evidence, calculate additional charges, and process the remaining deposit refund.
+10. Support request management: allow customers to create support tickets and authorized staff to receive, update, and close them.
+11. Facility and staff management: manage facilities, storage units, staff assignments, and facility-level operational information.
+12. Pricing, fees, discounts and policies: manage unit pricing, rental policies, fees, discounts, and related business rules.
+13. Reporting and dashboards: provide occupancy, revenue, overdue, facility, and system-wide operational reports.
+14. User, role and permission management: manage users, roles, permissions, facility assignments, authentication, login history, and audit logs.
+15. Scheduled processing and notifications: automate reservation expiry, renewal reminders, overdue detection, and relevant customer notifications.
+
+6.2 Limitations & Exclusions
+1. Direct Bluetooth, Zigbee, or remote smart-lock hardware integration is excluded from Phase 1.
+2. Third-party home pickup, transportation, or moving services are excluded.
+3. Online auction or liquidation of abandoned property is excluded; legal processing remains offline in Phase 1.
+4. Sub-user access sharing is excluded from the MVP; access is limited to the contract holder.
+5. The payment integration uses a sandbox provider for the project and is not intended to represent a production payment deployment.
+6. Physical storage-unit assignment remains a manual authorized operation in the MVP; automatic allocation is deferred.
+7. The system does not directly operate physical locks or other facility hardware.
+
+---
+
+II. Project Management Plan
+
+1. Overview
+The Project Management Plan defines how the Boxora team organizes, develops, reviews, tests, documents, and delivers the Self-Storage Facility Rental and Management System. The plan covers project scope, objectives, risks, development process, quality activities, training, deliverables, responsibilities, communication, and configuration management.
+
+1.1 Scope & Estimation
+The project includes requirements analysis, system design, database design, backend development, frontend development, integration, testing, documentation, and release preparation. Development is organized around the core rental lifecycle and the supporting management functions defined in the Software Requirements Specification.
+The project estimation is divided into the following major work packages: requirements and analysis; UI and system design; database and backend development; frontend development; integration and business workflow implementation; testing and defect fixing; documentation and release preparation.
+The team will prioritize Must-have requirements first, followed by Should-have requirements where time and project capacity allow. Changes to the baseline requirements are reviewed by the team before implementation.
+
+1.2 Project Objectives
+1. Deliver a working web-based self-storage rental and management system for the defined user roles.
+2. Implement the complete core rental lifecycle from discovery and reservation through payment, contract, handover, active rental, renewal, overdue handling, checkout, and deposit refund.
+3. Provide role-based and facility-scoped authorization for operational users.
+4. Provide reliable payment-status processing, auditability, and traceability for critical business operations.
+5. Provide dashboards and reports for facility and system-level operational monitoring.
+6. Complete the required software documentation, testing documentation, installation instructions, and user guides.
+
+1.3 Project Risks
+- Risk R1 – Requirement changes: Changes to business rules or functional scope may increase development effort and affect the schedule. Mitigation: maintain a requirements baseline and review changes before implementation.
+- Risk R2 – Integration issues: Frontend, backend, database, payment sandbox, and notification components may produce integration defects. Mitigation: integrate incrementally and perform API and end-to-end testing.
+- Risk R3 – Payment inconsistency: Client-side payment results may differ from gateway callback results. Mitigation: treat signed webhook results as the authoritative reconciliation event and design callback processing to be idempotent.
+- Risk R4 – Authorization errors: Incorrect facility-scoped authorization may expose or modify data outside a user's assigned facility. Mitigation: enforce RBAC and facility-scope checks in backend services and test unauthorized scenarios.
+- Risk R5 – Data inconsistency: Unit status, reservations, contracts, and payments may become inconsistent if concurrent operations are not handled correctly. Mitigation: validate state transitions, use database constraints/transactions where appropriate, and test boundary cases.
+- Risk R6 – Schedule pressure: Limited capstone time may reduce the time available for testing or documentation. Mitigation: prioritize core requirements, track milestones, and reserve time for integration and defect fixing.
+- Risk R7 – Hardware dependency: Smart-lock or other physical integrations may introduce additional technical and operational complexity. Mitigation: keep direct hardware control outside Phase 1 and provide software-based access-credential management.
+
+2. Management Approach
+Boxora follows an iterative software development approach. Requirements are organized into functional modules, implemented incrementally, integrated with related modules, and verified through testing. The team maintains a shared baseline for requirements, source code, database migrations, and project documentation.
+
+2.1 Project Process
+- Phase 1 – Requirements Analysis: identify actors, use cases, business rules, functional requirements, non-functional requirements, and project constraints.
+- Phase 2 – System and Database Design: define architecture, modules, entity relationships, database schema, authorization boundaries, and major workflows.
+- Phase 3 – Implementation: develop backend APIs, frontend screens, database migrations, authentication, business workflows, and supporting services.
+- Phase 4 – Integration: connect frontend and backend modules and verify complete workflows such as reservation-payment-contract-check-in-handover and renewal-overdue-checkout-refund.
+- Phase 5 – Testing and Stabilization: execute unit, integration, functional, authorization, and user acceptance testing; record and fix defects.
+- Phase 6 – Documentation and Release: finalize the SRS, design documentation, test documentation, installation guide, user manual, and release package.
+
+2.2 Quality Management
+Quality is managed through requirement reviews, coding standards, peer review, functional testing, authorization testing, database validation, and regression testing after significant changes.
+Critical workflows such as payment reconciliation, unit assignment, handover, overdue processing, checkout, deposit refund, and audit logging receive specific verification because errors in these workflows can affect business records or access control.
+The project uses the following quality targets defined for the system: business APIs should meet the documented response-time targets under normal test conditions; critical activities should be auditable; role and facility authorization should be enforced consistently; and the release package should contain the required installation and user documentation.
+
+2.3 Training Plan
+Training is provided through the user manual and practical walkthroughs for each supported role:
+- Customer training covers registration, login, facility and unit discovery, reservation, payment, contract confirmation, check-in scheduling, rented-unit management, renewal, checkout, and support requests.
+- Facility Staff training covers daily tasks, reservation search, customer verification, check-in, unit assignment, handover, inspection, checkout, and support handling.
+- Facility Manager training covers facility dashboard usage, unit management, customer and reservation monitoring, overdue cases, staff assignment, and facility reports.
+- Business Operations Manager training covers facility management, unit types, pricing, rental policies, fees, discounts, and system-wide reports.
+- System Administrator training covers user, role, permission, facility-scope, login-history, and activity-log management.
+
+3. Project Deliverables
+1. Software Requirements Specification (SRS).
+2. Software Design Description and database design documentation.
+3. Source code for frontend, backend, database migrations, and supporting application components within the project scope.
+4. Test plan, test cases, test reports, and user acceptance testing evidence.
+5. Deployment and installation configuration required for the project environment.
+6. User manual for Customer, Facility Staff, Facility Manager, Business Operations Manager, and System Administrator.
+7. Final release package and capstone presentation materials as required by the project.
+
+4. Responsibility Assignments
+- Project Leader – Nguyễn Xuân Trường: coordinate the team, track project progress, consolidate requirements and documentation, and coordinate communication with the supervisor.
+- Đoàn Hoàng Phúc: participate in requirements analysis, system design, implementation, testing, and documentation according to the team's task allocation.
+- Lê Đăng Nguyên: participate in requirements analysis, system design, implementation, testing, and documentation according to the team's task allocation.
+- Phạm Duy Khang: participate in requirements analysis, system design, implementation, testing, and documentation according to the team's task allocation.
+- Cao Quang Triển: participate in requirements analysis, system design, implementation, testing, and documentation according to the team's task allocation.
+All members are responsible for reviewing their assigned work, reporting blockers, maintaining source code quality, updating relevant documentation, and supporting integration and testing.
+
+5. Project Communications
+The team uses scheduled meetings and asynchronous communication to coordinate project activities. Communication focuses on requirements, task status, technical blockers, defects, integration issues, documentation, and milestone progress.
+Internal team communication is used for daily coordination, task assignment, issue discussion, code review, and progress tracking. Formal project updates and important requirement decisions are communicated to the supervisor through the agreed project communication channel.
+Project artifacts such as requirements, source code, issues, diagrams, test results, and release documents are stored in the team's designated repositories or shared workspaces so that the latest approved version can be identified.
+
+6. Configuration Management
+Configuration Management ensures that source code, database migrations, requirements, design documents, test documents, and release materials are versioned and controlled. Changes to baselined artifacts should be traceable to a task, issue, defect, or approved requirement change.
+
+6.1 Document Management
+Project documents are maintained using controlled filenames and versions. Major documents such as the SRS, design description, test documentation, installation guide, and user manual are reviewed before being treated as a project baseline.
+Document changes should preserve the existing section structure and terminology unless a requirement or design change requires modification. Final versions are retained as part of the release package.
+
+6.2 Source Code Management
+Source code is maintained in a Git repository. Development work should be organized into branches or commits that clearly describe the implemented change. Changes are reviewed before integration into the main development line where practical.
+Database schema changes are maintained through versioned migration files. Applied migration files should not be edited retroactively; corrective changes should be introduced as new migrations to preserve database history and reproducibility.
+Sensitive configuration such as passwords, JWT secrets, payment credentials, and other environment-specific secrets must not be committed to the source-code repository.
+
+6.3 Tools & Infrastructures
+Development tools and infrastructure include a Java/Spring Boot backend, web frontend (React/TypeScript), PostgreSQL database, Git-based source control, API testing/documentation tools, an IDE or code editor, and the project environment used for build, test, and deployment.
+The project may use containerization or environment-specific configuration where required for consistent development and integration. Environment variables are used for configuration that differs between development, testing, and deployment environments.
+
+---
+
+III. Software Requirement Specification
+
+1. Product Overview
+Boxora is a centralized web-based platform for renting and managing self-storage facilities across multiple locations. It replaces manual reservation, paper-based handover, fragmented payment tracking, manual contract-expiry monitoring and ad-hoc support handling with an integrated digital workflow.
+The platform provides a Customer Portal, Facility Staff functions, Facility Manager functions, Business Operations management and System Administration. The system supports facility-scoped authorization, online payment, e-contract confirmation, access credentials, automated renewal reminders, overdue processing, support tickets and operational reporting.
+
+1.1 Product Objectives
+- Allow customers to discover facilities, unit types, prices and availability without visiting a facility.
+- Allow customers to reserve and pay online and receive a structured check-in process.
+- Reduce manual work and errors in unit assignment, handover, contract tracking and payment reconciliation.
+- Manage the complete rental lifecycle from reservation to checkout and deposit refund.
+- Restrict Staff and Facility Manager access to assigned facilities.
+- Provide Business Operations Managers with pricing, policy, revenue and occupancy visibility.
+- Provide System Administrators with user, role, permission, login and audit management.
+
+1.2 Scope
+1.2.1 In Scope
+- Customer portal: facility/unit search, reservation, payment, check-in appointment, rented-unit management, renewal, checkout and support.
+- Staff portal: daily tasks, reservation lookup, customer verification, check-in, handover, inspection, checkout and support.
+- Facility Manager: units, assignments, contracts, overdue cases, staff assignments and facility reports.
+- Business Operations Manager: facilities, unit types, pricing, deposit, fees, discounts and system-wide reports.
+- System Administrator: users, roles, permissions, facility assignments, login history and audit logs.
+- Online payment through a sandbox provider with signed webhook reconciliation.
+- Automated notifications and scheduled jobs for reservation expiry, renewal reminders and overdue handling.
+
+1.2.2 Out of Scope
+- Direct Bluetooth/Zigbee or remote smart-lock hardware integration in Phase 1.
+- Third-party home pickup, transportation or moving services.
+- Online auction/liquidation of abandoned property; legal processing remains offline in Phase 1.
+- Sub-user access sharing; MVP access is limited to the contract holder.
+
+1.3 Success Metrics
+| ID | Metric | Target |
+|---|---|---|
+| SM-001 | Check-in/handover duration | Below 5 minutes |
+| SM-002 | Average occupancy | Above 85% |
+| SM-003 | Renewal/overdue automation | 100% of due reminders and detections processed automatically |
+| SM-004 | Allocation/reservation errors | 90% reduction |
+
+2. User Requirements
+
+2.1 Actors
+| # | Actor | Description |
+|---|---|---|
+| 1 | Storage Customer | Searches, reserves, pays, checks in, manages rented units, renews/returns and creates support requests. |
+| 2 | Facility Staff | Handles customer verification, check-in, handover, inspection, checkout and on-site support. |
+| 3 | Facility Manager | Manages facility units, assignments, contracts, overdue cases, staff and facility reports. |
+| 4 | Business Operations Manager | Manages facilities, pricing, fees, policies, discounts and system-wide performance. |
+| 5 | System Administrator | Manages users, roles, permissions, facility assignments, login history and audit logs. |
+| 6 | Payment Gateway | Processes payment and sends signed webhook results. |
+| 7 | Notification Service | Sends Email/SMS notifications. |
+| 8 | System Scheduler | Executes reservation-expiry, renewal-reminder and overdue jobs. |
+
+2.2 Use Cases
+2.2.1 Diagram(s)
+Use cases are grouped into: Authentication, Facility & Unit Catalog, Reservation & Payment, Contract & Rented Unit, Check-in/Handover, Renewal/Overdue, Support, Facility/Staff Management, Reporting and Audit.
+
+2.2.2 Use Case Descriptions
+| ID | Use Case | Actors | Description |
+|---|---|---|---|
+| UC-001 | Sign In / Sign Out | All user roles | Authenticate users and end the authenticated session. |
+| UC-002 | View Facilities and Available Units | Guest, Customer | Browse facilities, unit types, prices and availability. |
+| UC-003 | Create Reservation | Customer | Create a temporary storage reservation. |
+| UC-004 | Pay Deposit / Rental | Customer, Payment Gateway | Process deposit and rental payments. |
+| UC-005 | Schedule Check-in | Customer | Book a check-in time and obtain a check-in reference. |
+| UC-006 | Check-in and Handover | Staff, Customer | Verify customer, inspect unit and complete handover. |
+| UC-007 | Manage Rented Units | Customer | View active units, contracts, payments and access information. |
+| UC-008 | Renew Contract | Customer | Extend an eligible contract and pay the renewal. |
+| UC-009 | Checkout and Inspection | Staff, Customer | Inspect returned unit and calculate deductions/refund. |
+| UC-010 | Overdue Handling | Scheduler, Facility Manager | Detect overdue contracts and enforce overdue rules. |
+| UC-011 | Support Ticket | Customer, Staff | Create, assign, process and close support requests. |
+| UC-012 | Manage Facility/Units | Facility Manager, Ops Manager | Maintain facilities, unit types and physical units. |
+| UC-013 | Staff Assignment | Facility Manager, Admin | Assign staff to facilities and define scope. |
+| UC-014 | Pricing and Policy | Ops Manager | Configure prices, deposit, fees, discounts and policies. |
+| UC-015 | Reports | Facility Manager, Ops Manager | View facility or system-wide operational reports. |
+| UC-016 | Users/Roles/Permissions | System Administrator | Manage accounts, roles and authorization. |
+| UC-017 | Audit/Login History | System Administrator | Review security and activity records. |
+
+3. Functional Requirements
+
+3.1 System Functional Overview
+3.1.1 Screens Flow
+- Guest: Home, Facility List, Facility Detail, Unit Availability, Sign In, Sign Up
+- Storage Customer: Dashboard, Facilities, Reservation, Payment, Check-in, My Units, Contract, Payments, Access, Renewal, Checkout, Support, Profile
+- Facility Staff: Dashboard, Daily Tasks, Check-in, Handover, Inspection, Checkout, Support, Facility Units
+- Facility Manager: Dashboard, Units, Unit Assignment, Customers, Reservations, Contracts, Overdue, Staff Assignment, Reports
+- Business Operations Manager: Dashboard, Facilities, Unit Types, Pricing, Policies, Fees, Discounts, Reports
+- System Administrator: Dashboard, Users, Roles, Permissions, Facility Assignments, Login History, Audit Logs
+
+3.1.2 Screen Authorization
+| Function | Customer | Staff | Facility Manager | Ops Manager | Admin |
+|---|---|---|---|---|---|
+| View facilities/availability | Yes | Yes | Yes | Yes | Yes |
+| Create reservation | Yes | - | - | - | - |
+| Payment | Yes | - | - | - | - |
+| Check-in/handover | - | Scoped | Scoped | - | - |
+| Manage rented units | Own only | - | - | - | - |
+| Manage facility units | - | Scoped | Scoped | All | All |
+| Assign staff | - | - | Yes | Yes | Yes |
+| Pricing/policies | - | - | - | Yes | - |
+| Facility reports | - | - | Scoped | Yes | Yes |
+| System reports | - | - | - | Yes | Yes |
+| Users/roles/permissions | - | - | - | - | Yes |
+| Audit/login history | - | - | - | - | Yes |
+
+3.1.3 Non-Screen Functions
+| # | Function | Description |
+|---|---|---|
+| 1 | Reservation Expiration Job | Expires unpaid reservations after 24 hours and releases held inventory. |
+| 2 | Renewal Reminder Job | Sends reminders 7 and 3 days before contract expiry. |
+| 3 | Daily Overdue Scan | Detects overdue contracts and calculates penalties. |
+| 4 | Access Credential Expiration | Disables/revokes access when the contract expires or is restricted. |
+| 5 | Notification Retry | Retries failed notifications and records delivery status. |
+| 6 | Report Aggregation | Provides optimized occupancy/revenue data for dashboards. |
+
+3.1.4 Entity Relationship Model
+| Entity | Key Fields | Description |
+|---|---|---|
+| User | id, email, phone, password_hash, full_name, role, status | Platform account and identity. |
+| Facility | id, code, name, address, city, phone, manager_id, status | Physical storage facility. |
+| StorageUnitType | id, facility_id, name, dimensions, area, base_price_monthly, deposit_rate | Category such as Small/Medium/Large. |
+| StorageUnitPriceHistory | id, unit_type_id, price, effective_from, effective_to | Versioned pricing. |
+| StorageUnit | id, facility_id, unit_type_id, unit_number, floor, status | Physical rentable unit. |
+| StaffAssignment | id, user_id, facility_id, assigned_role, dates, status | Facility-scoped staff relationship. |
+| Reservation | id, reservation_code, customer_id, facility_id, unit_type_id, assigned_unit_id, start_date, duration_months, deposit_amount, status, expires_at | Temporary booking/hold. |
+| RentalContract | id, contract_number, reservation_id, customer_id, unit_id, facility_id, dates, monthly_fee, deposit_held, status | Formal rental agreement. |
+| AccessCredential | id, contract_id, type, encrypted_code, valid_from, valid_to, status | PIN/Card/Key access credential. |
+| PaymentTransaction | id, transaction_code, contract_id, reservation_id, amount, payment_type, method, gateway_ref, status | Financial transaction. |
+| UnitHandoverRecord | id, contract_id, unit_id, staff_id, type, checklist, damage_fee, photos, notes | Check-in/check-out evidence. |
+| SupportTicket | id, ticket_number, customer_id, facility_id, unit_id, category, priority, subject, description, status, assigned_staff_id | Customer support issue. |
+| NotificationLog | id, recipient_id, contract_id, channel, type, status, retry_count, sent_at | Notification delivery history. |
+| AuditLog | id, user_id, facility_id, action, resource, before_state, after_state, ip_address, created_at | Immutable audit record. |
+
+3.2 Authentication and User Management
+3.2.1 Sign In
+- Function Trigger: User submits valid login credentials.
+- Actors: All system users
+- Purpose: Authenticate the user and establish token-based access.
+- Interface: Login form
+- Data Processing:
+  - Retrieve account by email/username.
+  - Verify password hash and account status.
+  - Issue short-lived access token and refresh-token mechanism.
+  - Record login event.
+- Function Details: The system denies invalid credentials and inactive accounts. Authorized requests use the user's role and facility scope.
+- Alternate / Error Flows:
+  - Invalid credentials -> authentication error.
+  - Inactive account -> access denied.
+  - Repeated failures -> security event recorded.
+
+3.2.2 Manage Users
+- Function Trigger: Administrator selects Create, View, Update or Deactivate.
+- Actors: System Administrator
+- Purpose: Maintain user accounts and role/facility assignments.
+- Interface: Table + form/modal
+- Data Processing:
+  - Validate account fields and uniqueness.
+  - Validate role and facility assignment.
+  - Persist changes.
+  - Create audit record for privileged changes.
+- Function Details: Admin can search, filter, create, update, activate/deactivate users and assign roles.
+- Alternate / Error Flows:
+  - Duplicate email/username -> reject.
+  - Invalid role/scope -> reject.
+  - Unauthorized user -> 403.
+
+3.3 Facility Management
+3.3.1 View Facilities
+- Function Trigger: User opens facility catalog.
+- Actors: Guest, Customer, Staff, Facility Manager, Ops Manager, Admin
+- Purpose: Display facilities and availability.
+- Interface: Cards/list + filters
+- Data Processing:
+  - Retrieve facility records.
+  - Calculate available-unit counts.
+  - Filter by city and unit type.
+- Function Details: Read-only catalog showing name, address, contact, status, unit types, prices and availability.
+
+3.3.2 Create / Update Facility
+- Function Trigger: Authorized manager submits facility form.
+- Actors: Business Operations Manager, System Administrator
+- Purpose: Maintain facility master data.
+- Interface: Form
+- Data Processing:
+  - Validate required fields and unique code/name.
+  - Validate status transition.
+  - Persist facility.
+  - Audit change.
+- Function Details: A facility can be created, updated or deactivated according to business dependencies.
+- Alternate / Error Flows:
+  - Invalid data -> validation error.
+  - Unsafe deactivation -> reject or require approved handling.
+
+3.4 Unit Type and Pricing Management
+3.4.1 Manage Unit Type
+- Function Trigger: Authorized user opens Unit Type management.
+- Actors: Business Operations Manager, Facility Manager where authorized
+- Purpose: Define storage categories, dimensions and base pricing.
+- Interface: Table + form
+- Data Processing:
+  - Validate name, dimensions, area and price.
+  - Associate type with facility.
+  - Persist configuration.
+- Function Details: Typical categories include Small, Medium and Large.
+
+3.4.2 Price History
+- Function Trigger: Operations Manager changes a unit-type price.
+- Actors: Business Operations Manager
+- Purpose: Preserve historical prices and prevent retroactive changes to active contracts.
+- Interface: Form + history table
+- Data Processing:
+  - Validate effective dates and amount.
+  - Close/version the prior price period.
+  - Store new price history record.
+- Function Details: New prices apply to new reservations/contracts. Active contracts retain the monthly fee locked at signing.
+
+3.5 Storage Unit Management
+3.5.1 View Storage Units
+- Function Trigger: Authorized user opens unit management.
+- Actors: Facility Staff, Facility Manager, Ops Manager, Admin
+- Purpose: Show physical unit inventory and status.
+- Interface: Table / floor-map style view
+- Data Processing:
+  - Retrieve units by facility, type, floor and status.
+  - Apply facility authorization.
+- Function Details: Typical statuses: Available, Reserved, Occupied, Maintenance, Overdue_Locked, Inactive.
+
+3.5.2 Assign Physical Unit
+- Function Trigger: Staff/Manager selects a valid reservation and available unit.
+- Actors: Facility Staff, Facility Manager
+- Purpose: Assign a physical unit to a reservation.
+- Interface: Assignment form / facility map
+- Data Processing:
+  - Validate reservation status.
+  - Validate facility and unit type match.
+  - Verify unit availability.
+  - Prevent concurrent double assignment.
+  - Update reservation and unit status.
+  - Record audit event.
+- Function Details: MVP uses manual physical-unit assignment before check-in.
+- Alternate / Error Flows:
+  - Unit unavailable -> 409.
+  - Wrong facility/type -> reject.
+  - Race condition -> reject conflicting assignment.
+
+3.6 Reservation Management
+3.6.1 Create Reservation
+- Function Trigger: Customer clicks Reserve after choosing facility, unit type, start date and duration.
+- Actors: Storage Customer
+- Purpose: Create a temporary reservation and calculate initial charges.
+- Interface: Reservation form + price summary
+- Data Processing:
+  - Validate minimum 1-month duration.
+  - Check availability.
+  - Calculate deposit and first rental payment.
+  - Set 24-hour expiration.
+  - Create Pending_Payment reservation.
+- Function Details: The reservation temporarily holds inventory and returns reservation code, payment URL and expiry time.
+- Alternate / Error Flows:
+  - No availability -> 409.
+  - Duration below minimum -> validation error.
+  - Concurrent reservation -> reject and refresh availability.
+
+3.6.2 Expire Reservation
+- Function Trigger: Scheduled job finds an unpaid reservation after 24 hours.
+- Actors: System Scheduler
+- Purpose: Release inventory from abandoned reservations.
+- Interface: Background job
+- Data Processing:
+  - Find Pending_Payment reservations where expires_at has passed.
+  - Verify no successful payment exists.
+  - Mark Expired.
+  - Release inventory.
+- Function Details: The released unit/capacity becomes available to other customers.
+
+3.7 Payment Management
+3.7.1 Create Payment
+- Function Trigger: Customer confirms deposit/rental/renewal/extra-fee payment.
+- Actors: Storage Customer, Payment Gateway
+- Purpose: Initiate an online payment.
+- Interface: Payment page / QR / gateway redirect
+- Data Processing:
+  - Validate payable amount and payment type.
+  - Create Pending PaymentTransaction.
+  - Send payment request to gateway.
+- Function Details: Client-side success is never treated as final payment confirmation.
+
+3.7.2 Payment Webhook
+- Function Trigger: Gateway sends a signed webhook.
+- Actors: Payment Gateway
+- Purpose: Synchronize payment status with Boxora.
+- Interface: Backend webhook endpoint
+- Data Processing:
+  - Verify signature.
+  - Verify transaction reference and amount.
+  - Process webhook idempotently.
+  - Update payment status.
+  - Trigger reservation/contract transition.
+- Function Details: A successful deposit payment confirms the reservation; required first-rental payment enables handover.
+- Alternate / Error Flows:
+  - Invalid signature -> 400.
+  - Unknown transaction -> 404.
+  - Duplicate webhook -> no duplicate financial effect.
+
+3.8 Rental Contract Management
+3.8.1 Create and Sign E-Contract
+- Function Trigger: Required payment succeeds and contract prerequisites are met.
+- Actors: Storage Customer, System
+- Purpose: Create the formal rental agreement.
+- Interface: Contract page + OTP
+- Data Processing:
+  - Prepare contract terms.
+  - Lock monthly fee.
+  - Validate OTP.
+  - Store signature metadata and contract.
+- Function Details: The contract records start/end dates, unit, deposit and locked monthly fee.
+- Alternate / Error Flows:
+  - Invalid/expired OTP -> reject.
+  - Missing payment prerequisite -> cannot activate.
+
+3.8.2 View Contract
+- Function Trigger: Authorized user opens a contract.
+- Actors: Customer, Staff, Facility Manager
+- Purpose: Display rental terms and status.
+- Interface: Detail page
+- Data Processing:
+  - Retrieve contract.
+  - Apply ownership or facility-scope authorization.
+- Function Details: Sensitive information is shown only to authorized actors.
+
+3.9 Check-in and Handover
+3.9.1 Check-in
+- Function Trigger: Customer arrives and presents QR/reservation code.
+- Actors: Facility Staff, Storage Customer
+- Purpose: Verify eligibility before physical handover.
+- Interface: Staff check-in screen
+- Data Processing:
+  - Retrieve reservation/customer/unit.
+  - Verify full deposit.
+  - Verify first rental payment.
+  - Verify signed e-contract.
+  - Verify original identity document.
+  - Verify appointment/date.
+- Function Details: The handover action is disabled until all four core prerequisites are satisfied.
+- Alternate / Error Flows:
+  - Incomplete payment -> block.
+  - Missing contract signature -> block.
+  - Invalid identity/booking -> block.
+  - Wrong appointment -> block or authorized exception.
+
+3.9.2 Handover and Access Credential
+- Function Trigger: Staff completes the handover checklist.
+- Actors: Facility Staff
+- Purpose: Record unit condition and issue access.
+- Interface: Handover checklist
+- Data Processing:
+  - Check cleanliness and lock condition.
+  - Record key/card/PIN.
+  - Store credential securely.
+  - Create handover record.
+  - Set contract Active and unit Occupied.
+- Function Details: MVP does not directly control smart-lock hardware; PIN/card/key is managed as a controlled credential.
+- Alternate / Error Flows:
+  - Unit damaged/unready -> notify Manager and reassign an equivalent unit.
+  - Missing checklist -> cannot complete handover.
+
+3.10 Rented Storage Unit Management
+3.10.1 View My Units
+- Function Trigger: Customer opens My Units.
+- Actors: Storage Customer
+- Purpose: Manage one or more rented units.
+- Interface: Cards/list + detail
+- Data Processing:
+  - Retrieve active contracts and units.
+  - Retrieve expiry, payment and access information.
+  - Filter to customer-owned rentals.
+- Function Details: Customer can view contract, rental period, payment status and access instructions.
+
+3.10.2 Request Checkout
+- Function Trigger: Customer submits a return request.
+- Actors: Storage Customer
+- Purpose: Start the unit-return process.
+- Interface: Checkout request form
+- Data Processing:
+  - Validate contract ownership and state.
+  - Create checkout task.
+  - Schedule return appointment if applicable.
+- Function Details: The task is visible to the assigned facility staff.
+
+3.11 Renewal and Overdue Management
+3.11.1 Renew Contract
+- Function Trigger: Customer selects Renew while eligible.
+- Actors: Storage Customer
+- Purpose: Extend rental period and collect renewal payment.
+- Interface: Renewal form + payment
+- Data Processing:
+  - Validate renewal window.
+  - Calculate renewal amount.
+  - Create payment.
+  - On success, extend end date.
+- Function Details: Online renewal is available at least 3 days before contract expiry; supported cycles are 1, 3, 6 and 12 months.
+- Alternate / Error Flows:
+  - Too close to expiry -> online renewal disabled.
+  - Payment failure -> contract unchanged.
+
+3.11.2 Overdue Processing
+- Function Trigger: Daily scheduler runs at 00:00.
+- Actors: System Scheduler, Facility Manager
+- Purpose: Detect overdue rentals and apply staged controls.
+- Interface: Background job + Manager overdue screen
+- Data Processing:
+  - Find expired active contracts without valid renewal/payment.
+  - At +1 mark Overdue, calculate penalty and notify.
+  - At +3 disable PIN.
+  - At +7 create sealing task.
+  - At +30 trigger offline legal liquidation workflow.
+- Function Details: Facility Manager approval is required for physical sealing or security-lock changes.
+- Alternate / Error Flows:
+  - Authorized exception may temporarily delay access restriction.
+  - All privileged actions are audited.
+
+3.12 Checkout, Inspection and Deposit Refund
+3.12.1 Checkout Inspection
+- Function Trigger: Customer returns the unit and staff opens the checkout task.
+- Actors: Facility Staff, Storage Customer
+- Purpose: Verify condition and calculate deductions.
+- Interface: Responsive checklist
+- Data Processing:
+  - Complete five-point condition checklist.
+  - Capture at least two photos.
+  - Record damage/cleaning fees.
+  - Calculate refund_estimated_amount = deposit_held - damage_fee - unpaid_overdue_fee.
+  - Create handover/checkout record.
+- Function Details: If inspection passes, the unit can return to Available after required processing.
+- Alternate / Error Flows:
+  - Missing checklist/photos -> cannot complete.
+  - Damage found -> evidence and fee required.
+  - Outstanding overdue -> apply approved deduction.
+
+3.12.2 Deposit Refund Review
+- Function Trigger: Checkout inspection is approved.
+- Actors: Facility Manager / Finance workflow
+- Purpose: Track the refundable deposit.
+- Interface: Refund request/detail
+- Data Processing:
+  - Validate approved deductions.
+  - Verify refund calculation.
+  - Create Pending_Accounting_Review request.
+- Function Details: Remaining deposit is transferred within 3–5 business days according to the baseline policy.
+
+3.13 Support Request and Issue Management
+3.13.1 Create Support Ticket
+- Function Trigger: Customer submits an issue from a rented unit.
+- Actors: Storage Customer
+- Purpose: Create a traceable support request.
+- Interface: Ticket form
+- Data Processing:
+  - Validate customer-unit relationship.
+  - Capture category, subject, description, priority and optional photos.
+  - Associate the ticket with facility.
+- Function Details: Initial status is Open and the ticket is routed to the relevant facility.
+
+3.13.2 Handle Support Ticket
+- Function Trigger: Staff opens a ticket in their facility scope.
+- Actors: Facility Staff, Facility Manager
+- Purpose: Track issue resolution.
+- Interface: Ticket detail
+- Data Processing:
+  - Validate facility scope.
+  - Assign staff.
+  - Update status.
+  - Record resolution notes.
+  - Record audit event.
+- Function Details: Typical lifecycle: Open -> Assigned -> In_Progress -> Resolved -> Closed.
+- Alternate / Error Flows:
+  - Wrong facility -> 403.
+  - Invalid transition -> reject.
+  - SLA breach -> flag/escalate.
+
+3.14 Facility Staff Management
+3.14.1 Assign Staff
+- Function Trigger: Manager/Admin creates or updates staff assignment.
+- Actors: Facility Manager, System Administrator
+- Purpose: Define facility scope for staff operations.
+- Interface: Assignment form
+- Data Processing:
+  - Validate user role.
+  - Validate facility.
+  - Validate assignment dates.
+  - Prevent invalid/conflicting assignments.
+  - Persist assignment and update authorization scope.
+- Function Details: Staff and Facility Managers operate only within assigned facility scope.
+
+3.15 Fee, Pricing and Policy Management
+3.15.1 Configure Policies
+- Function Trigger: Operations Manager opens policy configuration.
+- Actors: Business Operations Manager
+- Purpose: Centralize rental, deposit, cancellation, renewal, overdue and extra-fee rules.
+- Interface: Policy form
+- Data Processing:
+  - Validate amounts, percentages and effective dates.
+  - Version changes.
+  - Audit policy updates.
+- Function Details: Baseline: minimum rental 1 month; deposit 100% of one month's rent; reservation hold 24 hours; renewal cycles 1/3/6/12 months.
+
+3.15.2 Calculate Charge
+- Function Trigger: Reservation, renewal or fee operation requests a price.
+- Actors: System, Storage Customer
+- Purpose: Produce a transparent payable amount.
+- Interface: Price summary
+- Data Processing:
+  - Load effective base price.
+  - Apply deposit.
+  - Apply extra/overdue fees.
+  - Apply discount.
+  - Calculate final amount.
+- Function Details: The finalized amount is stored with the relevant reservation, contract or payment transaction.
+
+3.16 Reporting
+3.16.1 Facility Report
+- Function Trigger: Facility Manager opens dashboard.
+- Actors: Facility Manager
+- Purpose: Monitor facility performance.
+- Interface: Dashboard + charts + tables
+- Data Processing:
+  - Aggregate available/rented units.
+  - Calculate occupancy.
+  - Aggregate revenue.
+  - List overdue cases.
+- Function Details: Reports are restricted to the Manager's assigned facility.
+
+3.16.2 System-wide Report
+- Function Trigger: Operations Manager/Admin opens reports.
+- Actors: Business Operations Manager, System Administrator
+- Purpose: Monitor all facilities.
+- Interface: Dashboard + filters + export
+- Data Processing:
+  - Aggregate by date, facility, unit type and rental status.
+  - Calculate total revenue and occupancy.
+  - Prepare exportable report data.
+- Function Details: Required reports include facilities, revenue, occupancy and overdue cases.
+
+3.17 Activity Log and Login History
+3.17.1 Audit Critical Activities
+- Function Trigger: A critical business/security action completes.
+- Actors: System
+- Purpose: Provide traceability and accountability.
+- Interface: Admin audit screen
+- Data Processing:
+  - Capture actor, facility, action, resource, before state, after state, reason, IP and timestamp.
+  - Append immutable log record.
+- Function Details: Critical operations include unit assignment, status changes, payment approvals, fee waivers, Master Key override and overdue locking.
+
+3.17.2 View Login History
+- Function Trigger: Admin opens Login History.
+- Actors: System Administrator
+- Purpose: Review authentication events.
+- Interface: Table + filters
+- Data Processing:
+  - Filter by user, date and success/failure.
+  - Apply administrator authorization.
+- Function Details: Read-only security monitoring view.
+
+---
+
+4. Non-Functional Requirements
+
+4.1 External Interfaces
+| ID | Interface | Requirement |
+|---|---|---|
+| EI-001 | Web Browser | Responsive web UI compatible with modern Chrome, Edge and Safari. |
+| EI-002 | Payment Gateway | QR/bank transfer/card sandbox payment with signed webhook callbacks. |
+| EI-003 | Email/SMS | Reservation, check-in, renewal and overdue notifications. |
+| EI-004 | Identity Verification | Staff manually verifies original identity documents; data is confidential. |
+| EI-005 | Image/File Storage | Store inspection, damage and support evidence. |
+| EI-006 | Authentication | JWT access token plus refresh-token mechanism. |
+
+4.2 Quality Attributes
+| ID | Category | Target / Requirement | Priority |
+|---|---|---|---|
+| NFR-001 | Performance | Catalog/availability APIs < 800 ms p95; other business APIs < 1.5 s p95. | Must |
+| NFR-002 | Availability | 99.9% uptime target for 24/7 service. | Must |
+| NFR-003 | Security | JWT, RBAC, facility isolation and bcrypt/Argon2id password hashing. | Must |
+| NFR-004 | Data Protection | Encrypt sensitive credentials/PII, use HTTPS/TLS and do not store full card data. | Must |
+| NFR-005 | Scalability | At least 50 facilities, 20,000 units and 10,000 payment transactions/day. | Should |
+| NFR-006 | Auditability | 100% of critical state/security changes recorded in append-only audit logs. | Must |
+| NFR-007 | Usability/Compatibility | Responsive customer/staff web UI on modern desktop and mobile browsers. | Must |
+| NFR-008 | Disaster Recovery | RTO < 2 hours; RPO < 15 minutes for database failure scenarios. | Should |
+
+---
+
+5. Requirement Appendix
+
+5.1 Business Rules
+| Rule ID | Rule | Requirement |
+|---|---|---|
+| BR-RULE-001 | Minimum rental | Minimum rental period is 1 month (30 days). |
+| BR-RULE-002 | Deposit | Deposit equals 100% of one month's rent. |
+| BR-RULE-003 | Soft-lock | Unpaid reservation expires after 24 hours and releases inventory. |
+| BR-RULE-004 | Cancellation | >48h: 100% refund; 24–48h: 50% refund; <24h/no-show: 100% forfeiture, subject to approved policy. |
+| BR-RULE-005 | Handover prerequisites | Full deposit + first rental payment + signed e-contract + original identity verification. |
+| BR-RULE-006 | Unit assignment | Unit must match facility/type/capacity and be available and ready. |
+| BR-RULE-007 | Prohibited items | Flammables/explosives, toxic chemicals, weapons/explosive materials, contraband, live animals, waste and fresh easily spoiled food are prohibited. |
+| BR-RULE-008 | PIN lifecycle | PIN is encrypted, valid during contract period and revoked when access is disabled. |
+| BR-RULE-009 | Master Key | Emergency use requires two-person authorization and audit logging. |
+| BR-RULE-010 | Renewal | Online renewal is available at least 3 days before expiry; reminders at -7 and -3 days. |
+| BR-RULE-011 | Price lock | New price applies to new reservations/contracts; active contracts retain locked monthly fee. |
+| BR-RULE-012 | Overdue stages | +1 warning/penalty; +3 PIN disabled; +7 sealing process; +30 offline legal liquidation workflow. |
+| BR-RULE-013 | Checkout inspection | Checklist plus at least two photos are required. |
+| BR-RULE-014 | Extra fees | Approved cleaning/lost-key/damage charges may be deducted from deposit. |
+| BR-RULE-015 | Refund SLA | Remaining deposit is reconciled and transferred within 3–5 business days. |
+
+5.2 Requirements Catalogue
+| ID | Type | Requirement | Priority |
+|---|---|---|---|
+| BR-001 | Business | Increase storage utilization and automate the rental lifecycle. | Must |
+| BR-002 | Business | Provide transparent revenue and deposit control. | Must |
+| BR-003 | Business | Isolate operational data by facility. | Must |
+| FR-001 | Functional | Display facilities, addresses, unit types, dimensions, prices and availability. | Must |
+| FR-002 | Functional | Allow customers to choose facility, unit type, start date and duration to create reservations. | Must |
+| FR-003 | Functional | Support deposit, rental, renewal and extra-fee payment flows. | Must |
+| FR-004 | Functional | Hold reservation inventory for 24 hours and release unpaid reservations. | Must |
+| FR-005 | Functional | Allow check-in appointment selection and generate a QR/check-in reference. | Should |
+| FR-006 | Functional | Allow staff to search reservations by QR or phone number. | Must |
+| FR-007 | Functional | Allow authorized staff/manager to assign physical units. | Must |
+| FR-008 | Functional | Record handover, access issuance and set unit to Occupied. | Must |
+| FR-009 | Functional | Allow customers to view rented units, contracts, expiry and access information. | Must |
+| FR-010 | Functional | Allow customers to create support tickets. | Must |
+| FR-011 | Functional | Provide a staff daily task board. | Must |
+| FR-012 | Functional | Allow staff to receive, update and close support tickets. | Must |
+| FR-013 | Functional | Send renewal reminders at 7 and 3 days before expiry. | Must |
+| FR-014 | Functional | Allow eligible customers to renew and pay online. | Must |
+| FR-015 | Functional | Support checkout inspection, evidence, fees and return completion. | Must |
+| FR-016 | Functional | Calculate estimated deposit refund after deductions. | Must |
+| FR-017 | Functional | Daily scan overdue contracts, calculate penalties and disable PIN after 3 days. | Must |
+| FR-018 | Functional | Allow Manager to seal a unit and mark Overdue_Locked after 7 days. | Must |
+| FR-019 | Functional | Allow Ops Manager to manage facilities, unit types and policies. | Must |
+| FR-020 | Functional | Provide occupancy, revenue and overdue reports. | Must |
+| FR-021 | Functional | Allow Admin to manage users, roles and facility relationships. | Must |
+| FR-022 | Functional | Record audit events for critical operations. | Must |
+
+5.3 User Stories
+| ID | Actor | User Story |
+|---|---|---|
+| US-001 | Storage Customer | As a customer, I want to search storage by facility, size and price so that I can choose a suitable unit online. |
+| US-002 | Storage Customer | As a customer, I want to pay the deposit online so that my reservation is confirmed. |
+| US-003 | Facility Staff | As staff, I want to scan a reservation QR so that I can verify the booking and complete handover quickly. |
+| US-004 | Storage Customer | As a customer, I want to submit a support ticket from my rented unit so that the correct facility can handle my issue. |
+| US-005 | Facility Manager | As a manager, I want to assign an available physical unit so that the customer receives a prepared unit. |
+| US-006 | Facility Staff | As staff, I want to complete a return checklist and record damage fees so that the refund is calculated consistently. |
+| US-007 | Business Operations Manager | As an operations manager, I want to configure pricing and fees so that business rules are controlled centrally. |
+| US-008 | System Administrator | As an administrator, I want to assign users to roles and facilities so that access is limited to authorized scope. |
+
+5.4 Application Messages
+| ID | Message | Meaning |
+|---|---|---|
+| MSG-001 | Invalid credentials | Email/username or password is incorrect. |
+| MSG-002 | Access denied | User does not have permission for the requested resource/facility. |
+| MSG-003 | Unit unavailable | Requested unit/capacity is no longer available. |
+| MSG-004 | Reservation expired | Payment was not completed before the reservation timeout. |
+| MSG-005 | Payment failed | Gateway did not confirm successful payment. |
+| MSG-006 | Incomplete handover | One or more handover prerequisites are missing. |
+| MSG-007 | Contract not renewable | Contract is outside the online renewal window or invalid state. |
+| MSG-008 | Invalid facility scope | User is not assigned to the requested facility. |
+| MSG-009 | Invalid state transition | Requested operation is not allowed from the current status. |
+| MSG-010 | Ticket created | Support request was created and routed to the facility. |
+
+6. Traceability Matrix
+| Business Goal | Requirements | Use Cases | Main Data/Components | Test Evidence |
+|---|---|---|---|---|
+| BR-001 – automate rental lifecycle | FR-001, FR-002, FR-004 | UC-002, UC-003 | Facility, UnitType, StorageUnit, Reservation | TC-RES-001/002 |
+| BR-002 – revenue/deposit control | FR-003, FR-014, FR-016 | UC-004, UC-008, UC-009 | PaymentTransaction, RentalContract | TC-PAY-001/002 |
+| BR-001 – faster handover | FR-005–FR-008 | UC-005, UC-006 | HandoverRecord, AccessCredential | TC-CHK-001/002 |
+| BR-003 – facility isolation | FR-021, FR-022 | UC-013, UC-017 | StaffAssignment, AuditLog | TC-SEC-001/TC-AUD-001 |
+| BR-001 – overdue control | FR-017, FR-018 | UC-010 | Scheduler, Contract, StorageUnit | TC-OVD-001/002 |
+| BR-001 – customer support | FR-009–FR-013 | UC-007, UC-011 | SupportTicket, NotificationLog | TC-TCK-001/TC-NOT-001 |
+| BR-001/BR-002 – management | FR-019, FR-020 | UC-014, UC-015 | Policy, Pricing, Reports | TC-REP-001 |
+
+7. Baseline Decisions and Constraints
+- MVP uses a shared database with facility_id as the data-scope discriminator and application-level facility authorization.
+- Physical storage-unit assignment is manual in MVP; auto-assignment is deferred.
+- E-contract is confirmed by OTP before physical handover.
+- MVP does not directly control smart-lock hardware.
+- Payment integration uses a sandbox provider and signed webhook reconciliation.
+- Minimum rental is one month; renewal cycles are 1, 3, 6 and 12 months.
+- Sub-user access sharing is excluded from MVP.
+- Deposit refunds follow an accounting review workflow with a 3–5 business-day SLA.
+
+8. Reference and Approval
+This SRS is based on the approved Software Development Blueprint for the Self-Storage Facility Rental and Management System. It follows the structure of the provided FPT Capstone SRS example: Product Overview, User Requirements, Use Cases, Functional Requirements, Non-Functional Requirements and Requirement Appendix.
+Project Code: funef21205 (Project ID: 2)
+Group Name: Boxora Team
+Members: Nguyễn Xuân Trường, Đoàn Hoàng Phúc, Lê Đăng Nguyên, Phạm Duy Khang, Cao Quang Triển.

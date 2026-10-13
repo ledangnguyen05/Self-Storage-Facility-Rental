@@ -1,0 +1,21 @@
+.vscode/
+.idea/
+*.log
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+
+.github/
+BA-Blueprint-Agent/
+Development-Agent/
+bug/
+docs/
+*.md
+!README.md
+.env*
+!.env.example
+docker-compose*.yml
+*.txt

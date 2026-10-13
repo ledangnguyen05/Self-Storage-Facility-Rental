@@ -1,0 +1,10 @@
+package com.boxora.enums;
+
+public enum NotificationType {
+    RENEWAL_REMINDER_7D,
+    RENEWAL_REMINDER_3D,
+    OVERDUE_NOTICE,
+    SEALING_NOTICE,
+    UNSEALING_NOTICE,
+    REFUND_STATUS
+}
