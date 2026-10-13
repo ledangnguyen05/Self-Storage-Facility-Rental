@@ -11,10 +11,6 @@ import { HomePage } from './pages/public/HomePage'
 import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
 import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
 import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
-
-// StorageOps Pro Portals (Matching Prototype Stitch Files)
-import { CustomerDashboard } from './pages/customer/CustomerDashboard'
-import { StaffDashboard } from './pages/staff/StaffDashboard'
 import { ManagerDashboard } from './pages/manager/ManagerDashboard'
 import { OperationsDashboard } from './pages/operations/OperationsDashboard'
 import { AdminDashboard } from './pages/admin/AdminDashboard'
