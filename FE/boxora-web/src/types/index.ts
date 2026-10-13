@@ -105,6 +105,8 @@ export interface RentalContract {
   contractCode: string
   customerId: string
   customerEmail: string
+  customerName?: string
+  customerPhone?: string
   unitCode: string
   facilityName: string
   startDate: string

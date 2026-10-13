@@ -199,16 +199,33 @@ public class ContractSigningController {
     }
 
     // =========================================================================
-    // DOCUSEAL WEBHOOK (PUBLIC - XÁC THỰC BẰNG WEBHOOK TOKEN TRONG PATH)
+    // MOCK SIGNING (SIMULATION / LOCAL TESTING)
     // =========================================================================
 
-    @PostMapping("webhook/docuseal/{webhookToken}")
+    @PostMapping("{contractId}/mock-sign")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Ký xác nhận hợp đồng điện tử ở chế độ mô phỏng / local development")
+    public ResponseEntity<ApiResponse<RentalContractResponse>> mockSign(
+            @PathVariable UUID contractId) {
+        RentalContractResponse response = contractSigningService.mockSign(contractId);
+        return ResponseEntity.ok(ApiResponse.success("Ký hợp đồng điện tử thành công", response));
+    }
+
+    // =========================================================================
+    // DOCUSEAL WEBHOOK (PUBLIC - XÁC THỰC BẰNG WEBHOOK TOKEN TRONG PATH/HEADER)
+    // =========================================================================
+
+    @PostMapping(value = {"webhook/docuseal/{webhookToken}", "webhook/docuseal"})
     @Operation(summary = "Webhook DocuSeal gọi khi hoàn tất ký hợp đồng hoặc phụ lục gia hạn")
     public ResponseEntity<Void> docusealWebhook(
-            @PathVariable String webhookToken,
+            @PathVariable(required = false) String webhookToken,
+            @RequestHeader(value = "X-Webhook-Token", required = false) String headerToken,
+            @RequestParam(value = "token", required = false) String queryToken,
             @RequestBody Map<String, Object> payload) {
-        if (!docuSealConfig.getWebhookToken().equals(webhookToken)) {
-            log.warn("Invalid DocuSeal webhook token received: {}", webhookToken);
+        String expectedToken = docuSealConfig.getWebhookToken();
+        String actualToken = webhookToken != null ? webhookToken : (headerToken != null ? headerToken : queryToken);
+        if (expectedToken != null && !expectedToken.isBlank() && actualToken != null && !expectedToken.equals(actualToken)) {
+            log.warn("Invalid DocuSeal webhook token received: {}", actualToken);
             throw new AppException(ErrorCode.CONTRACT_SIGNING_INVALID_WEBHOOK_TOKEN);
         }
         contractSigningService.handleWebhook(payload);

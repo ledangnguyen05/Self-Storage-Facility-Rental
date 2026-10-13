@@ -5,6 +5,7 @@ import { contractService } from '../../services/contractService'
 interface ContractOtpModalProps {
   contract: RentalContract
   onClose: () => void
+  onOpenSimulationSign?: (contract: RentalContract) => void
 }
 
 function getErrorMessage(error: unknown) {
@@ -21,7 +22,7 @@ function maskEmail(email: string) {
   return `${name.slice(0, 2)}${'*'.repeat(Math.max(2, name.length - 2))}@${domain}`
 }
 
-export function ContractOtpModal({ contract, onClose }: ContractOtpModalProps) {
+export function ContractOtpModal({ contract, onClose, onOpenSimulationSign }: ContractOtpModalProps) {
   const [otp, setOtp] = useState('')
   const [hasSentOtp, setHasSentOtp] = useState(false)
   const [resendInSeconds, setResendInSeconds] = useState(0)
@@ -71,7 +72,13 @@ export function ContractOtpModal({ contract, onClose }: ContractOtpModalProps) {
       if (!result.signingUrl) {
         throw new Error('Không nhận được liên kết ký hợp đồng.')
       }
-      window.location.assign(result.signingUrl)
+
+      if (result.signingUrl.includes('mockSignContractId=') && onOpenSimulationSign) {
+        onOpenSimulationSign(contract)
+        onClose()
+      } else {
+        window.location.assign(result.signingUrl)
+      }
     } catch (requestError) {
       setError(getErrorMessage(requestError))
     } finally {

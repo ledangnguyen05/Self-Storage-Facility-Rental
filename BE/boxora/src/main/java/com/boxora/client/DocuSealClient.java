@@ -25,12 +25,27 @@ public class DocuSealClient {
     private RestClient client() {
         return RestClient.builder()
                 .baseUrl(config.getApiUrl())
-                .defaultHeader("X-Auth-Token", config.getApiKey())
+                .defaultHeader("X-Auth-Token", config.getApiKey() != null ? config.getApiKey() : "")
                 .defaultHeader("Content-Type", "application/json")
                 .build();
     }
 
     public List<DocuSealSubmitterResponse> createSubmission(DocuSealSubmissionRequest request) {
+        if (config.isMockActive()) {
+            log.info("DocuSeal is running in simulation/mock mode (apiKey empty or mockEnabled=true). Emulating submission for templateId={}",
+                    request.getTemplate_id());
+            DocuSealSubmitterResponse mock = new DocuSealSubmitterResponse();
+            mock.setId(System.currentTimeMillis() % 100000);
+            mock.setSubmission_id(System.currentTimeMillis() % 1000000);
+            mock.setSlug("mock-" + java.util.UUID.randomUUID().toString().substring(0, 8));
+            mock.setStatus("pending");
+            if (request.getSubmitters() != null && !request.getSubmitters().isEmpty()) {
+                mock.setEmail(request.getSubmitters().get(0).getEmail());
+                mock.setExternal_id(request.getSubmitters().get(0).getExternal_id());
+            }
+            return List.of(mock);
+        }
+
         try {
             log.info("Sending submission request to DocuSeal at {} templateId={}", config.getApiUrl(), request.getTemplate_id());
             String responseStr = client().post()
