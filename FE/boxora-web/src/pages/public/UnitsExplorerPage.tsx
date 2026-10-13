@@ -245,7 +245,10 @@ export const UnitsExplorerPage: React.FC = () => {
   const filteredUnits = useMemo(() => {
     let list = unitsWithProximity.filter(u => {
       const matchCat = activeCategory === 'all' || u.category === activeCategory
-      const matchFac = selectedFacilityFilter === 'all' || u.facilityId === selectedFacilityFilter
+      const matchFac =
+        selectedFacilityFilter === 'all' ||
+        u.facilityId === selectedFacilityFilter ||
+        (facilities.find(f => f.id === selectedFacilityFilter)?.name === u.facilityName)
       const matchStatus = statusFilter === 'all' || u.status === statusFilter
       const matchQuery =
         !searchQuery.trim() ||

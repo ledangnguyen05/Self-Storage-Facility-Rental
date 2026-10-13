@@ -37,26 +37,6 @@ export const getCustomerRentals = (user: User | null): CustomerRentalRecord[] =>
     }
   }
 
-  // For existing default demo user "customer@gmail.com" when not explicitly marked as new
-  if (user.email === 'customer@gmail.com' && !isMarkedNew) {
-    return [
-      {
-        unitCode: 'A-108',
-        unitName: 'Kho Cá Nhân Standard 5.0m²',
-        contractCode: 'HD-2025-0108',
-        startDate: '15/01/2025',
-        isAppConfirmed: true
-      },
-      {
-        unitCode: 'B-205',
-        unitName: 'Kho Doanh Nghiệp 12.0m²',
-        contractCode: 'HD-2024-8891',
-        startDate: '20/12/2024',
-        isAppConfirmed: true
-      }
-    ]
-  }
-
   return []
 }
 
@@ -74,18 +54,11 @@ export const checkCustomerPortalAccess = (user: User | null): {
     return { hasAccess: true, rentals: [] }
   }
 
-  // Check customer rentals and app confirmation status
+  // Any logged-in customer can access their portal
   const rentals = getCustomerRentals(user)
-  const hasConfirmedRental = rentals.some(r => r.isAppConfirmed)
-
-  if (hasConfirmedRental) {
-    return { hasAccess: true, rentals }
-  }
-
   return {
-    hasAccess: false,
-    rentals: [],
-    reason: 'Tài khoản chưa có hợp đồng kho đang hoạt động hoặc chưa hoàn tất kích hoạt dịch vụ.'
+    hasAccess: true,
+    rentals,
   }
 }
 

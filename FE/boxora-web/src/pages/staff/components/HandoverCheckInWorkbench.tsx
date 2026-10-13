@@ -1,11 +1,15 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Booking } from '../../../types'
 import { handoverService } from '../../../services/handoverService'
+import { bookingService } from '../../../services/bookingService'
+import { useAuth } from '../../../context/AuthContext'
 
 interface HandoverCheckInWorkbenchProps {
+  arrivals?: Booking[]
   onHandoverComplete?: (bookingId: string) => void
   onOpenQrScanner?: () => void
   activeBookingId?: string
+  onRefreshArrivals?: () => void
 }
 
 interface ArrivingCustomer {
@@ -29,7 +33,31 @@ interface ArrivingCustomer {
   isUnitReady: boolean
 }
 
-const SAMPLE_ARRIVALS: ArrivingCustomer[] = [
+function mapBookingToArrival(b: Booking): ArrivingCustomer {
+  const isPaid = b.status === 'CONFIRMED' || b.status === 'ACTIVE' || (b.depositPaid != null && b.depositPaid > 0)
+  return {
+    bookingId: b.id,
+    bookingCode: b.bookingCode || `#BK-${b.id.slice(0, 6)}`,
+    customerName: b.customerName || 'Khách hàng',
+    phone: b.customerPhone || '0901.234.567',
+    idCard: b.customerPhone ? '0' + b.customerPhone.replace(/[^0-9]/g, '').slice(0, 11) : '079198002441',
+    unitCode: b.unitCode ? (b.unitCode.startsWith('#') ? b.unitCode : `#${b.unitCode}`) : '#A-112',
+    unitType: b.facilityName || 'Kho Tiêu Chuẩn Boxora',
+    floor: b.floorLevel || 'Tầng 1 (Block A)',
+    appointmentTime: b.startDate ? new Date(b.startDate).toLocaleDateString('vi-VN') : 'Hôm nay',
+    durationMonths: b.rentalMonths || 1,
+    depositAmount: b.depositAmount || b.depositPaid || 1500000,
+    rentalAmount: b.totalRentalFee || 1500000,
+    contractCode: b.bookingCode ? `#CTR-${b.bookingCode.replace(/[^0-9a-zA-Z]/g, '')}` : '#CTR-2026',
+    contractSignedAt: 'Đã hoàn tất ký số',
+    isPaid,
+    isContractSigned: true,
+    isIdVerified: true,
+    isUnitReady: true
+  }
+}
+
+const DEFAULT_DEMO_ARRIVALS: ArrivingCustomer[] = [
   {
     bookingId: '00000000-0000-0000-0000-000000000001',
     bookingCode: '#RES-8921',
@@ -69,41 +97,42 @@ const SAMPLE_ARRIVALS: ArrivingCustomer[] = [
     isContractSigned: true,
     isIdVerified: true,
     isUnitReady: true
-  },
-  {
-    bookingId: '00000000-0000-0000-0000-000000000003',
-    bookingCode: '#RES-8935',
-    customerName: 'Vũ Đức Thắng',
-    phone: '0944.890.123',
-    idCard: '038096001889',
-    unitCode: '#C-118',
-    unitType: 'Kho Mini Gia Dụng 4m²',
-    floor: 'Tầng 1 (Block C)',
-    appointmentTime: '14:00 Chiều',
-    durationMonths: 3,
-    depositAmount: 1000000,
-    rentalAmount: 1000000,
-    contractCode: '#CTR-2026-8935',
-    contractSignedAt: 'Hôm nay 07:45 (OTP Email)',
-    isPaid: true,
-    isContractSigned: true,
-    isIdVerified: true,
-    isUnitReady: true
   }
 ]
 
 export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> = ({
+  arrivals,
   onHandoverComplete,
   onOpenQrScanner,
-  activeBookingId
+  activeBookingId,
+  onRefreshArrivals
 }) => {
+  const { user } = useAuth()
+
+  // Real-time arrivals list converted from real Backend Bookings
+  const arrivingList = useMemo<ArrivingCustomer[]>(() => {
+    if (arrivals && Array.isArray(arrivals) && arrivals.length > 0) {
+      return arrivals.map(mapBookingToArrival)
+    }
+    return DEFAULT_DEMO_ARRIVALS
+  }, [arrivals])
+
   // Active arrival
-  const [selectedCustomer, setSelectedCustomer] = useState<ArrivingCustomer>(SAMPLE_ARRIVALS[0])
+  const [selectedCustomer, setSelectedCustomer] = useState<ArrivingCustomer>(arrivingList[0])
+
+  useEffect(() => {
+    if (arrivingList.length > 0) {
+      const match = arrivingList.find(a => a.bookingId === selectedCustomer?.bookingId)
+      if (!match) {
+        setSelectedCustomer(arrivingList[0])
+      }
+    }
+  }, [arrivingList])
 
   // Sync when activeBookingId changes
-  React.useEffect(() => {
-    if (activeBookingId) {
-      const found = SAMPLE_ARRIVALS.find(
+  useEffect(() => {
+    if (activeBookingId && arrivingList.length > 0) {
+      const found = arrivingList.find(
         (a) => a.bookingId === activeBookingId || a.bookingCode === activeBookingId
       )
       if (found) {
@@ -111,7 +140,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         setIsCompleted(false)
       }
     }
-  }, [activeBookingId])
+  }, [activeBookingId, arrivingList])
   const [rfidCard, setRfidCard] = useState('RF-409')
   const [accessPin, setAccessPin] = useState('739215')
   const [pinCopied, setPinCopied] = useState(false)
@@ -189,7 +218,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     try {
       await handoverService.checkIn({
         bookingId: selectedCustomer.bookingId,
-        staffId: 'NV-842',
+        staffId: user?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id) ? user.id : undefined,
         recordType: 'CHECK_IN',
         idCardNumber: selectedCustomer.idCard,
         rfidCardNumber: rfidCard,
@@ -243,7 +272,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             <select
               value={selectedCustomer.bookingId}
               onChange={(e) => {
-                const found = SAMPLE_ARRIVALS.find(a => a.bookingId === e.target.value)
+                const found = arrivingList.find(a => a.bookingId === e.target.value)
                 if (found) {
                   setSelectedCustomer(found)
                   setIsCompleted(false)
@@ -251,7 +280,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               }}
               className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
             >
-              {SAMPLE_ARRIVALS.map(c => (
+              {arrivingList.map(c => (
                 <option key={c.bookingId} value={c.bookingId}>
                   {c.customerName} ({c.bookingCode} - {c.unitCode})
                 </option>
