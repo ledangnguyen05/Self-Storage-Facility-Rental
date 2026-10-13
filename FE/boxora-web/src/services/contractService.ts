@@ -37,7 +37,7 @@ export interface PageResponse<T> {
 }
 
 export const contractService = {
-  async getMyContracts(params?: { facilityId?: string; status?: string; page?: number; size?: number }) {
+  async getMyContracts(params?: { customerId?: string; facilityId?: string; status?: string; page?: number; size?: number }) {
     const response = await api.get('/api/v1/contracts', { params })
     return response.data?.data as PageResponse<RentalContract>
   },
@@ -54,6 +54,11 @@ export const contractService = {
 
   async getSigningUrl(contractId: string) {
     const response = await api.get(`/api/v1/contracts/${contractId}/signing-url`)
+    return response.data?.data?.signingUrl as string
+  },
+
+  async sendForSignature(contractId: string) {
+    const response = await api.post(`/api/v1/contracts/${contractId}/send-for-signature`)
     return response.data?.data?.signingUrl as string
   }
 }

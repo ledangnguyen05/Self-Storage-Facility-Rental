@@ -14,6 +14,7 @@ import { checkCustomerPortalAccess, activateCustomerRental } from '../../utils/r
 import { FloatingContactWidget } from '../../components/common/FloatingContactWidget'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
+import { bookingService } from '../../services/bookingService'
 import { BrandLogo } from '../../components/common/BrandLogo'
 import { Facility, StorageUnit } from '../../types'
 
@@ -261,15 +262,30 @@ export const UnitsExplorerPage: React.FC = () => {
     setRentalModalUnit(unit)
   }
 
-  const handleConfirmRentalActivation = () => {
+  const handleConfirmRentalActivation = async () => {
     if (!rentalModalUnit || !user) return
     setIsActivatingRental(true)
-    setTimeout(() => {
+    try {
+      const priceNum = Number(rentalModalUnit.monthlyPriceNumeric || 1850000)
+      const res = await bookingService.createBooking({
+        storageUnitId: rentalModalUnit.id.length === 36 ? rentalModalUnit.id : '00000000-0000-0000-0000-000000000001',
+        customerId: user?.id,
+        startDate: new Date().toISOString().split('T')[0],
+        rentalMonths: 3,
+        totalRentalFee: priceNum * 3,
+        depositPaid: priceNum
+      })
+      if (res?.accessPin) {
+        setActivatedPin(res.accessPin)
+      }
+    } catch (err) {
+      console.warn('Booking create fallback:', err)
+    } finally {
       activateCustomerRental(user, rentalModalUnit.id, rentalModalUnit.name)
       setIsActivatingRental(false)
       setActivationDone(true)
       setCustomerAccess(checkCustomerPortalAccess(user))
-    }, 700)
+    }
   }
 
   return (

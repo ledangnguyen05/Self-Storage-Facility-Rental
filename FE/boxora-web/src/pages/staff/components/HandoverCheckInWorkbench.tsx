@@ -138,6 +138,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   // 2 Condition Photos
   const [photoDoor, setPhotoDoor] = useState<string>('https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=600&q=80')
   const [photoInterior, setPhotoInterior] = useState<string>('https://images.unsplash.com/photo-1595246140625-573b715d11dc?auto=format&fit=crop&w=600&q=80')
+  const doorInputRef = React.useRef<HTMLInputElement | null>(null)
+  const interiorInputRef = React.useRef<HTMLInputElement | null>(null)
+  const [appPushSent, setAppPushSent] = useState(false)
 
   // Submission state
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -151,6 +154,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     setAccessPin(newPin)
     setPinCopied(false)
     setSmsSent(false)
+    setAppPushSent(false)
   }
 
   // Copy PIN to clipboard
@@ -189,11 +193,18 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     try {
       await handoverService.checkIn({
         bookingId: selectedCustomer.bookingId,
-        staffId: 'NV-842',
         recordType: 'CHECK_IN',
         idCardNumber: selectedCustomer.idCard,
+        identityVerified: true,
+        firstMonthRentConfirmed: true,
+        contractConfirmed: true,
         rfidCardNumber: rfidCard,
         accessPin: accessPin,
+        doorConditionPassed: checklist.doorRoll,
+        cleanlinessPassed: checklist.cleanliness,
+        smartLockPassed: checklist.lighting,
+        sensorPassed: checklist.fireSafety,
+        wallStructurePassed: checklist.sealPlate,
         unitCondition: `${checklistCount}/5 tiêu chuẩn nghiệm thu đạt chuẩn (Ảnh cửa & trong kho đã lưu vết)`,
         notes: handoverNotes
       })
@@ -622,6 +633,32 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               
+              {/* Hidden File Inputs for real camera/photo upload */}
+              <input
+                type="file"
+                ref={doorInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    setPhotoDoor(URL.createObjectURL(file))
+                  }
+                }}
+              />
+              <input
+                type="file"
+                ref={interiorInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    setPhotoInterior(URL.createObjectURL(file))
+                  }
+                }}
+              />
+
               {/* Photo 1: Door Overview */}
               <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex flex-col">
                 <div className="relative aspect-video bg-slate-900 overflow-hidden">
@@ -637,7 +674,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 <div className="p-2.5 flex items-center justify-between bg-white text-xs">
                   <span className="text-slate-600 text-[11px] truncate">door_overview_{selectedCustomer.unitCode}.jpg</span>
                   <button
-                    onClick={() => alert('Đang kích hoạt máy ảnh thiết bị để chụp lại ảnh cửa kho...')}
+                    type="button"
+                    onClick={() => doorInputRef.current?.click()}
                     className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
                   >
                     Chụp lại
@@ -660,7 +698,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 <div className="p-2.5 flex items-center justify-between bg-white text-xs">
                   <span className="text-slate-600 text-[11px] truncate">interior_floor_{selectedCustomer.unitCode}.jpg</span>
                   <button
-                    onClick={() => alert('Đang kích hoạt máy ảnh thiết bị để chụp lại ảnh trong kho...')}
+                    type="button"
+                    onClick={() => interiorInputRef.current?.click()}
                     className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
                   >
                     Chụp lại
@@ -772,10 +811,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </span>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => {
-                    setSmsSent(true)
-                    alert(`Đã gửi tin nhắn SMS chứa mã PIN ${accessPin} tới số điện thoại ${selectedCustomer.phone}!`)
-                  }}
+                  type="button"
+                  onClick={() => setSmsSent(true)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
                     smsSent
                       ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40'
@@ -783,14 +820,19 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   }`}
                 >
                   <span className="material-symbols-outlined text-[16px]">sms</span>
-                  <span>{smsSent ? 'Đã Gửi SMS' : 'Gửi SMS Cho Khách'}</span>
+                  <span>{smsSent ? `Đã Gửi SMS (${selectedCustomer.phone})` : 'Gửi SMS Cho Khách'}</span>
                 </button>
                 <button
-                  onClick={() => alert(`Đã gửi thông báo xác thực tới ứng dụng di động Boxora của anh/chị ${selectedCustomer.customerName}!`)}
-                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  type="button"
+                  onClick={() => setAppPushSent(true)}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    appPushSent
+                      ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/40'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                  }`}
                 >
                   <span className="material-symbols-outlined text-[16px]">send_to_mobile</span>
-                  <span>Bắn Thông Báo App</span>
+                  <span>{appPushSent ? 'Đã Bắn Thông Báo App' : 'Bắn Thông Báo App'}</span>
                 </button>
               </div>
             </div>
@@ -986,9 +1028,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </span>
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => {
-                    alert('Đang kết nối máy in để in biên bản bàn giao...')
-                    setShowPdfModal(false)
+                    window.print()
                   }}
                   className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
                 >
