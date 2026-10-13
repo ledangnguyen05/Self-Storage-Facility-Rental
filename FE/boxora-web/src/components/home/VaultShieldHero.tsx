@@ -563,15 +563,15 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
             >
               <div className="flex items-center gap-2 bg-white/85 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
                 <ShieldCheck size={16} className="text-cyan-600" />
-                <span>Mã Hóa AES-256 GCM</span>
+                <span>Bảo mật đa tầng</span>
               </div>
               <div className="flex items-center gap-2 bg-white/85 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
                 <KeyRound size={16} className="text-emerald-600" />
-                <span>Cấp PIN 60 Giây</span>
+                <span>Cấp mã PIN tức thì</span>
               </div>
               <div className="flex items-center gap-2 bg-white/85 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
                 <Thermometer size={16} className="text-teal-600" />
-                <span>21.5°C // 45% RH Ổn Định</span>
+                <span>Nhiệt độ &amp; Độ ẩm ổn định</span>
               </div>
             </motion.div>
 
@@ -733,7 +733,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
                         disabled={isUnlocking}
                         className="py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-[10px] font-bold shadow-2xs transition-all cursor-pointer flex items-center justify-center gap-1"
                       >
-                        <Sparkles size={11} />
+                        <KeyRound size={12} />
                         <span>MỞ</span>
                       </button>
                     </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react'
-import { ArrowDown, ArrowRight, Sparkles } from 'lucide-react'
+import { ArrowDown, ArrowRight } from 'lucide-react'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 
@@ -182,8 +182,7 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
             <span className="absolute h-full w-full animate-ping rounded-full bg-lime-500/35 motion-reduce:animate-none" />
             <span className="relative h-2 w-2 rounded-full bg-lime-500" />
           </span>
-          <Sparkles size={14} className="text-blue-600" />
-          Không gian lưu trữ thế hệ mới
+          Không gian lưu trữ thông minh
         </div>
 
         <h1 data-hero-copy id="boxora-hero-title" className="max-w-6xl text-[clamp(2.2rem,min(7.4vw,10svh),6.4rem)] font-semibold leading-[0.96] tracking-[-0.045em] text-slate-950">
@@ -260,11 +259,11 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
 
           <div className="absolute bottom-0 left-1/2 hidden -translate-x-1/2 items-center gap-3 rounded-2xl border border-white/90 bg-white/80 px-4 py-2.5 text-left shadow-[0_10px_35px_rgba(27,66,74,.1)] backdrop-blur-xl sm:inline-flex sm:bottom-0">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
-              <Sparkles size={16} />
+              <span className="h-2 w-2 rounded-full bg-blue-600" />
             </span>
             <span>
-            <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-700">BOXORA SMART STORAGE</span>
-              <span className="mt-0.5 block text-sm font-semibold text-slate-900">Không gian riêng, luôn trong tầm kiểm soát</span>
+              <span className="block text-xs font-semibold text-slate-900">Boxora Self-Storage</span>
+              <span className="mt-0.5 block text-xs text-slate-500">Không gian riêng, luôn trong tầm kiểm soát</span>
             </span>
           </div>
 
