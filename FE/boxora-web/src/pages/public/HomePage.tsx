@@ -610,8 +610,7 @@ export const HomePage: React.FC = () => {
           className="text-center max-w-2xl mx-auto space-y-3"
         >
           <span className="text-[var(--brand-teal,#0866f5)] font-mono text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200">
-            <span className="w-2 h-2 rounded-full bg-cyan-600 animate-pulse" />
-            QUY TRÌNH THUÊ KHO KHÉP KÍN // 3 BƯỚC ĐƠN GIẢN
+            Quy trình thuê kho 3 bước đơn giản
           </span>
           <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             Bắt Đầu Thuê Kho Chỉ Trong 3 Bước
@@ -790,8 +789,7 @@ export const HomePage: React.FC = () => {
           className="text-center max-w-3xl mx-auto space-y-3"
         >
           <span className="text-[var(--brand-teal,#0866f5)] font-mono text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200">
-            <span className="w-2 h-2 rounded-full bg-cyan-600 animate-pulse" />
-            AN NINH CHUẨN XÁC // THE PRECISION VAULT
+            An ninh &amp; Bảo mật đa tầng
           </span>
           <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             Công Nghệ Khóa Điện Tử IoT &amp; Bảo Mật Đa Tầng
@@ -827,10 +825,6 @@ export const HomePage: React.FC = () => {
                 Cấp mã PIN số hóa bảo mật ngay sau khi thuê. Ra vào kho 24/7 chỉ với mã số trên bàn phím cảm ứng hoặc một chạm trên điện thoại mà không lo thất lạc chìa khóa.
               </p>
             </div>
-            <div className="font-mono text-[11px] text-cyan-800 bg-cyan-50 px-2.5 py-1.5 rounded-xl border border-cyan-100 font-semibold flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[15px] text-cyan-600">check_circle</span>
-              <span>Mã hóa chuẩn AES-256</span>
-            </div>
           </motion.div>
 
           {/* Pillar 2 */}
@@ -850,10 +844,6 @@ export const HomePage: React.FC = () => {
               <p className="text-xs text-slate-600 leading-relaxed">
                 Cảm biến từ tính phát hiện trạng thái cánh cửa và tự động kích hoạt chốt khóa sau 3 giây. Hệ thống sẽ phát cảnh báo âm thanh và gửi thông báo nếu bạn vô tình để hở cửa quá lâu.
               </p>
-            </div>
-            <div className="font-mono text-[11px] text-emerald-800 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-100 font-semibold flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[15px] text-emerald-600">check_circle</span>
-              <span>Tự động khóa sau 3 giây</span>
             </div>
           </motion.div>
 
@@ -875,10 +865,6 @@ export const HomePage: React.FC = () => {
                 Dễ dàng tạo mã PIN tạm thời hoặc mã 1 lần gửi cho người thân, shipper hoặc nhân viên khi cần nhờ nhận hoặc lấy đồ, và chủ động thu hồi quyền bất kỳ lúc nào.
               </p>
             </div>
-            <div className="font-mono text-[11px] text-blue-800 bg-blue-50 px-2.5 py-1.5 rounded-xl border border-blue-100 font-semibold flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[15px] text-blue-600">check_circle</span>
-              <span>Quản lý &amp; Thu hồi tức thì</span>
-            </div>
           </motion.div>
 
           {/* Pillar 4 */}
@@ -898,10 +884,6 @@ export const HomePage: React.FC = () => {
               <p className="text-xs text-slate-600 leading-relaxed">
                 Duy trì nhiệt độ 20-22°C và độ ẩm dưới 50% RH chống ẩm mốc đồ đạc. Toàn bộ mốc thời gian mở và khóa cửa đều được ghi nhận minh bạch trên nhật ký ứng dụng.
               </p>
-            </div>
-            <div className="font-mono text-[11px] text-lime-800 bg-lime-50 px-2.5 py-1.5 rounded-xl border border-lime-100 font-semibold flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[15px] text-lime-600">check_circle</span>
-              <span>21.5°C • 45% RH • Nhật ký 24/7</span>
             </div>
           </motion.div>
         </motion.div>
@@ -949,8 +931,7 @@ export const HomePage: React.FC = () => {
           className="text-center max-w-3xl mx-auto space-y-3"
         >
           <span className="text-[var(--brand-teal,#0866f5)] font-mono text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200">
-            <span className="w-2 h-2 rounded-full bg-cyan-600 animate-pulse" />
-            DANH MỤC DỊCH VỤ // THE PRECISION VAULT
+            Danh mục dịch vụ
           </span>
           <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             Giải Pháp Lưu Trữ Toàn Diện Cho Cá Nhân &amp; Doanh Nghiệp
@@ -1138,8 +1119,7 @@ export const HomePage: React.FC = () => {
           className="text-center max-w-3xl mx-auto space-y-3"
         >
           <span className="text-[var(--brand-teal,#0866f5)] font-mono text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200">
-            <span className="w-2 h-2 rounded-full bg-cyan-600 animate-pulse" />
-            QUY CÁCH BUỒNG KHO // THE PRECISION VAULT
+            Quy cách buồng kho
           </span>
           <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             Bộ Ước Tính Kích Cỡ &amp; Sức Chứa Buồng Kho Chuẩn
@@ -1279,8 +1259,7 @@ export const HomePage: React.FC = () => {
           className="text-center max-w-3xl mx-auto space-y-3"
         >
           <span className="text-[var(--brand-teal,#0866f5)] font-mono text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200">
-            <span className="w-2 h-2 rounded-full bg-cyan-600 animate-pulse" />
-            CHÍNH SÁCH MINH BẠCH // BẢO VỆ KHÁCH HÀNG
+            Chính sách minh bạch
           </span>
           <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             Chính Sách Thuê Kho Rõ Ràng &amp; Minh Bạch Tuyệt Đối
@@ -1558,8 +1537,7 @@ export const HomePage: React.FC = () => {
           className="text-center max-w-3xl mx-auto space-y-3"
         >
           <span className="text-[var(--brand-teal,#0866f5)] font-mono text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200">
-            <span className="w-2 h-2 rounded-full bg-cyan-600 animate-pulse" />
-            THÔNG TIN CẦN BIẾT // HỎI ĐÁP &amp; HỖ TRỢ
+            Hỏi đáp &amp; Hỗ trợ
           </span>
           <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             Câu Hỏi Thường Gặp &amp; Kênh Hỗ Trợ Khách Hàng
@@ -1719,10 +1697,9 @@ export const HomePage: React.FC = () => {
           initial={{ opacity: 0, scale: 0.95 }}
           whileInView={{ opacity: 1, scale: 1 }}
           viewport={{ once: true }}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-cyan-100 text-[var(--brand-teal,#0866f5)] font-mono text-[11px] font-bold uppercase shadow-2xs"
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-cyan-100 text-[var(--brand-teal,#0866f5)] text-xs font-semibold shadow-2xs"
         >
-          <span className="material-symbols-outlined text-[15px]">verified</span>
-          <span>ƯU ĐÃI THÁNG ĐẦU TIÊN CHO KHÁCH HÀNG MỚI</span>
+          <span>Ưu đãi tháng đầu tiên cho khách hàng mới</span>
         </motion.div>
 
         <h2 className="font-headline text-3xl sm:text-5xl font-extrabold text-slate-900 tracking-tight leading-tight">
@@ -1879,7 +1856,7 @@ export const HomePage: React.FC = () => {
         {/* Sub-footer Bottom Line */}
         <div className="pt-8 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-4 font-mono text-[11px] text-slate-500">
           <div>
-            © 2026 Boxora Smart Storage. Tất cả các quyền được bảo lưu // The Precision Vault.
+            © 2026 Boxora Smart Storage. Tất cả các quyền được bảo lưu.
           </div>
           <div className="flex items-center gap-6">
             <Link to="/units" className="hover:text-slate-900 text-cyan-800 font-bold transition-colors">
