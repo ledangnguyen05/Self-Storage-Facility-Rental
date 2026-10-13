@@ -17,7 +17,7 @@ interface InspectedUnit {
   type: string
   status: 'Available' | 'Rented' | 'Pending' | 'Overdue' | 'Maintenance'
   rawStatus?: string
-  color: 'emerald' | 'blue' | 'amber' | 'purple' | 'red'
+  color: 'emerald' | 'blue' | 'amber' | 'rose' | 'red'
   tenant: string
   contract: string
   due: string
@@ -46,7 +46,7 @@ const INITIAL_UNITS: InspectedUnit[] = [
   { id: 'A-112', floorLevel: 'Floor 1', size: '10.0 m²', type: 'Standard Roll-up', status: 'Rented', color: 'blue', tenant: 'Nguyễn Mai Hương', contract: 'HD-2024-9099', due: '05/06/2025', battery: '93%', smartlock: 'SL-8864', lastAccess: '2 ngày trước' },
   { id: 'A-113', floorLevel: 'Floor 1', size: '10.0 m²', type: 'Standard Roll-up', status: 'Rented', color: 'blue', tenant: 'Studio Nhiếp Ảnh Sáng Tạo', contract: 'HD-2024-1188', due: '11/11/2025', battery: '86%', smartlock: 'SL-8870', lastAccess: 'Hôm nay 06:40' },
   { id: 'A-114', floorLevel: 'Floor 1', size: '10.0 m²', type: 'Standard Roll-up', status: 'Rented', color: 'blue', tenant: 'Dương Minh Trí', contract: 'HD-2024-2200', due: '24/07/2025', battery: '90%', smartlock: 'SL-8873', lastAccess: '1 tuần trước' },
-  { id: 'A-115', floorLevel: 'Floor 1', size: '10.0 m²', type: 'Standard Roll-up', status: 'Overdue', color: 'purple', tenant: 'Trần Quốc Tuấn (Kinh doanh)', contract: 'HD-2024-0044', due: 'Quá hạn 7 ngày', battery: '88%', smartlock: 'SL-8880 [KHOÁ TẠM]', lastAccess: '7 ngày trước 14:20' },
+  { id: 'A-115', floorLevel: 'Floor 1', size: '10.0 m²', type: 'Standard Roll-up', status: 'Overdue', color: 'rose', tenant: 'Trần Quốc Tuấn (Kinh doanh)', contract: 'HD-2024-0044', due: 'Quá hạn 7 ngày', battery: '88%', smartlock: 'SL-8880 [KHOÁ TẠM]', lastAccess: '7 ngày trước 14:20' },
   { id: 'A-116', floorLevel: 'Floor 1', size: '10.0 m²', type: 'Standard Dry', status: 'Rented', color: 'blue', tenant: 'Đoàn Thị Bích Ngọc', contract: 'HD-2024-6331', due: '18/09/2025', battery: '92%', smartlock: 'SL-8889', lastAccess: 'Hôm qua 11:30' },
   // Zone B (Floor 1)
   { id: 'B-101', floorLevel: 'Floor 1', size: '20.0 m²', type: 'High Ceiling Bulk', status: 'Rented', color: 'blue', tenant: 'Hàng Tiêu Dùng Á Châu JSC', contract: 'HD-2023-1100', due: '25/12/2025', battery: '95%', smartlock: 'SL-7001', lastAccess: 'Hôm nay 08:30' },
@@ -63,7 +63,7 @@ const INITIAL_UNITS: InspectedUnit[] = [
   { id: 'B-112', floorLevel: 'Floor 1', size: '15.0 m²', type: 'Standard Dry', status: 'Rented', color: 'blue', tenant: 'Cty Kiến Trúc Nghệ Thuật', contract: 'HD-2024-9912', due: '14/09/2025', battery: '93%', smartlock: 'SL-7012', lastAccess: 'Hôm qua 15:00' },
   { id: 'B-113', floorLevel: 'Floor 1', size: '15.0 m²', type: 'Standard Dry', status: 'Rented', color: 'blue', tenant: 'Chuỗi Sách Ngoại Văn Bookland', contract: 'HD-2024-4112', due: '30/11/2025', battery: '98%', smartlock: 'SL-7013', lastAccess: 'Hôm nay 09:44' },
   { id: 'B-114', floorLevel: 'Floor 1', size: '15.0 m²', type: 'Standard Dry', status: 'Rented', color: 'blue', tenant: 'Huỳnh Thanh Tùng', contract: 'HD-2024-5509', due: '01/08/2025', battery: '85%', smartlock: 'SL-7014', lastAccess: '5 ngày trước' },
-  { id: 'B-120', floorLevel: 'Floor 1', size: '20.0 m²', type: 'High Ceiling Bulk', status: 'Overdue', color: 'purple', tenant: 'Kho Đồ Điện Tử Việt Phát', contract: 'HD-2023-8811', due: 'Quá hạn 12 ngày', battery: '82%', smartlock: 'SL-7020 [KHOÁ TẠM]', lastAccess: '12 ngày trước 18:00' },
+  { id: 'B-120', floorLevel: 'Floor 1', size: '20.0 m²', type: 'High Ceiling Bulk', status: 'Overdue', color: 'rose', tenant: 'Kho Đồ Điện Tử Việt Phát', contract: 'HD-2023-8811', due: 'Quá hạn 12 ngày', battery: '82%', smartlock: 'SL-7020 [KHOÁ TẠM]', lastAccess: '12 ngày trước 18:00' },
   { id: 'B-121', floorLevel: 'Floor 1', size: '20.0 m²', type: 'High Ceiling Bulk', status: 'Rented', color: 'blue', tenant: 'Cửa Hàng Thể Thao ProSport', contract: 'HD-2024-7700', due: '20/09/2025', battery: '94%', smartlock: 'SL-7021', lastAccess: 'Hôm qua 17:15' },
   // Zone C (Floor 2 - Climate Controlled Cold)
   { id: 'C-201', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Available', color: 'emerald', tenant: 'Chưa có khách', contract: 'Trống', due: '--', battery: '99%', smartlock: 'SL-C201', lastAccess: 'Chưa ghi nhận' },
@@ -313,38 +313,39 @@ export const ManagerDashboard: React.FC = () => {
 
   const getStatusBadgeStyle = (status: InspectedUnit['status']) => {
     switch (status) {
-      case 'Available': return 'bg-emerald-100 text-emerald-800 border-emerald-300'
-      case 'Rented': return 'bg-blue-100 text-blue-800 border-blue-300'
-      case 'Pending': return 'bg-amber-100 text-amber-900 border-amber-300'
-      case 'Overdue': return 'bg-rose-100 text-rose-900 border-rose-300'
-      case 'Maintenance': return 'bg-red-100 text-red-800 border-red-300'
+      case 'Available': return 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      case 'Rented': return 'bg-blue-50 text-blue-700 border-blue-200'
+      case 'Pending': return 'bg-amber-50 text-amber-800 border-amber-200'
+      case 'Overdue': return 'bg-rose-50 text-rose-700 border-rose-200'
+      case 'Maintenance': return 'bg-rose-50 text-rose-700 border-rose-200'
     }
   }
 
   const getUnitCardBorder = (unit: InspectedUnit) => {
-    const isSelected = selectedUnit?.id === unit.id ? 'ring-2 ring-slate-900 shadow-md scale-[1.02] z-10' : 'hover:-translate-y-0.5 hover:shadow-xs'
+    const isSelected = selectedUnit?.id === unit.id ? 'ring-2 ring-slate-900 shadow-md z-10' : 'hover:-translate-y-0.5 hover:shadow-xs'
     switch (unit.color) {
-      case 'emerald': return `border-t-4 border-t-emerald-500 hover:bg-emerald-50/60 ${isSelected}`
-      case 'blue': return `border-t-4 border-t-blue-600 hover:bg-blue-50/60 ${isSelected}`
-      case 'amber': return `border-t-4 border-t-amber-500 hover:bg-amber-50/70 ${isSelected}`
-      case 'purple': return `border-t-4 border-t-rose-600 hover:bg-rose-50/70 ${isSelected}`
-      case 'red': return `border-t-4 border-t-red-500 hover:bg-red-50/70 ${isSelected}`
+      case 'emerald': return `border-t-2 border-t-emerald-500 hover:bg-slate-50/80 ${isSelected}`
+      case 'blue': return `border-t-2 border-t-blue-600 hover:bg-slate-50/80 ${isSelected}`
+      case 'amber': return `border-t-2 border-t-amber-500 hover:bg-slate-50/80 ${isSelected}`
+      case 'rose':
+      case 'red': return `border-t-2 border-t-rose-500 hover:bg-slate-50/80 ${isSelected}`
+      default: return `border-t-2 border-t-slate-400 hover:bg-slate-50/80 ${isSelected}`
     }
   }
 
   const getUnitHeatmapInfo = (unit: InspectedUnit) => {
     if (unit.status === 'Available') {
-      return { visits: 0, level: 'none', label: '0 lượt/tuần', badgeClass: 'bg-slate-100 text-slate-700 border border-slate-200' }
+      return { visits: 0, level: 'none', label: '0 lượt/tuần', badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200' }
     }
     const charCode = unit.id.charCodeAt(unit.id.length - 1) + (unit.id.charCodeAt(unit.id.length - 2) || 0)
     const visits = (charCode % 18) + 3
     if (visits >= 14) {
-      return { visits, level: 'high', label: `${visits} lượt/tuần (Cao)`, badgeClass: 'bg-rose-100 text-rose-900 border border-rose-200 font-bold' }
+      return { visits, level: 'high', label: `${visits} lượt/tuần`, badgeClass: 'bg-slate-100 text-slate-800 border border-slate-300 font-semibold' }
     }
     if (visits >= 8) {
-      return { visits, level: 'med', label: `${visits} lượt/tuần (Vừa)`, badgeClass: 'bg-amber-100 text-amber-950 border border-amber-200 font-semibold' }
+      return { visits, level: 'med', label: `${visits} lượt/tuần`, badgeClass: 'bg-slate-100 text-slate-700 border border-slate-200' }
     }
-    return { visits, level: 'low', label: `${visits} lượt/tuần (Thấp)`, badgeClass: 'bg-emerald-100 text-emerald-900 border border-emerald-200' }
+    return { visits, level: 'low', label: `${visits} lượt/tuần`, badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200' }
   }
 
   return (
@@ -603,12 +604,12 @@ export const ManagerDashboard: React.FC = () => {
                 onClick={() => setShowHeatmap(prev => !prev)}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                   showHeatmap 
-                    ? 'bg-amber-500 text-amber-950 border-amber-600 shadow-xs ring-2 ring-amber-400/40 font-bold' 
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-xs' 
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 shadow-2xs'
                 }`}
                 title="Bật/Tắt hiển thị bản đồ nhiệt mật độ tần suất ra vào kho"
               >
-                <span className="material-symbols-outlined text-[16px]">{showHeatmap ? 'local_fire_department' : 'radar'}</span>
+                <span className="material-symbols-outlined icon-sm">{showHeatmap ? 'analytics' : 'insights'}</span>
                 <span>Bản đồ nhiệt ({showHeatmap ? 'Bật' : 'Tắt'})</span>
               </button>
 
@@ -788,8 +789,7 @@ export const ManagerDashboard: React.FC = () => {
                           <span className={`w-1.5 h-1.5 rounded-full ${
                             unit.color === 'emerald' ? 'bg-emerald-500' :
                             unit.color === 'blue' ? 'bg-blue-600' :
-                            unit.color === 'amber' ? 'bg-amber-500' :
-                            unit.color === 'purple' ? 'bg-rose-600' : 'bg-rose-500'
+                            unit.color === 'amber' ? 'bg-amber-500' : 'bg-rose-500'
                           }`}></span>
                           {unit.status === 'Available' ? 'Trống' :
                            unit.status === 'Rented' ? 'Thuê' :
@@ -798,7 +798,7 @@ export const ManagerDashboard: React.FC = () => {
                         </span>
                         {showHeatmap && (
                           <span className={`mt-1 text-[9px] px-1 py-0.5 rounded font-mono flex items-center gap-0.5 ${getUnitHeatmapInfo(unit).badgeClass}`}>
-                            <span className="material-symbols-outlined text-[10px]">local_fire_department</span>
+                            <span className="material-symbols-outlined icon-xs text-slate-500">trending_up</span>
                             {getUnitHeatmapInfo(unit).label}
                           </span>
                         )}
@@ -818,8 +818,8 @@ export const ManagerDashboard: React.FC = () => {
                         Phân khu A (Hành lang Aisle North)
                       </span>
                       {showHeatmap && (
-                        <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-900 text-[10px] font-mono font-semibold border border-rose-200 flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[12px]">local_fire_department</span>
+                        <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 text-[10px] font-mono font-semibold border border-slate-300 flex items-center gap-1">
+                          <span className="material-symbols-outlined icon-xs text-slate-600">trending_up</span>
                           Mật độ cao: 94 lượt/ngày
                         </span>
                       )}
@@ -850,8 +850,7 @@ export const ManagerDashboard: React.FC = () => {
                             <span className={`w-1.5 h-1.5 rounded-full ${
                               unit.color === 'emerald' ? 'bg-emerald-500' :
                               unit.color === 'blue' ? 'bg-blue-600' :
-                              unit.color === 'amber' ? 'bg-amber-500' :
-                              unit.color === 'purple' ? 'bg-rose-600' : 'bg-rose-500'
+                              unit.color === 'amber' ? 'bg-amber-500' : 'bg-rose-500'
                             }`}></span>
                             {unit.status === 'Available' ? 'Trống' :
                              unit.status === 'Rented' ? 'Thuê' :
@@ -860,7 +859,7 @@ export const ManagerDashboard: React.FC = () => {
                           </span>
                           {showHeatmap && (
                             <span className={`mt-1 text-[9px] px-1 py-0.5 rounded font-mono flex items-center gap-0.5 ${getUnitHeatmapInfo(unit).badgeClass}`}>
-                              <span className="material-symbols-outlined text-[10px]">local_fire_department</span>
+                              <span className="material-symbols-outlined icon-xs text-slate-500">trending_up</span>
                               {getUnitHeatmapInfo(unit).label}
                             </span>
                           )}
@@ -878,8 +877,8 @@ export const ManagerDashboard: React.FC = () => {
                         Phân khu B (Hành lang Aisle South &amp; Giáp kho hàng xuất)
                       </span>
                       {showHeatmap && (
-                        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-950 text-[10px] font-mono font-semibold border border-amber-200 flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[12px]">footprint</span>
+                        <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 text-[10px] font-mono font-semibold border border-slate-300 flex items-center gap-1">
+                          <span className="material-symbols-outlined icon-xs text-slate-600">trending_up</span>
                           Mật độ vừa: 62 lượt/ngày
                         </span>
                       )}
@@ -910,8 +909,7 @@ export const ManagerDashboard: React.FC = () => {
                             <span className={`w-1.5 h-1.5 rounded-full ${
                               unit.color === 'emerald' ? 'bg-emerald-500' :
                               unit.color === 'blue' ? 'bg-blue-600' :
-                              unit.color === 'amber' ? 'bg-amber-500' :
-                              unit.color === 'purple' ? 'bg-rose-600' : 'bg-rose-500'
+                              unit.color === 'amber' ? 'bg-amber-500' : 'bg-rose-500'
                             }`}></span>
                             {unit.status === 'Available' ? 'Trống' :
                              unit.status === 'Rented' ? 'Thuê' :
@@ -920,7 +918,7 @@ export const ManagerDashboard: React.FC = () => {
                           </span>
                           {showHeatmap && (
                             <span className={`mt-1 text-[9px] px-1 py-0.5 rounded font-mono flex items-center gap-0.5 ${getUnitHeatmapInfo(unit).badgeClass}`}>
-                              <span className="material-symbols-outlined text-[10px]">local_fire_department</span>
+                              <span className="material-symbols-outlined icon-xs text-slate-500">trending_up</span>
                               {getUnitHeatmapInfo(unit).label}
                             </span>
                           )}
@@ -1096,15 +1094,15 @@ export const ManagerDashboard: React.FC = () => {
         <div className="lg:col-span-7 flex flex-col gap-4 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
           <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-100">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-rose-100 text-rose-900">
-                <span className="material-symbols-outlined text-[22px]">warning</span>
+              <div className="p-2 rounded-lg bg-rose-50 text-rose-700 border border-rose-200">
+                <span className="material-symbols-outlined icon-md">warning</span>
               </div>
               <div className="flex flex-col">
                 <h3 className="text-base font-bold text-slate-900">Xử lý Nợ cước Quá hạn (Overdue Handling)</h3>
                 <span className="text-xs text-slate-500">Phát hiện 02 hợp đồng vi phạm điều khoản thanh toán kỳ hạn</span>
               </div>
             </div>
-            <span className="px-3 py-1 rounded-full bg-rose-50 text-rose-900 font-mono text-xs font-bold border border-rose-200">
+            <span className="px-3 py-1 rounded-full bg-rose-50 text-rose-700 font-mono text-xs font-bold border border-rose-200">
               2 Cần xử lý
             </span>
           </div>
@@ -1112,15 +1110,15 @@ export const ManagerDashboard: React.FC = () => {
           {/* Delinquent Cases Stack */}
           <div className="flex flex-col gap-3">
             {/* Case 1: Unit A-115 */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-rose-50/40 rounded-xl gap-4 border border-rose-200/60">
+            <div className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-slate-50 rounded-xl gap-4 border border-slate-200">
               <div className="flex flex-col gap-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-rose-700 text-white font-mono text-xs font-bold">Kho #A-115</span>
+                  <span className="px-2 py-0.5 rounded bg-rose-600 text-white font-mono text-xs font-bold">Kho #A-115</span>
                   <span className="text-xs font-bold text-slate-900 truncate">Trần Quốc Tuấn (HĐ #HD-2024-0044)</span>
                 </div>
                 <div className="flex items-center gap-4 flex-wrap text-slate-600 text-xs mt-1">
                   <span className="text-rose-600 font-semibold flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[16px]">schedule</span> Quá hạn 7 ngày
+                    <span className="material-symbols-outlined icon-xs">schedule</span> Quá hạn 7 ngày
                   </span>
                   <span>Cước nợ: <strong className="text-slate-900 font-mono">3.600.000đ</strong></span>
                   <span>Phí phạt: <strong className="text-rose-600 font-mono">250.000đ</strong></span>
@@ -1143,7 +1141,7 @@ export const ManagerDashboard: React.FC = () => {
                   })}
                   className="px-3 py-2 rounded-lg bg-white text-slate-800 text-xs font-medium border border-slate-200 hover:bg-slate-100 transition-all flex items-center gap-1 shadow-xs cursor-pointer"
                 >
-                  <span className="material-symbols-outlined text-[16px]">forward_to_inbox</span>
+                  <span className="material-symbols-outlined icon-xs">forward_to_inbox</span>
                   <span>Gửi SMS/Email</span>
                 </button>
                 <button 
@@ -1160,24 +1158,24 @@ export const ManagerDashboard: React.FC = () => {
                       setConfirmModal(null)
                     }
                   })}
-                  className="px-3 py-2 rounded-lg bg-rose-700 text-white text-xs font-bold shadow-sm hover:bg-rose-800 transition-all flex items-center gap-1 cursor-pointer"
+                  className="px-3 py-2 rounded-lg bg-rose-600 text-white text-xs font-semibold shadow-xs hover:bg-rose-700 transition-all flex items-center gap-1 cursor-pointer"
                 >
-                  <span className="material-symbols-outlined text-[16px]">lock_person</span>
+                  <span className="material-symbols-outlined icon-xs">lock_person</span>
                   <span>Khóa tạm (Lockout)</span>
                 </button>
               </div>
             </div>
 
             {/* Case 2: Unit B-120 */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-rose-50/40 rounded-xl gap-4 border border-rose-200/60">
+            <div className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-slate-50 rounded-xl gap-4 border border-slate-200">
               <div className="flex flex-col gap-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-rose-700 text-white font-mono text-xs font-bold">Kho #B-120</span>
+                  <span className="px-2 py-0.5 rounded bg-rose-600 text-white font-mono text-xs font-bold">Kho #B-120</span>
                   <span className="text-xs font-bold text-slate-900 truncate">Kho Đồ Điện Tử Việt Phát (HĐ #HD-2023-8811)</span>
                 </div>
                 <div className="flex items-center gap-4 flex-wrap text-slate-600 text-xs mt-1">
                   <span className="text-rose-600 font-semibold flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[16px]">schedule</span> Quá hạn 12 ngày
+                    <span className="material-symbols-outlined icon-xs">schedule</span> Quá hạn 12 ngày
                   </span>
                   <span>Cước nợ: <strong className="text-slate-900 font-mono">4.900.000đ</strong></span>
                   <span>Phí phạt: <strong className="text-rose-600 font-mono">500.000đ</strong></span>
@@ -1200,7 +1198,7 @@ export const ManagerDashboard: React.FC = () => {
                   })}
                   className="px-3 py-2 rounded-lg bg-white text-slate-800 text-xs font-medium border border-slate-200 hover:bg-slate-100 transition-all flex items-center gap-1 shadow-xs cursor-pointer"
                 >
-                  <span className="material-symbols-outlined text-[16px]">forward_to_inbox</span>
+                  <span className="material-symbols-outlined icon-xs">forward_to_inbox</span>
                   <span>Gửi SMS/Email</span>
                 </button>
                 <button 
@@ -1223,7 +1221,7 @@ export const ManagerDashboard: React.FC = () => {
                       })
                     }
                   })}
-                  className="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold shadow-sm hover:bg-blue-700 transition-all flex items-center gap-1 cursor-pointer"
+                  className="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold shadow-xs hover:bg-blue-700 transition-all flex items-center gap-1 cursor-pointer"
                 >
                   <span>Lập Biên Bản</span>
                 </button>
@@ -1334,7 +1332,7 @@ export const ManagerDashboard: React.FC = () => {
                   <span className="text-[11px] text-slate-500">Điều phối Bàn giao &amp; Ký gửi</span>
                 </div>
               </div>
-              <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-900 font-mono text-[11px] font-bold border border-indigo-200">
+              <span className="px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 font-mono text-[11px] font-bold border border-slate-200">
                 Phòng Vận Hành
               </span>
             </div>

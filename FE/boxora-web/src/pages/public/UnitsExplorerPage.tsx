@@ -1084,7 +1084,7 @@ export const UnitsExplorerPage: React.FC = () => {
                     </div>
                     <div className="flex items-start gap-2.5 text-slate-600">
                       <span className="material-symbols-outlined text-[18px] text-emerald-600 shrink-0">check_circle</span>
-                      <span>Cấp mã PIN mở cửa tự động 24/7 bảo mật AES-256.</span>
+                      <span>Cấp mã PIN mở cửa tự động 24/7 bảo mật riêng biệt.</span>
                     </div>
                     <div className="flex items-start gap-2.5 text-slate-600">
                       <span className="material-symbols-outlined text-[18px] text-emerald-600 shrink-0">check_circle</span>

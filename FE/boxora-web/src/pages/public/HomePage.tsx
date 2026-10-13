@@ -584,10 +584,10 @@ export const HomePage: React.FC = () => {
               <span className="material-symbols-outlined text-[20px] text-blue-600 group-hover:scale-110 transition-transform">encrypted</span>
             </div>
             <div className="font-mono text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              AES-256
+              Bảo Mật 24/7
             </div>
             <p className="text-xs text-slate-500 font-normal">
-              Khóa IoT &amp; Mã PIN số hóa
+              Khóa IoT &amp; Mã PIN riêng biệt
             </p>
           </motion.div>
 
@@ -719,7 +719,7 @@ export const HomePage: React.FC = () => {
               Nhận Mã PIN &amp; Vào Kho 24/7
             </h3>
             <p className="text-xs text-slate-600 leading-relaxed mb-4">
-              Hệ thống tự động cấp mã PIN số hóa bảo mật AES-256 tức thì. Bạn có thể tự do mở cửa kho và quản lý tài sản bất kỳ lúc nào ngày hay đêm qua app.
+              Hệ thống tự động cấp mã PIN số hóa riêng biệt tức thì. Bạn có thể tự do mở cửa kho và quản lý tài sản bất kỳ lúc nào ngày hay đêm qua app.
             </p>
 
             <div className="pt-3 border-t border-slate-200/70 text-[11px] font-mono font-semibold text-blue-800 flex items-center gap-1.5">
@@ -1151,7 +1151,7 @@ export const HomePage: React.FC = () => {
               </div>
               <div className="flex justify-between">
                 <span>Khóa an ninh:</span>
-                <span className="font-bold">IoT Mã PIN AES-256</span>
+                <span className="font-bold">Khóa IoT &amp; Mã PIN</span>
               </div>
               <div className="flex justify-between">
                 <span>Ra vào kho:</span>

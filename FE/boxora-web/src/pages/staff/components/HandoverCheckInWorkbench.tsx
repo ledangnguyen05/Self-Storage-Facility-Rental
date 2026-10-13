@@ -231,7 +231,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Chuẩn hóa 4 điều kiện tiên quyết, checklist hiện trường 5 điểm, lưu trữ 2 ảnh đối soát và cấp mã PIN bảo mật AES-256.
+              Chuẩn hóa 4 điều kiện tiên quyết, checklist hiện trường 5 điểm, lưu trữ 2 ảnh đối soát và cấp mã PIN bảo mật cá nhân.
             </p>
           </div>
         </div>
@@ -715,7 +715,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       Mã PIN Mở Cửa Kho Số Hóa
                     </span>
                     <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-500/30">
-                      AES-256-GCM
+                      BẢO MẬT SỐ HÓA
                     </span>
                   </div>
                   <span className="text-xs text-slate-400">
