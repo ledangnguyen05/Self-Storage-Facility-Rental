@@ -117,7 +117,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
   const handleSimulateUnlock = () => {
     if (isUnlocking) return
     setIsUnlocking(true)
-    setFeedbackMsg('Đang xác thực giao thức IoT AES-256...')
+    setFeedbackMsg('Đang xác thực thông tin bảo mật...')
     
     setTimeout(() => {
       if (!simulatedUnlocked) {
@@ -273,70 +273,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
           <span className="material-symbols-outlined text-cyan-600 text-[18px] animate-pulse">arrow_forward</span>
         </motion.div>
 
-        {/* ========================================================== */}
-        {/* 3 GLASSMORPHIC HUD STATUS BADGES (MATCHING REFERENCE UI)   */}
-        {/* ========================================================== */}
-        <div className="hidden xl:flex flex-col gap-2.5 absolute top-20 left-[54%] z-15 pointer-events-none">
-          {/* Badge 1: IoT System */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.4, duration: 0.5 }}
-            className="flex items-center justify-between gap-4 px-3.5 py-2 rounded-xl bg-white/85 backdrop-blur-md border border-cyan-200/90 shadow-sm min-w-[230px]"
-          >
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-cyan-600 text-[18px]">wifi_tethering</span>
-              <div className="text-left">
-                <div className="text-[11px] font-bold text-slate-900 leading-none">Hệ thống IoT</div>
-                <div className="text-[9px] text-slate-500 font-mono mt-0.5">Hoạt động ổn định</div>
-              </div>
-            </div>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-mono font-bold border border-emerald-200 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-              Hoạt động
-            </span>
-          </motion.div>
 
-          {/* Badge 2: Security AES-256 */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.6, duration: 0.5 }}
-            className="flex items-center justify-between gap-4 px-3.5 py-2 rounded-xl bg-white/85 backdrop-blur-md border border-cyan-200/90 shadow-sm min-w-[230px]"
-          >
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-cyan-600 text-[18px]">shield</span>
-              <div className="text-left">
-                <div className="text-[11px] font-bold text-slate-900 leading-none">Bảo mật</div>
-                <div className="text-[9px] text-slate-500 font-mono mt-0.5">AES-256 GCM</div>
-              </div>
-            </div>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-mono font-bold border border-emerald-200 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              Đã bật
-            </span>
-          </motion.div>
-
-          {/* Badge 3: Realtime Sync */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.8, duration: 0.5 }}
-            className="flex items-center justify-between gap-4 px-3.5 py-2 rounded-xl bg-white/85 backdrop-blur-md border border-cyan-200/90 shadow-sm min-w-[230px]"
-          >
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-cyan-600 text-[18px]">cloud_sync</span>
-              <div className="text-left">
-                <div className="text-[11px] font-bold text-slate-900 leading-none">Trạng thái kho</div>
-                <div className="text-[9px] text-slate-500 font-mono mt-0.5">Đồng bộ real-time</div>
-              </div>
-            </div>
-            <span className="px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-900 text-[9px] font-mono font-bold border border-cyan-200 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-600 animate-pulse" />
-              100% online
-            </span>
-          </motion.div>
-        </div>
 
       </div>
 

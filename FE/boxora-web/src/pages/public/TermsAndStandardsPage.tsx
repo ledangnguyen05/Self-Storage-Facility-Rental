@@ -106,30 +106,30 @@ export const TermsAndStandardsPage: React.FC = () => {
     },
     {
       id: 'security',
-      badge: 'ISO/IEC 27001',
+      badge: 'Bảo Mật 24/7',
       badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-400/30',
-      title: '3. An Ninh & Khóa IoT',
-      subtitle: 'Khóa điện tử độc lập & Camera AI hành lang AES-256',
+      title: '3. An Ninh & Khóa Điện Tử',
+      subtitle: 'Khóa điện tử độc lập & Camera giám sát hành lang',
       icon: Lock,
       iconBg: 'bg-cyan-500/20',
       iconColor: 'text-cyan-300',
       borderColor: 'hover:border-cyan-500/50',
       accentColor: 'text-cyan-400',
       kpiLabel: 'Nhật ký truy cập',
-      kpiValue: 'Real-time Audit Log',
-      tag: 'Bảo mật ngân hàng',
+      kpiValue: 'Lưu trữ tự động',
+      tag: 'Bảo mật an toàn',
       items: [
         {
           label: 'Khóa điện tử độc lập tuyệt đối',
           detail: 'Nhân viên Boxora không nắm giữ bất kỳ chìa khóa vật lý hay thẻ dự phòng nào của ô kho. Quyền mở cửa chỉ do duy nhất khách hàng nắm giữ trên thiết bị cá nhân.'
         },
         {
-          label: 'Mã hóa truyền tin AES-256 GCM',
-          detail: 'Toàn bộ tín hiệu đóng mở cửa từ ứng dụng điện thoại đến bộ điều khiển chốt khóa IoT được mã hóa đa tầng theo chuẩn bảo mật ngân hàng quốc tế.'
+          label: 'Mã hóa truyền tin an toàn',
+          detail: 'Toàn bộ tín hiệu đóng mở cửa từ ứng dụng điện thoại đến bộ điều khiển chốt khóa được mã hóa an toàn giữa ứng dụng và thiết bị.'
         },
         {
-          label: 'Camera AI 4K hành lang 24/7',
-          detail: 'Giám sát lối đi chung 24/7 nhận diện chuyển động bất thường. Boxora cam kết tuyệt đối không lắp đặt góc quay vào bên trong không gian riêng tư của ô kho.'
+          label: 'Camera giám sát hành lang 24/7',
+          detail: 'Giám sát lối đi chung 24/7 nhận diện chuyển động. Boxora cam kết tuyệt đối không lắp đặt góc quay vào bên trong không gian riêng tư của ô kho.'
         }
       ]
     },
@@ -318,7 +318,7 @@ export const TermsAndStandardsPage: React.FC = () => {
             className="text-sm sm:text-base max-w-4xl leading-relaxed"
             style={{ color: '#F1F5F9' }}
           >
-            Hệ thống quy chuẩn vận hành kho tự quản thông minh khép kín: hợp đồng điện tử hợp chuẩn, tiêu chuẩn PCCC khí sạch FM-200 không dùng nước, khóa IoT độc lập mã hóa chuẩn ngân hàng ISO/IEC 27001 và chính sách hoàn cọc minh bạch trong 24 giờ.
+            Hệ thống quy chuẩn vận hành kho tự quản thông minh khép kín: hợp đồng điện tử hợp chuẩn, tiêu chuẩn PCCC khí sạch FM-200 không dùng nước, khóa điện tử độc lập an toàn và chính sách hoàn cọc minh bạch trong 24 giờ.
           </p>
 
           {/* Quick KPI stats dashboard */}
@@ -332,8 +332,8 @@ export const TermsAndStandardsPage: React.FC = () => {
               <span className="block text-sm sm:text-base font-black text-white mt-0.5">FM-200 10 Giây</span>
             </div>
             <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
-              <span className="block text-[11px] font-mono text-cyan-400 font-bold uppercase">Bảo mật IoT</span>
-              <span className="block text-sm sm:text-base font-black text-white mt-0.5">ISO/IEC 27001</span>
+              <span className="block text-[11px] font-mono text-cyan-400 font-bold uppercase">Bảo mật</span>
+              <span className="block text-sm sm:text-base font-black text-white mt-0.5">Bảo Mật 24/7</span>
             </div>
             <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm">
               <span className="block text-[11px] font-mono text-cyan-400 font-bold uppercase">Hoàn cọc</span>
@@ -500,7 +500,7 @@ export const TermsAndStandardsPage: React.FC = () => {
           <div className="space-y-1.5">
             <div className="flex items-center gap-2 text-cyan-400 font-mono font-bold text-xs uppercase">
               <Sparkles className="w-4 h-4" />
-              <span>HỆ THỐNG VẬN HÀNH BẢO MẬT STORAGEOPS PRO</span>
+              <span>HỆ THỐNG QUẢN LÝ VÀ VẬN HÀNH BOXORA</span>
             </div>
             <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
               Mọi lịch sử mở khóa, nhật ký biến động nhiệt độ, độ ẩm và dữ liệu hợp đồng điện tử đều được lưu trữ phân tán chống giả mạo. Khách hàng hoàn toàn yên tâm khi lưu trữ tài sản giá trị tại Boxora.
@@ -533,7 +533,7 @@ export const TermsAndStandardsPage: React.FC = () => {
       {/* ============================================================ */}
       <footer className="relative z-10 border-t border-slate-800/80 py-8 px-4 sm:px-8 text-center text-xs text-slate-500 space-y-2">
         <p>
-          &copy; 2026 BOXORA SMART STORAGE VIETNAM. Tiêu chuẩn PCCC QCVN 06:2022/BXD &amp; An ninh bảo mật IoT ISO/IEC 27001.
+          &copy; {new Date().getFullYear()} BOXORA SMART STORAGE. Quy chuẩn an toàn và bảo mật kho tự quản Boxora.
         </p>
         <p className="text-[11px] text-slate-600">
           Văn bản quy chuẩn nghiệp vụ này được áp dụng thống nhất cho toàn bộ hệ thống cơ sở kho tự quản thông minh Boxora.

@@ -14,8 +14,6 @@ import {
   Sliders,
   Box,
   Clock,
-  Wifi,
-  Cloud,
   Check,
   ChevronRight,
   Eye,
@@ -244,24 +242,6 @@ export const RegisterPage: React.FC = () => {
             <span className="font-extrabold text-xs sm:text-[13px] text-slate-900 tracking-wider uppercase font-mono leading-tight">
               KHO TỰ QUẢN THÔNG MINH
             </span>
-            <span className="text-[10px] font-bold text-teal-700 tracking-widest uppercase mt-0.5 leading-tight">
-              IoT • AI • BẢO MẬT TUYỆT ĐỐI
-            </span>
-          </div>
-        </div>
-
-        {/* Security Badge (Top Right) */}
-        <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full bg-white/95 hover:bg-white backdrop-blur-md border border-teal-200 shadow-[0_4px_16px_rgba(15,23,42,0.08)] transition-all">
-          <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-700 shrink-0">
-            <Lock className="w-3.5 h-3.5" />
-          </div>
-          <div className="text-left leading-tight">
-            <span className="block text-[11px] sm:text-xs font-black text-slate-900 font-mono">
-              Bảo Mật 24/7
-            </span>
-            <span className="block text-[9px] sm:text-[10px] font-semibold text-slate-500">
-              Mã hóa dữ liệu an toàn
-            </span>
           </div>
         </div>
 
@@ -273,77 +253,9 @@ export const RegisterPage: React.FC = () => {
       <main className="auth-content-enter flex-1 w-full relative z-20 px-6 sm:px-10 lg:px-14 py-2 sm:py-4 flex flex-col lg:flex-row items-center justify-between gap-8 lg:gap-12 max-w-[1580px] mx-auto">
         
         {/* ========================================================== */}
-        {/* LEFT COLUMN: Glass status panel and Boxora content          */}
+        {/* LEFT COLUMN: Clean Boxora brand content                     */}
         {/* ========================================================== */}
-        <div className="w-full lg:w-[52%] xl:w-[54%] flex flex-col justify-between py-2 sm:py-6 space-y-8 lg:space-y-10">
-          
-          {/* Translucent glass status panel */}
-          <div className="w-full max-w-sm rounded-2xl bg-gradient-to-br from-white/90 via-white/75 to-teal-50/85 backdrop-blur-md border border-white/90 p-4 sm:p-4.5 shadow-[0_12px_36px_rgba(15,23,42,0.08),inset_0_1px_2px_rgba(255,255,255,0.7)] space-y-3.5 transition-all">
-            
-            {/* HUD Item 1: Hệ thống IoT */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-8.5 h-8.5 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-700 shrink-0">
-                  <Wifi className="w-4.5 h-4.5 stroke-[2.5]" />
-                </div>
-                <div className="text-left">
-                  <p className="text-xs sm:text-[13px] font-black text-slate-900 tracking-wide">
-                    Hệ thống IoT
-                  </p>
-                  <p className="text-[11px] text-slate-600 font-semibold">
-                    Hoạt động ổn định
-                  </p>
-                </div>
-              </div>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-mono font-black">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse " />
-                Hoạt động
-              </span>
-            </div>
-
-            {/* HUD Item 2: Bảo mật */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-8.5 h-8.5 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-700 shrink-0">
-                  <ShieldCheck className="w-4.5 h-4.5 stroke-[2.5]" />
-                </div>
-                <div className="text-left">
-                  <p className="text-xs sm:text-[13px] font-black text-slate-900 tracking-wide">
-                    Bảo mật
-                  </p>
-                  <p className="text-[11px] text-slate-600 font-semibold">
-                    Bảo mật đa lớp
-                  </p>
-                </div>
-              </div>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-mono font-black">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                Đã bật
-              </span>
-            </div>
-
-            {/* HUD Item 3: Trạng thái kho */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-8.5 h-8.5 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-700 shrink-0">
-                  <Cloud className="w-4.5 h-4.5 stroke-[2.5]" />
-                </div>
-                <div className="text-left">
-                  <p className="text-xs sm:text-[13px] font-black text-slate-900 tracking-wide">
-                    Trạng thái kho
-                  </p>
-                  <p className="text-[11px] text-slate-600 font-semibold">
-                    Đồng bộ real-time
-                  </p>
-                </div>
-              </div>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-mono font-black">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                100% online
-              </span>
-            </div>
-
-          </div>
+        <div className="w-full lg:w-[52%] xl:w-[54%] flex flex-col justify-center py-2 sm:py-6 space-y-8 lg:space-y-10">
 
           {/* Hero Headlines & Content directly on canvas - no enclosing frame */}
           <div className="max-w-xl space-y-4 text-left">
@@ -826,8 +738,8 @@ export const RegisterPage: React.FC = () => {
       {/* 4. FOOTER (CLEAN & PROFESSIONAL)                             */}
       {/* ============================================================ */}
       <footer className="relative z-20 w-full px-6 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-600 font-mono">
-        <span className="bg-white/75 backdrop-blur-md px-3.5 py-1 rounded-full border border-slate-200/60 shadow-2xs">
-          BOXORA Smart Storage System • Tiêu chuẩn an ninh ISO/IEC 27001
+        <span className="text-slate-500 font-medium">
+          &copy; {new Date().getFullYear()} BOXORA Smart Storage. Bản quyền thuộc về Boxora.
         </span>
         <span className="text-slate-600 font-medium bg-white/75 backdrop-blur-md px-3.5 py-1 rounded-full border border-slate-200/60 shadow-2xs">
           Hotline hỗ trợ 24/7: <strong className="text-teal-700 font-bold">1900-6868</strong>

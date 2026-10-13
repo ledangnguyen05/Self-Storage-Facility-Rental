@@ -402,37 +402,13 @@ export const UnitsExplorerPage: React.FC = () => {
       <section className="bg-gradient-to-b from-white to-slate-50 border-b border-slate-200 py-10 sm:py-14 text-left">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
           
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-            <div className="max-w-3xl space-y-2">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 font-mono text-xs font-semibold">
-                <span>Tìm kiếm &amp; Đặt thuê trực tuyến</span>
-              </div>
-              <h1 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-                Trung Tâm Phân Hạng &amp; Tìm Kiếm Thuê Kho Thông Minh
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl">
-                Dành cho khách hàng đã tìm hiểu quy trình và công nghệ Boxora. Định vị vị trí hiện tại của bạn, kiểm tra cự ly thực tế tới các chi nhánh, so sánh các phân hạng kho và đặt giữ chỗ ngay để nhận mã PIN tự quản 24/7.
-              </p>
-            </div>
-
-            {/* Quick Metrics Strip */}
-            <div className="grid grid-cols-3 gap-3 self-start md:self-auto shrink-0 font-mono text-left">
-              <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                <span className="text-[10px] text-slate-400 block font-semibold uppercase">Cơ sở trực tuyến</span>
-                <span className="text-lg font-bold text-slate-900">3 Chi Nhánh</span>
-                <span className="text-[10px] text-cyan-700 block">Q.1 • Bình Thạnh • Thủ Đức</span>
-              </div>
-              <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                <span className="text-[10px] text-slate-400 block font-semibold uppercase">Kho phòng trống</span>
-                <span className="text-lg font-bold text-emerald-700">Khả Dụng</span>
-                <span className="text-[10px] text-slate-500 block">Cấp mã PIN tức thời</span>
-              </div>
-              <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                <span className="text-[10px] text-slate-400 block font-semibold uppercase">Vi khí hậu chuẩn</span>
-                <span className="text-lg font-bold text-slate-900">21.5°C</span>
-                <span className="text-[10px] text-slate-500 block">Độ ẩm 45% RH</span>
-              </div>
-            </div>
+          <div className="max-w-3xl space-y-2">
+            <h1 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+              Tìm Kiếm &amp; Đặt Thuê Kho Trực Tuyến
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl">
+              Định vị vị trí hiện tại của bạn, kiểm tra cự ly thực tế tới các chi nhánh, so sánh phân hạng buồng kho và đặt giữ chỗ ngay để nhận mã PIN tự quản 24/7.
+            </p>
           </div>
 
         </div>
@@ -462,7 +438,7 @@ export const UnitsExplorerPage: React.FC = () => {
             {/* Nearest Unit Highlight Badge */}
             {nearestUnit && (
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold self-start sm:self-auto">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
                 <span>
                   Kho gần bạn nhất: <strong>{nearestUnit.facilityName.split('—')[0].trim()}</strong> ({nearestUnit.distanceKm} km • ~{nearestUnit.travelMins} phút)
                 </span>
