@@ -16,6 +16,7 @@ public interface UserService {
             String search,
             Boolean isActive,
             UUID roleId,
+            String role,
             UUID facilityId,
             int page,
             int size,

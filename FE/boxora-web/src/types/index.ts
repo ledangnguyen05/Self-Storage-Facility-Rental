@@ -42,7 +42,7 @@ export interface UnitType {
   suitableFor: string
 }
 
-export type UnitStatusType = 'AVAILABLE' | 'RESERVED' | 'OCCUPIED' | 'MAINTENANCE' | 'UNDER_MAINTENANCE'
+export type UnitStatusType = 'AVAILABLE' | 'RESERVED' | 'OCCUPIED' | 'MAINTENANCE' | 'UNDER_MAINTENANCE' | 'OVERDUE_LOCKED'
 
 export interface StorageUnit {
   id: string
@@ -60,6 +60,8 @@ export interface StorageUnit {
   lastAccessTime?: string
   tenantName?: string
   contractCode?: string
+  contractId?: string
+  bookingId?: string
   dueDate?: string
 }
 

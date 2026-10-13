@@ -139,6 +139,20 @@ export const IoTTelemetryModal: React.FC<IoTTelemetryModalProps> = ({
           </button>
         </div>
 
+        {/* Development State Warning Banner */}
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3 text-amber-900 text-xs">
+          <span className="material-symbols-outlined text-[20px] text-amber-600 shrink-0">engineering</span>
+          <div>
+            <div className="font-bold flex items-center gap-1.5">
+              <span>TÍNH NĂNG ĐANG PHÁT TRIỂN &bull; CHƯA KẾT NỐI PHẦN CỨNG THỰC TẾ</span>
+              <span className="px-1.5 py-0.2 bg-amber-200 text-amber-900 font-mono text-[10px] rounded font-bold uppercase">Mô phỏng</span>
+            </div>
+            <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+              Trạm hiện chưa lắp đặt gateway LoRaWAN và cụm cảm biến IoT vi khí hậu thực tế tại hiện trường. Dữ liệu ping, RSSI và ngưỡng nhiệt ẩm dưới đây là dữ liệu telemetry giả lập phục vụ kiểm thử giao diện điều hành.
+            </p>
+          </div>
+        </div>
+
         {/* Realtime KPI Strip */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">

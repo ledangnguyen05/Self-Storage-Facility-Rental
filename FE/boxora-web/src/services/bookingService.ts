@@ -49,4 +49,24 @@ export const bookingService = {
     const response = await api.post(`/api/v1/bookings/${id}/remote-unlock`)
     return response.data?.data as Booking
   },
+
+  async updatePin(id: string, newPin: string) {
+    const response = await api.put(`/api/v1/bookings/${id}/access-pin`, { newPin })
+    return response.data?.data as { bookingId: string; bookingCode: string; pin: string; qrAccessToken: string }
+  },
+
+  async updatePinByUnit(unitId: string, newPin: string) {
+    const response = await api.put(`/api/v1/bookings/unit/${unitId}/access-pin`, { newPin })
+    return response.data?.data as { bookingId: string; bookingCode: string; pin: string; qrAccessToken: string }
+  },
+
+  async getBookingPin(id: string) {
+    const response = await api.get(`/api/v1/bookings/${id}/access-pin`)
+    return response.data?.data as { bookingId: string; bookingCode: string; pin: string; qrAccessToken: string }
+  },
+
+  async getBookingPinByUnit(unitId: string) {
+    const response = await api.get(`/api/v1/bookings/unit/${unitId}/access-pin`)
+    return response.data?.data as { bookingId: string; bookingCode: string; pin: string; qrAccessToken: string }
+  },
 }

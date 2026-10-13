@@ -28,7 +28,7 @@ public class SealingController {
 
     private final SealingService sealingService;
 
-    @PostMapping("seal")
+    @PostMapping({"", "seal"})
     @PreAuthorize("hasAuthority('OVERDUE_PROCESS') or hasAnyRole('ADMIN', 'FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Lập biên bản niêm phong kho và chuyển trạng thái OVERDUE_LOCKED")
     public ResponseEntity<ApiResponse<SealingRecordResponse>> createSealing(

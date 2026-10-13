@@ -259,6 +259,46 @@ public class StorageUnitServiceImpl implements StorageUnitService {
         BigDecimal price = u.getEffectiveBasePrice();
         Double area = (u.getUnitType() != null) ? u.getUnitType().getAreaSqm() : null;
 
+        UUID bookingId = null;
+        String tenantName = null;
+        String contractCode = null;
+        UUID contractId = null;
+        String dueDate = null;
+
+        if (u.getStatus() == UnitStatus.OCCUPIED || u.getStatus() == UnitStatus.OVERDUE_LOCKED || u.getStatus() == UnitStatus.RESERVED) {
+            var optContract = rentalContractRepository.findFirstByUnit_IdOrderByCreatedAtDesc(u.getId());
+            if (optContract.isPresent()) {
+                var contract = optContract.get();
+                contractId = contract.getId();
+                contractCode = contract.getContractCode();
+                if (contract.getCustomer() != null) {
+                    tenantName = contract.getCustomer().getFullName() != null ? contract.getCustomer().getFullName() : contract.getCustomer().getUsername();
+                }
+                if (contract.getEndDate() != null) {
+                    dueDate = contract.getEndDate().toString();
+                }
+                if (contract.getBooking() != null) {
+                    bookingId = contract.getBooking().getId();
+                }
+            }
+
+            if (bookingId == null || tenantName == null) {
+                var optBooking = bookingRepository.findFirstByStorageUnit_IdOrderByCreatedAtDesc(u.getId());
+                if (optBooking.isPresent()) {
+                    var booking = optBooking.get();
+                    if (bookingId == null) {
+                        bookingId = booking.getId();
+                    }
+                    if (tenantName == null && booking.getCustomer() != null) {
+                        tenantName = booking.getCustomer().getFullName() != null ? booking.getCustomer().getFullName() : booking.getCustomer().getUsername();
+                    }
+                    if (dueDate == null && booking.getEndDate() != null) {
+                        dueDate = booking.getEndDate().toString();
+                    }
+                }
+            }
+        }
+
         return StorageUnitResponse.builder()
                 .id(u.getId())
                 .unitCode(u.getUnitCode())
@@ -273,6 +313,11 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .batteryLevel("98%")
                 .smartLockSerial("SL-" + (u.getUnitCode() != null ? u.getUnitCode().replace("-", "") : "8841"))
                 .lastAccessTime(null)
+                .bookingId(bookingId)
+                .tenantName(tenantName)
+                .contractCode(contractCode)
+                .contractId(contractId)
+                .dueDate(dueDate)
                 .build();
     }
 }

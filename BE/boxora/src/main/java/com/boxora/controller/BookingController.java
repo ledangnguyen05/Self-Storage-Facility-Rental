@@ -94,6 +94,35 @@ public class BookingController {
         ));
     }
 
+    @GetMapping("/unit/{unitId}/access-pin")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "API tra cứu mã PIN giải mã AES-256-GCM theo mã ID phòng kho")
+    public ResponseEntity<ApiResponse<BookingPinResponse>> getBookingPinByUnit(
+            @PathVariable UUID unitId,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        String email = userDetails != null ? userDetails.getUsername() : null;
+        return ResponseEntity.ok(ApiResponse.success(
+                "Tra cứu mã PIN phòng kho thành công",
+                bookingService.getBookingPinByUnitId(unitId, email)
+        ));
+    }
+
+    @PutMapping("/unit/{unitId}/access-pin")
+    @PreAuthorize("hasAuthority('BOOKING_UPDATE') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "API cập nhật hoặc tái cấp mã PIN mã hóa AES-256-GCM theo phòng kho")
+    public ResponseEntity<ApiResponse<BookingPinResponse>> updateBookingPinByUnit(
+            @PathVariable UUID unitId,
+            @Valid @RequestBody UpdatePinRequest request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        String email = userDetails != null ? userDetails.getUsername() : null;
+        return ResponseEntity.ok(ApiResponse.success(
+                "Đã đổi mã PIN và mã hóa AES-256-GCM thành công cho phòng kho",
+                bookingService.updateBookingPinByUnitId(unitId, request, email)
+        ));
+    }
+
     @PostMapping("/{id}/renew")
     @PreAuthorize("hasAuthority('BOOKING_UPDATE') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Gia hạn thời gian thuê của lượt đặt kho")
