@@ -362,7 +362,7 @@ export const ManagerDashboard: React.FC = () => {
         <div className="flex flex-col gap-2 max-w-2xl z-10">
           <div className="flex items-center gap-3 flex-wrap">
             <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-slate-100 font-mono text-xs text-slate-800 uppercase tracking-wider font-semibold">
-              <span className="w-2 h-2 rounded-full bg-orange-600 animate-pulse"></span> Trực quan thời gian thực (Live API)
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Trực quan thời gian thực
             </span>
             <span className="text-xs text-slate-500 font-medium">Bản cập nhật: {new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} (Hôm nay)</span>
           </div>
@@ -397,8 +397,8 @@ export const ManagerDashboard: React.FC = () => {
             className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-slate-100 text-slate-800 font-semibold text-xs hover:bg-slate-200 transition-all border border-slate-200 cursor-pointer shadow-2xs"
             title="Tải lại danh sách phòng kho mới nhất từ hệ thống"
           >
-            <span className={`material-symbols-outlined text-[18px] text-cyan-700 ${isLoading ? 'animate-spin' : ''}`}>sync</span>
-            <span>{isLoading ? 'Đang tải...' : 'Làm mới dữ liệu'}</span>
+            <span className={`material-symbols-outlined text-[18px] text-blue-600 ${isLoading ? 'animate-spin' : ''}`}>sync</span>
+            <span>{isLoading ? 'Đang tải...' : 'Làm mới'}</span>
           </button>
           <button 
             type="button" 
@@ -406,16 +406,14 @@ export const ManagerDashboard: React.FC = () => {
             className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-slate-100 text-slate-800 font-medium text-xs hover:bg-slate-200 transition-all border border-slate-200 cursor-pointer shadow-2xs"
             title="Mở bảng điều khiển giám sát mạng lưới IoT, độ trễ Ping và vi khí hậu"
           >
-            <span className="material-symbols-outlined text-[18px] text-slate-600">sensors</span>
             <span>Kiểm tra trạm IoT</span>
           </button>
           <button 
             type="button" 
             onClick={() => setShowSurveyModal(true)}
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-orange-600 text-white font-medium text-xs shadow-xs hover:bg-orange-700 transition-all cursor-pointer"
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-blue-600 text-white font-medium text-xs shadow-xs hover:bg-blue-700 transition-all cursor-pointer"
             title="Tạo phiếu kiểm định an toàn PCCC, cửa cuốn và hạ tầng"
           >
-            <span className="material-symbols-outlined text-[18px]">assignment_add</span>
             <span>Lập phiếu khảo sát</span>
           </button>
         </div>
@@ -1001,8 +999,8 @@ export const ManagerDashboard: React.FC = () => {
               <span className="font-semibold text-slate-900 text-right">{selectedUnit.tenant}</span>
             </div>
             <div className="flex items-center justify-between py-1 text-xs border-b border-slate-200/50">
-              <span className="text-slate-500">Mã hợp đồng điện tử:</span>
-              <span className="font-mono font-bold text-orange-600">{selectedUnit.contract}</span>
+              <span className="text-slate-500">Mã hợp đồng:</span>
+              <span className="font-mono font-bold text-blue-600">{selectedUnit.contract}</span>
             </div>
             <div className="flex items-center justify-between py-1 text-xs">
               <span className="text-slate-500">Thời hạn thuê:</span>
@@ -1014,8 +1012,7 @@ export const ManagerDashboard: React.FC = () => {
           <div className="flex flex-col gap-2 bg-slate-100 p-3.5 rounded-lg border border-slate-200">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[18px] text-orange-600">lock</span>
-                <span className="text-xs font-bold text-slate-800">Smart Lock IoT Seri</span>
+                <span className="text-xs font-bold text-slate-800">Smart Lock Seri</span>
               </div>
               <span className="font-mono text-xs font-bold text-slate-900">{selectedUnit.smartlock}</span>
             </div>
@@ -1226,9 +1223,8 @@ export const ManagerDashboard: React.FC = () => {
                       })
                     }
                   })}
-                  className="px-3 py-2 rounded-lg bg-orange-600 text-white text-xs font-bold shadow-sm hover:bg-orange-700 transition-all flex items-center gap-1 cursor-pointer"
+                  className="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold shadow-sm hover:bg-blue-700 transition-all flex items-center gap-1 cursor-pointer"
                 >
-                  <span className="material-symbols-outlined text-[16px]">description</span>
                   <span>Lập Biên Bản</span>
                 </button>
               </div>
@@ -1384,7 +1380,7 @@ export const ManagerDashboard: React.FC = () => {
                 className={`px-4 py-2 rounded-lg text-xs font-bold text-white transition-all shadow-sm cursor-pointer ${
                   confirmModal.isDestructive 
                     ? 'bg-rose-700 hover:bg-rose-800' 
-                    : 'bg-orange-600 hover:bg-orange-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
                 }`}
               >
                 {confirmModal.confirmText}

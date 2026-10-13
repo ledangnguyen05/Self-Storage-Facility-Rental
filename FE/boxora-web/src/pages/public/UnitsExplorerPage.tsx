@@ -273,7 +273,7 @@ export const UnitsExplorerPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--surface-canvas,#f8fafc)] text-slate-900 font-sans selection:bg-[#0891b2] selection:text-white pb-20">
+    <div className="min-h-screen bg-[var(--surface-canvas,#f8fafc)] text-slate-900 font-sans selection:bg-blue-600 selection:text-white pb-20">
       
       {/* ============================================================ */}
       {/* 1. TOP HEADER & NAVIGATION                                   */}
@@ -286,9 +286,8 @@ export const UnitsExplorerPage: React.FC = () => {
             <BrandLogo subtitle="STORAGE EXPLORER" />
 
             <div className="hidden sm:flex items-center gap-2 border-l border-slate-200 pl-4">
-              <span className="material-symbols-outlined text-[18px] text-cyan-600">travel_explore</span>
               <span className="text-xs font-bold text-slate-700 uppercase tracking-wider font-mono">
-                Trung Tâm Phân Hạng &amp; Đặt Thuê Kho
+                Tìm Kiếm &amp; Đặt Thuê Kho
               </span>
             </div>
           </div>
@@ -379,13 +378,13 @@ export const UnitsExplorerPage: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Link
                   to="/login"
-                  className="px-3.5 py-2 text-xs font-semibold text-slate-700 hover:text-[var(--brand-teal,#0891b2)] transition-colors"
+                  className="px-3.5 py-2 text-xs font-semibold text-slate-700 hover:text-blue-600 transition-colors"
                 >
                   Đăng Nhập
                 </Link>
                 <Link
                   to="/register"
-                  className="px-4 py-2 rounded-lg bg-[var(--brand-teal,#0891b2)] hover:bg-[var(--brand-teal-hover,#0e7490)] text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1"
+                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1"
                 >
                   <span>Đăng Ký Thuê</span>
                   <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
@@ -405,9 +404,8 @@ export const UnitsExplorerPage: React.FC = () => {
           
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
             <div className="max-w-3xl space-y-2">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-[var(--brand-teal,#0891b2)] font-mono text-xs font-bold uppercase tracking-wider">
-                <span className="material-symbols-outlined text-[15px]">warehouse</span>
-                <span>DASHBOARD TÌM KHO &amp; ĐẶT THUÊ CHUYÊN BIỆT</span>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 font-mono text-xs font-semibold">
+                <span>Tìm kiếm &amp; Đặt thuê trực tuyến</span>
               </div>
               <h1 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
                 Trung Tâm Phân Hạng &amp; Tìm Kiếm Thuê Kho Thông Minh
@@ -448,7 +446,7 @@ export const UnitsExplorerPage: React.FC = () => {
         <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm text-left space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-cyan-100 text-[var(--brand-teal,#0891b2)] flex items-center justify-center">
+              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center">
                 <span className="material-symbols-outlined text-[20px]">near_me</span>
               </div>
               <div>
@@ -736,7 +734,7 @@ export const UnitsExplorerPage: React.FC = () => {
                   onClick={() => setSelectedUnit(unit)}
                   className={`p-6 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between space-y-5 h-full ${
                     isSelected
-                      ? 'border-[var(--brand-teal,#0891b2)] bg-cyan-50/20 ring-2 ring-[var(--brand-teal,#0891b2)]/20 shadow-md'
+                      ? 'border-blue-600 bg-blue-50/20 ring-2 ring-blue-500/20 shadow-md'
                       : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
                   }`}
                 >
@@ -777,7 +775,7 @@ export const UnitsExplorerPage: React.FC = () => {
                     <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 space-y-2 text-xs">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 font-bold text-slate-800 min-w-0">
-                          <span className="material-symbols-outlined text-[16px] text-[var(--brand-teal,#0891b2)] shrink-0">
+                          <span className="material-symbols-outlined text-[16px] text-blue-600 shrink-0">
                             domain
                           </span>
                           <span className="truncate" title={unit.facilityName}>
@@ -813,7 +811,7 @@ export const UnitsExplorerPage: React.FC = () => {
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="text-[var(--brand-teal,#0891b2)] hover:text-cyan-800 font-semibold flex items-center gap-0.5 hover:underline"
+                          className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-0.5 hover:underline"
                         >
                           <span>Xem chỉ đường</span>
                           <span className="material-symbols-outlined text-[12px]">open_in_new</span>
@@ -852,7 +850,7 @@ export const UnitsExplorerPage: React.FC = () => {
                         e.stopPropagation()
                         handleRentUnitClick(unit)
                       }}
-                      className="px-4 py-2 rounded-lg bg-[var(--brand-teal,#0891b2)] hover:bg-[var(--brand-teal-hover,#0e7490)] text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                      className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1 cursor-pointer"
                     >
                       <span>Giữ Chỗ / Thuê</span>
                       <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
@@ -874,7 +872,7 @@ export const UnitsExplorerPage: React.FC = () => {
                   onClick={() => setSelectedUnit(unit)}
                   className={`p-5 rounded-2xl border transition-all cursor-pointer flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 text-left ${
                     isSelected
-                      ? 'border-[var(--brand-teal,#0891b2)] bg-cyan-50/20 ring-2 ring-[var(--brand-teal,#0891b2)]/20 shadow-md'
+                      ? 'border-blue-600 bg-blue-50/20 ring-2 ring-blue-500/20 shadow-md'
                       : 'border-slate-200 bg-white hover:border-slate-300 shadow-2xs'
                   }`}
                 >
@@ -940,7 +938,7 @@ export const UnitsExplorerPage: React.FC = () => {
                         e.stopPropagation()
                         handleRentUnitClick(unit)
                       }}
-                      className="px-5 py-2.5 rounded-xl bg-[var(--brand-teal,#0891b2)] hover:bg-[var(--brand-teal-hover,#0e7490)] text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                      className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                     >
                       <span>Giữ Chỗ / Thuê</span>
                       <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
@@ -965,7 +963,7 @@ export const UnitsExplorerPage: React.FC = () => {
             {/* Modal Header */}
             <div className="p-6 bg-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[var(--brand-teal,#0891b2)] flex items-center justify-center text-white">
+                <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white">
                   <span className="material-symbols-outlined text-[22px]">verified</span>
                 </div>
                 <div>
@@ -1004,7 +1002,7 @@ export const UnitsExplorerPage: React.FC = () => {
                       </p>
                     </div>
                     <div className="text-right">
-                      <span className="font-mono text-base font-bold text-[var(--brand-teal,#0891b2)] block">
+                      <span className="font-mono text-base font-bold text-blue-600 block">
                         {rentalModalUnit.monthlyPrice}
                       </span>
                       <span className="text-[10px] text-slate-500">/ tháng</span>
@@ -1038,7 +1036,7 @@ export const UnitsExplorerPage: React.FC = () => {
                       <div className="space-y-0.5">
                         <span className="text-slate-400 font-semibold block uppercase text-[10px]">Vị trí kho muốn thuê:</span>
                         <div className="text-slate-800 font-medium flex items-start gap-1">
-                          <span className="material-symbols-outlined text-[13px] text-[var(--brand-teal,#0891b2)] shrink-0 mt-0.5">warehouse</span>
+                          <span className="material-symbols-outlined text-[13px] text-blue-600 shrink-0 mt-0.5">warehouse</span>
                           <span><strong>{rentalModalUnit.facilityName}</strong></span>
                         </div>
                       </div>
@@ -1053,7 +1051,7 @@ export const UnitsExplorerPage: React.FC = () => {
                         href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rentalModalUnit.facilityAddress)}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[var(--brand-teal,#0891b2)] hover:text-cyan-800 font-semibold flex items-center gap-0.5 hover:underline self-end sm:self-auto"
+                        className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-0.5 hover:underline self-end sm:self-auto"
                       >
                         <span>Mở bản đồ chỉ đường</span>
                         <span className="material-symbols-outlined text-[13px]">open_in_new</span>
@@ -1107,7 +1105,7 @@ export const UnitsExplorerPage: React.FC = () => {
                       type="button"
                       disabled={isActivatingRental}
                       onClick={handleConfirmRentalActivation}
-                      className="px-5 py-2.5 rounded-xl bg-[var(--brand-teal,#0891b2)] hover:bg-[var(--brand-teal-hover,#0e7490)] text-white text-xs font-bold flex items-center gap-2 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                      className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-2 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
                     >
                       {isActivatingRental ? (
                         <>
