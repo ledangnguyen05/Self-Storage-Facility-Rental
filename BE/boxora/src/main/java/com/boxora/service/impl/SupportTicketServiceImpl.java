@@ -1,0 +1,187 @@
+package com.boxora.service.impl;
+
+import com.boxora.dto.request.SupportTicketRequest;
+import com.boxora.dto.response.FileUploadResponse;
+import com.boxora.dto.response.SupportTicketResponse;
+import com.boxora.entity.Booking;
+import com.boxora.entity.SupportTicket;
+import com.boxora.entity.User;
+import com.boxora.enums.TicketCategory;
+import com.boxora.enums.TicketStatus;
+import com.boxora.exception.AppException;
+import com.boxora.exception.ErrorCode;
+import com.boxora.repository.BookingRepository;
+import com.boxora.repository.SupportTicketRepository;
+import com.boxora.repository.UserRepository;
+import com.boxora.service.FileStorageService;
+import com.boxora.service.SupportTicketService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+@Transactional
+@Slf4j
+public class SupportTicketServiceImpl implements SupportTicketService {
+
+    private final SupportTicketRepository supportTicketRepository;
+    private final UserRepository userRepository;
+    private final BookingRepository bookingRepository;
+    private final FileStorageService fileStorageService;
+
+    @Override
+    public SupportTicketResponse createTicket(SupportTicketRequest request) {
+        User customer = null;
+        if (request.getCustomerId() != null) {
+            customer = userRepository.findById(request.getCustomerId()).orElse(null);
+        }
+        if (customer == null) {
+            customer = userRepository.findAll().stream().findFirst().orElse(null);
+        }
+
+        Booking booking = null;
+        if (request.getBookingId() != null) {
+            booking = bookingRepository.findById(request.getBookingId()).orElse(null);
+        }
+
+        String ticketCode = "TK-" + String.format("%04d", new Random().nextInt(10000));
+
+        TicketCategory category = TicketCategory.OTHER;
+        if (request.getCategory() != null && !request.getCategory().isBlank()) {
+            try {
+                category = TicketCategory.valueOf(request.getCategory().trim().toUpperCase());
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+
+        String combinedEvidence = resolveImageEvidence(request.getImageEvidence(), request.getEvidenceUrls());
+
+        SupportTicket ticket = SupportTicket.builder()
+                .ticketCode(ticketCode)
+                .customer(customer)
+                .booking(booking)
+                .category(category)
+                .title(request.getTitle())
+                .description(request.getDescription())
+                .status(TicketStatus.OPEN)
+                .priority(request.getPriority() != null ? request.getPriority() : "MEDIUM")
+                .imageEvidence(combinedEvidence)
+                .build();
+
+        ticket = supportTicketRepository.save(ticket);
+        log.info("Created support ticket {} with image evidence: {}", ticketCode, combinedEvidence);
+        return mapToResponse(ticket);
+    }
+
+    @Override
+    public SupportTicketResponse createTicketWithFiles(SupportTicketRequest request, List<MultipartFile> files) {
+        List<FileUploadResponse> uploadedFiles = fileStorageService.storeFiles(files, "tickets");
+        List<String> uploadedUrls = uploadedFiles.stream()
+                .map(FileUploadResponse::getFileUrl)
+                .collect(Collectors.toList());
+
+        List<String> allUrls = new ArrayList<>(uploadedUrls);
+        if (request.getEvidenceUrls() != null) {
+            allUrls.addAll(request.getEvidenceUrls());
+        }
+
+        request.setEvidenceUrls(allUrls);
+        return createTicket(request);
+    }
+
+    @Override
+    public FileUploadResponse uploadEvidenceImage(MultipartFile file) {
+        return fileStorageService.storeFile(file, "tickets");
+    }
+
+    @Override
+    public List<FileUploadResponse> uploadEvidenceImages(List<MultipartFile> files) {
+        return fileStorageService.storeFiles(files, "tickets");
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SupportTicketResponse> getQueue() {
+        return supportTicketRepository.findAll().stream().map(this::mapToResponse).collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SupportTicketResponse> getMyTickets(UUID customerId) {
+        List<SupportTicket> list = supportTicketRepository.findAll();
+        if (customerId != null) {
+            list = list.stream()
+                    .filter(t -> t.getCustomer() != null && customerId.equals(t.getCustomer().getId()))
+                    .collect(Collectors.toList());
+        }
+        return list.stream().map(this::mapToResponse).collect(Collectors.toList());
+    }
+
+    @Override
+    public SupportTicketResponse resolveTicket(UUID id, String resolutionNote) {
+        SupportTicket ticket = supportTicketRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        ticket.setStatus(TicketStatus.RESOLVED);
+        ticket.setResolutionNote(resolutionNote);
+        ticket = supportTicketRepository.save(ticket);
+
+        return mapToResponse(ticket);
+    }
+
+    private String resolveImageEvidence(String singleEvidence, List<String> evidenceUrls) {
+        Set<String> urls = new LinkedHashSet<>();
+        if (singleEvidence != null && !singleEvidence.isBlank()) {
+            for (String part : singleEvidence.split(";")) {
+                if (!part.trim().isEmpty()) {
+                    urls.add(part.trim());
+                }
+            }
+        }
+        if (evidenceUrls != null) {
+            for (String url : evidenceUrls) {
+                if (url != null && !url.trim().isEmpty()) {
+                    urls.add(url.trim());
+                }
+            }
+        }
+        return urls.isEmpty() ? null : String.join(";", urls);
+    }
+
+    private SupportTicketResponse mapToResponse(SupportTicket t) {
+        List<String> evidenceUrls = (t.getImageEvidence() != null && !t.getImageEvidence().isBlank())
+                ? Arrays.stream(t.getImageEvidence().split(";"))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .collect(Collectors.toList())
+                : List.of();
+
+        return SupportTicketResponse.builder()
+                .id(t.getId())
+                .ticketCode(t.getTicketCode())
+                .customerId(t.getCustomer() != null ? t.getCustomer().getId() : null)
+                .customerName(t.getCustomer() != null ? t.getCustomer().getFullName() : "Nguyễn Văn An")
+                .customerPhone(t.getCustomer() != null ? t.getCustomer().getPhone() : "0918 234 567")
+                .bookingId(t.getBooking() != null ? t.getBooking().getId() : null)
+                .unitCode(t.getBooking() != null && t.getBooking().getStorageUnit() != null 
+                        ? t.getBooking().getStorageUnit().getUnitCode() 
+                        : "A-108")
+                .category(t.getCategory() != null ? t.getCategory().name() : null)
+                .title(t.getTitle())
+                .description(t.getDescription())
+                .status(t.getStatus() != null ? t.getStatus().name() : TicketStatus.OPEN.name())
+                .priority(t.getPriority() != null ? t.getPriority() : "MEDIUM")
+                .imageEvidence(t.getImageEvidence())
+                .evidenceUrls(evidenceUrls)
+                .resolutionNote(t.getResolutionNote())
+                .createdAt(t.getCreatedAt() != null ? t.getCreatedAt() : LocalDateTime.now())
+                .build();
+    }
+}
