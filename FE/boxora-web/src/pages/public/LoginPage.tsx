@@ -272,10 +272,10 @@ export const LoginPage: React.FC = () => {
           </div>
           <div className="text-left leading-tight">
             <span className="block text-[11px] sm:text-xs font-black text-slate-900 font-mono">
-              AES-256 GCM
+              Bảo Mật 24/7
             </span>
             <span className="block text-[9px] sm:text-[10px] font-semibold text-slate-500">
-              Bảo mật cấp quân sự
+              Mã hóa dữ liệu an toàn
             </span>
           </div>
         </div>
@@ -327,7 +327,7 @@ export const LoginPage: React.FC = () => {
                     Bảo mật
                   </p>
                   <p className="text-[11px] text-slate-600 font-semibold">
-                    AES-256 GCM
+                    Bảo mật đa lớp
                   </p>
                 </div>
               </div>

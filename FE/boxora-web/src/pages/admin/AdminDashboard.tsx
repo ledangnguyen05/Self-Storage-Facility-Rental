@@ -237,7 +237,7 @@ export const AdminDashboard: React.FC = () => {
           <div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-800 text-xs font-mono font-semibold uppercase tracking-wider mb-2">
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span>
-              RBAC &amp; FACILITY SCOPING MATRIX // ENTERPRISE
+              Hệ thống phân quyền &amp; Quản trị vai trò
             </div>
             <h1 className="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight font-headline">
               Quản Trị Người Dùng, Phân Quyền &amp; Nhật Ký Kiểm Toán
