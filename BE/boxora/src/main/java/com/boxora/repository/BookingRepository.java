@@ -13,6 +13,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -27,6 +28,9 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     boolean existsByStorageUnit_Id(UUID storageUnitId);
 
     boolean existsByStorageUnit_IdAndStatusIn(UUID storageUnitId, Collection<BookingStatus> statuses);
+
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "storageUnit", "storageUnit.facility"})
+    Optional<Booking> findFirstByStorageUnit_IdOrderByCreatedAtDesc(UUID storageUnitId);
 
     List<Booking> findByStatusAndCreatedAtBefore(BookingStatus status, LocalDateTime threshold);
 

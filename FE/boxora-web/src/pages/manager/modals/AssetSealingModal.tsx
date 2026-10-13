@@ -1,11 +1,17 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { sealingService } from '../../../services/sealingService'
+import { userService } from '../../../services/userService'
+import { User } from '../../../types'
 
 interface AssetSealingModalProps {
   isOpen: boolean
   onClose: () => void
   unitCode: string
+  unitId?: string
   tenantName: string
   contractCode: string
+  contractId?: string
+  facilityId?: string
   overdueDays: number
   totalDebt: string
   onCompleteSealing: (msg: string) => void
@@ -15,29 +21,71 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
   isOpen,
   onClose,
   unitCode,
+  unitId,
   tenantName,
   contractCode,
+  contractId,
+  facilityId,
   overdueDays,
   totalDebt,
   onCompleteSealing
 }) => {
   const [sealReportCode] = useState(() => `BB-NP-${new Date().getFullYear()}${Math.floor(100 + Math.random() * 900)}`)
-  const [sealStickerCode] = useState('TEM-BOXORA-88992')
-  const [witness1] = useState('Nguyễn Văn An (Quản lý Cơ sở)')
-  const [witness2] = useState('Lê Hoàng Nam (Kỹ thuật Trưởng)')
-  const [witness3] = useState('Trần Thùy Linh (Điều phối Vận hành)')
+  const [sealStickerCode, setSealStickerCode] = useState(() => `TEM-BOXORA-${Math.floor(10000 + Math.random() * 90000)}`)
+  const [witnesses, setWitnesses] = useState<User[]>([])
+  const [selectedWitnessId, setSelectedWitnessId] = useState<string>('')
+  const [reason, setReason] = useState('Khách hàng vi phạm nghĩa vụ thanh toán quá hạn trên 7 ngày theo quy định BR-RULE-012. Tiến hành niêm phong bảo toàn tài sản.')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (isOpen) {
+      loadWitnesses()
+    }
+  }, [isOpen, facilityId])
+
+  const loadWitnesses = async () => {
+    try {
+      const res = await userService.getAllUsers({ facilityId })
+      const users = res?.data || []
+      setWitnesses(users)
+      if (users.length > 0) {
+        setSelectedWitnessId(users[0].id)
+      }
+    } catch {
+      // Fallback
+    }
+  }
 
   if (!isOpen) return null
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     setIsSubmitting(true)
-    setTimeout(() => {
-      setIsSubmitting(false)
-      onCompleteSealing(`Đã hoàn tất lập và lưu Biên bản Niêm phong điện tử ${sealReportCode} cho kho #${unitCode}!`)
+    setErrorMessage(null)
+
+    try {
+      const res = await sealingService.createSealing({
+        contractId: contractId || undefined,
+        unitId: unitId || undefined,
+        sealTagNumber: sealStickerCode,
+        witnessId: selectedWitnessId || undefined,
+        reason: reason,
+        notes: `Niêm phong kho #${unitCode} do quá hạn ${overdueDays} ngày. Tổng nợ ${totalDebt}.`
+      })
+
+      const protocol = res?.protocolNumber || sealReportCode
+      onCompleteSealing(`Đã hoàn tất lập biên bản niêm phong ${protocol} và chuyển trạng thái kho #${unitCode} sang SEALED / OVERDUE_LOCKED!`)
       onClose()
-    }, 1000)
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Lỗi khi gọi API niêm phong kho'
+      setErrorMessage(msg)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
+
+  const selectedWitness = witnesses.find(w => w.id === selectedWitnessId)
+  const witnessName = selectedWitness ? (selectedWitness.fullName || selectedWitness.username) : 'Nhân chứng hiện trường trạm'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200">
@@ -56,7 +104,7 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Văn bản pháp lý số hóa ghi nhận biện pháp cưỡng chế an ninh Boxora
+                Kết nối API POST /api/v1/sealing &mdash; Chuyển trạng thái kho sang SEALED
               </p>
             </div>
           </div>
@@ -68,6 +116,13 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
             <span className="material-symbols-outlined text-[22px]">close</span>
           </button>
         </div>
+
+        {errorMessage && (
+          <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px]">error</span>
+            <span>{errorMessage}</span>
+          </div>
+        )}
 
         {/* Legal Document Sheet Scrollable */}
         <div className="flex-1 overflow-y-auto p-4 bg-slate-50 rounded-xl border border-slate-200 font-sans text-xs flex flex-col gap-3">
@@ -82,7 +137,7 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
               BIÊN BẢN NIÊM PHONG KHO HÀNG &amp; KÊ BIÊN TÀI SẢN
             </h3>
             <p className="text-[10px] text-slate-500 mt-0.5 italic">
-              (Do vi phạm nghĩa vụ thanh toán cước thuê kho vượt quá thời hạn cam kết)
+              (Do vi phạm nghĩa vụ thanh toán cước thuê kho vượt quá thời hạn cam kết BR-RULE-012)
             </p>
           </div>
 
@@ -107,27 +162,70 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
           </div>
 
           {/* Council & Witnesses */}
-          <div className="bg-white p-3 rounded-lg border border-slate-200 flex flex-col gap-1.5">
+          <div className="bg-white p-3 rounded-lg border border-slate-200 flex flex-col gap-2">
             <span className="font-bold text-slate-900 uppercase text-[10px] tracking-wider">
-              2. Thành phần hội đồng thực hiện niêm phong
+              2. Thành phần hội đồng &amp; Nhân chứng niêm phong
             </span>
-            <ul className="list-disc list-inside text-[11px] text-slate-700 space-y-0.5">
-              <li>Đại diện Ban Quản Lý: <strong>{witness1}</strong></li>
-              <li>Cán bộ phụ trách Kỹ thuật: <strong>{witness2}</strong></li>
-              <li>Nhân chứng hiện trường: <strong>{witness3}</strong></li>
-            </ul>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] text-slate-600 font-semibold">
+                Chọn nhân viên / giám sát làm nhân chứng hiện trường (Two-Person Integrity):
+              </label>
+              {witnesses.length > 0 ? (
+                <select
+                  value={selectedWitnessId}
+                  onChange={(e) => setSelectedWitnessId(e.target.value)}
+                  className="p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-800 font-medium cursor-pointer"
+                >
+                  {witnesses.map(w => (
+                    <option key={w.id} value={w.id}>
+                      {w.fullName || w.username} ({w.role?.name || 'Staff'} - {w.email})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-[11px] text-slate-700 italic">
+                  Đại diện Ban Quản Lý &amp; Cán bộ phụ trách Kỹ thuật tại trạm: <strong>{witnessName}</strong>
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Seal Tag & Reason */}
+          <div className="bg-white p-3 rounded-lg border border-slate-200 flex flex-col gap-2">
+            <span className="font-bold text-slate-900 uppercase text-[10px] tracking-wider">
+              3. Tem niêm phong &amp; Lý do cưỡng chế
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] text-slate-500 font-bold block mb-1">MÃ TEM NIÊM PHONG AN NINH</label>
+                <input
+                  type="text"
+                  value={sealStickerCode}
+                  onChange={(e) => setSealStickerCode(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-slate-50 rounded border border-slate-200 font-mono font-bold text-orange-700 text-xs"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 font-bold block mb-1">LÝ DO NIÊM PHONG</label>
+                <input
+                  type="text"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-slate-50 rounded border border-slate-200 text-xs text-slate-800"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Enforcement Steps */}
           <div className="bg-white p-3 rounded-lg border border-slate-200 flex flex-col gap-1.5">
             <span className="font-bold text-slate-900 uppercase text-[10px] tracking-wider">
-              3. Hiện trạng &amp; Biện pháp cưỡng chế áp dụng
+              4. Biện pháp cưỡng chế áp dụng
             </span>
             <div className="text-[11px] text-slate-700 flex flex-col gap-1">
-              <p>&bull; Ngắt kết nối mã PIN cá nhân trên ổ khóa SmartLock, chuyển sang chế độ Khóa cưỡng chế Master.</p>
-              <p>&bull; Dán tem niêm phong an ninh số hiệu: <span className="font-mono font-bold text-orange-700 px-1 bg-orange-50 rounded border border-orange-200">{sealStickerCode}</span> trên khe cửa cuốn.</p>
-              <p>&bull; Kích hoạt giám sát camera trực diện 24/7 cảnh báo rung chấn và xâm nhập trái phép.</p>
-              <p>&bull; Thời hạn giải quyết: Khách hàng có <strong>05 ngày làm việc</strong> để tất toán công nợ và hoàn tất thủ tục mở khóa.</p>
+              <p>&bull; Ngắt kết nối mã PIN cá nhân trên SmartLock, đổi trạng thái kho sang <strong className="text-rose-700">OVERDUE_LOCKED / SEALED</strong>.</p>
+              <p>&bull; Dán tem an ninh <strong className="font-mono text-orange-700">{sealStickerCode}</strong> tại chốt cửa ngoài.</p>
+              <p>&bull; Hệ thống tự động gửi Email thông báo khẩn cấp và biểu mẫu công nợ cho khách hàng.</p>
             </div>
           </div>
         </div>
@@ -160,7 +258,7 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
               <span className={`material-symbols-outlined text-[16px] ${isSubmitting ? 'animate-spin' : ''}`}>
                 {isSubmitting ? 'sync' : 'verified'}
               </span>
-              <span>{isSubmitting ? 'Đang ký số...' : 'Lưu & Ký Số Biên Bản'}</span>
+              <span>{isSubmitting ? 'Đang gọi API niêm phong...' : 'Lưu & Ký Số Biên Bản'}</span>
             </button>
           </div>
         </div>

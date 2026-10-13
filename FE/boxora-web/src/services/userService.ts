@@ -17,8 +17,8 @@ export const userService = {
     return response.data?.data as PageResult<User>
   },
 
-  async getAllUsers() {
-    const response = await api.get('/api/v1/users', { params: { size: 100 } })
+  async getAllUsers(params?: { role?: string; facilityId?: string; search?: string; isActive?: boolean; size?: number }) {
+    const response = await api.get('/api/v1/users', { params: { size: 100, ...params } })
     return response.data?.data?.content ? { data: response.data.data.content } : { data: [] }
   },
 
