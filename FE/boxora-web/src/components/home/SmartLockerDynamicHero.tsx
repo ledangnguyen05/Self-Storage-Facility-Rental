@@ -249,20 +249,6 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
             <path d="M720 13V57M720 303V356M548 180H505M935 180H892" stroke="#0866F5" strokeOpacity=".16" strokeDasharray="2 7" />
           </svg>
 
-          <div className="absolute bottom-0 left-1/2 hidden -translate-x-1/2 items-center gap-3 rounded-2xl border border-white/90 bg-white/80 px-4 py-2.5 text-left shadow-[0_10px_35px_rgba(27,66,74,.1)] backdrop-blur-xl sm:inline-flex sm:bottom-0">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
-              <span className="h-2 w-2 rounded-full bg-blue-600" />
-            </span>
-            <span>
-              <span className="block text-xs font-semibold text-slate-900">Boxora Self-Storage</span>
-              <span className="mt-0.5 block text-xs text-slate-500">Không gian riêng, luôn trong tầm kiểm soát</span>
-            </span>
-          </div>
-
-          <span className="absolute right-[4%] top-[14%] hidden items-center gap-2 rounded-full border border-white/90 bg-white/65 px-3.5 py-2 text-xs font-medium text-slate-600 shadow-sm backdrop-blur-md sm:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-lime-500 shadow-[0_0_0_4px_rgba(123,227,63,.18)]" />
-            Kết nối 24/7
-          </span>
         </div>
 
       </div>
