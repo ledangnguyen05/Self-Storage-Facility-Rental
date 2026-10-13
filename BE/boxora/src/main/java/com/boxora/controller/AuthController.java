@@ -3,6 +3,7 @@ package com.boxora.controller;
 import com.boxora.common.response.ApiResponse;
 import com.boxora.dto.request.*;
 import com.boxora.dto.response.AuthResponse;
+import com.boxora.dto.response.UserResponse;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.service.AuthService;
@@ -31,6 +32,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final com.boxora.service.CaptchaService captchaService;
+    private final com.boxora.service.UserService userService;
 
     @GetMapping("/captcha")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.CaptchaResponse>> getCaptcha() {
@@ -165,6 +167,16 @@ public class AuthController {
     ) {
         authService.changePassword(userDetails.getUsername(), request);
         return ResponseEntity.ok(ApiResponse.success("Password changed successfully", null));
+    }
+
+    @PutMapping("/profile")
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<UserResponse>> updateProfile(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody ProfileUpdateRequest request
+    ) {
+        UserResponse response = userService.updateOwnProfile(userDetails.getUsername(), request);
+        return ResponseEntity.ok(ApiResponse.success("Profile updated successfully", response));
     }
 
     private ResponseCookie createRefreshTokenCookie(String value, long maxAgeSeconds) {

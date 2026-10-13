@@ -183,11 +183,11 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
             <span className="relative h-2 w-2 rounded-full bg-lime-500" />
           </span>
           <Sparkles size={14} className="text-blue-600" />
-          Không gian lưu trữ thế hệ mới
+          Dành cho cá nhân và doanh nghiệp
         </div>
 
         <h1 data-hero-copy id="boxora-hero-title" className="max-w-6xl text-[clamp(2.2rem,min(7.4vw,10svh),6.4rem)] font-semibold leading-[0.96] tracking-[-0.045em] text-slate-950">
-          Kho lưu trữ thông minh
+          Không gian lưu trữ linh hoạt
           <img
             src="/logo.png"
             alt="Boxora"
@@ -196,17 +196,26 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
         </h1>
 
         <p data-hero-copy className="mx-auto mt-4 max-w-2xl text-sm font-medium leading-6 text-slate-700 sm:mt-5 sm:text-base sm:leading-7 lg:text-lg">
-          Mở khóa IoT vân tay một chạm <span className="mx-1 text-cyan-600">•</span> Giám sát 24/7
+          Chọn diện tích phù hợp <span className="mx-1 text-cyan-600">•</span> Vào kho 24/7 bằng mã PIN
         </p>
 
         <div data-hero-copy className="mt-5 flex flex-wrap items-center justify-center gap-3 sm:mt-6">
           <button
             type="button"
             onClick={onBookNow}
-            className="group inline-flex min-h-12 items-center gap-2.5 rounded-full bg-gradient-to-r from-blue-700 via-blue-600 to-cyan-500 px-6 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(8,102,245,.24)] transition duration-200 hover:-translate-y-0.5 hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 focus-visible:ring-offset-2"
+            className="book-now-effect-button"
           >
-            Đặt kho ngay
-            <ArrowRight size={16} className="transition-transform duration-200 group-hover:translate-x-1" />
+            <span className="book-now-effect-button__gradient-layer" aria-hidden="true" />
+            <span className="book-now-effect-button__gradient-layer book-now-effect-button__gradient-layer--dodge" aria-hidden="true" />
+            <span className="book-now-effect-button__light" aria-hidden="true" />
+            <span className="book-now-effect-button__label">
+              Đặt kho ngay
+              <ArrowRight size={16} aria-hidden="true" focusable="false" />
+            </span>
+            <span className="book-now-effect-button__overlay" aria-hidden="true">
+              Đặt kho ngay
+              <ArrowRight size={16} focusable="false" />
+            </span>
           </button>
           <a
             href="#services"

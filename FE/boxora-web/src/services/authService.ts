@@ -60,6 +60,22 @@ export const authService = {
     return response.data
   },
 
+  async updateProfile(data: { fullName: string; phone: string }): Promise<User> {
+    const response = await api.put('/api/v1/auth/profile', data)
+    const profile = response.data?.data
+    return {
+      id: profile.id,
+      username: profile.username,
+      email: profile.email,
+      fullName: profile.fullName,
+      phone: profile.phone,
+      isActive: profile.isActive,
+      facilityId: profile.facilityId,
+      createdAt: profile.createdAt,
+      role: profile.roleName ? { name: profile.roleName } : undefined
+    } as User
+  },
+
   async googleLogin(idToken: string, mode: 'LOGIN' | 'REGISTER' = 'LOGIN'): Promise<LoginResponse> {
     const response = await api.post('/api/v1/auth/google', { idToken, mode })
     return response.data

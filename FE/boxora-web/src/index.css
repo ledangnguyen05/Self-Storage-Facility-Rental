@@ -143,6 +143,141 @@ body {
   transform: translateY(0) scale(0.98);
 }
 
+/* Animated login button in the public page header */
+.header-login-button {
+  --header-login-navy: var(--brand-navy, #0f172a);
+  --header-login-blue: var(--brand-blue, #0866f5);
+  --header-login-cyan: var(--brand-cyan, #00bfd8);
+  --header-login-radius: 9999px;
+  --header-login-transition: 0.3s ease-in-out;
+  --header-login-active: 0;
+
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.8rem 1.5rem;
+  border: 0;
+  border-radius: var(--header-login-radius);
+  background: transparent;
+  color: white;
+  text-decoration: none;
+  cursor: pointer;
+  transform-origin: center;
+  transform: scale(calc(1 + (var(--header-login-active) * 0.1)));
+  transition: transform var(--header-login-transition);
+}
+
+.header-login-button::before,
+.header-login-button::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--header-login-radius);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.header-login-button::before {
+  z-index: 0;
+  background-color: #fff;
+  box-shadow:
+    inset 0 0.5px hsl(0 0% 100%),
+    inset 0 -1px 2px rgb(15 23 42 / 0.08),
+    0 4px 10px -4px rgb(15 23 42 / 0.24),
+    0 0 0 calc(var(--header-login-active) * 0.3rem) color-mix(in srgb, var(--header-login-blue) 28%, transparent);
+  transition: all var(--header-login-transition);
+}
+
+.header-login-button::after {
+  z-index: 2;
+  background-color: var(--header-login-blue);
+  background-image:
+    radial-gradient(at 51% 89%, var(--header-login-cyan) 0, transparent 52%),
+    radial-gradient(at 100% 100%, var(--header-login-blue) 0, transparent 54%),
+    radial-gradient(at 22% 91%, #38bdf8 0, transparent 52%);
+  background-position: top;
+  opacity: var(--header-login-active);
+  transition: opacity var(--header-login-transition);
+}
+
+.header-login-button:is(:hover, :focus-visible) {
+  --header-login-active: 1;
+}
+
+.header-login-button:is(:hover, :focus-visible) .header-login-button__text {
+  color: #fff;
+}
+
+.header-login-button:focus-visible {
+  outline: 2px solid rgb(8 102 245 / 0.8);
+  outline-offset: 6px;
+}
+
+.header-login-button:active {
+  transform: scale(1);
+}
+
+.header-login-button__dots-border {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: -1;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  overflow: hidden;
+  border-radius: var(--header-login-radius);
+  background: transparent;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.header-login-button__dots-border::before {
+  content: "";
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  width: 100%;
+  height: 2rem;
+  background-color: var(--header-login-cyan);
+  mask: linear-gradient(transparent 0%, white 120%);
+  transform-origin: left;
+  animation: header-login-rotate 2s linear infinite;
+}
+
+.header-login-button__text {
+  position: relative;
+  z-index: 3;
+  color: var(--header-login-navy);
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: color var(--header-login-transition);
+}
+
+@keyframes header-login-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header-login-button,
+  .header-login-button::before,
+  .header-login-button::after {
+    transition-duration: 0.01ms;
+  }
+
+  .header-login-button__dots-border::before {
+    animation: none;
+  }
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
@@ -435,6 +570,176 @@ body {
   .auth-content-enter {
     animation: none;
     will-change: auto;
+  }
+}
+
+/* Brand-colored rotating gradient effect for the hero booking CTA */
+.book-now-effect-button {
+  --book-now-blue: var(--brand-blue, #0866f5);
+  --book-now-cyan: var(--brand-cyan, #00bfd8);
+  --book-now-bg: var(--brand-teal-hover, #0752c9);
+
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  gap: 0.625rem;
+  padding: 0.75rem 1.5rem;
+  border: 0;
+  border-radius: 9999px;
+  color: #fff;
+  background-color: var(--book-now-bg);
+  box-shadow:
+    inset 0 0 10px 5px rgb(15 23 42 / 0.18),
+    0 8px 24px rgb(8 102 245 / 0.24);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 3px rgb(15 23 42 / 0.42);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.book-now-effect-button__gradient-layer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 0;
+  width: 500%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at 65% 180%,
+    var(--book-now-cyan) 0%,
+    #38bdf8 18%,
+    var(--book-now-blue) 36%,
+    var(--book-now-cyan) 54%,
+    var(--book-now-blue) 72%,
+    #38bdf8 88%,
+    var(--book-now-cyan) 100%
+  );
+  opacity: 0.38;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: book-now-gradient-rotate 8s linear infinite;
+}
+
+.book-now-effect-button__gradient-layer--dodge {
+  z-index: 1;
+  opacity: 0.16;
+  mix-blend-mode: color-dodge;
+  animation-duration: 12s;
+  animation-direction: reverse;
+}
+
+.book-now-effect-button__light {
+  position: absolute;
+  top: 50%;
+  left: 10%;
+  z-index: 1;
+  width: 80%;
+  height: 1.9rem;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.18);
+  filter: blur(5px);
+  pointer-events: none;
+  transform: translateY(-50%);
+  animation: book-now-light-pulse 3s ease-in-out infinite;
+}
+
+.book-now-effect-button__label,
+.book-now-effect-button__overlay {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  white-space: nowrap;
+}
+
+.book-now-effect-button__label {
+  position: relative;
+  z-index: 2;
+  transition: color 0.3s ease, text-shadow 0.3s ease;
+}
+
+.book-now-effect-button__overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  color: #fff;
+  text-shadow: 0 0 6px rgb(255 255 255 / 0.7);
+  box-shadow:
+    inset 0 -4px 4px 0 rgb(15 23 42 / 0.16),
+    inset 0 4px 4px 0 rgb(255 255 255 / 0.24);
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.94);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.book-now-effect-button:is(:hover, :focus-visible) {
+  box-shadow:
+    inset 0 0 10px 5px rgb(15 23 42 / 0.12),
+    0 12px 30px rgb(8 102 245 / 0.34);
+}
+
+.book-now-effect-button:is(:hover, :focus-visible) .book-now-effect-button__label {
+  color: transparent;
+  text-shadow: 0 0 0 transparent;
+}
+
+.book-now-effect-button:is(:hover, :focus-visible) .book-now-effect-button__overlay {
+  opacity: 1;
+  transform: scale(1.04);
+  animation: book-now-text-pulse 5s ease-in-out infinite;
+}
+
+.book-now-effect-button:focus-visible {
+  outline: 2px solid var(--book-now-blue);
+  outline-offset: 4px;
+}
+
+.book-now-effect-button:active {
+  transform: scale(0.97);
+}
+
+.book-now-effect-button:active .book-now-effect-button__overlay {
+  transform: scale(0.96);
+}
+
+@keyframes book-now-gradient-rotate {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+@keyframes book-now-light-pulse {
+  0%, 100% { opacity: 0.42; }
+  50% { opacity: 0.12; }
+}
+
+@keyframes book-now-text-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.78; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .book-now-effect-button,
+  .book-now-effect-button__label,
+  .book-now-effect-button__overlay {
+    transition-duration: 0.01ms;
+  }
+
+  .book-now-effect-button__gradient-layer,
+  .book-now-effect-button__light,
+  .book-now-effect-button__overlay {
+    animation: none;
   }
 }
 
