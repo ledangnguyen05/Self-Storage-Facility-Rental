@@ -730,44 +730,7 @@ export const HomePage: React.FC = () => {
 
         </div>
 
-        {/* Interactive Step Preview Interactive Simulator Widget */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.98 }}
-          whileInView={{ opacity: 1, scale: 1 }}
-          viewport={{ once: true }}
-          className="p-6 sm:p-7 rounded-3xl bg-slate-900 text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl border border-slate-800"
-        >
-          <div className="flex items-center gap-4 text-left">
-            <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/30">
-              <span className="material-symbols-outlined text-[28px]">
-                {activeProcessStep === 1 ? 'explore' : activeProcessStep === 2 ? 'draw' : 'dialpad'}
-              </span>
-            </div>
-            <div>
-              <div className="font-mono text-[10px] text-cyan-300 font-bold uppercase tracking-wider">
-                MÔ PHỎNG TIỆN ÍCH // BƯỚC 0{activeProcessStep}
-              </div>
-              <h4 className="text-base font-bold text-white mt-0.5">
-                {activeProcessStep === 1 && 'Hệ Thống Radar Định Vị Kho Gần Nhất (Dưới 5km)'}
-                {activeProcessStep === 2 && 'Xác Thực Hợp Đồng Điện Tử Bằng Mã OTP Trong 30 Giây'}
-                {activeProcessStep === 3 && 'Tự Động Sinh Mã PIN Số Hóa Mở App Không Tiếp Xúc'}
-              </h4>
-              <p className="text-xs text-slate-300 leading-relaxed mt-1 max-w-2xl">
-                {activeProcessStep === 1 && 'Nhập vị trí nhà hoặc văn phòng của bạn, thuật toán sẽ tự động tính toán lộ trình tối ưu và đưa ra gợi ý cơ sở còn buồng kho trống.'}
-                {activeProcessStep === 2 && 'Mọi điều khoản minh bạch, pháp lý bảo chứng. Đặt cọc niêm phong tài khoản ký quỹ an toàn và hoàn trả 100% khi thanh lý.'}
-                {activeProcessStep === 3 && 'Không phải chờ đợi nhân viên cấp phát chìa cơ. Bạn toàn quyền mở khóa buồng của mình bất kể nửa đêm hay rạng sáng.'}
-              </p>
-            </div>
-          </div>
 
-          <Link
-            to="/units"
-            className="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shrink-0 transition-all shadow-md shadow-cyan-500/30 cursor-pointer"
-          >
-            <span>Trải Nghiệm Đặt Kho Ngay</span>
-            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-          </Link>
-        </motion.div>
 
       </div>
     </section>
@@ -882,31 +845,7 @@ export const HomePage: React.FC = () => {
           </motion.div>
         </motion.div>
 
-        {/* Infrastructure Security Callout */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="p-6 sm:p-7 rounded-3xl bg-slate-900 text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl border border-slate-800"
-        >
-          <div className="flex items-center gap-4 text-left">
-            <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/30">
-              <span className="material-symbols-outlined text-[28px]">shield</span>
-            </div>
-            <div className="space-y-1">
-              <h4 className="font-headline text-base font-bold text-white">
-                An Ninh Đa Lớp: Camera AI, PCCC Tự Động &amp; Tuần Tra 24/7
-              </h4>
-              <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
-                Ngoài khóa IoT tại từng buồng, toàn bộ hành lang cơ sở Boxora đều được giám sát bằng camera nhận diện chuyển động, vòi phun PCCC đạt chuẩn và nhân sự kiểm soát ra vào 24/7/365.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 font-mono text-xs px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-cyan-300 shrink-0">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>TIÊU CHUẨN ISO/IEC 27001</span>
-          </div>
-        </motion.div>
+
 
       </div>
     </section>
@@ -1716,10 +1655,7 @@ export const HomePage: React.FC = () => {
             <p className="text-xs text-slate-500 leading-relaxed">
               Hệ thống phòng kho tự quản thông minh đầu tiên tại Việt Nam ứng dụng khóa bảo mật IoT, kiểm soát vi khí hậu 24/7 và cấp mã PIN truy cập số hóa tức thời.
             </p>
-            <div className="inline-flex items-center gap-2 font-mono text-[11px] px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-emerald-700 font-semibold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>CHỨNG NHẬN ISO/IEC 27001 SECURE</span>
-            </div>
+
           </div>
 
           {/* Column 2: Danh Mục Dịch Vụ */}
