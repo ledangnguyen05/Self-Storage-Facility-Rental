@@ -183,18 +183,38 @@ export interface RevenueReport {
   toDate?: string
   systemSummary?: {
     totalRevenue: number
-    rentalRevenue: number
+    rentalFeeRevenue: number
     depositRevenue: number
-    penaltyRevenue: number
-    totalTransactions: number
+    renewalFeeRevenue?: number
+    extraChargeRevenue?: number
+    paymentCount: number
   }
   byFacility?: Array<{
     facilityId: string
     facilityName: string
     totalRevenue: number
-    rentalRevenue: number
+    rentalFeeRevenue: number
     depositRevenue: number
+    renewalFeeRevenue?: number
+    extraChargeRevenue?: number
+    paymentCount?: number
   }>
+}
+
+export interface OverdueDebtReport {
+  asOfDate?: string
+  totalOverdueCount: number
+  totalDebtAmount: number
+  totalUnpaidRent: number
+  totalLateFees: number
+  gracePeriodCount: number
+  warningCount: number
+  accessBlockedCount: number
+  eligibleForSealingCount: number
+  aging1To3DaysDebt?: number
+  aging4To7DaysDebt?: number
+  aging8To14DaysDebt?: number
+  aging15PlusDaysDebt?: number
 }
 
 export interface OccupancyReport {
