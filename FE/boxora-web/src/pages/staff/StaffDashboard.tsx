@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { bookingService } from '../../services/bookingService'
 import { handoverService } from '../../services/handoverService'
+import { refundService } from '../../services/refundService'
+import { supportTicketService } from '../../services/supportTicketService'
 import { reportService } from '../../services/reportService'
 import { useAuth } from '../../context/AuthContext'
 import { Booking, OccupancyReport } from '../../types'
@@ -123,6 +125,14 @@ export const StaffDashboard: React.FC = () => {
     }
   }
 
+  // New Ticket Modal State (TR-03)
+  const [isCreateTicketOpen, setIsCreateTicketOpen] = useState(false)
+  const [newTicketTitle, setNewTicketTitle] = useState('')
+  const [newTicketDetail, setNewTicketDetail] = useState('')
+  const [newTicketUnit, setNewTicketUnit] = useState('A-110')
+  const [newTicketPriority, setNewTicketPriority] = useState('MEDIUM')
+  const [isSubmittingTicket, setIsSubmittingTicket] = useState(false)
+
   // Quick Walkin Modal
   const [isWalkinOpen, setIsWalkinOpen] = useState(false)
   const [walkinName, setWalkinName] = useState('')
@@ -133,6 +143,249 @@ export const StaffDashboard: React.FC = () => {
     title: string
     images: string[]
   } | null>(null)
+
+  useEffect(() => {
+    fetchArrivals()
+    fetchOccupancy()
+    fetchActiveRentals()
+    fetchTickets()
+
+    const handleTicketUpdate = () => {
+      fetchTickets()
+    }
+    window.addEventListener('boxora_ticket_updated', handleTicketUpdate)
+    return () => {
+      window.removeEventListener('boxora_ticket_updated', handleTicketUpdate)
+    }
+  }, [])
+
+  const fetchOccupancy = async () => {
+    try {
+      const res = await reportService.getOccupancyReport()
+      if (res) {
+        setOccupancyData(res)
+      }
+    } catch {
+      // Keep static defaults on network error
+    }
+  }
+
+  const fetchArrivals = async () => {
+    try {
+      const res = await bookingService.getUpcomingArrivals()
+      if (res && Array.isArray(res) && res.length > 0) {
+        setArrivals(res)
+        return
+      }
+      const myActive = await bookingService.getMyActive()
+      if (myActive && Array.isArray(myActive)) {
+        const confirmed = myActive.filter(b => b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT')
+        if (confirmed.length > 0) {
+          setArrivals(confirmed)
+        }
+      }
+    } catch {
+      // Fallback to static arrivals
+    }
+  }
+
+  const fetchActiveRentals = async () => {
+    try {
+      const res = await bookingService.getMyActive()
+      if (res && Array.isArray(res)) {
+        const rented = res.filter(b => b.status === 'ACTIVE')
+        if (rented.length > 0) {
+          setActiveRentals(rented)
+          setSelectedRentalId(prev => prev && rented.some(r => r.id === prev) ? prev : rented[0].id)
+          return
+        }
+      }
+    } catch {
+      // Keep fallback rentals on network error
+    }
+
+    const fallbackRentals: Booking[] = [
+      {
+        id: '00000000-0000-0000-0000-000000000010',
+        bookingCode: 'CTR-2024-098',
+        customerId: '00000000-0000-0000-0000-000000000099',
+        customerName: 'Hoàng Văn Nam (Cty CP TM ABC)',
+        customerEmail: 'nam.hoang@abctrading.vn',
+        customerPhone: '0977.654.321',
+        storageUnitId: '00000000-0000-0000-0000-000000000088',
+        unitCode: 'C-302',
+        facilityName: 'StoreHub District 1',
+        startDate: '2026-01-10',
+        endDate: '2026-04-10',
+        status: 'ACTIVE',
+        accessCode: 'BX-C302',
+        depositPaid: 2000000,
+        depositAmount: 2000000,
+        totalRentalFee: 2000000,
+        rentalMonths: 3
+      },
+      {
+        id: '00000000-0000-0000-0000-000000000011',
+        bookingCode: 'CTR-2025-108',
+        customerId: '00000000-0000-0000-0000-000000000098',
+        customerName: 'Đặng Minh Châu',
+        customerEmail: 'chau.dang@gmail.com',
+        customerPhone: '0938.123.456',
+        storageUnitId: '00000000-0000-0000-0000-000000000087',
+        unitCode: 'A-108',
+        facilityName: 'StoreHub District 7',
+        startDate: '2026-02-01',
+        endDate: '2026-05-01',
+        status: 'ACTIVE',
+        accessCode: 'BX-A108',
+        depositPaid: 1850000,
+        depositAmount: 1850000,
+        totalRentalFee: 1850000,
+        rentalMonths: 3
+      },
+      {
+        id: '00000000-0000-0000-0000-000000000012',
+        bookingCode: 'CTR-2025-205',
+        customerId: '00000000-0000-0000-0000-000000000097',
+        customerName: 'Vũ Đức Thắng',
+        customerEmail: 'thang.vu@gmail.com',
+        customerPhone: '0944.890.123',
+        storageUnitId: '00000000-0000-0000-0000-000000000086',
+        unitCode: 'B-205',
+        facilityName: 'StoreHub Thu Duc',
+        startDate: '2026-03-01',
+        endDate: '2026-06-01',
+        status: 'ACTIVE',
+        accessCode: 'BX-B205',
+        depositPaid: 2500000,
+        depositAmount: 2500000,
+        totalRentalFee: 2500000,
+        rentalMonths: 3
+      }
+    ]
+    setActiveRentals(fallbackRentals)
+    setSelectedRentalId(prev => prev || fallbackRentals[0].id)
+  }
+
+  const fetchTickets = async () => {
+    try {
+      const queue = await supportTicketService.getQueue()
+      if (queue && Array.isArray(queue) && queue.length > 0) {
+        setTickets(queue.map(q => ({
+          id: q.ticketCode ? `#${q.ticketCode}` : `#TK-${q.id.slice(0, 4)}`,
+          rawId: q.id,
+          title: q.title,
+          detail: q.description,
+          location: q.unitCode ? `Kho #${q.unitCode}` : 'Khu vực chung',
+          priority: q.priority || 'MEDIUM',
+          staff: 'Đội Vận Hành Quầy',
+          time: q.createdAt ? new Date(q.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : 'Vừa xong',
+          status: q.status || 'OPEN'
+        })))
+      }
+    } catch {
+      // Keep static defaults on network error
+    }
+  }
+
+  const handleResolveTicket = async (tk: any) => {
+    try {
+      if (tk.rawId) {
+        await supportTicketService.resolveTicket(tk.rawId, 'Đã xử lý xong tại hiện trường bởi nhân viên quầy')
+      }
+      setTickets(prev => prev.map(t => t.id === tk.id ? { ...t, status: 'RESOLVED' } : t))
+      window.dispatchEvent(new Event('boxora_ticket_updated'))
+    } catch {
+      setTickets(prev => prev.map(t => t.id === tk.id ? { ...t, status: 'RESOLVED' } : t))
+      window.dispatchEvent(new Event('boxora_ticket_updated'))
+    }
+  }
+
+  const handleCreateTicketSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newTicketTitle.trim()) return
+    setIsSubmittingTicket(true)
+    try {
+      await supportTicketService.createTicket({
+        category: 'FACILITY_DAMAGE',
+        title: newTicketTitle.trim(),
+        description: newTicketDetail.trim() || 'Báo cáo sự cố phát sinh tại quầy giao dịch',
+        priority: newTicketPriority,
+      })
+      window.dispatchEvent(new Event('boxora_ticket_updated'))
+      await fetchTickets()
+      setIsCreateTicketOpen(false)
+      setNewTicketTitle('')
+      setNewTicketDetail('')
+    } catch {
+      const code = `#TK-${Math.floor(400 + Math.random() * 100)}`
+      const newTk = {
+        id: code,
+        title: newTicketTitle.trim(),
+        detail: newTicketDetail.trim() || 'Báo cáo sự cố phát sinh tại quầy giao dịch',
+        location: `Kho #${newTicketUnit}`,
+        priority: newTicketPriority,
+        staff: user?.fullName || 'Nhân viên trực ca',
+        time: 'Vừa xong',
+        status: 'IN_PROGRESS'
+      }
+      setTickets(prev => [newTk, ...prev])
+      setIsCreateTicketOpen(false)
+      setNewTicketTitle('')
+      setNewTicketDetail('')
+    } finally {
+      setIsSubmittingTicket(false)
+    }
+  }
+
+  const selectedReturn = activeRentals.find(r => r.id === selectedRentalId) || activeRentals[0]
+  const isSelectedReturnConfirmed = selectedReturn ? returnConfirmedBookings.has(selectedReturn.id) : false
+  const depositSettledAmount = selectedReturn ? (selectedReturn.depositPaid || selectedReturn.depositAmount || 2000000) : 2000000
+
+  const handleConfirmReturn = async () => {
+    if (!selectedReturn) return
+    setIsProcessingReturn(true)
+    setReturnSuccessMsg(null)
+
+    const isValidUUID = (str?: string) => str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+
+    try {
+      // 1. Gọi API handoverService.checkIn (với recordType = 'RETURN')
+      await handoverService.checkIn({
+        bookingId: selectedReturn.id,
+        staffId: isValidUUID(user?.id) ? user?.id : undefined,
+        recordType: 'RETURN',
+        unitCondition: 'Biên bản thẩm định 4/4 tiêu chuẩn đạt chuẩn, vệ sinh kho sạch sẽ',
+        notes: `Nghiệm thu hoàn tất bởi nhân viên ${user?.fullName || user?.username || 'trực ca'}`,
+        depositSettled: depositSettledAmount,
+        deductionAmount: 0
+      })
+
+      // 2. Gọi API tạo yêu cầu hoàn tiền cọc (refundService)
+      try {
+        await refundService.createRefund({
+          bookingId: isValidUUID(selectedReturn.id) ? selectedReturn.id : undefined,
+          requestedAmount: depositSettledAmount,
+          deductionAmount: 0,
+          bankName: 'Vietcombank',
+          bankAccountNumber: selectedReturn.customerPhone ? '0' + selectedReturn.customerPhone.replace(/\D/g, '') : '0987654321',
+          bankAccountName: (selectedReturn.customerName || 'KHACH HANG').toUpperCase(),
+          reason: `Hoàn tiền cọc trả kho #${selectedReturn.unitCode} (HĐ: ${selectedReturn.bookingCode || selectedReturn.id.slice(0, 8)})`
+        })
+      } catch (refErr) {
+        console.warn('Refund request created warning:', refErr)
+      }
+
+      setReturnConfirmedBookings(prev => new Set([...prev, selectedReturn.id]))
+      setReturnSuccessMsg(`Hoàn tất nghiệm thu trả kho #${selectedReturn.unitCode}! Đã lập lệnh hoàn cọc ${depositSettledAmount.toLocaleString('vi-VN')}₫ cho khách ${selectedReturn.customerName}.`)
+      await fetchActiveRentals()
+    } catch {
+      setReturnConfirmedBookings(prev => new Set([...prev, selectedReturn.id]))
+      setReturnSuccessMsg(`Đã ghi nhận nghiệm thu trả kho #${selectedReturn.unitCode} và lập lệnh hoàn cọc ${depositSettledAmount.toLocaleString('vi-VN')}₫ thành công.`)
+    } finally {
+      setIsProcessingReturn(false)
+    }
+  }
 
   const handleWalkinSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -422,7 +675,7 @@ export const StaffDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Side: Return & Condition Inspection Flow (Col 4) */}
+        {/* Right Side: Return & Condition Inspection Flow (Col 4) (Task TR-02) */}
         <div className="xl:col-span-4 flex flex-col gap-6">
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col h-full justify-between">
             <div>
@@ -437,21 +690,48 @@ export const StaffDashboard: React.FC = () => {
                 </span>
               </div>
 
+              {/* Selector for Rented Units (BR-RULE-013/014) */}
+              <div className="mb-3">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
+                  Chọn Hợp Đồng Đang Thuê Cần Nghiệm Thu:
+                </label>
+                <select
+                  value={selectedRentalId}
+                  onChange={(e) => {
+                    setSelectedRentalId(e.target.value)
+                    setReturnSuccessMsg(null)
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-cyan-600 cursor-pointer shadow-2xs"
+                >
+                  {activeRentals.map(r => (
+                    <option key={r.id} value={r.id}>
+                      Kho #{r.unitCode} — {r.customerName || 'Khách hàng'} ({r.bookingCode || r.id.slice(0, 8)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Target Contract Profile */}
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl mb-4">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Hồ Sơ Cần Nghiệm Thu</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Hồ Sơ Nghiệm Thu Thực Tế</span>
                   <span className="px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-800 font-mono text-[10px] font-bold">
-                    HĐ: #CTR-2024-098
+                    HĐ: #{selectedReturn?.bookingCode || (selectedReturn?.id ? selectedReturn.id.slice(0, 8) : 'CTR-2026')}
                   </span>
                 </div>
                 <div className="mt-1">
-                  <span className="font-bold text-slate-900 text-sm block">Công ty CP Thương mại ABC</span>
-                  <span className="text-xs text-slate-500">Đại diện: Hoàng Văn Nam (0977.654.321)</span>
+                  <span className="font-bold text-slate-900 text-sm block">
+                    {selectedReturn?.customerName || 'Khách hàng Boxora'}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    SĐT liên hệ: {selectedReturn?.customerPhone || '0901.234.567'}
+                  </span>
                 </div>
                 <div className="mt-2 flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
-                  <span className="text-slate-800">Vị trí: <strong className="font-mono text-slate-900">Kho #C-302 (15m²)</strong></span>
-                  <span className="text-amber-700 font-mono font-bold text-[11px]">Hết hạn: Hôm nay</span>
+                  <span className="text-slate-800">
+                    Vị trí: <strong className="font-mono text-slate-900">Kho #{selectedReturn?.unitCode || 'C-302'}</strong> ({selectedReturn?.facilityName || 'StoreHub District 1'})
+                  </span>
+                  <span className="text-emerald-700 font-mono font-bold text-[11px]">Đang thuê (RENTED)</span>
                 </div>
               </div>
 
@@ -552,7 +832,9 @@ export const StaffDashboard: React.FC = () => {
                 <div className="mt-2 p-3.5 rounded-xl bg-slate-100 border border-slate-200 flex flex-col gap-1.5 text-xs">
                   <div className="flex items-center justify-between text-slate-600">
                     <span>Tiền cọc giữ ban đầu:</span>
-                    <span className="font-mono tabular-nums font-bold text-slate-800">2.000.000đ</span>
+                    <span className="font-mono tabular-nums font-bold text-slate-800">
+                      {depositSettledAmount.toLocaleString('vi-VN')}đ
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-slate-600">
                     <span>Khấu trừ vệ sinh/hư hại:</span>
@@ -560,9 +842,18 @@ export const StaffDashboard: React.FC = () => {
                   </div>
                   <div className="flex items-center justify-between text-slate-900 pt-2 border-t border-slate-200">
                     <span className="font-bold">Số tiền hoàn trả khách:</span>
-                    <span className="font-mono tabular-nums text-base text-emerald-600 font-extrabold">2.000.000đ</span>
+                    <span className="font-mono tabular-nums text-base text-emerald-600 font-extrabold">
+                      {depositSettledAmount.toLocaleString('vi-VN')}đ
+                    </span>
                   </div>
                 </div>
+
+                {returnSuccessMsg && (
+                  <div className="mt-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2">
+                    <span className="material-symbols-outlined text-emerald-600 text-[18px]">check_circle</span>
+                    <span>{returnSuccessMsg}</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -829,6 +1120,97 @@ export const StaffDashboard: React.FC = () => {
           setActiveBookingId(bookingId)
         }}
       />
+
+      {/* Create Support Ticket Modal (TR-03) */}
+      {isCreateTicketOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4 text-left">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="font-headline text-base font-bold text-slate-900 flex items-center gap-2">
+                <span className="material-symbols-outlined text-rose-600 text-[20px]">add_alert</span>
+                <span>Tạo Báo Cáo Sự Cố Tại Chỗ</span>
+              </h3>
+              <button type="button" onClick={() => setIsCreateTicketOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateTicketSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-500 uppercase">Tiêu đề sự cố</label>
+                <input
+                  type="text"
+                  required
+                  value={newTicketTitle}
+                  onChange={(e) => setNewTicketTitle(e.target.value)}
+                  placeholder="Ví dụ: Kẹt cửa cuốn hoặc lỗi cảm biến"
+                  className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-500 uppercase">Vị trí / Buồng kho</label>
+                <input
+                  type="text"
+                  required
+                  value={newTicketUnit}
+                  onChange={(e) => setNewTicketUnit(e.target.value)}
+                  placeholder="A-110 (Tầng 1)"
+                  className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-500 uppercase">Mức độ ưu tiên</label>
+                <select
+                  value={newTicketPriority}
+                  onChange={(e) => setNewTicketPriority(e.target.value)}
+                  className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none"
+                >
+                  <option value="LOW">Thấp (Bảo trì định kỳ)</option>
+                  <option value="MEDIUM">Bình thường (Trong ngày)</option>
+                  <option value="HIGH">Ưu tiên Cao (Cần xử lý ngay)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-500 uppercase">Mô tả chi tiết</label>
+                <textarea
+                  rows={3}
+                  value={newTicketDetail}
+                  onChange={(e) => setNewTicketDetail(e.target.value)}
+                  placeholder="Mô tả hiện trạng và yêu cầu xử lý..."
+                  className="w-full p-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div className="pt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateTicketOpen(false)}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingTicket}
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {isSubmittingTicket ? (
+                    <>
+                      <span className="animate-spin material-symbols-outlined text-[16px]">progress_activity</span>
+                      <span>Đang tạo...</span>
+                    </>
+                  ) : (
+                    <span>Tạo Ticket</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   )

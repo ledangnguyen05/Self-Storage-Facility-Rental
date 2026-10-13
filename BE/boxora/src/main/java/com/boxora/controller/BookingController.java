@@ -3,6 +3,7 @@ package com.boxora.controller;
 import com.boxora.common.response.ApiResponse;
 import com.boxora.dto.request.BookingCreateRequest;
 import com.boxora.dto.request.UpdatePinRequest;
+import com.boxora.dto.response.BookingAccessCredentialsResponse;
 import com.boxora.dto.response.BookingPinResponse;
 import com.boxora.dto.response.BookingResponse;
 import com.boxora.service.BookingService;
@@ -55,6 +56,13 @@ public class BookingController {
     @Operation(summary = "Lấy chi tiết lượt đặt kho (Mã PIN bị ẩn '******' để bảo mật)")
     public ResponseEntity<ApiResponse<BookingResponse>> getById(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getById(id)));
+    }
+
+    @GetMapping("/{id}/access-credentials")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Lấy mã PIN và QR access token của lượt đặt kho")
+    public ResponseEntity<ApiResponse<BookingAccessCredentialsResponse>> getAccessCredentials(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getAccessCredentials(id)));
     }
 
     @GetMapping("/{id}/access-pin")

@@ -553,6 +553,44 @@ class HandoverServiceTest {
             assertThat(response.isChecklistAllPassed()).isTrue();
             assertThat(response.getEvidencePhotoCount()).isEqualTo(2);
         }
+
+        @Test
+        @DisplayName("processReturnSettlement khi tiền phạt vượt quá tiền cọc thì actualRefund = 0 và ghi nhận cảnh báo nợ")
+        void processReturnSettlement_ExcessDeduction_ShouldCapRefundAtZeroAndFlagDebt() {
+            testBooking.setStatus(BookingStatus.ACTIVE);
+            testBooking.setAccessPin("739215");
+
+            FacilityPolicy policy = FacilityPolicy.builder()
+                    .facility(testFacility)
+                    .depositRefundSlaDays(7)
+                    .build();
+
+            // Cọc: 1,500,000. Phạt hư hại: 2,000,000 -> Âm 500,000
+            HandoverRequest request = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .staffId(staffId)
+                    .damageFee(new BigDecimal("2000000.00"))
+                    .damageNotes("Vỡ kính cường lực và hỏng ray cửa")
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
+            when(facilityPolicyRepository.findByFacilityId(testFacility.getId())).thenReturn(Optional.of(policy));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
+            when(handoverRecordRepository.save(any(HandoverRecord.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+
+            ReturnSettlementResponse response = handoverService.processReturnSettlement(request);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getDepositPaid()).isEqualByComparingTo(new BigDecimal("1500000.00"));
+            assertThat(response.getTotalDeduction()).isEqualByComparingTo(new BigDecimal("2000000.00"));
+            assertThat(response.getNetRefundAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(response.getReviewStatus()).isEqualTo("PENDING_ACCOUNTING_REVIEW");
+            assertThat(response.getNotes()).contains("CẢNH BÁO: Khấu trừ vượt quá tiền cọc!");
+            assertThat(response.getNotes()).contains("500000.00");
+            verify(paymentRepository, never()).save(any(Payment.class));
+        }
     }
 }
 

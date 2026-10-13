@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Booking } from '../../../types'
 import { handoverService } from '../../../services/handoverService'
 import { bookingService } from '../../../services/bookingService'
@@ -60,6 +60,16 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   onHandoverComplete,
   onOpenQrScanner
 }) => {
+  const { user } = useAuth()
+
+  // Real-time arrivals list converted from real Backend Bookings
+  const arrivingList = useMemo<ArrivingCustomer[]>(() => {
+    if (arrivals && Array.isArray(arrivals) && arrivals.length > 0) {
+      return arrivals.map(mapBookingToArrival)
+    }
+    return DEFAULT_DEMO_ARRIVALS
+  }, [arrivals])
+
   // Active arrival
   const [selectedCustomer, setSelectedCustomer] = useState<ArrivingCustomer>(() => mapBooking(booking))
 

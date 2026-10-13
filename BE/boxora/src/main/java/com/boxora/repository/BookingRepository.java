@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -20,6 +21,8 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     List<Booking> findByCustomer_Id(UUID customerId);
 
     List<Booking> findByStatusIn(Collection<BookingStatus> statuses);
+
+    List<Booking> findByStatusAndPaymentExpiresAtBefore(BookingStatus status, Instant expiresAt);
 
     boolean existsByStorageUnit_Id(UUID storageUnitId);
 

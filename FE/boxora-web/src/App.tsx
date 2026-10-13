@@ -11,11 +11,9 @@ import { HomePage } from './pages/public/HomePage'
 import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
 import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
 import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
-<<<<<<< HEAD
-=======
 
 // StorageOps Pro Portals (Matching Prototype Stitch Files)
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
+
 import { CustomerDashboard } from './pages/customer/CustomerDashboard'
 import { StaffDashboard } from './pages/staff/StaffDashboard'
 import { ManagerDashboard } from './pages/manager/ManagerDashboard'
@@ -75,6 +73,7 @@ function MainContent() {
           {/* Dedicated Storage Units Explorer & Booking Dashboard */}
           <Route path="/units" element={<UnitsExplorerPage />} />
           <Route path="/explore-units" element={<UnitsExplorerPage />} />
+          <Route path="/payment-result" element={<PaymentResultPage />} />
 
           {/* Boxora Terms & Standards Dashboard */}
           <Route path="/terms" element={<TermsAndStandardsPage />} />

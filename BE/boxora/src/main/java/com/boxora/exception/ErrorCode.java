@@ -74,6 +74,7 @@ public enum ErrorCode {
     RETURN_INSPECTION_CHECKLIST_INCOMPLETE(724, "Chưa hoàn tất đầy đủ 5 tiêu chuẩn kiểm tra hiện trạng trả kho theo BR-RULE-013", HttpStatus.BAD_REQUEST),
     BOOKING_NOT_ACTIVE_FOR_RETURN(725, "Đơn đặt kho phải ở trạng thái đang hoạt động (ACTIVE) mới được thực hiện trả kho", HttpStatus.BAD_REQUEST),
     RETURN_PHOTO_EVIDENCE_REQUIRED(726, "Cần tối thiểu 2 ảnh chụp hiện trường để xác nhận nghiệm thu trả kho theo BR-RULE-013", HttpStatus.BAD_REQUEST),
+    BOOKING_PAYMENT_EXPIRED(727, "The 24-hour booking payment window has expired", HttpStatus.CONFLICT),
 
     // ========================= PAYMENT (750 - 799) =========================
     PAYMENT_NOT_FOUND(750, "Payment transaction not found", HttpStatus.NOT_FOUND),
@@ -134,6 +135,11 @@ public enum ErrorCode {
     CONTRACT_RENEWAL_ALREADY_COMPLETED(1507, "Contract renewal has already been completed", HttpStatus.BAD_REQUEST),
     CONTRACT_RENEWAL_ALREADY_SIGNED(1508, "Contract renewal is already signed", HttpStatus.BAD_REQUEST),
     RENEWAL_CONTRACT_NOT_FOUND(1509, "Rental contract not found", HttpStatus.NOT_FOUND),
+    CONTRACT_OTP_NOT_FOUND(1510, "No active contract OTP request was found", HttpStatus.BAD_REQUEST),
+    CONTRACT_OTP_INVALID(1511, "The contract OTP is invalid or has expired", HttpStatus.BAD_REQUEST),
+    CONTRACT_OTP_RESEND_TOO_SOON(1512, "Please wait before requesting another contract OTP", HttpStatus.TOO_MANY_REQUESTS),
+    CONTRACT_OTP_ALREADY_VERIFIED(1513, "The contract OTP has already been verified", HttpStatus.BAD_REQUEST),
+    CONTRACT_OTP_ATTEMPTS_EXCEEDED(1514, "Too many invalid contract OTP attempts", HttpStatus.TOO_MANY_REQUESTS),
 
     // ========================= PRICE & PRICE HISTORY (BR-RULE-011) (1600 - 1699) =========================
     PRICE_MUST_BE_GREATER_THAN_ZERO(1600, "Price must be greater than zero", HttpStatus.BAD_REQUEST),

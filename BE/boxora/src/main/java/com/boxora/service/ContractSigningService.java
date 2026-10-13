@@ -33,4 +33,10 @@ public interface ContractSigningService {
 
     /** Xử lý webhook từ DocuSeal cho cả hợp đồng chính và phụ lục gia hạn. */
     void handleWebhook(Map<String, Object> payload);
+
+    /** Ký hợp đồng điện tử ở chế độ mô phỏng / local simulation. */
+    RentalContractResponse mockSign(UUID contractId);
+
+    /** Đảm bảo tồn tại hợp đồng ở trạng thái PENDING_SIGNATURE cho đơn đặt kho đã xác nhận. */
+    RentalContract ensureContractForBooking(com.boxora.entity.Booking booking);
 }

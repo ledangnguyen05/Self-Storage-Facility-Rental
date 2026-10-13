@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -27,6 +28,7 @@ public class SupportTicketController {
     private final SupportTicketService supportTicketService;
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Tạo yêu cầu hỗ trợ sự cố mới (hỗ trợ đính kèm URL ảnh bằng chứng imageEvidence / evidenceUrls)")
     public ResponseEntity<ApiResponse<SupportTicketResponse>> create(@Valid @RequestBody SupportTicketRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -34,6 +36,7 @@ public class SupportTicketController {
     }
 
     @PostMapping(value = "/upload-evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Tải lên 1 ảnh bằng chứng hiện trường sự cố (JPG, PNG, WEBP, tối đa 10MB)")
     public ResponseEntity<ApiResponse<FileUploadResponse>> uploadEvidence(@RequestParam("file") MultipartFile file) {
         FileUploadResponse response = supportTicketService.uploadEvidenceImage(file);
@@ -42,6 +45,7 @@ public class SupportTicketController {
     }
 
     @PostMapping(value = "/upload-evidences", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Tải lên nhiều ảnh bằng chứng hiện trường sự cố")
     public ResponseEntity<ApiResponse<List<FileUploadResponse>>> uploadEvidences(@RequestParam("files") List<MultipartFile> files) {
         List<FileUploadResponse> responses = supportTicketService.uploadEvidenceImages(files);
@@ -50,6 +54,7 @@ public class SupportTicketController {
     }
 
     @PostMapping(value = "/with-evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Tạo yêu cầu hỗ trợ đính kèm trực tiếp file ảnh bằng chứng hiện trường trong cùng 1 request")
     public ResponseEntity<ApiResponse<SupportTicketResponse>> createWithEvidence(
             @Valid @RequestPart("ticket") SupportTicketRequest request,
@@ -63,18 +68,21 @@ public class SupportTicketController {
     }
 
     @GetMapping("/queue")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Lấy hàng đợi toàn bộ tickets xử lý sự cố cho nhân viên trực ca")
     public ResponseEntity<ApiResponse<List<SupportTicketResponse>>> getQueue() {
         return ResponseEntity.ok(ApiResponse.success(supportTicketService.getQueue()));
     }
 
     @GetMapping("/my-tickets")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Lấy danh sách tickets sự cố của khách hàng")
     public ResponseEntity<ApiResponse<List<SupportTicketResponse>>> getMyTickets(@RequestParam(required = false) UUID customerId) {
         return ResponseEntity.ok(ApiResponse.success(supportTicketService.getMyTickets(customerId)));
     }
 
     @PatchMapping("/{id}/resolve")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Xác nhận đã xử lý hoàn tất sự cố kèm ghi chú khắc phục")
     public ResponseEntity<ApiResponse<SupportTicketResponse>> resolve(
             @PathVariable UUID id,

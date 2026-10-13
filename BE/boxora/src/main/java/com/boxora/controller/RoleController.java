@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -22,6 +23,7 @@ public class RoleController {
     private final RoleService roleService;
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     public ResponseEntity<ApiResponse<RoleResponse>> getById(@PathVariable UUID id){
         log.info("Get role by id : {}",id);
         RoleResponse response=roleService.getById(id);
@@ -29,6 +31,7 @@ public class RoleController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<RoleResponse>> create
             (@Valid @RequestBody RoleCreateRequest request){
         log.info("Creating new role : {}", request.getName());
@@ -38,6 +41,7 @@ public class RoleController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<RoleResponse>> update
             (@PathVariable UUID id,@Valid @RequestBody RoleUpdateRequest request){
         log.info("Updating role : {}", request.getName());
@@ -46,6 +50,7 @@ public class RoleController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id){
         log.info("Deleting role with id : {}",id);
         roleService.delete(id);
@@ -53,6 +58,7 @@ public class RoleController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     public ResponseEntity<ApiResponse<PageResponse<RoleResponse>>> getAll(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Boolean isActive,
