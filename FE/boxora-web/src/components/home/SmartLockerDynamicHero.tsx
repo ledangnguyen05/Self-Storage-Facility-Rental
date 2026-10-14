@@ -195,19 +195,10 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
           <button
             type="button"
             onClick={onBookNow}
-            className="book-now-effect-button"
+            className="group inline-flex min-h-12 items-center justify-center gap-2.5 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-95 px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/25 transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
           >
-            <span className="book-now-effect-button__gradient-layer" aria-hidden="true" />
-            <span className="book-now-effect-button__gradient-layer book-now-effect-button__gradient-layer--dodge" aria-hidden="true" />
-            <span className="book-now-effect-button__light" aria-hidden="true" />
-            <span className="book-now-effect-button__label">
-              Đặt kho ngay
-              <ArrowRight size={16} aria-hidden="true" focusable="false" />
-            </span>
-            <span className="book-now-effect-button__overlay" aria-hidden="true">
-              Đặt kho ngay
-              <ArrowRight size={16} focusable="false" />
-            </span>
+            <span>Đặt kho ngay</span>
+            <ArrowRight size={16} className="transition-transform duration-200 group-hover:translate-x-1" />
           </button>
           <a
             href="#services"
