@@ -16,12 +16,19 @@ import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { bookingService } from '../../services/bookingService'
 import { BrandLogo } from '../../components/common/BrandLogo'
+import { AccountProfileModal } from '../../components/common/AccountProfileModal'
+import { LogoutConfirmModal } from '../../components/common/LogoutConfirmModal'
+import { WebSettingsModal } from '../../components/common/WebSettingsModal'
+import { UserAvatarDropdown } from '../../components/common/UserAvatarDropdown'
+import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
+import { useLanguage } from '../../context/LanguageContext'
 import { Facility, StorageUnit } from '../../types'
 
 export const UnitsExplorerPage: React.FC = () => {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { isAuthenticated, user, logout } = useAuth()
+  const { t } = useLanguage()
 
   // Real Database Data State
   const [dbFacilities, setDbFacilities] = useState<Facility[]>([])
@@ -54,6 +61,9 @@ export const UnitsExplorerPage: React.FC = () => {
   const [activatedPin, setActivatedPin] = useState('841 902')
   const [copiedPin, setCopiedPin] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
 
   // Fetch real data from backend database
   useEffect(() => {
@@ -313,97 +323,52 @@ export const UnitsExplorerPage: React.FC = () => {
           <div className="flex items-center gap-3">
             <Link
               to="/"
-              className="hidden md:flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+              className="hidden md:flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-              <span>Trang Giới Thiệu (Landing)</span>
+              <span>{t('Trang Giới Thiệu (Landing)')}</span>
             </Link>
 
+            <QuickThemeLanguageToggle />
+
             {isAuthenticated ? (
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setDropdownOpen(prev => !prev)}
-                  className={`flex items-center gap-2 p-1.5 pr-3 rounded-full border shadow-2xs transition-all cursor-pointer text-left focus:outline-none ${
-                    !canAccessPortal
-                      ? 'bg-amber-50/90 hover:bg-amber-100 border-amber-200'
-                      : 'bg-white hover:bg-slate-50 border-slate-200'
-                  }`}
-                >
-                  <div
-                    className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shadow-2xs ${
-                      !canAccessPortal ? 'bg-amber-700 text-white' : 'bg-slate-900 text-white'
-                    }`}
-                  >
-                    {user?.fullName ? user.fullName[0].toUpperCase() : user?.username ? user.username[0].toUpperCase() : 'U'}
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-slate-900 leading-tight">
-                      {user?.fullName || user?.username || 'Khách Hàng'}
-                    </span>
-                    <span className="text-[9px] font-mono font-semibold text-cyan-800">
-                      {!canAccessPortal ? 'Chưa Kích Hoạt Kho' : (user?.role?.name || 'CUSTOMER')}
-                    </span>
-                  </div>
-                  <span className="material-symbols-outlined text-[16px] text-slate-400">expand_more</span>
-                </button>
-
-                {dropdownOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 p-4 space-y-3 text-left">
-                    <div className="flex items-center gap-2.5 pb-2.5 border-b border-slate-100">
-                      <div className="w-8 h-8 rounded-full bg-slate-900 text-white font-bold flex items-center justify-center text-xs">
-                        {user?.fullName ? user.fullName[0].toUpperCase() : user?.username ? user.username[0].toUpperCase() : 'U'}
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-xs font-bold text-slate-900 truncate">{user?.fullName || user?.username}</span>
-                        <span className="text-[11px] text-slate-500 truncate">{user?.email}</span>
-                      </div>
-                    </div>
-
-                    {canAccessPortal && (
+              <UserAvatarDropdown
+                user={user}
+                role={user?.role?.name || 'CUSTOMER'}
+                onOpenProfile={() => setIsProfileModalOpen(true)}
+                onOpenSettings={() => setIsSettingsModalOpen(true)}
+                onOpenLogoutConfirm={() => setIsLogoutConfirmOpen(true)}
+                extraActions={
+                  canAccessPortal ? (
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
                       <button
                         type="button"
-                        onClick={() => {
-                          setDropdownOpen(false)
-                          navigate(isCustomer ? '/portal/customer' : '/portal')
-                        }}
-                        className="w-full py-2 px-3 rounded-xl bg-slate-900 text-white font-semibold text-xs flex items-center justify-between hover:bg-neutral-800 transition-colors cursor-pointer"
+                        onClick={() => navigate(isCustomer ? '/portal/customer' : '/portal')}
+                        className="w-full py-2.5 px-3.5 rounded-xl bg-slate-900 dark:bg-blue-600 text-white font-semibold text-xs flex items-center justify-between hover:bg-neutral-800 dark:hover:bg-blue-700 transition-all shadow-xs cursor-pointer"
                       >
-                        <span className="flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-[16px] text-emerald-400">dashboard</span>
-                          <span>Vào Portal Quản Lý</span>
+                        <span className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[18px] text-emerald-400">dashboard</span>
+                          <span>{t('Vào Portal')}</span>
                         </span>
-                        <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                        <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
                       </button>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDropdownOpen(false)
-                        logout()
-                      }}
-                      className="w-full py-1.5 px-3 rounded-lg text-rose-700 hover:bg-rose-50 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">logout</span>
-                      <span>Đăng xuất</span>
-                    </button>
-                  </div>
-                )}
-              </div>
+                    </div>
+                  ) : undefined
+                }
+              />
             ) : (
               <div className="flex items-center gap-2">
                 <Link
                   to="/login"
-                  className="px-3.5 py-2 text-xs font-semibold text-slate-700 hover:text-blue-600 transition-colors"
+                  className="px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-cyan-400 transition-colors"
                 >
-                  Đăng Nhập
+                  {t('Đăng Nhập')}
                 </Link>
                 <Link
                   to="/register"
                   className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1"
                 >
-                  <span>Đăng Ký Thuê</span>
+                  <span>{t('Đăng Ký Thuê')}</span>
                   <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
                 </Link>
               </div>
@@ -1192,6 +1157,26 @@ export const UnitsExplorerPage: React.FC = () => {
 
       {/* Floating Action Speed-Dial Widget (Scroll Top, Zalo, Hotline, Maps) */}
       <FloatingContactWidget />
+
+      <AccountProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+      />
+      <WebSettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+      />
+      <LogoutConfirmModal
+        isOpen={isLogoutConfirmOpen}
+        onClose={() => setIsLogoutConfirmOpen(false)}
+        onConfirm={async () => {
+          await logout()
+          navigate('/login')
+        }}
+        userName={user?.fullName || user?.username}
+        userEmail={user?.email}
+        userRole={user?.role?.name || 'CUSTOMER'}
+      />
 
     </div>
   )
