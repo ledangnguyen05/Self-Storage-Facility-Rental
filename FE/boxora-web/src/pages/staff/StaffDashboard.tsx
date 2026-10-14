@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useAuth } from '../../context/AuthContext'
 import { bookingService } from '../../services/bookingService'
 import { handoverService } from '../../services/handoverService'
 import { reportService } from '../../services/reportService'
@@ -47,38 +48,16 @@ export const StaffDashboard: React.FC = () => {
   const [settlementSuccessMsg, setSettlementSuccessMsg] = useState<string | null>(null)
 
   // Ticket status state
-  const [tickets, setTickets] = useState([
-    {
-      id: '#TK-402',
-      title: 'Khách báo kẹt ổ khóa điện tử Smart Lock',
-      detail: 'Khách hàng Hoàng Long đang ở trước cửa kho, mã PIN báo đúng nhưng chốt cơ khí không bung ra.',
-      location: 'Kho #B-104 (Hành lang Tây - Tầng 1)',
-      priority: 'HIGH',
-      staff: 'Hoàng Nam (Kỹ thuật)',
-      time: '12 phút trước',
-      status: 'IN_PROGRESS'
-    },
-    {
-      id: '#TK-405',
-      title: 'Yêu cầu mở cổng xe tải giao hàng sớm',
-      detail: 'Xe tải 5 tấn giao kiện hàng cho kho #C-005 xin phép vào sân tiếp nhận sớm 30 phút.',
-      location: 'Cổng tiếp vận Loading Bay #01',
-      priority: 'MEDIUM',
-      staff: 'Nguyễn Quỳnh Anh (Trực ca)',
-      time: '28 phút trước',
-      status: 'IN_PROGRESS'
-    },
-    {
-      id: '#TK-408',
-      title: 'Quên mã PIN mở kho #A-108',
-      detail: 'Khách hàng liên hệ qua app yêu cầu kiểm tra và gửi lại mã số thẻ mở cửa cuốn qua SMS.',
-      location: 'Kho #A-108 (Tầng 1)',
-      priority: 'LOW',
-      staff: 'Quỳnh Anh (NV-842)',
-      time: 'Vừa xong',
-      status: 'RESOLVED'
-    }
-  ])
+  const [tickets, setTickets] = useState<Array<{
+    id: string
+    title: string
+    detail: string
+    location: string
+    priority: string
+    staff: string
+    time: string
+    status: string
+  }>>([])
 
   useEffect(() => {
     fetchArrivals()
@@ -117,20 +96,20 @@ export const StaffDashboard: React.FC = () => {
   const loadTicketQueue = async () => {
     try {
       const res = await supportTicketService.getQueue()
-      if (res && res.length > 0) {
+      if (res && Array.isArray(res)) {
         setTickets(res.map((t: any) => ({
-          id: t.id.startsWith('#') ? t.id : `#TK-${t.id.slice(0, 4)}`,
+          id: t.ticketCode || (t.id ? `#TK-${t.id.slice(0, 4)}` : '#TK-0000'),
           title: t.title || 'Sự cố thiết bị',
-          detail: t.description || 'Chi tiết hiện trường',
-          location: t.category || 'Kho Boxora',
+          detail: t.customerName ? `${t.customerName} - ${t.description || 'Chi tiết hiện trường'}` : (t.description || 'Chi tiết hiện trường'),
+          location: t.unitCode ? `Kho #${t.unitCode}` : (t.category || 'Kho Boxora'),
           priority: t.priority || 'MEDIUM',
-          staff: 'Nhân viên trực ca',
-          time: 'Hôm nay',
+          staff: t.assignedStaffName || 'Nhân viên trực ca',
+          time: t.createdAt ? new Date(t.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : 'Hôm nay',
           status: t.status || 'IN_PROGRESS'
         })))
       }
     } catch {
-      // Fallback
+      // Empty on error
     }
   }
 
@@ -811,53 +790,61 @@ export const StaffDashboard: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
-              {tickets.map((tk) => (
-                <tr 
-                  key={tk.id} 
-                  className={`hover:bg-slate-50/70 transition-colors ${
-                    tk.priority === 'HIGH' ? 'bg-rose-50/40' : ''
-                  }`}
-                >
-                  <td className="py-3 px-3 font-mono text-xs font-bold text-slate-900">
-                    {tk.id}
-                  </td>
-                  <td className="py-3 px-3 max-w-xs">
-                    <span className="font-bold text-slate-900 block text-xs">{tk.title}</span>
-                    <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">{tk.detail}</span>
-                  </td>
-                  <td className="py-3 px-3">
-                    <span className="font-mono font-bold text-slate-800">{tk.location}</span>
-                  </td>
-                  <td className="py-3 px-3">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase inline-flex items-center gap-1 ${
-                      tk.priority === 'HIGH'
-                        ? 'bg-rose-100 text-rose-700 border border-rose-200'
-                        : tk.priority === 'MEDIUM'
-                        ? 'bg-amber-100 text-amber-700 border border-amber-200'
-                        : 'bg-slate-100 text-slate-600'
-                    }`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${
-                        tk.priority === 'HIGH' ? 'bg-rose-600' : tk.priority === 'MEDIUM' ? 'bg-amber-600' : 'bg-slate-400'
-                      }`}></span>
-                      {tk.priority === 'HIGH' ? 'Ưu tiên Cao' : tk.priority === 'MEDIUM' ? 'Bình thường' : 'Thấp'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-3 text-slate-700 font-medium">{tk.staff}</td>
-                  <td className="py-3 px-3 text-slate-500 font-mono text-[11px] tabular-nums">{tk.time}</td>
-                  <td className="py-3 px-3 text-right">
-                    {tk.status === 'RESOLVED' ? (
-                      <span className="text-emerald-600 font-mono font-bold text-[11px]">✓ Đã giải quyết</span>
-                    ) : (
-                      <button
-                        onClick={() => handleResolveTicket(tk.id)}
-                        className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-[11px] transition-colors cursor-pointer"
-                      >
-                        Xong tại chỗ
-                      </button>
-                    )}
+              {tickets.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-slate-400 text-xs">
+                    Hiện không có phiếu sự cố nào cần xử lý trong ca trực.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                tickets.map((tk) => (
+                  <tr 
+                    key={tk.id} 
+                    className={`hover:bg-slate-50/70 transition-colors ${
+                      tk.priority === 'HIGH' ? 'bg-rose-50/40' : ''
+                    }`}
+                  >
+                    <td className="py-3 px-3 font-mono text-xs font-bold text-slate-900">
+                      {tk.id}
+                    </td>
+                    <td className="py-3 px-3 max-w-xs">
+                      <span className="font-bold text-slate-900 block text-xs">{tk.title}</span>
+                      <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">{tk.detail}</span>
+                    </td>
+                    <td className="py-3 px-3">
+                      <span className="font-mono font-bold text-slate-800">{tk.location}</span>
+                    </td>
+                    <td className="py-3 px-3">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase inline-flex items-center gap-1 ${
+                        tk.priority === 'HIGH'
+                          ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                          : tk.priority === 'MEDIUM'
+                          ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          tk.priority === 'HIGH' ? 'bg-rose-600' : tk.priority === 'MEDIUM' ? 'bg-amber-600' : 'bg-slate-400'
+                        }`}></span>
+                        {tk.priority === 'HIGH' ? 'Ưu tiên Cao' : tk.priority === 'MEDIUM' ? 'Bình thường' : 'Thấp'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-slate-700 font-medium">{tk.staff}</td>
+                    <td className="py-3 px-3 text-slate-500 font-mono text-[11px] tabular-nums">{tk.time}</td>
+                    <td className="py-3 px-3 text-right">
+                      {tk.status === 'RESOLVED' ? (
+                        <span className="text-emerald-600 font-mono font-bold text-[11px]">✓ Đã giải quyết</span>
+                      ) : (
+                        <button
+                          onClick={() => handleResolveTicket(tk.id)}
+                          className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-[11px] transition-colors cursor-pointer"
+                        >
+                          Xong tại chỗ
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

@@ -30,71 +30,17 @@ interface InspectedUnit {
   facilityName?: string
 }
 
-const INITIAL_UNITS: InspectedUnit[] = [
-  // Zone A (Floor 1)
-  { id: 'A-101', floorLevel: 'Floor 1', size: '6.5 m²', type: 'Standard Dry', status: 'Available', color: 'emerald', tenant: 'Chưa có khách', contract: 'Trống', due: '--', battery: '98%', smartlock: 'SL-9011', lastAccess: 'Chưa ghi nhận' },
-  { id: 'A-102', floorLevel: 'Floor 1', size: '6.5 m²', type: 'Standard Dry', status: 'Available', color: 'emerald', tenant: 'Chưa có khách', contract: 'Trống', due: '--', battery: '95%', smartlock: 'SL-9012', lastAccess: 'Chưa ghi nhận' },
-  { id: 'A-103', floorLevel: 'Floor 1', size: '12.0 m²', type: 'Standard Roll-up', status: 'Rented', color: 'blue', tenant: 'Công ty TNHH Hóa Mỹ Phẩm An Bình', contract: 'HD-2024-8891', due: '18/11/2025', battery: '92%', smartlock: 'SL-8812', lastAccess: 'Hôm nay 08:15' },
-  { id: 'A-104', floorLevel: 'Floor 1', size: '12.0 m²', type: 'Standard Roll-up', status: 'Rented', color: 'blue', tenant: 'Võ Thành Đạt (Cá nhân)', contract: 'HD-2024-7742', due: '30/08/2025', battery: '89%', smartlock: 'SL-8814', lastAccess: '3 ngày trước' },
-  { id: 'A-105', floorLevel: 'Floor 1', size: '8.0 m²', type: 'Standard Dry', status: 'Rented', color: 'blue', tenant: 'Bùi Thị Thanh Hằng', contract: 'HD-2025-0102', due: '28/02/2026', battery: '100%', smartlock: 'SL-8820', lastAccess: 'Hôm qua 19:40' },
-  { id: 'A-106', floorLevel: 'Floor 1', size: '8.0 m²', type: 'Standard Dry', status: 'Rented', color: 'blue', tenant: 'Startup Logistic Tân Bình Express', contract: 'HD-2024-9118', due: '12/12/2025', battery: '94%', smartlock: 'SL-8822', lastAccess: 'Hôm nay 07:11' },
-  { id: 'A-107', floorLevel: 'Floor 1', size: '8.0 m²', type: 'Standard Dry', status: 'Rented', color: 'blue', tenant: 'Phòng Trưng Bày Scandinavia', contract: 'HD-2024-6550', due: '10/01/2026', battery: '87%', smartlock: 'SL-8830', lastAccess: '5 ngày trước' },
-  { id: 'A-108', floorLevel: 'Floor 1', size: '8.0 m²', type: 'Standard Roll-up', status: 'Pending', color: 'amber', tenant: 'Phạm Hoàng Nam', contract: 'HD-2025-4421', due: '15/05/2025', battery: '99%', smartlock: 'SL-8841', lastAccess: 'Hôm qua 18:24' },
-  { id: 'A-109', floorLevel: 'Floor 1', size: '15.0 m²', type: 'Large Bulk Space', status: 'Rented', color: 'blue', tenant: 'Kho Phụ Kiện Sài Gòn', contract: 'HD-2023-3392', due: '01/10/2025', battery: '91%', smartlock: 'SL-8850', lastAccess: 'Hôm nay 09:50' },
-  { id: 'A-110', floorLevel: 'Floor 1', size: '15.0 m²', type: 'Large Bulk Space', status: 'Maintenance', color: 'red', tenant: 'ĐANG BẢO TRÌ SỬA CỬA CUỐN', contract: 'TICKET-MT-402', due: 'Dự kiến 17:00', battery: 'Cắt nguồn', smartlock: 'SL-8855 (Tạm ngắt)', lastAccess: 'Kỹ thuật viên' },
-  { id: 'A-111', floorLevel: 'Floor 1', size: '10.0 m²', type: 'Standard Roll-up', status: 'Rented', color: 'blue', tenant: 'Chuỗi Coffee Bean Lab', contract: 'HD-2024-5221', due: '19/04/2026', battery: '97%', smartlock: 'SL-8861', lastAccess: 'Hôm qua 14:10' },
-  { id: 'A-112', floorLevel: 'Floor 1', size: '10.0 m²', type: 'Standard Roll-up', status: 'Rented', color: 'blue', tenant: 'Nguyễn Mai Hương', contract: 'HD-2024-9099', due: '05/06/2025', battery: '93%', smartlock: 'SL-8864', lastAccess: '2 ngày trước' },
-  { id: 'A-113', floorLevel: 'Floor 1', size: '10.0 m²', type: 'Standard Roll-up', status: 'Rented', color: 'blue', tenant: 'Studio Nhiếp Ảnh Sáng Tạo', contract: 'HD-2024-1188', due: '11/11/2025', battery: '86%', smartlock: 'SL-8870', lastAccess: 'Hôm nay 06:40' },
-  { id: 'A-114', floorLevel: 'Floor 1', size: '10.0 m²', type: 'Standard Roll-up', status: 'Rented', color: 'blue', tenant: 'Dương Minh Trí', contract: 'HD-2024-2200', due: '24/07/2025', battery: '90%', smartlock: 'SL-8873', lastAccess: '1 tuần trước' },
-  { id: 'A-115', floorLevel: 'Floor 1', size: '10.0 m²', type: 'Standard Roll-up', status: 'Overdue', color: 'rose', tenant: 'Trần Quốc Tuấn (Kinh doanh)', contract: 'HD-2024-0044', due: 'Quá hạn 7 ngày', battery: '88%', smartlock: 'SL-8880 [KHOÁ TẠM]', lastAccess: '7 ngày trước 14:20' },
-  { id: 'A-116', floorLevel: 'Floor 1', size: '10.0 m²', type: 'Standard Dry', status: 'Rented', color: 'blue', tenant: 'Đoàn Thị Bích Ngọc', contract: 'HD-2024-6331', due: '18/09/2025', battery: '92%', smartlock: 'SL-8889', lastAccess: 'Hôm qua 11:30' },
-  // Zone B (Floor 1)
-  { id: 'B-101', floorLevel: 'Floor 1', size: '20.0 m²', type: 'High Ceiling Bulk', status: 'Rented', color: 'blue', tenant: 'Hàng Tiêu Dùng Á Châu JSC', contract: 'HD-2023-1100', due: '25/12/2025', battery: '95%', smartlock: 'SL-7001', lastAccess: 'Hôm nay 08:30' },
-  { id: 'B-102', floorLevel: 'Floor 1', size: '20.0 m²', type: 'High Ceiling Bulk', status: 'Rented', color: 'blue', tenant: 'Công ty Dược Medipharm', contract: 'HD-2024-5510', due: '15/07/2025', battery: '99%', smartlock: 'SL-7002', lastAccess: 'Hôm qua 16:45' },
-  { id: 'B-103', floorLevel: 'Floor 1', size: '15.0 m²', type: 'Heavy Duty Space', status: 'Rented', color: 'blue', tenant: 'Vật Tư Y Tế Phúc Khang', contract: 'HD-2024-6622', due: '10/11/2025', battery: '94%', smartlock: 'SL-7003', lastAccess: '3 ngày trước' },
-  { id: 'B-104', floorLevel: 'Floor 1', size: '15.0 m²', type: 'Heavy Duty Space', status: 'Rented', color: 'blue', tenant: 'Chuỗi Cửa Hàng Decathlon Depot', contract: 'HD-2024-3312', due: '01/01/2026', battery: '96%', smartlock: 'SL-7004', lastAccess: 'Hôm nay 09:12' },
-  { id: 'B-105', floorLevel: 'Floor 1', size: '12.0 m²', type: 'Standard Roll-up', status: 'Pending', color: 'amber', tenant: 'Đỗ Nhật Huy (App Booking)', contract: 'HD-2025-9901', due: 'Hẹn check-in 14:00', battery: '100%', smartlock: 'SL-7005', lastAccess: 'Chưa check-in' },
-  { id: 'B-106', floorLevel: 'Floor 1', size: '12.0 m²', type: 'Standard Dry', status: 'Rented', color: 'blue', tenant: 'Lê Thanh Thảo', contract: 'HD-2024-7711', due: '18/06/2025', battery: '89%', smartlock: 'SL-7006', lastAccess: '4 ngày trước' },
-  { id: 'B-107', floorLevel: 'Floor 1', size: '12.0 m²', type: 'Standard Dry', status: 'Rented', color: 'blue', tenant: 'Trương Vĩnh Kỳ', contract: 'HD-2024-4481', due: '20/10/2025', battery: '92%', smartlock: 'SL-7007', lastAccess: 'Hôm nay 10:00' },
-  { id: 'B-108', floorLevel: 'Floor 1', size: '8.0 m²', type: 'Standard Dry', status: 'Rented', color: 'blue', tenant: 'Kho Đồ Gia Dụng Thông Minh', contract: 'HD-2024-3388', due: '12/12/2025', battery: '91%', smartlock: 'SL-7008', lastAccess: 'Hôm qua 09:20' },
-  { id: 'B-109', floorLevel: 'Floor 1', size: '8.0 m²', type: 'Standard Dry', status: 'Rented', color: 'blue', tenant: 'Ngô Gia Cường', contract: 'HD-2024-8822', due: '05/05/2025', battery: '90%', smartlock: 'SL-7009', lastAccess: '3 ngày trước' },
-  { id: 'B-110', floorLevel: 'Floor 1', size: '8.0 m²', type: 'Standard Dry', status: 'Available', color: 'emerald', tenant: 'Chưa có khách', contract: 'Trống', due: '--', battery: '97%', smartlock: 'SL-7010', lastAccess: 'Chưa ghi nhận' },
-  { id: 'B-111', floorLevel: 'Floor 1', size: '8.0 m²', type: 'Standard Dry', status: 'Available', color: 'emerald', tenant: 'Chưa có khách', contract: 'Trống', due: '--', battery: '96%', smartlock: 'SL-7011', lastAccess: 'Chưa ghi nhận' },
-  { id: 'B-112', floorLevel: 'Floor 1', size: '15.0 m²', type: 'Standard Dry', status: 'Rented', color: 'blue', tenant: 'Cty Kiến Trúc Nghệ Thuật', contract: 'HD-2024-9912', due: '14/09/2025', battery: '93%', smartlock: 'SL-7012', lastAccess: 'Hôm qua 15:00' },
-  { id: 'B-113', floorLevel: 'Floor 1', size: '15.0 m²', type: 'Standard Dry', status: 'Rented', color: 'blue', tenant: 'Chuỗi Sách Ngoại Văn Bookland', contract: 'HD-2024-4112', due: '30/11/2025', battery: '98%', smartlock: 'SL-7013', lastAccess: 'Hôm nay 09:44' },
-  { id: 'B-114', floorLevel: 'Floor 1', size: '15.0 m²', type: 'Standard Dry', status: 'Rented', color: 'blue', tenant: 'Huỳnh Thanh Tùng', contract: 'HD-2024-5509', due: '01/08/2025', battery: '85%', smartlock: 'SL-7014', lastAccess: '5 ngày trước' },
-  { id: 'B-120', floorLevel: 'Floor 1', size: '20.0 m²', type: 'High Ceiling Bulk', status: 'Overdue', color: 'rose', tenant: 'Kho Đồ Điện Tử Việt Phát', contract: 'HD-2023-8811', due: 'Quá hạn 12 ngày', battery: '82%', smartlock: 'SL-7020 [KHOÁ TẠM]', lastAccess: '12 ngày trước 18:00' },
-  { id: 'B-121', floorLevel: 'Floor 1', size: '20.0 m²', type: 'High Ceiling Bulk', status: 'Rented', color: 'blue', tenant: 'Cửa Hàng Thể Thao ProSport', contract: 'HD-2024-7700', due: '20/09/2025', battery: '94%', smartlock: 'SL-7021', lastAccess: 'Hôm qua 17:15' },
-  // Zone C (Floor 2 - Climate Controlled Cold)
-  { id: 'C-201', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Available', color: 'emerald', tenant: 'Chưa có khách', contract: 'Trống', due: '--', battery: '99%', smartlock: 'SL-C201', lastAccess: 'Chưa ghi nhận' },
-  { id: 'C-202', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Available', color: 'emerald', tenant: 'Chưa có khách', contract: 'Trống', due: '--', battery: '98%', smartlock: 'SL-C202', lastAccess: 'Chưa ghi nhận' },
-  { id: 'C-203', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Rented', color: 'blue', tenant: 'Hầm Rượu Bordeaux Wine Club', contract: 'HD-2025-1088', due: '15/12/2026', battery: '95%', smartlock: 'SL-C203', lastAccess: 'Hôm nay 11:20' },
-  { id: 'C-204', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Rented', color: 'blue', tenant: 'Công ty Mỹ Phẩm Nature Skin', contract: 'HD-2025-2234', due: '20/11/2026', battery: '92%', smartlock: 'SL-C204', lastAccess: 'Hôm qua 14:00' },
-  { id: 'C-205', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Rented', color: 'blue', tenant: 'Xưởng Đồ Da Thủ Công Hermes', contract: 'HD-2024-7719', due: '05/10/2026', battery: '94%', smartlock: 'SL-C205', lastAccess: '3 ngày trước' },
-  { id: 'C-206', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Maintenance', color: 'red', tenant: 'BẢO TRÌ BƠM LẠNH CHILLER #2', contract: 'TICKET-CH-102', due: 'Dự kiến 18:00', battery: 'Cắt nguồn', smartlock: 'SL-C206 [BẢO TRÌ]', lastAccess: 'Kỹ thuật HVAC' },
-  { id: 'C-207', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Rented', color: 'blue', tenant: 'Dược Phẩm Sinh Học Meditech', contract: 'HD-2024-9988', due: '25/09/2026', battery: '97%', smartlock: 'SL-C207', lastAccess: 'Hôm nay 08:45' },
-  { id: 'C-208', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Available', color: 'emerald', tenant: 'Chưa có khách', contract: 'Trống', due: '--', battery: '96%', smartlock: 'SL-C208', lastAccess: 'Chưa ghi nhận' },
-  { id: 'C-209', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Pending', color: 'amber', tenant: 'Công ty Tranh Nghệ Thuật Canvas', contract: 'HD-2026-0012', due: 'Hẹn check-in 15:30', battery: '100%', smartlock: 'SL-C209', lastAccess: 'Chờ giao' },
-  { id: 'C-210', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Rented', color: 'blue', tenant: 'Bộ Sưu Tập Đồng Hồ Luxury Vintage', contract: 'HD-2024-5501', due: '14/10/2026', battery: '93%', smartlock: 'SL-C210', lastAccess: 'Hôm qua 16:30' },
-  { id: 'C-211', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Rented', color: 'blue', tenant: 'Kho Thiết Bị Ống Kính Máy Ảnh Cine', contract: 'HD-2025-4490', due: '30/11/2026', battery: '91%', smartlock: 'SL-C211', lastAccess: 'Hôm nay 10:15' },
-  { id: 'C-212', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Available', color: 'emerald', tenant: 'Chưa có khách', contract: 'Trống', due: '--', battery: '97%', smartlock: 'SL-C212', lastAccess: 'Chưa ghi nhận' },
-  { id: 'C-213', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Rented', color: 'blue', tenant: 'Kho Dược Phẩm Thảo Dược Đông Y', contract: 'HD-2024-3321', due: '12/12/2026', battery: '96%', smartlock: 'SL-C213', lastAccess: '4 ngày trước' },
-  { id: 'C-214', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Rented', color: 'blue', tenant: 'Kho Linh Kiện Vi Điện Tử Bán Dẫn', contract: 'HD-2024-8844', due: '01/01/2027', battery: '98%', smartlock: 'SL-C214', lastAccess: 'Hôm nay 07:50' },
-  { id: 'C-215', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Rented', color: 'blue', tenant: 'Studio Thu Âm Âm Thanh Analog', contract: 'HD-2024-1199', due: '18/08/2026', battery: '89%', smartlock: 'SL-C215', lastAccess: '5 ngày trước' },
-  { id: 'C-216', floorLevel: 'Floor 2', size: '12.0 m²', type: 'Climate Cold (18°C-22°C)', status: 'Available', color: 'emerald', tenant: 'Chưa có khách', contract: 'Trống', due: '--', battery: '99%', smartlock: 'SL-C216', lastAccess: 'Chưa ghi nhận' },
-]
-
 export const ManagerDashboard: React.FC = () => {
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>('')
-  const [units, setUnits] = useState<InspectedUnit[]>(INITIAL_UNITS)
+  const [units, setUnits] = useState<InspectedUnit[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [selectedFloor, setSelectedFloor] = useState<'floor1' | 'floor2'>('floor1')
   const [sizeFilter, setSizeFilter] = useState<'all' | 's' | 'm' | 'l'>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'Available' | 'Rented' | 'Pending' | 'Overdue' | 'Maintenance'>('all')
   const [showHeatmap, setShowHeatmap] = useState<boolean>(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedUnit, setSelectedUnit] = useState<InspectedUnit>(INITIAL_UNITS[0])
+  const [selectedUnit, setSelectedUnit] = useState<InspectedUnit | null>(null)
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null)
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean
@@ -199,15 +145,14 @@ export const ManagerDashboard: React.FC = () => {
           }
         })
         setUnits(mapped)
-        setSelectedUnit(prev => mapped.find(u => u.id === prev?.id) || mapped[0])
+        setSelectedUnit(prev => (prev?.id ? mapped.find(u => u.id === prev.id) : undefined) || mapped[0] || null)
       } else {
-        setUnits(INITIAL_UNITS)
-        setSelectedUnit(INITIAL_UNITS[0])
+        setUnits([])
+        setSelectedUnit(null)
       }
     } catch {
-      // Keep INITIAL_UNITS fallback on network or offline state
-      setUnits(INITIAL_UNITS)
-      setSelectedUnit(INITIAL_UNITS[0])
+      setUnits([])
+      setSelectedUnit(null)
     } finally {
       setIsLoading(false)
     }
@@ -245,21 +190,31 @@ export const ManagerDashboard: React.FC = () => {
           }
           return u
         }))
-        setSelectedUnit(prev => ({
-          ...prev,
-          status: nextStatus,
-          rawStatus: updated.status,
-          color: nextColor,
-          tenant: isNowMaint ? 'ĐANG BẢO TRÌ SỬA CHỮA' : 'Chưa có khách',
-          contract: isNowMaint ? 'TICKET-MAINTENANCE' : 'Trống',
-          due: isNowMaint ? 'Dự kiến hôm nay' : '--'
-        }))
+        setSelectedUnit(prev => {
+          if (!prev) return null
+          return {
+            ...prev,
+            status: nextStatus,
+            rawStatus: updated.status,
+            color: nextColor,
+            tenant: isNowMaint ? 'ĐANG BẢO TRÌ SỬA CHỮA' : 'Chưa có khách',
+            contract: isNowMaint ? 'TICKET-MAINTENANCE' : 'Trống',
+            due: isNowMaint ? 'Dự kiến hôm nay' : '--'
+          }
+        })
 
         triggerAction(`Đã cập nhật trạng thái kho #${selectedUnit.id} thành ${isNowMaint ? 'Bảo trì' : 'Sẵn sàng'} qua StorageUnit API!`)
       } else {
         const nextStatus = selectedUnit.status === 'Maintenance' ? 'Available' : 'Maintenance'
         setUnits(prev => prev.map(u => u.id === selectedUnit.id ? { ...u, status: nextStatus, color: nextStatus === 'Maintenance' ? 'red' : 'emerald' } : u))
-        setSelectedUnit(prev => ({ ...prev, status: nextStatus, color: nextStatus === 'Maintenance' ? 'red' : 'emerald' }))
+        setSelectedUnit(prev => {
+          if (!prev) return null
+          return {
+            ...prev,
+            status: nextStatus,
+            color: nextStatus === 'Maintenance' ? 'red' : 'emerald'
+          }
+        })
         triggerAction(`Đã chuyển đổi trạng thái bảo trì cho kho #${selectedUnit.id}`)
       }
     } catch (err: any) {
@@ -289,11 +244,20 @@ export const ManagerDashboard: React.FC = () => {
   })
 
   // Floor splitting
-  const floor1Units = filteredUnits.filter(u => u.floorLevel === 'Floor 1' || (!u.floorLevel?.includes('2') && !u.id.startsWith('C-')))
-  const floor2Units = filteredUnits.filter(u => u.floorLevel === 'Floor 2' || u.id.startsWith('C-'))
+  const isFloor1 = (u: InspectedUnit) => {
+    const fl = (u.floorLevel || '').toLowerCase()
+    return fl.includes('1') || fl.includes('ground') || /^[A-Z]-1\d\d/.test(u.id)
+  }
+  const isFloor2 = (u: InspectedUnit) => {
+    const fl = (u.floorLevel || '').toLowerCase()
+    return fl.includes('2') || fl.includes('3') || /^[A-Z]-[23]\d\d/.test(u.id)
+  }
 
-  const zoneAUnits = floor1Units.filter(u => u.id.startsWith('A-'))
-  const zoneBUnits = floor1Units.filter(u => u.id.startsWith('B-') || (!u.id.startsWith('A-') && !u.id.startsWith('C-')))
+  const floor1Units = filteredUnits.filter(isFloor1)
+  const floor2Units = filteredUnits.filter(u => isFloor2(u) || !isFloor1(u))
+
+  const zoneAUnits = floor1Units.filter((_, idx) => idx < Math.ceil(floor1Units.length / 2))
+  const zoneBUnits = floor1Units.filter((_, idx) => idx >= Math.ceil(floor1Units.length / 2))
   const zoneCUnits = floor2Units
 
   // Dynamic KPI counts
@@ -950,6 +914,7 @@ export const ManagerDashboard: React.FC = () => {
         </div>
 
         {/* RIGHT: CONTEXTUAL INSPECTION SLIDE-DRAWER PANEL (xl:col-span-4) */}
+        {selectedUnit ? (
         <div className="xl:col-span-4 flex flex-col gap-4 bg-white p-6 rounded-xl shadow-xs border border-slate-200 sticky top-20 max-h-[calc(100vh-5.5rem)] overflow-y-auto">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100">
             <div className="flex items-center gap-3">
@@ -1086,6 +1051,15 @@ export const ManagerDashboard: React.FC = () => {
             </div>
           </div>
         </div>
+        ) : (
+          <div className="xl:col-span-4 flex flex-col items-center justify-center p-10 bg-white rounded-xl shadow-xs border border-slate-200 sticky top-20 text-center min-h-[360px]">
+            <span className="material-symbols-outlined text-slate-300 text-[48px] mb-2">grid_view</span>
+            <h3 className="text-sm font-bold text-slate-700">Chọn một kho từ sơ đồ</h3>
+            <p className="text-xs text-slate-400 mt-1 max-w-xs leading-relaxed">
+              Bấm vào bất kỳ ô kho nào trong sơ đồ để xem thông số kỹ thuật, tình trạng pin SmartLock và trạng thái hợp đồng.
+            </p>
+          </div>
+        )}
       </section>
 
       {/* BOTTOM SECTION: OVERDUE HANDLING & STAFF WORKFORCE ALLOCATION */}
@@ -1405,20 +1379,24 @@ export const ManagerDashboard: React.FC = () => {
       />
 
       {/* 3. APP ACTIVATION & KEY HANDOVER MODAL */}
-      <AppActivationModal
-        isOpen={showAppActivationModal}
-        onClose={() => setShowAppActivationModal(false)}
-        mode={selectedUnit.status === 'Rented' ? 'REISSUE' : 'HANDOVER'}
-        unit={selectedUnit}
-        onCompleteActivation={(msg) => triggerAction(msg)}
-      />
+      {showAppActivationModal && selectedUnit && (
+        <AppActivationModal
+          isOpen={showAppActivationModal}
+          onClose={() => setShowAppActivationModal(false)}
+          mode={selectedUnit.status === 'Rented' ? 'REISSUE' : 'HANDOVER'}
+          unit={selectedUnit}
+          onCompleteActivation={(msg) => triggerAction(msg)}
+        />
+      )}
 
       {/* 4. DOOR ACCESS HISTORY & AUDIT LOG MODAL */}
-      <DoorAccessHistoryModal
-        isOpen={showDoorAccessModal}
-        onClose={() => setShowDoorAccessModal(false)}
-        unit={selectedUnit}
-      />
+      {showDoorAccessModal && selectedUnit && (
+        <DoorAccessHistoryModal
+          isOpen={showDoorAccessModal}
+          onClose={() => setShowDoorAccessModal(false)}
+          unit={selectedUnit}
+        />
+      )}
 
       {/* 5. WORKFORCE SHIFT ASSIGNMENT MODAL */}
       <ShiftAssignmentModal

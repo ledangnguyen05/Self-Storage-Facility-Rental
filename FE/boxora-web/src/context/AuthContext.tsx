@@ -162,11 +162,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               name: rawUser.roleName as RoleType,
               description: rawUser.roleName
             } : (jwtRole ? { name: jwtRole } : undefined)),
-            roleName: rawUser?.roleName || rawUser?.role?.name || jwtRole || undefined,
-            roleId: rawUser?.roleId || rawUser?.role?.id,
-            facilityId: rawUser?.facilityId,
-            facilityName: rawUser?.facilityName,
-            facilityCode: rawUser?.facilityCode
+            roleName: (rawUser?.roleName || rawUser?.role?.name || jwtRole || undefined) as (RoleType | string | undefined),
+            roleId: rawUser?.roleId || rawUser?.role?.id || undefined,
+            facilityId: rawUser?.facilityId || undefined,
+            facilityName: rawUser?.facilityName || undefined,
+            facilityCode: rawUser?.facilityCode || undefined
           }
           localStorage.setItem('boxora_access_token', accessToken)
           localStorage.setItem('boxora_refresh_token', refreshToken)

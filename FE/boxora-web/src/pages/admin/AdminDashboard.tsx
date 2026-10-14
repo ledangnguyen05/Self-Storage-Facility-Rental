@@ -163,19 +163,18 @@ export const AdminDashboard: React.FC = () => {
     try {
       const rRes = await roleService.getAll({ size: 50 })
       const pRes = await permissionService.getAll({ size: 100 })
-      setIsSampleRoleData(!(rRes?.content?.length && pRes?.content?.length))
-      const loadedRoles = rRes?.content && rRes.content.length > 0 ? rRes.content : fallbackRoles
-      const loadedPerms = pRes?.content && pRes.content.length > 0 ? pRes.content : fallbackPermissions
+      const loadedRoles = rRes?.content || []
+      const loadedPerms = pRes?.content || []
+      setIsSampleRoleData(false)
       setRoles(loadedRoles)
       setPermissions(loadedPerms)
       if (loadedRoles.length > 0) {
         void selectRole(loadedRoles[0], loadedPerms)
       }
     } catch {
-      setIsSampleRoleData(true)
-      setRoles(fallbackRoles)
-      setPermissions(fallbackPermissions)
-      void selectRole(fallbackRoles[0], fallbackPermissions)
+      setIsSampleRoleData(false)
+      setRoles([])
+      setPermissions([])
     }
   }
 

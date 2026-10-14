@@ -75,11 +75,14 @@ export const CustomerDashboard: React.FC = () => {
 
   const activeContracts = contracts.filter(c => c.status === 'ACTIVE')
 
+  // Support Ticket Form State
+  const [ticketUnit, setTicketUnit] = useState('')
+
   useEffect(() => {
-    if (activeContracts.length > 0 && (!ticketUnit || ticketUnit === 'A-108')) {
+    if (activeContracts.length > 0 && !ticketUnit) {
       setTicketUnit(activeContracts[0].unitCode)
     }
-  }, [activeContracts])
+  }, [activeContracts, ticketUnit])
   const nearestEndDate = activeContracts
     .map(c => c.endDate)
     .filter(Boolean)
@@ -163,7 +166,6 @@ export const CustomerDashboard: React.FC = () => {
   const [shareSuccess, setShareSuccess] = useState(false)
 
   // Support Ticket Form State
-  const [ticketUnit, setTicketUnit] = useState('A-108')
   const [ticketType, setTicketType] = useState('lock')
   const [ticketContent, setTicketContent] = useState('')
   const [ticketSubmitted, setTicketSubmitted] = useState(false)
