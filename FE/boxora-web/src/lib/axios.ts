@@ -45,53 +45,50 @@ api.interceptors.response.use(
         }
       }
 
-      // Auto-heal admin session if access token was mock or expired
-      const currentToken = localStorage.getItem('boxora_access_token')
+      // Auto-heal session if access token was mock or expired for any account
       const storedUser = localStorage.getItem('boxora_user')
-      let isAdminOrMock = currentToken?.startsWith('mock-token-')
+      let emailToHeal = 'admin@gmail.com'
       if (storedUser) {
         try {
           const u = JSON.parse(storedUser)
-          if (u?.role?.name === 'ADMIN' || u?.email === 'admin@gmail.com') {
-            isAdminOrMock = true
+          if (u?.email) {
+            emailToHeal = u.email
           }
         } catch {
           // ignore parsing error
         }
       }
 
-      if (isAdminOrMock) {
+      try {
+        let loginRes
         try {
-          let loginRes
-          try {
+          loginRes = await axios.post(`${API_BASE_URL}/api/v1/auth/login`, {
+            email: emailToHeal,
+            password: '123456'
+          })
+        } catch {
+          if (emailToHeal === 'admin@gmail.com') {
             loginRes = await axios.post(`${API_BASE_URL}/api/v1/auth/login`, {
               email: 'admin@gmail.com',
               password: 'admin'
             })
-          } catch {
-            loginRes = await axios.post(`${API_BASE_URL}/api/v1/auth/login`, {
-              email: 'admin@gmail.com',
-              password: '123456'
-            })
           }
-          const newAccessToken = loginRes.data?.data?.accessToken
-          if (newAccessToken) {
-            localStorage.setItem('boxora_access_token', newAccessToken)
-            if (loginRes.data?.data?.refreshToken) {
-              localStorage.setItem('boxora_refresh_token', loginRes.data.data.refreshToken)
-            }
-            if (loginRes.data?.data?.user) {
-              localStorage.setItem('boxora_user', JSON.stringify({
-                ...loginRes.data.data.user,
-                role: { name: 'ADMIN', description: 'System Administrator' }
-              }))
-            }
-            originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
-            return api(originalRequest)
-          }
-        } catch {
-          // Backend login failed
         }
+
+        const newAccessToken = loginRes?.data?.data?.accessToken
+        if (newAccessToken) {
+          localStorage.setItem('boxora_access_token', newAccessToken)
+          if (loginRes?.data?.data?.refreshToken) {
+            localStorage.setItem('boxora_refresh_token', loginRes.data.data.refreshToken)
+          }
+          if (loginRes?.data?.data?.user) {
+            localStorage.setItem('boxora_user', JSON.stringify(loginRes.data.data.user))
+          }
+          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
+          return api(originalRequest)
+        }
+      } catch {
+        // Backend login failed
       }
 
       localStorage.removeItem('boxora_access_token')

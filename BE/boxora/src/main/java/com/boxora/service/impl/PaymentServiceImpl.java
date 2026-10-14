@@ -22,7 +22,10 @@ import com.boxora.service.ActivityLogService;
 import com.boxora.service.ContractRenewalService;
 import com.boxora.service.PaymentService;
 import com.boxora.service.VNPayService;
+import com.boxora.entity.StorageUnit;
 import com.boxora.util.VNPayUtil;
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -424,8 +427,32 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<PaymentResponse> getMyPayments() {
+        UUID currentUserId = requestContext.currentUserId();
+        if (currentUserId == null) {
+            return List.of();
+        }
+
+        Specification<Payment> spec = (root, query, cb) -> {
+            query.orderBy(cb.desc(cb.coalesce(root.get("paymentTime"), root.get("createdAt"))));
+            Join<Payment, Booking> bookingJoin = root.join("booking", JoinType.LEFT);
+            Join<Payment, RentalContract> contractJoin = root.join("contract", JoinType.LEFT);
+
+            return cb.or(
+                    cb.equal(bookingJoin.get("customer").get("id"), currentUserId),
+                    cb.equal(contractJoin.get("customer").get("id"), currentUserId)
+            );
+        };
+
+        return paymentRepository.findAll(spec).stream().map(paymentMapper::toResponse).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public PageResponse<PaymentResponse> getAll(
             UUID bookingId,
+            UUID facilityId,
+            UUID customerId,
             PaymentStatus status,
             PaymentType paymentType,
             LocalDateTime fromDate,
@@ -438,15 +465,37 @@ public class PaymentServiceImpl implements PaymentService {
         Sort sort = sortDir.equalsIgnoreCase("asc") ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
 
-        UUID scopedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+        UUID scopedFacilityId = facilityId;
+        if (facilityAccessGuard.isFacilityScoped()) {
+            scopedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+        }
+
+        UUID effectiveCustomerId = customerId;
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            effectiveCustomerId = requestContext.currentUserId();
+        }
+
+        final UUID queryFacilityId = scopedFacilityId;
+        final UUID queryCustomerId = effectiveCustomerId;
 
         Specification<Payment> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
-            if (scopedFacilityId != null) {
+            Join<Payment, Booking> bookingJoin = root.join("booking", JoinType.LEFT);
+            Join<Booking, StorageUnit> suJoin = bookingJoin.join("storageUnit", JoinType.LEFT);
+            Join<Payment, RentalContract> contractJoin = root.join("contract", JoinType.LEFT);
+
+            if (queryFacilityId != null) {
                 predicates.add(cb.or(
-                        cb.equal(root.get("booking").get("facility").get("id"), scopedFacilityId),
-                        cb.equal(root.get("contract").get("facility").get("id"), scopedFacilityId)
+                        cb.equal(suJoin.get("facility").get("id"), queryFacilityId),
+                        cb.equal(contractJoin.get("facility").get("id"), queryFacilityId)
+                ));
+            }
+
+            if (queryCustomerId != null) {
+                predicates.add(cb.or(
+                        cb.equal(bookingJoin.get("customer").get("id"), queryCustomerId),
+                        cb.equal(contractJoin.get("customer").get("id"), queryCustomerId)
                 ));
             }
 

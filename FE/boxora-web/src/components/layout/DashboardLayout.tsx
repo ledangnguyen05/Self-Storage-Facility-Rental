@@ -6,6 +6,7 @@ import { facilityService } from '../../services/facilityService'
 import { BrandLogo } from '../common/BrandLogo'
 import { AccountProfileModal } from '../common/AccountProfileModal'
 import { FacilityScopingModal } from '../modals/FacilityScopingModal'
+import { LogoutConfirmModal } from '../modals/LogoutConfirmModal'
 import NotificationCenter from './NotificationCenter'
 
 export const DashboardLayout: React.FC = () => {
@@ -17,6 +18,7 @@ export const DashboardLayout: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
   const [isScopingModalOpen, setIsScopingModalOpen] = useState(false)
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false)
   const isCurrentPath = (path: string) => location.pathname === path
   const isFacilityManagerPage = location.pathname.includes('/facility-manager')
 
@@ -162,9 +164,11 @@ export const DashboardLayout: React.FC = () => {
                   <span className="material-symbols-outlined text-[18px]">edit</span>
                 </button>
                 <button
-                  onClick={() => logout().then(() => navigate('/login'))}
-                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  type="button"
+                  onClick={() => setIsLogoutModalOpen(true)}
+                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                   title="Đăng xuất khỏi phiên làm việc"
+                  aria-label="Đăng xuất"
                 >
                   <span className="material-symbols-outlined text-[18px]">logout</span>
                 </button>
@@ -516,6 +520,14 @@ export const DashboardLayout: React.FC = () => {
         }}
         onSave={(data) => {
           setSelectedFacility(data.facilityId)
+        }}
+      />
+      <LogoutConfirmModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={async () => {
+          await logout()
+          navigate('/login')
         }}
       />
     </div>

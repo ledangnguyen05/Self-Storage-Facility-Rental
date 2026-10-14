@@ -176,8 +176,9 @@ public class HandoverServiceImpl implements HandoverService {
         // Điều kiện 1: Đủ tiền cọc (Full deposit)
         BigDecimal requiredDeposit = getRequiredDeposit(booking, unit);
         BigDecimal depositPaid = calculateTotalDepositPaid(booking);
-        boolean depositSatisfied = depositPaid.compareTo(BigDecimal.ZERO) > 0
-                && depositPaid.compareTo(requiredDeposit) >= 0;
+        boolean depositSatisfied = (depositPaid.compareTo(BigDecimal.ZERO) > 0
+                && depositPaid.compareTo(requiredDeposit) >= 0)
+                || (request.getDepositSettled() != null && request.getDepositSettled().compareTo(requiredDeposit) >= 0);
         if (!depositSatisfied) {
             missingPrerequisites.add("Chưa thanh toán đủ tiền cọc");
         }

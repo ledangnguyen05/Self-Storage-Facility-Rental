@@ -137,13 +137,7 @@ public class BookingServiceImpl implements BookingService {
         String code = "BX-" + (2025 + new Random().nextInt(2)) + "-" + String.format("%04d", new Random().nextInt(10000));
         UUID bookingId = UUID.randomUUID();
 
-        // 8. Thực hiện Soft-lock 24 giờ trên Redis cho ngăn kho
-        boolean lockAcquired = storageUnitLockService.tryLockUnit(unit.getId(), bookingId, softLockHours);
-        if (!lockAcquired) {
-            throw new AppException(ErrorCode.STORAGE_UNIT_SOFT_LOCKED);
-        }
-
-        // 9. Khởi tạo Booking ở trạng thái PENDING_PAYMENT (chưa cấp PIN/QR)
+        // 8. Khởi tạo Booking ở trạng thái PENDING_PAYMENT (chưa cấp PIN/QR)
         Booking booking = Booking.builder()
                 .bookingCode(code)
                 .customer(customer)
@@ -152,20 +146,22 @@ public class BookingServiceImpl implements BookingService {
                 .endDate(endDate)
                 .rentalMonths(months)
                 .totalRentalFee(totalFee)
-                .depositPaid(BigDecimal.ZERO) // Tiền cọc thực tế đã đóng = 0 cho tới khi thanh toán
+                .depositPaid(request.getDepositPaid() != null ? request.getDepositPaid() : BigDecimal.ZERO)
                 .depositAmount(deposit)
                 .paymentExpiresAt(Instant.now().plusSeconds(24 * 60 * 60))
                 .status(BookingStatus.PENDING_PAYMENT)
                 .accessPin(null) // Chưa cấp PIN trước khi thanh toán
                 .qrAccessToken(null) // Chưa cấp QR trước khi thanh toán
                 .build();
-        booking.setId(bookingId);
 
-        // 10. Chuyển ngăn kho sang RESERVED để giữ chỗ mềm
+        // 9. Chuyển ngăn kho sang RESERVED để giữ chỗ mềm
         unit.setStatus(UnitStatus.RESERVED);
         storageUnitRepository.save(unit);
 
         booking = bookingRepository.save(booking);
+
+        // 10. Thực hiện Soft-lock 24 giờ trên Redis cho ngăn kho
+        storageUnitLockService.tryLockUnit(unit.getId(), booking.getId(), softLockHours);
 
         // 11. Ghi Activity Log
         UUID facilityId = (unit.getFacility() != null) ? unit.getFacility().getId() : null;
@@ -181,6 +177,34 @@ public class BookingServiceImpl implements BookingService {
         );
 
         return mapToResponse(booking);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<BookingResponse> getMyBookings(UUID customerId) {
+        UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
+        if (currentUserId != null && customerId != null && !currentUserId.equals(customerId)) {
+            String role = requestContext.currentUserRole();
+            if (!"ADMIN".equalsIgnoreCase(role) && !"FACILITY_MANAGER".equalsIgnoreCase(role) && !"STAFF".equalsIgnoreCase(role)) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        }
+        UUID targetCustomerId = customerId != null ? customerId : currentUserId;
+        List<Booking> bookings;
+        if (targetCustomerId != null) {
+            bookings = bookingRepository.findByCustomer_Id(targetCustomerId);
+        } else {
+            bookings = bookingRepository.findAll();
+        }
+        return bookings.stream()
+                .sorted((b1, b2) -> {
+                    if (b1.getCreatedAt() != null && b2.getCreatedAt() != null) {
+                        return b2.getCreatedAt().compareTo(b1.getCreatedAt());
+                    }
+                    return 0;
+                })
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -201,7 +225,7 @@ public class BookingServiceImpl implements BookingService {
             bookings = bookingRepository.findAll();
         }
         return bookings.stream()
-                .filter(b -> b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.ACTIVE)
+                .filter(b -> b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.ACTIVE || b.getStatus() == BookingStatus.PENDING_PAYMENT)
                 .map(b -> {
                     BookingResponse resp = mapToResponse(b);
                     resp.setAccessPin(null);

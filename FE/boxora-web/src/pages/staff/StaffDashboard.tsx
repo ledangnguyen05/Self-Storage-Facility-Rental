@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { bookingService } from '../../services/bookingService'
@@ -8,6 +8,7 @@ import { masterKeyService } from '../../services/masterKeyService'
 import { supportTicketService } from '../../services/supportTicketService'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
+import { paymentService, PaymentItem } from '../../services/paymentService'
 import { Booking, OccupancyReport, StorageUnit, Facility } from '../../types'
 import { HandoverCheckInWorkbench } from './components/HandoverCheckInWorkbench'
 import { QrCameraCheckInModal } from './components/QrCameraCheckInModal'
@@ -67,6 +68,10 @@ export const StaffDashboard: React.FC = () => {
     status: string
   }>>([])
 
+  // Live Shift Revenue & Cashier Payments from DB
+  const [shiftPayments, setShiftPayments] = useState<PaymentItem[]>([])
+  const [isShiftPaymentsLoading, setIsShiftPaymentsLoading] = useState(false)
+
   useEffect(() => {
     const targetFacility = (!selectedFacility || selectedFacility === 'ALL') ? undefined : selectedFacility
     fetchArrivals(targetFacility)
@@ -75,7 +80,24 @@ export const StaffDashboard: React.FC = () => {
     loadTicketQueue()
     loadActiveRentals(targetFacility)
     loadRadarUnits(targetFacility)
+    loadShiftPayments(targetFacility)
   }, [selectedFacility])
+
+  const loadShiftPayments = async (facilityId?: string) => {
+    setIsShiftPaymentsLoading(true)
+    try {
+      const res = await paymentService.getPayments({ size: 20, facilityId: facilityId || undefined })
+      if (Array.isArray(res)) {
+        setShiftPayments(res)
+      } else {
+        setShiftPayments([])
+      }
+    } catch {
+      setShiftPayments([])
+    } finally {
+      setIsShiftPaymentsLoading(false)
+    }
+  }
 
   const loadRadarUnits = async (facilityId?: string) => {
     try {
@@ -270,6 +292,51 @@ export const StaffDashboard: React.FC = () => {
 
   const currentReturnBooking = activeRentals.find(r => r.id === (selectedReturnBookingId || activeRentals[0]?.id)) || activeRentals[0]
   const returnDepositAmt = currentReturnBooking ? (currentReturnBooking.depositPaid || currentReturnBooking.depositAmount || 0) : 0
+
+  // Live shift revenue calculations from DB
+  const shiftTotalCollected = useMemo(() => {
+    return shiftPayments.filter(p => p.status === 'SUCCESS').reduce((sum, p) => sum + (p.amount || 0), 0)
+  }, [shiftPayments])
+
+  const shiftRentalRevenue = useMemo(() => {
+    return shiftPayments
+      .filter(p => p.status === 'SUCCESS' && (!p.paymentType || p.paymentType === 'RENTAL' || p.paymentType === 'CONTRACT' || p.paymentType === 'EXTEND'))
+      .reduce((sum, p) => sum + (p.amount || 0), 0)
+  }, [shiftPayments])
+
+  const shiftDepositRevenue = useMemo(() => {
+    return shiftPayments
+      .filter(p => p.status === 'SUCCESS' && p.paymentType === 'DEPOSIT')
+      .reduce((sum, p) => sum + (p.amount || 0), 0)
+  }, [shiftPayments])
+
+  const handleExportShiftLedgerCsv = () => {
+    if (!shiftPayments || shiftPayments.length === 0) {
+      alert('Không có dữ liệu giao dịch để xuất sổ thu ngân.')
+      return
+    }
+    const headers = ['Mã GD', 'Khách hàng', 'Mã Kho', 'Cơ sở', 'Số tiền (VNĐ)', 'Phương thức', 'Loại thanh toán', 'Thời gian', 'Trạng thái']
+    const rows = shiftPayments.map(p => [
+      p.id,
+      p.customerName || 'N/A',
+      p.unitCode || 'N/A',
+      p.facilityName || 'Boxora',
+      p.amount,
+      p.paymentMethod || 'VNPay',
+      p.paymentType || 'RENTAL',
+      p.paymentTime ? new Date(p.paymentTime).toLocaleString('vi-VN') : '',
+      p.status
+    ])
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', `So_Thu_Ngan_Ca_Truc_${new Date().toISOString().slice(0, 10)}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
 
   return (
     <div className="flex flex-col gap-6 text-left max-w-7xl mx-auto">
@@ -798,6 +865,202 @@ export const StaffDashboard: React.FC = () => {
           </div>
         </div>
 
+      </div>
+
+      {/* LIVE SHIFT REVENUE & CASHIER JOURNAL (REAL DB DATA) */}
+      <div className="w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col gap-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+              <span className="material-symbols-outlined text-[20px]">point_of_sale</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-headline text-base font-bold text-slate-900">
+                  Báo Cáo Thu Ngân &amp; Dòng Tiền Ca Trực
+                </h2>
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  {selectedFacility && selectedFacility !== 'ALL'
+                    ? facilities.find(f => f.id === selectedFacility)?.name || 'Cơ sở hiện tại'
+                    : 'Toàn hệ thống'}
+                </span>
+              </div>
+              <span className="text-xs text-slate-500">
+                Sổ cái đối soát giao dịch thực thu tại quầy và cổng trực tuyến VNPay kết nối trực tiếp database
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExportShiftLedgerCsv}
+              className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-colors border border-slate-200 cursor-pointer shadow-2xs"
+            >
+              <span className="material-symbols-outlined text-[16px]">download</span>
+              <span>Xuất Sổ Thu Ngân (CSV)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 4 Shift Financial Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
+            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
+              <span>Tổng thu ngân thực nhận</span>
+              <span className="material-symbols-outlined text-[18px] text-emerald-600">payments</span>
+            </div>
+            <div className="mt-3">
+              <div className="text-xl font-bold text-slate-900 font-mono">
+                {isShiftPaymentsLoading ? (
+                  <span className="inline-block w-20 h-6 bg-slate-200 animate-pulse rounded"></span>
+                ) : (
+                  `${shiftTotalCollected.toLocaleString('vi-VN')} ₫`
+                )}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1">
+                <span className="font-semibold text-emerald-600">
+                  {shiftPayments.filter(p => p.status === 'SUCCESS').length}
+                </span> giao dịch hợp lệ
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
+            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
+              <span>Thu tiền thuê kho &amp; gia hạn</span>
+              <span className="material-symbols-outlined text-[18px] text-blue-600">receipt</span>
+            </div>
+            <div className="mt-3">
+              <div className="text-xl font-bold text-blue-900 font-mono">
+                {isShiftPaymentsLoading ? (
+                  <span className="inline-block w-20 h-6 bg-slate-200 animate-pulse rounded"></span>
+                ) : (
+                  `${shiftRentalRevenue.toLocaleString('vi-VN')} ₫`
+                )}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1">
+                Phí dịch vụ lưu trữ định kỳ
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
+            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
+              <span>Thu tiền cọc nhận kho (Ký quỹ)</span>
+              <span className="material-symbols-outlined text-[18px] text-amber-600">savings</span>
+            </div>
+            <div className="mt-3">
+              <div className="text-xl font-bold text-amber-900 font-mono">
+                {isShiftPaymentsLoading ? (
+                  <span className="inline-block w-20 h-6 bg-slate-200 animate-pulse rounded"></span>
+                ) : (
+                  `${shiftDepositRevenue.toLocaleString('vi-VN')} ₫`
+                )}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1">
+                Cọc giữ kho &amp; bảo chứng tài sản
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
+            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
+              <span>Tỷ lệ khớp lệnh ca trực</span>
+              <span className="material-symbols-outlined text-[18px] text-slate-600">check_circle</span>
+            </div>
+            <div className="mt-3">
+              <div className="text-xl font-bold text-slate-900 font-mono">
+                {shiftPayments.length > 0
+                  ? `${Math.round((shiftPayments.filter(p => p.status === 'SUCCESS').length / shiftPayments.length) * 100)}%`
+                  : '100%'}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1">
+                Khớp lệnh thanh toán thành công
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Real Payments Shift Ledger Table */}
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                <th className="py-2.5 px-3">Mã GD / Giờ nhận</th>
+                <th className="py-2.5 px-3">Khách hàng</th>
+                <th className="py-2.5 px-3">Mã Kho</th>
+                <th className="py-2.5 px-3">Loại thanh toán</th>
+                <th className="py-2.5 px-3">Phương thức</th>
+                <th className="py-2.5 px-3 text-right">Số tiền</th>
+                <th className="py-2.5 px-3 text-center">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {isShiftPaymentsLoading ? (
+                <tr>
+                  <td colSpan={7} className="py-6 text-center text-slate-400">
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+                      <span>Đang nạp dữ liệu thu ngân trực tiếp từ database...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : shiftPayments.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-6 text-center text-slate-400">
+                    Chưa ghi nhận giao dịch thu ngân nào phát sinh tại cơ sở trong ca trực này.
+                  </td>
+                </tr>
+              ) : (
+                shiftPayments.map((p) => (
+                  <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="py-3 px-3">
+                      <div className="font-mono font-medium text-slate-900">{p.id.slice(0, 8)}...</div>
+                      <div className="text-[11px] text-slate-400">
+                        {p.paymentTime ? new Date(p.paymentTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
+                      </div>
+                    </td>
+                    <td className="py-3 px-3 font-medium text-slate-800">
+                      {p.customerName || 'Khách hàng Boxora'}
+                    </td>
+                    <td className="py-3 px-3">
+                      <span className="font-mono font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
+                        {p.unitCode || 'N/A'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3">
+                      <span className={`px-2 py-0.5 rounded text-[11px] font-medium border ${
+                        p.paymentType === 'DEPOSIT'
+                          ? 'bg-amber-50 text-amber-800 border-amber-200'
+                          : 'bg-blue-50 text-blue-700 border-blue-200'
+                      }`}>
+                        {p.paymentType === 'DEPOSIT' ? 'Tiền ký quỹ (Cọc)' : 'Tiền thuê kho'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-slate-600">
+                      {p.paymentMethod || 'VNPay'}
+                    </td>
+                    <td className="py-3 px-3 text-right font-bold text-slate-900 font-mono">
+                      {p.amount.toLocaleString('vi-VN')} ₫
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        p.status === 'SUCCESS'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : p.status === 'PENDING'
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-rose-50 text-rose-700 border-rose-200'
+                      }`}>
+                        {p.status === 'SUCCESS' ? 'Thành công' : p.status === 'PENDING' ? 'Chờ xử lý' : 'Thất bại'}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Bottom Workspace: On-Site Incident & Ticket Handling Queue */}

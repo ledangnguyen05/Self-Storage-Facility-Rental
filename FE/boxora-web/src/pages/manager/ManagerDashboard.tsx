@@ -3,8 +3,9 @@ import { useOutletContext } from 'react-router-dom'
 import { storageUnitService } from '../../services/storageUnitService'
 import { facilityService } from '../../services/facilityService'
 import { reportService } from '../../services/reportService'
+import { paymentService, PaymentItem } from '../../services/paymentService'
 import { userService } from '../../services/userService'
-import { Facility, StorageUnit, OverdueDebtItem, User } from '../../types'
+import { Facility, StorageUnit, OverdueDebtItem, User, RevenueReport } from '../../types'
 import { IoTTelemetryModal } from './modals/IoTTelemetryModal'
 import { FacilitySurveyModal } from './modals/FacilitySurveyModal'
 import { AppActivationModal } from './modals/AppActivationModal'
@@ -87,6 +88,16 @@ export const ManagerDashboard: React.FC = () => {
     totalDebt: string
   } | null>(null)
 
+  // Facility Revenue Report & Cashflow State from real DB
+  const [revenueData, setRevenueData] = useState<RevenueReport | null>(null)
+  const [facilityPayments, setFacilityPayments] = useState<PaymentItem[]>([])
+  const [isRevenueLoading, setIsRevenueLoading] = useState<boolean>(true)
+  const [revFromDate, setRevFromDate] = useState<string>('')
+  const [revToDate, setRevToDate] = useState<string>('')
+  const [isRevDatePickerOpen, setIsRevDatePickerOpen] = useState<boolean>(false)
+  const [tempRevFrom, setTempRevFrom] = useState<string>('')
+  const [tempRevTo, setTempRevTo] = useState<string>('')
+
   useEffect(() => {
     if (contextFacilities && contextFacilities.length > 0) {
       setFacilities(contextFacilities)
@@ -111,21 +122,24 @@ export const ManagerDashboard: React.FC = () => {
     }
     if (targetFacility && targetFacility !== 'ALL') {
       setSelectedFacilityId(targetFacility)
-      void fetchUnits(targetFacility)
+      void fetchUnits(targetFacility, revFromDate, revToDate)
     }
   }, [selectedFacility, facilities])
 
-  const fetchUnits = async (facId?: string) => {
+  const fetchUnits = async (facId?: string, fDate = revFromDate, tDate = revToDate) => {
     setIsLoading(true)
+    setIsRevenueLoading(true)
     try {
       const targetId = (facId && facId !== 'ALL')
         ? facId
         : (selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : facilities[0]?.id)
 
-      const [unitsRes, debtRes, staffRes] = await Promise.allSettled([
+      const [unitsRes, debtRes, staffRes, revRes, payRes] = await Promise.allSettled([
         storageUnitService.getUnits(targetId ? { facilityId: targetId } : undefined),
         reportService.getOverdueDebtReport(targetId ? { facilityId: targetId } : undefined),
-        userService.getAllUsers({ role: 'STAFF', facilityId: targetId, size: 50 })
+        userService.getAllUsers({ role: 'STAFF', facilityId: targetId, size: 50 }),
+        reportService.getRevenueReport(fDate || undefined, tDate || undefined, targetId),
+        paymentService.getPayments({ size: 15, facilityId: targetId })
       ])
 
       if (unitsRes.status === 'fulfilled' && Array.isArray(unitsRes.value) && unitsRes.value.length > 0) {
@@ -187,13 +201,28 @@ export const ManagerDashboard: React.FC = () => {
       } else {
         setStaffList([])
       }
+
+      if (revRes.status === 'fulfilled' && revRes.value) {
+        setRevenueData(revRes.value)
+      } else {
+        setRevenueData(null)
+      }
+
+      if (payRes.status === 'fulfilled' && payRes.value) {
+        setFacilityPayments(payRes.value)
+      } else {
+        setFacilityPayments([])
+      }
     } catch {
       setUnits([])
       setOverdueItems([])
       setStaffList([])
       setSelectedUnit(null)
+      setRevenueData(null)
+      setFacilityPayments([])
     } finally {
       setIsLoading(false)
+      setIsRevenueLoading(false)
     }
   }
 
@@ -343,6 +372,71 @@ export const ManagerDashboard: React.FC = () => {
   }, [facilities, selectedFacilityId])
 
   const currentFacilityName = currentFacility?.name || 'Cơ sở Boxora'
+
+  // Computed revenue & cash flow values for the selected facility from real DB
+  const facilityRevenue = useMemo(() => {
+    return revenueData?.totalRevenue ?? facilityPayments.reduce((acc, p) => acc + (p.amount || 0), 0)
+  }, [revenueData, facilityPayments])
+
+  const rentalFeeRevenue = useMemo(() => {
+    return facilityPayments
+      .filter(p => !p.paymentType || p.paymentType === 'RENTAL' || p.paymentType === 'CONTRACT' || p.paymentType === 'EXTEND')
+      .reduce((sum, p) => sum + (p.amount || 0), 0)
+  }, [facilityPayments])
+
+  const depositRevenue = useMemo(() => {
+    return facilityPayments
+      .filter(p => p.paymentType === 'DEPOSIT')
+      .reduce((sum, p) => sum + (p.amount || 0), 0)
+  }, [facilityPayments])
+
+  const totalOverdueDebt = useMemo(() => {
+    return overdueItems.reduce((acc, item) => acc + (item.debtAmount || 0), 0)
+  }, [overdueItems])
+
+  const handleApplyRevDateFilter = () => {
+    setRevFromDate(tempRevFrom)
+    setRevToDate(tempRevTo)
+    setIsRevDatePickerOpen(false)
+    void fetchUnits(selectedFacilityId, tempRevFrom, tempRevTo)
+  }
+
+  const handleResetRevDateFilter = () => {
+    setTempRevFrom('')
+    setTempRevTo('')
+    setRevFromDate('')
+    setRevToDate('')
+    setIsRevDatePickerOpen(false)
+    void fetchUnits(selectedFacilityId, '', '')
+  }
+
+  const handleExportFacilityRevenueCsv = () => {
+    if (!facilityPayments || facilityPayments.length === 0) {
+      alert('Không có dữ liệu giao dịch để xuất báo cáo.')
+      return
+    }
+    const headers = ['Mã GD', 'Mã Kho', 'Cơ Sở', 'Khách Hàng', 'Số Tiền (VNĐ)', 'Phương Thức', 'Loại Thanh Toán', 'Thời Gian', 'Trạng Thái']
+    const rows = facilityPayments.map(p => [
+      p.id,
+      p.unitCode || 'N/A',
+      p.facilityName || currentFacilityName,
+      p.customerName || 'N/A',
+      p.amount,
+      p.paymentMethod || 'VNPay',
+      p.paymentType || 'RENTAL',
+      p.paymentTime ? new Date(p.paymentTime).toLocaleString('vi-VN') : '',
+      p.status
+    ])
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', `Bao_Cao_Doanh_Thu_${currentFacility?.code || 'CO_SO'}_${new Date().toISOString().slice(0, 10)}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
 
   // Dynamic facility layout blueprint configurations
   const facilityProfile = useMemo(() => {
@@ -1228,6 +1322,294 @@ export const ManagerDashboard: React.FC = () => {
             </p>
           </div>
         )}
+      </section>
+
+      {/* REVENUE & CASHFLOW REPORT SECTION (REAL DB DATA) */}
+      <section className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 flex flex-col gap-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
+              <span className="material-symbols-outlined text-[24px]">account_balance_wallet</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-slate-900">Báo cáo Doanh thu & Dòng tiền Cơ sở</h3>
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  {currentFacilityName}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Dữ liệu tài chính đối soát trực tiếp từ cổng VNPay & hệ thống hóa đơn thực tế
+                {revFromDate || revToDate ? ` (${revFromDate || '...'} → ${revToDate || 'nay'})` : ' (Toàn bộ thời gian)'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap relative">
+            {/* Date filter dropdown popover button */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setTempRevFrom(revFromDate)
+                  setTempRevTo(revToDate)
+                  setIsRevDatePickerOpen(!isRevDatePickerOpen)
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+                  revFromDate || revToDate
+                    ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">calendar_today</span>
+                <span>
+                  {revFromDate || revToDate ? `${revFromDate || '...'} - ${revToDate || 'nay'}` : 'Chọn kỳ báo cáo'}
+                </span>
+                <span className="material-symbols-outlined text-[14px]">arrow_drop_down</span>
+              </button>
+
+              {/* Date Filter Dropdown Box */}
+              {isRevDatePickerOpen && (
+                <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-200 p-4 z-50 animate-in fade-in zoom-in-95">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 mb-3">
+                    <span className="text-xs font-bold text-slate-800">Khoảng thời gian</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsRevDatePickerOpen(false)}
+                      className="text-slate-400 hover:text-slate-600 text-xs"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">close</span>
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-2.5">
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-600 mb-1 block">Từ ngày:</label>
+                      <input
+                        type="date"
+                        value={tempRevFrom}
+                        onChange={(e) => setTempRevFrom(e.target.value)}
+                        className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-600 mb-1 block">Đến ngày:</label>
+                      <input
+                        type="date"
+                        value={tempRevTo}
+                        onChange={(e) => setTempRevTo(e.target.value)}
+                        className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="flex items-center justify-end gap-2 mt-2 pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={handleResetRevDateFilter}
+                        className="px-2.5 py-1 rounded-md text-xs text-slate-600 hover:bg-slate-100"
+                      >
+                        Đặt lại
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleApplyRevDateFilter}
+                        className="px-3 py-1 rounded-md text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        Áp dụng
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* CSV Export Button */}
+            <button
+              type="button"
+              onClick={handleExportFacilityRevenueCsv}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-all shadow-2xs"
+            >
+              <span className="material-symbols-outlined text-[16px]">download</span>
+              <span>Xuất CSV</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 4 Financial Stat Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: Tổng Doanh thu cơ sở */}
+          <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-4 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">Tổng doanh thu cơ sở</span>
+              <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100">
+                <span className="material-symbols-outlined text-[18px]">payments</span>
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="text-xl font-black text-slate-900 tracking-tight">
+                {isRevenueLoading ? (
+                  <span className="inline-block w-24 h-6 bg-slate-200 animate-pulse rounded"></span>
+                ) : (
+                  `${new Intl.NumberFormat('vi-VN').format(facilityRevenue)} ₫`
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500">
+                <span className="font-semibold text-emerald-600">{facilityPayments.length}</span> giao dịch đã thanh toán
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: Doanh thu Tiền thuê kho */}
+          <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-4 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">Phí thuê kho thực thu</span>
+              <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600 border border-blue-100">
+                <span className="material-symbols-outlined text-[18px]">receipt_long</span>
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="text-xl font-black text-blue-900 tracking-tight">
+                {isRevenueLoading ? (
+                  <span className="inline-block w-24 h-6 bg-slate-200 animate-pulse rounded"></span>
+                ) : (
+                  `${new Intl.NumberFormat('vi-VN').format(rentalFeeRevenue)} ₫`
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500">
+                Tiền thuê kho định kỳ & hợp đồng
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: Tiền Ký quỹ / Đặt cọc */}
+          <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-4 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">Tiền ký quỹ đặt cọc</span>
+              <div className="p-1.5 rounded-lg bg-amber-50 text-amber-600 border border-amber-100">
+                <span className="material-symbols-outlined text-[18px]">savings</span>
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="text-xl font-black text-amber-900 tracking-tight">
+                {isRevenueLoading ? (
+                  <span className="inline-block w-24 h-6 bg-slate-200 animate-pulse rounded"></span>
+                ) : (
+                  `${new Intl.NumberFormat('vi-VN').format(depositRevenue)} ₫`
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500">
+                Tiền cọc đảm bảo giữ hộ
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4: Nợ cước quá hạn */}
+          <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-4 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">Nợ cước quá hạn cần thu</span>
+              <div className="p-1.5 rounded-lg bg-rose-50 text-rose-600 border border-rose-100">
+                <span className="material-symbols-outlined text-[18px]">money_off</span>
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="text-xl font-black text-rose-700 tracking-tight">
+                {`${new Intl.NumberFormat('vi-VN').format(totalOverdueDebt)} ₫`}
+              </div>
+              <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500">
+                <span className="font-semibold text-rose-600">{overdueItems.length}</span> hợp đồng vi phạm kỳ hạn
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Real Transactions Ledger */}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+              <span className="material-symbols-outlined text-[16px] text-slate-500">history</span>
+              Nhật ký Giao dịch Thu ngân Cơ sở gần nhất
+            </h4>
+            <span className="text-xs text-slate-400">Hiển thị các giao dịch phát sinh tại cơ sở</span>
+          </div>
+
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                  <th className="py-2.5 px-3">Mã GD / Thời gian</th>
+                  <th className="py-2.5 px-3">Khách hàng</th>
+                  <th className="py-2.5 px-3">Mã Kho</th>
+                  <th className="py-2.5 px-3">Loại thanh toán</th>
+                  <th className="py-2.5 px-3">Phương thức</th>
+                  <th className="py-2.5 px-3 text-right">Số tiền</th>
+                  <th className="py-2.5 px-3 text-center">Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {isRevenueLoading ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-slate-400">
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
+                        <span>Đang tải dữ liệu doanh thu từ cơ sở dữ liệu...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : facilityPayments.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-slate-400">
+                      <span className="material-symbols-outlined text-[32px] text-slate-300 block mb-1">receipt</span>
+                      Chưa ghi nhận giao dịch thanh toán nào cho cơ sở này trong khoảng thời gian đã chọn.
+                    </td>
+                  </tr>
+                ) : (
+                  facilityPayments.map((p) => (
+                    <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-2.5 px-3">
+                        <div className="font-mono font-medium text-slate-900">{p.id.slice(0, 8)}...</div>
+                        <div className="text-[11px] text-slate-400">
+                          {p.paymentTime ? new Date(p.paymentTime).toLocaleString('vi-VN') : '—'}
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 font-medium text-slate-800">
+                        {p.customerName || 'Khách hàng Boxora'}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className="font-mono font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
+                          {p.unitCode || 'N/A'}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[11px] font-medium border ${
+                          p.paymentType === 'DEPOSIT'
+                            ? 'bg-amber-50 text-amber-800 border-amber-200'
+                            : 'bg-blue-50 text-blue-700 border-blue-200'
+                        }`}>
+                          {p.paymentType === 'DEPOSIT' ? 'Tiền ký quỹ (Cọc)' : 'Tiền thuê kho'}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-600">
+                        {p.paymentMethod || 'VNPay'}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-bold text-slate-900 font-mono">
+                        {new Intl.NumberFormat('vi-VN').format(p.amount)} ₫
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          p.status === 'SUCCESS'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : p.status === 'PENDING'
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-rose-50 text-rose-700 border-rose-200'
+                        }`}>
+                          {p.status === 'SUCCESS' ? 'Thành công' : p.status === 'PENDING' ? 'Chờ xử lý' : 'Thất bại'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       {/* BOTTOM SECTION: OVERDUE HANDLING & STAFF WORKFORCE ALLOCATION */}

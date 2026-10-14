@@ -16,12 +16,14 @@ import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { bookingService } from '../../services/bookingService'
 import { BrandLogo } from '../../components/common/BrandLogo'
+import { LogoutConfirmModal } from '../../components/modals/LogoutConfirmModal'
 import { Facility, StorageUnit } from '../../types'
 
 export const UnitsExplorerPage: React.FC = () => {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { isAuthenticated, user, logout } = useAuth()
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false)
 
   // Real Database Data State
   const [dbFacilities, setDbFacilities] = useState<Facility[]>([])
@@ -381,7 +383,7 @@ export const UnitsExplorerPage: React.FC = () => {
                       type="button"
                       onClick={() => {
                         setDropdownOpen(false)
-                        logout()
+                        setIsLogoutModalOpen(true)
                       }}
                       className="w-full py-1.5 px-3 rounded-lg text-rose-700 hover:bg-rose-50 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
                     >
@@ -1192,6 +1194,15 @@ export const UnitsExplorerPage: React.FC = () => {
 
       {/* Floating Action Speed-Dial Widget (Scroll Top, Zalo, Hotline, Maps) */}
       <FloatingContactWidget />
+
+      <LogoutConfirmModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={async () => {
+          await logout()
+          navigate('/login')
+        }}
+      />
 
     </div>
   )

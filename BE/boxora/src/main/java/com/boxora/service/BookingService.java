@@ -9,6 +9,7 @@ import java.util.UUID;
 
 public interface BookingService {
     BookingResponse createBooking(BookingCreateRequest request);
+    List<BookingResponse> getMyBookings(UUID customerId);
     List<BookingResponse> getMyActiveBookings(UUID customerId);
     List<BookingResponse> getUpcomingArrivals();
     BookingResponse renewBooking(UUID id, int extraMonths);

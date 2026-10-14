@@ -6,6 +6,7 @@ import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import { FloatingContactWidget } from '../../components/common/FloatingContactWidget'
 import { BrandLogo } from '../../components/common/BrandLogo'
 import { SmartLockerDynamicHero } from '../../components/home/SmartLockerDynamicHero'
+import { LogoutConfirmModal } from '../../components/modals/LogoutConfirmModal'
 
 // ============================================================================
 // MAIN HOMEPAGE COMPONENT
@@ -14,6 +15,7 @@ export const HomePage: React.FC = () => {
   const navigate = useNavigate()
   const { isAuthenticated, user, logout } = useAuth()
   const [dropdown1Open, setDropdown1Open] = useState(false)
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false)
   const [notifySetting, setNotifySetting] = useState(true)
   const [soundSetting, setSoundSetting] = useState(true)
   const [langSetting, setLangSetting] = useState<'vi' | 'en'>('vi')
@@ -375,7 +377,7 @@ export const HomePage: React.FC = () => {
                       type="button"
                       onClick={() => {
                         setDropdown1Open(false)
-                        logout()
+                        setIsLogoutModalOpen(true)
                       }}
                       className="px-2.5 py-1 rounded-lg text-rose-700 hover:bg-rose-50 font-semibold text-xs flex items-center gap-1 transition-colors cursor-pointer"
                     >
@@ -1607,6 +1609,15 @@ export const HomePage: React.FC = () => {
 
     {/* Floating Action Speed-Dial Widget (Scroll Top, Zalo, Hotline, Maps) */}
     <FloatingContactWidget />
+
+    <LogoutConfirmModal
+      isOpen={isLogoutModalOpen}
+      onClose={() => setIsLogoutModalOpen(false)}
+      onConfirm={async () => {
+        await logout()
+        navigate('/login')
+      }}
+    />
 
   </div>
     </MotionConfig>

@@ -159,22 +159,28 @@ export const OperationsDashboard: React.FC = () => {
         ? `${new Date(`${revenueData.fromDate}T00:00:00`).toLocaleDateString('vi-VN')} – ${new Date(`${revenueData.toDate}T00:00:00`).toLocaleDateString('vi-VN')}`
         : 'Kỳ hiện tại'
 
-  // Dynamic monthly revenue aggregation from real DB payments
-  const monthlyRevenueData = useMemo(() => {
-    if (!payments || payments.length === 0) return []
-    const groups: Record<string, { rentalFee: number; deposit: number; renewalFee: number; total: number }> = {}
-
-    // Filter payments if specific facility is chosen
-    const scopedPayments = payments.filter((p) => {
+  // Scoped payments matching active facility filter
+  const scopedPayments = useMemo(() => {
+    return payments.filter((p) => {
       if (selectedFacilityId === 'all') return true
+      if (p.facilityName) {
+        const fac = facilities.find((f) => f.id === selectedFacilityId)
+        if (fac && p.facilityName === fac.name) return true
+      }
       const ct = contracts.find((c) => c.id === p.contractId)
       if (ct) {
         if (ct.facilityId) return ct.facilityId === selectedFacilityId
         const fac = facilities.find((f) => f.id === selectedFacilityId)
         if (fac && ct.facilityName) return ct.facilityName === fac.name
       }
-      return true
+      return false
     })
+  }, [payments, contracts, facilities, selectedFacilityId])
+
+  // Dynamic monthly revenue aggregation from real DB payments
+  const monthlyRevenueData = useMemo(() => {
+    if (!scopedPayments || scopedPayments.length === 0) return []
+    const groups: Record<string, { rentalFee: number; deposit: number; renewalFee: number; total: number }> = {}
 
     scopedPayments.forEach((p) => {
       const dateStr = p.paymentTime || p.createdAt
@@ -201,7 +207,7 @@ export const OperationsDashboard: React.FC = () => {
           ...data,
         }
       })
-  }, [payments, contracts, selectedFacilityId])
+  }, [scopedPayments])
 
   const maxMonthlyTotal = useMemo(() => {
     if (monthlyRevenueData.length === 0) return 1
@@ -210,13 +216,13 @@ export const OperationsDashboard: React.FC = () => {
 
   // Dynamic payment method distribution from real DB payments
   const paymentMethodStats = useMemo(() => {
-    const totalCount = payments.length
+    const totalCount = scopedPayments.length
     if (totalCount === 0) {
-      return { vnpayPercent: 50, bankPercent: 37.5, momoPercent: 12.5, vnpayCount: 0, bankCount: 0, momoCount: 0, totalCount: 0 }
+      return { vnpayPercent: 0, bankPercent: 0, momoPercent: 0, vnpayCount: 0, bankCount: 0, momoCount: 0, totalCount: 0 }
     }
-    const vnpayCount = payments.filter((p) => p.paymentMethod === 'VNPAY').length
-    const bankCount = payments.filter((p) => p.paymentMethod === 'BANK_TRANSFER').length
-    const momoCount = payments.filter((p) => p.paymentMethod === 'MOMO').length
+    const vnpayCount = scopedPayments.filter((p) => p.paymentMethod === 'VNPAY').length
+    const bankCount = scopedPayments.filter((p) => p.paymentMethod === 'BANK_TRANSFER').length
+    const momoCount = scopedPayments.filter((p) => p.paymentMethod === 'MOMO').length
 
     return {
       vnpayPercent: Math.round((vnpayCount / totalCount) * 1000) / 10,
@@ -227,7 +233,7 @@ export const OperationsDashboard: React.FC = () => {
       momoCount,
       totalCount,
     }
-  }, [payments])
+  }, [scopedPayments])
 
   const formatCurrency = (value?: number) => (value == null ? '—' : value.toLocaleString('vi-VN'))
 
@@ -714,7 +720,7 @@ export const OperationsDashboard: React.FC = () => {
               </span>
             </div>
             <span className="text-xs font-mono font-bold text-slate-900">
-              Tổng cộng: {payments.length} GD thành công
+              Tổng cộng: {scopedPayments.length} GD thành công
             </span>
           </div>
         </div>
