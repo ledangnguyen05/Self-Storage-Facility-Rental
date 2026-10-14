@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useOutletContext } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
+import { useLanguage } from '../../context/LanguageContext'
 import { reportService } from '../../services/reportService'
 import { facilityService } from '../../services/facilityService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
@@ -8,6 +10,8 @@ import { contractService, RentalContract } from '../../services/contractService'
 import { Facility, FacilityPolicy, RevenueReport, OccupancyReport, OverdueDebtReport, UnitType } from '../../types'
 
 export const OperationsDashboard: React.FC = () => {
+  const { role } = useAuth()
+  const { t } = useLanguage()
   const { selectedFacility, setSelectedFacility, facilities: contextFacilities } = useOutletContext<{
     selectedFacility?: string
     setSelectedFacility?: (facId: string) => void
@@ -260,6 +264,7 @@ export const OperationsDashboard: React.FC = () => {
 
   const handleSavePolicies = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (role !== 'ADMIN') return
     setIsSavingPolicies(true)
     try {
       const priceUpdates: string[] = []
@@ -1029,6 +1034,7 @@ export const OperationsDashboard: React.FC = () => {
       </div>
 
       {/* 4-TIER DYNAMIC PRICING MATRIX & BUSINESS POLICY ENGINE */}
+      {role === 'ADMIN' ? (
       <form onSubmit={handleSavePolicies} className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
@@ -1291,6 +1297,17 @@ export const OperationsDashboard: React.FC = () => {
           </div>
         </div>
       </form>
+      ) : (
+        <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex items-start gap-3">
+            <span className="material-symbols-outlined rounded-lg bg-slate-100 p-2 text-slate-600 dark:bg-slate-800 dark:text-slate-300">admin_panel_settings</span>
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{t('Cấu hình chính sách toàn hệ thống', 'System-wide policy settings')}</h2>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{t('Chỉ Admin được phép chỉnh sửa chính sách và bảng giá.', 'Only Admin can edit system policies and pricing.')}</p>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   )
 }

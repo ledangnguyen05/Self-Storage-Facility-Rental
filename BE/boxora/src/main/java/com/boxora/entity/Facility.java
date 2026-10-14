@@ -4,6 +4,7 @@ import com.boxora.enums.FacilityStatus;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalTime;
 
 @Entity
@@ -52,4 +53,13 @@ public class Facility extends BaseEntity {
 
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
+
+    @Column(name = "latitude", precision = 10, scale = 7)
+    private BigDecimal latitude;
+
+    @Column(name = "longitude", precision = 10, scale = 7)
+    private BigDecimal longitude;
+
+    @Column(name = "layout_config", columnDefinition = "TEXT")
+    private String layoutConfig;
 }

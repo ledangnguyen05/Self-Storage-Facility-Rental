@@ -4,7 +4,9 @@ import { storageUnitService } from '../../services/storageUnitService'
 import { facilityService } from '../../services/facilityService'
 import { reportService } from '../../services/reportService'
 import { userService } from '../../services/userService'
+import { useLanguage } from '../../context/LanguageContext'
 import { Facility, StorageUnit, OverdueDebtItem, User } from '../../types'
+import { parseFacilityLayoutConfig } from '../../utils/facilityLayout'
 import { IoTTelemetryModal } from './modals/IoTTelemetryModal'
 import { FacilitySurveyModal } from './modals/FacilitySurveyModal'
 import { AppActivationModal } from './modals/AppActivationModal'
@@ -12,6 +14,8 @@ import { DoorAccessHistoryModal } from './modals/DoorAccessHistoryModal'
 import { ShiftAssignmentModal } from './modals/ShiftAssignmentModal'
 import { NoticeDispatcherModal } from './modals/NoticeDispatcherModal'
 import { AssetSealingModal } from './modals/AssetSealingModal'
+import { BookingApprovalModal } from './modals/BookingApprovalModal'
+import { CreateStorageUnitModal } from './modals/CreateStorageUnitModal'
 
 interface InspectedUnit {
   id: string
@@ -34,6 +38,7 @@ interface InspectedUnit {
 }
 
 export const ManagerDashboard: React.FC = () => {
+  const { t } = useLanguage()
   const { selectedFacility, setSelectedFacility, facilities: contextFacilities } = useOutletContext<{
     selectedFacility?: string
     setSelectedFacility?: (facId: string) => void
@@ -67,6 +72,8 @@ export const ManagerDashboard: React.FC = () => {
 
   const [showIoTModal, setShowIoTModal] = useState(false)
   const [showSurveyModal, setShowSurveyModal] = useState(false)
+  const [showBookingApprovalModal, setShowBookingApprovalModal] = useState(false)
+  const [showCreateUnitModal, setShowCreateUnitModal] = useState(false)
   const [showAppActivationModal, setShowAppActivationModal] = useState(false)
   const [showDoorAccessModal, setShowDoorAccessModal] = useState(false)
   const [showShiftModal, setShowShiftModal] = useState(false)
@@ -204,6 +211,19 @@ export const ManagerDashboard: React.FC = () => {
   const triggerAction = (msg: string) => {
     setActionSuccessMessage(msg)
     setTimeout(() => setActionSuccessMessage(null), 3000)
+  }
+
+  const handleStorageUnitCreated = (unit: StorageUnit) => {
+    const targetFacilityId = unit.facilityId || selectedFacilityId
+    if (targetFacilityId) {
+      setSelectedFacilityId(targetFacilityId)
+      if (setSelectedFacility && selectedFacility !== targetFacilityId) {
+        setSelectedFacility(targetFacilityId)
+      } else {
+        void fetchUnits(targetFacilityId)
+      }
+    }
+    triggerAction(`${t('Đã thêm kho', 'Added storage unit')} ${unit.unitCode}.`)
   }
 
   const handleToggleMaintenance = async () => {
@@ -344,110 +364,8 @@ export const ManagerDashboard: React.FC = () => {
 
   const currentFacilityName = currentFacility?.name || 'Cơ sở Boxora'
 
-  // Dynamic facility layout blueprint configurations
-  const facilityProfile = useMemo(() => {
-    const name = (currentFacility?.name || '').toLowerCase()
-    const code = (currentFacility?.code || '').toLowerCase()
-
-    if (code.includes('d1') || name.includes('quận 1') || name.includes('boutique') || name.includes('wine')) {
-      return {
-        title: 'Sơ đồ Quận 1 Boutique & Wine Vault (Hầm Rượu VIP & Tài Liệu)',
-        floor1Name: 'Tầng 1 (Khu A VIP & Khu B Hồ Sơ)',
-        floor2Name: 'Tầng 2 (Khu C Hầm Rượu Vang 16°C)',
-        zoneAName: 'Phân khu A (Hành lang Luxury Climate Suite VIP)',
-        zoneADesc: 'Kho boutique cao cấp điều hòa riêng biệt, bảo mật vân tay & IoT (4 - 8 m²)',
-        zoneAIcon: 'diamond',
-        zoneBName: 'Phân khu B (Hành lang Lưu Trữ Hồ Sơ & Tài Liệu Doanh Nghiệp)',
-        zoneBDesc: 'Tủ hồ sơ chứng từ chống cháy, bảo mật tiêu chuẩn ngân hàng (2 - 4 m²)',
-        zoneBIcon: 'folder_special',
-        zoneCName: 'Phân khu C (Hầm Rượu Vang & Tranh Mỹ Thuật 16°C)',
-        zoneCDesc: 'Hầm điều hòa vi khí hậu chuyên sâu, kiểm soát độ ẩm 65% chống oxy hóa',
-        zoneCIcon: 'wine_bar',
-        loadingBayFloor1: 'Sảnh bốc dỡ VIP hầm B1 (Mặt tiền Lê Duẩn)',
-        corridorNorth: 'Hành lang đá hoa cương & thẻ từ riêng biệt rộng 2.2m',
-        exitFloor1: 'Lối thoát hiểm an ninh D1-01',
-        loadingBayFloor2: 'Thang máy nâng hàng chuyên dụng chống rung chấn',
-        corridorClimate: 'Hầm rượu kiểm soát nhiệt độ 16°C & độ ẩm 65%',
-        exitFloor2: 'Cửa thoát hiểm cách nhiệt áp suất dương D1-02',
-        totalAreaFloor1: 'Tổng diện tích mặt sàn Tầng 1: 980 m²',
-        totalAreaFloor2: 'Tổng diện tích mặt sàn Tầng 2: 850 m²'
-      }
-    }
-
-    if (code.includes('d7') || name.includes('quận 7') || name.includes('residential') || name.includes('gia đình')) {
-      return {
-        title: 'Sơ đồ Quận 7 Residential Hub (Khu Dân Cư & Lưu Trữ Đồ Gia Đình)',
-        floor1Name: 'Tầng 1 (Khu A Nội Thất & Khu B Chuyển Nhà)',
-        floor2Name: 'Tầng 2 (Khu C Đồ Sinh Viên & Cá Nhân)',
-        zoneAName: 'Phân khu A (Hành lang Nội Thất Cỡ Lớn Aisle North)',
-        zoneADesc: 'Kho trần cao lưu trữ sofa, giường tủ, đồ gỗ gia đình cồng kềnh (12 - 20 m²)',
-        zoneAIcon: 'chair',
-        zoneBName: 'Phân khu B (Hành lang Đồ Chuyển Nhà Tiêu Chuẩn)',
-        zoneBDesc: 'Lô kho chuyển dọn nhà & lưu đồ decor căn hộ chung cư (6 - 10 m²)',
-        zoneBIcon: 'inventory_2',
-        zoneCName: 'Phân khu C (Hành lang Tủ Đồ Sinh Viên & Cá Nhân)',
-        zoneCDesc: 'Kho mini tối ưu chi phí cho sinh viên, vali du học & dụng cụ thể thao (2 - 5 m²)',
-        zoneCIcon: 'backpack',
-        loadingBayFloor1: 'Bãi bốc dỡ xe tải 5 tấn (Mặt tiền Nguyễn Văn Linh)',
-        corridorNorth: 'Hành lang xe đẩy hàng 4 bánh rộng 2.4m',
-        exitFloor1: 'Lối thoát hiểm PCCC D7-01',
-        loadingBayFloor2: 'Thang máy tải hàng Freight Lift 1.500kg',
-        corridorClimate: 'Hành lang thông gió tự nhiên & đèn cảm ứng thông minh',
-        exitFloor2: 'Cửa thoát hiểm D7-02',
-        totalAreaFloor1: 'Tổng diện tích mặt sàn Tầng 1: 1.450 m²',
-        totalAreaFloor2: 'Tổng diện tích mặt sàn Tầng 2: 1.100 m²'
-      }
-    }
-
-    if (code.includes('td') || name.includes('thủ đức') || name.includes('tech') || name.includes('fulfillment')) {
-      return {
-        title: 'Sơ đồ Thủ Đức Tech & Fulfillment Hub (Khu Công Nghệ Cao & Bán Hàng Online)',
-        floor1Name: 'Tầng 1 (Khu A Fulfillment & Khu B Phần Cứng)',
-        floor2Name: 'Tầng 2 (Khu C Startup Locker & Box Tự Quản)',
-        zoneAName: 'Phân khu A (Hành lang Bán Lẻ & Đóng Hàng Tốc Độ Cao)',
-        zoneADesc: 'Kho trung chuyển fulfillment sàn TMĐT & hàng bán lẻ online (10 - 18 m²)',
-        zoneAIcon: 'shopping_cart',
-        zoneBName: 'Phân khu B (Hành lang Linh Kiện & Phần Cứng IT)',
-        zoneBDesc: 'Kho chống tĩnh điện lưu máy chủ, linh kiện vi mạch điện tử (8 - 15 m²)',
-        zoneBIcon: 'memory',
-        zoneCName: 'Phân khu C (Hành lang Startup Locker & Kho Tự Quản)',
-        zoneCDesc: 'Hệ thống tủ locker thông minh mở khóa QR qua app cho founder & freelancer (2 - 6 m²)',
-        zoneCIcon: 'qr_code_scanner',
-        loadingBayFloor1: 'Bãi đỗ xe van & shipper giao nhận nhanh (Khu Công Nghệ Cao)',
-        corridorNorth: 'Hành lang phân loại băng tải con lăn rộng 2.5m',
-        exitFloor1: 'Lối thoát hiểm tự động TD-01',
-        loadingBayFloor2: 'Thang máy tốc độ cao Smart Freight Lift',
-        corridorClimate: 'Hành lang Wi-Fi 6 phủ sóng toàn diện & camera AI',
-        exitFloor2: 'Cửa thoát hiểm TD-02',
-        totalAreaFloor1: 'Tổng diện tích mặt sàn Tầng 1: 1.600 m²',
-        totalAreaFloor2: 'Tổng diện tích mặt sàn Tầng 2: 1.350 m²'
-      }
-    }
-
-    // Default Tan Binh Mega Hub
-    return {
-      title: 'Sơ đồ Tân Bình Mega Hub (Kho Bãi Logistics & Vận Tải Liên Vùng)',
-      floor1Name: 'Tầng 1 (Khu A Logistics & Khu B Pallet)',
-      floor2Name: 'Tầng 2 (Khu C Vi Khí Hậu E-Commerce)',
-      zoneAName: 'Phân khu A (Hành lang Logistics Aisle North)',
-      zoneADesc: 'Lô kho mặt tiền cửa cuốn công nghiệp & tải trọng nặng (15 - 25 m²)',
-      zoneAIcon: 'local_shipping',
-      zoneBName: 'Phân khu B (Hành lang Pallet Aisle South)',
-      zoneBDesc: 'Lô kho trần cao 3.8m & hành lang xe nâng điện tiếp cận (8 - 12 m²)',
-      zoneBIcon: 'forklift',
-      zoneCName: 'Phân khu C (Hành lang Climate-Controlled 18°C - 22°C)',
-      zoneCDesc: 'Kho vi khí hậu bảo quản đồ da, rượu vang & linh kiện nhạy nhiệt độ',
-      zoneCIcon: 'ac_unit',
-      loadingBayFloor1: 'Cửa nhập Container Bay #01 (Mặt tiền QL1A/Trường Chinh)',
-      corridorNorth: 'Hành lang xe nâng pallet công nghiệp rộng 2.8m',
-      exitFloor1: 'Lối thoát hiểm PCCC E-01 (Khu Aisle North)',
-      loadingBayFloor2: 'Thang hàng tải trọng 3.000kg Freight Lift #02',
-      corridorClimate: 'Hành lang điều hòa trung tâm kiểm soát nhiệt ẩm 55%',
-      exitFloor2: 'Cửa chống cháy tự động E-02 (Khu C)',
-      totalAreaFloor1: 'Tổng diện tích mặt sàn Tầng 1: 1.850 m²',
-      totalAreaFloor2: 'Tổng diện tích mặt sàn Tầng 2: 1.200 m²'
-    }
-  }, [currentFacility])
+  // Display the floor plan configured by an admin, with generic defaults for unconfigured branches.
+  const facilityProfile = useMemo(() => parseFacilityLayoutConfig(currentFacility?.layoutConfig), [currentFacility])
 
   const getStatusBadgeStyle = (status: InspectedUnit['status']) => {
     switch (status) {
@@ -607,6 +525,22 @@ export const ManagerDashboard: React.FC = () => {
 
         {/* Quick action & Facility Switcher */}
         <div className="flex items-center gap-3 self-start lg:self-center shrink-0 z-10 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setShowCreateUnitModal(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-600 px-3.5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-blue-700 dark:border-blue-500 dark:bg-blue-600 dark:hover:bg-blue-500"
+          >
+            <span className="material-symbols-outlined text-[18px]">add</span>
+            <span>{t('Thêm kho mới', 'Add storage unit')}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowBookingApprovalModal(true)}
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-amber-50 text-amber-900 font-semibold text-xs hover:bg-amber-100 transition-all border border-amber-200 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[18px]">fact_check</span>
+            <span>Yêu cầu thuê</span>
+          </button>
           <button 
             type="button" 
             onClick={() => fetchUnits(selectedFacilityId)}
@@ -965,7 +899,7 @@ export const ManagerDashboard: React.FC = () => {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-bold text-cyan-900 uppercase flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-cyan-600 text-[18px]">{facilityProfile.zoneCIcon}</span>
+                      <span className="material-symbols-outlined text-cyan-600 text-[18px]">warehouse</span>
                       {facilityProfile.zoneCName}
                     </span>
                     {showHeatmap && (
@@ -975,7 +909,7 @@ export const ManagerDashboard: React.FC = () => {
                       </span>
                     )}
                   </div>
-                  <span className="text-[11px] text-slate-500">{facilityProfile.zoneCDesc}</span>
+                  {facilityProfile.zoneCDesc && <span className="text-[11px] text-slate-500">{facilityProfile.zoneCDesc}</span>}
                 </div>
                 {permanentZoneC.length === 0 ? (
                   <div className="p-8 text-center text-slate-500 text-xs bg-white rounded-lg border border-slate-200">
@@ -995,7 +929,7 @@ export const ManagerDashboard: React.FC = () => {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-xs font-bold text-slate-900 uppercase flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-slate-600 text-[18px]">{facilityProfile.zoneAIcon}</span>
+                        <span className="material-symbols-outlined text-slate-600 text-[18px]">inventory_2</span>
                         {facilityProfile.zoneAName}
                       </span>
                       {showHeatmap && (
@@ -1005,7 +939,7 @@ export const ManagerDashboard: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    <span className="text-[11px] text-slate-500">{facilityProfile.zoneADesc}</span>
+                    {facilityProfile.zoneADesc && <span className="text-[11px] text-slate-500">{facilityProfile.zoneADesc}</span>}
                   </div>
                   {permanentZoneA.length === 0 ? (
                     <div className="p-6 text-center text-slate-500 text-xs bg-white rounded-lg border border-slate-200">
@@ -1023,7 +957,7 @@ export const ManagerDashboard: React.FC = () => {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-xs font-bold text-slate-900 uppercase flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-slate-600 text-[18px]">{facilityProfile.zoneBIcon}</span>
+                        <span className="material-symbols-outlined text-slate-600 text-[18px]">inventory</span>
                         {facilityProfile.zoneBName}
                       </span>
                       {showHeatmap && (
@@ -1033,7 +967,7 @@ export const ManagerDashboard: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    <span className="text-[11px] text-slate-500">{facilityProfile.zoneBDesc}</span>
+                    {facilityProfile.zoneBDesc && <span className="text-[11px] text-slate-500">{facilityProfile.zoneBDesc}</span>}
                   </div>
                   {permanentZoneB.length === 0 ? (
                     <div className="p-6 text-center text-slate-500 text-xs bg-white rounded-lg border border-slate-200">
@@ -1060,9 +994,11 @@ export const ManagerDashboard: React.FC = () => {
                   Mạng lưới IoT LoRaWAN Mesh: Ổn định (Ping 14ms)
                 </span>
               </div>
-              <span className="font-mono font-semibold text-slate-700">
-                {selectedFloor === 'floor1' ? facilityProfile.totalAreaFloor1 : facilityProfile.totalAreaFloor2}
-              </span>
+              {(selectedFloor === 'floor1' ? facilityProfile.totalAreaFloor1 : facilityProfile.totalAreaFloor2) && (
+                <span className="font-mono font-semibold text-slate-700">
+                  {selectedFloor === 'floor1' ? facilityProfile.totalAreaFloor1 : facilityProfile.totalAreaFloor2}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -1440,6 +1376,19 @@ export const ManagerDashboard: React.FC = () => {
         onClose={() => setShowSurveyModal(false)}
         facilityName={currentFacilityName}
         onSubmitSurvey={(code) => triggerAction(`Đã tạo và ký phiếu khảo sát kiểm định ${code} thành công!`)}
+      />
+
+      <BookingApprovalModal
+        isOpen={showBookingApprovalModal}
+        onClose={() => setShowBookingApprovalModal(false)}
+      />
+
+      <CreateStorageUnitModal
+        isOpen={showCreateUnitModal}
+        facilities={facilities}
+        selectedFacilityId={selectedFacilityId}
+        onClose={() => setShowCreateUnitModal(false)}
+        onCreated={handleStorageUnitCreated}
       />
 
       {/* 3. APP ACTIVATION & KEY HANDOVER MODAL */}

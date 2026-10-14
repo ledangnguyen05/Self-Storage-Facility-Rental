@@ -447,6 +447,45 @@ export const DICTIONARY: Record<string, string> = {
   'Dạng danh sách': 'List View',
   'Bật để ưu tiên kho gần bạn': 'Enable to sort by closest distance',
   'Đang xếp theo km ngắn nhất': 'Sorted by shortest distance',
+  'Tìm kho gần bạn': 'Find storage near you',
+  'Nhập địa chỉ hoặc bật vị trí để xem các cơ sở kho gần bạn.': 'Enter an address or use your location to find nearby facilities.',
+  'Nhập địa chỉ của bạn': 'Enter your address',
+  'Địa chỉ của bạn': 'Your address',
+  'Đang tìm…': 'Searching…',
+  'Tìm địa chỉ': 'Find address',
+  'Dùng vị trí hiện tại của bạn': 'Use your current location',
+  'Đang lấy vị trí…': 'Getting your location…',
+  'Bật vị trí': 'Use my location',
+  'Đang tìm quanh:': 'Searching near:',
+  'Nguồn dữ liệu địa chỉ:': 'Address data from:',
+  'Cơ sở kho': 'Storage facility',
+  'Gần bạn nhất:': 'Nearest to you:',
+  'khoảng ': 'about ',
+  'Kho tại ': 'Storage at ',
+  'Kho gần bạn': 'Nearby storage',
+  'Đang ưu tiên kho gần bạn': 'Prioritizing nearby storage',
+  'Ưu tiên kho gần bạn': 'Prioritize nearby storage',
+  'Các kho gần bạn được hiển thị trước': 'Nearby facilities are shown first',
+  'Bật để xem kho gần bạn trước': 'Turn on to show nearby facilities first',
+  'Tìm mã kho, loại kho, chi nhánh...': 'Search by unit, type, or facility...',
+  'Lọc theo phân hạng': 'Filter by category',
+  'Tất cả phân hạng': 'All categories',
+  'Locker Mini (1–3 m²)': 'Mini Locker (1–3 m²)',
+  'Kho Cá nhân (4–8 m²)': 'Personal Storage (4–8 m²)',
+  'Kho Doanh nghiệp (10–20 m²)': 'Business Storage (10–20 m²)',
+  'Kho lạnh / đặc biệt': 'Climate-controlled / special storage',
+  'Lọc theo loại kho': 'Filter by storage type',
+  'Tất cả loại kho': 'All storage types',
+  'Lọc theo diện tích kho': 'Filter by unit size',
+  'Mọi diện tích': 'Any size',
+  'Dưới 3 m²': 'Under 3 m²',
+  '3–8 m²': '3–8 m²',
+  'Trên 8–15 m²': 'Over 8–15 m²',
+  'Trên 15 m²': 'Over 15 m²',
+  'Hiện chưa có kho để hiển thị': 'No storage units are available yet',
+  'Không tìm thấy kho phù hợp': 'No matching storage units found',
+  'Thử đổi loại kho, diện tích, chi nhánh hoặc từ khóa tìm kiếm.': 'Try changing the unit type, size, facility, or search terms.',
+  'Gửi yêu cầu thuê': 'Request to rent',
   'GPS của tôi': 'My GPS',
   'Định vị GPS thực tế của bạn': 'Pinpoint your actual GPS location',
   'Đang hiển thị các phòng kho trên toàn hệ thống': 'Displaying units across all facilities in network',
@@ -586,6 +625,7 @@ export const DICTIONARY: Record<string, string> = {
   'Âm lượng còi:': 'Siren Volume:',
   'Bật thông báo đẩy trạng thái mở khóa và hợp đồng': 'Push alerts for unlock status and contracts',
   'Tiếng Việt': 'Vietnamese',
+  'Tiếng Anh': 'English',
   'Ngôn ngữ mặc định hệ thống': 'Default platform language',
   'English': 'English',
   'Global English interface': 'Global English interface',
@@ -661,9 +701,48 @@ const SORTED_KEYS = Object.keys(DICTIONARY).sort((a, b) => b.length - a.length)
 // WeakMaps storing original Vietnamese text and attributes
 const originalTextMap = new WeakMap<Node, string>()
 const originalAttrMap = new WeakMap<Element, Record<string, string>>()
+const translatedTextMap = new WeakMap<Node, string>()
+const translatedAttrMap = new WeakMap<Element, Record<string, string>>()
 
 // Mutual exclusion flag to prevent observer recursion
 let isTranslatingDOM = false
+
+const translateText = (value: string) => {
+  let translated = value
+  for (const phrase of SORTED_KEYS) {
+    if (translated.includes(phrase)) {
+      translated = translated.split(phrase).join(DICTIONARY[phrase])
+    }
+  }
+  return translated
+}
+
+const applyTextNodeTranslation = (node: Node, lang: Language) => {
+  const currentValue = node.nodeValue || ''
+  if (!currentValue.trim()) return
+
+  const original = originalTextMap.get(node)
+  const lastTranslation = translatedTextMap.get(node)
+
+  if (lang === 'en') {
+    const source = lastTranslation !== undefined && currentValue === lastTranslation
+      ? original ?? currentValue
+      : currentValue
+    originalTextMap.set(node, source)
+    const translated = translateText(source)
+    translatedTextMap.set(node, translated)
+    if (translated !== currentValue) node.nodeValue = translated
+    return
+  }
+
+  if (lastTranslation !== undefined && currentValue === lastTranslation && original !== undefined) {
+    if (currentValue !== original) node.nodeValue = original
+  } else {
+    // React has rendered fresh Vietnamese content into this text node.
+    originalTextMap.set(node, currentValue)
+  }
+  translatedTextMap.delete(node)
+}
 
 // Walk DOM and translate text nodes and attributes
 function applyDOMTranslation(root: Node, lang: Language) {
@@ -672,6 +751,11 @@ function applyDOMTranslation(root: Node, lang: Language) {
 
   isTranslatingDOM = true
   try {
+    if (root.nodeType === Node.TEXT_NODE) {
+      applyTextNodeTranslation(root, lang)
+      return
+    }
+
     const walker = document.createTreeWalker(
       root,
       NodeFilter.SHOW_TEXT,
@@ -693,40 +777,16 @@ function applyDOMTranslation(root: Node, lang: Language) {
 
     let currentNode = walker.nextNode()
     while (currentNode) {
-      if (lang === 'en') {
-        const currentVal = currentNode.nodeValue || ''
-        if (!originalTextMap.has(currentNode)) {
-          originalTextMap.set(currentNode, currentVal)
-        }
-        const original = originalTextMap.get(currentNode) || currentVal
-
-        let translated = original
-        for (const phrase of SORTED_KEYS) {
-          if (translated.includes(phrase)) {
-            translated = translated.split(phrase).join(DICTIONARY[phrase])
-          }
-        }
-
-        if (translated !== currentVal) {
-          currentNode.nodeValue = translated
-        }
-      } else {
-        // Restore Vietnamese
-        if (originalTextMap.has(currentNode)) {
-          const vi = originalTextMap.get(currentNode)
-          if (vi !== undefined && currentNode.nodeValue !== vi) {
-            currentNode.nodeValue = vi
-          }
-        }
-      }
+      applyTextNodeTranslation(currentNode, lang)
       currentNode = walker.nextNode()
     }
 
     // Also translate attributes on elements: placeholder, title, aria-label, alt
     if (root instanceof Element || root instanceof Document) {
-      const elementsWithAttrs = (root as Element).querySelectorAll
-        ? (root as Element).querySelectorAll('[placeholder], [title], [aria-label], [alt]')
-        : []
+      const selector = '[placeholder], [title], [aria-label], [alt]'
+      const elementsWithAttrs: Element[] = []
+      if (root instanceof Element && root.matches(selector)) elementsWithAttrs.push(root)
+      elementsWithAttrs.push(...Array.from(root.querySelectorAll(selector)))
 
       elementsWithAttrs.forEach((el) => {
         if (!originalAttrMap.has(el)) {
@@ -738,26 +798,35 @@ function applyDOMTranslation(root: Node, lang: Language) {
           })
         }
         const orig = originalAttrMap.get(el)!
+        const lastTranslations = translatedAttrMap.get(el) || {}
 
         const attrNames = ['placeholder', 'title', 'aria-label', 'alt'] as const
         attrNames.forEach((attr) => {
-          const val = orig[attr]
+          const currentValue = el.getAttribute(attr)
+          if (currentValue === null) return
+
           if (lang === 'en') {
-            if (val) {
-              let trans = val
-              for (const phrase of SORTED_KEYS) {
-                if (trans.includes(phrase)) trans = trans.split(phrase).join(DICTIONARY[phrase])
-              }
-              if (trans !== el.getAttribute(attr)) {
-                el.setAttribute(attr, trans)
-              }
-            }
+            const lastTranslation = lastTranslations[attr]
+            const source = lastTranslation !== undefined && currentValue === lastTranslation
+              ? orig[attr] ?? currentValue
+              : currentValue
+            orig[attr] = source
+            const translated = translateText(source)
+            lastTranslations[attr] = translated
+            if (translated !== currentValue) el.setAttribute(attr, translated)
           } else {
-            if (val && el.getAttribute(attr) !== val) {
-              el.setAttribute(attr, val)
+            const lastTranslation = lastTranslations[attr]
+            if (lastTranslation !== undefined && currentValue === lastTranslation) {
+              const source = orig[attr]
+              if (source !== undefined && source !== currentValue) el.setAttribute(attr, source)
+            } else {
+              // React has rendered a fresh value; retain it as the Vietnamese source.
+              orig[attr] = currentValue
             }
+            delete lastTranslations[attr]
           }
         })
+        translatedAttrMap.set(el, lastTranslations)
       })
     }
   } finally {
@@ -794,12 +863,10 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               applyDOMTranslation(node, language)
             }
           })
-        } else if (mutation.type === 'characterData' && language === 'en') {
-          const textNode = mutation.target
-          if (!originalTextMap.has(textNode)) {
-            originalTextMap.set(textNode, textNode.nodeValue || '')
-            applyDOMTranslation(textNode, 'en')
-          }
+        } else if (mutation.type === 'characterData') {
+          applyDOMTranslation(mutation.target, language)
+        } else if (mutation.type === 'attributes' && mutation.target instanceof Element) {
+          applyDOMTranslation(mutation.target, language)
         }
       }
     })
@@ -808,6 +875,8 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       childList: true,
       subtree: true,
       characterData: true,
+      attributes: true,
+      attributeFilter: ['placeholder', 'title', 'aria-label', 'alt'],
     })
 
     return () => {

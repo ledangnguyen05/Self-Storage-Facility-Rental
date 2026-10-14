@@ -18,7 +18,7 @@ export const facilityService = {
     return response.data?.data as Facility
   },
 
-  async updateFacility(id: string, data: Partial<Facility>) {
+  async updateFacility(id: string, data: Partial<Facility> & { clearCoordinates?: boolean }) {
     const response = await api.put(`/api/v1/facilities/${id}`, data)
     return response.data?.data as Facility
   },
