@@ -5,17 +5,25 @@ import { RoleType, Facility } from '../../types'
 import { facilityService } from '../../services/facilityService'
 import { BrandLogo } from '../common/BrandLogo'
 import { AccountProfileModal } from '../common/AccountProfileModal'
+import { LogoutConfirmModal } from '../common/LogoutConfirmModal'
+import { WebSettingsModal } from '../common/WebSettingsModal'
+import { UserAvatarDropdown } from '../common/UserAvatarDropdown'
+import { QuickThemeLanguageToggle } from '../common/QuickThemeLanguageToggle'
 import { FacilityScopingModal } from '../modals/FacilityScopingModal'
 import NotificationCenter from './NotificationCenter'
+import { useLanguage } from '../../context/LanguageContext'
 
 export const DashboardLayout: React.FC = () => {
   const { user, role, logout, isAuthenticated } = useAuth()
+  const { t } = useLanguage()
   const location = useLocation()
   const navigate = useNavigate()
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [selectedFacility, setSelectedFacility] = useState<string>('ALL')
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
   const [isScopingModalOpen, setIsScopingModalOpen] = useState(false)
   const isCurrentPath = (path: string) => location.pathname === path
   const isFacilityManagerPage = location.pathname.includes('/facility-manager')
@@ -54,16 +62,16 @@ export const DashboardLayout: React.FC = () => {
   const getRoleBadge = (r: RoleType | null) => {
     switch (r) {
       case 'ADMIN':
-        return { label: 'Quản trị viên Hệ thống', bg: 'bg-rose-50 text-rose-700 border-rose-200' }
+        return { label: t('Quản trị viên Hệ thống'), bg: 'bg-rose-50 text-rose-700 border-rose-200' }
       case 'BUSINESS_MANAGER':
-        return { label: 'Giám đốc Vận hành', bg: 'bg-slate-100 text-slate-800 border-slate-300' }
+        return { label: t('Giám đốc Vận hành'), bg: 'bg-slate-100 text-slate-800 border-slate-300' }
       case 'FACILITY_MANAGER':
-        return { label: 'Quản lý Cơ sở', bg: 'bg-blue-50 text-blue-700 border-blue-200' }
+        return { label: t('Quản lý Cơ sở'), bg: 'bg-blue-50 text-blue-700 border-blue-200' }
       case 'STAFF':
-        return { label: 'Nhân viên Quầy', bg: 'bg-amber-50 text-amber-800 border-amber-200' }
+        return { label: t('Nhân viên Quầy'), bg: 'bg-amber-50 text-amber-800 border-amber-200' }
       case 'CUSTOMER':
       default:
-        return { label: 'Khách hàng Thuê kho', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+        return { label: t('Khách hàng Thuê kho'), bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
     }
   }
 
@@ -88,7 +96,7 @@ export const DashboardLayout: React.FC = () => {
               </span>
             </button>
 
-            <BrandLogo size="md" subtitle="KHO TỰ QUẢN THÔNG MINH" />
+            <BrandLogo size="md" subtitle={t('KHO TỰ QUẢN THÔNG MINH', 'SMART SELF-STORAGE')} />
 
             <div className="h-8 w-[1px] bg-slate-200 hidden md:block"></div>
 
@@ -97,14 +105,16 @@ export const DashboardLayout: React.FC = () => {
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
                 <span className="material-symbols-outlined text-blue-600 text-[18px]">location_on</span>
                 <div className="flex flex-col text-left">
-                  <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Cơ sở trực thuộc</span>
+                  <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">
+                    {t('Cơ sở trực thuộc', 'Assigned Facility')}
+                  </span>
                   <select
                     value={selectedFacility}
                     onChange={(e) => setSelectedFacility(e.target.value)}
                     className="bg-transparent font-mono text-xs text-slate-900 font-bold focus:outline-none cursor-pointer pr-1"
                   >
                     {!isFacilityManagerPage && (
-                      <option value="ALL">Toàn hệ thống (Tất cả cơ sở)</option>
+                      <option value="ALL">{t('Toàn hệ thống (Tất cả cơ sở)', 'All Facilities System')}</option>
                     )}
                     {facilities.length > 0 ? (
                       facilities.map(f => (
@@ -113,14 +123,14 @@ export const DashboardLayout: React.FC = () => {
                         </option>
                       ))
                     ) : (
-                      <option value="">Đang tải danh sách cơ sở...</option>
+                      <option value="">{t('Đang tải danh sách cơ sở...', 'Loading facilities...')}</option>
                     )}
                   </select>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsScopingModalOpen(true)}
-                  title="Mở bảng phân công cơ sở"
+                  title={t('Mở bảng phân công cơ sở')}
                   className="ml-1 p-1 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[18px]">domain_verification</span>
@@ -132,43 +142,20 @@ export const DashboardLayout: React.FC = () => {
 
           {/* Right Tools: Notifications, User Profile */}
           <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+            <QuickThemeLanguageToggle />
             <NotificationCenter userId={user?.id} />
 
             <div className="h-8 w-[1px] bg-slate-200 hidden sm:block"></div>
 
-            {/* User Profile & Logout */}
+            {/* User Profile Dropdown & Logout */}
             {isAuthenticated && user ? (
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs shadow-sm">
-                  {user.fullName ? user.fullName.slice(0, 2).toUpperCase() : 'US'}
-                </div>
-                <div className="hidden md:flex flex-col text-left">
-                  <span className="text-xs font-bold text-slate-900 leading-tight">
-                    {user.fullName || user.username}
-                  </span>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold border ${roleBadge.bg}`}>
-                      {role || 'USER'}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsProfileModalOpen(true)}
-                  className="p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-                  title="Chỉnh sửa hồ sơ"
-                  aria-label="Chỉnh sửa hồ sơ"
-                >
-                  <span className="material-symbols-outlined text-[18px]">edit</span>
-                </button>
-                <button
-                  onClick={() => logout().then(() => navigate('/login'))}
-                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  title="Đăng xuất khỏi phiên làm việc"
-                >
-                  <span className="material-symbols-outlined text-[18px]">logout</span>
-                </button>
-              </div>
+              <UserAvatarDropdown
+                user={user}
+                role={role}
+                onOpenProfile={() => setIsProfileModalOpen(true)}
+                onOpenSettings={() => setIsSettingsModalOpen(true)}
+                onOpenLogoutConfirm={() => setIsLogoutConfirmOpen(true)}
+              />
             ) : (
               <Link
                 to="/login"
@@ -445,7 +432,7 @@ export const DashboardLayout: React.FC = () => {
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">query_stats</span>
-                    <span>BÁO CÁO DOANH THU</span>
+                    <span>{t('BÁO CÁO DOANH THU')}</span>
                   </Link>
                   <Link
                     to="/portal/facility-manager"
@@ -456,7 +443,7 @@ export const DashboardLayout: React.FC = () => {
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">grid_view</span>
-                    <span>SƠ ĐỒ CƠ SỞ KHO</span>
+                    <span>{t('SƠ ĐỒ CƠ SỞ KHO')}</span>
                   </Link>
                   <Link
                     to="/portal/staff"
@@ -467,7 +454,7 @@ export const DashboardLayout: React.FC = () => {
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">badge</span>
-                    <span>VẬN HÀNH QUẦY BÀN GIAO</span>
+                    <span>{t('VẬN HÀNH QUẦY BÀN GIAO')}</span>
                   </Link>
                 </nav>
               </div>
@@ -481,15 +468,15 @@ export const DashboardLayout: React.FC = () => {
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-1 text-left">
             <div className="flex items-center justify-between">
               <span className="font-mono text-[10px] text-slate-500 font-bold uppercase">
-                {role === 'CUSTOMER' ? 'An Ninh Kho' : 'Trạng Thái Hệ Thống'}
+                {role === 'CUSTOMER' ? t('An Ninh Kho') : t('Trạng Thái Hệ Thống')}
               </span>
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
             </div>
             <span className="font-unit-code text-xs text-slate-900 font-bold">
-              {role === 'CUSTOMER' ? 'Khóa bảo mật: Hoạt động' : 'Hệ thống trực tuyến'}
+              {role === 'CUSTOMER' ? t('Khóa bảo mật: Hoạt động') : t('Hệ thống trực tuyến')}
             </span>
             <span className="text-[11px] text-slate-500">
-              {role === 'CUSTOMER' ? 'Hỗ trợ khách: 1900 6828' : 'Kết nối máy chủ ổn định'}
+              {role === 'CUSTOMER' ? t('Hỗ trợ khách: 1900 6828') : t('Kết nối máy chủ ổn định')}
             </span>
           </div>
         </div>
@@ -504,6 +491,18 @@ export const DashboardLayout: React.FC = () => {
         </main>
       </div>
       <AccountProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
+      <WebSettingsModal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} />
+      <LogoutConfirmModal
+        isOpen={isLogoutConfirmOpen}
+        onClose={() => setIsLogoutConfirmOpen(false)}
+        onConfirm={async () => {
+          await logout()
+          navigate('/login')
+        }}
+        userName={user?.fullName || user?.username}
+        userEmail={user?.email}
+        userRole={role || 'USER'}
+      />
       <FacilityScopingModal
         isOpen={isScopingModalOpen}
         onClose={() => setIsScopingModalOpen(false)}

@@ -74,14 +74,15 @@ export const OperationsDashboard: React.FC = () => {
       const queryFrom = fDate || undefined
       const queryTo = tDate || undefined
       const scope = targetScope !== undefined ? targetScope : selectedFacilityId
+      const targetFacilityId = scope === 'all' ? undefined : scope
       const [facRes, revRes, occRes, debtRes, polRes, payRes, utRes, ctRes] = await Promise.allSettled([
         facilityService.getFacilities(),
-        reportService.getRevenueReport(queryFrom, queryTo),
-        reportService.getOccupancyReport(),
-        reportService.getOverdueDebtReport(scope === 'all' ? undefined : { facilityId: scope }),
-        scope === 'all'
-          ? Promise.resolve(null)
-          : facilityService.getPolicyByFacilityId(scope),
+        reportService.getRevenueReport(queryFrom, queryTo, targetFacilityId),
+        reportService.getOccupancyReport(targetFacilityId),
+        reportService.getOverdueDebtReport(targetFacilityId ? { facilityId: targetFacilityId } : undefined),
+        targetFacilityId
+          ? facilityService.getPolicyByFacilityId(targetFacilityId)
+          : Promise.resolve(null),
         paymentService.getPayments({ size: 100 }),
         storageUnitService.getUnitTypes(),
         contractService.getMyContracts({ size: 100 }),
@@ -102,7 +103,20 @@ export const OperationsDashboard: React.FC = () => {
         setPayments(payRes.value)
       }
       if (utRes.status === 'fulfilled' && utRes.value) {
-        setUnitTypes(utRes.value)
+        const uts: UnitType[] = utRes.value
+        setUnitTypes(uts)
+        const mini = uts.find((ut) => ut.typeName.toLowerCase().includes('mini'))
+        const standard = uts.find((ut) => ut.typeName.toLowerCase().includes('standard') || ut.typeName.toLowerCase().includes('tiêu chuẩn'))
+        const climate = uts.find((ut) => ut.typeName.toLowerCase().includes('cold') || ut.typeName.toLowerCase().includes('climate') || ut.typeName.toLowerCase().includes('mát'))
+        if (mini?.basePricePerMonth != null) {
+          setMiniPrice(Number(mini.basePricePerMonth).toLocaleString('vi-VN'))
+        }
+        if (standard?.basePricePerMonth != null) {
+          setStandardPrice(Number(standard.basePricePerMonth).toLocaleString('vi-VN'))
+        }
+        if (climate?.basePricePerMonth != null) {
+          setClimatePrice(Number(climate.basePricePerMonth).toLocaleString('vi-VN'))
+        }
       }
       if (ctRes.status === 'fulfilled' && ctRes.value?.content) {
         setContracts(ctRes.value.content)
@@ -237,30 +251,95 @@ export const OperationsDashboard: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3000)
   }
 
+  const [isSavingPolicies, setIsSavingPolicies] = useState(false)
+
+  const parseCurrencyInput = (val: string) => {
+    const cleaned = String(val).replace(/\D/g, '')
+    return Number(cleaned) || 0
+  }
+
   const handleSavePolicies = async (e: React.FormEvent) => {
     e.preventDefault()
+    setIsSavingPolicies(true)
     try {
-      if (selectedFacilityId === 'all') {
-        showToast('Hãy chọn một cơ sở cụ thể trước khi lưu chính sách.', true)
-        return
+      const priceUpdates: string[] = []
+
+      // 1. Save UnitType prices (Mini, Tiêu Chuẩn, Kho Mát) under BR-RULE-011
+      const miniUt = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('mini'))
+      const standardUt = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('standard') || ut.typeName.toLowerCase().includes('tiêu chuẩn'))
+      const climateUt = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('cold') || ut.typeName.toLowerCase().includes('climate') || ut.typeName.toLowerCase().includes('mát'))
+
+      const miniVal = parseCurrencyInput(miniPrice)
+      const standardVal = parseCurrencyInput(standardPrice)
+      const climateVal = parseCurrencyInput(climatePrice)
+
+      if (miniUt && miniVal > 0 && miniVal !== Number(miniUt.basePricePerMonth)) {
+        await storageUnitService.adjustUnitTypePrice(miniUt.id, {
+          newPrice: miniVal,
+          reason: 'Điều chỉnh ma trận giá loại kho Mini từ Operations Dashboard theo BR-RULE-011',
+          cascadeToAvailableUnits: true,
+        })
+        priceUpdates.push(`Mini: ${miniVal.toLocaleString('vi-VN')} đ`)
       }
-      const payload: Partial<FacilityPolicy> = {
-        facilityId: selectedFacilityId,
-        lateFeePerDay: Number(lateFee.replace(/\D/g, '')),
-        discount3Months: Math.abs(Number(discount3M)) || 0,
-        discount6Months: Math.abs(Number(discount6M)) || 0,
-        discount12Months: Math.abs(Number(discount12M)) || 0,
-        depositPercent: depositOption === '2months' ? 200 : 100,
-        gracePeriodDays: Number.parseInt(graceDays, 10) || 0,
-        overdueSealingDays: Number.parseInt(lockoutDay.replace(/\D/g, ''), 10) || 5,
+
+      if (standardUt && standardVal > 0 && standardVal !== Number(standardUt.basePricePerMonth)) {
+        await storageUnitService.adjustUnitTypePrice(standardUt.id, {
+          newPrice: standardVal,
+          reason: 'Điều chỉnh ma trận giá loại kho Tiêu Chuẩn từ Operations Dashboard theo BR-RULE-011',
+          cascadeToAvailableUnits: true,
+        })
+        priceUpdates.push(`Tiêu chuẩn: ${standardVal.toLocaleString('vi-VN')} đ`)
       }
-      const saved = currentPolicy?.id
-        ? await facilityService.updatePolicy(currentPolicy.id, payload)
-        : await facilityService.createPolicy(payload)
-      setCurrentPolicy(saved)
-      showToast(`Đã lưu chính sách cho ${facilities.find(facility => facility.id === selectedFacilityId)?.name || 'cơ sở đã chọn'}.`)
-    } catch (error) {
-      showToast('Không lưu được chính sách. Dữ liệu chưa được cập nhật; vui lòng thử lại.', true)
+
+      if (climateUt && climateVal > 0 && climateVal !== Number(climateUt.basePricePerMonth)) {
+        await storageUnitService.adjustUnitTypePrice(climateUt.id, {
+          newPrice: climateVal,
+          reason: 'Điều chỉnh ma trận giá loại kho Mát từ Operations Dashboard theo BR-RULE-011',
+          cascadeToAvailableUnits: true,
+        })
+        priceUpdates.push(`Kho Mát: ${climateVal.toLocaleString('vi-VN')} đ`)
+      }
+
+      // 2. Save FacilityPolicy if a specific facility is selected
+      let policySaved = false
+      if (selectedFacilityId !== 'all') {
+        const payload: Partial<FacilityPolicy> = {
+          facilityId: selectedFacilityId,
+          lateFeePerDay: Number(lateFee.replace(/\D/g, '')),
+          discount3Months: Math.abs(Number(discount3M)) || 0,
+          discount6Months: Math.abs(Number(discount6M)) || 0,
+          discount12Months: Math.abs(Number(discount12M)) || 0,
+          depositPercent: depositOption === '2months' ? 200 : 100,
+          gracePeriodDays: Number.parseInt(graceDays, 10) || 0,
+          overdueSealingDays: Number.parseInt(lockoutDay.replace(/\D/g, ''), 10) || 5,
+        }
+        const saved = currentPolicy?.id
+          ? await facilityService.updatePolicy(currentPolicy.id, payload)
+          : await facilityService.createPolicy(payload)
+        setCurrentPolicy(saved)
+        policySaved = true
+      }
+
+      // 3. Re-fetch updated unit types
+      const updatedUnitTypes = await storageUnitService.getUnitTypes()
+      if (updatedUnitTypes) {
+        setUnitTypes(updatedUnitTypes)
+      }
+
+      if (priceUpdates.length > 0 && policySaved) {
+        showToast(`Đã lưu bảng giá (${priceUpdates.join(', ')}) và chính sách cơ sở thành công!`)
+      } else if (priceUpdates.length > 0) {
+        showToast(`Đã cập nhật bảng giá (${priceUpdates.join(', ')}) vào CSDL và StorageUnitPriceHistory (BR-RULE-011)!`)
+      } else if (policySaved) {
+        showToast(`Đã lưu chính sách cơ sở cho ${facilities.find((facility) => facility.id === selectedFacilityId)?.name || 'cơ sở đã chọn'}.`)
+      } else {
+        showToast('Thông số chính sách và bảng giá hiện tại đã khớp CSDL.')
+      }
+    } catch (error: any) {
+      const errMsg = error?.response?.data?.message || 'Không lưu được chính sách hoặc bảng giá. Vui lòng thử lại.'
+      showToast(errMsg, true)
+    } finally {
+      setIsSavingPolicies(false)
     }
   }
 
@@ -321,6 +400,36 @@ export const OperationsDashboard: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 shrink-0">
+            {/* Facility Selector Dropdown */}
+            <div className="flex items-center bg-slate-50 hover:bg-slate-100 text-left px-3 py-1.5 rounded-lg border border-slate-200 hover:border-slate-300 transition-all shadow-xs group">
+              <span className="material-symbols-outlined text-blue-600 group-hover:scale-110 transition-transform text-[20px] mr-2">
+                location_on
+              </span>
+              <div className="flex flex-col pr-1 text-left">
+                <span className="text-[10px] text-slate-500 uppercase font-semibold leading-none mb-0.5">
+                  Cơ sở báo cáo
+                </span>
+                <select
+                  value={selectedFacilityId}
+                  onChange={(e) => {
+                    const newFacilityId = e.target.value
+                    setSelectedFacilityId(newFacilityId)
+                    if (setSelectedFacility) {
+                      setSelectedFacility(newFacilityId)
+                    }
+                  }}
+                  className="bg-transparent font-mono text-xs text-slate-900 font-bold focus:outline-none cursor-pointer pr-1"
+                >
+                  <option value="all">Toàn hệ thống (Tất cả)</option>
+                  {facilities.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name.replace(/StoreHub\s*/gi, 'Boxora ')} ({f.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div className="relative z-30">
               <button
                 type="button"
@@ -937,33 +1046,43 @@ export const OperationsDashboard: React.FC = () => {
             <button 
               type="button" 
               onClick={() => {
-                setMiniPrice('650.000')
-                setStandardPrice('1.450.000')
-                setClimatePrice('2.350.000')
+                const mini = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('mini'))
+                const standard = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('standard') || ut.typeName.toLowerCase().includes('tiêu chuẩn'))
+                const climate = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('cold') || ut.typeName.toLowerCase().includes('climate') || ut.typeName.toLowerCase().includes('mát'))
+                setMiniPrice(mini?.basePricePerMonth ? Number(mini.basePricePerMonth).toLocaleString('vi-VN') : '450.000')
+                setStandardPrice(standard?.basePricePerMonth ? Number(standard.basePricePerMonth).toLocaleString('vi-VN') : '2.400.000')
+                setClimatePrice(climate?.basePricePerMonth ? Number(climate.basePricePerMonth).toLocaleString('vi-VN') : '3.200.000')
                 setDepositOption('1month')
                 setDiscount3M('-5')
                 setDiscount6M('-10')
                 setDiscount12M('-15')
-                showToast('Đã khôi phục thông số chính sách mặc định')
+                showToast('Đã khôi phục thông số chính sách và bảng giá loại kho')
               }}
-              className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all border border-slate-200"
+              className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all border border-slate-200 cursor-pointer"
             >
               Khôi phục mặc định
             </button>
             <button 
               type="submit" 
-              disabled={selectedFacilityId === 'all' || isReportsLoading}
-              title={selectedFacilityId === 'all' ? 'Chọn một cơ sở cụ thể để lưu chính sách' : undefined}
+              disabled={isReportsLoading || isSavingPolicies}
               className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
             >
-              <span className="material-symbols-outlined text-[18px]">save</span>
-              <span>Lưu chính sách cơ sở</span>
+              <span className="material-symbols-outlined text-[18px]">
+                {isSavingPolicies ? 'hourglass_top' : 'save'}
+              </span>
+              <span>
+                {isSavingPolicies
+                  ? 'Đang lưu...'
+                  : selectedFacilityId === 'all'
+                  ? 'Lưu bảng giá loại kho (BR-RULE-011)'
+                  : 'Lưu bảng giá & chính sách cơ sở'}
+              </span>
             </button>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {/* Tier 1: Base Pricing (Real Unit Types from DB) */}
+          {/* Tier 1: Base Pricing (Real Unit Types from DB with BR-RULE-011 live adjustment) */}
           <div className="bg-slate-50 rounded-xl p-4 flex flex-col justify-between border border-slate-200">
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -972,43 +1091,71 @@ export const OperationsDashboard: React.FC = () => {
                   1. Bảng Giá Tiêu Chuẩn
                 </span>
                 <span className="px-2 py-0.5 rounded bg-white text-xs font-semibold text-emerald-700 border border-emerald-200">
-                  {unitTypes.length > 0 ? `${unitTypes.length} loại kho` : 'Đang bật'}
+                  {unitTypes.length > 0 ? `${unitTypes.length} loại kho` : 'BR-RULE-011'}
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mb-3">Đơn giá niêm yết theo danh mục loại kho lưu trong cơ sở dữ liệu Boxora.</p>
-              <div className="flex flex-col gap-2 max-h-56 overflow-y-auto pr-1">
-                {unitTypes.length > 0 ? (
-                  unitTypes.slice(0, 4).map((ut) => (
-                    <div key={ut.id} className="flex items-center justify-between p-2 rounded bg-white border border-slate-200">
-                      <div className="flex flex-col text-left">
-                        <span className="text-xs font-bold text-slate-800">{ut.typeName}</span>
-                        <span className="text-[10px] text-slate-400 font-mono">{ut.areaSqm}m² · {ut.dimensions || 'Tiêu chuẩn'}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="font-mono text-xs font-bold text-slate-900">
-                          {ut.basePricePerMonth ? Number(ut.basePricePerMonth).toLocaleString('vi-VN') : '—'}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-mono">đ/th</span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between p-2 rounded bg-white border border-slate-200">
-                      <span className="text-xs text-slate-800">Kho Mini (1 - 3m²)</span>
-                      <span className="font-mono text-xs font-bold text-slate-900">{miniPrice} đ</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2 rounded bg-white border border-slate-200">
-                      <span className="text-xs text-slate-800">Kho Tiêu Chuẩn (4 - 10m²)</span>
-                      <span className="font-mono text-xs font-bold text-slate-900">{standardPrice} đ</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2 rounded bg-white border border-slate-200">
-                      <span className="text-xs text-slate-800">Kho Lớn Thương Mại</span>
-                      <span className="font-mono text-xs font-bold text-orange-600">{climatePrice} đ</span>
-                    </div>
-                  </>
-                )}
+              <p className="text-xs text-slate-500 mb-3">
+                Đơn giá niêm yết theo loại kho (lưu StorageUnitPriceHistory và đồng bộ kho trống).
+              </p>
+              <div className="flex flex-col gap-2.5">
+                {/* Mini */}
+                <div className="p-2.5 rounded-lg bg-white border border-slate-200 flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800">Kho Mini (Personal Locker)</span>
+                    <span className="text-[10px] text-slate-400 font-mono">1.0 - 2.5m²</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <input
+                      type="text"
+                      value={miniPrice}
+                      onChange={(e) => setMiniPrice(e.target.value)}
+                      placeholder="450.000"
+                      className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1 font-mono text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                    />
+                    <span className="text-xs text-slate-500 font-mono shrink-0">đ/th</span>
+                  </div>
+                </div>
+
+                {/* Standard */}
+                <div className="p-2.5 rounded-lg bg-white border border-slate-200 flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800">Kho Tiêu Chuẩn (Standard)</span>
+                    <span className="text-[10px] text-slate-400 font-mono">4.0 - 10.0m²</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <input
+                      type="text"
+                      value={standardPrice}
+                      onChange={(e) => setStandardPrice(e.target.value)}
+                      placeholder="2.400.000"
+                      className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1 font-mono text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                    />
+                    <span className="text-xs text-slate-500 font-mono shrink-0">đ/th</span>
+                  </div>
+                </div>
+
+                {/* Cold Storage */}
+                <div className="p-2.5 rounded-lg bg-white border border-slate-200 flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800">Kho Mát (Cold Storage 18-22°C)</span>
+                    <span className="text-[10px] text-cyan-600 font-mono">Khí hậu ổn định</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <input
+                      type="text"
+                      value={climatePrice}
+                      onChange={(e) => setClimatePrice(e.target.value)}
+                      placeholder="3.200.000"
+                      className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1 font-mono text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                    />
+                    <span className="text-xs text-slate-500 font-mono shrink-0">đ/th</span>
+                  </div>
+                </div>
               </div>
+            </div>
+            <div className="mt-3 pt-2 border-t border-slate-200 text-[10px] text-slate-400 flex items-center justify-between">
+              <span>Chuẩn BR-RULE-011</span>
+              <span>Bảo lưu HĐ đang thuê</span>
             </div>
           </div>
 
