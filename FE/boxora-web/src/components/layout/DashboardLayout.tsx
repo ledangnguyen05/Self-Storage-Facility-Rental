@@ -4,15 +4,18 @@ import { useAuth } from '../../context/AuthContext'
 import { RoleType } from '../../types'
 import { BrandLogo } from '../common/BrandLogo'
 import { AccountProfileModal } from '../common/AccountProfileModal'
+import { FacilityScopingModal } from '../modals/FacilityScopingModal'
 import NotificationCenter from './NotificationCenter'
 
 export const DashboardLayout: React.FC = () => {
   const { user, role, logout, isAuthenticated } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
+  const [selectedFacility, setSelectedFacility] = useState('tb')
   const [searchQuery, setSearchQuery] = useState('')
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
+  const [isScopingModalOpen, setIsScopingModalOpen] = useState(false)
   const isCurrentPath = (path: string) => location.pathname === path
 
   useEffect(() => {
@@ -22,16 +25,16 @@ export const DashboardLayout: React.FC = () => {
   const getRoleBadge = (r: RoleType | null) => {
     switch (r) {
       case 'ADMIN':
-        return { label: 'Quản trị viên Hệ thống', bg: 'bg-rose-100 text-rose-700 border-rose-200' }
+        return { label: 'Quản trị viên Hệ thống', bg: 'bg-rose-50 text-rose-700 border-rose-200' }
       case 'BUSINESS_MANAGER':
-        return { label: 'Giám đốc Vận hành', bg: 'bg-violet-100 text-violet-700 border-violet-200' }
+        return { label: 'Giám đốc Vận hành', bg: 'bg-slate-100 text-slate-800 border-slate-300' }
       case 'FACILITY_MANAGER':
-        return { label: 'Quản lý Cơ sở', bg: 'bg-blue-100 text-blue-700 border-blue-200' }
+        return { label: 'Quản lý Cơ sở', bg: 'bg-blue-50 text-blue-700 border-blue-200' }
       case 'STAFF':
-        return { label: 'Nhân viên Quầy', bg: 'bg-amber-100 text-amber-700 border-amber-200' }
+        return { label: 'Nhân viên Quầy', bg: 'bg-amber-50 text-amber-800 border-amber-200' }
       case 'CUSTOMER':
       default:
-        return { label: 'Khách hàng Thuê kho', bg: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
+        return { label: 'Khách hàng Thuê kho', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
     }
   }
 
@@ -56,10 +59,38 @@ export const DashboardLayout: React.FC = () => {
               </span>
             </button>
 
-            <BrandLogo size="md" subtitle="AUTOMATED VAULT NETWORK" />
+            <BrandLogo size="md" subtitle="KHO TỰ QUẢN THÔNG MINH" />
 
             <div className="h-8 w-[1px] bg-slate-200 hidden md:block"></div>
 
+            {/* Facility Selector & Scoping Modal Trigger (Only for internal staff/managers) */}
+            {role && role !== 'CUSTOMER' && (
+              <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
+                <span className="material-symbols-outlined text-blue-600 text-[18px]">location_on</span>
+                <div className="flex flex-col text-left">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Cơ sở trực thuộc</span>
+                  <select
+                    value={selectedFacility}
+                    onChange={(e) => setSelectedFacility(e.target.value)}
+                    className="bg-transparent font-mono text-xs text-slate-900 font-bold focus:outline-none cursor-pointer pr-1"
+                  >
+                    <option value="tb">Cơ sở Tân Bình - Mega Central</option>
+                    <option value="q7">Cơ sở Quận 7 - Nam Sài Gòn</option>
+                    <option value="bt">Cơ sở Bình Thạnh - Landmark</option>
+                    <option value="cg">Cơ sở Cầu Giấy - Hà Nội Hub</option>
+                    <option value="hp">Cơ sở Hải Phòng - Hồng Bàng</option>
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsScopingModalOpen(true)}
+                  title="Mở bảng phân công cơ sở"
+                  className="ml-1 p-1 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[18px]">domain_verification</span>
+                </button>
+              </div>
+            )}
           </div>
 
 
@@ -429,6 +460,20 @@ export const DashboardLayout: React.FC = () => {
         </main>
       </div>
       <AccountProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
+      <FacilityScopingModal
+        isOpen={isScopingModalOpen}
+        onClose={() => setIsScopingModalOpen(false)}
+        initialUser={{
+          id: user?.id || 'u-active',
+          fullName: user?.fullName || 'Người dùng hiện tại',
+          email: user?.email || '',
+          roleName: role || 'STAFF',
+          facilityId: selectedFacility,
+        }}
+        onSave={(data) => {
+          setSelectedFacility(data.facilityId)
+        }}
+      />
     </div>
   )
 }

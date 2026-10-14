@@ -793,12 +793,12 @@ export const VolumetricSpaceCalculator: React.FC = () => {
         <div className="lg:col-span-7 space-y-4">
           <div className="relative rounded-2xl bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-slate-800 shadow-xl overflow-hidden">
             
-            {/* Top HUD Bar */}
+            {/* Top Bar */}
             <div className="absolute top-0 inset-x-0 z-10 px-4 py-3 bg-slate-900/80 backdrop-blur-md border-b border-slate-800/80 flex items-center justify-between text-white">
-              <div className="flex items-center gap-2.5">
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="font-mono text-xs font-semibold tracking-wider text-slate-200">
-                  BOXORA 3D VAULT // {vaultDims.name}
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="text-xs font-semibold tracking-wide text-slate-200">
+                  Mô phỏng không gian: {vaultDims.name}
                 </span>
               </div>
 

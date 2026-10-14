@@ -163,8 +163,8 @@ export const AppActivationModal: React.FC<AppActivationModalProps> = ({
             <span className="font-semibold text-slate-900">{unit.tenant}</span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-slate-500">Mã hợp đồng điện tử:</span>
-            <span className="font-mono font-bold text-orange-600">{unit.contract}</span>
+            <span className="text-slate-500">Mã hợp đồng:</span>
+            <span className="font-mono font-bold text-blue-600">{unit.contract}</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Thiết bị SmartLock:</span>

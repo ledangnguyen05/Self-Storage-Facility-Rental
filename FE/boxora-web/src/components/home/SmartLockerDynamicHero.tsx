@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react'
-import { ArrowDown, ArrowRight, Sparkles } from 'lucide-react'
+import { ArrowDown, ArrowRight } from 'lucide-react'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 
@@ -177,14 +177,6 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
       />
 
       <div data-scroll-copy className="relative z-10 mx-auto flex min-h-[calc(100svh_-_64px)] max-w-[1440px] flex-col items-center px-5 pb-3 pt-[clamp(1.25rem,5svh,4rem)] text-center sm:px-8 sm:pb-4 sm:pt-[clamp(1.75rem,6svh,4.5rem)] lg:px-12 lg:pt-[clamp(1.5rem,5svh,3.75rem)]">
-        <div data-hero-copy className="mb-4 inline-flex items-center gap-2.5 rounded-full border border-blue-900/10 bg-white/85 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-800 shadow-sm backdrop-blur-sm sm:mb-5 sm:py-2.5 sm:text-xs">
-          <span className="relative flex h-2.5 w-2.5 items-center justify-center">
-            <span className="absolute h-full w-full animate-ping rounded-full bg-lime-500/35 motion-reduce:animate-none" />
-            <span className="relative h-2 w-2 rounded-full bg-lime-500" />
-          </span>
-          <Sparkles size={14} className="text-blue-600" />
-          Dành cho cá nhân và doanh nghiệp
-        </div>
 
         <h1 data-hero-copy id="boxora-hero-title" className="max-w-6xl text-[clamp(2.2rem,min(7.4vw,10svh),6.4rem)] font-semibold leading-[0.96] tracking-[-0.045em] text-slate-950">
           Không gian lưu trữ linh hoạt
@@ -267,29 +259,15 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
             <path d="M720 13V57M720 303V356M548 180H505M935 180H892" stroke="#0866F5" strokeOpacity=".16" strokeDasharray="2 7" />
           </svg>
 
-          <div className="absolute bottom-0 left-1/2 hidden -translate-x-1/2 items-center gap-3 rounded-2xl border border-white/90 bg-white/80 px-4 py-2.5 text-left shadow-[0_10px_35px_rgba(27,66,74,.1)] backdrop-blur-xl sm:inline-flex sm:bottom-0">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
-              <Sparkles size={16} />
-            </span>
-            <span>
-            <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-700">BOXORA SMART STORAGE</span>
-              <span className="mt-0.5 block text-sm font-semibold text-slate-900">Không gian riêng, luôn trong tầm kiểm soát</span>
-            </span>
-          </div>
-
-          <span className="absolute right-[4%] top-[14%] hidden items-center gap-2 rounded-full border border-white/90 bg-white/65 px-3.5 py-2 text-xs font-medium text-slate-600 shadow-sm backdrop-blur-md sm:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-lime-500 shadow-[0_0_0_4px_rgba(123,227,63,.18)]" />
-            Kết nối 24/7
-          </span>
         </div>
 
       </div>
 
       <a
-        href="#telemetry"
+        href="#process"
         onClick={(event) => {
           event.preventDefault()
-          document.getElementById('telemetry')?.scrollIntoView({
+          document.getElementById('process')?.scrollIntoView({
             behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
             block: 'start',
           })

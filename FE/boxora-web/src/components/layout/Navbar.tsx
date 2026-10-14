@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { LogOut, LayoutDashboard, ArrowRight, Menu, X, Pencil } from 'lucide-react'
+import { LogOut, LayoutDashboard, ArrowRight, Menu, X, Pencil, Compass } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { Button } from '../ui/Button'
 import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
@@ -102,7 +102,7 @@ export const Navbar: React.FC = () => {
                   </div>
                 </div>
                 {!canAccessPortal ? (
-                  <span className="material-symbols-outlined text-[16px] text-amber-700 ml-1">travel_explore</span>
+                  <Compass size={15} className="text-amber-700 ml-1" />
                 ) : (
                   <LayoutDashboard size={15} className="text-slate-500 ml-1" />
                 )}
@@ -216,7 +216,7 @@ export const Navbar: React.FC = () => {
                   }`}
                 >
                   {!canAccessPortal ? (
-                    <span className="material-symbols-outlined text-[18px]">travel_explore</span>
+                    <Compass size={16} />
                   ) : (
                     <LayoutDashboard size={16} />
                   )}

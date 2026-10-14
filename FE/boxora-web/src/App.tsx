@@ -29,8 +29,8 @@ function RootRedirect() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-3 text-white">
-        <div className="w-10 h-10 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin"></div>
-        <span className="font-mono text-xs text-slate-400">Khởi động StorageOps Pro...</span>
+        <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
+        <span className="text-xs text-slate-400 font-medium">Đang kết nối hệ thống Boxora...</span>
       </div>
     )
   }

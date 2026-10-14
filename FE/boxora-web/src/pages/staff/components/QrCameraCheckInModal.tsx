@@ -377,7 +377,7 @@ export const QrCameraCheckInModal: React.FC<QrCameraCheckInModalProps> = ({
             </div>
             <div>
               <h3 className="font-headline font-bold text-slate-900 text-sm">
-                QR Camera Check-in // html5-qrcode
+                Quét Mã QR Tiếp Đón Check-in
               </h3>
               <p className="text-[11px] text-slate-500 font-mono">
                 Quét mã QR tiếp đón &amp; tự động gọi API check-in

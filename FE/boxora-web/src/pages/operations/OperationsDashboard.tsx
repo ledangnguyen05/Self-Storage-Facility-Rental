@@ -621,10 +621,10 @@ export const OperationsDashboard: React.FC = () => {
               type="submit" 
               disabled={selectedFacilityId === 'all' || isReportsLoading}
               title={selectedFacilityId === 'all' ? 'Chọn một cơ sở cụ thể để lưu chính sách' : undefined}
-              className="px-4 py-2 rounded-lg bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">save</span>
-              Lưu chính sách cơ sở
+              <span>Lưu chính sách cơ sở</span>
             </button>
           </div>
         </div>

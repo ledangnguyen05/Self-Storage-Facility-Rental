@@ -2,24 +2,46 @@ import { api } from '../lib/axios'
 import { Booking } from '../types'
 import { PageResult } from './userService'
 
+export interface BookingCreatePayload {
+  storageUnitId: string
+  customerId?: string
+  startDate: string
+  rentalMonths: number
+  totalRentalFee?: number
+  depositPaid?: number
+}
+
+export interface BookingPinData {
+  bookingId: string
+  bookingCode?: string
+  accessPin: string
+  pin?: string
+  unitCode?: string
+  encryptedAt?: string
+  pinUpdatedAt?: string
+  qrAccessToken?: string
+}
+
 export const bookingService = {
-  async create(data: { storageUnitId: string; customerId?: string; startDate: string; rentalMonths: number; totalRentalFee?: number }) {
+  async create(data: BookingCreatePayload) {
     const response = await api.post('/api/v1/bookings', data)
     return response.data?.data as Booking
   },
 
-  async createBooking(data: { storageUnitId: string; customerId?: string; startDate: string; rentalMonths: number; totalRentalFee?: number }) {
+  async createBooking(data: BookingCreatePayload) {
     return this.create(data)
   },
 
   async getMyActive(customerId?: string) {
-    const response = await api.get('/api/v1/bookings/my-active', { params: customerId ? { customerId } : undefined })
-    return response.data?.data as Booking[]
+    const response = await api.get('/api/v1/bookings/my-active', {
+      params: customerId ? { customerId } : undefined,
+    })
+    return (response.data?.data || []) as Booking[]
   },
 
   async getUpcomingArrivals() {
     const response = await api.get('/api/v1/bookings/arrivals')
-    return response.data?.data as Booking[]
+    return (response.data?.data || []) as Booking[]
   },
 
   async getAccessCredentials(id: string) {
@@ -39,38 +61,50 @@ export const bookingService = {
 
   async getAccessPin(id: string) {
     const response = await api.get(`/api/v1/bookings/${id}/access-pin`)
-    return response.data?.data as { bookingId: string; bookingCode: string; unitCode: string; pin: string; pinUpdatedAt?: string }
+    const data = response.data?.data
+    return {
+      bookingId: data?.bookingId || id,
+      bookingCode: data?.bookingCode || '',
+      unitCode: data?.unitCode || '',
+      pin: data?.pin || data?.accessPin || '',
+      accessPin: data?.accessPin || data?.pin || '',
+      pinUpdatedAt: data?.pinUpdatedAt,
+      qrAccessToken: data?.qrAccessToken,
+    }
   },
 
-  async remoteUnlock(id: string) {
-    const response = await api.post(`/api/v1/bookings/${id}/remote-unlock`)
-    return response.data?.data as Booking
+  async getBookingPin(id: string) {
+    return this.getAccessPin(id)
   },
 
   async updatePin(id: string, newPin: string) {
     const response = await api.put(`/api/v1/bookings/${id}/access-pin`, { newPin })
-    return response.data?.data as { bookingId: string; bookingCode: string; pin: string; qrAccessToken: string }
+    return response.data?.data as BookingPinData
+  },
+
+  async updateBookingPin(id: string, newPin: string) {
+    return this.updatePin(id, newPin)
   },
 
   async updatePinByUnit(unitId: string, newPin: string) {
     const response = await api.put(`/api/v1/bookings/unit/${unitId}/access-pin`, { newPin })
-    return response.data?.data as { bookingId: string; bookingCode: string; pin: string; qrAccessToken: string }
-  },
-
-  async getBookingPin(id: string) {
-    const response = await api.get(`/api/v1/bookings/${id}/access-pin`)
-    return response.data?.data as { bookingId: string; bookingCode: string; pin: string; qrAccessToken: string }
+    return response.data?.data as BookingPinData
   },
 
   async getBookingPinByUnit(unitId: string) {
     const response = await api.get(`/api/v1/bookings/unit/${unitId}/access-pin`)
-    return response.data?.data as { bookingId: string; bookingCode: string; pin: string; qrAccessToken: string }
+    return response.data?.data as BookingPinData
   },
 
   async renewBooking(id: string, extraMonths: number = 1) {
     const response = await api.post(`/api/v1/bookings/${id}/renew`, null, {
       params: { extraMonths },
     })
+    return response.data?.data as Booking
+  },
+
+  async remoteUnlock(id: string) {
+    const response = await api.post(`/api/v1/bookings/${id}/remote-unlock`)
     return response.data?.data as Booking
   },
 }
