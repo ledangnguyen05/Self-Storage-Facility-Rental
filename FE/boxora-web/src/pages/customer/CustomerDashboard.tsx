@@ -73,7 +73,7 @@ export const CustomerDashboard: React.FC = () => {
     fetchFacilities()
   }, [user])
 
-  const activeContracts = contracts.filter(c => c.status === 'ACTIVE')
+  const activeContracts = contracts.filter(c => c.status === 'ACTIVE' || c.status === 'OVERDUE')
 
   // Support Ticket Form State
   const [ticketUnit, setTicketUnit] = useState('')
@@ -473,21 +473,37 @@ export const CustomerDashboard: React.FC = () => {
                           <div className="flex flex-col">
                             <div className="flex items-center gap-2">
                               <span className="font-mono text-base font-extrabold text-slate-900">KHO #{c.unitCode}</span>
-                              <span className="stitch-badge stitch-badge-available">
-                                <span className="pulsing-dot bg-emerald-500"></span>
-                                Đang hoạt động
-                              </span>
+                              {c.status === 'OVERDUE' ? (
+                                <span className="stitch-badge bg-rose-50 text-rose-700 border border-rose-200">
+                                  <span className="pulsing-dot bg-rose-500"></span>
+                                  Quá hạn thanh toán
+                                </span>
+                              ) : (
+                                <span className="stitch-badge stitch-badge-available">
+                                  <span className="pulsing-dot bg-emerald-500"></span>
+                                  Đang hoạt động
+                                </span>
+                              )}
                             </div>
                             <span className="text-xs text-slate-500">{c.facilityName} • Hợp đồng #{c.contractCode}</span>
                           </div>
                         </div>
 
                         <div className="text-right">
-                          <span className="text-[10px] uppercase font-bold text-amber-700 block">Hạn hợp đồng</span>
-                          <span className="font-mono text-xs font-bold text-slate-900">{c.endDate}</span>
-                          <span className="text-[10px] text-emerald-600 font-semibold block">Đã thanh toán</span>
+                          <span className={`text-[10px] uppercase font-bold block ${c.status === 'OVERDUE' ? 'text-rose-600' : 'text-amber-700'}`}>Hạn hợp đồng</span>
+                          <span className={`font-mono text-xs font-bold ${c.status === 'OVERDUE' ? 'text-rose-700' : 'text-slate-900'}`}>{c.endDate}</span>
+                          <span className={`text-[10px] font-semibold block ${c.status === 'OVERDUE' ? 'text-rose-600' : 'text-emerald-600'}`}>
+                            {c.status === 'OVERDUE' ? 'Chưa thanh toán' : 'Đã thanh toán'}
+                          </span>
                         </div>
                       </div>
+
+                      {c.status === 'OVERDUE' && (
+                        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700">
+                          <span className="material-symbols-outlined text-[18px]">warning</span>
+                          <span>Kho đã quá hạn hợp đồng từ ngày {c.endDate}. Khóa đã chuyển sang chế độ Tạm Khóa (Overdue Locked). Vui lòng gia hạn để mở khóa.</span>
+                        </div>
+                      )}
 
                       {/* Climate & Status Strip */}
                       <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono text-slate-600">
@@ -497,9 +513,9 @@ export const CustomerDashboard: React.FC = () => {
                         <span className="flex items-center gap-1.5">
                           <span className="text-slate-400">Độ ẩm:</span> 48% RH
                         </span>
-                        <span className="flex items-center gap-1.5 text-emerald-700 font-semibold">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                          Khóa thông minh: Đã khóa
+                        <span className={`flex items-center gap-1.5 font-semibold ${c.status === 'OVERDUE' ? 'text-rose-700' : 'text-emerald-700'}`}>
+                          <span className={`w-2 h-2 rounded-full ${c.status === 'OVERDUE' ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>
+                          {c.status === 'OVERDUE' ? 'Khóa thông minh: Tạm khóa quá hạn' : 'Khóa thông minh: Đã khóa'}
                         </span>
                       </div>
 
@@ -836,9 +852,13 @@ export const CustomerDashboard: React.FC = () => {
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                           c.status === 'ACTIVE' 
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : c.status === 'OVERDUE'
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                            : c.status === 'PENDING_SIGNATURE'
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
                             : 'bg-slate-100 text-slate-600 border border-slate-200'
                         }`}>
-                          {c.status === 'ACTIVE' ? 'Đang hiệu lực' : c.status}
+                          {c.status === 'ACTIVE' ? 'Đang hiệu lực' : c.status === 'OVERDUE' ? 'Quá hạn' : c.status === 'PENDING_SIGNATURE' ? 'Chờ ký số' : c.status}
                         </span>
                       </td>
                       <td className="py-4 px-4 text-right">

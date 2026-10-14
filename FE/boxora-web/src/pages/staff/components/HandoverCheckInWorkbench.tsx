@@ -5,6 +5,7 @@ import { bookingService } from '../../../services/bookingService'
 
 interface HandoverCheckInWorkbenchProps {
   arrivals?: Booking[]
+  onRefreshArrivals?: () => Promise<void> | void
   onHandoverComplete?: (bookingId: string) => void
   onOpenQrScanner?: () => void
   activeBookingId?: string
@@ -12,6 +13,7 @@ interface HandoverCheckInWorkbenchProps {
 
 export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> = ({
   arrivals: propArrivals,
+  onRefreshArrivals,
   onHandoverComplete,
   onOpenQrScanner,
   activeBookingId

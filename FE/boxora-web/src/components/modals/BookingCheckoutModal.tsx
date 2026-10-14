@@ -66,7 +66,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
 
     let isCurrent = true
     QRCode.toDataURL(paymentUrl, { width: 220, margin: 1, errorCorrectionLevel: 'M' })
-      .then((dataUrl) => {
+      .then((dataUrl: string) => {
         if (isCurrent) setQrCode(dataUrl)
       })
       .catch((error: unknown) => {
