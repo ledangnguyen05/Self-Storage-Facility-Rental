@@ -37,9 +37,10 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
                 COUNT(p)
             )
             FROM Payment p
-            JOIN p.booking b
-            JOIN b.storageUnit su
-            JOIN su.facility f
+            LEFT JOIN p.booking b
+            LEFT JOIN b.storageUnit bSu
+            LEFT JOIN p.contract c
+            JOIN Facility f ON (f.id = bSu.facility.id OR (bSu.facility.id IS NULL AND f.id = c.facility.id))
             WHERE p.status = com.boxora.enums.PaymentStatus.PAID
             AND (CAST(:fromDate AS timestamp) IS NULL OR p.paymentTime >= :fromDate)
             AND (CAST(:toDate AS timestamp) IS NULL OR p.paymentTime <= :toDate)

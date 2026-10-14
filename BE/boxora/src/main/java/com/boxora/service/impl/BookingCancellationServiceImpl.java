@@ -59,6 +59,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
      * Tự động quét và hủy các booking PENDING_PAYMENT quá hạn mỗi 15 phút (0 *\/15 * * * ?).
      */
     @Scheduled(cron = "${app.scheduling.auto-cancel-cron:0 */15 * * * ?}")
+    @Transactional
     public void runAutoCancelCron() {
         log.info("[CRON] Starting 15-minute automated pending payment booking cancellation...");
         try {

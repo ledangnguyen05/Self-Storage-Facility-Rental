@@ -47,15 +47,19 @@ export const Footer: React.FC = () => {
             <ul className="space-y-2.5 text-[14px] text-[#555555]">
               <li className="flex items-start gap-2">
                 <MapPin size={15} className="text-[#8A8A8A] shrink-0 mt-1" />
-                <span>District 1 — Central Landmark</span>
+                <span>StoreHub District 1 — 123 Nguyễn Huệ</span>
               </li>
               <li className="flex items-start gap-2">
                 <MapPin size={15} className="text-[#8A8A8A] shrink-0 mt-1" />
-                <span>Thu Duc — Saigon Hi-Tech Park</span>
+                <span>StoreHub District 7 — 456 Nguyễn Hữu Thọ</span>
               </li>
               <li className="flex items-start gap-2">
                 <MapPin size={15} className="text-[#8A8A8A] shrink-0 mt-1" />
-                <span>Binh Thanh — Riverside Facility</span>
+                <span>StoreHub Thu Duc — 789 Võ Văn Ngân</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <MapPin size={15} className="text-[#8A8A8A] shrink-0 mt-1" />
+                <span>StoreHub Tan Binh — 102 Trường Sơn</span>
               </li>
             </ul>
           </div>

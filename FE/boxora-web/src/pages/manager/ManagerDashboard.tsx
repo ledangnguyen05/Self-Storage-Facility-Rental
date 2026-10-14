@@ -1239,7 +1239,7 @@ export const ManagerDashboard: React.FC = () => {
               </div>
               <div className="flex flex-col">
                 <h3 className="text-base font-bold text-slate-900">Nhân sự Trực ca (4/6 Nhân viên)</h3>
-                <span className="text-xs text-slate-500">Ca sáng: 07:00 - 15:30 (Trạm Mega Central)</span>
+                <span className="text-xs text-slate-500">Ca sáng: 07:00 - 15:30 ({currentFacilityName})</span>
               </div>
             </div>
             <button 

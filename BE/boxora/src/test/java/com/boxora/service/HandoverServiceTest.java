@@ -63,6 +63,9 @@ class HandoverServiceTest {
     @Mock
     private com.boxora.security.FacilityAccessGuard facilityAccessGuard;
 
+    @Mock
+    private com.boxora.security.RequestContext requestContext;
+
     @InjectMocks
     private HandoverServiceImpl handoverService;
 

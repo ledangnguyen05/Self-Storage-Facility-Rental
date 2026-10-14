@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { RoleType } from '../../types'
+import { RoleType, Facility } from '../../types'
+import { facilityService } from '../../services/facilityService'
 import { BrandLogo } from '../common/BrandLogo'
 import { AccountProfileModal } from '../common/AccountProfileModal'
 import { FacilityScopingModal } from '../modals/FacilityScopingModal'
@@ -11,12 +12,31 @@ export const DashboardLayout: React.FC = () => {
   const { user, role, logout, isAuthenticated } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
-  const [selectedFacility, setSelectedFacility] = useState('tb')
+  const [facilities, setFacilities] = useState<Facility[]>([])
+  const [selectedFacility, setSelectedFacility] = useState(user?.facilityId || '')
   const [searchQuery, setSearchQuery] = useState('')
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
   const [isScopingModalOpen, setIsScopingModalOpen] = useState(false)
   const isCurrentPath = (path: string) => location.pathname === path
+
+  useEffect(() => {
+    facilityService.getFacilities()
+      .then(res => {
+        const list = res?.content || []
+        setFacilities(list)
+        if (list.length > 0) {
+          setSelectedFacility(current => {
+            if (current && list.some(f => f.id === current)) return current
+            if (user?.facilityId && list.some(f => f.id === user.facilityId)) return user.facilityId
+            return list[0].id
+          })
+        }
+      })
+      .catch(err => {
+        console.warn('Failed to load facilities in DashboardLayout:', err)
+      })
+  }, [user?.facilityId])
 
   useEffect(() => {
     setIsMobileMenuOpen(false)
@@ -74,11 +94,15 @@ export const DashboardLayout: React.FC = () => {
                     onChange={(e) => setSelectedFacility(e.target.value)}
                     className="bg-transparent font-mono text-xs text-slate-900 font-bold focus:outline-none cursor-pointer pr-1"
                   >
-                    <option value="tb">Cơ sở Tân Bình - Mega Central</option>
-                    <option value="q7">Cơ sở Quận 7 - Nam Sài Gòn</option>
-                    <option value="bt">Cơ sở Bình Thạnh - Landmark</option>
-                    <option value="cg">Cơ sở Cầu Giấy - Hà Nội Hub</option>
-                    <option value="hp">Cơ sở Hải Phòng - Hồng Bàng</option>
+                    {facilities.length > 0 ? (
+                      facilities.map(f => (
+                        <option key={f.id} value={f.id}>
+                          {f.name} ({f.code})
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">Đang tải danh sách cơ sở...</option>
+                    )}
                   </select>
                 </div>
                 <button

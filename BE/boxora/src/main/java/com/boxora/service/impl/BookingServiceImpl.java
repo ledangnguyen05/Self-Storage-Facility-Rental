@@ -109,15 +109,13 @@ public class BookingServiceImpl implements BookingService {
         // 5. Xác định khách hàng
         User customer = null;
         if (request.getCustomerId() != null) {
-            customer = userRepository.findById(request.getCustomerId()).orElse(null);
+            customer = userRepository.findById(request.getCustomerId())
+                    .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
         } else if (requestContext != null && requestContext.currentUserId() != null) {
-            customer = userRepository.findById(requestContext.currentUserId()).orElse(null);
-        }
-        if (customer == null) {
-            customer = userRepository.findAll().stream().findFirst().orElse(null);
-        }
-        if (customer == null) {
-            throw new AppException(ErrorCode.USER_NOT_FOUND);
+            customer = userRepository.findById(requestContext.currentUserId())
+                    .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        } else {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
         }
 
         // 6. Tính toán đơn giá và tiền cọc
