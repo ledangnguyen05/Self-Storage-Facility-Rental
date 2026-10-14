@@ -43,7 +43,7 @@ export interface StorageUnitType {
 
 export const BOXORA_FACILITIES: FacilityLocation[] = [
   {
-    id: 'HCM-D1',
+    id: 'f7af2794-0d0d-4c68-9e36-c44bf3034f6c',
     name: 'StoreHub District 1',
     shortName: 'StoreHub Quận 1',
     district: 'Quận 1',
@@ -53,7 +53,7 @@ export const BOXORA_FACILITIES: FacilityLocation[] = [
     highlight: 'HCM-D1 • Mở cửa 08:00 - 20:00 • Trung tâm Quận 1 • Chuẩn An Ninh 24/7'
   },
   {
-    id: 'HCM-D7',
+    id: '45e03ded-5da1-43d5-bea7-96c645d5f96c',
     name: 'StoreHub District 7',
     shortName: 'StoreHub Quận 7',
     district: 'Quận 7',
@@ -63,7 +63,7 @@ export const BOXORA_FACILITIES: FacilityLocation[] = [
     highlight: 'HCM-D7 • Mở cửa 08:00 - 20:00 • Đỗ xe tải tận cửa • Kho mát vi khí hậu'
   },
   {
-    id: 'HCM-TD',
+    id: 'fd8f948e-fdff-4a81-ad0f-fc45639b545d',
     name: 'StoreHub Thu Duc',
     shortName: 'StoreHub Thủ Đức',
     district: 'TP. Thủ Đức',
@@ -71,6 +71,16 @@ export const BOXORA_FACILITIES: FacilityLocation[] = [
     coords: { lat: 10.8540, lng: 106.7865 },
     contactPhone: '0903456789',
     highlight: 'HCM-TD • Mở cửa 08:00 - 20:00 • Khu Công Nghệ Cao • Kho pallet logistics'
+  },
+  {
+    id: 'a1111111-2222-3333-4444-555555555555',
+    name: 'StoreHub Tan Binh Mega Hub',
+    shortName: 'StoreHub Tân Bình',
+    district: 'Tân Bình',
+    address: '102 Trường Sơn, Phường 2, Quận Tân Bình, TP.HCM',
+    coords: { lat: 10.8015, lng: 106.6550 },
+    contactPhone: '0904567890',
+    highlight: 'HCM-TB • Mở cửa 08:00 - 21:00 • Tiếp giáp sân bay Tân Sơn Nhất • Kho thương mại điện tử 24/7'
   }
 ]
 

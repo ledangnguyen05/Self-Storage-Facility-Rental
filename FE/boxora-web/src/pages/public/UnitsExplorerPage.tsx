@@ -84,6 +84,7 @@ export const UnitsExplorerPage: React.FC = () => {
       const fName = (f.name || '').toLowerCase()
       if (fName.includes('district 7') || fName.includes('quận 7')) coords = { lat: 10.7380, lng: 106.7082 }
       if (fName.includes('thu duc') || fName.includes('thủ đức')) coords = { lat: 10.8521, lng: 106.7684 }
+      if (fName.includes('tan binh') || fName.includes('tân bình')) coords = { lat: 10.8015, lng: 106.6550 }
       return {
         id: f.id,
         name: f.name,
@@ -268,7 +269,7 @@ export const UnitsExplorerPage: React.FC = () => {
     try {
       const priceNum = Number(rentalModalUnit.monthlyPriceNumeric || 1850000)
       const res = await bookingService.createBooking({
-        storageUnitId: rentalModalUnit.id.length === 36 ? rentalModalUnit.id : '00000000-0000-0000-0000-000000000001',
+        storageUnitId: rentalModalUnit.id.length === 36 ? rentalModalUnit.id : (rawUnits[0]?.id || 'b0000000-0000-0000-0000-000000000101'),
         customerId: user?.id,
         startDate: new Date().toISOString().split('T')[0],
         rentalMonths: 3,
@@ -544,7 +545,7 @@ export const UnitsExplorerPage: React.FC = () => {
                 onChange={(e) => setSelectedFacilityFilter(e.target.value)}
                 className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500 shadow-2xs"
               >
-                <option value="all">Tất Cả Cơ Sở Kho Boxora (3 Chi Nhánh)</option>
+                <option value="all">Tất Cả Cơ Sở Kho Boxora ({effectiveFacilities.length} Chi Nhánh)</option>
                 {effectiveFacilities.map((fac) => {
                   const dist = calculateDistanceKm(
                     customerLocation.coords.lat,
@@ -566,7 +567,7 @@ export const UnitsExplorerPage: React.FC = () => {
                 <span className="material-symbols-outlined text-[14px] text-slate-500 shrink-0">warehouse</span>
                 <span className="truncate">
                   {selectedFacilityFilter === 'all'
-                    ? 'Đang hiển thị các phòng kho trên toàn hệ thống 3 cơ sở'
+                    ? `Đang hiển thị các phòng kho trên toàn hệ thống ${effectiveFacilities.length} cơ sở`
                     : effectiveFacilities.find(f => f.id === selectedFacilityFilter)?.address || ''}
                 </span>
               </div>

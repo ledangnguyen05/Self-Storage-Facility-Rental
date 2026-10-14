@@ -1557,20 +1557,24 @@ export const HomePage: React.FC = () => {
           {/* Column 4: Hệ Thống Cơ Sở & Liên Hệ */}
           <div className="space-y-4">
             <h4 className="font-headline text-sm font-bold text-slate-900 uppercase tracking-wider">
-              Hệ Thống Cơ Sở
+              Hệ Thống 4 Cơ Sở Kho
             </h4>
             <div className="space-y-3 text-xs text-slate-600">
               <div className="space-y-0.5">
-                <div className="font-bold text-slate-800">Cơ Sở 1 // Thủ Đức Hub:</div>
-                <p className="text-slate-500">Lô D2, Khu Công Nghệ Cao, P. Tăng Nhơn Phú B, TP. Thủ Đức, TP.HCM</p>
+                <div className="font-bold text-slate-800">Cơ Sở 1 // StoreHub Quận 1:</div>
+                <p className="text-slate-500">123 Nguyễn Huệ, P. Bến Nghé, Quận 1, TP.HCM</p>
               </div>
               <div className="space-y-0.5">
-                <div className="font-bold text-slate-800">Cơ Sở 2 // Nam Sài Gòn (Q.7):</div>
-                <p className="text-slate-500">120 Đường Số 7, KDC Trung Sơn, Xã Bình Hưng, TP.HCM</p>
+                <div className="font-bold text-slate-800">Cơ Sở 2 // StoreHub Quận 7 (Nam Sài Gòn):</div>
+                <p className="text-slate-500">456 Nguyễn Hữu Thọ, P. Tân Hưng, Quận 7, TP.HCM</p>
               </div>
               <div className="space-y-0.5">
-                <div className="font-bold text-slate-800">Cơ Sở 3 // Tân Bình Hub:</div>
-                <p className="text-slate-500">45 Bạch Đằng, Phường 2, Quận Tân Bình, TP.HCM</p>
+                <div className="font-bold text-slate-800">Cơ Sở 3 // StoreHub Thủ Đức Hub:</div>
+                <p className="text-slate-500">789 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức, TP.HCM</p>
+              </div>
+              <div className="space-y-0.5">
+                <div className="font-bold text-slate-800">Cơ Sở 4 // StoreHub Tân Bình Mega Hub:</div>
+                <p className="text-slate-500">102 Trường Sơn, Phường 2, Quận Tân Bình, TP.HCM</p>
               </div>
               <div className="pt-2 text-cyan-800 font-mono font-bold text-xs">
                 Hotline: 1900-BOXORA (24/7)

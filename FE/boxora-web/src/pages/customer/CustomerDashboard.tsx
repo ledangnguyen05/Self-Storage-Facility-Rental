@@ -4,6 +4,16 @@ import { useAuth } from '../../context/AuthContext'
 import { contractService, RentalContract } from '../../services/contractService'
 import { bookingService } from '../../services/bookingService'
 import { supportTicketService } from '../../services/supportTicketService'
+import { facilityService } from '../../services/facilityService'
+import { storageUnitService } from '../../services/storageUnitService'
+import { Facility, StorageUnit } from '../../types'
+
+const UNIT_CARD_IMAGES = [
+  'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80',
+  'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=800&q=80',
+  'https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&w=800&q=80',
+  'https://images.unsplash.com/photo-1590247813693-5541d1c609fd?auto=format&fit=crop&w=800&q=80'
+]
 
 export const CustomerDashboard: React.FC = () => {
   const { user } = useAuth()
@@ -12,6 +22,11 @@ export const CustomerDashboard: React.FC = () => {
   // Real database contracts state
   const [contracts, setContracts] = useState<RentalContract[]>([])
   const [loadingContracts, setLoadingContracts] = useState<boolean>(true)
+
+  // Real facilities & available units state
+  const [facilities, setFacilities] = useState<Facility[]>([])
+  const [availableUnits, setAvailableUnits] = useState<StorageUnit[]>([])
+  const [loadingUnits, setLoadingUnits] = useState<boolean>(true)
 
   const fetchContracts = async () => {
     try {
@@ -27,11 +42,44 @@ export const CustomerDashboard: React.FC = () => {
     }
   }
 
+  const fetchAvailableUnits = async () => {
+    try {
+      setLoadingUnits(true)
+      const res = await storageUnitService.getUnits({ status: 'AVAILABLE' })
+      if (Array.isArray(res)) {
+        setAvailableUnits(res)
+      }
+    } catch (err) {
+      console.error('Failed to load available storage units from database:', err)
+    } finally {
+      setLoadingUnits(false)
+    }
+  }
+
+  const fetchFacilities = async () => {
+    try {
+      const res = await facilityService.getFacilities()
+      if (res?.content) {
+        setFacilities(res.content)
+      }
+    } catch (err) {
+      console.error('Failed to load facilities from database:', err)
+    }
+  }
+
   useEffect(() => {
     fetchContracts()
+    fetchAvailableUnits()
+    fetchFacilities()
   }, [user])
 
   const activeContracts = contracts.filter(c => c.status === 'ACTIVE')
+
+  useEffect(() => {
+    if (activeContracts.length > 0 && (!ticketUnit || ticketUnit === 'A-108')) {
+      setTicketUnit(activeContracts[0].unitCode)
+    }
+  }, [activeContracts])
   const nearestEndDate = activeContracts
     .map(c => c.endDate)
     .filter(Boolean)
@@ -203,9 +251,9 @@ export const CustomerDashboard: React.FC = () => {
     if (!selectedBookingUnit) return
     setIsSubmittingBooking(true)
     try {
-      const unitNumPrice = parseInt(selectedBookingUnit.price.replace(/\D/g, ''), 10) || 1850000
+      const unitNumPrice = parseInt(selectedBookingUnit.price.replace(/\D/g, ''), 10) || 1250000
       await bookingService.createBooking({
-        storageUnitId: selectedBookingUnit.id.length === 36 ? selectedBookingUnit.id : '00000000-0000-0000-0000-000000000001',
+        storageUnitId: selectedBookingUnit.id,
         startDate: new Date().toISOString().split('T')[0],
         rentalMonths: bookingRentalMonths,
         totalRentalFee: unitNumPrice * bookingRentalMonths,
@@ -213,6 +261,7 @@ export const CustomerDashboard: React.FC = () => {
       })
       setBookingSuccess(true)
       await fetchContracts()
+      await fetchAvailableUnits()
     } catch (err) {
       console.warn('Booking creation fallback:', err)
       setBookingSuccess(true)
@@ -606,10 +655,11 @@ export const CustomerDashboard: React.FC = () => {
                 className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
               >
                 <option value="all">Tất cả cơ sở</option>
-                <option value="tb">Cơ sở Tân Bình (TP.HCM)</option>
-                <option value="q7">Cơ sở Quận 7 (TP.HCM)</option>
-                <option value="bt">Cơ sở Bình Thạnh (TP.HCM)</option>
-                <option value="cg">Cơ sở Cầu Giấy (Hà Nội)</option>
+                {facilities.map(f => (
+                  <option key={f.id} value={f.id}>
+                    {f.name} ({f.code})
+                  </option>
+                ))}
               </select>
 
               <select
@@ -618,205 +668,115 @@ export const CustomerDashboard: React.FC = () => {
                 className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
               >
                 <option value="all">Tất cả kích cỡ</option>
-                <option value="mini">Kho Mini (2 - 5 m²)</option>
+                <option value="mini">Kho Mini (≤ 5 m²)</option>
                 <option value="family">Kho Gia Đình (6 - 10 m²)</option>
-                <option value="business">Kho Doanh Nghiệp (15 - 30 m²)</option>
+                <option value="business">Kho Doanh Nghiệp (&gt; 10 m²)</option>
               </select>
             </div>
           </div>
 
           {/* Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            
-            {/* Card 1: Kho Mini Standard #A-112 */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-              <div>
-                <div className="relative h-44 overflow-hidden bg-slate-800">
-                  <div 
-                    className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105 opacity-90"
-                    style={{ backgroundImage: "url('https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80')" }}
-                  ></div>
-                  <div className="absolute top-3 left-3 flex gap-1.5">
-                    <span className="bg-slate-900/90 backdrop-blur text-white font-unit-code text-xs px-2 py-1 rounded-md">
-                      #A-112
-                    </span>
-                    <span className="bg-slate-800 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
-                      Tầng Trệt
-                    </span>
-                  </div>
-                  <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
-                    <span className="text-slate-500">Nhiệt độ:</span> 22°C Ổn định
-                  </div>
-                </div>
-
-                <div className="p-5 flex flex-col gap-3">
-                  <div className="flex items-baseline justify-between">
-                    <span className="font-headline text-base font-bold text-slate-900">Kho Mini Standard</span>
-                    <span className="font-headline text-base font-bold text-blue-600">
-                      1.850.000 đ<span className="text-xs font-normal text-slate-500">/tháng</span>
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Phù hợp lưu trữ đồ gia dụng, vali cá nhân, thiết bị văn phòng cỡ vừa.
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Diện tích</span>
-                      <span className="font-data-tabular font-semibold text-slate-800">2.0m × 2.5m (5m²)</span>
-                    </div>
-                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Thể tích</span>
-                      <span className="font-data-tabular font-semibold text-slate-800">15m³</span>
-                    </div>
-                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Khóa cửa</span>
-                      <span className="text-slate-800 font-semibold">Cửa cuốn + Smart PIN</span>
-                    </div>
-                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                      <span className="text-slate-400 block text-[10px] uppercase font-medium">An ninh</span>
-                      <span className="text-slate-800 font-semibold">CCTV 24/7 chuyên dụng</span>
-                    </div>
-                  </div>
-                </div>
+            {loadingUnits ? (
+              <div className="col-span-full py-12 text-center text-slate-500 text-xs">
+                Đang tải danh sách kho đang trống từ hệ thống database...
               </div>
-
-              <div className="p-5 pt-0">
-                <button
-                  onClick={() => setSelectedBookingUnit({ id: 'A-112', name: 'Kho Mini Standard 5m²', price: '1.850.000' })}
-                  className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm"
-                >
-                  <span>Đặt Giữ Chỗ</span>
-                </button>
+            ) : availableUnits.filter(u => {
+                if (filterFacility !== 'all' && u.facilityId !== filterFacility) return false
+                const area = u.areaSqMeters || 6
+                if (filterSize === 'mini' && area > 5) return false
+                if (filterSize === 'family' && (area <= 5 || area > 10)) return false
+                if (filterSize === 'business' && area <= 10) return false
+                return true
+              }).length === 0 ? (
+              <div className="col-span-full py-12 text-center text-slate-500 text-xs bg-white rounded-2xl border border-slate-200">
+                Không có kho trống nào phù hợp với bộ lọc đã chọn. Vui lòng chọn cơ sở hoặc kích thước khác.
               </div>
-            </div>
+            ) : (
+              availableUnits.filter(u => {
+                if (filterFacility !== 'all' && u.facilityId !== filterFacility) return false
+                const area = u.areaSqMeters || 6
+                if (filterSize === 'mini' && area > 5) return false
+                if (filterSize === 'family' && (area <= 5 || area > 10)) return false
+                if (filterSize === 'business' && area <= 10) return false
+                return true
+              }).map((unit, idx) => {
+                const bgImg = UNIT_CARD_IMAGES[idx % UNIT_CARD_IMAGES.length]
+                const priceFormatted = Number(unit.pricePerMonth || 1250000).toLocaleString('vi-VN')
+                const areaVal = unit.areaSqMeters ? `${unit.areaSqMeters.toFixed(1)} m²` : '6.0 m²'
+                const volumeVal = unit.areaSqMeters ? `${Math.round(unit.areaSqMeters * 2.8)} m³` : '17 m³'
 
-            {/* Card 2: Kho Gia Đình Plus #B-104 */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-              <div>
-                <div className="relative h-44 overflow-hidden bg-slate-800">
-                  <div 
-                    className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105 opacity-90"
-                    style={{ backgroundImage: "url('https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=800&q=80')" }}
-                  ></div>
-                  <div className="absolute top-3 left-3 flex gap-1.5">
-                    <span className="bg-slate-900/90 backdrop-blur text-white font-unit-code text-xs px-2 py-1 rounded-md">
-                      #B-104
-                    </span>
-                    <span className="bg-blue-600 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
-                      Tầng 2 (Thang tải)
-                    </span>
-                  </div>
-                  <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
-                    <span className="text-slate-500">Môi trường:</span> 20-22°C Khô thoáng
-                  </div>
-                </div>
+                return (
+                  <div key={unit.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                    <div>
+                      <div className="relative h-44 overflow-hidden bg-slate-800">
+                        <div 
+                          className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105 opacity-90"
+                          style={{ backgroundImage: `url('${bgImg}')` }}
+                        ></div>
+                        <div className="absolute top-3 left-3 flex gap-1.5">
+                          <span className="bg-slate-900/90 backdrop-blur text-white font-unit-code text-xs px-2 py-1 rounded-md">
+                            #{unit.unitCode}
+                          </span>
+                          <span className="bg-blue-600 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
+                            {unit.floorLevel || 'Tầng 1'}
+                          </span>
+                        </div>
+                        <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
+                          <span className="text-slate-500">{unit.facilityName || 'Kho StoreHub'}</span>
+                        </div>
+                      </div>
 
-                <div className="p-5 flex flex-col gap-3">
-                  <div className="flex items-baseline justify-between">
-                    <span className="font-headline text-base font-bold text-slate-900">Kho Gia Đình Plus</span>
-                    <span className="font-headline text-base font-bold text-blue-600">
-                      3.400.000 đ<span className="text-xs font-normal text-slate-500">/tháng</span>
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Lưu kho nội thất căn hộ 2 phòng ngủ, nệm, sofa, đàn piano chống ẩm tiêu chuẩn.
-                  </p>
+                      <div className="p-5 flex flex-col gap-3">
+                        <div className="flex items-baseline justify-between">
+                          <span className="font-headline text-base font-bold text-slate-900">
+                            {unit.unitTypeName || `Kho Tiêu Chuẩn #${unit.unitCode}`}
+                          </span>
+                          <span className="font-headline text-base font-bold text-blue-600">
+                            {priceFormatted} đ<span className="text-xs font-normal text-slate-500">/tháng</span>
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          Phù hợp lưu trữ gia dụng, hành lý, thiết bị cá nhân và hàng hóa thương mại điện tử.
+                        </p>
 
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Diện tích</span>
-                      <span className="font-data-tabular font-semibold text-slate-800">3.0m × 3.0m (9m²)</span>
+                        <div className="grid grid-cols-2 gap-2 pt-2">
+                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                            <span className="text-slate-400 block text-[10px] uppercase font-medium">Diện tích</span>
+                            <span className="font-data-tabular font-semibold text-slate-800">{areaVal}</span>
+                          </div>
+                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                            <span className="text-slate-400 block text-[10px] uppercase font-medium">Thể tích</span>
+                            <span className="font-data-tabular font-semibold text-slate-800">{volumeVal}</span>
+                          </div>
+                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                            <span className="text-slate-400 block text-[10px] uppercase font-medium">Khóa cửa</span>
+                            <span className="text-slate-800 font-semibold">Smart Lock + PIN</span>
+                          </div>
+                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+                            <span className="text-slate-400 block text-[10px] uppercase font-medium">An ninh</span>
+                            <span className="text-slate-800 font-semibold">CCTV 24/7 chuyên dụng</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Thể tích</span>
-                      <span className="font-data-tabular font-semibold text-slate-800">27m³</span>
-                    </div>
-                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Kiểm soát</span>
-                      <span className="text-slate-800 font-semibold">Khóa điện tử thông minh</span>
-                    </div>
-                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Độ ẩm</span>
-                      <span className="text-slate-800 font-semibold">&lt; 55% RH</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
 
-              <div className="p-5 pt-0">
-                <button
-                  onClick={() => setSelectedBookingUnit({ id: 'B-104', name: 'Kho Gia Đình Plus 9m²', price: '3.400.000' })}
-                  className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm"
-                >
-                  <span>Đặt Giữ Chỗ</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Card 3: Kho Doanh Nghiệp Pro #C-005 */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-              <div>
-                <div className="relative h-44 overflow-hidden bg-slate-800">
-                  <div 
-                    className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105 opacity-90"
-                    style={{ backgroundImage: "url('https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&w=800&q=80')" }}
-                  ></div>
-                  <div className="absolute top-3 left-3 flex gap-1.5">
-                    <span className="bg-slate-900/90 backdrop-blur text-white font-unit-code text-xs px-2 py-1 rounded-md">
-                      #C-005
-                    </span>
-                    <span className="bg-slate-800 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
-                      Cửa đôi xe tải
-                    </span>
-                  </div>
-                  <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
-                    <span className="text-slate-500">Giao nhận:</span> Xe tải tận cửa
-                  </div>
-                </div>
-
-                <div className="p-5 flex flex-col gap-3">
-                  <div className="flex items-baseline justify-between">
-                    <span className="font-headline text-base font-bold text-slate-900">Kho Doanh Nghiệp Pro</span>
-                    <span className="font-headline text-base font-bold text-blue-600">
-                      6.900.000 đ<span className="text-xs font-normal text-slate-500">/tháng</span>
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Dành cho công ty thương mại điện tử, nhập khẩu phụ tùng hoặc hàng hóa lưu kho.
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Diện tích</span>
-                      <span className="font-data-tabular font-semibold text-slate-800">4.0m × 5.0m (20m²)</span>
-                    </div>
-                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Thể tích</span>
-                      <span className="font-data-tabular font-semibold text-slate-800">65m³</span>
-                    </div>
-                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Bảo hiểm</span>
-                      <span className="text-slate-800 font-semibold">Tài sản 200 triệu</span>
-                    </div>
-                    <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                      <span className="text-slate-400 block text-[10px] uppercase font-medium">Sức chứa</span>
-                      <span className="text-slate-800 font-semibold">6 Pallet tiêu chuẩn</span>
+                    <div className="p-5 pt-0">
+                      <button
+                        onClick={() => setSelectedBookingUnit({ 
+                          id: unit.id, 
+                          name: `${unit.unitTypeName || 'Kho tiêu chuẩn'} #${unit.unitCode}`, 
+                          price: priceFormatted 
+                        })}
+                        className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
+                      >
+                        <span>Đặt Giữ Chỗ</span>
+                      </button>
                     </div>
                   </div>
-                </div>
-              </div>
-
-              <div className="p-5 pt-0">
-                <button
-                  onClick={() => setSelectedBookingUnit({ id: 'C-005', name: 'Kho Doanh Nghiệp Pro 20m²', price: '6.900.000' })}
-                  className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm"
-                >
-                  <span>Đặt Giữ Chỗ</span>
-                </button>
-              </div>
-            </div>
-
+                )
+              })
+            )}
           </div>
         </div>
       )}
@@ -946,8 +906,15 @@ export const CustomerDashboard: React.FC = () => {
                       onChange={(e) => setTicketUnit(e.target.value)}
                       className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
                     >
-                      <option value="A-108">Kho #A-108 (Cơ sở Tân Bình)</option>
-                      <option value="B-205">Kho #B-205 (Cơ sở Tân Bình)</option>
+                      {activeContracts.length > 0 ? (
+                        activeContracts.map(c => (
+                          <option key={c.unitCode} value={c.unitCode}>
+                            Kho #{c.unitCode} ({c.facilityName})
+                          </option>
+                        ))
+                      ) : (
+                        <option value="general">Chưa có kho hoạt động</option>
+                      )}
                       <option value="general">Khác / Thắc mắc chung</option>
                     </select>
                   </div>
@@ -1125,7 +1092,9 @@ export const CustomerDashboard: React.FC = () => {
                     <h3 className="font-headline text-base font-bold text-slate-900">
                       Gia Hạn Thuê Kho #{renewUnit.id}
                     </h3>
-                    <span className="text-xs text-slate-500">Cơ sở Tân Bình - Mega Central</span>
+                    <span className="text-xs text-slate-500">
+                      {contracts.find(c => c.unitCode === renewUnit.id || c.id === renewUnit.contractId)?.facilityName || 'Hệ thống kho StoreHub'}
+                    </span>
                   </div>
                   <button
                     onClick={() => setRenewUnit(null)}

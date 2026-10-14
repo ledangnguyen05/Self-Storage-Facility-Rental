@@ -31,14 +31,25 @@ export interface HandoverPayload {
 }
 
 export interface HandoverPrerequisites {
-  depositPaid: boolean
-  firstMonthRentPaid: boolean
-  contractSigned: boolean
-  identityVerified: boolean
-  canCheckIn: boolean
+  bookingId?: string
   bookingCode?: string
   customerName?: string
+  customerPhone?: string
   unitCode?: string
+  facilityName?: string
+  depositSatisfied: boolean
+  depositPaid?: number
+  requiredDeposit?: number
+  firstMonthRentSatisfied: boolean
+  firstMonthRentPaid?: number
+  requiredFirstMonthRent?: number
+  contractSigned: boolean
+  contractCode?: string
+  contractStatus?: string
+  identityVerified: boolean
+  idCardNumber?: string
+  eligibleForCheckIn: boolean
+  missingPrerequisites?: string[]
 }
 
 export interface ReturnSettlementPreview {

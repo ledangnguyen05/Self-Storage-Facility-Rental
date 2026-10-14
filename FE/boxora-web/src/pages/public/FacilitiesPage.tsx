@@ -11,7 +11,8 @@ import { BrandLogo } from '../../components/common/BrandLogo'
 const FACILITY_IMAGES = [
   'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&q=80&w=800',
   'https://images.unsplash.com/photo-1549488344-1f9b8d2bd1f3?auto=format&fit=crop&q=80&w=800',
-  'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&q=80&w=800'
+  'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&q=80&w=800',
+  'https://images.unsplash.com/photo-1590247813693-5541d1c609fd?auto=format&fit=crop&q=80&w=800'
 ]
 
 export const FacilitiesPage: React.FC = () => {
@@ -82,7 +83,7 @@ export const FacilitiesPage: React.FC = () => {
         <div className="max-w-3xl mb-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-50 border border-orange-200 text-xs font-semibold text-orange-700 mb-3">
             <Building2 className="w-3.5 h-3.5 text-orange-600" />
-            Hệ thống 3 cơ sở kho tiêu chuẩn cao
+            Hệ thống {facilities.length > 0 ? `${facilities.length} cơ sở kho` : '4 cơ sở kho'} tiêu chuẩn cao
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-2 text-slate-900">
             Hệ Thống Cơ Sở &amp; Tình Trạng Kho Trống

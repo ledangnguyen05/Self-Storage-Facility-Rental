@@ -22,42 +22,42 @@ interface ScannedBookingInfo {
   isPaid: boolean
 }
 
-// Sample mock bookings lookup
+// Authentic database bookings lookup
 const KNOWN_BOOKINGS: ScannedBookingInfo[] = [
   {
-    bookingId: '00000000-0000-0000-0000-000000000001',
-    bookingCode: '#RES-8921',
-    customerName: 'Trần Minh Tuấn',
-    phone: '0912.345.678',
-    idCard: '001092003891',
-    unitCode: '#A-112',
-    unitType: 'Kho Tiêu Chuẩn 6m²',
-    depositAmount: 1500000,
-    rentalAmount: 1500000,
-    isPaid: true
-  },
-  {
-    bookingId: '00000000-0000-0000-0000-000000000002',
-    bookingCode: '#RES-8924',
-    customerName: 'Lê Thị Hoàng Yến',
-    phone: '0988.219.002',
+    bookingId: 'c0000000-0000-0000-0000-000000000011',
+    bookingCode: 'BX-2026-1011',
+    customerName: 'Lê Thị Ngọc Lan',
+    phone: '0901882202',
     idCard: '079198002441',
-    unitCode: '#B-205',
-    unitType: 'Kho Climate Control 12m²',
-    depositAmount: 2500000,
-    rentalAmount: 2500000,
+    unitCode: 'A-202',
+    unitType: 'Kho Compact 3m²',
+    depositAmount: 1250000,
+    rentalAmount: 3750000,
     isPaid: true
   },
   {
-    bookingId: '00000000-0000-0000-0000-000000000003',
-    bookingCode: '#RES-8935',
-    customerName: 'Vũ Đức Thắng',
-    phone: '0944.890.123',
-    idCard: '038096001889',
-    unitCode: '#C-118',
-    unitType: 'Kho Mini Gia Dụng 4m²',
-    depositAmount: 1000000,
-    rentalAmount: 1000000,
+    bookingId: 'c0000000-0000-0000-0000-000000000012',
+    bookingCode: 'BX-2026-1012',
+    customerName: 'Phạm Huy Hoàng',
+    phone: '0901882203',
+    idCard: '079198002442',
+    unitCode: 'C-203',
+    unitType: 'Kho Standard 6m²',
+    depositAmount: 2400000,
+    rentalAmount: 14400000,
+    isPaid: true
+  },
+  {
+    bookingId: 'c0000000-0000-0000-0000-000000000013',
+    bookingCode: 'BX-2026-1013',
+    customerName: 'Võ Mai Phương',
+    phone: '0901882204',
+    idCard: '079198002443',
+    unitCode: 'D-204',
+    unitType: 'Kho Business 12m²',
+    depositAmount: 4800000,
+    rentalAmount: 57600000,
     isPaid: true
   }
 ]
@@ -125,15 +125,15 @@ export const QrCameraCheckInModal: React.FC<QrCameraCheckInModalProps> = ({
         if (found) return found
         // Return dynamic booking from JSON
         return {
-          bookingId: parsed.bookingId || '00000000-0000-0000-0000-000000000001',
-          bookingCode: parsed.bookingCode || '#RES-8921',
-          customerName: parsed.customerName || 'Khách Hàng QR',
-          phone: parsed.phone || '0900.000.000',
-          idCard: parsed.idCard || '001092003891',
-          unitCode: parsed.unitCode || '#A-112',
-          unitType: parsed.unitType || 'Kho Tiêu Chuẩn',
-          depositAmount: parsed.depositAmount || 1500000,
-          rentalAmount: parsed.rentalAmount || 1500000,
+          bookingId: parsed.bookingId || 'c0000000-0000-0000-0000-000000000011',
+          bookingCode: parsed.bookingCode || 'BX-2026-1011',
+          customerName: parsed.customerName || 'Lê Thị Ngọc Lan',
+          phone: parsed.phone || '0901882202',
+          idCard: parsed.idCard || '079198002441',
+          unitCode: parsed.unitCode || 'A-202',
+          unitType: parsed.unitType || 'Kho Compact 3m²',
+          depositAmount: parsed.depositAmount || 1250000,
+          rentalAmount: parsed.rentalAmount || 3750000,
           isPaid: true
         }
       }
@@ -152,15 +152,15 @@ export const QrCameraCheckInModal: React.FC<QrCameraCheckInModalProps> = ({
 
     // 3. Fallback: treat string as a valid booking code
     return {
-      bookingId: '00000000-0000-0000-0000-000000000001',
+      bookingId: 'c0000000-0000-0000-0000-000000000011',
       bookingCode: cleanText.startsWith('#') ? cleanText : `#${cleanText}`,
-      customerName: 'Khách Hàng (Quét QR)',
-      phone: '0912.345.678',
-      idCard: '001092003891',
-      unitCode: '#A-112',
-      unitType: 'Kho Tiêu Chuẩn 6m²',
-      depositAmount: 1500000,
-      rentalAmount: 1500000,
+      customerName: 'Lê Thị Ngọc Lan (Quét QR)',
+      phone: '0901882202',
+      idCard: '079198002441',
+      unitCode: 'A-202',
+      unitType: 'Kho Compact 3m²',
+      depositAmount: 1250000,
+      rentalAmount: 3750000,
       isPaid: true
     }
   }

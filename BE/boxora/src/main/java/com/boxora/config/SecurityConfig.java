@@ -23,6 +23,8 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import org.springframework.http.HttpMethod;
+
 import java.util.List;
 
 @Configuration
@@ -60,7 +62,12 @@ public class SecurityConfig {
                 // Configure route permissions
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_URLS).permitAll()
-                        .anyRequest().permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/facilities/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/storage-units/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/unit-types/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/facility-policies/**").permitAll()
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .anyRequest().authenticated()
                 )
 
                 // Stateless session — no HTTP session stored server-side

@@ -2,34 +2,48 @@ import { Facility, UnitType, StorageUnit, Booking, SupportTicket, HandoverRecord
 
 export const MOCK_FACILITIES: Facility[] = [
   {
-    id: 'fac-1',
-    name: 'Boxora Central Landmark — District 1',
-    address: '142 Nguyen Thi Minh Khai, Ben Thanh Ward, District 1',
+    id: 'f7af2794-0d0d-4c68-9e36-c44bf3034f6c',
+    name: 'StoreHub District 1',
+    code: 'HCM-D1',
+    address: '123 Nguyen Hue, Ben Nghe Ward',
     city: 'Ho Chi Minh City',
-    contactPhone: '028 3822 9901',
-    totalUnits: 120,
-    availableUnits: 34,
+    contactPhone: '0901234567',
+    totalUnits: 9,
+    availableUnits: 5,
     imageUrl: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&q=80&w=1000'
   },
   {
-    id: 'fac-2',
-    name: 'Boxora Tech Park — Thu Duc City',
-    address: 'Lot E2a-7, D1 Road, Saigon Hi-Tech Park, District 9',
+    id: '45e03ded-5da1-43d5-bea7-96c645d5f96c',
+    name: 'StoreHub District 7',
+    code: 'HCM-D7',
+    address: '456 Nguyen Huu Tho, Tan Hung Ward',
     city: 'Ho Chi Minh City',
-    contactPhone: '028 7300 8822',
-    totalUnits: 250,
-    availableUnits: 88,
-    imageUrl: 'https://images.unsplash.com/photo-1590247813693-5541d1c609fd?auto=format&fit=crop&q=80&w=1000'
+    contactPhone: '0902345678',
+    totalUnits: 9,
+    availableUnits: 4,
+    imageUrl: 'https://images.unsplash.com/photo-1549488344-1f9b8d2bd1f3?auto=format&fit=crop&q=80&w=1000'
   },
   {
-    id: 'fac-3',
-    name: 'Boxora Riverside — Binh Thanh',
-    address: '208 Nguyen Huu Canh, Ward 22, Binh Thanh District',
+    id: 'fd8f948e-fdff-4a81-ad0f-fc45639b545d',
+    name: 'StoreHub Thu Duc',
+    code: 'HCM-TD',
+    address: '789 Vo Van Ngan, Linh Chieu Ward',
     city: 'Ho Chi Minh City',
-    contactPhone: '028 3514 6677',
-    totalUnits: 180,
-    availableUnits: 42,
+    contactPhone: '0903456789',
+    totalUnits: 9,
+    availableUnits: 5,
     imageUrl: 'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&q=80&w=1000'
+  },
+  {
+    id: 'a1111111-2222-3333-4444-555555555555',
+    name: 'StoreHub Tan Binh Mega Hub',
+    code: 'HCM-TB',
+    address: '102 Truong Son, Ward 2, Tan Binh District',
+    city: 'Ho Chi Minh City',
+    contactPhone: '0904567890',
+    totalUnits: 9,
+    availableUnits: 4,
+    imageUrl: 'https://images.unsplash.com/photo-1590247813693-5541d1c609fd?auto=format&fit=crop&q=80&w=1000'
   }
 ]
 
