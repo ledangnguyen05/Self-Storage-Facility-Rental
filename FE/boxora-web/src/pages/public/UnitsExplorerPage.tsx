@@ -39,6 +39,9 @@ export const UnitsExplorerPage: React.FC = () => {
   const [searchParams] = useSearchParams()
   const { isAuthenticated, user, logout } = useAuth()
   const { t } = useLanguage()
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
 
   // Real Database Data State
   const [dbFacilities, setDbFacilities] = useState<Facility[]>([])

@@ -38,23 +38,23 @@ public class BookingController {
                 .body(ApiResponse.success("Booking created with access credentials", bookingService.createBooking(request)));
     }
 
-    @GetMapping("/my-requests")
+@GetMapping("/my-requests")
     @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN')")
-    @Operation(summary = "Láº¥y cÃ¡c yÃªu cáº§u Ä‘áº·t kho Ä‘ang chá» duyá»‡t hoáº·c chá» thanh toÃ¡n")
+    @Operation(summary = "Lấy các yêu cầu đặt kho đang chờ duyệt hoặc chờ thanh toán")
     public ResponseEntity<ApiResponse<List<BookingResponse>>> getMyRequests() {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getMyBookingRequests()));
     }
 
     @GetMapping("/pending-approval")
     @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
-    @Operation(summary = "Láº¥y yÃªu cáº§u Ä‘áº·t kho Ä‘ang chá» quÃ½n lÃ½ duyá»‡t")
+    @Operation(summary = "Lấy yêu cầu đặt kho đang chờ quản lý duyệt")
     public ResponseEntity<ApiResponse<List<BookingResponse>>> getPendingApprovalRequests() {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getPendingApprovalRequests()));
     }
 
     @PostMapping("/{id}/decision")
     @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
-    @Operation(summary = "Duyá»‡t hoáº·c tá»« chá»‘i yÃªu cáº§u thuÃª kho")
+    @Operation(summary = "Duyệt hoặc từ chối yêu cầu thuê kho")
     public ResponseEntity<ApiResponse<BookingResponse>> decideRequest(
             @PathVariable UUID id,
             @Valid @RequestBody BookingDecisionRequest request
@@ -62,6 +62,27 @@ public class BookingController {
         return ResponseEntity.ok(ApiResponse.success(
                 bookingService.reviewBookingRequest(id, request.getApproved())
         ));
+    }
+
+    @GetMapping("/my-bookings")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Lấy toàn bộ lịch sử các lượt đặt kho của khách hàng")
+    public ResponseEntity<ApiResponse<List<BookingResponse>>> getMyBookings(@RequestParam(required = false) UUID customerId) {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getMyBookings(customerId)));
+    }
+
+    @GetMapping
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Truy vấn danh sách đơn đặt kho")
+    public ResponseEntity<ApiResponse<List<BookingResponse>>> getAll(
+            @RequestParam(required = false) UUID customerId,
+            @RequestParam(required = false) com.boxora.enums.BookingStatus status) {
+        List<BookingResponse> list = bookingService.getMyBookings(customerId);
+        if (status != null) {
+            list = list.stream().filter(b -> b.getStatus() == status).toList();
+        }
+        return ResponseEntity.ok(ApiResponse.success(list));
+    }
     }
 
     @GetMapping("/my-active")

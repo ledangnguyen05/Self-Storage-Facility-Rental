@@ -284,6 +284,7 @@ export interface FacilityPolicy {
 export interface RevenueReport {
   fromDate?: string
   toDate?: string
+  totalRevenue?: number
   systemSummary?: {
     totalRevenue: number
     rentalFeeRevenue: number
@@ -341,6 +342,7 @@ export interface OverdueDebtItem {
   dailyLateFee: number
   totalLateFee: number
   totalDebt: number
+  debtAmount?: number
   overdueStage?: string
   smartLockStatus?: string
 }

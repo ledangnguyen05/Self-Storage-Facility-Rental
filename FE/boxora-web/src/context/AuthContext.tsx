@@ -83,23 +83,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState<boolean>(true)
 
   useEffect(() => {
-    try {
-      const storedToken = localStorage.getItem('boxora_access_token')
-      const storedUser = localStorage.getItem('boxora_user')
-      if (storedToken && storedUser) {
-        const parsed = JSON.parse(storedUser)
-        if (storedToken.startsWith('mock-token-')) {
-          // Stored mock token detected: auto-upgrade to real database session
-          const adminPreset = { email: 'admin@gmail.com', password: '123456' }
-          authService.login(adminPreset.email, adminPreset.password)
-            .then(res => {
-              if (res.data?.accessToken) {
+    let isMounted = true
+
+    const initAuth = async () => {
+      try {
+        const storedToken = localStorage.getItem('boxora_access_token')
+        const storedUser = localStorage.getItem('boxora_user')
+
+        if (storedToken && storedUser) {
+          const parsed = JSON.parse(storedUser)
+          const isMock = storedToken.startsWith('mock-token-')
+
+          if (isMock) {
+            // Find appropriate account to authenticate against backend
+            const email = parsed.email || (parsed.roleName === 'BUSINESS_MANAGER' ? 'business@gmail.com' : 'admin@gmail.com')
+            const preset = ROLE_PRESETS.find(
+              p => p.email.toLowerCase() === email.toLowerCase() ||
+                   p.role === parsed.roleName ||
+                   p.role === parsed.role?.name
+            )
+            const emailToUse = preset?.email || email
+            const passwordToUse = preset?.password || '123456'
+
+            try {
+              const res = await authService.login(emailToUse, passwordToUse)
+              if (res.data?.accessToken && isMounted) {
                 const { accessToken, refreshToken, user: rawUser } = res.data
                 const jwtRole = parseJwtRole(accessToken)
                 const enriched: User = {
                   ...rawUser,
-                  role: rawUser?.role || { name: (rawUser?.roleName || jwtRole || 'ADMIN') as RoleType },
-                  roleName: rawUser?.roleName || 'ADMIN',
+                  role: rawUser?.role || { name: (rawUser?.roleName || jwtRole || preset?.role || 'ADMIN') as RoleType },
+                  roleName: rawUser?.roleName || jwtRole || preset?.role,
                   roleId: rawUser?.roleId,
                   facilityId: rawUser?.facilityId,
                   facilityName: rawUser?.facilityName,
@@ -110,22 +124,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 localStorage.setItem('boxora_user', JSON.stringify(enriched))
                 setToken(accessToken)
                 setUser(enriched)
+                return
               }
-            })
-            .catch(() => {
-              setToken(storedToken)
-              setUser(parsed)
-            })
-        } else {
-          setToken(storedToken)
-          setUser(parsed)
+            } catch (autoLoginErr) {
+              console.warn('Auto-upgrade to real DB token failed, keeping existing session:', autoLoginErr)
+            }
+          }
+
+          if (isMounted) {
+            setToken(storedToken)
+            setUser(parsed)
+          }
+        }
+      } catch {
+        localStorage.removeItem('boxora_access_token')
+        localStorage.removeItem('boxora_user')
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
         }
       }
-    } catch {
-      localStorage.removeItem('boxora_access_token')
-      localStorage.removeItem('boxora_user')
-    } finally {
-      setIsLoading(false)
+    }
+
+    void initAuth()
+
+    return () => {
+      isMounted = false
     }
   }, [])
 
@@ -175,7 +199,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setUser(enrichedUser)
           return enrichedUser
         }
-      } catch (backendError) {
+      } catch (backendError: any) {
+        if (backendError?.response) {
+          throw backendError
+        }
         console.warn('Backend authentication offline, falling back to mock session:', backendError)
         const matchedPreset = ROLE_PRESETS.find(
           p => p.email.toLowerCase() === emailOrUsername.toLowerCase() ||
@@ -241,9 +268,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       // Try backend authentication first
       return await login(preset.email, preset.password)
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.response) {
+        throw err
+      }
       console.warn('Backend login fallback to mock session for preset:', targetRole, err)
-      // Fallback session to guarantee smooth demo
+      // Fallback session only when backend is completely offline
       const mockUser: User = {
         id: `mock-${targetRole.toLowerCase()}`,
         username: preset.email.split('@')[0],

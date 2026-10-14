@@ -228,6 +228,7 @@ export const Navbar: React.FC = () => {
                   <span>{canAccessPortal ? `${t('Vào bảng điều khiển')} (${role})` : t('Khám Phá & Đăng Ký Thuê Kho')}</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
                     setIsMobileMenuOpen(false)
                     setIsLogoutConfirmOpen(true)
