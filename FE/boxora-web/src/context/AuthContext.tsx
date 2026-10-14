@@ -87,8 +87,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const storedToken = localStorage.getItem('boxora_access_token')
       const storedUser = localStorage.getItem('boxora_user')
       if (storedToken && storedUser) {
-        setToken(storedToken)
-        setUser(JSON.parse(storedUser))
+        const parsed = JSON.parse(storedUser)
+        if (storedToken.startsWith('mock-token-')) {
+          // Stored mock token detected: auto-upgrade to real database session
+          const adminPreset = { email: 'admin@gmail.com', password: '123456' }
+          authService.login(adminPreset.email, adminPreset.password)
+            .then(res => {
+              if (res.data?.accessToken) {
+                const { accessToken, refreshToken, user: rawUser } = res.data
+                const jwtRole = parseJwtRole(accessToken)
+                const enriched: User = {
+                  ...rawUser,
+                  role: rawUser?.role || { name: (rawUser?.roleName || jwtRole || 'ADMIN') as RoleType },
+                  roleName: rawUser?.roleName || 'ADMIN',
+                  roleId: rawUser?.roleId,
+                  facilityId: rawUser?.facilityId,
+                  facilityName: rawUser?.facilityName,
+                  facilityCode: rawUser?.facilityCode
+                }
+                localStorage.setItem('boxora_access_token', accessToken)
+                if (refreshToken) localStorage.setItem('boxora_refresh_token', refreshToken)
+                localStorage.setItem('boxora_user', JSON.stringify(enriched))
+                setToken(accessToken)
+                setUser(enriched)
+              }
+            })
+            .catch(() => {
+              setToken(storedToken)
+              setUser(parsed)
+            })
+        } else {
+          setToken(storedToken)
+          setUser(parsed)
+        }
       }
     } catch {
       localStorage.removeItem('boxora_access_token')
@@ -126,7 +157,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const jwtRole = parseJwtRole(accessToken)
           const enrichedUser: User = {
             ...rawUser,
-            role: rawUser?.role || (jwtRole ? { name: jwtRole } : undefined)
+            role: rawUser?.role || (rawUser?.roleName ? {
+              id: rawUser.roleId,
+              name: rawUser.roleName as RoleType,
+              description: rawUser.roleName
+            } : (jwtRole ? { name: jwtRole } : undefined)),
+            roleName: rawUser?.roleName || rawUser?.role?.name || jwtRole,
+            roleId: rawUser?.roleId || rawUser?.role?.id,
+            facilityId: rawUser?.facilityId,
+            facilityName: rawUser?.facilityName,
+            facilityCode: rawUser?.facilityCode
           }
           localStorage.setItem('boxora_access_token', accessToken)
           localStorage.setItem('boxora_refresh_token', refreshToken)

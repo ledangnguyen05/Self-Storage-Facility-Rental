@@ -12,9 +12,14 @@ export interface User {
     name: RoleType
     description?: string
   }
-  isActive?: boolean
+  roleName?: RoleType | string
+  roleId?: string
   facilityId?: string
+  facilityName?: string
+  facilityCode?: string
+  isActive?: boolean
   createdAt?: string
+  updatedAt?: string
 }
 
 export interface Facility {

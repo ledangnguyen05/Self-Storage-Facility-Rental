@@ -94,6 +94,7 @@ export const DashboardLayout: React.FC = () => {
                     onChange={(e) => setSelectedFacility(e.target.value)}
                     className="bg-transparent font-mono text-xs text-slate-900 font-bold focus:outline-none cursor-pointer pr-1"
                   >
+                    <option value="ALL">Toàn hệ thống (Tất cả cơ sở)</option>
                     {facilities.length > 0 ? (
                       facilities.map(f => (
                         <option key={f.id} value={f.id}>
@@ -479,7 +480,7 @@ export const DashboardLayout: React.FC = () => {
       <div className="lg:pl-64 pt-20 flex-1 min-w-0">
         <main className="min-h-[calc(100vh-5rem)] w-full bg-slate-50 p-4 sm:p-6 lg:p-8">
           <div className="mx-auto w-full max-w-[1600px]">
-            <Outlet />
+            <Outlet context={{ selectedFacility, setSelectedFacility, facilities }} />
           </div>
         </main>
       </div>
