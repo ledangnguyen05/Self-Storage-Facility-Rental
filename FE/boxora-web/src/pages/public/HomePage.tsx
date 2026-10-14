@@ -6,6 +6,12 @@ import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import { FloatingContactWidget } from '../../components/common/FloatingContactWidget'
 import { BrandLogo } from '../../components/common/BrandLogo'
 import { SmartLockerDynamicHero } from '../../components/home/SmartLockerDynamicHero'
+import { AccountProfileModal } from '../../components/common/AccountProfileModal'
+import { LogoutConfirmModal } from '../../components/common/LogoutConfirmModal'
+import { WebSettingsModal } from '../../components/common/WebSettingsModal'
+import { UserAvatarDropdown } from '../../components/common/UserAvatarDropdown'
+import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
+import { useLanguage } from '../../context/LanguageContext'
 
 // ============================================================================
 // MAIN HOMEPAGE COMPONENT
@@ -13,10 +19,13 @@ import { SmartLockerDynamicHero } from '../../components/home/SmartLockerDynamic
 export const HomePage: React.FC = () => {
   const navigate = useNavigate()
   const { isAuthenticated, user, logout } = useAuth()
+  const { language, setLanguage, t } = useLanguage()
   const [dropdown1Open, setDropdown1Open] = useState(false)
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
   const [notifySetting, setNotifySetting] = useState(true)
   const [soundSetting, setSoundSetting] = useState(true)
-  const [langSetting, setLangSetting] = useState<'vi' | 'en'>('vi')
 
   // Customer rental access state
   const isCustomer = user?.role?.name === 'CUSTOMER'
@@ -192,218 +201,55 @@ export const HomePage: React.FC = () => {
 
           {/* Action CTAs */}
           <div className="flex items-center gap-3">
+            <QuickThemeLanguageToggle />
+
             {isAuthenticated ? (
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setDropdown1Open(prev => !prev)}
-                  className={`flex items-center gap-2.5 p-1.5 pr-3 rounded-full border shadow-2xs transition-all cursor-pointer text-left focus:outline-none ${
-                  !canAccessPortal
-                    ? 'bg-lime-50/90 hover:bg-lime-100 border-lime-200 focus:ring-2 focus:ring-lime-500/30'
-                    : 'bg-white hover:bg-slate-50 border-slate-200 focus:ring-2 focus:ring-cyan-500/30'
-                }`}
-              >
-                <div className="relative">
-                  <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shadow-2xs ${
-                      !canAccessPortal ? 'bg-lime-700 text-white' : 'bg-slate-900 text-white'
-                    }`}
-                  >
-                    {user?.fullName ? user.fullName[0].toUpperCase() : user?.username ? user.username[0].toUpperCase() : 'U'}
-                  </div>
-                  <span
-                    className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full ring-2 ring-white ${
-                      !canAccessPortal ? 'bg-lime-500' : 'bg-emerald-500'
-                    }`}
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-xs font-bold text-slate-900 leading-tight">
-                    {user?.fullName || user?.username || 'Khách Hàng'}
-                  </span>
-                  <span
-                    className={`text-[10px] font-mono font-semibold ${
-                      !canAccessPortal ? 'text-lime-800' : 'text-cyan-800'
-                    }`}
-                  >
-                    {!canAccessPortal ? 'Khách Mới • Thuê Kho' : (user?.role?.name || 'CUSTOMER')}
-                  </span>
-                </div>
-                <span
-                  className={`material-symbols-outlined text-[18px] transition-transform duration-150 ${
-                    !canAccessPortal ? 'text-lime-700' : 'text-slate-400'
-                  } ${dropdown1Open ? 'rotate-180' : ''}`}
-                >
-                  expand_more
-                </span>
-              </button>
-
-              {/* Dropdown 1 Popover */}
-              {dropdown1Open && (
-                <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 p-4 animate-in fade-in slide-in-from-top-1 duration-150 flex flex-col gap-3">
-                  <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
-                    <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-xs ${
-                        !canAccessPortal ? 'bg-lime-700 text-white' : 'bg-slate-900 text-white'
-                      }`}
-                    >
-                      {user?.fullName ? user.fullName[0].toUpperCase() : user?.username ? user.username[0].toUpperCase() : 'U'}
-                    </div>
-                    <div className="flex flex-col min-w-0">
-                      <span className="text-xs font-bold text-slate-900 truncate">
-                        {user?.fullName || user?.username || 'Khách Hàng'}
-                      </span>
-                      <span className="text-[11px] text-slate-500 truncate">
-                        {user?.email || 'customer@boxora.vn'}
-                      </span>
-                      <span
-                        className={`mt-0.5 inline-block px-1.5 py-0.2 rounded font-mono text-[9px] font-bold border w-fit ${
-                          !canAccessPortal
-                            ? 'bg-lime-50 text-lime-900 border-lime-200'
-                            : 'bg-cyan-50 text-cyan-900 border-cyan-200'
-                        }`}
-                      >
-                        {!canAccessPortal ? 'KHÁCH HÀNG MỚI (CHƯA CÓ KHO)' : (user?.role?.name || 'CUSTOMER')}
-                      </span>
-                    </div>
-                  </div>
-
-                  {!canAccessPortal ? (
-                    <div className="p-3.5 rounded-xl bg-lime-50/90 border border-lime-200/80 text-left space-y-2.5">
-                      <div className="flex items-center gap-1.5 text-lime-900 font-bold text-xs">
-                        <span className="material-symbols-outlined text-[18px] text-lime-700">info</span>
-                        <span>Tài Khoản Chưa Kích Hoạt Kho</span>
-                      </div>
-                      <p className="text-[11px] text-lime-900 leading-relaxed font-normal">
-                        Quý khách hiện chưa có hợp đồng kho đang hoạt động. Vui lòng truy cập Dashboard tìm kiếm &amp; thuê kho để định vị khoảng cách, chọn phòng kho và nhận mã PIN mở app.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDropdown1Open(false)
-                          navigate('/units')
-                        }}
-                        className="w-full py-2 px-3 rounded-lg bg-lime-700 hover:bg-lime-800 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">travel_explore</span>
-                        <span>Đi Đến Dashboard Tìm &amp; Thuê Kho</span>
-                      </button>
-                    </div>
-                  ) : (
+              <UserAvatarDropdown
+                user={user}
+                role={user?.role?.name || 'CUSTOMER'}
+                onOpenProfile={() => setIsProfileModalOpen(true)}
+                onOpenSettings={() => setIsSettingsModalOpen(true)}
+                onOpenLogoutConfirm={() => setIsLogoutConfirmOpen(true)}
+                extraActions={
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        setDropdown1Open(false)
-                        navigate(isCustomer ? '/portal/customer' : '/portal')
-                      }}
-                      className="w-full py-2.5 px-3.5 rounded-xl bg-slate-900 text-white font-semibold text-xs flex items-center justify-between hover:bg-neutral-800 transition-all shadow-xs cursor-pointer"
+                      onClick={() => navigate(isCustomer ? '/portal/customer' : '/portal')}
+                      className="w-full py-2.5 px-3.5 rounded-xl bg-slate-900 dark:bg-blue-600 text-white font-semibold text-xs flex items-center justify-between hover:bg-neutral-800 dark:hover:bg-blue-700 transition-all shadow-xs cursor-pointer"
                     >
                       <span className="flex items-center gap-2">
                         <span className="material-symbols-outlined text-[18px] text-emerald-400">dashboard</span>
-                        <span>{isCustomer ? 'Vào Portal Quản Lý Kho' : 'Vào Trang Điều Hành Portal'}</span>
+                        <span>{isCustomer ? t('Vào Portal Quản Lý Kho') : t('Vào Trang Điều Hành Portal')}</span>
                       </span>
                       <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
                     </button>
-                  )}
-
-                  <div className="flex flex-col gap-2 pt-1 text-xs">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      Cài Đặt Trang Web &amp; Vận Hành
-                    </span>
-
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-slate-700 flex items-center gap-1.5 font-medium">
-                        <span className="material-symbols-outlined text-[16px] text-slate-500">notifications</span>
-                        Thông báo IoT &amp; Sự kiện
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setNotifySetting(prev => !prev)}
-                        className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer ${notifySetting ? 'bg-cyan-600' : 'bg-slate-300'}`}
-                      >
-                        <div className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform ${notifySetting ? 'translate-x-4' : 'translate-x-0'}`}></div>
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-slate-700 flex items-center gap-1.5 font-medium">
-                        <span className="material-symbols-outlined text-[16px] text-slate-500">volume_up</span>
-                        Âm thanh cảnh báo khẩn
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setSoundSetting(prev => !prev)}
-                        className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer ${soundSetting ? 'bg-cyan-600' : 'bg-slate-300'}`}
-                      >
-                        <div className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform ${soundSetting ? 'translate-x-4' : 'translate-x-0'}`}></div>
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-slate-700 flex items-center gap-1.5 font-medium">
-                        <span className="material-symbols-outlined text-[16px] text-slate-500">language</span>
-                        Ngôn ngữ hiển thị
-                      </span>
-                      <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold">
-                        <button
-                          type="button"
-                          onClick={() => setLangSetting('vi')}
-                          className={`px-2 py-0.5 rounded cursor-pointer ${langSetting === 'vi' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'}`}
-                        >
-                          VI
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setLangSetting('en')}
-                          className={`px-2 py-0.5 rounded cursor-pointer ${langSetting === 'en' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'}`}
-                        >
-                          EN
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
                     <Link
                       to="/portal/facility-manager"
-                      onClick={() => setDropdown1Open(false)}
-                      className="text-[11px] font-semibold text-cyan-800 hover:underline"
+                      className="text-[11px] font-semibold text-cyan-800 dark:text-cyan-400 hover:underline px-1 text-center"
                     >
-                      Sơ đồ kho Tầng 1 &amp; 2
+                      {t('Sơ đồ kho Tầng 1 & 2')}
                     </Link>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDropdown1Open(false)
-                        logout()
-                      }}
-                      className="px-2.5 py-1 rounded-lg text-rose-700 hover:bg-rose-50 font-semibold text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[15px]">logout</span>
-                      <span>Đăng xuất</span>
-                    </button>
                   </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <>
-              <Link
-                to="/login"
-                className="px-3 py-2 text-[13px] font-medium text-slate-700 transition-colors hover:text-slate-950"
-              >
-                Đăng Nhập
-              </Link>
-              <Link
-                to="/register"
-                className="inline-flex items-center gap-1.5 rounded-full bg-blue-700 px-4 py-2.5 text-[13px] font-semibold text-white transition-colors hover:bg-blue-800"
-              >
-                <span>Thuê Kho Ngay</span>
-                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-              </Link>
-            </>
-          )}
-        </div>
+                }
+              />
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  className="px-3 py-2 text-[13px] font-medium text-slate-700 dark:text-slate-300 transition-colors hover:text-slate-950 dark:hover:text-white"
+                >
+                  {t('Đăng Nhập')}
+                </Link>
+                <Link
+                  to="/units"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-blue-700 hover:bg-blue-800 px-4 py-2.5 text-[13px] font-semibold text-white transition-colors shadow-xs"
+                >
+                  <span>{t('Thuê Kho Ngay')}</span>
+                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                </Link>
+              </>
+            )}
+          </div>
 
       </div>
     </header>
@@ -1607,6 +1453,26 @@ export const HomePage: React.FC = () => {
 
     {/* Floating Action Speed-Dial Widget (Scroll Top, Zalo, Hotline, Maps) */}
     <FloatingContactWidget />
+
+    <AccountProfileModal
+      isOpen={isProfileModalOpen}
+      onClose={() => setIsProfileModalOpen(false)}
+    />
+    <WebSettingsModal
+      isOpen={isSettingsModalOpen}
+      onClose={() => setIsSettingsModalOpen(false)}
+    />
+    <LogoutConfirmModal
+      isOpen={isLogoutConfirmOpen}
+      onClose={() => setIsLogoutConfirmOpen(false)}
+      onConfirm={async () => {
+        await logout()
+        navigate('/login')
+      }}
+      userName={user?.fullName || user?.username}
+      userEmail={user?.email}
+      userRole={user?.role?.name || 'CUSTOMER'}
+    />
 
   </div>
     </MotionConfig>
