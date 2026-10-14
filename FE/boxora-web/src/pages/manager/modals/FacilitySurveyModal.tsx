@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useAuth } from '../../../context/AuthContext'
 
 interface FacilitySurveyModalProps {
   isOpen: boolean
@@ -21,8 +22,9 @@ export const FacilitySurveyModal: React.FC<FacilitySurveyModalProps> = ({
   facilityName,
   onSubmitSurvey
 }) => {
+  const { user } = useAuth()
   const [ticketCode] = useState(() => `PKS-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`)
-  const [inspectorName, setInspectorName] = useState('Nguyễn Văn An (Quản lý Cơ sở)')
+  const [inspectorName, setInspectorName] = useState(() => `${user?.fullName || user?.username || 'Quản lý Cơ sở'} (Quản lý)`)
   const [overallRating, setOverallRating] = useState<'EXCELLENT' | 'GOOD' | 'NEEDS_MAINTENANCE'>('EXCELLENT')
   const [generalNotes, setGeneralNotes] = useState('Hệ thống PCCC áp lực ổn định. Cửa cuốn 32 kho vận hành trơn tru. Vi khí hậu Zone C đạt chuẩn 20.4°C.')
   
