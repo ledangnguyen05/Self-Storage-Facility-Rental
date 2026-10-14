@@ -43,8 +43,31 @@ export interface UnitType {
   areaSqm: number // e.g. 3.0
   basePricePerMonth: number // e.g. 1200000
   depositAmount: number // e.g. 1200000
-  description: string
-  suitableFor: string
+  description?: string
+  suitableFor?: string
+  activeUnitsCount?: number
+}
+
+export interface UnitTypePriceAdjustmentRequest {
+  newPrice: number
+  reason: string
+  effectiveFrom?: string
+  cascadeToAvailableUnits?: boolean
+}
+
+export interface StorageUnitPriceHistory {
+  id: string
+  storageUnitId?: string
+  unitCode?: string
+  unitTypeId?: string
+  unitTypeName?: string
+  oldPrice: number
+  newPrice: number
+  effectiveFrom: string
+  reason: string
+  changedById?: string
+  changedByName?: string
+  createdAt?: string
 }
 
 export type UnitStatusType = 'AVAILABLE' | 'RESERVED' | 'OCCUPIED' | 'MAINTENANCE' | 'UNDER_MAINTENANCE' | 'OVERDUE_LOCKED'
@@ -107,6 +130,7 @@ export type RentalContractStatus =
   | 'EXPIRED'
   | 'TERMINATED'
   | 'CANCELLED'
+  | 'OVERDUE'
 
 export interface RentalContract {
   id: string

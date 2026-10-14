@@ -36,5 +36,36 @@ export const storageUnitService = {
     const response = await api.get('/api/v1/unit-types')
     return response.data?.data
   },
+
+  async adjustUnitTypePrice(
+    id: string,
+    data: {
+      newPrice: number
+      reason: string
+      effectiveFrom?: string
+      cascadeToAvailableUnits?: boolean
+    }
+  ) {
+    const response = await api.post(`/api/v1/unit-types/${id}/price-adjustment`, {
+      ...data,
+      cascadeToAvailableUnits: data.cascadeToAvailableUnits ?? true,
+    })
+    return response.data?.data
+  },
+
+  async updateUnitType(
+    id: string,
+    data: {
+      typeName?: string
+      dimensions?: string
+      areaSqm?: number
+      depositAmount?: number
+      basePricePerMonth?: number
+      priceChangeReason?: string
+    }
+  ) {
+    const response = await api.put(`/api/v1/unit-types/${id}`, data)
+    return response.data?.data
+  },
 }
 
