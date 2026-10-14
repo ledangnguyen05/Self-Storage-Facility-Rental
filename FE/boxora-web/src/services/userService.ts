@@ -18,8 +18,40 @@ export const userService = {
   },
 
   async getAllUsers(params?: { role?: string; facilityId?: string; search?: string; isActive?: boolean; size?: number }) {
-    const response = await api.get('/api/v1/users', { params: { size: 100, ...params } })
-    return response.data?.data?.content ? { data: response.data.data.content } : { data: [] }
+    const queryParams: Record<string, any> = { size: params?.size || 100 }
+    if (params?.role && params.role !== 'ALL') queryParams.role = params.role
+    if (params?.facilityId && params.facilityId !== 'ALL' && params.facilityId.trim() !== '') {
+      queryParams.facilityId = params.facilityId
+    }
+    if (params?.search && params.search.trim() !== '') queryParams.search = params.search.trim()
+    if (params?.isActive !== undefined) queryParams.isActive = params.isActive
+
+    const response = await api.get('/api/v1/users', { params: queryParams })
+    const rawContent: any[] = response.data?.data?.content || []
+
+    const normalizedUsers: User[] = rawContent.map((item: any) => ({
+      id: item.id,
+      username: item.username,
+      email: item.email,
+      fullName: item.fullName,
+      phone: item.phone,
+      avatar: item.avatar,
+      role: item.role || (item.roleName ? {
+        id: item.roleId,
+        name: item.roleName,
+        description: item.roleName
+      } : undefined),
+      roleName: item.roleName || item.role?.name,
+      roleId: item.roleId || item.role?.id,
+      facilityId: item.facilityId,
+      facilityName: item.facilityName,
+      facilityCode: item.facilityCode,
+      isActive: item.isActive !== false,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    }))
+
+    return { data: normalizedUsers }
   },
 
   async createUser(data: any) {
