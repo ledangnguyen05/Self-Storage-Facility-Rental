@@ -22,10 +22,11 @@ export interface SupportTicketRecord {
 export interface CreateSupportTicketRequest {
   customerId?: string
   bookingId?: string
-  category: SupportTicketCategory
+  category: SupportTicketCategory | string
   title: string
   description: string
-  priority?: SupportTicketRecord['priority']
+  priority?: SupportTicketRecord['priority'] | string
+  attachmentUrl?: string
 }
 
 export const supportTicketService = {
@@ -34,9 +35,24 @@ export const supportTicketService = {
     return response.data?.data as SupportTicketRecord
   },
 
+  async createTicket(request: CreateSupportTicketRequest) {
+    return this.create(request)
+  },
+
   async getQueue() {
     const response = await api.get('/api/v1/support-tickets/queue')
-    return response.data?.data as SupportTicketRecord[]
+    return (response.data?.data || []) as SupportTicketRecord[]
+  },
+
+  async getMyTickets(customerId?: string) {
+    try {
+      const response = await api.get('/api/v1/support-tickets/my', {
+        params: customerId ? { customerId } : undefined,
+      })
+      return (response.data?.data || []) as SupportTicketRecord[]
+    } catch {
+      return []
+    }
   },
 
   async resolve(id: string, resolutionNote: string) {
@@ -44,5 +60,22 @@ export const supportTicketService = {
       params: { resolutionNote },
     })
     return response.data?.data as SupportTicketRecord
+  },
+
+  async resolveTicket(id: string, resolutionNote: string) {
+    return this.resolve(id, resolutionNote)
+  },
+
+  async uploadAttachment(file: File): Promise<string> {
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await api.post('/api/v1/support-tickets/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      return (response.data?.data?.url || response.data?.url || '') as string
+    } catch {
+      return URL.createObjectURL(file)
+    }
   },
 }

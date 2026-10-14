@@ -8,7 +8,6 @@ import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { BrandLogo } from '../../components/common/BrandLogo'
 import { SmartLockerDynamicHero } from '../../components/home/SmartLockerDynamicHero'
-<<<<<<< HEAD
 import { AccountProfileModal } from '../../components/common/AccountProfileModal'
 
 // ============================================================================
@@ -73,65 +72,7 @@ const headerNavigationItems = [
   { href: '#iot-access', label: 'Công nghệ' },
   { href: '#faq', label: 'Hỗ trợ' }
 ]
-=======
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
 
-// ============================================================================
-// ANIMATED COUNTER COMPONENT (Counts up smoothly when scrolled into view)
-// ============================================================================
-interface AnimatedCounterProps {
-  value: number
-  duration?: number
-  decimals?: number
-  prefix?: string
-  suffix?: string
-}
-
-const AnimatedCounter: React.FC<AnimatedCounterProps> = ({
-  value,
-  duration = 1.4,
-  decimals = 0,
-  prefix = '',
-  suffix = ''
-}) => {
-  const [displayValue, setDisplayValue] = useState(0)
-  const ref = useRef<HTMLSpanElement>(null)
-  const inView = useInView(ref, { once: true, amount: 0.3 })
-
-  useEffect(() => {
-    if (!inView) return
-    let startTimestamp: number | null = null
-    const startValue = 0
-    const endValue = value
-
-    const step = (timestamp: number) => {
-      if (!startTimestamp) startTimestamp = timestamp
-      const progress = Math.min((timestamp - startTimestamp) / (duration * 1000), 1)
-      const easeProgress = 1 - Math.pow(1 - progress, 3) // easeOutCubic
-      const current = startValue + (endValue - startValue) * easeProgress
-      setDisplayValue(current)
-      if (progress < 1) {
-        frameId = window.requestAnimationFrame(step)
-      } else {
-        setDisplayValue(endValue)
-      }
-    }
-    let frameId = window.requestAnimationFrame(step)
-    return () => window.cancelAnimationFrame(frameId)
-  }, [inView, value, duration])
-
-  return (
-    <span ref={ref} className="tabular-nums">
-      {prefix}
-      {decimals > 0 ? displayValue.toFixed(decimals) : Math.round(displayValue)}
-      {suffix}
-    </span>
-  )
-}
-
-// ============================================================================
-// MAIN HOMEPAGE COMPONENT
-// ============================================================================
 export const HomePage: React.FC = () => {
   const navigate = useNavigate()
   const { isAuthenticated, user, logout } = useAuth()
@@ -201,12 +142,6 @@ export const HomePage: React.FC = () => {
     setCustomerAccess(checkCustomerPortalAccess(user))
   }, [user])
 
-<<<<<<< HEAD
-=======
-  // Interactive 3-Step Process State
-  const [activeProcessStep, setActiveProcessStep] = useState<1 | 2 | 3>(1)
-
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
   // Interactive Size Guide State
   const [selectedSizeTier, setSelectedSizeTier] = useState<'LOCKER' | 'STANDARD' | 'LARGE' | 'ENTERPRISE'>('STANDARD')
 
@@ -337,7 +272,6 @@ export const HomePage: React.FC = () => {
       {/* ============================================================ */}
       {/* 1. TOP UNIFIED NAVIGATION BAR (STICKY WITH BACKDROP BLUR)    */}
       {/* ============================================================ */}
-<<<<<<< HEAD
       <header
         className={`sticky top-0 z-[100] border-b backdrop-blur-xl transition-all duration-300 ${
           headerScrolled
@@ -374,28 +308,6 @@ export const HomePage: React.FC = () => {
                 {item.label}
               </a>
             ))}
-=======
-      <header className="sticky top-0 z-[100] border-b border-slate-200/70 bg-white/90 backdrop-blur-xl transition-colors">
-        <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between px-4 sm:px-6 lg:px-10">
-          
-          {/* Brand Logo */}
-          <BrandLogo size="sm" subtitle="KHO TỰ QUẢN THÔNG MINH" />
-
-          {/* Nav Links (Desktop) */}
-          <nav className="hidden items-center gap-7 text-[13px] font-medium text-slate-600 lg:flex">
-            <a href="#services" className="transition-colors hover:text-slate-950">
-              Dịch vụ
-            </a>
-            <a href="#process" className="transition-colors hover:text-slate-950">
-              Cách hoạt động
-            </a>
-            <a href="#iot-access" className="transition-colors hover:text-slate-950">
-              Công nghệ
-            </a>
-            <a href="#faq" className="transition-colors hover:text-slate-950">
-              Hỗ trợ
-            </a>
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
           </nav>
 
           {/* Action CTAs */}
@@ -514,7 +426,6 @@ export const HomePage: React.FC = () => {
                     </button>
                   )}
 
-<<<<<<< HEAD
                   <button
                     type="button"
                     onClick={() => {
@@ -530,13 +441,6 @@ export const HomePage: React.FC = () => {
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                       Cài Đặt Trang Web &amp; Vận Hành
                     </span>
-=======
-                  <div className="flex flex-col gap-2 pt-1 text-xs">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      Cài Đặt Trang Web &amp; Vận Hành
-                    </span>
-
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
                     <div className="flex items-center justify-between py-1">
                       <span className="text-slate-700 flex items-center gap-1.5 font-medium">
                         <span className="material-symbols-outlined text-[16px] text-slate-500">notifications</span>
@@ -551,10 +455,6 @@ export const HomePage: React.FC = () => {
                         <div className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform ${notifySetting ? 'translate-x-4' : 'translate-x-0'}`}></div>
                       </button>
                     </div>
-<<<<<<< HEAD
-=======
-
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
                     <div className="flex items-center justify-between py-1">
                       <span className="text-slate-700 flex items-center gap-1.5 font-medium">
                         <span className="material-symbols-outlined text-[16px] text-slate-500">volume_up</span>
@@ -569,32 +469,6 @@ export const HomePage: React.FC = () => {
                         <div className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform ${soundSetting ? 'translate-x-4' : 'translate-x-0'}`}></div>
                       </button>
                     </div>
-<<<<<<< HEAD
-=======
-
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-slate-700 flex items-center gap-1.5 font-medium">
-                        <span className="material-symbols-outlined text-[16px] text-slate-500">language</span>
-                        Ngôn ngữ hiển thị
-                      </span>
-                      <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold">
-                        <button
-                          type="button"
-                          onClick={() => setLangSetting('vi')}
-                          className={`px-2 py-0.5 rounded cursor-pointer ${langSetting === 'vi' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'}`}
-                        >
-                          VI
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setLangSetting('en')}
-                          className={`px-2 py-0.5 rounded cursor-pointer ${langSetting === 'en' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'}`}
-                        >
-                          EN
-                        </button>
-                      </div>
-                    </div>
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
                   </div>
 
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
@@ -621,33 +495,14 @@ export const HomePage: React.FC = () => {
               )}
             </div>
           ) : (
-<<<<<<< HEAD
             <Link to="/login" className="header-login-button">
               <span className="header-login-button__dots-border" aria-hidden="true" />
               <span className="header-login-button__text">Đăng Nhập</span>
             </Link>
-=======
-            <>
-              <Link
-                to="/login"
-                className="px-3 py-2 text-[13px] font-medium text-slate-700 transition-colors hover:text-slate-950"
-              >
-                Đăng Nhập
-              </Link>
-              <Link
-                to="/register"
-                className="inline-flex items-center gap-1.5 rounded-full bg-blue-700 px-4 py-2.5 text-[13px] font-semibold text-white transition-colors hover:bg-blue-800"
-              >
-                <span>Thuê Kho Ngay</span>
-                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-              </Link>
-            </>
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
           )}
         </div>
 
       </div>
-<<<<<<< HEAD
 
       {/* Keep the restored navigation available on tablet and mobile widths. */}
       <nav
@@ -669,8 +524,6 @@ export const HomePage: React.FC = () => {
           </a>
         ))}
       </nav>
-=======
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
     </header>
 
     {/* ============================================================ */}
@@ -678,11 +531,8 @@ export const HomePage: React.FC = () => {
     {/* ============================================================ */}
     <SmartLockerDynamicHero onBookNow={() => navigate('/units')} />
 
-<<<<<<< HEAD
     <AccountProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
 
-=======
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
     {/* ============================================================ */}
     {/* 3. REALTIME TELEMETRY STRIP (LIVE DATABASE METRICS HUD)      */}
     {/* ============================================================ */}
@@ -711,11 +561,7 @@ export const HomePage: React.FC = () => {
             </div>
             <p className="text-xs text-slate-500 font-normal flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-<<<<<<< HEAD
               <span>Hệ thống cơ sở Boxora</span>
-=======
-              <span>Hoạt động liên tục 24/7</span>
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
             </p>
           </motion.div>
 
@@ -735,11 +581,7 @@ export const HomePage: React.FC = () => {
               <span className="text-slate-700">{telemetry.totalUnits}</span>
             </div>
             <p className="text-xs text-slate-500 font-normal">
-<<<<<<< HEAD
               Buồng còn trống trên toàn hệ thống
-=======
-              Tỷ lệ lấp đầy <strong className="text-cyan-800 font-mono"><AnimatedCounter value={telemetry.occupancyRate} suffix="%" /></strong>
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
             </p>
           </motion.div>
 
@@ -750,7 +592,6 @@ export const HomePage: React.FC = () => {
             className="p-5 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-sm hover:shadow-lg hover:border-cyan-300 text-left space-y-1.5 transition-all group cursor-default"
           >
             <div className="flex items-center justify-between text-slate-400 mb-1">
-<<<<<<< HEAD
               <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500 font-bold">Ra Vào Linh Hoạt</span>
               <span className="material-symbols-outlined text-[20px] text-blue-600 group-hover:scale-110 transition-transform">schedule</span>
             </div>
@@ -759,16 +600,6 @@ export const HomePage: React.FC = () => {
             </div>
             <p className="text-xs text-slate-500 font-normal">
               Ra vào bằng mã PIN cá nhân
-=======
-              <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500 font-bold">Vi Khí Hậu Tối Ưu</span>
-              <span className="material-symbols-outlined text-[20px] text-blue-600 group-hover:scale-110 transition-transform">thermostat</span>
-            </div>
-            <div className="font-mono text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              21.5°C
-            </div>
-            <p className="text-xs text-slate-500 font-normal">
-              Độ ẩm kiểm soát <strong className="text-blue-800 font-mono">45% RH</strong>
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
             </p>
           </motion.div>
 
@@ -779,7 +610,6 @@ export const HomePage: React.FC = () => {
             className="p-5 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-sm hover:shadow-lg hover:border-cyan-300 text-left space-y-1.5 transition-all group cursor-default"
           >
             <div className="flex items-center justify-between text-slate-400 mb-1">
-<<<<<<< HEAD
               <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500 font-bold">Giá Thuê Tham Khảo</span>
               <span className="material-symbols-outlined text-[20px] text-blue-600 group-hover:scale-110 transition-transform">payments</span>
             </div>
@@ -788,16 +618,6 @@ export const HomePage: React.FC = () => {
             </div>
             <p className="text-xs text-slate-500 font-normal">
               Giá khởi điểm mỗi tháng
-=======
-              <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500 font-bold">Chuẩn Bảo Mật</span>
-              <span className="material-symbols-outlined text-[20px] text-blue-600 group-hover:scale-110 transition-transform">encrypted</span>
-            </div>
-            <div className="font-mono text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              AES-256
-            </div>
-            <p className="text-xs text-slate-500 font-normal">
-              Khóa IoT &amp; Mã PIN số hóa
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
             </p>
           </motion.div>
 
@@ -806,7 +626,6 @@ export const HomePage: React.FC = () => {
     </section>
 
     {/* ============================================================ */}
-<<<<<<< HEAD
     {/* 4. DỊCH VỤ LƯU TRỮ BOXORA (SERVICES)                         */}
     {/* ============================================================ */}
     <section id="services" className="py-20 lg:py-24 border-b border-slate-200/80 bg-slate-50">
@@ -996,9 +815,6 @@ export const HomePage: React.FC = () => {
 
     {/* ============================================================ */}
     {/* 5. SEAMLESS 3-STEP PROCESS (QUY TRÌNH THUÊ KHO KHÉP KÍN)     */}
-=======
-    {/* 4. SEAMLESS 3-STEP PROCESS (QUY TRÌNH THUÊ KHO KHÉP KÍN)     */}
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
     {/* ============================================================ */}
     <section id="process" className="py-20 lg:py-24 border-b border-slate-200/80 bg-white relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-14">
@@ -1013,7 +829,6 @@ export const HomePage: React.FC = () => {
         >
           <span className="text-[var(--brand-teal,#0866f5)] font-mono text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200">
             <span className="w-2 h-2 rounded-full bg-cyan-600 animate-pulse" />
-<<<<<<< HEAD
             THUÊ KHO TRỰC TUYẾN // 3 BƯỚC
           </span>
           <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
@@ -1025,19 +840,6 @@ export const HomePage: React.FC = () => {
         </motion.div>
 
         {/* 3-Step Process */}
-=======
-            QUY TRÌNH THUÊ KHO KHÉP KÍN // 3 BƯỚC ĐƠN GIẢN
-          </span>
-          <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-            Bắt Đầu Thuê Kho Chỉ Trong 3 Bước
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-600">
-            Không thủ tục giấy tờ rườm rà. Toàn bộ quy trình hoàn tất trực tuyến minh bạch, chuẩn xác và bảo mật.
-          </p>
-        </motion.div>
-
-        {/* 3 Step Interactive Cards Grid */}
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-left relative">
           
           {/* Step 1 */}
@@ -1047,16 +849,7 @@ export const HomePage: React.FC = () => {
             viewport={{ once: true, amount: 0.3 }}
             transition={{ delay: 0.1, duration: 0.6 }}
             whileHover={{ y: -6 }}
-<<<<<<< HEAD
             className="p-7 rounded-3xl border border-slate-200/80 bg-slate-50 shadow-xs transition-all hover:border-cyan-300 relative overflow-hidden"
-=======
-            onClick={() => setActiveProcessStep(1)}
-            className={`p-7 rounded-3xl border transition-all cursor-pointer relative overflow-hidden ${
-              activeProcessStep === 1
-                ? 'bg-cyan-50/50 border-cyan-400 shadow-xl ring-2 ring-cyan-500/20'
-                : 'bg-slate-50 border-slate-200/80 hover:border-cyan-300 shadow-xs'
-            }`}
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
           >
             <div className="flex items-center justify-between mb-4">
               <div className="w-12 h-12 rounded-2xl bg-cyan-600 text-white font-mono font-black flex items-center justify-center text-base shadow-md shadow-cyan-600/30">
@@ -1068,26 +861,15 @@ export const HomePage: React.FC = () => {
             </div>
 
             <h3 className="font-headline text-lg font-bold text-slate-900 mb-2">
-<<<<<<< HEAD
               Chọn cơ sở và kích thước
             </h3>
             <p className="text-xs text-slate-600 leading-relaxed mb-4">
               Xem các buồng còn trống, rồi chọn địa điểm và diện tích phù hợp với đồ cần lưu trữ.
-=======
-              Tìm Kho &amp; Đo Khoảng Cách
-            </h3>
-            <p className="text-xs text-slate-600 leading-relaxed mb-4">
-              Định vị vị trí của bạn trên Dashboard, đo cự ly di chuyển tới từng cơ sở Boxora và lựa chọn kích thước buồng kho phù hợp nhất với nhu cầu cất giữ.
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
             </p>
 
             <div className="pt-3 border-t border-slate-200/70 text-[11px] font-mono font-semibold text-cyan-800 flex items-center gap-1.5">
               <span className="material-symbols-outlined text-[16px]">location_on</span>
-<<<<<<< HEAD
               <span>So sánh diện tích và sức chứa</span>
-=======
-              <span>Định vị cự ly GPS thời gian thực</span>
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
             </div>
           </motion.div>
 
@@ -1098,16 +880,7 @@ export const HomePage: React.FC = () => {
             viewport={{ once: true, amount: 0.3 }}
             transition={{ delay: 0.2, duration: 0.6 }}
             whileHover={{ y: -6 }}
-<<<<<<< HEAD
             className="p-7 rounded-3xl border border-slate-200/80 bg-slate-50 shadow-xs transition-all hover:border-cyan-300 relative overflow-hidden"
-=======
-            onClick={() => setActiveProcessStep(2)}
-            className={`p-7 rounded-3xl border transition-all cursor-pointer relative overflow-hidden ${
-              activeProcessStep === 2
-                ? 'bg-cyan-50/50 border-cyan-400 shadow-xl ring-2 ring-cyan-500/20'
-                : 'bg-slate-50 border-slate-200/80 hover:border-cyan-300 shadow-xs'
-            }`}
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
           >
             <div className="flex items-center justify-between mb-4">
               <div className="w-12 h-12 rounded-2xl bg-cyan-600 text-white font-mono font-black flex items-center justify-center text-base shadow-md shadow-cyan-600/30">
@@ -1119,26 +892,15 @@ export const HomePage: React.FC = () => {
             </div>
 
             <h3 className="font-headline text-lg font-bold text-slate-900 mb-2">
-<<<<<<< HEAD
               Ký hợp đồng và thanh toán
             </h3>
             <p className="text-xs text-slate-600 leading-relaxed mb-4">
               Đọc điều khoản, ký hợp đồng điện tử và thanh toán theo hướng dẫn trên hệ thống.
-=======
-              Ký Hợp Đồng &amp; Đặt Cọc Số Hóa
-            </h3>
-            <p className="text-xs text-slate-600 leading-relaxed mb-4">
-              Ký kết thỏa thuận hợp đồng điện tử bảo chứng pháp lý, thanh toán an toàn qua cổng ngân hàng bảo mật và nhận hóa đơn VAT điện tử tự động.
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
             </p>
 
             <div className="pt-3 border-t border-slate-200/70 text-[11px] font-mono font-semibold text-emerald-800 flex items-center gap-1.5">
               <span className="material-symbols-outlined text-[16px]">verified</span>
-<<<<<<< HEAD
               <span>Điều khoản và chi phí rõ ràng</span>
-=======
-              <span>Hợp đồng điện tử bảo chứng pháp lý</span>
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
             </div>
           </motion.div>
 
@@ -1149,16 +911,7 @@ export const HomePage: React.FC = () => {
             viewport={{ once: true, amount: 0.3 }}
             transition={{ delay: 0.3, duration: 0.6 }}
             whileHover={{ y: -6 }}
-<<<<<<< HEAD
             className="p-7 rounded-3xl border border-slate-200/80 bg-slate-50 shadow-xs transition-all hover:border-cyan-300 relative overflow-hidden"
-=======
-            onClick={() => setActiveProcessStep(3)}
-            className={`p-7 rounded-3xl border transition-all cursor-pointer relative overflow-hidden ${
-              activeProcessStep === 3
-                ? 'bg-cyan-50/50 border-cyan-400 shadow-xl ring-2 ring-cyan-500/20'
-                : 'bg-slate-50 border-slate-200/80 hover:border-cyan-300 shadow-xs'
-            }`}
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
           >
             <div className="flex items-center justify-between mb-4">
               <div className="w-12 h-12 rounded-2xl bg-cyan-600 text-white font-mono font-black flex items-center justify-center text-base shadow-md shadow-cyan-600/30">
@@ -1170,82 +923,25 @@ export const HomePage: React.FC = () => {
             </div>
 
             <h3 className="font-headline text-lg font-bold text-slate-900 mb-2">
-<<<<<<< HEAD
               Nhận mã PIN và sử dụng kho
             </h3>
             <p className="text-xs text-slate-600 leading-relaxed mb-4">
               Nhận mã PIN sau khi hoàn tất thuê, rồi chủ động ra vào kho 24/7 theo quyền truy cập của bạn.
-=======
-              Nhận Mã PIN &amp; Vào Kho 24/7
-            </h3>
-            <p className="text-xs text-slate-600 leading-relaxed mb-4">
-              Hệ thống tự động cấp mã PIN số hóa bảo mật AES-256 tức thì. Bạn có thể tự do mở cửa kho và quản lý tài sản bất kỳ lúc nào ngày hay đêm qua app.
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
             </p>
 
             <div className="pt-3 border-t border-slate-200/70 text-[11px] font-mono font-semibold text-blue-800 flex items-center gap-1.5">
               <span className="material-symbols-outlined text-[16px]">key</span>
-<<<<<<< HEAD
               <span>Ra vào kho bằng mã PIN cá nhân</span>
-=======
-              <span>Cấp PIN tức thì • Vào kho tự do 24/7</span>
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
             </div>
           </motion.div>
 
         </div>
 
-<<<<<<< HEAD
-=======
-        {/* Interactive Step Preview Interactive Simulator Widget */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.98 }}
-          whileInView={{ opacity: 1, scale: 1 }}
-          viewport={{ once: true }}
-          className="p-6 sm:p-7 rounded-3xl bg-slate-900 text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl border border-slate-800"
-        >
-          <div className="flex items-center gap-4 text-left">
-            <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/30">
-              <span className="material-symbols-outlined text-[28px]">
-                {activeProcessStep === 1 ? 'explore' : activeProcessStep === 2 ? 'draw' : 'dialpad'}
-              </span>
-            </div>
-            <div>
-              <div className="font-mono text-[10px] text-cyan-300 font-bold uppercase tracking-wider">
-                MÔ PHỎNG TIỆN ÍCH // BƯỚC 0{activeProcessStep}
-              </div>
-              <h4 className="text-base font-bold text-white mt-0.5">
-                {activeProcessStep === 1 && 'Hệ Thống Radar Định Vị Kho Gần Nhất (Dưới 5km)'}
-                {activeProcessStep === 2 && 'Xác Thực Hợp Đồng Điện Tử Bằng Mã OTP Trong 30 Giây'}
-                {activeProcessStep === 3 && 'Tự Động Sinh Mã PIN Số Hóa Mở App Không Tiếp Xúc'}
-              </h4>
-              <p className="text-xs text-slate-300 leading-relaxed mt-1 max-w-2xl">
-                {activeProcessStep === 1 && 'Nhập vị trí nhà hoặc văn phòng của bạn, thuật toán sẽ tự động tính toán lộ trình tối ưu và đưa ra gợi ý cơ sở còn buồng kho trống.'}
-                {activeProcessStep === 2 && 'Mọi điều khoản minh bạch, pháp lý bảo chứng. Đặt cọc niêm phong tài khoản ký quỹ an toàn và hoàn trả 100% khi thanh lý.'}
-                {activeProcessStep === 3 && 'Không phải chờ đợi nhân viên cấp phát chìa cơ. Bạn toàn quyền mở khóa buồng của mình bất kể nửa đêm hay rạng sáng.'}
-              </p>
-            </div>
-          </div>
-
-          <Link
-            to="/units"
-            className="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shrink-0 transition-all shadow-md shadow-cyan-500/30 cursor-pointer"
-          >
-            <span>Trải Nghiệm Đặt Kho Ngay</span>
-            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-          </Link>
-        </motion.div>
-
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
       </div>
     </section>
 
     {/* ============================================================ */}
-<<<<<<< HEAD
     {/* 6. IOT ACCESS & SMART SECURITY ARCHITECTURE                  */}
-=======
-    {/* 5. IOT ACCESS & SMART SECURITY ARCHITECTURE                  */}
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
     {/* ============================================================ */}
     <section id="iot-access" className="py-20 lg:py-24 border-b border-slate-200/80 bg-[var(--surface-canvas,#f8fafc)]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-14">
@@ -1265,11 +961,7 @@ export const HomePage: React.FC = () => {
             Công Nghệ Khóa Điện Tử IoT &amp; Bảo Mật Đa Tầng
           </h2>
           <p className="text-xs sm:text-sm text-slate-600 max-w-2xl mx-auto leading-relaxed">
-<<<<<<< HEAD
             Mỗi buồng có khóa điện tử; bạn dùng mã PIN hoặc ứng dụng để ra vào. Cảm biến ghi nhận trạng thái cửa và môi trường lưu trữ.
-=======
-            Mỗi buồng kho Boxora đều được tích hợp khóa điện tử kết nối mạng độc lập và hệ thống cảm biến môi trường, đảm bảo tài sản của bạn luôn an toàn tuyệt đối mà không cần sử dụng chìa khóa cơ truyền thống.
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
           </p>
         </motion.div>
 
@@ -1296,11 +988,7 @@ export const HomePage: React.FC = () => {
                 <h3 className="font-headline text-base font-bold text-slate-900 mt-0.5">Mã PIN &amp; Mở Qua App</h3>
               </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-<<<<<<< HEAD
                 Dùng mã PIN riêng hoặc ứng dụng để mở kho, không cần mang theo chìa khóa cơ.
-=======
-                Cấp mã PIN số hóa bảo mật ngay sau khi thuê. Ra vào kho 24/7 chỉ với mã số trên bàn phím cảm ứng hoặc một chạm trên điện thoại mà không lo thất lạc chìa khóa.
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
               </p>
             </div>
             <div className="font-mono text-[11px] text-cyan-800 bg-cyan-50 px-2.5 py-1.5 rounded-xl border border-cyan-100 font-semibold flex items-center gap-1.5">
@@ -1324,11 +1012,7 @@ export const HomePage: React.FC = () => {
                 <h3 className="font-headline text-base font-bold text-slate-900 mt-0.5">Tự Động Chốt Khóa Sau Đóng</h3>
               </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-<<<<<<< HEAD
                 Cửa tự khóa sau khi đóng. Hệ thống ghi nhận trạng thái cửa và gửi cảnh báo khi cửa chưa đóng đúng cách.
-=======
-                Cảm biến từ tính phát hiện trạng thái cánh cửa và tự động kích hoạt chốt khóa sau 3 giây. Hệ thống sẽ phát cảnh báo âm thanh và gửi thông báo nếu bạn vô tình để hở cửa quá lâu.
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
               </p>
             </div>
             <div className="font-mono text-[11px] text-emerald-800 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-100 font-semibold flex items-center gap-1.5">
@@ -1352,11 +1036,7 @@ export const HomePage: React.FC = () => {
                 <h3 className="font-headline text-base font-bold text-slate-900 mt-0.5">Cấp Mã Phụ Dùng Một Lần</h3>
               </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-<<<<<<< HEAD
                 Tạo mã tạm thời cho người thân hoặc nhân viên, rồi thu hồi quyền truy cập khi không còn cần dùng.
-=======
-                Dễ dàng tạo mã PIN tạm thời hoặc mã 1 lần gửi cho người thân, shipper hoặc nhân viên khi cần nhờ nhận hoặc lấy đồ, và chủ động thu hồi quyền bất kỳ lúc nào.
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
               </p>
             </div>
             <div className="font-mono text-[11px] text-blue-800 bg-blue-50 px-2.5 py-1.5 rounded-xl border border-blue-100 font-semibold flex items-center gap-1.5">
@@ -1380,11 +1060,7 @@ export const HomePage: React.FC = () => {
                 <h3 className="font-headline text-base font-bold text-slate-900 mt-0.5">Cảm Biến Môi Trường</h3>
               </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-<<<<<<< HEAD
                 Theo dõi nhiệt độ, độ ẩm và lịch sử ra vào trên ứng dụng để bạn tiện kiểm tra tình trạng kho.
-=======
-                Duy trì nhiệt độ 20-22°C và độ ẩm dưới 50% RH chống ẩm mốc đồ đạc. Toàn bộ mốc thời gian mở và khóa cửa đều được ghi nhận minh bạch trên nhật ký ứng dụng.
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
               </p>
             </div>
             <div className="font-mono text-[11px] text-lime-800 bg-lime-50 px-2.5 py-1.5 rounded-xl border border-lime-100 font-semibold flex items-center gap-1.5">
@@ -1424,198 +1100,6 @@ export const HomePage: React.FC = () => {
     </section>
 
     {/* ============================================================ */}
-<<<<<<< HEAD
-=======
-    {/* 6. DỊCH VỤ LƯU TRỮ BOXORA (SERVICES)                         */}
-    {/* ============================================================ */}
-    <section id="services" className="py-20 lg:py-24 border-b border-slate-200/80 bg-slate-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-14">
-        
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.3 }}
-          variants={sectionFadeIn}
-          className="text-center max-w-3xl mx-auto space-y-3"
-        >
-          <span className="text-[var(--brand-teal,#0866f5)] font-mono text-xs font-bold tracking-wider uppercase inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200">
-            <span className="w-2 h-2 rounded-full bg-cyan-600 animate-pulse" />
-            DANH MỤC DỊCH VỤ // THE PRECISION VAULT
-          </span>
-          <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-            Giải Pháp Lưu Trữ Toàn Diện Cho Cá Nhân &amp; Doanh Nghiệp
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-600 max-w-2xl mx-auto leading-relaxed">
-            Mỗi buồng kho tại Boxora được thiết kế chuyên biệt theo tiêu chuẩn quốc tế, đáp ứng linh hoạt từ nhu cầu cất giữ tư trang cá nhân đến kho logistics trung chuyển hàng hóa.
-          </p>
-        </motion.div>
-
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          variants={staggerContainer}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 text-left"
-        >
-          {/* Service 1 */}
-          <motion.div
-            variants={cardItem}
-            whileHover={{ y: -6, scale: 1.02 }}
-            className="p-7 rounded-3xl bg-white border border-slate-200/80 hover:border-cyan-400 shadow-sm hover:shadow-xl transition-all flex flex-col justify-between space-y-6"
-          >
-            <div className="space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-cyan-50 text-[var(--brand-teal,#0866f5)] flex items-center justify-center">
-                <span className="material-symbols-outlined text-[26px]">lock_person</span>
-              </div>
-              <div>
-                <span className="font-mono text-[10px] text-cyan-800 font-bold uppercase tracking-wider block">TIỆN ÍCH CÁ NHÂN</span>
-                <h3 className="font-headline text-lg font-bold text-slate-900 mt-0.5">Kho Cá Nhân 24/7</h3>
-              </div>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Lưu giữ an toàn đồ dùng theo mùa, vali du lịch, nội thất khi sửa nhà, bộ sưu tập cá nhân. Ra vào tự do mọi lúc không cần đặt lịch hẹn trước.
-              </p>
-              <div className="space-y-2 pt-2 text-xs text-slate-700">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[15px] text-[var(--brand-teal,#0866f5)]">check_circle</span>
-                  <span>Diện tích linh hoạt từ 1.5m²</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[15px] text-[var(--brand-teal,#0866f5)]">check_circle</span>
-                  <span>Mã PIN số hóa cá nhân độc quyền</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[15px] text-[var(--brand-teal,#0866f5)]">check_circle</span>
-                  <span>Miễn phí xe đẩy hàng tại chỗ</span>
-                </div>
-              </div>
-            </div>
-            <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-cyan-800">
-              <span>Thuê theo tháng linh hoạt</span>
-              <span className="font-mono text-[11px] bg-cyan-50 px-2 py-0.5 rounded text-cyan-800">Từ 450k/tháng</span>
-            </div>
-          </motion.div>
-
-          {/* Service 2 */}
-          <motion.div
-            variants={cardItem}
-            whileHover={{ y: -6, scale: 1.02 }}
-            className="p-7 rounded-3xl bg-white border border-cyan-200/90 hover:border-cyan-400 shadow-sm hover:shadow-xl transition-all flex flex-col justify-between space-y-6 ring-1 ring-cyan-500/10"
-          >
-            <div className="space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                <span className="material-symbols-outlined text-[26px]">ac_unit</span>
-              </div>
-              <div>
-                <span className="font-mono text-[10px] text-blue-700 font-bold uppercase tracking-wider block">KIỂM SOÁT NHIỆT ẨM</span>
-                <h3 className="font-headline text-lg font-bold text-slate-900 mt-0.5">Kho Mát Vi Khí Hậu</h3>
-              </div>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Duy trì ổn định 16°C – 22°C và độ ẩm 45% – 55% RH liên tục 24/7. Giải pháp tối ưu chống nấm mốc cho máy ảnh, đồ da, tài liệu, tranh ảnh và thiết bị điện tử.
-              </p>
-              <div className="space-y-2 pt-2 text-xs text-slate-700">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[15px] text-blue-600">check_circle</span>
-                  <span>16°C – 22°C // Độ ẩm &lt; 50% RH</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[15px] text-blue-600">check_circle</span>
-                  <span>Cảm biến IoT cảnh báo lệch nhiệt</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[15px] text-blue-600">check_circle</span>
-                  <span>Lọc khí khử ẩm đa tầng</span>
-                </div>
-              </div>
-            </div>
-            <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-blue-800">
-              <span>Bảo quản chuẩn studio</span>
-              <span className="font-mono text-[11px] bg-blue-50 px-2 py-0.5 rounded text-blue-800">Chuẩn cao cấp</span>
-            </div>
-          </motion.div>
-
-          {/* Service 3 */}
-          <motion.div
-            variants={cardItem}
-            whileHover={{ y: -6, scale: 1.02 }}
-            className="p-7 rounded-3xl bg-white border border-slate-200/80 hover:border-cyan-400 shadow-sm hover:shadow-xl transition-all flex flex-col justify-between space-y-6"
-          >
-            <div className="space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                <span className="material-symbols-outlined text-[26px]">corporate_fare</span>
-              </div>
-              <div>
-                <span className="font-mono text-[10px] text-blue-700 font-bold uppercase tracking-wider block">DOANH NGHIỆP &amp; E-COMMERCE</span>
-                <h3 className="font-headline text-lg font-bold text-slate-900 mt-0.5">Kho Doanh Nghiệp &amp; Hồ Sơ</h3>
-              </div>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Lưu trữ hồ sơ chứng từ kế toán 10 năm, thiết bị sự kiện, hàng tồn kho bán lẻ trực tuyến. Hỗ trợ hợp đồng pháp nhân, xuất hóa đơn VAT điện tử nhanh chóng.
-              </p>
-              <div className="space-y-2 pt-2 text-xs text-slate-700">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[15px] text-blue-600">check_circle</span>
-                  <span>Cửa cuốn &amp; Bãi xe tải 2.5 tấn</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[15px] text-blue-600">check_circle</span>
-                  <span>Hóa đơn VAT &amp; Ký HĐ điện tử</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[15px] text-blue-600">check_circle</span>
-                  <span>Cấp mã PIN phụ cho shipper/nhân viên</span>
-                </div>
-              </div>
-            </div>
-            <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-blue-800">
-              <span>Hợp đồng pháp lý chuẩn</span>
-              <span className="font-mono text-[11px] bg-blue-50 px-2 py-0.5 rounded text-blue-800">VAT đầy đủ</span>
-            </div>
-          </motion.div>
-
-          {/* Service 4 */}
-          <motion.div
-            variants={cardItem}
-            whileHover={{ y: -6, scale: 1.02 }}
-            className="p-7 rounded-3xl bg-white border border-slate-200/80 hover:border-cyan-400 shadow-sm hover:shadow-xl transition-all flex flex-col justify-between space-y-6"
-          >
-            <div className="space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-lime-50 text-lime-600 flex items-center justify-center">
-                <span className="material-symbols-outlined text-[26px]">local_shipping</span>
-              </div>
-              <div>
-                <span className="font-mono text-[10px] text-lime-700 font-bold uppercase tracking-wider block">HẬU CẦN &amp; TIẾP VẬN</span>
-                <h3 className="font-headline text-lg font-bold text-slate-900 mt-0.5">Tiếp Vận &amp; Đóng Gói</h3>
-              </div>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Cung ứng thùng carton chịu lực 5 lớp, màng cuốn PE, bọc bóng khí bubble wrap. Hỗ trợ nhận hàng ký gửi thay khách từ các đơn vị vận chuyển đối tác.
-              </p>
-              <div className="space-y-2 pt-2 text-xs text-slate-700">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[15px] text-lime-600">check_circle</span>
-                  <span>Vật tư đóng gói tiêu chuẩn tại chỗ</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[15px] text-lime-600">check_circle</span>
-                  <span>Nhận ký gửi hàng thay khách 24/7</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[15px] text-lime-600">check_circle</span>
-                  <span>Sảnh bốc dỡ hàng có mái che</span>
-                </div>
-              </div>
-            </div>
-            <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-lime-800">
-              <span>Hỗ trợ trọn gói tận nơi</span>
-              <span className="font-mono text-[11px] bg-lime-50 px-2 py-0.5 rounded text-lime-800">Tiện ích kèm theo</span>
-            </div>
-          </motion.div>
-
-        </motion.div>
-
-      </div>
-    </section>
-
-    {/* ============================================================ */}
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
     {/* 7. VISUAL STORAGE UNIT SIZE SPECIFICATIONS & CALCULATOR       */}
     {/* ============================================================ */}
     <section id="size-guide" className="py-20 lg:py-24 border-b border-slate-200/80 bg-white">

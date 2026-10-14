@@ -4,11 +4,14 @@ import { handoverService } from '../../../services/handoverService'
 import { bookingService } from '../../../services/bookingService'
 
 interface HandoverCheckInWorkbenchProps {
-  booking: Booking
+  booking?: Booking
+  arrivals?: Booking[]
+  onRefreshArrivals?: () => Promise<void> | void
   staffId?: string
   staffName?: string
   onHandoverComplete?: (bookingId: string) => void
   onOpenQrScanner?: () => void
+  activeBookingId?: string
 }
 
 interface ArrivingCustomer {
@@ -30,6 +33,25 @@ interface ArrivingCustomer {
   isContractSigned: boolean
   isIdVerified: boolean
   isUnitReady: boolean
+}
+
+const DEFAULT_BOOKING: Booking = {
+  id: '00000000-0000-0000-0000-000000000001',
+  bookingCode: 'RES-8921',
+  customerId: 'cust-1',
+  customerName: 'Trần Minh Tuấn',
+  customerEmail: 'tuan.tran@boxora.vn',
+  customerPhone: '0912.345.678',
+  storageUnitId: 'unit-1',
+  unitCode: 'A-112',
+  facilityName: 'Boxora Quận 1',
+  startDate: new Date().toISOString(),
+  endDate: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+  rentalMonths: 12,
+  totalRentalFee: 1500000,
+  depositPaid: 1500000,
+  status: 'CONFIRMED',
+  accessCode: 'BX-88219',
 }
 
 const mapBooking = (booking: Booking): ArrivingCustomer => ({
@@ -55,34 +77,44 @@ const mapBooking = (booking: Booking): ArrivingCustomer => ({
 
 export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> = ({
   booking,
+  arrivals = [],
+  onRefreshArrivals: _onRefreshArrivals,
   staffId,
   staffName,
   onHandoverComplete,
-  onOpenQrScanner
+  onOpenQrScanner,
+  activeBookingId,
 }) => {
-  const { user } = useAuth()
-
-  // Real-time arrivals list converted from real Backend Bookings
-  const arrivingList = useMemo<ArrivingCustomer[]>(() => {
-    if (arrivals && Array.isArray(arrivals) && arrivals.length > 0) {
-      return arrivals.map(mapBookingToArrival)
+  const currentBooking = useMemo(() => {
+    if (booking) return booking
+    if (arrivals.length > 0) {
+      if (activeBookingId) {
+        const found = arrivals.find((a) => a.id === activeBookingId || a.bookingCode === activeBookingId)
+        if (found) return found
+      }
+      return arrivals[0]
     }
-    return DEFAULT_DEMO_ARRIVALS
-  }, [arrivals])
+    return DEFAULT_BOOKING
+  }, [booking, arrivals, activeBookingId])
 
   // Active arrival
-  const [selectedCustomer, setSelectedCustomer] = useState<ArrivingCustomer>(() => mapBooking(booking))
+  const [selectedCustomer, setSelectedCustomer] = useState<ArrivingCustomer>(() => mapBooking(currentBooking))
 
-  // Sync with the booking selected from the live arrivals list and retrieve its real PIN.
+  // Sync with currentBooking
   React.useEffect(() => {
-    setSelectedCustomer(mapBooking(booking))
+    setSelectedCustomer(mapBooking(currentBooking))
     setIsCompleted(false)
     setAccessPin('')
     setPinError(null)
-    void bookingService.getAccessPin(booking.id)
-      .then(result => setAccessPin(result.pin))
-      .catch(() => setPinError('Không tải được PIN của lượt đặt kho. Hãy thử lại trước khi hoàn tất bàn giao.'))
-  }, [booking])
+    if (currentBooking.id && !currentBooking.id.startsWith('00000000-')) {
+      void bookingService
+        .getAccessPin(currentBooking.id)
+        .then((result) => setAccessPin(result.pin))
+        .catch(() => setPinError('Không tải được PIN của lượt đặt kho. Hãy thử lại trước khi hoàn tất bàn giao.'))
+    } else {
+      setAccessPin('739215')
+    }
+  }, [currentBooking])
   const [rfidCard, setRfidCard] = useState('')
   const [accessPin, setAccessPin] = useState('')
   const [pinError, setPinError] = useState<string | null>(null)
@@ -94,7 +126,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     contract: false,
     payment: false,
     idCard: false,
-    unitReady: false
+    unitReady: false,
   })
 
   // 5-Point On-Site Handover Checklist
@@ -103,7 +135,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     cleanliness: false,
     lighting: false,
     fireSafety: false,
-    sealPlate: false
+    sealPlate: false,
   })
 
   // 2 Condition Photos
@@ -115,12 +147,17 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const [activeStepTab, setActiveStepTab] = useState<'audit' | 'checklist' | 'pin'>('audit')
 
   const handleReloadPin = async () => {
+    if (!currentBooking.id) return
     setPinError(null)
     setAccessPin('')
     setPinCopied(false)
     try {
-      const result = await bookingService.getAccessPin(booking.id)
-      setAccessPin(result.pin)
+      if (!currentBooking.id.startsWith('00000000-')) {
+        const result = await bookingService.getAccessPin(currentBooking.id)
+        setAccessPin(result.pin)
+      } else {
+        setAccessPin('739215')
+      }
     } catch {
       setPinError('Không tải được PIN của lượt đặt kho. Hãy thử lại.')
     }
@@ -668,7 +705,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => void handleReloadPin()}
-                  disabled={!booking.id}
+                  disabled={!currentBooking.id}
                   className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[16px]">refresh</span>

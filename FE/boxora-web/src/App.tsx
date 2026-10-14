@@ -11,6 +11,7 @@ import { HomePage } from './pages/public/HomePage'
 import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
 import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
 import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
+import { PaymentResultPage } from './pages/public/PaymentResultPage'
 
 // StorageOps Pro Portals (Matching Prototype Stitch Files)
 
