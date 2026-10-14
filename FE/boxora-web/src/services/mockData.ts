@@ -1,4 +1,4 @@
-import { Facility, UnitType, StorageUnit, Booking, SupportTicket, HandoverRecord } from '../types'
+import { Facility, UnitType, Booking, SupportTicket, HandoverRecord } from '../types'
 
 export const MOCK_FACILITIES: Facility[] = [
   {
@@ -88,17 +88,6 @@ export const MOCK_UNIT_TYPES: UnitType[] = [
     description: 'Equipped with heavy-duty shelving, climate-controlled insulation, dedicated electrical outlets and pallet access.',
     suitableFor: 'E-commerce inventory, office archives, retail merchandise'
   }
-]
-
-export const MOCK_STORAGE_UNITS: StorageUnit[] = [
-  { id: 'u-101', unitCode: 'A-101', floorLevel: 'Floor 1', status: 'OCCUPIED', facilityId: 'fac-1', facilityName: 'Boxora Central Landmark', unitTypeId: 'ut-compact', unitTypeName: 'Compact Studio Unit', pricePerMonth: 1250000 },
-  { id: 'u-102', unitCode: 'A-102', floorLevel: 'Floor 1', status: 'AVAILABLE', facilityId: 'fac-1', facilityName: 'Boxora Central Landmark', unitTypeId: 'ut-compact', unitTypeName: 'Compact Studio Unit', pricePerMonth: 1250000 },
-  { id: 'u-103', unitCode: 'A-103', floorLevel: 'Floor 1', status: 'AVAILABLE', facilityId: 'fac-1', facilityName: 'Boxora Central Landmark', unitTypeId: 'ut-standard', unitTypeName: 'Standard 1-Bedroom', pricePerMonth: 2400000 },
-  { id: 'u-104', unitCode: 'B-201', floorLevel: 'Floor 2', status: 'MAINTENANCE', facilityId: 'fac-1', facilityName: 'Boxora Central Landmark', unitTypeId: 'ut-locker', unitTypeName: 'Personal Locker', pricePerMonth: 450000 },
-  { id: 'u-105', unitCode: 'B-202', floorLevel: 'Floor 2', status: 'AVAILABLE', facilityId: 'fac-1', facilityName: 'Boxora Central Landmark', unitTypeId: 'ut-locker', unitTypeName: 'Personal Locker', pricePerMonth: 450000 },
-  { id: 'u-106', unitCode: 'C-301', floorLevel: 'Floor 3', status: 'OCCUPIED', facilityId: 'fac-1', facilityName: 'Boxora Central Landmark', unitTypeId: 'ut-business', unitTypeName: 'Commercial Suite', pricePerMonth: 4800000 },
-  { id: 'u-201', unitCode: 'T-101', floorLevel: 'Ground Floor', status: 'AVAILABLE', facilityId: 'fac-2', facilityName: 'Boxora Tech Park', unitTypeId: 'ut-business', unitTypeName: 'Commercial Suite', pricePerMonth: 4800000 },
-  { id: 'u-202', unitCode: 'T-102', floorLevel: 'Ground Floor', status: 'AVAILABLE', facilityId: 'fac-2', facilityName: 'Boxora Tech Park', unitTypeId: 'ut-standard', unitTypeName: 'Standard 1-Bedroom', pricePerMonth: 2400000 },
 ]
 
 export const MOCK_BOOKINGS: Booking[] = [

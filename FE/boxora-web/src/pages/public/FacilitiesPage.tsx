@@ -30,7 +30,7 @@ export const FacilitiesPage: React.FC = () => {
           facilityService.getFacilities({ size: 100 }),
           storageUnitService.getUnits()
         ])
-        const facList = facRes?.content || []
+        const facList = (facRes?.content || []).filter(facility => !facility.status || facility.status === 'ACTIVE')
         const unitList = Array.isArray(unitRes) ? unitRes : []
         setFacilities(facList)
         setUnits(unitList)
@@ -83,7 +83,7 @@ export const FacilitiesPage: React.FC = () => {
         <div className="max-w-3xl mb-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-50 border border-orange-200 text-xs font-semibold text-orange-700 mb-3">
             <Building2 className="w-3.5 h-3.5 text-orange-600" />
-            Hệ thống {facilities.length > 0 ? `${facilities.length} cơ sở kho` : '4 cơ sở kho'} tiêu chuẩn cao
+            Hệ thống {facilities.length} cơ sở kho đang hoạt động
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-2 text-slate-900">
             Hệ Thống Cơ Sở &amp; Tình Trạng Kho Trống

@@ -2,6 +2,7 @@ package com.boxora.controller;
 
 import com.boxora.common.response.ApiResponse;
 import com.boxora.dto.request.BookingCreateRequest;
+import com.boxora.dto.request.BookingDecisionRequest;
 import com.boxora.dto.request.UpdatePinRequest;
 import com.boxora.dto.response.BookingAccessCredentialsResponse;
 import com.boxora.dto.response.BookingPinResponse;
@@ -37,6 +38,32 @@ public class BookingController {
                 .body(ApiResponse.success("Booking created with access credentials", bookingService.createBooking(request)));
     }
 
+@GetMapping("/my-requests")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN')")
+    @Operation(summary = "Lấy các yêu cầu đặt kho đang chờ duyệt hoặc chờ thanh toán")
+    public ResponseEntity<ApiResponse<List<BookingResponse>>> getMyRequests() {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getMyBookingRequests()));
+    }
+
+    @GetMapping("/pending-approval")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @Operation(summary = "Lấy yêu cầu đặt kho đang chờ quản lý duyệt")
+    public ResponseEntity<ApiResponse<List<BookingResponse>>> getPendingApprovalRequests() {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getPendingApprovalRequests()));
+    }
+
+    @PostMapping("/{id}/decision")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @Operation(summary = "Duyệt hoặc từ chối yêu cầu thuê kho")
+    public ResponseEntity<ApiResponse<BookingResponse>> decideRequest(
+            @PathVariable UUID id,
+            @Valid @RequestBody BookingDecisionRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                bookingService.reviewBookingRequest(id, request.getApproved())
+        ));
+    }
+
     @GetMapping("/my-bookings")
     @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Lấy toàn bộ lịch sử các lượt đặt kho của khách hàng")
@@ -55,6 +82,7 @@ public class BookingController {
             list = list.stream().filter(b -> b.getStatus() == status).toList();
         }
         return ResponseEntity.ok(ApiResponse.success(list));
+    }
     }
 
     @GetMapping("/my-active")

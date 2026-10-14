@@ -39,11 +39,19 @@ export const bookingService = {
     return (response.data?.data || []) as Booking[]
   },
 
-  async getMyBookings(customerId?: string) {
-    const response = await api.get('/api/v1/bookings/my-bookings', {
-      params: customerId ? { customerId } : undefined,
-    })
+  async getMyRequests() {
+    const response = await api.get('/api/v1/bookings/my-requests')
     return (response.data?.data || []) as Booking[]
+  },
+
+  async getPendingApprovals() {
+    const response = await api.get('/api/v1/bookings/pending-approval')
+    return (response.data?.data || []) as Booking[]
+  },
+
+  async decideRequest(id: string, approved: boolean) {
+    const response = await api.post(`/api/v1/bookings/${id}/decision`, { approved })
+    return response.data?.data as Booking
   },
 
   async getUpcomingArrivals() {

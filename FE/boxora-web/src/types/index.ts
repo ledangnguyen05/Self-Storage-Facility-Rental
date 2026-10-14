@@ -34,6 +34,32 @@ export interface Facility {
   code?: string
   openTime?: string
   closeTime?: string
+  latitude?: number | null
+  longitude?: number | null
+  layoutConfig?: string | null
+  description?: string
+  email?: string
+  status?: string
+}
+
+export interface FacilityLayoutConfig {
+  title: string
+  floor1Name: string
+  floor2Name: string
+  zoneAName: string
+  zoneADesc: string
+  zoneBName: string
+  zoneBDesc: string
+  zoneCName: string
+  zoneCDesc: string
+  loadingBayFloor1: string
+  corridorNorth: string
+  exitFloor1: string
+  loadingBayFloor2: string
+  corridorClimate: string
+  exitFloor2: string
+  totalAreaFloor1: string
+  totalAreaFloor2: string
 }
 
 export interface UnitType {
@@ -82,6 +108,7 @@ export interface StorageUnit {
   unitTypeId: string
   unitTypeName: string
   pricePerMonth: number
+  depositAmount?: number
   areaSqMeters?: number
   batteryLevel?: string
   smartLockSerial?: string
@@ -93,7 +120,7 @@ export interface StorageUnit {
   dueDate?: string
 }
 
-export type BookingStatusType = 'PENDING_PAYMENT' | 'CONFIRMED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
+export type BookingStatusType = 'PENDING_APPROVAL' | 'PENDING_PAYMENT' | 'CONFIRMED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
 
 export interface Booking {
   id: string
