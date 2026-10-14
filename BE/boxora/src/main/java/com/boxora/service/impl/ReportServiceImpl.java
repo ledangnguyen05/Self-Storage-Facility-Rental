@@ -71,6 +71,7 @@ public class ReportServiceImpl implements ReportService {
                     .totalRevenue(BigDecimal.ZERO)
                     .depositRevenue(BigDecimal.ZERO)
                     .rentalFeeRevenue(BigDecimal.ZERO)
+                    .renewalFeeRevenue(BigDecimal.ZERO)
                     .extraChargeRevenue(BigDecimal.ZERO)
                     .paymentCount(0L)
                     .build();
@@ -86,6 +87,16 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public OccupancyReportResponse getOccupancyReport() {
+        return getOccupancyReport(null);
+    }
+
+    @Override
+    public OccupancyReportResponse getOccupancyReport(UUID facilityId) {
+        UUID effectiveFacilityId = facilityId;
+        if (facilityAccessGuard.isFacilityScoped()) {
+            effectiveFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+        }
+
         List<Object[]> rows = storageUnitRepository.countUnitsGroupedByFacilityAndStatus();
 
         Map<UUID, String> facilityNames = new LinkedHashMap<>();
@@ -93,7 +104,7 @@ public class ReportServiceImpl implements ReportService {
         Map<UUID, long[]> counts = new LinkedHashMap<>();
 
         for (Object[] row : rows) {
-            UUID facilityId = (UUID) row[0];
+            UUID fId = (UUID) row[0];
             String facilityName = (String) row[1];
             
             UnitStatus status;
@@ -106,8 +117,8 @@ public class ReportServiceImpl implements ReportService {
             }
             Long count = row[3] instanceof Number num ? num.longValue() : 0L;
 
-            facilityNames.putIfAbsent(facilityId, facilityName);
-            long[] bucket = counts.computeIfAbsent(facilityId, k -> new long[5]);
+            facilityNames.putIfAbsent(fId, facilityName);
+            long[] bucket = counts.computeIfAbsent(fId, k -> new long[5]);
             bucket[0] += count;
             switch (status) {
                 case OCCUPIED -> bucket[1] += count;
@@ -121,12 +132,16 @@ public class ReportServiceImpl implements ReportService {
         long sysTotal = 0, sysOccupied = 0, sysAvailable = 0, sysReserved = 0, sysMaintenance = 0;
 
         for (Map.Entry<UUID, long[]> entry : counts.entrySet()) {
+            UUID fId = entry.getKey();
+            if (effectiveFacilityId != null && !effectiveFacilityId.equals(fId)) {
+                continue;
+            }
             long[] c = entry.getValue();
             double rate = c[0] == 0 ? 0.0 : (c[1] * 100.0) / c[0];
 
             byFacility.add(FacilityOccupancyResponse.builder()
-                    .facilityId(entry.getKey())
-                    .facilityName(facilityNames.get(entry.getKey()))
+                    .facilityId(fId)
+                    .facilityName(facilityNames.get(fId))
                     .totalUnits(c[0])
                     .occupiedUnits(c[1])
                     .availableUnits(c[2])

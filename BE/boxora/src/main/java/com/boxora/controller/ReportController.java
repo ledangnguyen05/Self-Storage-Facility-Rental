@@ -52,9 +52,12 @@ public class ReportController {
 
     @GetMapping("/occupancy")
     @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
-    @Operation(summary = "Lấy báo cáo tỷ lệ lấp đầy kho")
-    public ResponseEntity<ApiResponse<OccupancyReportResponse>> getOccupancyReport() {
-        OccupancyReportResponse response = reportService.getOccupancyReport();
+    @Operation(summary = "Lấy báo cáo tỷ lệ lấp đầy kho toàn hệ thống hoặc theo cơ sở")
+    public ResponseEntity<ApiResponse<OccupancyReportResponse>> getOccupancyReport(
+            @RequestParam(required = false)
+            UUID facilityId
+    ) {
+        OccupancyReportResponse response = reportService.getOccupancyReport(facilityId);
 
         return ResponseEntity.ok(ApiResponse.success(response));
     }
