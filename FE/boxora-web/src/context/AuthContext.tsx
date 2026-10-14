@@ -162,7 +162,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               name: rawUser.roleName as RoleType,
               description: rawUser.roleName
             } : (jwtRole ? { name: jwtRole } : undefined)),
-            roleName: rawUser?.roleName || rawUser?.role?.name || jwtRole,
+            roleName: rawUser?.roleName || rawUser?.role?.name || jwtRole || undefined,
             roleId: rawUser?.roleId || rawUser?.role?.id,
             facilityId: rawUser?.facilityId,
             facilityName: rawUser?.facilityName,

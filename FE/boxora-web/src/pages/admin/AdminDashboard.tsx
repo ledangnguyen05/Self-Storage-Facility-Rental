@@ -60,6 +60,25 @@ export const AdminDashboard: React.FC = () => {
   const [userActionLoadingId, setUserActionLoadingId] = useState<string | null>(null)
 
   // Activity Log state
+  const fallbackRoles: Role[] = [
+    { id: 'r-1', name: 'ADMIN', description: 'Quản trị viên toàn quyền hệ thống' },
+    { id: 'r-2', name: 'BUSINESS_MANAGER', description: 'Giám đốc vận hành chuỗi và chính sách giá' },
+    { id: 'r-3', name: 'FACILITY_MANAGER', description: 'Quản lý cơ sở kho vật lý và ca trực' },
+    { id: 'r-4', name: 'STAFF', description: 'Nhân viên trạm tiếp đón và nghiệm thu bàn giao' },
+    { id: 'r-5', name: 'CUSTOMER', description: 'Khách hàng thuê kho và quản lý mã PIN' },
+  ]
+
+  const fallbackPermissions: Permission[] = [
+    { id: 'p-1', name: 'Xem người dùng', code: 'USER_READ', module: 'USER' },
+    { id: 'p-2', name: 'Tạo / Sửa người dùng', code: 'USER_WRITE', module: 'USER' },
+    { id: 'p-3', name: 'Phân quyền vai trò', code: 'ROLE_MANAGE', module: 'ROLE' },
+    { id: 'p-4', name: 'Xem cơ sở & kho', code: 'FACILITY_READ', module: 'FACILITY' },
+    { id: 'p-5', name: 'Cấu hình giá & chính sách', code: 'POLICY_MANAGE', module: 'POLICY' },
+    { id: 'p-6', name: 'Check-in & Nghiệm thu', code: 'HANDOVER_EXECUTE', module: 'HANDOVER' },
+    { id: 'p-7', name: 'Xem báo cáo doanh thu', code: 'REPORT_REVENUE', module: 'REPORT' },
+    { id: 'p-8', name: 'Xem nhật ký kiểm toán', code: 'AUDIT_LOG_READ', module: 'AUDIT' },
+  ]
+
   const [logs, setLogs] = useState<ActivityLog[]>([])
   const [logsError, setLogsError] = useState(false)
   const [logTypeFilter, setLogTypeFilter] = useState<string>('ALL')
