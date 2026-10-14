@@ -37,6 +37,26 @@ public class BookingController {
                 .body(ApiResponse.success("Booking created with access credentials", bookingService.createBooking(request)));
     }
 
+    @GetMapping("/my-bookings")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Lấy toàn bộ lịch sử các lượt đặt kho của khách hàng")
+    public ResponseEntity<ApiResponse<List<BookingResponse>>> getMyBookings(@RequestParam(required = false) UUID customerId) {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getMyBookings(customerId)));
+    }
+
+    @GetMapping
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Truy vấn danh sách đơn đặt kho")
+    public ResponseEntity<ApiResponse<List<BookingResponse>>> getAll(
+            @RequestParam(required = false) UUID customerId,
+            @RequestParam(required = false) com.boxora.enums.BookingStatus status) {
+        List<BookingResponse> list = bookingService.getMyBookings(customerId);
+        if (status != null) {
+            list = list.stream().filter(b -> b.getStatus() == status).toList();
+        }
+        return ResponseEntity.ok(ApiResponse.success(list));
+    }
+
     @GetMapping("/my-active")
     @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Lấy danh sách các lượt đặt kho đang hoạt động")

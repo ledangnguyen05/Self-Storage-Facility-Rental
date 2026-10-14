@@ -2,9 +2,9 @@ import { api } from '../lib/axios'
 import { RevenueReport, OccupancyReport, OverdueDebtReport } from '../types'
 
 export const reportService = {
-  async getRevenueReport(fromDate?: string, toDate?: string) {
+  async getRevenueReport(fromDate?: string, toDate?: string, facilityId?: string) {
     const response = await api.get('/api/v1/reports/revenue', {
-      params: { fromDate, toDate },
+      params: { fromDate, toDate, facilityId },
     })
     return response.data?.data as RevenueReport
   },

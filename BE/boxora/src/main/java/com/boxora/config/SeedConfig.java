@@ -72,6 +72,11 @@ public class SeedConfig implements ApplicationRunner {
         } catch (Exception e) {
             log.warn("Notice updating user full names: {}", e.getMessage());
         }
+        try {
+            jdbcTemplate.execute("UPDATE rental_contracts SET end_date = CURRENT_DATE + INTERVAL '2 days' WHERE contract_code = 'CTR-2026-1010'");
+        } catch (Exception e) {
+            log.warn("Notice updating CTR-2026-1010 end_date: {}", e.getMessage());
+        }
         seedUsers();
         distributeCustomersToFacilities();
     }

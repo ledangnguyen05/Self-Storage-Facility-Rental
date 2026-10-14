@@ -47,15 +47,25 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public RevenueReportResponse getRevenueReport(LocalDate fromDate, LocalDate toDate) {
+        return getRevenueReport(fromDate, toDate, null);
+    }
+
+    @Override
+    public RevenueReportResponse getRevenueReport(LocalDate fromDate, LocalDate toDate, UUID facilityId) {
         if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
             throw new AppException(ErrorCode.INVALID_REQUEST);
+        }
+
+        UUID effectiveFacilityId = facilityId;
+        if (facilityAccessGuard.isFacilityScoped()) {
+            effectiveFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
         }
 
         LocalDateTime from = fromDate != null ? fromDate.atStartOfDay() : LocalDateTime.of(2000, 1, 1, 0, 0, 0);
         LocalDateTime to = toDate != null ? toDate.atTime(LocalTime.MAX) : LocalDateTime.of(2099, 12, 31, 23, 59, 59);
 
-        List<FacilityRevenueResponse> byFacility = paymentRepository.sumRevenueByFacility(from, to);
-        SystemRevenueSummaryResponse systemSummary = paymentRepository.sumSystemRevenue(from, to);
+        List<FacilityRevenueResponse> byFacility = paymentRepository.sumRevenueByFacility(from, to, effectiveFacilityId);
+        SystemRevenueSummaryResponse systemSummary = paymentRepository.sumSystemRevenue(from, to, effectiveFacilityId);
         if (systemSummary == null) {
             systemSummary = SystemRevenueSummaryResponse.builder()
                     .totalRevenue(BigDecimal.ZERO)

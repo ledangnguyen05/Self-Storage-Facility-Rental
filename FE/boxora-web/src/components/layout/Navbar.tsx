@@ -6,12 +6,14 @@ import { Button } from '../ui/Button'
 import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import { BrandLogo } from '../common/BrandLogo'
 import { AccountProfileModal } from '../common/AccountProfileModal'
+import { LogoutConfirmModal } from '../modals/LogoutConfirmModal'
 
 export const Navbar: React.FC = () => {
   const { user, role, logout } = useAuth()
   const navigate = useNavigate()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false)
 
   const isCustomer = role === 'CUSTOMER'
   const customerAccess = checkCustomerPortalAccess(user)
@@ -119,9 +121,11 @@ export const Navbar: React.FC = () => {
               </button>
 
               <button
-                onClick={() => logout()}
+                type="button"
+                onClick={() => setIsLogoutModalOpen(true)}
                 className="p-2 rounded-lg text-slate-500 hover:text-rose-700 hover:bg-rose-100/60 transition-colors cursor-pointer"
                 title="Đăng xuất"
+                aria-label="Đăng xuất"
               >
                 <LogOut size={18} />
               </button>
@@ -223,9 +227,10 @@ export const Navbar: React.FC = () => {
                   <span>{canAccessPortal ? `Vào bảng điều khiển (${role})` : 'Khám Phá & Đăng Ký Thuê Kho'}</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
-                    logout()
                     setIsMobileMenuOpen(false)
+                    setIsLogoutModalOpen(true)
                   }}
                   className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-red-600 bg-red-50 hover:bg-red-100 font-medium text-sm transition-colors cursor-pointer"
                 >
@@ -251,6 +256,14 @@ export const Navbar: React.FC = () => {
         </div>
       )}
       <AccountProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
+      <LogoutConfirmModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={async () => {
+          await logout()
+          navigate('/login')
+        }}
+      />
     </header>
   )
 }

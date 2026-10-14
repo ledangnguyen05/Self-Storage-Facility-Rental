@@ -25,7 +25,7 @@ public class FacilityAccessGuard {
      */
     public void checkFacilityAccess(UUID targetFacilityId) {
         String role = requestContext.currentUserRole();
-        if (role == null || SYSTEM_WIDE_ROLES.contains(role)) {
+        if (role == null || !("STAFF".equals(role) || "FACILITY_MANAGER".equals(role))) {
             return;
         }
 
@@ -38,7 +38,7 @@ public class FacilityAccessGuard {
     /** True if the current user should only see their own facility's rows in a list query. */
     public boolean isFacilityScoped() {
         String role = requestContext.currentUserRole();
-        return role != null && !SYSTEM_WIDE_ROLES.contains(role);
+        return "STAFF".equals(role) || "FACILITY_MANAGER".equals(role);
     }
 
     /** Facility to filter list queries by when isFacilityScoped() is true; null otherwise. */
