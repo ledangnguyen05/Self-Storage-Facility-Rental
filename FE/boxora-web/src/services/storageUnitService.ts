@@ -31,4 +31,10 @@ export const storageUnitService = {
     const response = await api.patch(`/api/v1/storage-units/${id}/toggle-maintenance`)
     return response.data?.data as StorageUnit
   },
+
+  async getUnitTypes() {
+    const response = await api.get('/api/v1/unit-types')
+    return response.data?.data
+  },
 }
+

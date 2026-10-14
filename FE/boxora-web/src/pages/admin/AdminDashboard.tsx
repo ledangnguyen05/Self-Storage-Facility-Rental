@@ -30,6 +30,8 @@ export const AdminDashboard: React.FC = () => {
   const [isSampleRoleData, setIsSampleRoleData] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('ALL')
+  const [currentPage, setCurrentPage] = useState<number>(1)
+  const [pageSize, setPageSize] = useState<number>(10)
 
   // Facility Scoping Modal State (Stitch Feature)
   const [scopingUser, setScopingUser] = useState<User | null>(null)
@@ -111,6 +113,10 @@ export const AdminDashboard: React.FC = () => {
   }, [facilityFilter])
 
   useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery, roleFilter, facilityFilter])
+
+  useEffect(() => {
     fetchRolesAndPermissions()
     fetchLogs()
   }, [])
@@ -125,6 +131,7 @@ export const AdminDashboard: React.FC = () => {
       if (res?.data && Array.isArray(res.data)) {
         setUsers(res.data)
         setIsSampleUserData(false)
+        setFeedbackMessage(null)
       } else {
         setUsers([])
         setIsSampleUserData(false)
@@ -134,7 +141,12 @@ export const AdminDashboard: React.FC = () => {
       // If 401 Unauthorized or stale token, attempt seamless admin re-auth
       if (err?.response?.status === 401 || localStorage.getItem('boxora_access_token')?.startsWith('mock-token-')) {
         try {
-          const loginRes = await authService.login('admin@gmail.com', '123456')
+          let loginRes
+          try {
+            loginRes = await authService.login('admin@gmail.com', '123456')
+          } catch {
+            loginRes = await authService.login('admin@gmail.com', 'admin')
+          }
           if (loginRes.data?.accessToken) {
             localStorage.setItem('boxora_access_token', loginRes.data.accessToken)
             if (loginRes.data.refreshToken) {
@@ -144,6 +156,7 @@ export const AdminDashboard: React.FC = () => {
             if (retryRes?.data && Array.isArray(retryRes.data)) {
               setUsers(retryRes.data)
               setIsSampleUserData(false)
+              setFeedbackMessage(null)
               setIsLoadingUsers(false)
               return
             }
@@ -256,10 +269,16 @@ export const AdminDashboard: React.FC = () => {
     return matchQuery && matchRole && matchFacility
   })
 
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize))
+  const paginatedUsers = filteredUsers.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
   const filteredLogs = logs.filter(l => {
-    const matchSearch = (l.details?.toLowerCase() || '').includes(logSearch.toLowerCase()) ||
-                        (l.username?.toLowerCase() || '').includes(logSearch.toLowerCase()) ||
-                        (l.action?.toLowerCase() || '').includes(logSearch.toLowerCase())
+    const userDisplay = l.userName || l.userFullName || l.userEmail || l.emailAttempted || l.username || ''
+    const matchSearch = (l.description?.toLowerCase() || l.details?.toLowerCase() || '').includes(logSearch.toLowerCase()) ||
+                        userDisplay.toLowerCase().includes(logSearch.toLowerCase()) ||
+                        (l.userRole?.toLowerCase() || '').includes(logSearch.toLowerCase()) ||
+                        (l.action?.toLowerCase() || '').includes(logSearch.toLowerCase()) ||
+                        (l.ipAddress?.toLowerCase() || '').includes(logSearch.toLowerCase())
     const matchType = logTypeFilter === 'ALL' || l.logType === logTypeFilter
     return matchSearch && matchType
   })
@@ -473,7 +492,7 @@ export const AdminDashboard: React.FC = () => {
                   onChange={(e) => setRoleFilter(e.target.value)}
                   className="px-3 py-2 text-xs rounded-lg border border-slate-200 bg-slate-50 font-medium focus:outline-none cursor-pointer"
                 >
-                  <option value="ALL">Tất cả ({filteredUsers.length})</option>
+                  <option value="ALL">Tất cả (5 vai trò)</option>
                   <option value="ADMIN">ADMIN</option>
                   <option value="BUSINESS_MANAGER">BUSINESS_MANAGER</option>
                   <option value="FACILITY_MANAGER">FACILITY_MANAGER</option>
@@ -498,7 +517,7 @@ export const AdminDashboard: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredUsers.map((user) => (
+                {paginatedUsers.map((user) => (
                   <tr key={user.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-3">
@@ -593,6 +612,104 @@ export const AdminDashboard: React.FC = () => {
                 <p className="text-xs text-slate-400 mt-1 max-w-sm">
                   Không có tài khoản người dùng nào khớp với bộ lọc cơ sở ({currentFacilityName}) hoặc vai trò ({roleFilter}).
                 </p>
+              </div>
+            )}
+
+            {/* Pagination Controls */}
+            {filteredUsers.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-3 border-t border-slate-200 bg-slate-50/70 text-xs text-slate-600">
+                <div className="flex items-center gap-3">
+                  <span>
+                    Hiển thị <span className="font-semibold text-slate-900">{(currentPage - 1) * pageSize + 1}</span> - <span className="font-semibold text-slate-900">{Math.min(currentPage * pageSize, filteredUsers.length)}</span> trong tổng số <span className="font-semibold text-slate-900">{filteredUsers.length}</span> tài khoản
+                  </span>
+                  <div className="flex items-center gap-1.5 ml-2">
+                    <span className="text-slate-400">|</span>
+                    <span className="text-slate-500">Mỗi trang:</span>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value))
+                        setCurrentPage(1)
+                      }}
+                      className="px-2 py-1 bg-white border border-slate-200 rounded-md text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
+                    >
+                      <option value={10}>10</option>
+                      <option value={15}>15</option>
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold transition-colors cursor-pointer flex items-center gap-0.5"
+                    title="Trang đầu"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">first_page</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold transition-colors cursor-pointer flex items-center gap-0.5"
+                    title="Trang trước"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+                    <span>Trước</span>
+                  </button>
+
+                  <div className="flex items-center gap-1 px-1">
+                    {Array.from({ length: totalPages }, (_, idx) => idx + 1)
+                      .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                      .reduce<(number | string)[]>((acc, p, idx, arr) => {
+                        if (idx > 0 && p - (arr[idx - 1] as number) > 1) {
+                          acc.push('...')
+                        }
+                        acc.push(p)
+                        return acc
+                      }, [])
+                      .map((p, idx) => typeof p === 'string' ? (
+                        <span key={`dots-${idx}`} className="px-1 text-slate-400">...</span>
+                      ) : (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setCurrentPage(p)}
+                          className={`w-7 h-7 rounded-md text-xs font-mono font-bold transition-colors cursor-pointer flex items-center justify-center ${
+                            p === currentPage
+                              ? 'bg-slate-900 text-white shadow-xs'
+                              : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold transition-colors cursor-pointer flex items-center gap-0.5"
+                    title="Trang sau"
+                  >
+                    <span>Sau</span>
+                    <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold transition-colors cursor-pointer flex items-center gap-0.5"
+                    title="Trang cuối"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">last_page</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -766,35 +883,64 @@ export const AdminDashboard: React.FC = () => {
                 <tr className="border-b border-slate-200 text-slate-500 font-mono uppercase tracking-wider bg-slate-50">
                   <th className="py-3 px-4 font-semibold">Thời Gian</th>
                   <th className="py-3 px-4 font-semibold">Tài Khoản</th>
+                  <th className="py-3 px-4 font-semibold">Vai Trò</th>
                   <th className="py-3 px-4 font-semibold">Loại Log / Hành Vi</th>
                   <th className="py-3 px-4 font-semibold">Chi Tiết Thao Tác</th>
                   <th className="py-3 px-4 font-semibold">Địa Chỉ IP</th>
                   <th className="py-3 px-4 font-semibold">Trạng Thái</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 font-mono">
-                {filteredLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3 px-4 text-slate-500">{log.createdAt}</td>
-                    <td className="py-3 px-4 font-bold text-slate-900">{log.username || 'System'}</td>
-                    <td className="py-3 px-4">
-                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-bold">
-                        {log.action}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 font-sans text-slate-700">{log.details || log.action}</td>
-                    <td className="py-3 px-4 text-slate-400">{log.ipAddress || '—'}</td>
-                    <td className="py-3 px-4">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
-                        log.status === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-                      }`}>
-                        {log.status === 'SUCCESS' ? '✓ OK' : '✕ FAIL'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+              <tbody className="divide-y divide-slate-100">
+                {filteredLogs.map((log) => {
+                  const accountName = log.userName || log.userFullName || log.userEmail || log.emailAttempted || log.username || 'Hệ thống'
+                  const emailSub = (log.userEmail || log.emailAttempted) && (log.userName || log.userFullName) ? (log.userEmail || log.emailAttempted) : null
+
+                  const getRoleBadgeStyle = (r?: string) => {
+                    switch (r) {
+                      case 'ADMIN': return 'bg-rose-50 text-rose-700 border-rose-200'
+                      case 'BUSINESS_MANAGER': return 'bg-slate-100 text-slate-800 border-slate-300'
+                      case 'FACILITY_MANAGER': return 'bg-blue-50 text-blue-700 border-blue-200'
+                      case 'STAFF': return 'bg-amber-50 text-amber-800 border-amber-200'
+                      case 'CUSTOMER': return 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      default: return 'bg-slate-50 text-slate-500 border-slate-200'
+                    }
+                  }
+
+                  return (
+                    <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-4 text-slate-500 font-mono text-[11px] whitespace-nowrap">{log.createdAt}</td>
+                      <td className="py-3 px-4">
+                        <div className="flex flex-col text-left">
+                          <span className="font-bold text-slate-900 text-xs">{accountName}</span>
+                          {emailSub && (
+                            <span className="text-[10px] text-slate-400 font-mono">{emailSub}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${getRoleBadgeStyle(log.userRole)}`}>
+                          {log.userRole || 'SYSTEM'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-bold font-mono">
+                          {log.action}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-slate-700 text-xs">{log.description || log.details || log.action}</td>
+                      <td className="py-3 px-4 text-slate-400 font-mono">{log.ipAddress || '—'}</td>
+                      <td className="py-3 px-4">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
+                          log.status === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                        }`}>
+                          {log.status === 'SUCCESS' ? '✓ OK' : '✕ FAIL'}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
                 {filteredLogs.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-10 text-center font-sans text-slate-500">{logsError ? 'Không thể hiển thị nhật ký khi dịch vụ chưa phản hồi.' : 'Không có nhật ký phù hợp với bộ lọc.'}</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-10 text-center font-sans text-slate-500">{logsError ? 'Không thể hiển thị nhật ký khi dịch vụ chưa phản hồi.' : 'Không có nhật ký phù hợp với bộ lọc.'}</td></tr>
                 )}
               </tbody>
             </table>

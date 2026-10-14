@@ -401,78 +401,78 @@ export const LoginPage: React.FC = () => {
         {/* ========================================================== */}
         {/* RIGHT COLUMN: Floating Card Login Panel                   */}
         {/* ========================================================== */}
-        <div className="w-full max-w-[460px] lg:w-[440px] xl:w-[460px] shrink-0 my-auto">
+        <div className="w-full max-w-[540px] lg:w-[500px] xl:w-[540px] shrink-0 my-auto">
           
-          <div className="w-full bg-white/98 backdrop-blur-md rounded-[32px] sm:rounded-[36px] border-2 border-teal-100 shadow-[0_20px_50px_rgba(15,23,42,0.12),0_0_40px_rgba(13,148,136,0.08)] p-6 sm:p-8 lg:p-9 relative z-30 transition-all text-left space-y-4">
+          <div className="w-full bg-white/98 backdrop-blur-md rounded-[32px] sm:rounded-[36px] border-2 border-teal-100 shadow-[0_25px_60px_rgba(15,23,42,0.12),0_0_40px_rgba(13,148,136,0.08)] p-7 sm:p-9 lg:p-10 relative z-30 transition-all text-left space-y-5">
             
             {/* Top Logo inside the Card */}
             <div className="flex items-center justify-start">
               <img
                 src={boxoraLogo}
                 alt="BOXORA"
-                className="h-10 sm:h-11 w-auto object-contain drop-shadow-xs"
+                className="h-10 sm:h-12 w-auto object-contain drop-shadow-xs"
               />
             </div>
 
             {/* Header Title */}
-            <div className="space-y-1">
-              <h2 className="text-2xl sm:text-[28px] font-black text-slate-950 tracking-tight">
+            <div className="space-y-1.5">
+              <h2 className="text-2xl sm:text-[30px] font-black text-slate-950 tracking-tight">
                 Đăng nhập tài khoản
               </h2>
-              <p className="text-xs sm:text-[13px] text-slate-600 font-medium">
+              <p className="text-xs sm:text-sm text-slate-600 font-medium">
                 Kết nối không gian lưu trữ thông minh &amp; quản lý ô kho của bạn
               </p>
             </div>
 
             {/* Error banner */}
             {error && (
-              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2 shadow-xs">
-                <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
+              <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs sm:text-sm flex items-center gap-2.5 shadow-xs">
+                <AlertCircle className="w-4.5 h-4.5 shrink-0 text-red-500" />
                 <span className="font-medium">{error}</span>
               </div>
             )}
 
             {/* Form */}
-            <form onSubmit={handleLoginSubmit} className="space-y-3.5">
+            <form onSubmit={handleLoginSubmit} className="space-y-4">
               
               {/* Field 1: Email đăng nhập */}
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-slate-800">
+              <div className="space-y-1.5">
+                <label className="block text-xs sm:text-[13px] font-bold text-slate-800">
                   Email đăng nhập
                 </label>
                 <div className="relative flex items-center">
                   <div className="absolute left-3.5 text-slate-400 pointer-events-none">
-                    <Mail className="w-4 h-4" />
+                    <Mail className="w-4.5 h-4.5" />
                   </div>
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Nhập email của bạn (ví dụ: customer@gmail.com)"
+                    placeholder="Nhập email của bạn"
                     required
                     autoFocus
-                    className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
+                    className="w-full h-12 pl-11 pr-4 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
                   />
                 </div>
               </div>
 
               {/* Field 2: Mật khẩu */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs sm:text-[13px]">
                   <label className="font-bold text-slate-800">
                     Mật khẩu
                   </label>
                   <button
                     type="button"
                     onClick={handleOpenForgotModal}
-                    className="text-teal-700 hover:text-teal-800 hover:underline font-semibold text-[11px] cursor-pointer"
+                    className="text-teal-700 hover:text-teal-800 hover:underline font-semibold text-xs cursor-pointer"
                   >
                     Quên mật khẩu?
                   </button>
                 </div>
                 <div className="relative flex items-center">
                   <div className="absolute left-3.5 text-slate-400 pointer-events-none">
-                    <Lock className="w-4 h-4" />
+                    <Lock className="w-4.5 h-4.5" />
                   </div>
                   <input
                     type={showPassword ? 'text' : 'password'}
@@ -480,14 +480,14 @@ export const LoginPage: React.FC = () => {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Nhập mật khẩu truy cập"
                     required
-                    className="w-full h-11 pl-10 pr-10 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
+                    className="w-full h-12 pl-11 pr-11 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                    className="absolute right-3.5 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
                   >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
                   </button>
                 </div>
               </div>
@@ -495,7 +495,7 @@ export const LoginPage: React.FC = () => {
               {/* Circular Selection 1: Ghi nhớ thiết bị an toàn */}
               <div
                 onClick={() => setRememberDevice(!rememberDevice)}
-                className="flex items-center gap-2.5 cursor-pointer text-xs text-slate-700 font-medium select-none group pt-1"
+                className="flex items-center gap-2.5 cursor-pointer text-xs sm:text-sm text-slate-700 font-medium select-none group pt-1"
               >
                 <div className={`w-4.5 h-4.5 rounded-full flex items-center justify-center transition-all shrink-0 ${
                   rememberDevice ? 'bg-teal-700 text-white shadow-xs' : 'border-2 border-slate-300 bg-white group-hover:border-slate-400'
@@ -508,7 +508,7 @@ export const LoginPage: React.FC = () => {
               {/* Circular Selection 2: Điều khoản & Quy chuẩn */}
               <div
                 onClick={() => setAgreeTerms(!agreeTerms)}
-                className="flex items-start gap-2.5 cursor-pointer text-xs text-slate-700 font-medium select-none group"
+                className="flex items-start gap-2.5 cursor-pointer text-xs sm:text-sm text-slate-700 font-medium select-none group"
               >
                 <div className={`w-4.5 h-4.5 mt-0.5 rounded-full flex items-center justify-center transition-all shrink-0 ${
                   agreeTerms ? 'bg-teal-700 text-white shadow-xs' : 'border-2 border-slate-300 bg-white group-hover:border-slate-400'
@@ -535,7 +535,7 @@ export const LoginPage: React.FC = () => {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-11 sm:h-12 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs sm:text-sm tracking-wider uppercase shadow-lg shadow-slate-900/15 hover:shadow-slate-900/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed mt-2"
+                className="w-full h-12 sm:h-12.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs sm:text-sm tracking-wider uppercase shadow-lg shadow-slate-900/15 hover:shadow-slate-900/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed mt-2"
               >
                 {isLoading ? (
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />

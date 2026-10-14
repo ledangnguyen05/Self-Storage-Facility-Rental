@@ -118,7 +118,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
             customerPhone: user.phone || '0901234567',
             storageUnitId: unit.backendId || unit.code,
             unitCode: unit.code,
-            facilityName: unit.facilityName || 'StoreHub District 1 — Quận 1',
+            facilityName: unit.facilityName || 'Boxora District 1 — Quận 1',
             startDate,
             endDate: new Date(new Date(startDate).setMonth(new Date(startDate).getMonth() + rentalMonths)).toISOString().slice(0, 10),
             rentalMonths,

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useOutletContext } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { bookingService } from '../../services/bookingService'
 import { handoverService } from '../../services/handoverService'
@@ -6,12 +7,18 @@ import { reportService } from '../../services/reportService'
 import { masterKeyService } from '../../services/masterKeyService'
 import { supportTicketService } from '../../services/supportTicketService'
 import { facilityService } from '../../services/facilityService'
-import { Booking, OccupancyReport } from '../../types'
+import { storageUnitService } from '../../services/storageUnitService'
+import { Booking, OccupancyReport, StorageUnit, Facility } from '../../types'
 import { HandoverCheckInWorkbench } from './components/HandoverCheckInWorkbench'
 import { QrCameraCheckInModal } from './components/QrCameraCheckInModal'
 
 export const StaffDashboard: React.FC = () => {
   const { user } = useAuth()
+  const { selectedFacility, facilities: contextFacilities } = useOutletContext<{
+    selectedFacility?: string
+    facilities?: Facility[]
+  }>() || {}
+
   // Stepper state for Spotlight Handover (Trần Minh Tuấn - #A-112)
   const [handoverStep, setHandoverStep] = useState(4)
   const [handoverCompleted, setHandoverCompleted] = useState(false)
@@ -24,6 +31,7 @@ export const StaffDashboard: React.FC = () => {
   // Dynamic arrivals & active rentals from BE
   const [arrivals, setArrivals] = useState<Booking[]>([])
   const [activeRentals, setActiveRentals] = useState<Booking[]>([])
+  const [radarUnits, setRadarUnits] = useState<StorageUnit[]>([])
   const [selectedReturnBookingId, setSelectedReturnBookingId] = useState<string>('')
   const [activeBookingId, setActiveBookingId] = useState<string>('')
   const [occupancyData, setOccupancyData] = useState<OccupancyReport | null>(null)
@@ -49,6 +57,7 @@ export const StaffDashboard: React.FC = () => {
   // Ticket status state
   const [tickets, setTickets] = useState<Array<{
     id: string
+    backendId?: string
     title: string
     detail: string
     location: string
@@ -59,29 +68,55 @@ export const StaffDashboard: React.FC = () => {
   }>>([])
 
   useEffect(() => {
-    fetchArrivals()
+    const targetFacility = (!selectedFacility || selectedFacility === 'ALL') ? undefined : selectedFacility
+    fetchArrivals(targetFacility)
     fetchOccupancy()
     loadFacilities()
     loadTicketQueue()
-    loadActiveRentals()
-  }, [])
+    loadActiveRentals(targetFacility)
+    loadRadarUnits(targetFacility)
+  }, [selectedFacility])
 
-  const loadActiveRentals = async () => {
+  const loadRadarUnits = async (facilityId?: string) => {
     try {
-      const res = await bookingService.getAll({ status: 'ACTIVE', size: 10 })
-      if (res?.content && res.content.length > 0) {
-        setActiveRentals(res.content)
-        if (!selectedReturnBookingId) {
-          setSelectedReturnBookingId(res.content[0].id)
-        }
+      const units = await storageUnitService.getUnits(facilityId ? { facilityId } : undefined)
+      if (Array.isArray(units)) {
+        setRadarUnits(units)
+      } else {
+        setRadarUnits([])
       }
     } catch {
-      // Fallback
+      setRadarUnits([])
+    }
+  }
+
+  const loadActiveRentals = async (facilityId?: string) => {
+    try {
+      const res = await bookingService.getAll({ status: 'ACTIVE', size: 50 })
+      if (res?.content && res.content.length > 0) {
+        let filtered = res.content
+        if (facilityId) {
+          filtered = filtered.filter(b => b.facilityId === facilityId || !b.facilityId)
+        }
+        setActiveRentals(filtered)
+        if (!selectedReturnBookingId && filtered.length > 0) {
+          setSelectedReturnBookingId(filtered[0].id)
+        }
+      } else {
+        setActiveRentals([])
+      }
+    } catch {
+      setActiveRentals([])
     }
   }
 
   const loadFacilities = async () => {
     try {
+      if (contextFacilities && contextFacilities.length > 0) {
+        setFacilities(contextFacilities)
+        setEmergencyFacilityId(contextFacilities[0].id)
+        return
+      }
       const res = await facilityService.getFacilities()
       if (res?.content && res.content.length > 0) {
         setFacilities(res.content)
@@ -98,6 +133,7 @@ export const StaffDashboard: React.FC = () => {
       if (res && Array.isArray(res)) {
         setTickets(res.map((t: any) => ({
           id: t.ticketCode || (t.id ? `#TK-${t.id.slice(0, 4)}` : '#TK-0000'),
+          backendId: t.id,
           title: t.title || 'Sự cố thiết bị',
           detail: t.customerName ? `${t.customerName} - ${t.description || 'Chi tiết hiện trường'}` : (t.description || 'Chi tiết hiện trường'),
           location: t.unitCode ? `Kho #${t.unitCode}` : (t.category || 'Kho Boxora'),
@@ -123,14 +159,20 @@ export const StaffDashboard: React.FC = () => {
     }
   }
 
-  const fetchArrivals = async () => {
+  const fetchArrivals = async (facilityId?: string) => {
     try {
       const res = await bookingService.getUpcomingArrivals()
-      if (res && Array.isArray(res) && res.length > 0) {
-        setArrivals(res)
+      if (res && Array.isArray(res)) {
+        let filtered = res
+        if (facilityId) {
+          filtered = filtered.filter(b => b.facilityId === facilityId || !b.facilityId)
+        }
+        setArrivals(filtered)
+      } else {
+        setArrivals([])
       }
     } catch {
-      // Fallback to static arrivals
+      setArrivals([])
     }
   }
 
@@ -192,11 +234,11 @@ export const StaffDashboard: React.FC = () => {
     }
   }
 
-  const handleResolveTicket = async (ticketId: string) => {
+  const handleResolveTicket = async (ticketId: string, backendId?: string) => {
     try {
-      const cleanId = ticketId.replace('#', '')
-      if (cleanId.length === 36) {
-        await supportTicketService.resolveTicket(cleanId, 'Đã kiểm tra hiện trường và xử lý xong tại chỗ')
+      const targetId = backendId || ticketId.replace('#', '')
+      if (targetId) {
+        await supportTicketService.resolveTicket(targetId, 'Đã kiểm tra hiện trường và xử lý xong tại chỗ')
       }
     } catch (err) {
       console.warn('Ticket resolve fallback:', err)
@@ -225,6 +267,9 @@ export const StaffDashboard: React.FC = () => {
       setWalkinPhone('')
     }, 1500)
   }
+
+  const currentReturnBooking = activeRentals.find(r => r.id === (selectedReturnBookingId || activeRentals[0]?.id)) || activeRentals[0]
+  const returnDepositAmt = currentReturnBooking ? (currentReturnBooking.depositPaid || currentReturnBooking.depositAmount || 0) : 0
 
   return (
     <div className="flex flex-col gap-6 text-left max-w-7xl mx-auto">
@@ -506,28 +551,59 @@ export const StaffDashboard: React.FC = () => {
             </div>
 
 
-            {/* Radar Block A Floor Indicator */}
+            {/* Radar Floor Units Indicator */}
             <div className="mt-6 pt-4 border-t border-slate-100">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-[18px] text-slate-700">map</span>
                   <span className="font-headline text-xs font-bold text-slate-900">
-                    Sơ Đồ Lô Kho Bàn Giao (Khu Vực Tầng 1 - Block A)
+                    Sơ Đồ Lô Kho Bàn Giao Thực Tế {radarUnits.length > 0 ? `(${radarUnits.length} lô kho)` : ''}
                   </span>
                 </div>
-                <span className="font-mono text-[11px] text-slate-400">Tọa độ tiếp vận lối cửa A2</span>
+                <span className="font-mono text-[11px] text-slate-400">
+                  {selectedFacility && selectedFacility !== 'ALL'
+                    ? facilities.find(f => f.id === selectedFacility)?.name || 'Cơ sở đã chọn'
+                    : 'Toàn hệ thống'}
+                </span>
               </div>
 
-              <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl font-unit-code text-center">
-                <div className="p-2 rounded bg-slate-200 text-slate-600 text-xs">#A-108<br/><span className="text-[10px] text-slate-400 font-normal">Đang thuê</span></div>
-                <div className="p-2 rounded bg-slate-200 text-slate-600 text-xs">#A-109<br/><span className="text-[10px] text-slate-400 font-normal">Đang thuê</span></div>
-                <div className="p-2 rounded bg-slate-200 text-slate-600 text-xs">#A-110<br/><span className="text-[10px] text-slate-400 font-normal">Đang thuê</span></div>
-                <div className="p-2 rounded bg-slate-200 text-slate-600 text-xs">#A-111<br/><span className="text-[10px] text-slate-400 font-normal">Đang thuê</span></div>
-                <div className="p-2 rounded bg-blue-600 text-white font-bold text-xs shadow-xs">#A-112<br/><span className="text-[10px] uppercase font-semibold">BÀN GIAO</span></div>
-                <div className="p-2 rounded bg-white border border-slate-200 text-slate-800 text-xs">#A-113<br/><span className="text-[10px] text-emerald-600 font-bold">TRỐNG</span></div>
-                <div className="p-2 rounded bg-white border border-slate-200 text-slate-800 text-xs">#A-114<br/><span className="text-[10px] text-emerald-600 font-bold">TRỐNG</span></div>
-                <div className="p-2 rounded bg-slate-200 text-slate-600 text-xs">#A-115<br/><span className="text-[10px] text-slate-400 font-normal">Đang thuê</span></div>
-              </div>
+              {radarUnits.length === 0 ? (
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center text-slate-400 text-xs">
+                  Không có dữ liệu lô kho tại cơ sở này.
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl font-unit-code text-center">
+                  {radarUnits.slice(0, 8).map((u) => {
+                    const isTargetHandover = arrivals.some(a => a.unitCode === u.unitCode)
+                    if (isTargetHandover) {
+                      return (
+                        <div key={u.id} className="p-2 rounded bg-blue-600 text-white font-bold text-xs shadow-xs">
+                          #{u.unitCode}<br/><span className="text-[10px] uppercase font-semibold">BÀN GIAO</span>
+                        </div>
+                      )
+                    }
+                    if (u.status === 'AVAILABLE') {
+                      return (
+                        <div key={u.id} className="p-2 rounded bg-white border border-slate-200 text-slate-800 text-xs">
+                          #{u.unitCode}<br/><span className="text-[10px] text-emerald-600 font-bold">TRỐNG</span>
+                        </div>
+                      )
+                    }
+                    if (u.status === 'MAINTENANCE' || u.status === 'UNDER_MAINTENANCE') {
+                      return (
+                        <div key={u.id} className="p-2 rounded bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+                          #{u.unitCode}<br/><span className="text-[10px] text-amber-600 font-normal">Bảo trì</span>
+                        </div>
+                      )
+                    }
+                    return (
+                      <div key={u.id} className="p-2 rounded bg-slate-200 text-slate-600 text-xs">
+                        #{u.unitCode}<br/><span className="text-[10px] text-slate-400 font-normal">Đang thuê</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
 
           </div>
@@ -564,21 +640,14 @@ export const StaffDashboard: React.FC = () => {
                       ))}
                     </select>
                   </div>
-                  {(() => {
-                    const selectedReturn = activeRentals.find(r => r.id === (selectedReturnBookingId || activeRentals[0]?.id)) || activeRentals[0]
-                    return (
-                      <>
-                        <div className="mt-1">
-                          <span className="font-bold text-slate-900 text-sm block">{selectedReturn?.customerName || 'Khách thuê'}</span>
-                          <span className="text-xs text-slate-500">SĐT: {selectedReturn?.customerPhone || 'N/A'}</span>
-                        </div>
-                        <div className="mt-2 flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
-                          <span className="text-slate-800">Vị trí: <strong className="font-mono text-slate-900">Kho #{selectedReturn?.unitCode}</strong></span>
-                          <span className="text-amber-700 font-mono font-bold text-[11px]">Hạn: {selectedReturn?.endDate}</span>
-                        </div>
-                      </>
-                    )
-                  })()}
+                  <div className="mt-1">
+                    <span className="font-bold text-slate-900 text-sm block">{currentReturnBooking?.customerName || 'Khách thuê'}</span>
+                    <span className="text-xs text-slate-500">SĐT: {currentReturnBooking?.customerPhone || 'N/A'}</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
+                    <span className="text-slate-800">Vị trí: <strong className="font-mono text-slate-900">Kho #{currentReturnBooking?.unitCode}</strong></span>
+                    <span className="text-amber-700 font-mono font-bold text-[11px]">Hạn: {currentReturnBooking?.endDate}</span>
+                  </div>
                 </div>
               ) : (
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl mb-4 text-xs text-slate-500 text-center">
@@ -683,7 +752,9 @@ export const StaffDashboard: React.FC = () => {
                 <div className="mt-2 p-3.5 rounded-xl bg-slate-100 border border-slate-200 flex flex-col gap-1.5 text-xs">
                   <div className="flex items-center justify-between text-slate-600">
                     <span>Tiền cọc giữ ban đầu:</span>
-                    <span className="font-mono tabular-nums font-bold text-slate-800">2.000.000đ</span>
+                    <span className="font-mono tabular-nums font-bold text-slate-800">
+                      {returnDepositAmt.toLocaleString('vi-VN')}đ
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-slate-600">
                     <span>Khấu trừ vệ sinh/hư hại:</span>
@@ -691,7 +762,9 @@ export const StaffDashboard: React.FC = () => {
                   </div>
                   <div className="flex items-center justify-between text-slate-900 pt-2 border-t border-slate-200">
                     <span className="font-bold">Số tiền hoàn trả khách:</span>
-                    <span className="font-mono tabular-nums text-base text-emerald-600 font-extrabold">2.000.000đ</span>
+                    <span className="font-mono tabular-nums text-base text-emerald-600 font-extrabold">
+                      {returnDepositAmt.toLocaleString('vi-VN')}đ
+                    </span>
                   </div>
                 </div>
               </div>
@@ -834,7 +907,7 @@ export const StaffDashboard: React.FC = () => {
                         <span className="text-emerald-600 font-mono font-bold text-[11px]">✓ Đã giải quyết</span>
                       ) : (
                         <button
-                          onClick={() => handleResolveTicket(tk.id)}
+                          onClick={() => handleResolveTicket(tk.id, tk.backendId)}
                           className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-[11px] transition-colors cursor-pointer"
                         >
                           Xong tại chỗ
@@ -1065,7 +1138,7 @@ export const StaffDashboard: React.FC = () => {
                         <option key={f.id} value={f.id}>{f.facilityName || f.name} ({f.facilityCode || f.code})</option>
                       ))
                     ) : (
-                      <option value="a1111111-2222-3333-4444-555555555555">StoreHub Tan Binh Mega Hub (HCM-TB)</option>
+                      <option value="a1111111-2222-3333-4444-555555555555">Boxora Tan Binh Mega Hub (HCM-TB)</option>
                     )}
                   </select>
                 </div>

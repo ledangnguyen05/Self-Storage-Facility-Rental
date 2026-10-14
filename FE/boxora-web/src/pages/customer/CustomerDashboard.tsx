@@ -725,7 +725,7 @@ export const CustomerDashboard: React.FC = () => {
                           </span>
                         </div>
                         <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
-                          <span className="text-slate-500">{unit.facilityName || 'Kho StoreHub'}</span>
+                          <span className="text-slate-500">{unit.facilityName || 'Kho Boxora'}</span>
                         </div>
                       </div>
 
@@ -1095,7 +1095,7 @@ export const CustomerDashboard: React.FC = () => {
                       Gia Hạn Thuê Kho #{renewUnit.id}
                     </h3>
                     <span className="text-xs text-slate-500">
-                      {contracts.find(c => c.unitCode === renewUnit.id || c.id === renewUnit.contractId)?.facilityName || 'Hệ thống kho StoreHub'}
+                      {contracts.find(c => c.unitCode === renewUnit.id || c.id === renewUnit.contractId)?.facilityName || 'Hệ thống kho Boxora'}
                     </span>
                   </div>
                   <button

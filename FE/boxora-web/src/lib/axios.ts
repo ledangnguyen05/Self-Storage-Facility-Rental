@@ -62,10 +62,18 @@ api.interceptors.response.use(
 
       if (isAdminOrMock) {
         try {
-          const loginRes = await axios.post(`${API_BASE_URL}/api/v1/auth/login`, {
-            email: 'admin@gmail.com',
-            password: '123456'
-          })
+          let loginRes
+          try {
+            loginRes = await axios.post(`${API_BASE_URL}/api/v1/auth/login`, {
+              email: 'admin@gmail.com',
+              password: 'admin'
+            })
+          } catch {
+            loginRes = await axios.post(`${API_BASE_URL}/api/v1/auth/login`, {
+              email: 'admin@gmail.com',
+              password: '123456'
+            })
+          }
           const newAccessToken = loginRes.data?.data?.accessToken
           if (newAccessToken) {
             localStorage.setItem('boxora_access_token', newAccessToken)

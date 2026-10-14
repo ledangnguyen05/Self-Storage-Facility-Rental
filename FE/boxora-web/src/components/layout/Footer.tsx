@@ -47,19 +47,19 @@ export const Footer: React.FC = () => {
             <ul className="space-y-2.5 text-[14px] text-[#555555]">
               <li className="flex items-start gap-2">
                 <MapPin size={15} className="text-[#8A8A8A] shrink-0 mt-1" />
-                <span>StoreHub District 1 — 123 Nguyễn Huệ</span>
+                <span>Boxora District 1 — 123 Nguyễn Huệ</span>
               </li>
               <li className="flex items-start gap-2">
                 <MapPin size={15} className="text-[#8A8A8A] shrink-0 mt-1" />
-                <span>StoreHub District 7 — 456 Nguyễn Hữu Thọ</span>
+                <span>Boxora District 7 — 456 Nguyễn Hữu Thọ</span>
               </li>
               <li className="flex items-start gap-2">
                 <MapPin size={15} className="text-[#8A8A8A] shrink-0 mt-1" />
-                <span>StoreHub Thu Duc — 789 Võ Văn Ngân</span>
+                <span>Boxora Thu Duc — 789 Võ Văn Ngân</span>
               </li>
               <li className="flex items-start gap-2">
                 <MapPin size={15} className="text-[#8A8A8A] shrink-0 mt-1" />
-                <span>StoreHub Tan Binh — 102 Trường Sơn</span>
+                <span>Boxora Tan Binh — 102 Trường Sơn</span>
               </li>
             </ul>
           </div>

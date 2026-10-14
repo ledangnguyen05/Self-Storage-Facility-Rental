@@ -3,7 +3,7 @@ import { Facility, UnitType, StorageUnit, Booking, SupportTicket, HandoverRecord
 export const MOCK_FACILITIES: Facility[] = [
   {
     id: 'f7af2794-0d0d-4c68-9e36-c44bf3034f6c',
-    name: 'StoreHub District 1',
+    name: 'Boxora District 1',
     code: 'HCM-D1',
     address: '123 Nguyen Hue, Ben Nghe Ward',
     city: 'Ho Chi Minh City',
@@ -14,7 +14,7 @@ export const MOCK_FACILITIES: Facility[] = [
   },
   {
     id: '45e03ded-5da1-43d5-bea7-96c645d5f96c',
-    name: 'StoreHub District 7',
+    name: 'Boxora District 7',
     code: 'HCM-D7',
     address: '456 Nguyen Huu Tho, Tan Hung Ward',
     city: 'Ho Chi Minh City',
@@ -25,7 +25,7 @@ export const MOCK_FACILITIES: Facility[] = [
   },
   {
     id: 'fd8f948e-fdff-4a81-ad0f-fc45639b545d',
-    name: 'StoreHub Thu Duc',
+    name: 'Boxora Thu Duc',
     code: 'HCM-TD',
     address: '789 Vo Van Ngan, Linh Chieu Ward',
     city: 'Ho Chi Minh City',
@@ -36,7 +36,7 @@ export const MOCK_FACILITIES: Facility[] = [
   },
   {
     id: 'a1111111-2222-3333-4444-555555555555',
-    name: 'StoreHub Tan Binh Mega Hub',
+    name: 'Boxora Tan Binh Mega Hub',
     code: 'HCM-TB',
     address: '102 Truong Son, Ward 2, Tan Binh District',
     city: 'Ho Chi Minh City',
