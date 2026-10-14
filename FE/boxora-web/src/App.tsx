@@ -21,6 +21,7 @@ import { ManagerDashboard } from './pages/manager/ManagerDashboard'
 import { OperationsDashboard } from './pages/operations/OperationsDashboard'
 import { AdminDashboard } from './pages/admin/AdminDashboard'
 import { checkCustomerPortalAccess } from './utils/rentalAccess'
+import { BoxoraChatWidget } from './components/chat/BoxoraChatWidget'
 
 // Root redirect handler based on user role
 function RootRedirect() {
@@ -156,6 +157,9 @@ function MainContent() {
           <Route path="*" element={<RootRedirect />} />
         </Routes>
       </main>
+
+      {/* Boxora AI Smart Assistant Chatbot */}
+      <BoxoraChatWidget />
     </div>
   )
 }
