@@ -229,6 +229,7 @@ export const HomePage: React.FC = () => {
                     >
                       {t('Sơ đồ kho Tầng 1 & 2')}
                     </Link>
+
                   </div>
                 }
               />

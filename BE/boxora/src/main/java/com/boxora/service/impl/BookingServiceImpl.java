@@ -143,13 +143,7 @@ public class BookingServiceImpl implements BookingService {
         String code = "BX-" + (2025 + new Random().nextInt(2)) + "-" + String.format("%04d", new Random().nextInt(10000));
         UUID bookingId = UUID.randomUUID();
 
-        // 8. Thực hiện Soft-lock 24 giờ trên Redis cho ngăn kho
-        boolean lockAcquired = storageUnitLockService.tryLockUnit(unit.getId(), bookingId, softLockHours);
-        if (!lockAcquired) {
-            throw new AppException(ErrorCode.STORAGE_UNIT_SOFT_LOCKED);
-        }
-
-        // 9. Khởi tạo Booking ở trạng thái PENDING_PAYMENT (chưa cấp PIN/QR)
+        // 8. Khởi tạo Booking ở trạng thái PENDING_PAYMENT (chưa cấp PIN/QR)
         Booking booking = Booking.builder()
                 .bookingCode(code)
                 .customer(customer)
@@ -158,20 +152,22 @@ public class BookingServiceImpl implements BookingService {
                 .endDate(endDate)
                 .rentalMonths(months)
                 .totalRentalFee(totalFee)
-                .depositPaid(BigDecimal.ZERO) // Tiền cọc thực tế đã đóng = 0 cho tới khi thanh toán
+                .depositPaid(request.getDepositPaid() != null ? request.getDepositPaid() : BigDecimal.ZERO)
                 .depositAmount(deposit)
                 .paymentExpiresAt(Instant.now().plusSeconds(approvalTimeoutHours * 60 * 60))
                 .status(BookingStatus.PENDING_APPROVAL)
                 .accessPin(null) // Chưa cấp PIN trước khi thanh toán
                 .qrAccessToken(null) // Chưa cấp QR trước khi thanh toán
                 .build();
-        booking.setId(bookingId);
 
-        // 10. Chuyển ngăn kho sang RESERVED để giữ chỗ mềm
+        // 9. Chuyển ngăn kho sang RESERVED để giữ chỗ mềm
         unit.setStatus(UnitStatus.RESERVED);
         storageUnitRepository.save(unit);
 
         booking = bookingRepository.save(booking);
+
+        // 10. Thực hiện Soft-lock 24 giờ trên Redis cho ngăn kho
+        storageUnitLockService.tryLockUnit(unit.getId(), booking.getId(), softLockHours);
 
         // 11. Ghi Activity Log
         UUID facilityId = (unit.getFacility() != null) ? unit.getFacility().getId() : null;
@@ -308,7 +304,7 @@ public class BookingServiceImpl implements BookingService {
             bookings = bookingRepository.findAll();
         }
         return bookings.stream()
-                .filter(b -> b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.ACTIVE || b.getStatus() == BookingStatus.OVERDUE)
+                .filter(b -> b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.ACTIVE || b.getStatus() == BookingStatus.PENDING_PAYMENT || b.getStatus() == BookingStatus.OVERDUE)
                 .map(b -> {
                     BookingResponse resp = mapToResponse(b);
                     resp.setAccessPin(null);

@@ -51,10 +51,17 @@ public interface PaymentService {
     List<PaymentResponse> getByBookingId(UUID bookingId);
 
     /**
+     * Lấy toàn bộ lịch sử thanh toán của tài khoản khách hàng đang đăng nhập.
+     */
+    List<PaymentResponse> getMyPayments();
+
+    /**
      * Danh sách thanh toán phân trang và lọc theo tiêu chí.
      */
     PageResponse<PaymentResponse> getAll(
             UUID bookingId,
+            UUID facilityId,
+            UUID customerId,
             PaymentStatus status,
             PaymentType paymentType,
             LocalDateTime fromDate,

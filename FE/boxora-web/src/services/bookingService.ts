@@ -66,7 +66,19 @@ export const bookingService = {
 
   async getAll(params?: { customerId?: string; status?: string; page?: number; size?: number }) {
     const response = await api.get('/api/v1/bookings', { params })
-    return response.data?.data as PageResult<Booking>
+    const data = response.data?.data
+    if (Array.isArray(data)) {
+      return {
+        content: data,
+        totalElements: data.length,
+        totalPages: 1,
+        size: data.length,
+        page: 0,
+        first: true,
+        last: true,
+      } as PageResult<Booking>
+    }
+    return data as PageResult<Booking>
   },
 
   async getById(id: string) {

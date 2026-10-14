@@ -64,47 +64,17 @@ public class ReportServiceImpl implements ReportService {
         LocalDateTime from = fromDate != null ? fromDate.atStartOfDay() : LocalDateTime.of(2000, 1, 1, 0, 0, 0);
         LocalDateTime to = toDate != null ? toDate.atTime(LocalTime.MAX) : LocalDateTime.of(2099, 12, 31, 23, 59, 59);
 
-        List<FacilityRevenueResponse> byFacility = paymentRepository.sumRevenueByFacility(from, to);
-        SystemRevenueSummaryResponse systemSummary;
-
-        if (effectiveFacilityId != null) {
-            UUID targetId = effectiveFacilityId;
-            byFacility = byFacility.stream()
-                    .filter(f -> targetId.equals(f.getFacilityId()))
-                    .collect(Collectors.toList());
-
-            if (!byFacility.isEmpty()) {
-                FacilityRevenueResponse fr = byFacility.get(0);
-                systemSummary = SystemRevenueSummaryResponse.builder()
-                        .totalRevenue(fr.getTotalRevenue() != null ? fr.getTotalRevenue() : BigDecimal.ZERO)
-                        .depositRevenue(fr.getDepositRevenue() != null ? fr.getDepositRevenue() : BigDecimal.ZERO)
-                        .rentalFeeRevenue(fr.getRentalFeeRevenue() != null ? fr.getRentalFeeRevenue() : BigDecimal.ZERO)
-                        .renewalFeeRevenue(fr.getRenewalFeeRevenue() != null ? fr.getRenewalFeeRevenue() : BigDecimal.ZERO)
-                        .extraChargeRevenue(fr.getExtraChargeRevenue() != null ? fr.getExtraChargeRevenue() : BigDecimal.ZERO)
-                        .paymentCount(fr.getPaymentCount() != null ? fr.getPaymentCount() : 0L)
-                        .build();
-            } else {
-                systemSummary = SystemRevenueSummaryResponse.builder()
-                        .totalRevenue(BigDecimal.ZERO)
-                        .depositRevenue(BigDecimal.ZERO)
-                        .rentalFeeRevenue(BigDecimal.ZERO)
-                        .renewalFeeRevenue(BigDecimal.ZERO)
-                        .extraChargeRevenue(BigDecimal.ZERO)
-                        .paymentCount(0L)
-                        .build();
-            }
-        } else {
-            systemSummary = paymentRepository.sumSystemRevenue(from, to);
-            if (systemSummary == null) {
-                systemSummary = SystemRevenueSummaryResponse.builder()
-                        .totalRevenue(BigDecimal.ZERO)
-                        .depositRevenue(BigDecimal.ZERO)
-                        .rentalFeeRevenue(BigDecimal.ZERO)
-                        .renewalFeeRevenue(BigDecimal.ZERO)
-                        .extraChargeRevenue(BigDecimal.ZERO)
-                        .paymentCount(0L)
-                        .build();
-            }
+        List<FacilityRevenueResponse> byFacility = paymentRepository.sumRevenueByFacility(from, to, effectiveFacilityId);
+        SystemRevenueSummaryResponse systemSummary = paymentRepository.sumSystemRevenue(from, to, effectiveFacilityId);
+        if (systemSummary == null) {
+            systemSummary = SystemRevenueSummaryResponse.builder()
+                    .totalRevenue(BigDecimal.ZERO)
+                    .depositRevenue(BigDecimal.ZERO)
+                    .rentalFeeRevenue(BigDecimal.ZERO)
+                    .renewalFeeRevenue(BigDecimal.ZERO)
+                    .extraChargeRevenue(BigDecimal.ZERO)
+                    .paymentCount(0L)
+                    .build();
         }
 
         return RevenueReportResponse.builder()
