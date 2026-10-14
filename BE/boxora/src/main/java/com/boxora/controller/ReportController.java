@@ -30,8 +30,8 @@ public class ReportController {
     private final ReportService reportService;
 
     @GetMapping("/revenue")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
-    @Operation(summary = "Lấy báo cáo doanh thu toàn hệ thống")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @Operation(summary = "Lấy báo cáo doanh thu toàn hệ thống hoặc theo cơ sở")
     public ResponseEntity<ApiResponse<RevenueReportResponse>> getRevenueReport(
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
@@ -39,19 +39,25 @@ public class ReportController {
 
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate toDate
+            LocalDate toDate,
+
+            @RequestParam(required = false)
+            UUID facilityId
     ) {
         RevenueReportResponse response =
-                reportService.getRevenueReport(fromDate, toDate);
+                reportService.getRevenueReport(fromDate, toDate, facilityId);
 
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
     @GetMapping("/occupancy")
     @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
-    @Operation(summary = "Lấy báo cáo tỷ lệ lấp đầy kho")
-    public ResponseEntity<ApiResponse<OccupancyReportResponse>> getOccupancyReport() {
-        OccupancyReportResponse response = reportService.getOccupancyReport();
+    @Operation(summary = "Lấy báo cáo tỷ lệ lấp đầy kho toàn hệ thống hoặc theo cơ sở")
+    public ResponseEntity<ApiResponse<OccupancyReportResponse>> getOccupancyReport(
+            @RequestParam(required = false)
+            UUID facilityId
+    ) {
+        OccupancyReportResponse response = reportService.getOccupancyReport(facilityId);
 
         return ResponseEntity.ok(ApiResponse.success(response));
     }
