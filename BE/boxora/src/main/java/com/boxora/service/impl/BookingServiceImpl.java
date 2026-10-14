@@ -201,7 +201,7 @@ public class BookingServiceImpl implements BookingService {
             bookings = bookingRepository.findAll();
         }
         return bookings.stream()
-                .filter(b -> b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.ACTIVE)
+                .filter(b -> b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.ACTIVE || b.getStatus() == BookingStatus.OVERDUE)
                 .map(b -> {
                     BookingResponse resp = mapToResponse(b);
                     resp.setAccessPin(null);

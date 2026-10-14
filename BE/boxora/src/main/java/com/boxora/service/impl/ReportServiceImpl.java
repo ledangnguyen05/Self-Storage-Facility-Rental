@@ -47,23 +47,64 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public RevenueReportResponse getRevenueReport(LocalDate fromDate, LocalDate toDate) {
+        return getRevenueReport(fromDate, toDate, null);
+    }
+
+    @Override
+    public RevenueReportResponse getRevenueReport(LocalDate fromDate, LocalDate toDate, UUID facilityId) {
         if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
             throw new AppException(ErrorCode.INVALID_REQUEST);
+        }
+
+        UUID effectiveFacilityId = facilityId;
+        if (facilityAccessGuard.isFacilityScoped()) {
+            effectiveFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
         }
 
         LocalDateTime from = fromDate != null ? fromDate.atStartOfDay() : LocalDateTime.of(2000, 1, 1, 0, 0, 0);
         LocalDateTime to = toDate != null ? toDate.atTime(LocalTime.MAX) : LocalDateTime.of(2099, 12, 31, 23, 59, 59);
 
         List<FacilityRevenueResponse> byFacility = paymentRepository.sumRevenueByFacility(from, to);
-        SystemRevenueSummaryResponse systemSummary = paymentRepository.sumSystemRevenue(from, to);
-        if (systemSummary == null) {
-            systemSummary = SystemRevenueSummaryResponse.builder()
-                    .totalRevenue(BigDecimal.ZERO)
-                    .depositRevenue(BigDecimal.ZERO)
-                    .rentalFeeRevenue(BigDecimal.ZERO)
-                    .extraChargeRevenue(BigDecimal.ZERO)
-                    .paymentCount(0L)
-                    .build();
+        SystemRevenueSummaryResponse systemSummary;
+
+        if (effectiveFacilityId != null) {
+            UUID targetId = effectiveFacilityId;
+            byFacility = byFacility.stream()
+                    .filter(f -> targetId.equals(f.getFacilityId()))
+                    .collect(Collectors.toList());
+
+            if (!byFacility.isEmpty()) {
+                FacilityRevenueResponse fr = byFacility.get(0);
+                systemSummary = SystemRevenueSummaryResponse.builder()
+                        .totalRevenue(fr.getTotalRevenue() != null ? fr.getTotalRevenue() : BigDecimal.ZERO)
+                        .depositRevenue(fr.getDepositRevenue() != null ? fr.getDepositRevenue() : BigDecimal.ZERO)
+                        .rentalFeeRevenue(fr.getRentalFeeRevenue() != null ? fr.getRentalFeeRevenue() : BigDecimal.ZERO)
+                        .renewalFeeRevenue(fr.getRenewalFeeRevenue() != null ? fr.getRenewalFeeRevenue() : BigDecimal.ZERO)
+                        .extraChargeRevenue(fr.getExtraChargeRevenue() != null ? fr.getExtraChargeRevenue() : BigDecimal.ZERO)
+                        .paymentCount(fr.getPaymentCount() != null ? fr.getPaymentCount() : 0L)
+                        .build();
+            } else {
+                systemSummary = SystemRevenueSummaryResponse.builder()
+                        .totalRevenue(BigDecimal.ZERO)
+                        .depositRevenue(BigDecimal.ZERO)
+                        .rentalFeeRevenue(BigDecimal.ZERO)
+                        .renewalFeeRevenue(BigDecimal.ZERO)
+                        .extraChargeRevenue(BigDecimal.ZERO)
+                        .paymentCount(0L)
+                        .build();
+            }
+        } else {
+            systemSummary = paymentRepository.sumSystemRevenue(from, to);
+            if (systemSummary == null) {
+                systemSummary = SystemRevenueSummaryResponse.builder()
+                        .totalRevenue(BigDecimal.ZERO)
+                        .depositRevenue(BigDecimal.ZERO)
+                        .rentalFeeRevenue(BigDecimal.ZERO)
+                        .renewalFeeRevenue(BigDecimal.ZERO)
+                        .extraChargeRevenue(BigDecimal.ZERO)
+                        .paymentCount(0L)
+                        .build();
+            }
         }
 
         return RevenueReportResponse.builder()
@@ -76,6 +117,16 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public OccupancyReportResponse getOccupancyReport() {
+        return getOccupancyReport(null);
+    }
+
+    @Override
+    public OccupancyReportResponse getOccupancyReport(UUID facilityId) {
+        UUID effectiveFacilityId = facilityId;
+        if (facilityAccessGuard.isFacilityScoped()) {
+            effectiveFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+        }
+
         List<Object[]> rows = storageUnitRepository.countUnitsGroupedByFacilityAndStatus();
 
         Map<UUID, String> facilityNames = new LinkedHashMap<>();
@@ -83,7 +134,7 @@ public class ReportServiceImpl implements ReportService {
         Map<UUID, long[]> counts = new LinkedHashMap<>();
 
         for (Object[] row : rows) {
-            UUID facilityId = (UUID) row[0];
+            UUID fId = (UUID) row[0];
             String facilityName = (String) row[1];
             
             UnitStatus status;
@@ -96,8 +147,8 @@ public class ReportServiceImpl implements ReportService {
             }
             Long count = row[3] instanceof Number num ? num.longValue() : 0L;
 
-            facilityNames.putIfAbsent(facilityId, facilityName);
-            long[] bucket = counts.computeIfAbsent(facilityId, k -> new long[5]);
+            facilityNames.putIfAbsent(fId, facilityName);
+            long[] bucket = counts.computeIfAbsent(fId, k -> new long[5]);
             bucket[0] += count;
             switch (status) {
                 case OCCUPIED -> bucket[1] += count;
@@ -111,12 +162,16 @@ public class ReportServiceImpl implements ReportService {
         long sysTotal = 0, sysOccupied = 0, sysAvailable = 0, sysReserved = 0, sysMaintenance = 0;
 
         for (Map.Entry<UUID, long[]> entry : counts.entrySet()) {
+            UUID fId = entry.getKey();
+            if (effectiveFacilityId != null && !effectiveFacilityId.equals(fId)) {
+                continue;
+            }
             long[] c = entry.getValue();
             double rate = c[0] == 0 ? 0.0 : (c[1] * 100.0) / c[0];
 
             byFacility.add(FacilityOccupancyResponse.builder()
-                    .facilityId(entry.getKey())
-                    .facilityName(facilityNames.get(entry.getKey()))
+                    .facilityId(fId)
+                    .facilityName(facilityNames.get(fId))
                     .totalUnits(c[0])
                     .occupiedUnits(c[1])
                     .availableUnits(c[2])
