@@ -18,7 +18,7 @@ export const ROLE_PRESETS: RolePreset[] = [
     label: 'Quản trị viên Hệ thống',
     sublabel: 'Toàn quyền kiểm soát, cấp phát RBAC & Audit Log',
     email: 'admin@gmail.com',
-    password: 'admin',
+    password: '123456',
     color: 'border-rose-500 text-rose-600 bg-rose-50',
     portalPath: '/portal/admin'
   },
@@ -27,7 +27,7 @@ export const ROLE_PRESETS: RolePreset[] = [
     label: 'Giám đốc Vận hành & Doanh thu',
     sublabel: 'Báo cáo C-Level, đối chuẩn 5 chi nhánh & ma trận giá',
     email: 'business@gmail.com',
-    password: 'business',
+    password: '123456',
     color: 'border-violet-500 text-violet-600 bg-violet-50',
     portalPath: '/portal/business-manager'
   },
@@ -35,8 +35,8 @@ export const ROLE_PRESETS: RolePreset[] = [
     role: 'FACILITY_MANAGER',
     label: 'Quản lý Cơ sở Chi nhánh',
     sublabel: 'Sơ đồ kho 2 tầng, ma trận hành lang & khóa cưỡng chế',
-    email: 'facility@gmail.com',
-    password: 'facility',
+    email: 'facility1q1@gmail.com',
+    password: '123456',
     color: 'border-blue-500 text-blue-600 bg-blue-50',
     portalPath: '/portal/facility-manager'
   },
@@ -44,8 +44,8 @@ export const ROLE_PRESETS: RolePreset[] = [
     role: 'STAFF',
     label: 'Nhân viên Tiếp đón & Bàn giao',
     sublabel: 'Check-in CCCD/RFID, nghiệm thu trả kho & hoàn cọc',
-    email: 'staff@gmail.com',
-    password: 'staff',
+    email: 'staff1q1@gmail.com',
+    password: '123456',
     color: 'border-amber-500 text-amber-600 bg-amber-50',
     portalPath: '/portal/staff'
   },
@@ -54,7 +54,7 @@ export const ROLE_PRESETS: RolePreset[] = [
     label: 'Khách hàng Thuê kho',
     sublabel: 'Tự quản lý kho, mở khóa từ xa IoT 24/7 & Hợp đồng',
     email: 'customer@gmail.com',
-    password: 'customer',
+    password: '123456',
     color: 'border-emerald-500 text-emerald-600 bg-emerald-50',
     portalPath: '/portal/customer'
   }
