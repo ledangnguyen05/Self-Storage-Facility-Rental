@@ -62,6 +62,12 @@ public class BookingServiceImpl implements BookingService {
     @Value("${app.booking.max-advance-days:30}")
     private int maxAdvanceDays;
 
+    @Value("${app.booking.approval-timeout-hours:24}")
+    private long approvalTimeoutHours;
+
+    @Value("${app.booking.payment-timeout-minutes:15}")
+    private int paymentTimeoutMinutes;
+
     @Override
     public BookingResponse createBooking(BookingCreateRequest request) {
         StorageUnit unit = storageUnitRepository.findWithDetailsById(request.getStorageUnitId())
@@ -148,8 +154,8 @@ public class BookingServiceImpl implements BookingService {
                 .totalRentalFee(totalFee)
                 .depositPaid(request.getDepositPaid() != null ? request.getDepositPaid() : BigDecimal.ZERO)
                 .depositAmount(deposit)
-                .paymentExpiresAt(Instant.now().plusSeconds(24 * 60 * 60))
-                .status(BookingStatus.PENDING_PAYMENT)
+                .paymentExpiresAt(Instant.now().plusSeconds(approvalTimeoutHours * 60 * 60))
+                .status(BookingStatus.PENDING_APPROVAL)
                 .accessPin(null) // Chưa cấp PIN trước khi thanh toán
                 .qrAccessToken(null) // Chưa cấp QR trước khi thanh toán
                 .build();
@@ -170,10 +176,10 @@ public class BookingServiceImpl implements BookingService {
                 ActivityAction.RESERVATION_CREATE,
                 "Booking",
                 booking.getId(),
-                String.format("Tạo đơn đặt kho %s giữ chỗ mềm 24h qua Redis cho ngăn kho %s. Trạng thái: PENDING_PAYMENT",
-                        code, unit.getUnitCode()),
+                String.format("Tạo yêu cầu thuê kho %s, chờ quản lý duyệt trong tối đa %d giờ. Trạng thái: PENDING_APPROVAL",
+                        code, approvalTimeoutHours),
                 null,
-                BookingStatus.PENDING_PAYMENT
+                BookingStatus.PENDING_APPROVAL
         );
 
         return mapToResponse(booking);
@@ -181,30 +187,103 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<BookingResponse> getMyBookings(UUID customerId) {
-        UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
-        if (currentUserId != null && customerId != null && !currentUserId.equals(customerId)) {
-            String role = requestContext.currentUserRole();
-            if (!"ADMIN".equalsIgnoreCase(role) && !"FACILITY_MANAGER".equalsIgnoreCase(role) && !"STAFF".equalsIgnoreCase(role)) {
-                throw new AppException(ErrorCode.FORBIDDEN);
-            }
+    public List<BookingResponse> getMyBookingRequests() {
+        UUID customerId = requestContext != null ? requestContext.currentUserId() : null;
+        if (customerId == null) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
         }
-        UUID targetCustomerId = customerId != null ? customerId : currentUserId;
-        List<Booking> bookings;
-        if (targetCustomerId != null) {
-            bookings = bookingRepository.findByCustomer_Id(targetCustomerId);
-        } else {
-            bookings = bookingRepository.findAll();
-        }
-        return bookings.stream()
-                .sorted((b1, b2) -> {
-                    if (b1.getCreatedAt() != null && b2.getCreatedAt() != null) {
-                        return b2.getCreatedAt().compareTo(b1.getCreatedAt());
-                    }
-                    return 0;
+        return bookingRepository.findByCustomer_Id(customerId).stream()
+                .filter(booking -> booking.getStatus() == BookingStatus.PENDING_APPROVAL
+                        || booking.getStatus() == BookingStatus.PENDING_PAYMENT
+                        || booking.getStatus() == BookingStatus.CANCELLED)
+                .sorted((left, right) -> right.getCreatedAt().compareTo(left.getCreatedAt()))
+                .map(booking -> {
+                    BookingResponse response = mapToResponse(booking);
+                    response.setAccessPin(null);
+                    response.setQrAccessToken(null);
+                    return response;
                 })
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<BookingResponse> getPendingApprovalRequests() {
+        UUID scopedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+        if (facilityAccessGuard.isFacilityScoped() && scopedFacilityId == null) {
+            return List.of();
+        }
+        return bookingRepository.findByStatusOrderByCreatedAtAsc(BookingStatus.PENDING_APPROVAL).stream()
+                .filter(booking -> scopedFacilityId == null
+                        || (booking.getStorageUnit() != null
+                        && booking.getStorageUnit().getFacility() != null
+                        && scopedFacilityId.equals(booking.getStorageUnit().getFacility().getId())))
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public BookingResponse reviewBookingRequest(UUID id, boolean approved) {
+        Booking booking = bookingRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        if (booking.getStatus() != BookingStatus.PENDING_APPROVAL) {
+            throw new AppException(ErrorCode.BOOKING_REQUEST_NOT_PENDING_APPROVAL);
+        }
+
+        StorageUnit unit = booking.getStorageUnit();
+        UUID facilityId = unit != null && unit.getFacility() != null ? unit.getFacility().getId() : null;
+        if (facilityId != null) {
+            facilityAccessGuard.checkFacilityAccess(facilityId);
+        }
+
+        Instant now = Instant.now();
+        if (booking.getPaymentExpiresAt() != null && !booking.getPaymentExpiresAt().isAfter(now)) {
+            booking.setStatus(BookingStatus.CANCELLED);
+            booking.setPaymentExpiresAt(null);
+            if (unit != null) {
+                unit.setStatus(UnitStatus.AVAILABLE);
+                storageUnitRepository.save(unit);
+                storageUnitLockService.releaseLock(unit.getId());
+            }
+            booking = bookingRepository.save(booking);
+            activityLogService.record(
+                    facilityId,
+                    ActivityAction.RESERVATION_CANCEL,
+                    "Booking",
+                    booking.getId(),
+                    String.format("Yêu cầu thuê kho %s đã hết hạn trước khi được duyệt; kho đã được giải phóng.", booking.getBookingCode()),
+                    null,
+                    booking.getStatus()
+            );
+            return mapToResponse(booking);
+        }
+
+        if (approved) {
+            booking.setStatus(BookingStatus.PENDING_PAYMENT);
+            booking.setPaymentExpiresAt(Instant.now().plusSeconds(paymentTimeoutMinutes * 60L));
+        } else {
+            booking.setStatus(BookingStatus.CANCELLED);
+            booking.setPaymentExpiresAt(null);
+            if (unit != null) {
+                unit.setStatus(UnitStatus.AVAILABLE);
+                storageUnitRepository.save(unit);
+                storageUnitLockService.releaseLock(unit.getId());
+            }
+        }
+
+        booking = bookingRepository.save(booking);
+        activityLogService.record(
+                facilityId,
+                approved ? ActivityAction.RESERVATION_CREATE : ActivityAction.RESERVATION_CANCEL,
+                "Booking",
+                booking.getId(),
+                approved
+                        ? String.format("Yêu cầu thuê kho %s đã được duyệt; khách hàng có %d phút để thanh toán.", booking.getBookingCode(), paymentTimeoutMinutes)
+                        : String.format("Yêu cầu thuê kho %s đã bị từ chối; kho đã được giải phóng.", booking.getBookingCode()),
+                null,
+                booking.getStatus()
+        );
+        return mapToResponse(booking);
     }
 
     @Override
@@ -451,14 +530,19 @@ public class BookingServiceImpl implements BookingService {
 
     @Scheduled(fixedDelay = 60_000L)
     public void expireUnpaidBookings() {
-        List<Booking> expiredBookings = bookingRepository.findByStatusAndPaymentExpiresAtBefore(
-                BookingStatus.PENDING_PAYMENT, Instant.now());
+        Instant now = Instant.now();
+        List<Booking> expiredBookings = new java.util.ArrayList<>();
+        expiredBookings.addAll(bookingRepository.findByStatusAndPaymentExpiresAtBefore(
+                BookingStatus.PENDING_APPROVAL, now));
+        expiredBookings.addAll(bookingRepository.findByStatusAndPaymentExpiresAtBefore(
+                BookingStatus.PENDING_PAYMENT, now));
         for (Booking booking : expiredBookings) {
             booking.setStatus(BookingStatus.CANCELLED);
             booking.setPaymentExpiresAt(null);
             if (booking.getStorageUnit() != null && booking.getStorageUnit().getStatus() == UnitStatus.RESERVED) {
                 booking.getStorageUnit().setStatus(UnitStatus.AVAILABLE);
                 storageUnitRepository.save(booking.getStorageUnit());
+                storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
             }
             bookingRepository.save(booking);
         }

@@ -30,24 +30,25 @@ export const WebSettingsModal: React.FC<WebSettingsModalProps> = ({ isOpen, onCl
   const handleUpdate = <K extends keyof WebSettings>(key: K, value: WebSettings[K]) => {
     const updated = { ...settings, [key]: value }
     setSettings(updated)
-    saveWebSettings({ [key]: value })
     if (key === 'language') {
-      setLanguage(value as any)
+      setLanguage(value as 'vi' | 'en')
+    } else {
+      saveWebSettings({ [key]: value })
     }
   }
 
   const handleReset = () => {
     setSettings(DEFAULT_WEB_SETTINGS)
     saveWebSettings(DEFAULT_WEB_SETTINGS)
-    setLanguage(DEFAULT_WEB_SETTINGS.language)
     setSavedSuccess(true)
     setTimeout(() => setSavedSuccess(false), 2000)
   }
 
   const handleSaveAndClose = () => {
-    saveWebSettings(settings)
     if (settings.language !== language) {
       setLanguage(settings.language)
+    } else {
+      saveWebSettings(settings)
     }
     setSavedSuccess(true)
     setTimeout(() => {
@@ -87,7 +88,9 @@ export const WebSettingsModal: React.FC<WebSettingsModalProps> = ({ isOpen, onCl
                 <span className="material-symbols-outlined text-[18px] text-slate-500">palette</span>
                 <span className="text-xs font-bold text-slate-900">{t('Giao diện (Chủ đề màu sắc)')}</span>
               </div>
-              <span className="text-[11px] font-mono text-slate-400 capitalize">{settings.theme}</span>
+              <span className="text-[11px] font-medium text-slate-500">
+                {settings.theme === 'dark' ? t('Tối') : settings.theme === 'system' ? t('Tự động') : t('Sáng')}
+              </span>
             </div>
             <div className="grid grid-cols-3 gap-2 pt-1">
               {[
@@ -101,7 +104,8 @@ export const WebSettingsModal: React.FC<WebSettingsModalProps> = ({ isOpen, onCl
                     key={item.id}
                     type="button"
                     onClick={() => handleUpdate('theme', item.id as any)}
-                    className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-center transition-all cursor-pointer ${
+                    aria-pressed={isActive}
+                    className={`flex min-h-[92px] flex-col items-center justify-center gap-1.5 p-3 rounded-xl border text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer ${
                       isActive
                         ? 'border-blue-600 bg-blue-50/70 text-blue-900 shadow-xs'
                         : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700'

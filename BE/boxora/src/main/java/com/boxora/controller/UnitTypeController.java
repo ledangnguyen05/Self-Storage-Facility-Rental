@@ -44,7 +44,7 @@ public class UnitTypeController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Tạo mới loại kho lưu trữ và ghi nhận giá niêm yết ban đầu")
     public ResponseEntity<ApiResponse<UnitTypeResponse>> createUnitType(
             @Valid @RequestBody UnitTypeCreateRequest request
@@ -55,7 +55,7 @@ public class UnitTypeController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Cập nhật thông tin loại kho (nếu đổi giá phải kèm lý do theo BR-RULE-011)")
     public ResponseEntity<ApiResponse<UnitTypeResponse>> updateUnitType(
             @PathVariable UUID id,
@@ -66,7 +66,7 @@ public class UnitTypeController {
     }
 
     @PostMapping("/{id}/price-adjustment")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Điều chỉnh giá niêm yết loại kho theo BR-RULE-011 (bắt buộc lý do và lưu lịch sử)")
     public ResponseEntity<ApiResponse<UnitTypeResponse>> adjustPrice(
             @PathVariable UUID id,
@@ -87,7 +87,7 @@ public class UnitTypeController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Xóa loại kho (chỉ xóa khi không có kho nào đang thuộc loại này)")
     public ResponseEntity<ApiResponse<Void>> deleteUnitType(@PathVariable UUID id) {
         unitTypeService.deleteUnitType(id);

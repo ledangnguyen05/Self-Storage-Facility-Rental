@@ -21,6 +21,8 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
 
     List<Booking> findByCustomer_Id(UUID customerId);
 
+    List<Booking> findByStatusOrderByCreatedAtAsc(BookingStatus status);
+
     List<Booking> findByStatusIn(Collection<BookingStatus> statuses);
 
     List<Booking> findByStatusAndPaymentExpiresAtBefore(BookingStatus status, Instant expiresAt);
@@ -34,7 +36,9 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
 
     List<Booking> findByStatusAndCreatedAtBefore(BookingStatus status, LocalDateTime threshold);
 
-    @Query("SELECT b FROM Booking b WHERE b.status = :status AND (b.createdAt < :threshold OR b.startDate < :today)")
+    @Query("SELECT b FROM Booking b WHERE b.status = :status AND ("
+            + "(b.paymentExpiresAt IS NOT NULL AND b.paymentExpiresAt < CURRENT_TIMESTAMP) OR "
+            + "(b.paymentExpiresAt IS NULL AND b.createdAt < :threshold) OR b.startDate < :today)")
     List<Booking> findExpiredPendingBookings(
             @Param("status") BookingStatus status,
             @Param("threshold") LocalDateTime threshold,

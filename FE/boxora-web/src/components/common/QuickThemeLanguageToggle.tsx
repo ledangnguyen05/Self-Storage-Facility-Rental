@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useLanguage } from '../../context/LanguageContext'
-import { WebSettings, getWebSettings, saveWebSettings } from '../../utils/webSettings'
+import { WebSettings, getWebSettings, getResolvedTheme, saveWebSettings } from '../../utils/webSettings'
 
 interface QuickThemeLanguageToggleProps {
   className?: string
@@ -15,6 +15,7 @@ export const QuickThemeLanguageToggle: React.FC<QuickThemeLanguageToggleProps> =
 }) => {
   const { language, setLanguage, t } = useLanguage()
   const [settings, setSettings] = useState<WebSettings>(getWebSettings())
+  const [systemIsDark, setSystemIsDark] = useState(() => getResolvedTheme({ theme: 'system' }) === 'dark')
 
   useEffect(() => {
     const handleSettingsChange = (e: any) => {
@@ -24,7 +25,16 @@ export const QuickThemeLanguageToggle: React.FC<QuickThemeLanguageToggleProps> =
     return () => window.removeEventListener('boxora_settings_changed', handleSettingsChange)
   }, [])
 
-  const isDark = settings.theme === 'dark' || (settings.theme === 'system' && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const updateSystemTheme = (event: MediaQueryListEvent) => setSystemIsDark(event.matches)
+    setSystemIsDark(media.matches)
+    media.addEventListener?.('change', updateSystemTheme)
+    return () => media.removeEventListener?.('change', updateSystemTheme)
+  }, [])
+
+  const isDark = settings.theme === 'dark' || (settings.theme === 'system' && systemIsDark)
 
   const handleToggleTheme = () => {
     const nextTheme = isDark ? 'light' : 'dark'
@@ -34,8 +44,6 @@ export const QuickThemeLanguageToggle: React.FC<QuickThemeLanguageToggleProps> =
 
   const handleSwitchLanguage = (lang: 'vi' | 'en') => {
     setLanguage(lang)
-    const updated = saveWebSettings({ language: lang })
-    setSettings(updated)
   }
 
   return (
@@ -45,9 +53,10 @@ export const QuickThemeLanguageToggle: React.FC<QuickThemeLanguageToggleProps> =
         <button
           type="button"
           onClick={handleToggleTheme}
-          title={isDark ? t('Chuyển sang giao diện sáng', 'Switch to Light Mode') : t('Chuyển sang giao diện tối', 'Switch to Dark Mode')}
-          aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-          className="w-8 h-8 rounded-xl flex items-center justify-center border border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600 bg-white/80 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-700 text-slate-700 dark:text-amber-400 shadow-2xs transition-all cursor-pointer"
+          title={isDark ? t('Chuyển sang giao diện sáng', 'Switch to light theme') : t('Chuyển sang giao diện tối', 'Switch to dark theme')}
+          aria-label={isDark ? t('Chuyển sang giao diện sáng', 'Switch to light theme') : t('Chuyển sang giao diện tối', 'Switch to dark theme')}
+          aria-pressed={isDark}
+          className="w-9 h-9 rounded-xl flex items-center justify-center border border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600 bg-white/90 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-amber-400 shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 cursor-pointer"
         >
           {isDark ? (
             <span className="material-symbols-outlined text-[17px] text-amber-400">light_mode</span>
@@ -62,13 +71,15 @@ export const QuickThemeLanguageToggle: React.FC<QuickThemeLanguageToggleProps> =
         <div
           role="group"
           aria-label={t('Chọn ngôn ngữ', 'Select language')}
-          className="flex items-center gap-0.5 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 shadow-2xs text-[11px] font-bold"
+          className="flex min-h-9 items-center gap-0.5 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800 shadow-sm text-[11px] font-bold"
         >
           <button
             type="button"
             onClick={() => handleSwitchLanguage('vi')}
             aria-pressed={language === 'vi'}
-            className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
+            aria-label={t('Tiếng Việt', 'Vietnamese')}
+            title={t('Tiếng Việt', 'Vietnamese')}
+            className={`min-w-9 px-2.5 py-1.5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer ${
               language === 'vi'
                 ? 'bg-blue-600 text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -80,7 +91,9 @@ export const QuickThemeLanguageToggle: React.FC<QuickThemeLanguageToggleProps> =
             type="button"
             onClick={() => handleSwitchLanguage('en')}
             aria-pressed={language === 'en'}
-            className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
+            aria-label={t('Tiếng Anh', 'English')}
+            title={t('Tiếng Anh', 'English')}
+            className={`min-w-9 px-2.5 py-1.5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer ${
               language === 'en'
                 ? 'bg-blue-600 text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'

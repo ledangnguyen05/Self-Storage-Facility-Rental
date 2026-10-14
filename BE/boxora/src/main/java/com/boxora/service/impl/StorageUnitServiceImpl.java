@@ -309,6 +309,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .unitTypeId(u.getUnitType() != null ? u.getUnitType().getId() : null)
                 .unitTypeName(u.getUnitType() != null ? u.getUnitType().getTypeName() : null)
                 .pricePerMonth(price)
+                .depositAmount(u.getUnitType() != null ? u.getUnitType().getDepositAmount() : price)
                 .areaSqMeters(area)
                 .batteryLevel("98%")
                 .smartLockSerial("SL-" + (u.getUnitCode() != null ? u.getUnitCode().replace("-", "") : "8841"))
