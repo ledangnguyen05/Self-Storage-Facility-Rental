@@ -3,6 +3,7 @@ import { User, RoleType } from '../../types'
 import { useLanguage } from '../../context/LanguageContext'
 import {
   WebSettings,
+  getResolvedTheme,
   getWebSettings,
   saveWebSettings,
 } from '../../utils/webSettings'
@@ -27,7 +28,18 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
   const { language, setLanguage, t } = useLanguage()
   const [isOpen, setIsOpen] = useState(false)
   const [webSettings, setWebSettings] = useState<WebSettings>(getWebSettings())
+  const [systemIsDark, setSystemIsDark] = useState(() => getResolvedTheme({ theme: 'system' }) === 'dark')
+  const isDark = webSettings.theme === 'dark' || (webSettings.theme === 'system' && systemIsDark)
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const updateSystemTheme = (event: MediaQueryListEvent) => setSystemIsDark(event.matches)
+    setSystemIsDark(media.matches)
+    media.addEventListener?.('change', updateSystemTheme)
+    return () => media.removeEventListener?.('change', updateSystemTheme)
+  }, [])
 
   // Listen for outside click to close
   useEffect(() => {
@@ -62,7 +74,7 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
   }, [])
 
   const handleToggleDark = () => {
-    const nextTheme = webSettings.theme === 'dark' ? 'light' : 'dark'
+    const nextTheme = isDark ? 'light' : 'dark'
     const updated = saveWebSettings({ theme: nextTheme })
     setWebSettings(updated)
   }
@@ -74,8 +86,6 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
 
   const handleSwitchLanguage = (lang: 'vi' | 'en') => {
     setLanguage(lang)
-    const updated = saveWebSettings({ language: lang })
-    setWebSettings(updated)
   }
 
   const userInitials = user?.fullName
@@ -242,21 +252,24 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-medium text-slate-700 flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[15px] text-slate-500">
-                  {webSettings.theme === 'dark' ? 'dark_mode' : 'light_mode'}
+                  {isDark ? 'dark_mode' : 'light_mode'}
                 </span>
                 {t('Giao diện tối')}
               </span>
               <button
                 type="button"
                 onClick={handleToggleDark}
-                className={`w-8 h-4.5 rounded-full p-0.5 transition-colors cursor-pointer ${
-                  webSettings.theme === 'dark' ? 'bg-blue-600' : 'bg-slate-300'
+                role="switch"
+                aria-checked={isDark}
+                aria-label={t('Giao diện tối')}
+                className={`w-10 h-6 rounded-full p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 cursor-pointer ${
+                  isDark ? 'bg-blue-600' : 'bg-slate-300'
                 }`}
-                title={t('Giao diện tối')}
+                title={isDark ? t('Chuyển sang giao diện sáng') : t('Chuyển sang giao diện tối')}
               >
                 <div
-                  className={`w-3.5 h-3.5 rounded-full bg-white shadow-xs transition-transform ${
-                    webSettings.theme === 'dark' ? 'translate-x-3.5' : 'translate-x-0'
+                  className={`w-5 h-5 rounded-full bg-white shadow-xs transition-transform ${
+                    isDark ? 'translate-x-4' : 'translate-x-0'
                   }`}
                 />
               </button>
@@ -294,7 +307,10 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
                 <button
                   type="button"
                   onClick={() => handleSwitchLanguage('vi')}
-                  className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                  aria-pressed={language === 'vi'}
+                  aria-label={t('Tiếng Việt', 'Vietnamese')}
+                  title={t('Tiếng Việt', 'Vietnamese')}
+                  className={`min-w-9 px-2 py-1 rounded cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                     language === 'vi'
                       ? 'bg-white text-slate-900 shadow-xs'
                       : 'text-slate-500 hover:text-slate-800'
@@ -305,7 +321,10 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
                 <button
                   type="button"
                   onClick={() => handleSwitchLanguage('en')}
-                  className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                  aria-pressed={language === 'en'}
+                  aria-label={t('Tiếng Anh', 'English')}
+                  title={t('Tiếng Anh', 'English')}
+                  className={`min-w-9 px-2 py-1 rounded cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                     language === 'en'
                       ? 'bg-white text-slate-900 shadow-xs'
                       : 'text-slate-500 hover:text-slate-800'

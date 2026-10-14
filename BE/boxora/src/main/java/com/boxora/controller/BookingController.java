@@ -2,6 +2,7 @@ package com.boxora.controller;
 
 import com.boxora.common.response.ApiResponse;
 import com.boxora.dto.request.BookingCreateRequest;
+import com.boxora.dto.request.BookingDecisionRequest;
 import com.boxora.dto.request.UpdatePinRequest;
 import com.boxora.dto.response.BookingAccessCredentialsResponse;
 import com.boxora.dto.response.BookingPinResponse;
@@ -35,6 +36,32 @@ public class BookingController {
     public ResponseEntity<ApiResponse<BookingResponse>> create(@Valid @RequestBody BookingCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Booking created with access credentials", bookingService.createBooking(request)));
+    }
+
+    @GetMapping("/my-requests")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN')")
+    @Operation(summary = "Láº¥y cÃ¡c yÃªu cáº§u Ä‘áº·t kho Ä‘ang chá» duyá»‡t hoáº·c chá» thanh toÃ¡n")
+    public ResponseEntity<ApiResponse<List<BookingResponse>>> getMyRequests() {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getMyBookingRequests()));
+    }
+
+    @GetMapping("/pending-approval")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @Operation(summary = "Láº¥y yÃªu cáº§u Ä‘áº·t kho Ä‘ang chá» quÃ½n lÃ½ duyá»‡t")
+    public ResponseEntity<ApiResponse<List<BookingResponse>>> getPendingApprovalRequests() {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getPendingApprovalRequests()));
+    }
+
+    @PostMapping("/{id}/decision")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @Operation(summary = "Duyá»‡t hoáº·c tá»« chá»‘i yÃªu cáº§u thuÃª kho")
+    public ResponseEntity<ApiResponse<BookingResponse>> decideRequest(
+            @PathVariable UUID id,
+            @Valid @RequestBody BookingDecisionRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                bookingService.reviewBookingRequest(id, request.getApproved())
+        ));
     }
 
     @GetMapping("/my-active")

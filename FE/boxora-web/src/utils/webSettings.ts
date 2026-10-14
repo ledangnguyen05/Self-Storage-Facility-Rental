@@ -24,10 +24,36 @@ export const getWebSettings = (): WebSettings => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return DEFAULT_WEB_SETTINGS
-    return { ...DEFAULT_WEB_SETTINGS, ...JSON.parse(raw) }
+    const parsed = JSON.parse(raw) as Partial<WebSettings> | null
+    if (!parsed || typeof parsed !== 'object') return DEFAULT_WEB_SETTINGS
+    return {
+      ...DEFAULT_WEB_SETTINGS,
+      ...parsed,
+      theme: parsed.theme === 'dark' || parsed.theme === 'system' ? parsed.theme : 'light',
+      fontSize: parsed.fontSize === 'large' ? 'large' : 'normal',
+      language: parsed.language === 'en' ? 'en' : 'vi',
+    }
   } catch (e) {
     console.warn('Failed to parse web settings from localStorage:', e)
     return DEFAULT_WEB_SETTINGS
+  }
+}
+
+export const getResolvedTheme = (settings: Pick<WebSettings, 'theme'> = getWebSettings()): 'light' | 'dark' => {
+  if (settings.theme === 'dark') return 'dark'
+  if (settings.theme === 'system' && typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
+    return 'dark'
+  }
+  return 'light'
+}
+
+let systemThemeMediaQuery: MediaQueryList | null = null
+let storageSyncAttached = false
+
+const handleSystemThemeChange = (event: MediaQueryListEvent) => {
+  const root = document.documentElement
+  if (root.dataset.themeMode === 'system') {
+    root.classList.toggle('dark', event.matches)
   }
 }
 
@@ -37,18 +63,26 @@ export const applyWebSettingsToDOM = (settings: WebSettings) => {
   const root = document.documentElement
 
   // Theme
-  if (settings.theme === 'dark') {
-    root.classList.add('dark')
-  } else if (settings.theme === 'light') {
-    root.classList.remove('dark')
-  } else {
-    // system
-    const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    if (systemPrefersDark) {
-      root.classList.add('dark')
+  root.dataset.themeMode = settings.theme
+  root.classList.toggle('dark', getResolvedTheme(settings) === 'dark')
+
+  if (typeof window !== 'undefined' && !systemThemeMediaQuery && window.matchMedia) {
+    systemThemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    if (systemThemeMediaQuery.addEventListener) {
+      systemThemeMediaQuery.addEventListener('change', handleSystemThemeChange)
     } else {
-      root.classList.remove('dark')
+      systemThemeMediaQuery.addListener?.(handleSystemThemeChange)
     }
+  }
+
+  if (typeof window !== 'undefined' && !storageSyncAttached) {
+    window.addEventListener('storage', (event) => {
+      if (event.key !== STORAGE_KEY) return
+      const syncedSettings = getWebSettings()
+      applyWebSettingsToDOM(syncedSettings)
+      window.dispatchEvent(new CustomEvent('boxora_settings_changed', { detail: syncedSettings }))
+    })
+    storageSyncAttached = true
   }
 
   // Font Size

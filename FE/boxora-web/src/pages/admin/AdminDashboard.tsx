@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { useOutletContext, useSearchParams } from 'react-router-dom'
 import { userService } from '../../services/userService'
 import { roleService } from '../../services/roleService'
 import { permissionService } from '../../services/permissionService'
 import { activityLogService } from '../../services/activityLogService'
 import { facilityService } from '../../services/facilityService'
 import { authService } from '../../services/authService'
+import { useLanguage } from '../../context/LanguageContext'
 import { User, RoleType, Role, Permission, ActivityLog, Facility } from '../../types'
 import { FacilityScopingModal } from '../../components/modals/FacilityScopingModal'
+import { FacilityConfigurationPanel } from './FacilityConfigurationPanel'
 
 interface DashboardOutletContextType {
   selectedFacility?: string
@@ -15,9 +17,31 @@ interface DashboardOutletContextType {
   facilities?: Facility[]
 }
 
+type AdminDashboardTab = 'users' | 'roles' | 'logs' | 'facilities'
+
+const isDashboardTab = (tab: string | null): tab is AdminDashboardTab =>
+  tab === 'users' || tab === 'roles' || tab === 'logs' || tab === 'facilities'
+
 export const AdminDashboard: React.FC = () => {
+  const { t } = useLanguage()
   const outletContext = useOutletContext<DashboardOutletContextType | undefined>()
-  const [activeTab, setActiveTab] = useState<'users' | 'roles' | 'logs'>('users')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab')
+  const [activeTab, setActiveTabState] = useState<AdminDashboardTab>(
+    isDashboardTab(requestedTab) ? requestedTab : 'users'
+  )
+  const setActiveTab = (tab: AdminDashboardTab) => {
+    setActiveTabState(tab)
+    setSearchParams(current => {
+      const next = new URLSearchParams(current)
+      next.set('tab', tab)
+      return next
+    }, { replace: true })
+  }
+
+  useEffect(() => {
+    if (isDashboardTab(requestedTab)) setActiveTabState(requestedTab)
+  }, [requestedTab])
 
   // Facility state
   const [facilities, setFacilities] = useState<Facility[]>(outletContext?.facilities || [])
@@ -364,6 +388,14 @@ export const AdminDashboard: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setActiveTab('facilities')}
+              className="px-3 py-2 rounded-xl border border-cyan-200 bg-cyan-50 text-xs font-bold text-cyan-800 hover:bg-cyan-100 transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px]">domain</span>
+              <span>{t('Cấu hình chi nhánh', 'Branch configuration')}</span>
+            </button>
             <button 
               type="button" 
               onClick={() => fetchUsers(facilityFilter)}
@@ -406,7 +438,7 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         {/* Tab Controls */}
-        <div className="mt-6 flex w-full items-center gap-2 overflow-x-auto border-b border-slate-200 pb-1 sm:w-fit">
+        <div className="mt-6 flex w-full flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
           <button
             onClick={() => setActiveTab('users')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
@@ -440,8 +472,23 @@ export const AdminDashboard: React.FC = () => {
             <span className="material-symbols-outlined text-[16px]">history</span>
             <span>Nhật Ký Kiểm Toán (Audit Logs)</span>
           </button>
+          <button
+            onClick={() => setActiveTab('facilities')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+              activeTab === 'facilities'
+                ? 'bg-cyan-50 text-cyan-800 border border-cyan-200 shadow-xs'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[16px]">domain</span>
+            <span>{t('Cấu hình chi nhánh', 'Branch configuration')}</span>
+          </button>
         </div>
       </div>
+
+      {activeTab === 'facilities' && (
+        <FacilityConfigurationPanel facilities={facilities} onFacilitiesChange={setFacilities} />
+      )}
 
       {/* TAB 1: USERS */}
       {activeTab === 'users' && (

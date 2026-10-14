@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.UUID;
@@ -44,6 +45,7 @@ public class FacilityPolicyController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Create a new facility policy")
     public ResponseEntity<ApiResponse<FacilityPolicyResponse>> create(
             @Valid @RequestBody FacilityPolicyCreateRequest request) {
@@ -55,6 +57,7 @@ public class FacilityPolicyController {
     }
 
     @PutMapping("{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Update an existing facility policy")
     public ResponseEntity<ApiResponse<FacilityPolicyResponse>> update(
             @PathVariable UUID id,
@@ -67,6 +70,7 @@ public class FacilityPolicyController {
     }
 
     @DeleteMapping("{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Delete a facility policy")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         facilityPolicyService.delete(id);
