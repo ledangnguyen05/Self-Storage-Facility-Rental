@@ -1561,19 +1561,19 @@ export const HomePage: React.FC = () => {
             </h4>
             <div className="space-y-3 text-xs text-slate-600">
               <div className="space-y-0.5">
-                <div className="font-bold text-slate-800">Cơ Sở 1 // StoreHub Quận 1:</div>
+                <div className="font-bold text-slate-800">Cơ Sở 1 // Boxora Quận 1:</div>
                 <p className="text-slate-500">123 Nguyễn Huệ, P. Bến Nghé, Quận 1, TP.HCM</p>
               </div>
               <div className="space-y-0.5">
-                <div className="font-bold text-slate-800">Cơ Sở 2 // StoreHub Quận 7 (Nam Sài Gòn):</div>
+                <div className="font-bold text-slate-800">Cơ Sở 2 // Boxora Quận 7 (Nam Sài Gòn):</div>
                 <p className="text-slate-500">456 Nguyễn Hữu Thọ, P. Tân Hưng, Quận 7, TP.HCM</p>
               </div>
               <div className="space-y-0.5">
-                <div className="font-bold text-slate-800">Cơ Sở 3 // StoreHub Thủ Đức Hub:</div>
+                <div className="font-bold text-slate-800">Cơ Sở 3 // Boxora Thủ Đức Hub:</div>
                 <p className="text-slate-500">789 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức, TP.HCM</p>
               </div>
               <div className="space-y-0.5">
-                <div className="font-bold text-slate-800">Cơ Sở 4 // StoreHub Tân Bình Mega Hub:</div>
+                <div className="font-bold text-slate-800">Cơ Sở 4 // Boxora Tân Bình Mega Hub:</div>
                 <p className="text-slate-500">102 Trường Sơn, Phường 2, Quận Tân Bình, TP.HCM</p>
               </div>
               <div className="pt-2 text-cyan-800 font-mono font-bold text-xs">

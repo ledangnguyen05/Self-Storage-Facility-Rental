@@ -12,11 +12,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import java.util.List;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class SeedConfig implements ApplicationRunner {
 
@@ -41,6 +41,19 @@ public class SeedConfig implements ApplicationRunner {
     private final PasswordEncoder passwordEncoder;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
+    public SeedConfig(
+            UserRepository userRepository,
+            RoleRepository roleRepository,
+            FacilityRepository facilityRepository,
+            PasswordEncoder passwordEncoder,
+            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+        this.userRepository = userRepository;
+        this.roleRepository = roleRepository;
+        this.facilityRepository = facilityRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
@@ -49,7 +62,18 @@ public class SeedConfig implements ApplicationRunner {
         } catch (Exception e) {
             log.warn("Notice altering bookings.access_pin: {}", e.getMessage());
         }
+        try {
+            jdbcTemplate.execute("UPDATE facilities SET name = REPLACE(name, 'StoreHub', 'Boxora'), email = REPLACE(email, 'storehub', 'boxora') WHERE name LIKE '%StoreHub%' OR email LIKE '%storehub%'");
+        } catch (Exception e) {
+            log.warn("Notice updating facility names: {}", e.getMessage());
+        }
+        try {
+            jdbcTemplate.execute("UPDATE users SET full_name = TRIM(REGEXP_REPLACE(full_name, '\\s*\\([^)]*\\)', '', 'g')) WHERE full_name LIKE '%(%'");
+        } catch (Exception e) {
+            log.warn("Notice updating user full names: {}", e.getMessage());
+        }
         seedUsers();
+        distributeCustomersToFacilities();
     }
 
     private void seedUsers() {
@@ -59,6 +83,7 @@ public class SeedConfig implements ApplicationRunner {
         // Neu DB da co user, kiem tra va gan bo sung facility neu chua co
         if (userRepository.count() > 0) {
             backfillUserFacilities(facilityD1, facilityD7);
+            distributeCustomersToFacilities();
             log.info("Users already seeded — skipping");
             return;
         }
@@ -197,4 +222,38 @@ public class SeedConfig implements ApplicationRunner {
                 username, email, roleName, facility != null ? facility.getName() : "None");
         return saved;
     }
-}
+
+    private void distributeCustomersToFacilities() {
+        List<Facility> facilities = facilityRepository.findAll().stream()
+                .filter(f -> f.getStatus() == com.boxora.enums.FacilityStatus.ACTIVE)
+                .sorted((a, b) -> a.getCode().compareTo(b.getCode()))
+                .toList();
+
+        if (facilities.isEmpty()) {
+            return;
+        }
+
+        List<User> customers = userRepository.findAll().stream()
+                .filter(u -> u.getRole() != null && "CUSTOMER".equalsIgnoreCase(u.getRole().getName()))
+                .sorted((a, b) -> {
+                    if (a.getCreatedAt() != null && b.getCreatedAt() != null) {
+                        return a.getCreatedAt().compareTo(b.getCreatedAt());
+                    }
+                    return a.getUsername().compareTo(b.getUsername());
+                })
+                .toList();
+
+        if (customers.isEmpty()) {
+            return;
+        }
+
+        for (int i = 0; i < customers.size(); i++) {
+            User customer = customers.get(i);
+            Facility targetFacility = facilities.get(i % facilities.size());
+            customer.setFacility(targetFacility);
+            userRepository.save(customer);
+        }
+        log.info("SeedConfig: Successfully distributed {} customers evenly across {} facilities",
+                customers.size(), facilities.size());
+    }
+}

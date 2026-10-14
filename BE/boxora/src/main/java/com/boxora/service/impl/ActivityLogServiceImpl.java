@@ -37,7 +37,6 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class ActivityLogServiceImpl implements ActivityLogService {
 
@@ -47,6 +46,21 @@ public class ActivityLogServiceImpl implements ActivityLogService {
     private final ActivityLogMapper activityLogMapper;
     private final RequestContext requestContext;
     private final ObjectMapper objectMapper;
+
+    public ActivityLogServiceImpl(
+            ActivityLogRepository activityLogRepository,
+            UserRepository userRepository,
+            FacilityRepository facilityRepository,
+            ActivityLogMapper activityLogMapper,
+            RequestContext requestContext,
+            ObjectMapper objectMapper) {
+        this.activityLogRepository = activityLogRepository;
+        this.userRepository = userRepository;
+        this.facilityRepository = facilityRepository;
+        this.activityLogMapper = activityLogMapper;
+        this.requestContext = requestContext;
+        this.objectMapper = objectMapper;
+    }
 
 
     // REQUIRES_NEW: ghi log không được rollback theo transaction nghiệp vụ bao quanh nó

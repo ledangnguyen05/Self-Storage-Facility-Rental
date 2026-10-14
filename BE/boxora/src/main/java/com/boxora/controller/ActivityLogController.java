@@ -22,12 +22,16 @@ import java.util.UUID;
 @RequestMapping("api/v1/activity-logs")
 @Tag(name = "Activity Log", description = "API tra cứu nhật ký đăng nhập và thao tác dữ liệu")
 @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
-@RequiredArgsConstructor
 @Slf4j
 public class ActivityLogController {
 
     private final ActivityLogService activityLogService;
     private final FacilityAccessGuard facilityAccessGuard;
+
+    public ActivityLogController(ActivityLogService activityLogService, FacilityAccessGuard facilityAccessGuard) {
+        this.activityLogService = activityLogService;
+        this.facilityAccessGuard = facilityAccessGuard;
+    }
 
     @GetMapping("{id}")
     @Operation(summary = "Lấy chi tiết một bản ghi log")

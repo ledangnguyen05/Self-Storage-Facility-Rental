@@ -74,7 +74,7 @@ class StorageUnitPriceHistoryServiceTest {
     @BeforeEach
     void setUp() {
         facility = Facility.builder()
-                .name("StoreHub District 1")
+                .name("Boxora District 1")
                 .code("HCM-D1")
                 .build();
         facility.setId(UUID.randomUUID());

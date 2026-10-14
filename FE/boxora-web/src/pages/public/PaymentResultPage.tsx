@@ -31,14 +31,14 @@ export const PaymentResultPage: React.FC = () => {
         id: bookingId,
         bookingCode: `RES-${mockUnitCode.replace(/[^0-9]/g, '') || Math.floor(1000 + Math.random() * 9000)}`,
         unitCode: mockUnitCode,
-        facilityName: 'StoreHub District 1 — Quận 1',
+        facilityName: 'Boxora District 1 — Quận 1',
         status: 'CONFIRMED',
         initialPaymentAmount: 1700000,
         createdAt: new Date().toISOString()
       }
       setBooking(mockResult)
       if (status === 'PAID' && user?.role?.name === 'CUSTOMER') {
-        activateCustomerRental(user, mockUnitCode, `${mockUnitName} • StoreHub District 1`)
+        activateCustomerRental(user, mockUnitCode, `${mockUnitName} • Boxora District 1`)
       }
       setIsLoading(false)
       return

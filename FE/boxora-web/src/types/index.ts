@@ -81,6 +81,7 @@ export interface Booking {
   customerPhone: string
   storageUnitId: string
   unitCode: string
+  facilityId?: string
   facilityName: string
   floorLevel?: string
   startDate: string
@@ -116,6 +117,7 @@ export interface RentalContract {
   customerPhone?: string
   bookingId?: string
   storageUnitId?: string
+  facilityId?: string
   unitCode: string
   facilityName: string
   startDate: string
@@ -193,7 +195,11 @@ export interface ActivityLog {
   id: string
   userId?: string
   username?: string
+  userName?: string
   userFullName?: string
+  userEmail?: string
+  userRole?: string
+  emailAttempted?: string
   facilityId?: string
   facilityName?: string
   logType: string
@@ -202,6 +208,7 @@ export interface ActivityLog {
   isCritical?: boolean
   resourceType?: string
   resourceId?: string
+  description?: string
   details?: string
   ipAddress?: string
   userAgent?: string
@@ -260,6 +267,31 @@ export interface OverdueDebtReport {
   aging4To7DaysDebt?: number
   aging8To14DaysDebt?: number
   aging15PlusDaysDebt?: number
+  items?: OverdueDebtItem[]
+}
+
+export interface OverdueDebtItem {
+  contractId: string
+  contractCode: string
+  bookingId?: string
+  bookingCode?: string
+  customerId?: string
+  customerName?: string
+  customerPhone?: string
+  customerEmail?: string
+  unitId?: string
+  unitCode: string
+  facilityId?: string
+  facilityName?: string
+  startDate?: string
+  dueDate?: string
+  daysOverdue: number
+  unpaidRent: number
+  dailyLateFee: number
+  totalLateFee: number
+  totalDebt: number
+  overdueStage?: string
+  smartLockStatus?: string
 }
 
 export interface OccupancyReport {

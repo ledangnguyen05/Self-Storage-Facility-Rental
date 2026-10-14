@@ -48,7 +48,7 @@ VALUES
         'business1@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0371234569',
-        'Nguyen Hoang Long (Business Manager 1)',
+        'Nguyen Hoang Long',
         TRUE,
         '33333333-3333-3333-3333-333333333333',
         NULL
@@ -60,7 +60,7 @@ VALUES
         'business2@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0371234570',
-        'Hoang Minh Tri (Business Manager 2)',
+        'Hoang Minh Tri',
         TRUE,
         '33333333-3333-3333-3333-333333333333',
         NULL
@@ -76,7 +76,7 @@ VALUES
         'facility1q1@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0901111001',
-        'Nguyen Van An (FM Q1)',
+        'Nguyen Van An',
         TRUE,
         '22222222-2222-2222-2222-222222222222',
         'f7af2794-0d0d-4c68-9e36-c44bf3034f6c'
@@ -88,7 +88,7 @@ VALUES
         'facility1q7@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0907111001',
-        'Le Hoang Nam (FM Q7)',
+        'Le Hoang Nam',
         TRUE,
         '22222222-2222-2222-2222-222222222222',
         '45e03ded-5da1-43d5-bea7-96c645d5f96c'
@@ -100,7 +100,7 @@ VALUES
         'facility1td@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0909111001',
-        'Nguyen Thi Bich (FM Thu Duc)',
+        'Nguyen Thi Bich',
         TRUE,
         '22222222-2222-2222-2222-222222222222',
         'fd8f948e-fdff-4a81-ad0f-fc45639b545d'
@@ -112,7 +112,7 @@ VALUES
         'facility1tb@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0904111001',
-        'Do Quang Huy (FM Tan Binh)',
+        'Do Quang Huy',
         TRUE,
         '22222222-2222-2222-2222-222222222222',
         'a1111111-2222-3333-4444-555555555555'
@@ -130,7 +130,7 @@ VALUES
         'staff1q1@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0901222001',
-        'Vu Thi Lan (Staff Q1 1)',
+        'Vu Thi Lan',
         TRUE,
         '44444444-4444-4444-4444-444444444444',
         'f7af2794-0d0d-4c68-9e36-c44bf3034f6c'
@@ -142,7 +142,7 @@ VALUES
         'staff2q1@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0901222002',
-        'Ngo Thanh Dat (Staff Q1 2)',
+        'Ngo Thanh Dat',
         TRUE,
         '44444444-4444-4444-4444-444444444444',
         'f7af2794-0d0d-4c68-9e36-c44bf3034f6c'
@@ -154,7 +154,7 @@ VALUES
         'staff3q1@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0901222003',
-        'Dinh Thi Thao (Staff Q1 3)',
+        'Dinh Thi Thao',
         TRUE,
         '44444444-4444-4444-4444-444444444444',
         'f7af2794-0d0d-4c68-9e36-c44bf3034f6c'
@@ -168,7 +168,7 @@ VALUES
         'staff1q7@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0907222001',
-        'Bui Quoc Anh (Staff Q7 1)',
+        'Bui Quoc Anh',
         TRUE,
         '44444444-4444-4444-4444-444444444444',
         '45e03ded-5da1-43d5-bea7-96c645d5f96c'
@@ -180,7 +180,7 @@ VALUES
         'staff2q7@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0907222002',
-        'Lam Gia Bao (Staff Q7 2)',
+        'Lam Gia Bao',
         TRUE,
         '44444444-4444-4444-4444-444444444444',
         '45e03ded-5da1-43d5-bea7-96c645d5f96c'
@@ -192,7 +192,7 @@ VALUES
         'staff3q7@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0907222003',
-        'Nguyen Kieu Oanh (Staff Q7 3)',
+        'Nguyen Kieu Oanh',
         TRUE,
         '44444444-4444-4444-4444-444444444444',
         '45e03ded-5da1-43d5-bea7-96c645d5f96c'
@@ -206,7 +206,7 @@ VALUES
         'staff1td@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0909222001',
-        'Phan Van Hau (Staff Thu Duc 1)',
+        'Phan Van Hau',
         TRUE,
         '44444444-4444-4444-4444-444444444444',
         'fd8f948e-fdff-4a81-ad0f-fc45639b545d'
@@ -218,7 +218,7 @@ VALUES
         'staff2td@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0909222002',
-        'Vo Thi Cam Tu (Staff Thu Duc 2)',
+        'Vo Thi Cam Tu',
         TRUE,
         '44444444-4444-4444-4444-444444444444',
         'fd8f948e-fdff-4a81-ad0f-fc45639b545d'
@@ -230,7 +230,7 @@ VALUES
         'staff3td@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0909222003',
-        'Luong Tuan Khai (Staff Thu Duc 3)',
+        'Luong Tuan Khai',
         TRUE,
         '44444444-4444-4444-4444-444444444444',
         'fd8f948e-fdff-4a81-ad0f-fc45639b545d'
@@ -244,7 +244,7 @@ VALUES
         'staff1tb@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0904222001',
-        'Vu Thi Ngoc (Staff Tan Binh 1)',
+        'Vu Thi Ngoc',
         TRUE,
         '44444444-4444-4444-4444-444444444444',
         'a1111111-2222-3333-4444-555555555555'
@@ -256,7 +256,7 @@ VALUES
         'staff2tb@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0904222002',
-        'Cao Thanh Tung (Staff Tan Binh 2)',
+        'Cao Thanh Tung',
         TRUE,
         '44444444-4444-4444-4444-444444444444',
         'a1111111-2222-3333-4444-555555555555'
@@ -268,7 +268,7 @@ VALUES
         'staff3tb@gmail.com',
         '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
         '0904222003',
-        'Mai Phuong Thuy (Staff Tan Binh 3)',
+        'Mai Phuong Thuy',
         TRUE,
         '44444444-4444-4444-4444-444444444444',
         'a1111111-2222-3333-4444-555555555555'

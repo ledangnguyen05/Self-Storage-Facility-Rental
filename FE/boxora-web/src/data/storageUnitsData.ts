@@ -44,8 +44,8 @@ export interface StorageUnitType {
 export const BOXORA_FACILITIES: FacilityLocation[] = [
   {
     id: 'f7af2794-0d0d-4c68-9e36-c44bf3034f6c',
-    name: 'StoreHub District 1',
-    shortName: 'StoreHub Quận 1',
+    name: 'Boxora District 1',
+    shortName: 'Boxora Quận 1',
     district: 'Quận 1',
     address: '123 Nguyễn Huệ, P. Bến Nghé, Quận 1, TP.HCM',
     coords: { lat: 10.7745, lng: 106.7025 },
@@ -54,8 +54,8 @@ export const BOXORA_FACILITIES: FacilityLocation[] = [
   },
   {
     id: '45e03ded-5da1-43d5-bea7-96c645d5f96c',
-    name: 'StoreHub District 7',
-    shortName: 'StoreHub Quận 7',
+    name: 'Boxora District 7',
+    shortName: 'Boxora Quận 7',
     district: 'Quận 7',
     address: '456 Nguyễn Hữu Thọ, P. Tân Hưng, Quận 7, TP.HCM',
     coords: { lat: 10.7325, lng: 106.7005 },
@@ -64,8 +64,8 @@ export const BOXORA_FACILITIES: FacilityLocation[] = [
   },
   {
     id: 'fd8f948e-fdff-4a81-ad0f-fc45639b545d',
-    name: 'StoreHub Thu Duc',
-    shortName: 'StoreHub Thủ Đức',
+    name: 'Boxora Thu Duc',
+    shortName: 'Boxora Thủ Đức',
     district: 'TP. Thủ Đức',
     address: '789 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức, TP.HCM',
     coords: { lat: 10.8540, lng: 106.7865 },
@@ -74,8 +74,8 @@ export const BOXORA_FACILITIES: FacilityLocation[] = [
   },
   {
     id: 'a1111111-2222-3333-4444-555555555555',
-    name: 'StoreHub Tan Binh Mega Hub',
-    shortName: 'StoreHub Tân Bình',
+    name: 'Boxora Tan Binh Mega Hub',
+    shortName: 'Boxora Tân Bình',
     district: 'Tân Bình',
     address: '102 Trường Sơn, Phường 2, Quận Tân Bình, TP.HCM',
     coords: { lat: 10.8015, lng: 106.6550 },
@@ -167,7 +167,7 @@ export const STORAGE_UNITS: StorageUnitType[] = [
     humidity: '44%',
     status: 'Sẵn sàng',
     facilityId: 'HCM-D1',
-    facilityName: 'StoreHub District 1',
+    facilityName: 'Boxora District 1',
     facilityAddress: '123 Nguyễn Huệ, P. Bến Nghé, Quận 1, TP.HCM',
     floorLocation: 'Tầng 1 • Dãy Locker A1 (Sát sảnh chính & Thang máy tải)',
     coords: { lat: 10.7745, lng: 106.7025 }
@@ -186,7 +186,7 @@ export const STORAGE_UNITS: StorageUnitType[] = [
     humidity: '45%',
     status: 'Sẵn sàng',
     facilityId: 'HCM-D7',
-    facilityName: 'StoreHub District 7',
+    facilityName: 'Boxora District 7',
     facilityAddress: '456 Nguyễn Hữu Thọ, P. Tân Hưng, Quận 7, TP.HCM',
     floorLocation: 'Tầng 2 • Khu Buồng B2 (Hành lang đối lưu gió, xe đẩy sảnh)',
     coords: { lat: 10.7325, lng: 106.7005 }
@@ -205,7 +205,7 @@ export const STORAGE_UNITS: StorageUnitType[] = [
     humidity: '43%',
     status: 'Đang thuê',
     facilityId: 'HCM-D1',
-    facilityName: 'StoreHub District 1',
+    facilityName: 'Boxora District 1',
     facilityAddress: '123 Nguyễn Huệ, P. Bến Nghé, Quận 1, TP.HCM',
     floorLocation: 'Tầng 3 • Dãy C1 (Khóa số thông minh, trần cao 3.2m rộng thoáng)',
     coords: { lat: 10.7745, lng: 106.7025 }
@@ -224,7 +224,7 @@ export const STORAGE_UNITS: StorageUnitType[] = [
     humidity: '60%',
     status: 'Sẵn sàng',
     facilityId: 'HCM-D1',
-    facilityName: 'StoreHub District 1',
+    facilityName: 'Boxora District 1',
     facilityAddress: '123 Nguyễn Huệ, P. Bến Nghé, Quận 1, TP.HCM',
     floorLocation: 'Tầng Hầm B1 • Phòng Vi Khí Hậu Kép (Kiểm soát nhiệt ẩm chuẩn hầm rượu)',
     coords: { lat: 10.7745, lng: 106.7025 }
@@ -243,7 +243,7 @@ export const STORAGE_UNITS: StorageUnitType[] = [
     humidity: '46%',
     status: 'Sẵn sàng',
     facilityId: 'HCM-TD',
-    facilityName: 'StoreHub Thu Duc',
+    facilityName: 'Boxora Thu Duc',
     facilityAddress: '789 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức, TP.HCM',
     floorLocation: 'Tầng Trệt G • Khoang E2 (Sát Dock tải hàng container & xe nâng)',
     coords: { lat: 10.8540, lng: 106.7865 }
@@ -262,7 +262,7 @@ export const STORAGE_UNITS: StorageUnitType[] = [
     humidity: '45%',
     status: 'Đang thuê',
     facilityId: 'HCM-TD',
-    facilityName: 'StoreHub Thu Duc',
+    facilityName: 'Boxora Thu Duc',
     facilityAddress: '789 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức, TP.HCM',
     floorLocation: 'Tầng Trệt G • Khoang E5 (Cửa cuốn trợ lực, xe tải 5 tấn tiếp cận thẳng)',
     coords: { lat: 10.8540, lng: 106.7865 }
@@ -281,7 +281,7 @@ export const STORAGE_UNITS: StorageUnitType[] = [
     humidity: '44%',
     status: 'Sẵn sàng',
     facilityId: 'HCM-D7',
-    facilityName: 'StoreHub District 7',
+    facilityName: 'Boxora District 7',
     facilityAddress: '456 Nguyễn Hữu Thọ, P. Tân Hưng, Quận 7, TP.HCM',
     floorLocation: 'Tầng 1 • Khu R-102 (Đường nội bộ rộng, bốc dỡ xe ô tô trực tiếp)',
     coords: { lat: 10.7325, lng: 106.7005 }
@@ -300,7 +300,7 @@ export const STORAGE_UNITS: StorageUnitType[] = [
     humidity: '45%',
     status: 'Sẵn sàng',
     facilityId: 'HCM-D7',
-    facilityName: 'StoreHub District 7',
+    facilityName: 'Boxora District 7',
     facilityAddress: '456 Nguyễn Hữu Thọ, P. Tân Hưng, Quận 7, TP.HCM',
     floorLocation: 'Tầng 1 • Dãy Locker R-Mini (Gần sảnh lễ tân & Quầy bảo vệ)',
     coords: { lat: 10.7325, lng: 106.7005 }

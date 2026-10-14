@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
+import { useOutletContext } from 'react-router-dom'
 import { storageUnitService } from '../../services/storageUnitService'
 import { facilityService } from '../../services/facilityService'
-import { Facility, StorageUnit } from '../../types'
+import { reportService } from '../../services/reportService'
+import { userService } from '../../services/userService'
+import { Facility, StorageUnit, OverdueDebtItem, User } from '../../types'
 import { IoTTelemetryModal } from './modals/IoTTelemetryModal'
 import { FacilitySurveyModal } from './modals/FacilitySurveyModal'
 import { AppActivationModal } from './modals/AppActivationModal'
@@ -31,9 +34,19 @@ interface InspectedUnit {
 }
 
 export const ManagerDashboard: React.FC = () => {
-  const [facilities, setFacilities] = useState<Facility[]>([])
-  const [selectedFacilityId, setSelectedFacilityId] = useState<string>('')
+  const { selectedFacility, setSelectedFacility, facilities: contextFacilities } = useOutletContext<{
+    selectedFacility?: string
+    setSelectedFacility?: (facId: string) => void
+    facilities?: Facility[]
+  }>() || {}
+
+  const [facilities, setFacilities] = useState<Facility[]>(contextFacilities || [])
+  const [selectedFacilityId, setSelectedFacilityId] = useState<string>(
+    selectedFacility && selectedFacility !== 'ALL' ? selectedFacility : (contextFacilities?.[0]?.id || '')
+  )
   const [units, setUnits] = useState<InspectedUnit[]>([])
+  const [overdueItems, setOverdueItems] = useState<OverdueDebtItem[]>([])
+  const [staffList, setStaffList] = useState<User[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [selectedFloor, setSelectedFloor] = useState<'floor1' | 'floor2'>('floor1')
   const [sizeFilter, setSizeFilter] = useState<'all' | 's' | 'm' | 'l'>('all')
@@ -75,37 +88,48 @@ export const ManagerDashboard: React.FC = () => {
   } | null>(null)
 
   useEffect(() => {
-    loadInitialData()
-  }, [])
-
-  const loadInitialData = async () => {
-    try {
-      const facRes = await facilityService.getFacilities()
-      if (facRes?.content && facRes.content.length > 0) {
-        setFacilities(facRes.content)
-        const defaultFac = facRes.content.find(f => f.code === 'HCM-D1') || facRes.content[0]
-        setSelectedFacilityId(defaultFac.id)
-        await fetchUnits(defaultFac.id)
-      } else {
-        await fetchUnits()
-      }
-    } catch {
-      await fetchUnits()
+    if (contextFacilities && contextFacilities.length > 0) {
+      setFacilities(contextFacilities)
+    } else {
+      facilityService.getFacilities()
+        .then(res => {
+          if (res?.content) setFacilities(res.content)
+        })
+        .catch(() => {})
     }
-  }
+  }, [contextFacilities])
 
-  const handleFacilityChange = async (facId: string) => {
-    setSelectedFacilityId(facId)
-    await fetchUnits(facId)
-  }
+  useEffect(() => {
+    let targetFacility = selectedFacility
+    if (!targetFacility || targetFacility === 'ALL') {
+      if (facilities.length > 0) {
+        targetFacility = facilities[0].id
+        if (setSelectedFacility) {
+          setSelectedFacility(facilities[0].id)
+        }
+      }
+    }
+    if (targetFacility && targetFacility !== 'ALL') {
+      setSelectedFacilityId(targetFacility)
+      void fetchUnits(targetFacility)
+    }
+  }, [selectedFacility, facilities])
 
   const fetchUnits = async (facId?: string) => {
     setIsLoading(true)
     try {
-      const targetId = facId || selectedFacilityId || undefined
-      const res = await storageUnitService.getUnits(targetId ? { facilityId: targetId } : undefined)
-      if (res && Array.isArray(res) && res.length > 0) {
-        const mapped: InspectedUnit[] = res.map((su: StorageUnit) => {
+      const targetId = (facId && facId !== 'ALL')
+        ? facId
+        : (selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : facilities[0]?.id)
+
+      const [unitsRes, debtRes, staffRes] = await Promise.allSettled([
+        storageUnitService.getUnits(targetId ? { facilityId: targetId } : undefined),
+        reportService.getOverdueDebtReport(targetId ? { facilityId: targetId } : undefined),
+        userService.getAllUsers({ role: 'STAFF', facilityId: targetId, size: 50 })
+      ])
+
+      if (unitsRes.status === 'fulfilled' && Array.isArray(unitsRes.value) && unitsRes.value.length > 0) {
+        const mapped: InspectedUnit[] = unitsRes.value.map((su: StorageUnit) => {
           const isAvail = su.status === 'AVAILABLE'
           const isOcc = su.status === 'OCCUPIED'
           const isMaint = su.status === 'UNDER_MAINTENANCE' || su.status === 'MAINTENANCE'
@@ -132,26 +156,41 @@ export const ManagerDashboard: React.FC = () => {
             status,
             rawStatus: su.status,
             color,
-            tenant: su.tenantName || (isAvail ? 'Chưa có khách' : 'Khách hàng Boxora'),
-            contract: su.contractCode || (isAvail ? 'Trống' : 'HD-2026-ACTIVE'),
-            due: su.dueDate || (isAvail ? '--' : '30/12/2026'),
+            tenant: su.tenantName || (isAvail ? 'Kho trống' : 'Đang cập nhật'),
+            contract: su.contractCode || (isAvail ? 'Chưa có hợp đồng' : 'Chưa có mã HĐ'),
+            due: su.dueDate ? new Date(su.dueDate).toLocaleDateString('vi-VN') : (isAvail ? '—' : 'Chưa xác định'),
             battery: su.batteryLevel || '98%',
             smartlock: su.smartLockSerial || `SL-${su.unitCode.replace('-', '')}`,
-            lastAccess: su.lastAccessTime || (isAvail ? 'Chưa ghi nhận' : 'Hôm nay 08:30'),
+            lastAccess: su.lastAccessTime || (isAvail ? 'Chưa ghi nhận' : 'Chưa có lượt ra vào'),
             floorLevel: su.floorLevel || 'Floor 1',
             pricePerMonth: su.pricePerMonth,
             facilityId: su.facilityId,
             facilityName: su.facilityName
           }
         })
+        mapped.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }))
         setUnits(mapped)
         setSelectedUnit(prev => (prev?.id ? mapped.find(u => u.id === prev.id) : undefined) || mapped[0] || null)
       } else {
         setUnits([])
         setSelectedUnit(null)
       }
+
+      if (debtRes.status === 'fulfilled' && debtRes.value?.items) {
+        setOverdueItems(debtRes.value.items)
+      } else {
+        setOverdueItems([])
+      }
+
+      if (staffRes.status === 'fulfilled' && staffRes.value?.data) {
+        setStaffList(staffRes.value.data)
+      } else {
+        setStaffList([])
+      }
     } catch {
       setUnits([])
+      setOverdueItems([])
+      setStaffList([])
       setSelectedUnit(null)
     } finally {
       setIsLoading(false)
@@ -222,43 +261,69 @@ export const ManagerDashboard: React.FC = () => {
     }
   }
 
-  const filteredUnits = units.filter(u => {
-    // Search query filter
-    const matchesSearch = u.id.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          u.tenant.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          u.contract.toLowerCase().includes(searchQuery.toLowerCase())
+  // Deterministic physical zone segregation based on permanent unit codes
+  const getUnitZone = (u: InspectedUnit): 'A' | 'B' | 'C' => {
+    const code = u.id.toUpperCase()
+    if (code.includes('-C') || /-[2-9]\d\d/.test(code) || (u.floorLevel || '').includes('2')) {
+      return 'C'
+    }
+    if (code.includes('-B')) {
+      return 'B'
+    }
+    if (code.includes('-A')) {
+      return 'A'
+    }
+    const numMatch = code.match(/\d+/)
+    if (numMatch) {
+      const num = parseInt(numMatch[0], 10)
+      if (num >= 200) return 'C'
+      if (num > 106) return 'B'
+      return 'A'
+    }
+    return 'A'
+  }
+
+  // Stable permanent inventory: order NEVER changes regardless of status changes or filtering
+  const permanentAllUnits = useMemo(() => {
+    return [...units].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }))
+  }, [units])
+
+  const permanentZoneA = useMemo(() => permanentAllUnits.filter(u => getUnitZone(u) === 'A'), [permanentAllUnits])
+  const permanentZoneB = useMemo(() => permanentAllUnits.filter(u => getUnitZone(u) === 'B'), [permanentAllUnits])
+  const permanentZoneC = useMemo(() => permanentAllUnits.filter(u => getUnitZone(u) === 'C'), [permanentAllUnits])
+  const permanentFloor1 = useMemo(() => [...permanentZoneA, ...permanentZoneB], [permanentZoneA, permanentZoneB])
+  const permanentFloor2 = permanentZoneC
+
+  // Filter evaluation predicate: does unit match current filters?
+  const isUnitMatchingFilter = (u: InspectedUnit) => {
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim()
+      const matchesSearch = u.id.toLowerCase().includes(q) || 
+                            u.tenant.toLowerCase().includes(q) ||
+                            u.contract.toLowerCase().includes(q) ||
+                            u.type.toLowerCase().includes(q)
+      if (!matchesSearch) return false
+    }
     
-    // Size filter
-    let matchesSize = true
-    const sizeNum = parseFloat(u.size)
-    if (!isNaN(sizeNum)) {
-      if (sizeFilter === 's') matchesSize = sizeNum <= 6.5
-      else if (sizeFilter === 'm') matchesSize = sizeNum > 6.5 && sizeNum <= 12
-      else if (sizeFilter === 'l') matchesSize = sizeNum > 12
+    if (sizeFilter !== 'all') {
+      const sizeNum = parseFloat(u.size)
+      if (!isNaN(sizeNum)) {
+        if (sizeFilter === 's' && !(sizeNum <= 6.5)) return false
+        if (sizeFilter === 'm' && !(sizeNum > 6.5 && sizeNum <= 12)) return false
+        if (sizeFilter === 'l' && !(sizeNum > 12)) return false
+      }
     }
 
-    // Status filter
-    const matchesStatus = statusFilter === 'all' || u.status === statusFilter
+    if (statusFilter !== 'all' && u.status !== statusFilter) {
+      return false
+    }
 
-    return matchesSearch && matchesSize && matchesStatus
-  })
-
-  // Floor splitting
-  const isFloor1 = (u: InspectedUnit) => {
-    const fl = (u.floorLevel || '').toLowerCase()
-    return fl.includes('1') || fl.includes('ground') || /^[A-Z]-1\d\d/.test(u.id)
-  }
-  const isFloor2 = (u: InspectedUnit) => {
-    const fl = (u.floorLevel || '').toLowerCase()
-    return fl.includes('2') || fl.includes('3') || /^[A-Z]-[23]\d\d/.test(u.id)
+    return true
   }
 
-  const floor1Units = filteredUnits.filter(isFloor1)
-  const floor2Units = filteredUnits.filter(u => isFloor2(u) || !isFloor1(u))
-
-  const zoneAUnits = floor1Units.filter((_, idx) => idx < Math.ceil(floor1Units.length / 2))
-  const zoneBUnits = floor1Units.filter((_, idx) => idx >= Math.ceil(floor1Units.length / 2))
-  const zoneCUnits = floor2Units
+  const floor1MatchingCount = permanentFloor1.filter(isUnitMatchingFilter).length
+  const floor2MatchingCount = permanentFloor2.filter(isUnitMatchingFilter).length
+  const isAnyFilterActive = statusFilter !== 'all' || sizeFilter !== 'all' || searchQuery.trim().length > 0
 
   // Dynamic KPI counts
   const totalUnitsCount = units.length
@@ -273,7 +338,116 @@ export const ManagerDashboard: React.FC = () => {
   const maintenancePercent = totalUnitsCount > 0 ? ((maintenanceUnitsCount / totalUnitsCount) * 100).toFixed(1) : '0.0'
   const overduePercent = totalUnitsCount > 0 ? ((overdueUnitsCount / totalUnitsCount) * 100).toFixed(1) : '0.0'
 
-  const currentFacilityName = facilities.find(f => f.id === selectedFacilityId)?.name || 'Cơ sở StoreHub District 1'
+  const currentFacility = useMemo(() => {
+    return facilities.find(f => f.id === selectedFacilityId) || facilities[0] || null
+  }, [facilities, selectedFacilityId])
+
+  const currentFacilityName = currentFacility?.name || 'Cơ sở Boxora'
+
+  // Dynamic facility layout blueprint configurations
+  const facilityProfile = useMemo(() => {
+    const name = (currentFacility?.name || '').toLowerCase()
+    const code = (currentFacility?.code || '').toLowerCase()
+
+    if (code.includes('d1') || name.includes('quận 1') || name.includes('boutique') || name.includes('wine')) {
+      return {
+        title: 'Sơ đồ Quận 1 Boutique & Wine Vault (Hầm Rượu VIP & Tài Liệu)',
+        floor1Name: 'Tầng 1 (Khu A VIP & Khu B Hồ Sơ)',
+        floor2Name: 'Tầng 2 (Khu C Hầm Rượu Vang 16°C)',
+        zoneAName: 'Phân khu A (Hành lang Luxury Climate Suite VIP)',
+        zoneADesc: 'Kho boutique cao cấp điều hòa riêng biệt, bảo mật vân tay & IoT (4 - 8 m²)',
+        zoneAIcon: 'diamond',
+        zoneBName: 'Phân khu B (Hành lang Lưu Trữ Hồ Sơ & Tài Liệu Doanh Nghiệp)',
+        zoneBDesc: 'Tủ hồ sơ chứng từ chống cháy, bảo mật tiêu chuẩn ngân hàng (2 - 4 m²)',
+        zoneBIcon: 'folder_special',
+        zoneCName: 'Phân khu C (Hầm Rượu Vang & Tranh Mỹ Thuật 16°C)',
+        zoneCDesc: 'Hầm điều hòa vi khí hậu chuyên sâu, kiểm soát độ ẩm 65% chống oxy hóa',
+        zoneCIcon: 'wine_bar',
+        loadingBayFloor1: 'Sảnh bốc dỡ VIP hầm B1 (Mặt tiền Lê Duẩn)',
+        corridorNorth: 'Hành lang đá hoa cương & thẻ từ riêng biệt rộng 2.2m',
+        exitFloor1: 'Lối thoát hiểm an ninh D1-01',
+        loadingBayFloor2: 'Thang máy nâng hàng chuyên dụng chống rung chấn',
+        corridorClimate: 'Hầm rượu kiểm soát nhiệt độ 16°C & độ ẩm 65%',
+        exitFloor2: 'Cửa thoát hiểm cách nhiệt áp suất dương D1-02',
+        totalAreaFloor1: 'Tổng diện tích mặt sàn Tầng 1: 980 m²',
+        totalAreaFloor2: 'Tổng diện tích mặt sàn Tầng 2: 850 m²'
+      }
+    }
+
+    if (code.includes('d7') || name.includes('quận 7') || name.includes('residential') || name.includes('gia đình')) {
+      return {
+        title: 'Sơ đồ Quận 7 Residential Hub (Khu Dân Cư & Lưu Trữ Đồ Gia Đình)',
+        floor1Name: 'Tầng 1 (Khu A Nội Thất & Khu B Chuyển Nhà)',
+        floor2Name: 'Tầng 2 (Khu C Đồ Sinh Viên & Cá Nhân)',
+        zoneAName: 'Phân khu A (Hành lang Nội Thất Cỡ Lớn Aisle North)',
+        zoneADesc: 'Kho trần cao lưu trữ sofa, giường tủ, đồ gỗ gia đình cồng kềnh (12 - 20 m²)',
+        zoneAIcon: 'chair',
+        zoneBName: 'Phân khu B (Hành lang Đồ Chuyển Nhà Tiêu Chuẩn)',
+        zoneBDesc: 'Lô kho chuyển dọn nhà & lưu đồ decor căn hộ chung cư (6 - 10 m²)',
+        zoneBIcon: 'inventory_2',
+        zoneCName: 'Phân khu C (Hành lang Tủ Đồ Sinh Viên & Cá Nhân)',
+        zoneCDesc: 'Kho mini tối ưu chi phí cho sinh viên, vali du học & dụng cụ thể thao (2 - 5 m²)',
+        zoneCIcon: 'backpack',
+        loadingBayFloor1: 'Bãi bốc dỡ xe tải 5 tấn (Mặt tiền Nguyễn Văn Linh)',
+        corridorNorth: 'Hành lang xe đẩy hàng 4 bánh rộng 2.4m',
+        exitFloor1: 'Lối thoát hiểm PCCC D7-01',
+        loadingBayFloor2: 'Thang máy tải hàng Freight Lift 1.500kg',
+        corridorClimate: 'Hành lang thông gió tự nhiên & đèn cảm ứng thông minh',
+        exitFloor2: 'Cửa thoát hiểm D7-02',
+        totalAreaFloor1: 'Tổng diện tích mặt sàn Tầng 1: 1.450 m²',
+        totalAreaFloor2: 'Tổng diện tích mặt sàn Tầng 2: 1.100 m²'
+      }
+    }
+
+    if (code.includes('td') || name.includes('thủ đức') || name.includes('tech') || name.includes('fulfillment')) {
+      return {
+        title: 'Sơ đồ Thủ Đức Tech & Fulfillment Hub (Khu Công Nghệ Cao & Bán Hàng Online)',
+        floor1Name: 'Tầng 1 (Khu A Fulfillment & Khu B Phần Cứng)',
+        floor2Name: 'Tầng 2 (Khu C Startup Locker & Box Tự Quản)',
+        zoneAName: 'Phân khu A (Hành lang Bán Lẻ & Đóng Hàng Tốc Độ Cao)',
+        zoneADesc: 'Kho trung chuyển fulfillment sàn TMĐT & hàng bán lẻ online (10 - 18 m²)',
+        zoneAIcon: 'shopping_cart',
+        zoneBName: 'Phân khu B (Hành lang Linh Kiện & Phần Cứng IT)',
+        zoneBDesc: 'Kho chống tĩnh điện lưu máy chủ, linh kiện vi mạch điện tử (8 - 15 m²)',
+        zoneBIcon: 'memory',
+        zoneCName: 'Phân khu C (Hành lang Startup Locker & Kho Tự Quản)',
+        zoneCDesc: 'Hệ thống tủ locker thông minh mở khóa QR qua app cho founder & freelancer (2 - 6 m²)',
+        zoneCIcon: 'qr_code_scanner',
+        loadingBayFloor1: 'Bãi đỗ xe van & shipper giao nhận nhanh (Khu Công Nghệ Cao)',
+        corridorNorth: 'Hành lang phân loại băng tải con lăn rộng 2.5m',
+        exitFloor1: 'Lối thoát hiểm tự động TD-01',
+        loadingBayFloor2: 'Thang máy tốc độ cao Smart Freight Lift',
+        corridorClimate: 'Hành lang Wi-Fi 6 phủ sóng toàn diện & camera AI',
+        exitFloor2: 'Cửa thoát hiểm TD-02',
+        totalAreaFloor1: 'Tổng diện tích mặt sàn Tầng 1: 1.600 m²',
+        totalAreaFloor2: 'Tổng diện tích mặt sàn Tầng 2: 1.350 m²'
+      }
+    }
+
+    // Default Tan Binh Mega Hub
+    return {
+      title: 'Sơ đồ Tân Bình Mega Hub (Kho Bãi Logistics & Vận Tải Liên Vùng)',
+      floor1Name: 'Tầng 1 (Khu A Logistics & Khu B Pallet)',
+      floor2Name: 'Tầng 2 (Khu C Vi Khí Hậu E-Commerce)',
+      zoneAName: 'Phân khu A (Hành lang Logistics Aisle North)',
+      zoneADesc: 'Lô kho mặt tiền cửa cuốn công nghiệp & tải trọng nặng (15 - 25 m²)',
+      zoneAIcon: 'local_shipping',
+      zoneBName: 'Phân khu B (Hành lang Pallet Aisle South)',
+      zoneBDesc: 'Lô kho trần cao 3.8m & hành lang xe nâng điện tiếp cận (8 - 12 m²)',
+      zoneBIcon: 'forklift',
+      zoneCName: 'Phân khu C (Hành lang Climate-Controlled 18°C - 22°C)',
+      zoneCDesc: 'Kho vi khí hậu bảo quản đồ da, rượu vang & linh kiện nhạy nhiệt độ',
+      zoneCIcon: 'ac_unit',
+      loadingBayFloor1: 'Cửa nhập Container Bay #01 (Mặt tiền QL1A/Trường Chinh)',
+      corridorNorth: 'Hành lang xe nâng pallet công nghiệp rộng 2.8m',
+      exitFloor1: 'Lối thoát hiểm PCCC E-01 (Khu Aisle North)',
+      loadingBayFloor2: 'Thang hàng tải trọng 3.000kg Freight Lift #02',
+      corridorClimate: 'Hành lang điều hòa trung tâm kiểm soát nhiệt ẩm 55%',
+      exitFloor2: 'Cửa chống cháy tự động E-02 (Khu C)',
+      totalAreaFloor1: 'Tổng diện tích mặt sàn Tầng 1: 1.850 m²',
+      totalAreaFloor2: 'Tổng diện tích mặt sàn Tầng 2: 1.200 m²'
+    }
+  }, [currentFacility])
 
   const getStatusBadgeStyle = (status: InspectedUnit['status']) => {
     switch (status) {
@@ -312,6 +486,94 @@ export const ManagerDashboard: React.FC = () => {
     return { visits, level: 'low', label: `${visits} lượt/tuần`, badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200' }
   }
 
+  // Render each physical unit slot: permanently positioned in place
+  const renderUnitCard = (unit: InspectedUnit) => {
+    const isMatching = isUnitMatchingFilter(unit)
+    const isSelected = selectedUnit?.id === unit.id
+    const zone = getUnitZone(unit)
+    const isClimate = zone === 'C'
+
+    if (!isMatching) {
+      return (
+        <button
+          key={unit.id}
+          type="button"
+          onClick={() => handleInspect(unit)}
+          className={`flex flex-col p-2.5 rounded-lg text-left bg-slate-50/70 opacity-35 hover:opacity-90 grayscale border border-dashed border-slate-300 transition-all cursor-pointer relative ${
+            isSelected ? 'ring-2 ring-slate-800 shadow-md !opacity-95 !grayscale-0' : ''
+          }`}
+          title={`Kho #${unit.id} (${unit.status}) - Không khớp bộ lọc hiện tại (bấm để xem)`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-xs font-semibold text-slate-400">#{unit.id}</span>
+            <span className="text-[9px] text-slate-400 font-mono uppercase">Slot</span>
+          </div>
+          <span className="text-[11px] text-slate-400 mt-0.5">{unit.size}</span>
+          <div className="mt-1 flex items-center justify-between text-[10px] text-slate-400">
+            <span className="flex items-center gap-1 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+              {unit.status === 'Available' ? 'Trống' :
+               unit.status === 'Rented' ? 'Thuê' :
+               unit.status === 'Pending' ? 'Chờ giao' :
+               unit.status === 'Overdue' ? 'Quá hạn' : 'Bảo trì'}
+            </span>
+          </div>
+        </button>
+      )
+    }
+
+    return (
+      <button 
+        key={unit.id}
+        type="button" 
+        onClick={() => handleInspect(unit)}
+        className={`flex flex-col p-2.5 rounded-lg text-left bg-white transition-all group relative border border-slate-200 cursor-pointer shadow-2xs ${getUnitCardBorder(unit)}`}
+        title={`Kho #${unit.id} - ${unit.status} (${unit.size})`}
+      >
+        <div className="flex items-center justify-between">
+          <span className="font-mono text-xs font-bold text-slate-900">#{unit.id}</span>
+          {isClimate ? (
+            <span className="material-symbols-outlined text-cyan-500 text-[14px]" title="Vi khí hậu 18-22°C">device_thermostat</span>
+          ) : (
+            <span className="text-[10px] font-mono text-slate-400 font-medium">
+              {unit.smartlock.startsWith('SL-') ? unit.smartlock.slice(-4) : 'IoT'}
+            </span>
+          )}
+        </div>
+        <div className="flex items-baseline justify-between mt-0.5">
+          <span className="text-[11px] text-slate-600 font-medium">{unit.size}</span>
+          <span className="text-[10px] text-slate-400 truncate max-w-[65px]" title={unit.type}>
+            {unit.type.replace('Storage', '').trim()}
+          </span>
+        </div>
+        <div className="mt-1 flex items-center justify-between">
+          <span className={`text-[10px] font-bold flex items-center gap-1 ${
+            unit.status === 'Available' ? 'text-emerald-700' :
+            unit.status === 'Rented' ? 'text-blue-700' :
+            unit.status === 'Pending' ? 'text-amber-700' :
+            unit.status === 'Overdue' ? 'text-rose-700' : 'text-rose-700'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${
+              unit.color === 'emerald' ? 'bg-emerald-500' :
+              unit.color === 'blue' ? 'bg-blue-600' :
+              unit.color === 'amber' ? 'bg-amber-500' : 'bg-rose-500'
+            }`}></span>
+            {unit.status === 'Available' ? 'Trống' :
+             unit.status === 'Rented' ? 'Thuê' :
+             unit.status === 'Pending' ? 'Chờ giao' :
+             unit.status === 'Overdue' ? 'Quá hạn' : 'Bảo trì'}
+          </span>
+        </div>
+        {showHeatmap && (
+          <span className={`mt-1 text-[9px] px-1 py-0.5 rounded font-mono flex items-center gap-0.5 ${getUnitHeatmapInfo(unit).badgeClass}`}>
+            <span className="material-symbols-outlined icon-xs text-slate-500">trending_up</span>
+            {getUnitHeatmapInfo(unit).label}
+          </span>
+        )}
+      </button>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-6 w-full">
       {/* Action Notification Toast */}
@@ -336,21 +598,10 @@ export const ManagerDashboard: React.FC = () => {
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
               {currentFacilityName} ({totalUnitsCount} Kho tự quản)
             </h1>
-            {facilities.length > 1 && (
-              <select
-                value={selectedFacilityId}
-                onChange={(e) => handleFacilityChange(e.target.value)}
-                className="px-2.5 py-1 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg border border-slate-300 focus:outline-none cursor-pointer"
-              >
-                {facilities.map(f => (
-                  <option key={f.id} value={f.id}>{f.name} ({f.code})</option>
-                ))}
-              </select>
-            )}
           </div>
 
           <p className="text-sm text-slate-600">
-            Sơ đồ cấu trúc hai tầng chuyên dụng: <strong className="text-slate-900 font-semibold">Tầng 1 (Khu A &amp; Khu B tiêu chuẩn)</strong> và <strong className="text-slate-900 font-semibold">Tầng 2 (Khu C - Kho lạnh Climate-Controlled 18°C-22°C)</strong>.
+            {facilityProfile.title}: <strong className="text-slate-900 font-semibold">{facilityProfile.floor1Name}</strong> và <strong className="text-slate-900 font-semibold">{facilityProfile.floor2Name}</strong>.
           </p>
         </div>
 
@@ -535,11 +786,11 @@ export const ManagerDashboard: React.FC = () => {
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <span>Tầng 1 (Khu A &amp; B)</span>
+                <span>{facilityProfile.floor1Name}</span>
                 <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
                   selectedFloor === 'floor1' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
                 }`}>
-                  {floor1Units.length}
+                  {isAnyFilterActive ? `${floor1MatchingCount}/${permanentFloor1.length}` : permanentFloor1.length}
                 </span>
               </button>
               <button 
@@ -551,11 +802,11 @@ export const ManagerDashboard: React.FC = () => {
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <span>Tầng 2 (Khu C Kho Lạnh)</span>
+                <span>{facilityProfile.floor2Name}</span>
                 <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
                   selectedFloor === 'floor2' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
                 }`}>
-                  {floor2Units.length}
+                  {isAnyFilterActive ? `${floor2MatchingCount}/${permanentFloor2.length}` : permanentFloor2.length}
                 </span>
               </button>
             </div>
@@ -692,10 +943,10 @@ export const ManagerDashboard: React.FC = () => {
             <div className="flex items-center justify-between px-3.5 py-2 mb-3 bg-white rounded-lg font-mono text-[11px] text-slate-600 uppercase tracking-wider border border-slate-200 shadow-2xs">
               <span className="flex items-center gap-1">
                 <span className="material-symbols-outlined text-[16px] text-slate-500">meeting_room</span> 
-                {selectedFloor === 'floor1' ? 'Cửa nhập hàng Loading Bay #01' : 'Cửa thang hàng Freight Elevator Bay #02'}
+                {selectedFloor === 'floor1' ? facilityProfile.loadingBayFloor1 : facilityProfile.loadingBayFloor2}
               </span>
               <span className="font-semibold text-slate-800 flex items-center gap-2">
-                <span>{selectedFloor === 'floor1' ? 'Hành lang lưu thông trục chính rộng 2.4m' : 'Hành lang cách nhiệt vi khí hậu rộng 2.0m'}</span>
+                <span>{selectedFloor === 'floor1' ? facilityProfile.corridorNorth : facilityProfile.corridorClimate}</span>
                 {showHeatmap && (
                   <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300">
                     Bản đồ nhiệt: Mật độ truy cập 30 ngày
@@ -704,7 +955,7 @@ export const ManagerDashboard: React.FC = () => {
               </span>
               <span className="flex items-center gap-1">
                 <span className="material-symbols-outlined text-[16px] text-rose-500">emergency</span> 
-                {selectedFloor === 'floor1' ? 'Lối thoát hiểm E-02' : 'Lối thoát hiểm E-03'}
+                {selectedFloor === 'floor1' ? facilityProfile.exitFloor1 : facilityProfile.exitFloor2}
               </span>
             </div>
 
@@ -714,8 +965,8 @@ export const ManagerDashboard: React.FC = () => {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-bold text-cyan-900 uppercase flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-cyan-600 text-[18px]">ac_unit</span>
-                      Phân khu C (Hành lang Climate-Controlled 18°C - 22°C)
+                      <span className="material-symbols-outlined text-cyan-600 text-[18px]">{facilityProfile.zoneCIcon}</span>
+                      {facilityProfile.zoneCName}
                     </span>
                     {showHeatmap && (
                       <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-900 text-[10px] font-mono font-semibold border border-blue-200 flex items-center gap-1">
@@ -724,50 +975,15 @@ export const ManagerDashboard: React.FC = () => {
                       </span>
                     )}
                   </div>
-                  <span className="text-[11px] text-slate-500">16 kho bảo quản đồ da, rượu vang &amp; vi điện tử nhạy nhiệt độ</span>
+                  <span className="text-[11px] text-slate-500">{facilityProfile.zoneCDesc}</span>
                 </div>
-                {zoneCUnits.length === 0 ? (
+                {permanentZoneC.length === 0 ? (
                   <div className="p-8 text-center text-slate-500 text-xs bg-white rounded-lg border border-slate-200">
-                    Không tìm thấy kho phù hợp bộ lọc trên Tầng 2
+                    Chưa có thiết kế kho trên Tầng 2 cho cơ sở này
                   </div>
                 ) : (
-                  <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                    {zoneCUnits.map(unit => (
-                      <button 
-                        key={unit.id}
-                        type="button" 
-                        onClick={() => handleInspect(unit)}
-                        className={`flex flex-col p-2 rounded-lg text-left bg-white transition-all group relative border border-slate-200 cursor-pointer ${getUnitCardBorder(unit)}`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-xs font-bold text-slate-900">#{unit.id}</span>
-                          <span className="material-symbols-outlined text-cyan-500 text-[13px]" title="Vi khí hậu 18-22°C">device_thermostat</span>
-                        </div>
-                        <span className="text-[11px] text-slate-500">{unit.size}</span>
-                        <span className={`mt-1 text-[10px] font-bold flex items-center gap-1 ${
-                          unit.status === 'Available' ? 'text-emerald-700' :
-                          unit.status === 'Rented' ? 'text-blue-700' :
-                          unit.status === 'Pending' ? 'text-amber-700' :
-                          unit.status === 'Overdue' ? 'text-rose-700' : 'text-rose-700'
-                        }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${
-                            unit.color === 'emerald' ? 'bg-emerald-500' :
-                            unit.color === 'blue' ? 'bg-blue-600' :
-                            unit.color === 'amber' ? 'bg-amber-500' : 'bg-rose-500'
-                          }`}></span>
-                          {unit.status === 'Available' ? 'Trống' :
-                           unit.status === 'Rented' ? 'Thuê' :
-                           unit.status === 'Pending' ? 'Chờ giao' :
-                           unit.status === 'Overdue' ? 'Quá hạn' : 'Bảo trì'}
-                        </span>
-                        {showHeatmap && (
-                          <span className={`mt-1 text-[9px] px-1 py-0.5 rounded font-mono flex items-center gap-0.5 ${getUnitHeatmapInfo(unit).badgeClass}`}>
-                            <span className="material-symbols-outlined icon-xs text-slate-500">trending_up</span>
-                            {getUnitHeatmapInfo(unit).label}
-                          </span>
-                        )}
-                      </button>
-                    ))}
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-6 gap-2">
+                    {permanentZoneC.map(unit => renderUnitCard(unit))}
                   </div>
                 )}
               </div>
@@ -778,8 +994,9 @@ export const ManagerDashboard: React.FC = () => {
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-slate-900 uppercase">
-                        Phân khu A (Hành lang Aisle North)
+                      <span className="font-mono text-xs font-bold text-slate-900 uppercase flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-slate-600 text-[18px]">{facilityProfile.zoneAIcon}</span>
+                        {facilityProfile.zoneAName}
                       </span>
                       {showHeatmap && (
                         <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 text-[10px] font-mono font-semibold border border-slate-300 flex items-center gap-1">
@@ -788,47 +1005,15 @@ export const ManagerDashboard: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    <span className="text-[11px] text-slate-500">Lô 16 kho mặt tiền cửa cuốn cơ &amp; điện tử</span>
+                    <span className="text-[11px] text-slate-500">{facilityProfile.zoneADesc}</span>
                   </div>
-                  {zoneAUnits.length === 0 ? (
+                  {permanentZoneA.length === 0 ? (
                     <div className="p-6 text-center text-slate-500 text-xs bg-white rounded-lg border border-slate-200">
-                      Không tìm thấy kho phù hợp bộ lọc tại Phân khu A
+                      Chưa có thiết kế kho tại Phân khu A cho cơ sở này
                     </div>
                   ) : (
-                    <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                      {zoneAUnits.map(unit => (
-                        <button 
-                          key={unit.id}
-                          type="button" 
-                          onClick={() => handleInspect(unit)}
-                          className={`flex flex-col p-2 rounded-lg text-left bg-white transition-all group relative border border-slate-200 cursor-pointer ${getUnitCardBorder(unit)}`}
-                        >
-                          <span className="font-mono text-xs font-bold text-slate-900">#{unit.id}</span>
-                          <span className="text-[11px] text-slate-500">{unit.size}</span>
-                          <span className={`mt-1 text-[10px] font-bold flex items-center gap-1 ${
-                            unit.status === 'Available' ? 'text-emerald-700' :
-                            unit.status === 'Rented' ? 'text-blue-700' :
-                            unit.status === 'Pending' ? 'text-amber-700' :
-                            unit.status === 'Overdue' ? 'text-rose-700' : 'text-rose-700'
-                          }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${
-                              unit.color === 'emerald' ? 'bg-emerald-500' :
-                              unit.color === 'blue' ? 'bg-blue-600' :
-                              unit.color === 'amber' ? 'bg-amber-500' : 'bg-rose-500'
-                            }`}></span>
-                            {unit.status === 'Available' ? 'Trống' :
-                             unit.status === 'Rented' ? 'Thuê' :
-                             unit.status === 'Pending' ? 'Chờ giao' :
-                             unit.status === 'Overdue' ? 'Quá hạn' : 'Bảo trì'}
-                          </span>
-                          {showHeatmap && (
-                            <span className={`mt-1 text-[9px] px-1 py-0.5 rounded font-mono flex items-center gap-0.5 ${getUnitHeatmapInfo(unit).badgeClass}`}>
-                              <span className="material-symbols-outlined icon-xs text-slate-500">trending_up</span>
-                              {getUnitHeatmapInfo(unit).label}
-                            </span>
-                          )}
-                        </button>
-                      ))}
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-6 gap-2">
+                      {permanentZoneA.map(unit => renderUnitCard(unit))}
                     </div>
                   )}
                 </div>
@@ -837,8 +1022,9 @@ export const ManagerDashboard: React.FC = () => {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-slate-900 uppercase">
-                        Phân khu B (Hành lang Aisle South &amp; Giáp kho hàng xuất)
+                      <span className="font-mono text-xs font-bold text-slate-900 uppercase flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-slate-600 text-[18px]">{facilityProfile.zoneBIcon}</span>
+                        {facilityProfile.zoneBName}
                       </span>
                       {showHeatmap && (
                         <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 text-[10px] font-mono font-semibold border border-slate-300 flex items-center gap-1">
@@ -847,47 +1033,15 @@ export const ManagerDashboard: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    <span className="text-[11px] text-slate-500">Lô 16 kho trần cao 3.8 mét &amp; Pallet tải nặng</span>
+                    <span className="text-[11px] text-slate-500">{facilityProfile.zoneBDesc}</span>
                   </div>
-                  {zoneBUnits.length === 0 ? (
+                  {permanentZoneB.length === 0 ? (
                     <div className="p-6 text-center text-slate-500 text-xs bg-white rounded-lg border border-slate-200">
-                      Không tìm thấy kho phù hợp bộ lọc tại Phân khu B
+                      Chưa có thiết kế kho tại Phân khu B cho cơ sở này
                     </div>
                   ) : (
-                    <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                      {zoneBUnits.map(unit => (
-                        <button 
-                          key={unit.id}
-                          type="button" 
-                          onClick={() => handleInspect(unit)}
-                          className={`flex flex-col p-2 rounded-lg text-left bg-white transition-all group relative border border-slate-200 cursor-pointer ${getUnitCardBorder(unit)}`}
-                        >
-                          <span className="font-mono text-xs font-bold text-slate-900">#{unit.id}</span>
-                          <span className="text-[11px] text-slate-500">{unit.size}</span>
-                          <span className={`mt-1 text-[10px] font-bold flex items-center gap-1 ${
-                            unit.status === 'Available' ? 'text-emerald-700' :
-                            unit.status === 'Rented' ? 'text-blue-700' :
-                            unit.status === 'Pending' ? 'text-amber-700' :
-                            unit.status === 'Overdue' ? 'text-rose-700' : 'text-rose-700'
-                          }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${
-                              unit.color === 'emerald' ? 'bg-emerald-500' :
-                              unit.color === 'blue' ? 'bg-blue-600' :
-                              unit.color === 'amber' ? 'bg-amber-500' : 'bg-rose-500'
-                            }`}></span>
-                            {unit.status === 'Available' ? 'Trống' :
-                             unit.status === 'Rented' ? 'Thuê' :
-                             unit.status === 'Pending' ? 'Chờ giao' :
-                             unit.status === 'Overdue' ? 'Quá hạn' : 'Bảo trì'}
-                          </span>
-                          {showHeatmap && (
-                            <span className={`mt-1 text-[9px] px-1 py-0.5 rounded font-mono flex items-center gap-0.5 ${getUnitHeatmapInfo(unit).badgeClass}`}>
-                              <span className="material-symbols-outlined icon-xs text-slate-500">trending_up</span>
-                              {getUnitHeatmapInfo(unit).label}
-                            </span>
-                          )}
-                        </button>
-                      ))}
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-6 gap-2">
+                      {permanentZoneB.map(unit => renderUnitCard(unit))}
                     </div>
                   )}
                 </div>
@@ -899,7 +1053,7 @@ export const ManagerDashboard: React.FC = () => {
               <div className="flex items-center gap-4">
                 <span className="flex items-center gap-1 font-medium">
                   <span className="material-symbols-outlined text-[16px] text-slate-600">elevator</span> 
-                  Thang máy tải hàng 3.000kg
+                  {selectedFloor === 'floor1' ? facilityProfile.loadingBayFloor1 : facilityProfile.loadingBayFloor2}
                 </span>
                 <span className="flex items-center gap-1 font-medium text-emerald-700">
                   <span className="material-symbols-outlined text-[16px]">wifi</span> 
@@ -907,7 +1061,7 @@ export const ManagerDashboard: React.FC = () => {
                 </span>
               </div>
               <span className="font-mono font-semibold text-slate-700">
-                {selectedFloor === 'floor1' ? 'Tổng diện tích mặt sàn Tầng 1: 1.850 m²' : 'Tổng diện tích mặt sàn Tầng 2: 1.200 m²'}
+                {selectedFloor === 'floor1' ? facilityProfile.totalAreaFloor1 : facilityProfile.totalAreaFloor2}
               </span>
             </div>
           </div>
@@ -943,19 +1097,33 @@ export const ManagerDashboard: React.FC = () => {
             />
             <div className="absolute bottom-2 left-2 px-2.5 py-1 bg-slate-900/85 backdrop-blur-sm rounded text-white font-mono text-[11px] flex items-center gap-1.5 shadow-sm">
               <span className="material-symbols-outlined text-[14px] text-emerald-400">photo_camera</span> 
-              Cam An Ninh Giám Sát Bay {selectedUnit.id.startsWith('A') ? 'A-North' : selectedUnit.id.startsWith('B') ? 'B-South' : 'C-Climate'}
+              Cam An Ninh Phân Khu {getUnitZone(selectedUnit)} · Slot #{selectedUnit.id}
             </div>
           </div>
 
           {/* Unit Spec Table */}
           <div className="flex flex-col gap-1.5 bg-slate-50 p-3.5 rounded-lg border border-slate-200">
             <div className="flex items-center justify-between py-1 text-xs border-b border-slate-200/50">
+              <span className="text-slate-500">Cơ sở trực thuộc:</span>
+              <span className="font-semibold text-slate-800">{selectedUnit.facilityName || currentFacilityName}</span>
+            </div>
+            <div className="flex items-center justify-between py-1 text-xs border-b border-slate-200/50">
+              <span className="text-slate-500">Vị trí &amp; Phân khu:</span>
+              <span className="font-mono font-semibold text-slate-900">{selectedUnit.floorLevel} · Phân khu {getUnitZone(selectedUnit)}</span>
+            </div>
+            <div className="flex items-center justify-between py-1 text-xs border-b border-slate-200/50">
               <span className="text-slate-500">Diện tích kho:</span>
-              <span className="font-mono font-bold text-slate-900">{selectedUnit.size} (2m × 4m × 3m)</span>
+              <span className="font-mono font-bold text-slate-900">{selectedUnit.size}</span>
             </div>
             <div className="flex items-center justify-between py-1 text-xs border-b border-slate-200/50">
               <span className="text-slate-500">Quy chuẩn kho:</span>
               <span className="font-medium text-slate-800">{selectedUnit.type}</span>
+            </div>
+            <div className="flex items-center justify-between py-1 text-xs border-b border-slate-200/50">
+              <span className="text-slate-500">Đơn giá tham chiếu:</span>
+              <span className="font-mono font-bold text-emerald-600">
+                {selectedUnit.pricePerMonth ? `${Number(selectedUnit.pricePerMonth).toLocaleString('vi-VN')} đ/tháng` : 'Liên hệ tư vấn'}
+              </span>
             </div>
             <div className="flex items-center justify-between py-1 text-xs border-b border-slate-200/50">
               <span className="text-slate-500">Khách thuê hiện tại:</span>
@@ -1073,134 +1241,86 @@ export const ManagerDashboard: React.FC = () => {
               </div>
               <div className="flex flex-col">
                 <h3 className="text-base font-bold text-slate-900">Xử lý Nợ cước Quá hạn (Overdue Handling)</h3>
-                <span className="text-xs text-slate-500">Phát hiện 02 hợp đồng vi phạm điều khoản thanh toán kỳ hạn</span>
+                <span className="text-xs text-slate-500">
+                  {overdueItems.length > 0
+                    ? `Phát hiện ${overdueItems.length < 10 ? `0${overdueItems.length}` : overdueItems.length} hợp đồng vi phạm điều khoản thanh toán kỳ hạn`
+                    : 'Không phát hiện vi phạm kỳ hạn thanh toán tại cơ sở'}
+                </span>
               </div>
             </div>
-            <span className="px-3 py-1 rounded-full bg-rose-50 text-rose-700 font-mono text-xs font-bold border border-rose-200">
-              2 Cần xử lý
+            <span className={`px-3 py-1 rounded-full font-mono text-xs font-bold border ${overdueItems.length > 0 ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+              {overdueItems.length > 0 ? `${overdueItems.length} Cần xử lý` : 'Ổn định'}
             </span>
           </div>
 
           {/* Delinquent Cases Stack */}
           <div className="flex flex-col gap-3">
-            {/* Case 1: Unit A-115 */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-slate-50 rounded-xl gap-4 border border-slate-200">
-              <div className="flex flex-col gap-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-rose-600 text-white font-mono text-xs font-bold">Kho #A-115</span>
-                  <span className="text-xs font-bold text-slate-900 truncate">Trần Quốc Tuấn (HĐ #HD-2024-0044)</span>
-                </div>
-                <div className="flex items-center gap-4 flex-wrap text-slate-600 text-xs mt-1">
-                  <span className="text-rose-600 font-semibold flex items-center gap-1">
-                    <span className="material-symbols-outlined icon-xs">schedule</span> Quá hạn 7 ngày
-                  </span>
-                  <span>Cước nợ: <strong className="text-slate-900 font-mono">3.600.000đ</strong></span>
-                  <span>Phí phạt: <strong className="text-rose-600 font-mono">250.000đ</strong></span>
-                </div>
-                <span className="text-[11px] text-slate-500 mt-1">
-                  SmartLock SL-8880: Đã kích hoạt chế độ khóa tạm quyền mã PIN và App
-                </span>
+            {overdueItems.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 text-xs bg-slate-50 rounded-xl border border-slate-200">
+                <span className="material-symbols-outlined text-[32px] text-emerald-500 mb-1">verified</span>
+                <p className="font-bold text-slate-800 text-sm">Không có nợ cước quá hạn</p>
+                <p className="text-slate-500 text-xs mt-0.5">Tất cả hợp đồng tại cơ sở đang được thanh toán đúng kỳ hạn.</p>
               </div>
-              <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-                <button 
-                  type="button" 
-                  onClick={() => setNoticeModalData({
-                    unitCode: 'A-115',
-                    tenantName: 'Trần Quốc Tuấn',
-                    contractCode: 'HD-2024-0044',
-                    daysOverdue: 7,
-                    baseDebt: '3.600.000đ',
-                    penaltyFee: '250.000đ',
-                    totalDebt: '3.850.000đ'
-                  })}
-                  className="px-3 py-2 rounded-lg bg-white text-slate-800 text-xs font-medium border border-slate-200 hover:bg-slate-100 transition-all flex items-center gap-1 shadow-xs cursor-pointer"
-                >
-                  <span className="material-symbols-outlined icon-xs">forward_to_inbox</span>
-                  <span>Gửi SMS/Email</span>
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => setConfirmModal({
-                    isOpen: true,
-                    title: 'Xác nhận Khóa tạm (Lockout) SmartLock',
-                    description: 'Hành động này sẽ ngắt mã PIN và thu hồi quyền mở khóa qua ứng dụng di động của khách hàng Trần Quốc Tuấn đối với kho #A-115 (Quá hạn 7 ngày). Thao tác này sẽ ghi nhận vào nhật ký an ninh hệ thống.',
-                    unitCode: 'Kho #A-115',
-                    confirmText: 'Xác nhận Khóa SmartLock',
-                    isDestructive: true,
-                    onConfirm: () => {
-                      triggerAction('Đã kích hoạt khóa cưỡng chế SmartLock kho #A-115 thành công!')
-                      setConfirmModal(null)
-                    }
-                  })}
-                  className="px-3 py-2 rounded-lg bg-rose-600 text-white text-xs font-semibold shadow-xs hover:bg-rose-700 transition-all flex items-center gap-1 cursor-pointer"
-                >
-                  <span className="material-symbols-outlined icon-xs">lock_person</span>
-                  <span>Khóa tạm (Lockout)</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Case 2: Unit B-120 */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-slate-50 rounded-xl gap-4 border border-slate-200">
-              <div className="flex flex-col gap-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-rose-600 text-white font-mono text-xs font-bold">Kho #B-120</span>
-                  <span className="text-xs font-bold text-slate-900 truncate">Kho Đồ Điện Tử Việt Phát (HĐ #HD-2023-8811)</span>
+            ) : (
+              overdueItems.map((item) => (
+                <div key={item.contractId} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-slate-50 rounded-xl gap-4 border border-slate-200">
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded bg-rose-600 text-white font-mono text-xs font-bold">Kho #{item.unitCode}</span>
+                      <span className="text-xs font-bold text-slate-900 truncate">{item.customerName || 'Khách hàng'} (HĐ #{item.contractCode})</span>
+                    </div>
+                    <div className="flex items-center gap-4 flex-wrap text-slate-600 text-xs mt-1">
+                      <span className="text-rose-600 font-semibold flex items-center gap-1">
+                        <span className="material-symbols-outlined icon-xs">schedule</span> Quá hạn {item.daysOverdue} ngày
+                      </span>
+                      <span>Cước nợ: <strong className="text-slate-900 font-mono">{Number(item.unpaidRent || 0).toLocaleString('vi-VN')}đ</strong></span>
+                      <span>Phí phạt: <strong className="text-rose-600 font-mono">{Number(item.totalLateFee || 0).toLocaleString('vi-VN')}đ</strong></span>
+                      <span>Tổng nợ: <strong className="text-rose-700 font-mono font-bold">{Number(item.totalDebt || 0).toLocaleString('vi-VN')}đ</strong></span>
+                    </div>
+                    <span className="text-[11px] text-slate-500 mt-1">
+                      Trạng thái: {item.overdueStage === 'ACCESS_BLOCKED' ? 'Đã khóa tạm SmartLock' : item.overdueStage === 'ELIGIBLE_FOR_SEALING' ? 'Đủ điều kiện niêm phong tài sản' : 'Đang trong thời gian ân hạn / nhắc cước'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                    <button 
+                      type="button" 
+                      onClick={() => setNoticeModalData({
+                        unitCode: item.unitCode,
+                        tenantName: item.customerName || 'Khách hàng',
+                        contractCode: item.contractCode,
+                        daysOverdue: Number(item.daysOverdue) || 0,
+                        baseDebt: `${Number(item.unpaidRent || 0).toLocaleString('vi-VN')}đ`,
+                        penaltyFee: `${Number(item.totalLateFee || 0).toLocaleString('vi-VN')}đ`,
+                        totalDebt: `${Number(item.totalDebt || 0).toLocaleString('vi-VN')}đ`
+                      })}
+                      className="px-3 py-2 rounded-lg bg-white text-slate-800 text-xs font-medium border border-slate-200 hover:bg-slate-100 transition-all flex items-center gap-1 shadow-xs cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined icon-xs">forward_to_inbox</span>
+                      <span>Gửi thông báo</span>
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setConfirmModal({
+                        isOpen: true,
+                        title: 'Xác nhận Khóa tạm (Lockout) SmartLock',
+                        description: `Hành động này sẽ ngắt mã PIN và thu hồi quyền mở khóa qua ứng dụng di động của khách hàng ${item.customerName || 'khách'} đối với kho #${item.unitCode} (Quá hạn ${item.daysOverdue} ngày). Thao tác này sẽ ghi nhận vào nhật ký an ninh hệ thống.`,
+                        unitCode: `Kho #${item.unitCode}`,
+                        confirmText: 'Xác nhận Khóa SmartLock',
+                        isDestructive: true,
+                        onConfirm: () => {
+                          triggerAction(`Đã kích hoạt khóa cưỡng chế SmartLock kho #${item.unitCode} thành công!`)
+                          setConfirmModal(null)
+                        }
+                      })}
+                      className="px-3 py-2 rounded-lg bg-rose-600 text-white text-xs font-semibold shadow-xs hover:bg-rose-700 transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined icon-xs">lock_person</span>
+                      <span>Khóa tạm (Lockout)</span>
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-4 flex-wrap text-slate-600 text-xs mt-1">
-                  <span className="text-rose-600 font-semibold flex items-center gap-1">
-                    <span className="material-symbols-outlined icon-xs">schedule</span> Quá hạn 12 ngày
-                  </span>
-                  <span>Cước nợ: <strong className="text-slate-900 font-mono">4.900.000đ</strong></span>
-                  <span>Phí phạt: <strong className="text-rose-600 font-mono">500.000đ</strong></span>
-                </div>
-                <span className="text-[11px] text-slate-500 mt-1">
-                  Đã gửi thông báo lần 2. Dự kiến lập biên bản niêm phong sau 3 ngày nữa
-                </span>
-              </div>
-              <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-                <button 
-                  type="button" 
-                  onClick={() => setNoticeModalData({
-                    unitCode: 'B-120',
-                    tenantName: 'Kho Đồ Điện Tử Việt Phát',
-                    contractCode: 'HD-2023-8811',
-                    daysOverdue: 12,
-                    baseDebt: '4.900.000đ',
-                    penaltyFee: '500.000đ',
-                    totalDebt: '5.400.000đ'
-                  })}
-                  className="px-3 py-2 rounded-lg bg-white text-slate-800 text-xs font-medium border border-slate-200 hover:bg-slate-100 transition-all flex items-center gap-1 shadow-xs cursor-pointer"
-                >
-                  <span className="material-symbols-outlined icon-xs">forward_to_inbox</span>
-                  <span>Gửi SMS/Email</span>
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => setConfirmModal({
-                    isOpen: true,
-                    title: 'Xác nhận Lập Biên Bản Niêm Phong Kho',
-                    description: 'Quy trình lập biên bản niêm phong tài sản đối với kho #B-120 (Kho Đồ Điện Tử Việt Phát - nợ quá hạn 12 ngày) sẽ xuất biên bản điện tử và gửi thông báo khẩn cấp tới bộ phận Pháp chế và Khách hàng.',
-                    unitCode: 'Kho #B-120',
-                    confirmText: 'Lập & Ký Biên Bản',
-                    isDestructive: false,
-                    onConfirm: () => {
-                      setConfirmModal(null)
-                      setSealingModalData({
-                        unitCode: 'B-120',
-                        tenantName: 'Kho Đồ Điện Tử Việt Phát',
-                        contractCode: 'HD-2023-8811',
-                        overdueDays: 12,
-                        totalDebt: '5.400.000đ'
-                      })
-                    }
-                  })}
-                  className="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold shadow-xs hover:bg-blue-700 transition-all flex items-center gap-1 cursor-pointer"
-                >
-                  <span>Lập Biên Bản</span>
-                </button>
-              </div>
-            </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -1212,8 +1332,10 @@ export const ManagerDashboard: React.FC = () => {
                 <span className="material-symbols-outlined text-[22px]">badge</span>
               </div>
               <div className="flex flex-col">
-                <h3 className="text-base font-bold text-slate-900">Nhân sự Trực ca (4/6 Nhân viên)</h3>
-                <span className="text-xs text-slate-500">Ca sáng: 07:00 - 15:30 ({currentFacilityName})</span>
+                <h3 className="text-base font-bold text-slate-900">
+                  Nhân sự Trực ca ({staffList.length} Nhân viên)
+                </h3>
+                <span className="text-xs text-slate-500">Ca trực thực tế tại {currentFacilityName}</span>
               </div>
             </div>
             <button 
@@ -1226,90 +1348,32 @@ export const ManagerDashboard: React.FC = () => {
           </div>
 
           {/* Staff List */}
-          <div className="flex flex-col gap-2 divide-y divide-slate-100">
-            {/* Staff 1 */}
-            <div className="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-slate-50 transition-all">
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <img 
-                    className="w-10 h-10 rounded-full object-cover border border-slate-200" 
-                    src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80" 
-                    alt="Lê Hoàng Nam"
-                  />
-                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white"></span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-xs font-bold text-slate-900">Lê Hoàng Nam</span>
-                  <span className="text-[11px] text-slate-500">Lễ tân Check-in &amp; Ký HĐ điện tử</span>
-                </div>
+          <div className="flex flex-col gap-2 divide-y divide-slate-100 max-h-96 overflow-y-auto pr-1">
+            {staffList.length === 0 ? (
+              <div className="p-6 text-center text-slate-500 text-xs">
+                Chưa có nhân sự nào được phân công tại cơ sở này.
               </div>
-              <span className="px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-mono text-[11px] font-bold border border-emerald-200">
-                Đang ở Quầy
-              </span>
-            </div>
-
-            {/* Staff 2 */}
-            <div className="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-slate-50 transition-all">
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <img 
-                    className="w-10 h-10 rounded-full object-cover border border-slate-200" 
-                    src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80" 
-                    alt="Trịnh Đình Dũng"
-                  />
-                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white"></span>
+            ) : (
+              staffList.slice(0, 6).map((staff, idx) => (
+                <div key={staff.id || idx} className="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-slate-50 transition-all">
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <div className="w-10 h-10 rounded-full bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-sm border border-slate-300">
+                        {(staff.fullName || staff.username || 'NV').slice(0, 2).toUpperCase()}
+                      </div>
+                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white"></span>
+                    </div>
+                    <div className="flex flex-col text-left">
+                      <span className="text-xs font-bold text-slate-900">{staff.fullName || staff.username}</span>
+                      <span className="text-[11px] text-slate-500">{staff.email || staff.phone || staff.facilityName || 'Nhân viên Boxora'}</span>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-mono text-[11px] font-bold border border-emerald-200">
+                    {staff.isActive ? 'Đang trực' : 'Ngoại tuyến'}
+                  </span>
                 </div>
-                <div className="flex flex-col">
-                  <span className="text-xs font-bold text-slate-900">Trịnh Đình Dũng</span>
-                  <span className="text-[11px] text-slate-500">Kỹ thuật viên Trưởng (Sửa #A-110)</span>
-                </div>
-              </div>
-              <span className="px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-700 font-mono text-[11px] font-bold border border-blue-200">
-                Tại Khu A
-              </span>
-            </div>
-
-            {/* Staff 3 */}
-            <div className="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-slate-50 transition-all">
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <img 
-                    className="w-10 h-10 rounded-full object-cover border border-slate-200" 
-                    src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120&auto=format&fit=crop&q=80" 
-                    alt="Phạm Văn Kiên"
-                  />
-                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white"></span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-xs font-bold text-slate-900">Phạm Văn Kiên</span>
-                  <span className="text-[11px] text-slate-500">Bảo vệ &amp; Tuần tra An ninh IoT</span>
-                </div>
-              </div>
-              <span className="px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-800 font-mono text-[11px] font-bold border border-amber-200">
-                Tuần tra Bay B
-              </span>
-            </div>
-
-            {/* Staff 4 */}
-            <div className="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-slate-50 transition-all">
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <img 
-                    className="w-10 h-10 rounded-full object-cover border border-slate-200" 
-                    src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&auto=format&fit=crop&q=80" 
-                    alt="Trần Thùy Linh"
-                  />
-                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white"></span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-xs font-bold text-slate-900">Trần Thùy Linh</span>
-                  <span className="text-[11px] text-slate-500">Điều phối Bàn giao &amp; Ký gửi</span>
-                </div>
-              </div>
-              <span className="px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 font-mono text-[11px] font-bold border border-slate-200">
-                Phòng Vận Hành
-              </span>
-            </div>
+              ))
+            )}
           </div>
         </div>
       </section>
