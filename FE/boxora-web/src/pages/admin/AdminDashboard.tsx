@@ -269,9 +269,9 @@ export const AdminDashboard: React.FC = () => {
       <div className="relative w-full overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-sm border border-slate-200">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold mb-2 ${isSampleUserData ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-cyan-50 border-cyan-200 text-cyan-800'}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${isSampleUserData ? 'bg-amber-500' : 'bg-cyan-500'}`}></span>
-              {isSampleUserData ? 'Đang hiển thị dữ liệu mẫu' : 'Quản trị hệ thống'}
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-800 text-xs font-mono font-semibold uppercase tracking-wider mb-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span>
+              Hệ thống phân quyền &amp; Quản trị vai trò
             </div>
             <h1 className="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight font-headline">
               Quản lý người dùng &amp; phân quyền
@@ -609,7 +609,7 @@ export const AdminDashboard: React.FC = () => {
                   void fetchLogs(nextMode)
                 }}
                 className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
-                  isLoginHistoryMode ? 'bg-orange-600 text-white border-orange-600' : 'bg-slate-50 text-slate-700 border-slate-200'
+                  isLoginHistoryMode ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-50 text-slate-700 border-slate-200'
                 }`}
               >
                 {isLoginHistoryMode ? 'Chỉ lịch sử Login' : 'Tất cả thao tác'}
@@ -779,7 +779,7 @@ export const AdminDashboard: React.FC = () => {
                   </button>
                   <button 
                     type="submit" 
-                    className="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold hover:bg-orange-700 transition-all shadow-sm"
+                    className="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-all shadow-sm"
                   >
                     Tạo Tài Khoản
                   </button>

@@ -1,11 +1,12 @@
 import { api } from '../lib/axios'
 
-export type SupportTicketCategory = 'PIN_CODE' | 'LOCK_ISSUE' | 'FACILITY_DAMAGE' | 'PAYMENT_ISSUE' | 'OTHER'
+export type SupportTicketCategory = 'PIN_CODE' | 'LOCK_ISSUE' | 'FACILITY_DAMAGE' | 'PAYMENT_ISSUE' | 'OTHER' | string
 
 export interface SupportTicketRecord {
   id: string
-  ticketCode: string
-  customerId: string
+  ticketCode?: string
+  ticketNumber?: string
+  customerId?: string
   customerName?: string
   customerPhone?: string
   bookingId?: string
@@ -13,30 +14,38 @@ export interface SupportTicketRecord {
   category: SupportTicketCategory
   title: string
   description: string
-  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
-  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+  status: 'OPEN' | 'PENDING' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED' | string
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT' | string
   resolutionNote?: string
   createdAt: string
+  updatedAt?: string
+  evidenceUrls?: string[]
 }
+
+export type SupportTicketResponse = SupportTicketRecord
 
 export interface CreateSupportTicketRequest {
   customerId?: string
   bookingId?: string
-  category: SupportTicketCategory | string
+  category: SupportTicketCategory
   title: string
   description: string
-  priority?: SupportTicketRecord['priority'] | string
+  priority?: string
   attachmentUrl?: string
+  imageEvidence?: string
+  evidenceUrls?: string[]
 }
 
+export type SupportTicketPayload = CreateSupportTicketRequest
+
 export const supportTicketService = {
-  async create(request: CreateSupportTicketRequest) {
-    const response = await api.post('/api/v1/support-tickets', request)
+  async createTicket(data: CreateSupportTicketRequest) {
+    const response = await api.post('/api/v1/support-tickets', data)
     return response.data?.data as SupportTicketRecord
   },
 
-  async createTicket(request: CreateSupportTicketRequest) {
-    return this.create(request)
+  async create(data: CreateSupportTicketRequest) {
+    return this.createTicket(data)
   },
 
   async getQueue() {
@@ -46,34 +55,46 @@ export const supportTicketService = {
 
   async getMyTickets(customerId?: string) {
     try {
-      const response = await api.get('/api/v1/support-tickets/my', {
+      const response = await api.get('/api/v1/support-tickets/my-tickets', {
         params: customerId ? { customerId } : undefined,
       })
       return (response.data?.data || []) as SupportTicketRecord[]
     } catch {
-      return []
+      try {
+        const fallback = await api.get('/api/v1/support-tickets/my', {
+          params: customerId ? { customerId } : undefined,
+        })
+        return (fallback.data?.data || []) as SupportTicketRecord[]
+      } catch {
+        return []
+      }
     }
   },
 
-  async resolve(id: string, resolutionNote: string) {
-    const response = await api.patch(`/api/v1/support-tickets/${id}/resolve`, undefined, {
+  async resolveTicket(id: string, resolutionNote = 'Đã xử lý hiện trường bởi nhân viên trực ca') {
+    const response = await api.patch(`/api/v1/support-tickets/${id}/resolve`, null, {
       params: { resolutionNote },
     })
     return response.data?.data as SupportTicketRecord
   },
 
-  async resolveTicket(id: string, resolutionNote: string) {
-    return this.resolve(id, resolutionNote)
+  async resolve(id: string, resolutionNote: string) {
+    return this.resolveTicket(id, resolutionNote)
+  },
+
+  async uploadEvidence(file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await api.post('/api/v1/support-tickets/upload-evidence', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return response.data?.data
   },
 
   async uploadAttachment(file: File): Promise<string> {
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const response = await api.post('/api/v1/support-tickets/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      return (response.data?.data?.url || response.data?.url || '') as string
+      const result = await this.uploadEvidence(file)
+      return (result?.url || result || '') as string
     } catch {
       return URL.createObjectURL(file)
     }
