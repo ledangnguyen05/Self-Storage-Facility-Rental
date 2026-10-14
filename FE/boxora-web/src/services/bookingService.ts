@@ -8,9 +8,23 @@ export const bookingService = {
     return response.data?.data as Booking
   },
 
+  async createBooking(data: { storageUnitId: string; customerId?: string; startDate: string; rentalMonths: number; totalRentalFee?: number }) {
+    return this.create(data)
+  },
+
+  async getMyActive(customerId?: string) {
+    const response = await api.get('/api/v1/bookings/my-active', { params: customerId ? { customerId } : undefined })
+    return response.data?.data as Booking[]
+  },
+
   async getUpcomingArrivals() {
     const response = await api.get('/api/v1/bookings/arrivals')
     return response.data?.data as Booking[]
+  },
+
+  async getAccessCredentials(id: string) {
+    const response = await api.get(`/api/v1/bookings/${id}/access-credentials`)
+    return response.data?.data as { accessPin: string; qrAccessToken: string }
   },
 
   async getAll(params?: { customerId?: string; status?: string; page?: number; size?: number }) {
@@ -51,5 +65,12 @@ export const bookingService = {
   async getBookingPinByUnit(unitId: string) {
     const response = await api.get(`/api/v1/bookings/unit/${unitId}/access-pin`)
     return response.data?.data as { bookingId: string; bookingCode: string; pin: string; qrAccessToken: string }
+  },
+
+  async renewBooking(id: string, extraMonths: number = 1) {
+    const response = await api.post(`/api/v1/bookings/${id}/renew`, null, {
+      params: { extraMonths },
+    })
+    return response.data?.data as Booking
   },
 }

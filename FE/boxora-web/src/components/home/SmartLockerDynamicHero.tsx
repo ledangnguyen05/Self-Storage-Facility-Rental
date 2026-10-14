@@ -183,19 +183,11 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
             <span className="relative h-2 w-2 rounded-full bg-lime-500" />
           </span>
           <Sparkles size={14} className="text-blue-600" />
-<<<<<<< HEAD
           Dành cho cá nhân và doanh nghiệp
         </div>
 
         <h1 data-hero-copy id="boxora-hero-title" className="max-w-6xl text-[clamp(2.2rem,min(7.4vw,10svh),6.4rem)] font-semibold leading-[0.96] tracking-[-0.045em] text-slate-950">
           Không gian lưu trữ linh hoạt
-=======
-          Không gian lưu trữ thế hệ mới
-        </div>
-
-        <h1 data-hero-copy id="boxora-hero-title" className="max-w-6xl text-[clamp(2.2rem,min(7.4vw,10svh),6.4rem)] font-semibold leading-[0.96] tracking-[-0.045em] text-slate-950">
-          Kho lưu trữ thông minh
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
           <img
             src="/logo.png"
             alt="Boxora"
@@ -204,18 +196,13 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
         </h1>
 
         <p data-hero-copy className="mx-auto mt-4 max-w-2xl text-sm font-medium leading-6 text-slate-700 sm:mt-5 sm:text-base sm:leading-7 lg:text-lg">
-<<<<<<< HEAD
           Chọn diện tích phù hợp <span className="mx-1 text-cyan-600">•</span> Vào kho 24/7 bằng mã PIN
-=======
-          Mở khóa IoT vân tay một chạm <span className="mx-1 text-cyan-600">•</span> Giám sát 24/7
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
         </p>
 
         <div data-hero-copy className="mt-5 flex flex-wrap items-center justify-center gap-3 sm:mt-6">
           <button
             type="button"
             onClick={onBookNow}
-<<<<<<< HEAD
             className="book-now-effect-button"
           >
             <span className="book-now-effect-button__gradient-layer" aria-hidden="true" />
@@ -229,12 +216,6 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
               Đặt kho ngay
               <ArrowRight size={16} focusable="false" />
             </span>
-=======
-            className="group inline-flex min-h-12 items-center gap-2.5 rounded-full bg-gradient-to-r from-blue-700 via-blue-600 to-cyan-500 px-6 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(8,102,245,.24)] transition duration-200 hover:-translate-y-0.5 hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 focus-visible:ring-offset-2"
-          >
-            Đặt kho ngay
-            <ArrowRight size={16} className="transition-transform duration-200 group-hover:translate-x-1" />
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
           </button>
           <a
             href="#services"

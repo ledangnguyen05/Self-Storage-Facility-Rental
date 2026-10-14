@@ -20,6 +20,68 @@ import { BrandLogo } from '../../components/common/BrandLogo'
 import { AccountProfileModal } from '../../components/common/AccountProfileModal'
 import { Facility, StorageUnit } from '../../types'
 
+const FACILITY_COORDS: Record<string, { lat: number; lng: number }> = {
+  'HCM-D1': { lat: 10.7745, lng: 106.7025 },
+  'HCM-D7': { lat: 10.7325, lng: 106.7005 },
+  'HCM-TD': { lat: 10.8540, lng: 106.7865 },
+}
+
+const mapBackendUnitToStorageUnitType = (
+  unit: any,
+  facilityMap: Map<string, FacilityLocation>
+): StorageUnitType => {
+  const fac = facilityMap.get(unit.facilityId)
+  const isCold =
+    unit.unitTypeName?.toLowerCase().includes('cold') ||
+    unit.unitTypeName?.toLowerCase().includes('climate')
+  const area = unit.areaSqMeters || 6
+  let category: 'mini' | 'personal' | 'business' | 'special' = 'personal'
+  if (isCold) category = 'special'
+  else if (area <= 3) category = 'mini'
+  else if (area <= 8) category = 'personal'
+  else category = 'business'
+
+  let capacityDesc =
+    'Phù hợp nội thất chuyển nhà 1-2 phòng ngủ, nệm, sofa, máy giặt và 15-20 thùng carton.'
+  let itemsExample = ['Nội thất căn hộ', 'Tủ lạnh, Máy giặt', '15-20 Thùng đồ']
+  if (category === 'mini') {
+    capacityDesc = 'Phù hợp 1-3 vali cỡ lớn, balo du lịch, đồ gia dụng nhỏ, thùng hồ sơ tài liệu.'
+    itemsExample = ['2-3 Vali lớn', 'Thùng hồ sơ', 'Hộp đồ cá nhân']
+  } else if (category === 'business') {
+    capacityDesc =
+      'Kho quy mô lớn có thể chứa pallet hàng hóa, vật tư sự kiện, thiết bị máy móc kinh doanh.'
+    itemsExample = ['Pallet hàng hóa', 'Hàng TMĐT', 'Hồ sơ doanh nghiệp']
+  } else if (category === 'special') {
+    capacityDesc =
+      'Kho vi khí hậu kiểm soát nhiệt độ 18°C-22°C và độ ẩm, phù hợp bảo quản rượu vang, đồ da cao cấp.'
+    itemsExample = ['Rượu vang cao cấp', 'Bộ sưu tập đồ da', 'Tranh nghệ thuật']
+  }
+
+  const statusMapped: 'Sẵn sàng' | 'Đang thuê' | 'Bảo trì' =
+    unit.status === 'AVAILABLE' ? 'Sẵn sàng' : unit.status === 'OCCUPIED' ? 'Đang thuê' : 'Bảo trì'
+
+  return {
+    id: `#${unit.unitCode}`,
+    backendId: unit.id,
+    name: `${unit.unitTypeName || 'Kho tiêu chuẩn'} #${unit.unitCode}`,
+    category,
+    size: `${area} m²`,
+    volume: `${Math.round(area * 2.8)} m³`,
+    capacityDesc,
+    itemsExample,
+    monthlyPrice: `${Number(unit.pricePerMonth || 1500000).toLocaleString('vi-VN')}₫`,
+    monthlyPriceNumeric: Number(unit.pricePerMonth || 1500000),
+    temp: isCold ? '18.5°C' : '21.5°C',
+    humidity: '45%',
+    status: statusMapped,
+    facilityId: unit.facilityId,
+    facilityName: unit.facilityName || fac?.name || 'Boxora Storage',
+    facilityAddress: fac?.address || 'Cơ sở Boxora',
+    floorLocation: `${unit.floorLevel || 'Tầng 1'} • SmartLock ${unit.smartLockSerial || 'IoT'}`,
+    coords: fac?.coords || { lat: 10.7745, lng: 106.6925 },
+  }
+}
+
 export const UnitsExplorerPage: React.FC = () => {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()

@@ -60,7 +60,6 @@ export const authService = {
     return response.data
   },
 
-<<<<<<< HEAD
   async updateProfile(data: { fullName: string; phone: string }): Promise<User> {
     const response = await api.put('/api/v1/auth/profile', data)
     const profile = response.data?.data
@@ -77,8 +76,6 @@ export const authService = {
     } as User
   },
 
-=======
->>>>>>> 49b11ab84475932c0da3237713e904988a55ab23
   async googleLogin(idToken: string, mode: 'LOGIN' | 'REGISTER' = 'LOGIN'): Promise<LoginResponse> {
     const response = await api.post('/api/v1/auth/google', { idToken, mode })
     return response.data
