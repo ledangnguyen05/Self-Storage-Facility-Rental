@@ -288,6 +288,34 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<BookingResponse> getMyBookings(UUID customerId) {
+        UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
+        if (currentUserId != null && customerId != null && !currentUserId.equals(customerId)) {
+            String role = requestContext.currentUserRole();
+            if (!"ADMIN".equalsIgnoreCase(role) && !"FACILITY_MANAGER".equalsIgnoreCase(role) && !"STAFF".equalsIgnoreCase(role)) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        }
+        UUID targetCustomerId = customerId != null ? customerId : currentUserId;
+        List<Booking> bookings;
+        if (targetCustomerId != null) {
+            bookings = bookingRepository.findByCustomer_Id(targetCustomerId);
+        } else {
+            bookings = bookingRepository.findAll();
+        }
+        return bookings.stream()
+                .sorted((b1, b2) -> {
+                    if (b1.getCreatedAt() != null && b2.getCreatedAt() != null) {
+                        return b2.getCreatedAt().compareTo(b1.getCreatedAt());
+                    }
+                    return 0;
+                })
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<BookingResponse> getMyActiveBookings(UUID customerId) {
         UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
         if (currentUserId != null && customerId != null && !currentUserId.equals(customerId)) {
