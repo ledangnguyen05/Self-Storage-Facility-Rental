@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { useOutletContext, Link } from 'react-router-dom'
+import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { bookingService } from '../../services/bookingService'
 import { handoverService } from '../../services/handoverService'
@@ -14,6 +14,7 @@ import { HandoverCheckInWorkbench } from './components/HandoverCheckInWorkbench'
 import { QrCameraCheckInModal } from './components/QrCameraCheckInModal'
 
 export const StaffDashboard: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuth()
   const { selectedFacility, facilities: contextFacilities } = useOutletContext<{
     selectedFacility?: string
@@ -37,6 +38,10 @@ export const StaffDashboard: React.FC = () => {
   const [activeBookingId, setActiveBookingId] = useState<string>('')
   const [occupancyData, setOccupancyData] = useState<OccupancyReport | null>(null)
   const [focusedBookingNotice, setFocusedBookingNotice] = useState<string | null>(null)
+  const [bookingDetail, setBookingDetail] = useState<Booking | null>(null)
+  const [bookingDetailLoading, setBookingDetailLoading] = useState(false)
+  const [bookingDetailError, setBookingDetailError] = useState('')
+  const bookingDetailId = searchParams.get('bookingId')
 
   // Master Key Emergency Override Modal (BR-RULE-009)
   const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false)
@@ -48,6 +53,7 @@ export const StaffDashboard: React.FC = () => {
   const [witnessPassword, setWitnessPassword] = useState('')
   const [isEmergencyCalling, setIsEmergencyCalling] = useState(false)
   const [emergencyResult, setEmergencyResult] = useState<string | null>(null)
+  const [emergencyError, setEmergencyError] = useState<string | null>(null)
   const [facilities, setFacilities] = useState<any[]>([])
 
   // Inspection Return state
@@ -75,13 +81,45 @@ export const StaffDashboard: React.FC = () => {
   useEffect(() => {
     const targetFacility = (!selectedFacility || selectedFacility === 'ALL') ? undefined : selectedFacility
     fetchArrivals(targetFacility)
-    fetchOccupancy()
+    fetchOccupancy(targetFacility)
     loadFacilities()
     loadTicketQueue()
     loadActiveRentals(targetFacility)
     loadRadarUnits(targetFacility)
     loadShiftPayments(targetFacility)
   }, [selectedFacility])
+
+  useEffect(() => {
+    if (!bookingDetailId) {
+      setBookingDetail(null)
+      setBookingDetailError('')
+      setBookingDetailLoading(false)
+      return
+    }
+
+    let isCurrent = true
+    setBookingDetail(null)
+    setBookingDetailError('')
+    setBookingDetailLoading(true)
+    bookingService.getById(bookingDetailId)
+      .then(booking => {
+        if (isCurrent) setBookingDetail(booking)
+      })
+      .catch(() => {
+        if (isCurrent) setBookingDetailError('Không tải được yêu cầu đặt kho tại cơ sở của bạn.')
+      })
+      .finally(() => {
+        if (isCurrent) setBookingDetailLoading(false)
+      })
+
+    return () => { isCurrent = false }
+  }, [bookingDetailId])
+
+  const closeBookingDetail = () => {
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('bookingId')
+    setSearchParams(nextParams, { replace: true })
+  }
 
   const loadShiftPayments = async (facilityId?: string) => {
     setIsShiftPaymentsLoading(true)
@@ -121,11 +159,10 @@ export const StaffDashboard: React.FC = () => {
           filtered = filtered.filter(b => b.facilityId === facilityId || !b.facilityId)
         }
         setActiveRentals(filtered)
-        if (!selectedReturnBookingId && filtered.length > 0) {
-          setSelectedReturnBookingId(filtered[0].id)
-        }
+        if (!filtered.some(booking => booking.id === selectedReturnBookingId)) setSelectedReturnBookingId('')
       } else {
         setActiveRentals([])
+        setSelectedReturnBookingId('')
       }
     } catch {
       setActiveRentals([])
@@ -170,9 +207,10 @@ export const StaffDashboard: React.FC = () => {
     }
   }
 
-  const fetchOccupancy = async () => {
+  const fetchOccupancy = async (facilityId?: string) => {
     try {
-      const res = await reportService.getOccupancyReport()
+      const scopedFacilityId = facilityId ?? ((!selectedFacility || selectedFacility === 'ALL') ? undefined : selectedFacility)
+      const res = await reportService.getOccupancyReport(scopedFacilityId)
       if (res) {
         setOccupancyData(res)
       }
@@ -202,19 +240,20 @@ export const StaffDashboard: React.FC = () => {
     e.preventDefault()
     setIsEmergencyCalling(true)
     setEmergencyResult(null)
+    setEmergencyError(null)
     try {
       await masterKeyService.executeOverride({
         facilityId: emergencyFacilityId,
         category: emergencyCategory,
         severity: emergencySeverity,
         witnessUserId: witnessStaffId,
-        witnessPassword: witnessPassword || 'Witness@123',
+        witnessPassword,
         reason: emergencyReason
       })
       setEmergencyResult('Lệnh khẩn cấp đã được kích hoạt thành công qua Master Key Service. Cửa sảnh và rào chắn kiểm soát mở cưỡng chế trong 60 giây.')
-    } catch (err) {
-      console.warn('MasterKey override API fallback:', err)
-      setEmergencyResult('Lệnh mở cửa khẩn cấp (BR-RULE-009) đã ghi nhận vào audit log. Khóa cơ tổng và rào chắn an ninh đã mở cưỡng chế trong 60 giây.')
+    } catch (err: any) {
+      console.warn('MasterKey override failed:', err)
+      setEmergencyError(err?.response?.data?.message || 'Không thể xác thực lệnh Master Key. Chưa có thao tác mở cửa nào được xác nhận.')
     } finally {
       setIsEmergencyCalling(false)
     }
@@ -290,8 +329,28 @@ export const StaffDashboard: React.FC = () => {
     }, 1500)
   }
 
-  const currentReturnBooking = activeRentals.find(r => r.id === (selectedReturnBookingId || activeRentals[0]?.id)) || activeRentals[0]
+  const currentReturnBooking = activeRentals.find(r => r.id === selectedReturnBookingId)
   const returnDepositAmt = currentReturnBooking ? (currentReturnBooking.depositPaid || currentReturnBooking.depositAmount || 0) : 0
+  const facilityTotalUnits = facilities.find(facility => facility.id === selectedFacility)?.totalUnits
+  const facilityOccupancy = occupancyData?.byFacility?.find(facility => facility.facilityId === selectedFacility)
+  const fallbackReportTotal = selectedFacility && selectedFacility !== 'ALL'
+    ? facilityOccupancy?.totalUnits || 0
+    : occupancyData?.byFacility?.reduce((sum, facility) => sum + facility.totalUnits, 0) || 0
+  const fallbackReportOccupied = selectedFacility && selectedFacility !== 'ALL'
+    ? facilityOccupancy?.occupiedUnits || 0
+    : occupancyData?.byFacility?.reduce((sum, facility) => sum + facility.occupiedUnits, 0) || 0
+  const reportedTotalUnits = occupancyData?.systemSummary?.totalUnits || fallbackReportTotal
+  const totalFacilityUnits = reportedTotalUnits || radarUnits.length || facilityTotalUnits || 0
+  const occupiedFacilityUnits = reportedTotalUnits
+    ? (occupancyData?.systemSummary?.totalUnits
+      ? occupancyData.systemSummary.occupiedUnits
+      : fallbackReportOccupied)
+    : radarUnits.length
+      ? radarUnits.filter(unit => unit.status === 'OCCUPIED').length
+      : activeRentals.length
+  const occupancyRate = totalFacilityUnits > 0
+    ? (occupiedFacilityUnits / totalFacilityUnits) * 100
+    : 0
 
   // Live shift revenue calculations from DB
   const shiftTotalCollected = useMemo(() => {
@@ -339,7 +398,7 @@ export const StaffDashboard: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col gap-6 text-left max-w-7xl mx-auto">
+    <div className="staff-dashboard-page flex flex-col gap-6 text-left max-w-7xl mx-auto">
       
       {/* 1. TOP OPERATIONAL SHIFT HEADER */}
       <div className="w-full bg-white border border-slate-200/90 shadow-2xs rounded-2xl p-5 sm:p-6">
@@ -362,7 +421,7 @@ export const StaffDashboard: React.FC = () => {
                 </span>
               </div>
               <span className="text-xs text-slate-500 mt-1">
-                Trực ca: <strong className="text-slate-900">{user?.fullName || user?.username || 'Nhân viên trực ca'}</strong> • Phụ trách tiếp đón, kiểm toán hiện trường và xử lý sự cố phát sinh.
+                Phụ trách tiếp đón, kiểm toán hiện trường và xử lý sự cố phát sinh.
               </span>
             </div>
           </div>
@@ -383,14 +442,6 @@ export const StaffDashboard: React.FC = () => {
             >
               <span className="material-symbols-outlined text-[18px]">person_add</span>
               <span>Khách Walk-in Vãng Lai</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsEmergencyModalOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[18px]">lock_open</span>
-              <span>Mở Cửa Khẩn Cấp (Master Key)</span>
             </button>
           </div>
         </div>
@@ -473,16 +524,16 @@ export const StaffDashboard: React.FC = () => {
           </div>
           <div className="mt-4 flex items-baseline gap-2">
             <span className="font-headline text-3xl font-extrabold text-slate-900 tabular-nums">
-              {occupancyData?.systemSummary?.occupancyRate ? `${occupancyData.systemSummary.occupancyRate.toFixed(1)}%` : '0.0%'}
+              {occupancyRate.toFixed(1)}%
             </span>
             <span className="font-mono text-xs text-slate-500">
-              {occupancyData?.systemSummary?.occupiedUnits ?? 0}/{occupancyData?.systemSummary?.totalUnits ?? 0} KHO
+              {occupiedFacilityUnits}/{totalFacilityUnits} KHO
             </span>
           </div>
           <div className="mt-3 w-full bg-slate-100 rounded-full h-2 overflow-hidden">
             <div 
               className="bg-blue-600 h-full rounded-full transition-all" 
-              style={{ width: `${occupancyData?.systemSummary?.occupancyRate ?? 0}%` }}
+              style={{ width: `${occupancyRate}%` }}
             ></div>
           </div>
         </div>
@@ -516,7 +567,7 @@ export const StaffDashboard: React.FC = () => {
           <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
             <span className="text-slate-500 font-medium">Khung giờ:</span>
             <select className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer">
-              <option value="current">Ca Hiện Tại (08:00 - 12:00)</option>
+              <option value="current">Ca Hiện Tại (08:00 - 16:30)</option>
               <option value="today">Trọn Vẹn Hôm Nay</option>
             </select>
           </div>
@@ -531,7 +582,6 @@ export const StaffDashboard: React.FC = () => {
           {/* Handover & Check-in Operator Workbench */}
           <HandoverCheckInWorkbench
             arrivals={arrivals}
-            onOpenQrScanner={() => setIsQrScannerOpen(true)}
             activeBookingId={activeBookingId}
             onHandoverComplete={(bookingId) => {
               setCheckInSuccessMsg(`Hoàn tất quy trình check-in bàn giao buồng kho cho đơn #${bookingId}`)
@@ -678,7 +728,7 @@ export const StaffDashboard: React.FC = () => {
 
         {/* Right Side: Return & Condition Inspection Flow (Col 4) */}
         <div className="xl:col-span-4 flex flex-col gap-6">
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col h-full justify-between">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col">
             <div>
               <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
                 <div className="flex items-center gap-2">
@@ -696,10 +746,15 @@ export const StaffDashboard: React.FC = () => {
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-[10px] uppercase font-bold text-slate-400">Hồ Sơ Cần Nghiệm Thu</span>
                     <select
-                      value={selectedReturnBookingId || activeRentals[0]?.id}
-                      onChange={(e) => setSelectedReturnBookingId(e.target.value)}
+                      value={selectedReturnBookingId}
+                      onChange={(e) => {
+                        setSelectedReturnBookingId(e.target.value)
+                        setReturnConfirmed(false)
+                        setSettlementSuccessMsg(null)
+                      }}
                       className="px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-800 font-mono text-[10px] font-bold focus:outline-none"
                     >
+                      <option value="">Chọn đơn trả kho</option>
                       {activeRentals.map(r => (
                         <option key={r.id} value={r.id}>
                           {r.bookingCode} - Kho #{r.unitCode}
@@ -707,14 +762,20 @@ export const StaffDashboard: React.FC = () => {
                       ))}
                     </select>
                   </div>
-                  <div className="mt-1">
-                    <span className="font-bold text-slate-900 text-sm block">{currentReturnBooking?.customerName || 'Khách thuê'}</span>
-                    <span className="text-xs text-slate-500">SĐT: {currentReturnBooking?.customerPhone || 'N/A'}</span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
-                    <span className="text-slate-800">Vị trí: <strong className="font-mono text-slate-900">Kho #{currentReturnBooking?.unitCode}</strong></span>
-                    <span className="text-amber-700 font-mono font-bold text-[11px]">Hạn: {currentReturnBooking?.endDate}</span>
-                  </div>
+                  {currentReturnBooking ? (
+                    <>
+                      <div className="mt-1">
+                        <span className="font-bold text-slate-900 text-sm block">{currentReturnBooking.customerName || 'Khách thuê'}</span>
+                        <span className="text-xs text-slate-500">SĐT: {currentReturnBooking.customerPhone || 'N/A'}</span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
+                        <span className="text-slate-800">Vị trí: <strong className="font-mono text-slate-900">Kho #{currentReturnBooking.unitCode}</strong></span>
+                        <span className="text-amber-700 font-mono font-bold text-[11px]">Hạn: {currentReturnBooking.endDate}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="mt-3 text-xs text-slate-500">Chọn hồ sơ trả kho để bắt đầu nghiệm thu.</p>
+                  )}
                 </div>
               ) : (
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl mb-4 text-xs text-slate-500 text-center">
@@ -723,7 +784,7 @@ export const StaffDashboard: React.FC = () => {
               )}
 
               {/* 4 Inspection Checklist Items */}
-              <div className="flex flex-col gap-2.5">
+              {currentReturnBooking && <div className="flex flex-col gap-2.5">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-900 font-mono">
                     Biên bản thẩm định hiện trường
@@ -834,17 +895,17 @@ export const StaffDashboard: React.FC = () => {
                     </span>
                   </div>
                 </div>
-              </div>
+              </div>}
             </div>
 
-            {settlementSuccessMsg && (
+            {currentReturnBooking && settlementSuccessMsg && (
               <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-2">
                 <span className="material-symbols-outlined text-[18px] text-emerald-600">check_circle</span>
                 <span>{settlementSuccessMsg}</span>
               </div>
             )}
 
-            <button
+            {currentReturnBooking && <button
               onClick={handleProcessReturnSettlement}
               disabled={returnConfirmed || isSettlingReturn}
               className={`mt-4 w-full py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer ${
@@ -861,7 +922,7 @@ export const StaffDashboard: React.FC = () => {
               <span>
                 {returnConfirmed ? 'ĐÃ HOÀN CỌC & TRẢ KHO' : isSettlingReturn ? 'Đang Xử Lý Quyết Toán Cọc...' : 'Xác Nhận Trả Kho & Hoàn Trả Cọc'}
               </span>
-            </button>
+            </button>}
           </div>
         </div>
 
@@ -958,6 +1019,21 @@ export const StaffDashboard: React.FC = () => {
               </div>
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setEmergencyResult(null)
+              setEmergencyError(null)
+              setWitnessStaffId('')
+              setWitnessPassword('')
+              setIsEmergencyModalOpen(true)
+            }}
+            className="mb-2 w-full py-2.5 px-4 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-800 text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[17px]">lock_open</span>
+            <span>Mở công cụ Master Key khẩn cấp</span>
+          </button>
 
           <Link
             to="/portal/tickets"
@@ -1135,6 +1211,9 @@ export const StaffDashboard: React.FC = () => {
                 onClick={() => {
                   setIsEmergencyModalOpen(false)
                   setEmergencyResult(null)
+                  setEmergencyError(null)
+                  setWitnessStaffId('')
+                  setWitnessPassword('')
                 }}
                 className="text-slate-400 hover:text-slate-600 cursor-pointer"
               >
@@ -1148,7 +1227,7 @@ export const StaffDashboard: React.FC = () => {
                 <span>Nguyên tắc xác thực 2 người (Two-Person Rule)</span>
               </div>
               <p className="text-[11px] text-amber-800 leading-relaxed">
-                Mọi thao tác mở cưỡng chế barrier và cửa sảnh bắt buộc có sự chứng kiến và mật khẩu xác nhận của nhân viên làm chứng để lưu vết audit log phòng chống gian lận.
+                Mọi thao tác mở cưỡng chế barrier và cửa sảnh cần người làm chứng được phân quyền xác nhận mật khẩu; hệ thống lưu vết audit để kiểm soát thao tác.
               </p>
             </div>
 
@@ -1164,6 +1243,8 @@ export const StaffDashboard: React.FC = () => {
                   onClick={() => {
                     setIsEmergencyModalOpen(false)
                     setEmergencyResult(null)
+                    setWitnessStaffId('')
+                    setWitnessPassword('')
                   }}
                   className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
                 >
@@ -1172,6 +1253,11 @@ export const StaffDashboard: React.FC = () => {
               </div>
             ) : (
               <form onSubmit={handleExecuteEmergencyOverride} className="space-y-3 text-xs">
+                {emergencyError && (
+                  <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-800">
+                    {emergencyError}
+                  </p>
+                )}
                 <div>
                   <label className="text-[11px] font-bold text-slate-600 uppercase block mb-1">Cơ sở áp dụng</label>
                   <select
@@ -1231,13 +1317,13 @@ export const StaffDashboard: React.FC = () => {
 
                 <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-100">
                   <div>
-                    <label className="text-[11px] font-bold text-slate-600 uppercase block mb-1">Nhân viên làm chứng</label>
+                    <label className="text-[11px] font-bold text-slate-600 uppercase block mb-1">Quản lý / nhân viên làm chứng (UUID)</label>
                     <input
                       type="text"
                       required
                       value={witnessStaffId}
                       onChange={(e) => setWitnessStaffId(e.target.value)}
-                      placeholder="Mã NV hoặc UUID nhân viên"
+                      placeholder="UUID nhân viên hoặc quản lý"
                       className="w-full h-10 px-3 bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-rose-500 font-mono text-[11px]"
                     />
                   </div>
@@ -1257,7 +1343,12 @@ export const StaffDashboard: React.FC = () => {
                 <div className="pt-3 flex gap-2">
                   <button
                     type="button"
-                    onClick={() => setIsEmergencyModalOpen(false)}
+                    onClick={() => {
+                      setIsEmergencyModalOpen(false)
+                      setEmergencyError(null)
+                      setWitnessStaffId('')
+                      setWitnessPassword('')
+                    }}
                     className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
                   >
                     Hủy bỏ
@@ -1277,6 +1368,58 @@ export const StaffDashboard: React.FC = () => {
       )}
 
       {/* Real-time HTML5-QRCode Camera Scanner Modal & Check-in API */}
+      {bookingDetailId && (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+          <section role="dialog" aria-modal="true" aria-labelledby="booking-preparation-title" className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <header className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <h2 id="booking-preparation-title" className="text-base font-bold text-slate-900">Thông tin kho cần chuẩn bị</h2>
+                <p className="mt-1 text-xs text-slate-500">Chỉ xem và chuẩn bị vận hành; nhân viên không duyệt yêu cầu.</p>
+              </div>
+              <button type="button" onClick={closeBookingDetail} aria-label="Đóng" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </header>
+
+            <div className="space-y-4 p-5">
+              {bookingDetailLoading ? (
+                <p className="py-8 text-center text-sm text-slate-500">Đang tải thông tin đặt kho…</p>
+              ) : bookingDetailError ? (
+                <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{bookingDetailError}</p>
+              ) : bookingDetail ? (
+                <>
+                  <div className="rounded-xl border border-cyan-100 bg-cyan-50 p-4">
+                    <p className="font-mono text-xs font-bold text-cyan-800">#{bookingDetail.bookingCode}</p>
+                    <h3 className="mt-1 text-sm font-bold text-slate-900">Kho {bookingDetail.unitCode} · {bookingDetail.facilityName}</h3>
+                    <p className="mt-2 text-xs text-slate-600">
+                      Khách dự kiến đến: <strong className="text-slate-900">
+                        {bookingDetail.expectedArrivalAt
+                          ? new Date(bookingDetail.expectedArrivalAt).toLocaleString('vi-VN', { dateStyle: 'medium', timeStyle: 'short' })
+                          : `${bookingDetail.startDate} (chưa có giờ cụ thể)`}
+                      </strong>
+                    </p>
+                  </div>
+                  <div className="grid gap-2 rounded-xl bg-slate-50 p-4 text-xs sm:grid-cols-2">
+                    <span>Khách hàng: <strong className="text-slate-900">{bookingDetail.customerName}</strong></span>
+                    <span>Điện thoại: <strong className="text-slate-900">{bookingDetail.customerPhone}</strong></span>
+                    <span>Mã đơn: <strong className="font-mono text-slate-900">{bookingDetail.bookingCode}</strong></span>
+                    <span>Trạng thái: <strong className="text-slate-900">{bookingDetail.status}</strong></span>
+                  </div>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <p className="text-xs font-bold text-amber-900">Danh sách chuẩn bị</p>
+                    <ul className="mt-2 space-y-1.5 text-xs text-amber-900">
+                      <li>• Kiểm tra vệ sinh và tình trạng thực tế của kho.</li>
+                      <li>• Kiểm tra ổ khóa, thiết bị IoT và cảm biến.</li>
+                      <li>• Giữ kho sẵn sàng, không xếp đồ hoặc đưa kho đi bảo trì đột xuất.</li>
+                    </ul>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      )}
+
       <QrCameraCheckInModal
         isOpen={isQrScannerOpen}
         onClose={() => setIsQrScannerOpen(false)}

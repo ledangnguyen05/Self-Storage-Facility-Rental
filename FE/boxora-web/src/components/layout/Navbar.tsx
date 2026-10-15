@@ -1,9 +1,8 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { LogOut, LayoutDashboard, ArrowRight, Menu, X, Pencil, Compass } from 'lucide-react'
+import { LogOut, LayoutDashboard, ArrowRight, Menu, X, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { Button } from '../ui/Button'
-import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import { BrandLogo } from '../common/BrandLogo'
 import { AccountProfileModal } from '../common/AccountProfileModal'
 import { LogoutConfirmModal } from '../common/LogoutConfirmModal'
@@ -22,8 +21,6 @@ export const Navbar: React.FC = () => {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
 
   const isCustomer = role === 'CUSTOMER'
-  const customerAccess = checkCustomerPortalAccess(user)
-  const canAccessPortal = !isCustomer || customerAccess.hasAccess
 
   const handleDashboardRedirect = () => {
     if (!role) return
@@ -42,14 +39,9 @@ export const Navbar: React.FC = () => {
         navigate('/portal/staff')
         break
       case 'CUSTOMER':
-      default: {
-        if (!canAccessPortal) {
-          navigate('/units')
-        } else {
-          navigate('/portal/customer')
-        }
+      default:
+        navigate('/portal/customer')
         break
-      }
     }
   }
 
@@ -84,24 +76,16 @@ export const Navbar: React.FC = () => {
             <div className="flex items-center gap-2.5">
               <button
                 onClick={handleDashboardRedirect}
-                title={canAccessPortal ? t('Vào Portal') : t('Khám Phá Thuê Kho')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all cursor-pointer text-left ${
-                  !canAccessPortal
-                    ? 'bg-amber-50/80 hover:bg-amber-100/90 border-amber-200 text-amber-900'
-                    : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-900'
-                }`}
+                title={t('Vào Portal')}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl border bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-900 transition-all cursor-pointer text-left"
               >
-                {!canAccessPortal ? (
-                  <Compass size={16} className="text-amber-700" />
-                ) : (
-                  <LayoutDashboard size={16} className="text-slate-700" />
-                )}
+                <LayoutDashboard size={16} className="text-slate-700" />
                 <div className="flex flex-col">
                   <span className="text-xs font-bold leading-tight">
-                    {!canAccessPortal ? t('Khám Phá Thuê Kho') : t('Vào Portal')}
+                    {t('Vào Portal')}
                   </span>
                   <span className="text-[9px] uppercase tracking-wider font-mono text-slate-500 leading-none">
-                    {!canAccessPortal ? t('Chưa Có Kho') : (role || 'PORTAL')}
+                    {isCustomer ? t('Khách hàng') : (role || 'PORTAL')}
                   </span>
                 </div>
               </button>
@@ -169,8 +153,8 @@ export const Navbar: React.FC = () => {
                   }}
                   className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-left text-sm font-semibold"
                 >
-                  <Pencil size={16} />
-                  {t('Chỉnh sửa hồ sơ')}
+                  <ShieldCheck size={16} />
+                  {t('Tài khoản & Bảo mật')}
                 </button>
                 <button
                   type="button"
@@ -216,16 +200,10 @@ export const Navbar: React.FC = () => {
               <>
                 <button
                   onClick={handleDashboardRedirect}
-                  className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-white font-medium text-sm transition-colors cursor-pointer ${
-                    !canAccessPortal ? 'bg-amber-700 hover:bg-amber-800' : 'bg-slate-900 hover:bg-slate-800'
-                  }`}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-white bg-slate-900 hover:bg-slate-800 font-medium text-sm transition-colors cursor-pointer"
                 >
-                  {!canAccessPortal ? (
-                    <Compass size={16} />
-                  ) : (
-                    <LayoutDashboard size={16} />
-                  )}
-                  <span>{canAccessPortal ? `${t('Vào bảng điều khiển')} (${role})` : t('Khám Phá & Đăng Ký Thuê Kho')}</span>
+                  <LayoutDashboard size={16} />
+                  <span>{isCustomer ? t('Vào Customer Portal') : `${t('Vào bảng điều khiển')} (${role})`}</span>
                 </button>
                 <button
                   type="button"

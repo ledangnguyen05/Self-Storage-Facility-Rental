@@ -7,9 +7,39 @@ import { userService } from '../../../services/userService'
 interface BookingApprovalModalProps {
   isOpen: boolean
   onClose: () => void
+  focusBookingId?: string
+  onPendingCountChange?: (count: number) => void
 }
 
 const formatVnd = (amount: number) => `${Math.round(amount || 0).toLocaleString('vi-VN')} ₫`
+
+const ApprovalCountdown: React.FC<{ request: Booking }> = ({ request }) => {
+  const expiresAt = request.paymentExpiresAt ? new Date(request.paymentExpiresAt).getTime() : NaN
+  const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    if (!Number.isFinite(expiresAt)) return
+    const intervalId = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(intervalId)
+  }, [expiresAt])
+
+  if (!Number.isFinite(expiresAt)) return null
+
+  const secondsRemaining = Math.max(0, Math.floor((expiresAt - now) / 1000))
+  const isExpired = secondsRemaining === 0
+  const formattedCountdown = [
+    Math.floor(secondsRemaining / 3600),
+    Math.floor((secondsRemaining % 3600) / 60),
+    secondsRemaining % 60
+  ].map(value => String(value).padStart(2, '0')).join(':')
+
+  return (
+    <p className={`mt-1.5 inline-flex items-center gap-1 text-xs font-bold ${isExpired ? 'text-rose-700' : 'text-orange-700'}`}>
+      <span className="material-symbols-outlined text-[15px]">timer</span>
+      {isExpired ? 'Đã hết hạn xử lý yêu cầu' : `Còn ${formattedCountdown} để duyệt yêu cầu`}
+    </p>
+  )
+}
 
 const errorMessage = (error: unknown) => {
   if (axios.isAxiosError<{ message?: string }>(error)) {
@@ -21,7 +51,7 @@ const errorMessage = (error: unknown) => {
   return error instanceof Error ? error.message : 'Không thể xử lý yêu cầu. Vui lòng thử lại.'
 }
 
-export const BookingApprovalModal: React.FC<BookingApprovalModalProps> = ({ isOpen, onClose }) => {
+export const BookingApprovalModal: React.FC<BookingApprovalModalProps> = ({ isOpen, onClose, focusBookingId, onPendingCountChange }) => {
   const [requests, setRequests] = useState<Booking[]>([])
   const [staffList, setStaffList] = useState<User[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -43,13 +73,14 @@ export const BookingApprovalModal: React.FC<BookingApprovalModalProps> = ({ isOp
         userService.getAllUsers({ role: 'STAFF', size: 100 }).catch(() => ({ data: [] })),
       ])
       setRequests(bookingsData)
+      onPendingCountChange?.(bookingsData.length)
       setStaffList(staffData.data || [])
     } catch (loadError) {
       setError(errorMessage(loadError))
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [onPendingCountChange])
 
   useEffect(() => {
     if (isOpen) {
@@ -86,6 +117,7 @@ export const BookingApprovalModal: React.FC<BookingApprovalModalProps> = ({ isOp
         staffNotes.trim() || undefined
       )
       setRequests(current => current.filter(r => r.id !== approvingBooking.id))
+      onPendingCountChange?.(Math.max(0, requests.length - 1))
       setSuccessMsg(
         `Đã duyệt yêu cầu thuê kho #${approvingBooking.unitCode} (${approvingBooking.bookingCode}) và phân công nhân viên phụ trách thành công!`
       )
@@ -107,6 +139,7 @@ export const BookingApprovalModal: React.FC<BookingApprovalModalProps> = ({ isOp
     try {
       await bookingService.decideRequest(booking.id, false)
       setRequests(current => current.filter(r => r.id !== booking.id))
+      onPendingCountChange?.(Math.max(0, requests.length - 1))
       setSuccessMsg(`Đã từ chối yêu cầu thuê kho #${booking.unitCode}. Kho đã được giải phóng trạng thái.`)
     } catch (decisionError) {
       setError(errorMessage(decisionError))
@@ -172,11 +205,13 @@ export const BookingApprovalModal: React.FC<BookingApprovalModalProps> = ({ isOp
             </div>
           )}
 
-          {!isLoading && requests.map(request => {
+          {!isLoading && [...requests]
+            .sort((left, right) => Number(right.id === focusBookingId) - Number(left.id === focusBookingId))
+            .map(request => {
             const isOnline = request.signingMethod !== 'IN_PERSON'
 
             return (
-              <article key={request.id} className="rounded-xl border border-slate-200 p-4 bg-white hover:border-slate-300 transition-all shadow-sm">
+              <article key={request.id} className={`rounded-xl border p-4 bg-white hover:border-slate-300 transition-all shadow-sm ${request.id === focusBookingId ? 'border-cyan-500 ring-2 ring-cyan-100' : 'border-slate-200'}`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
@@ -195,8 +230,12 @@ export const BookingApprovalModal: React.FC<BookingApprovalModalProps> = ({ isOp
                       Kho #{request.unitCode} &bull; {request.facilityName || 'Boxora Facility'}
                     </h3>
                     <p className="mt-1 text-xs text-slate-500 font-mono">
-                      Bắt đầu: {new Date(`${request.startDate}T00:00:00`).toLocaleDateString('vi-VN')} &bull; Kỳ hạn {request.rentalMonths} tháng
+                      Dự kiến đến: {request.expectedArrivalAt
+                        ? new Date(request.expectedArrivalAt).toLocaleString('vi-VN', { dateStyle: 'medium', timeStyle: 'short' })
+                        : new Date(`${request.startDate}T00:00:00`).toLocaleDateString('vi-VN')}
+                      {' '}&bull; Bắt đầu thuê {new Date(`${request.startDate}T00:00:00`).toLocaleDateString('vi-VN')} &bull; Kỳ hạn {request.rentalMonths} tháng
                     </p>
+                    {request.status === 'PENDING_APPROVAL' && <ApprovalCountdown request={request} />}
                   </div>
 
                   <div className="text-right">

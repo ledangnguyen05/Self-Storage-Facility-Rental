@@ -7,7 +7,6 @@ interface HandoverCheckInWorkbenchProps {
   arrivals?: Booking[]
   onRefreshArrivals?: () => Promise<void> | void
   onHandoverComplete?: (bookingId: string) => void
-  onOpenQrScanner?: () => void
   activeBookingId?: string
 }
 
@@ -15,7 +14,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   arrivals: propArrivals,
   onRefreshArrivals,
   onHandoverComplete,
-  onOpenQrScanner,
   activeBookingId
 }) => {
   const [internalArrivals, setInternalArrivals] = useState<Booking[]>([])
@@ -216,15 +214,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
           Tất cả lịch hẹn nhận kho hôm nay đã hoàn tất hoặc chưa có đặt chỗ mới trong ca trực hiện tại.
         </p>
-        {onOpenQrScanner && (
-          <button
-            onClick={onOpenQrScanner}
-            className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl inline-flex items-center gap-2 shadow-xs cursor-pointer transition-colors"
-          >
-            <span className="material-symbols-outlined text-[18px]">qr_code_scanner</span>
-            <span>Quét Mã QR Khách Đến Sớm</span>
-          </button>
-        )}
       </div>
     )
   }
@@ -280,15 +269,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             </select>
           </div>
 
-          {onOpenQrScanner && (
-            <button
-              onClick={onOpenQrScanner}
-              className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1 transition-colors border border-slate-200 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[16px]">qr_code_scanner</span>
-              <span>Quét QR</span>
-            </button>
-          )}
         </div>
       </div>
 

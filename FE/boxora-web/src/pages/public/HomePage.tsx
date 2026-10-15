@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion'
 import { useAuth } from '../../context/AuthContext'
-import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import { FloatingContactWidget } from '../../components/common/FloatingContactWidget'
 import { BrandLogo } from '../../components/common/BrandLogo'
 import { SmartLockerDynamicHero } from '../../components/home/SmartLockerDynamicHero'
@@ -24,25 +23,8 @@ export const HomePage: React.FC = () => {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
-  const [notifySetting, setNotifySetting] = useState(true)
-  const [soundSetting, setSoundSetting] = useState(true)
 
-  // Customer rental access state
   const isCustomer = user?.role?.name === 'CUSTOMER'
-  const [customerAccess, setCustomerAccess] = useState(() => checkCustomerPortalAccess(user))
-  const canAccessPortal = !isCustomer || customerAccess.hasAccess
-
-  useEffect(() => {
-    const handleRentalChange = () => {
-      setCustomerAccess(checkCustomerPortalAccess(user))
-    }
-    window.addEventListener('boxora_rental_updated', handleRentalChange)
-    return () => window.removeEventListener('boxora_rental_updated', handleRentalChange)
-  }, [user])
-
-  useEffect(() => {
-    setCustomerAccess(checkCustomerPortalAccess(user))
-  }, [user])
 
   // Interactive 3-Step Process State
   const [activeProcessStep, setActiveProcessStep] = useState<1 | 2 | 3>(1)

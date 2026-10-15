@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { contractService, RentalContract } from '../../services/contractService'
 import { bookingService } from '../../services/bookingService'
@@ -8,19 +8,71 @@ import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
 import { Booking, Facility, StorageUnit } from '../../types'
+import { StorageUnitCard, StorageUnitCardSkeleton } from '../../components/units/StorageUnitCard'
+import { StorageUnitDetailModal } from '../../components/modals/StorageUnitDetailModal'
 import { BookingCheckoutModal } from '../../components/modals/BookingCheckoutModal'
 import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
 import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
 import { ContractOtpModal } from '../../components/modals/ContractOtpModal'
+import NotificationCenter from '../../components/layout/NotificationCenter'
 
-const UNIT_CARD_IMAGES = [
-  'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1590247813693-5541d1c609fd?auto=format&fit=crop&w=800&q=80'
-]
+const BookingRequestCountdown: React.FC<{ request: Booking }> = ({ request }) => {
+  const expiresAt = request.paymentExpiresAt ? new Date(request.paymentExpiresAt).getTime() : NaN
+  const [now, setNow] = useState(Date.now())
 
-export const CustomerDashboard: React.FC = () => {
+  useEffect(() => {
+    if (!Number.isFinite(expiresAt)) return
+    const intervalId = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(intervalId)
+  }, [expiresAt])
+
+  if (!Number.isFinite(expiresAt)) return null
+
+  const secondsRemaining = Math.max(0, Math.floor((expiresAt - now) / 1000))
+  const isExpired = secondsRemaining === 0
+  const formattedCountdown = [
+    Math.floor(secondsRemaining / 3600),
+    Math.floor((secondsRemaining % 3600) / 60),
+    secondsRemaining % 60
+  ].map(value => String(value).padStart(2, '0')).join(':')
+
+  return (
+    <p className={`mt-1.5 inline-flex items-center gap-1 text-xs font-semibold ${isExpired ? 'text-rose-700' : 'text-amber-700'}`}>
+      <span className="material-symbols-outlined text-[15px]">timer</span>
+      {isExpired
+        ? 'Đã hết thời hạn giữ kho'
+        : `Thời gian giữ kho còn ${formattedCountdown}`}
+    </p>
+  )
+}
+
+const nextMonthlyPaymentDate = (startDate?: string): Date | null => {
+  if (!startDate) return null
+  const [year, month, day] = startDate.split('T')[0].split('-').map(Number)
+  if (!year || !month || !day) return null
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const baseMonthOffset = (today.getFullYear() - year) * 12 + today.getMonth() + 1 - month
+  const makeCycleDate = (offset: number) => {
+    const targetMonth = month - 1 + offset
+    const targetYear = year + Math.floor(targetMonth / 12)
+    const normalizedMonth = ((targetMonth % 12) + 12) % 12
+    const lastDay = new Date(targetYear, normalizedMonth + 1, 0).getDate()
+    return new Date(targetYear, normalizedMonth, Math.min(day, lastDay))
+  }
+
+  let nextDate = makeCycleDate(Math.max(0, baseMonthOffset))
+  if (nextDate < today) nextDate = makeCycleDate(Math.max(0, baseMonthOffset) + 1)
+  return nextDate
+}
+
+interface CustomerDashboardProps {
+  bookingOnly?: boolean
+}
+
+export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnly = false }) => {
+  const navigate = useNavigate()
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -44,7 +96,10 @@ export const CustomerDashboard: React.FC = () => {
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [availableUnits, setAvailableUnits] = useState<StorageUnit[]>([])
   const [loadingUnits, setLoadingUnits] = useState<boolean>(true)
+  const [selectedDetailModalUnit, setSelectedDetailModalUnit] = useState<StorageUnit | null>(null)
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState<boolean>(false)
   const [bookingRequests, setBookingRequests] = useState<Booking[]>([])
+  const [loadingRequests, setLoadingRequests] = useState<boolean>(true)
   const [requestToPay, setRequestToPay] = useState<Booking | null>(null)
 
   const fetchCustomerBookings = async () => {
@@ -128,6 +183,18 @@ export const CustomerDashboard: React.FC = () => {
     }
   }
 
+  const fetchBookingRequests = async () => {
+    setLoadingRequests(true)
+    try {
+      const requests = await bookingService.getMyRequests()
+      setBookingRequests(Array.isArray(requests) ? requests : [])
+    } catch (err) {
+      console.warn('Failed to load booking requests:', err)
+    } finally {
+      setLoadingRequests(false)
+    }
+  }
+
   useEffect(() => {
     fetchContracts()
     fetchCustomerBookings()
@@ -139,11 +206,14 @@ export const CustomerDashboard: React.FC = () => {
   useEffect(() => {
     let isCurrent = true
     const loadRequests = async () => {
+      setLoadingRequests(true)
       try {
         const requests = await bookingService.getMyRequests()
         if (isCurrent) setBookingRequests(requests)
       } catch (err) {
         console.warn('Failed to load booking requests:', err)
+      } finally {
+        if (isCurrent) setLoadingRequests(false)
       }
     }
     void loadRequests()
@@ -155,6 +225,12 @@ export const CustomerDashboard: React.FC = () => {
   }, [user?.id])
 
   const activeContracts = contracts.filter(c => c.status === 'ACTIVE' || c.status === 'OVERDUE')
+  const activatedContracts = contracts.filter(c => c.status === 'ACTIVE')
+  const nextPaymentDeadline = activatedContracts
+    .map(contract => nextMonthlyPaymentDate(contract.startDate))
+    .filter((date): date is Date => date !== null)
+    .sort((a, b) => a.getTime() - b.getTime())[0]
+  const pendingBookingRequests = bookingRequests.filter(request => request.status === 'PENDING_APPROVAL' || request.status === 'PENDING_PAYMENT')
 
   // Đơn đặt giữ chỗ đang chờ nhận kho tại quầy (CONFIRMED hoặc PENDING_PAYMENT)
   const pendingReservations = useMemo(() => {
@@ -173,8 +249,8 @@ export const CustomerDashboard: React.FC = () => {
   }, [customerPayments, contracts])
 
   const monthlyRentalTotal = useMemo(() => {
-    return activeContracts.reduce((sum, c) => sum + (c.monthlyFee || 0), 0)
-  }, [activeContracts])
+    return activatedContracts.reduce((sum, c) => sum + (c.monthlyFee || 0), 0)
+  }, [activatedContracts])
 
   const successfulPaymentsCount = useMemo(() => {
     return customerPayments.filter(p => p.status === 'SUCCESS').length
@@ -193,21 +269,21 @@ export const CustomerDashboard: React.FC = () => {
     .filter(Boolean)
     .sort()[0] || '--'
 
-  // Tabs: 'my-units' (default) | 'bookings' | 'explore' | 'contracts' | 'support'
-  const tabParam = searchParams.get('tab') as 'my-units' | 'bookings' | 'explore' | 'contracts' | 'support' | null
-  const [activeTab, setActiveTab] = useState<'my-units' | 'bookings' | 'explore' | 'contracts' | 'support'>(
-    tabParam && ['my-units', 'bookings', 'explore', 'contracts', 'support'].includes(tabParam)
+  // Tabs: 'my-units' (default) | 'requests' | 'bookings' | 'explore' | 'contracts' | 'support'
+  const tabParam = searchParams.get('tab') as 'my-units' | 'requests' | 'bookings' | 'explore' | 'contracts' | 'support' | null
+  const [activeTab, setActiveTab] = useState<'my-units' | 'requests' | 'bookings' | 'explore' | 'contracts' | 'support'>(
+    tabParam && ['my-units', 'requests', 'bookings', 'explore', 'contracts', 'support'].includes(tabParam)
       ? tabParam
       : 'my-units'
   )
 
   useEffect(() => {
-    if (tabParam && ['my-units', 'bookings', 'explore', 'contracts', 'support'].includes(tabParam)) {
+    if (tabParam && ['my-units', 'requests', 'bookings', 'explore', 'contracts', 'support'].includes(tabParam)) {
       setActiveTab(tabParam)
     }
   }, [tabParam])
 
-  const handleTabChange = (tab: 'my-units' | 'bookings' | 'explore' | 'contracts' | 'support') => {
+  const handleTabChange = (tab: 'my-units' | 'requests' | 'bookings' | 'explore' | 'contracts' | 'support') => {
     setActiveTab(tab)
     setSearchParams({ tab })
   }
@@ -272,9 +348,52 @@ export const CustomerDashboard: React.FC = () => {
     d.setDate(d.getDate() + 3)
     return d.toISOString().split('T')[0]
   })
+  const [bookingCheckInTime, setBookingCheckInTime] = useState('10:00')
   const [bookingPolicyAccepted, setBookingPolicyAccepted] = useState<boolean>(true)
   const [bookingWorkflow, setBookingWorkflow] = useState<'HOLD_ONLY' | 'ONLINE_NOW'>('HOLD_ONLY')
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false)
+  const [bookingError, setBookingError] = useState('')
+
+  const bookingUnitParam = searchParams.get('unit')
+  useEffect(() => {
+    if (!bookingOnly) return
+    if (selectedBookingUnit) return
+    if (!bookingUnitParam) {
+      navigate('/units', { replace: true })
+      return
+    }
+    if (loadingUnits) return
+
+    const unit = availableUnits.find(candidate => candidate.id === bookingUnitParam)
+    if (!unit) {
+      navigate('/units', { replace: true })
+      return
+    }
+
+    setSelectedBookingUnit({
+      id: unit.id,
+      unitCode: unit.unitCode,
+      name: unit.unitTypeName || `Kho Tiêu Chuẩn #${unit.unitCode}`,
+      facilityName: unit.facilityName || 'Hệ thống kho Boxora',
+      priceFormatted: Number(unit.pricePerMonth || 1250000).toLocaleString('vi-VN'),
+      priceNumber: Number(unit.pricePerMonth || 1250000),
+      depositNumber: Number(unit.depositAmount || unit.pricePerMonth || 1250000),
+      areaSqMeters: unit.areaSqMeters,
+      floorLevel: unit.floorLevel || 'Tầng 1'
+    })
+    setBookingPackage('3m')
+    setBookingCustomDays(45)
+    const todayStr = new Date().toISOString().split('T')[0]
+    setBookingStartDate(todayStr)
+    const checkInDate = new Date()
+    checkInDate.setDate(checkInDate.getDate() + 3)
+    setBookingCheckInDate(checkInDate.toISOString().split('T')[0])
+    setBookingPolicyAccepted(true)
+    setBookingWorkflow('HOLD_ONLY')
+    setBookingSuccess(false)
+    setBookingError('')
+    setCreatedBookingResult(null)
+  }, [bookingOnly, bookingUnitParam, loadingUnits, availableUnits, selectedBookingUnit, navigate])
 
   // Renewal Modal (Yêu cầu gia hạn hợp đồng)
   const [renewModalData, setRenewModalData] = useState<{
@@ -317,6 +436,7 @@ export const CustomerDashboard: React.FC = () => {
   const [ticketType, setTicketType] = useState('lock')
   const [ticketContent, setTicketContent] = useState('')
   const [ticketSubmitted, setTicketSubmitted] = useState(false)
+  const [ticketError, setTicketError] = useState('')
   const [isSubmittingTicket, setIsSubmittingTicket] = useState(false)
 
   // Filter explore state
@@ -331,6 +451,14 @@ export const CustomerDashboard: React.FC = () => {
     setTimeout(() => setCopiedPin(null), 2000)
   }
 
+  const closeBookingModal = () => {
+    if (bookingOnly) {
+      navigate('/units')
+      return
+    }
+    setSelectedBookingUnit(null)
+  }
+
   const handleRemoteUnlock = async (unitCode: string, bookingOrContractId: string) => {
     setUnlockingUnit(unitCode)
     setUnlockError(null)
@@ -339,9 +467,8 @@ export const CustomerDashboard: React.FC = () => {
       setUnlockedSuccess(unitCode)
       setTimeout(() => setUnlockedSuccess(null), 5000)
     } catch (err: any) {
-      console.warn('Remote unlock request fallback:', err)
-      setUnlockedSuccess(unitCode)
-      setTimeout(() => setUnlockedSuccess(null), 5000)
+      console.warn('Remote unlock request failed:', err)
+      setUnlockError(err?.response?.data?.message || 'Chưa thể gửi lệnh mở khóa. Vui lòng thử lại hoặc liên hệ hỗ trợ.')
     } finally {
       setUnlockingUnit(null)
     }
@@ -350,13 +477,14 @@ export const CustomerDashboard: React.FC = () => {
   const handleSupportSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmittingTicket(true)
+    setTicketError('')
     try {
       const activeUnit = contracts.find(c => c.unitCode === ticketUnit)
       await supportTicketService.createTicket({
         customerId: user?.id,
         bookingId: activeUnit?.bookingId || (activeUnit?.id?.length === 36 ? activeUnit.id : undefined),
-        category: ticketType.toUpperCase(),
-        title: `Yêu cầu hỗ trợ kho #${ticketUnit} (${ticketType})`,
+        category: ticketType === 'return' ? 'OTHER' : ticketType.toUpperCase(),
+        title: ticketType === 'return' ? `Yêu cầu trả kho #${ticketUnit}` : `Yêu cầu hỗ trợ kho #${ticketUnit} (${ticketType})`,
         description: ticketContent,
         priority: ticketType === 'lock' ? 'HIGH' : 'MEDIUM'
       })
@@ -366,12 +494,8 @@ export const CustomerDashboard: React.FC = () => {
         setTicketContent('')
       }, 3500)
     } catch (err) {
-      console.warn('Support ticket creation fallback:', err)
-      setTicketSubmitted(true)
-      setTimeout(() => {
-        setTicketSubmitted(false)
-        setTicketContent('')
-      }, 3500)
+      console.warn('Support ticket creation failed:', err)
+      setTicketError((err as any)?.response?.data?.message || 'Chưa thể gửi yêu cầu hỗ trợ. Vui lòng thử lại.')
     } finally {
       setIsSubmittingTicket(false)
     }
@@ -581,62 +705,52 @@ export const CustomerDashboard: React.FC = () => {
   const handleConfirmBooking = async () => {
     if (!selectedBookingUnit) return
     setIsSubmittingBooking(true)
+    setBookingError('')
+    let bookingCreated = false
     try {
       if (bookingWorkflow === 'ONLINE_NOW') {
-        // Option "Ký online & thanh toán": Chuyển tiếp ngay qua link VNPay Sandbox
-        let bookingId = ''
-        let bookingCode = ''
-        try {
-          const res = await bookingService.createBooking({
-            storageUnitId: selectedBookingUnit.id,
-            startDate: bookingStartDate,
-            rentalMonths: bookingEstimate.months,
-            totalRentalFee: bookingEstimate.rentAfterDiscount,
-            depositPaid: bookingEstimate.deposit,
-            signingMethod: 'ONLINE'
-          })
-          bookingId = res?.id || ''
-          bookingCode = res?.bookingCode || ''
-        } catch (bErr) {
-          console.warn('Booking creation API fallback:', bErr)
-          bookingId = `mock-${Date.now()}`
-          bookingCode = `BX-${Math.floor(100000 + Math.random() * 900000)}`
-        }
+        const res = await bookingService.createBooking({
+          storageUnitId: selectedBookingUnit.id,
+          startDate: bookingStartDate,
+          expectedArrivalAt: `${bookingCheckInDate}T${bookingCheckInTime}:00`,
+          rentalMonths: bookingEstimate.months,
+          totalRentalFee: bookingEstimate.rentAfterDiscount,
+          depositPaid: bookingEstimate.deposit,
+          signingMethod: 'ONLINE'
+        })
+        if (!res?.id) throw new Error('Máy chủ chưa xác nhận yêu cầu giữ chỗ. Vui lòng thử lại.')
+        bookingCreated = true
+        void bookingService.getMyRequests()
+          .then(requests => setBookingRequests(Array.isArray(requests) ? requests : []))
+          .catch(err => console.warn('Failed to refresh booking requests:', err))
 
-        // Tạo giao dịch VNPay Sandbox
-        const paymentAmount = bookingEstimate.totalPayment
-        try {
-          const payment = await paymentService.createVNPayPayment({
-            bookingId: bookingId,
-            paymentType: 'BOOKING_PAYMENT',
-            amount: paymentAmount,
-            orderInfo: `Thanh toan giu cho kho ${selectedBookingUnit.unitCode}`
-          })
-          if (payment?.paymentUrl) {
-            window.location.assign(payment.paymentUrl)
-            return
-          }
-        } catch (payErr) {
-          console.warn('VNPay create payment API fallback:', payErr)
-        }
-
-        // Chuyển hướng tới trang thanh toán VNPay Sandbox hoặc kết quả thanh toán
-        const targetUrl = `/payment-result?status=PAID&bookingId=${bookingId}&unitCode=${selectedBookingUnit.unitCode}&facilityName=${encodeURIComponent(selectedBookingUnit.facilityName)}&amount=${paymentAmount}&unitName=${encodeURIComponent(selectedBookingUnit.name)}`
-        window.location.assign(targetUrl)
+        const payment = await paymentService.createVNPayPayment({
+          bookingId: res.id,
+          paymentType: 'BOOKING_PAYMENT',
+          amount: bookingEstimate.totalPayment,
+          orderInfo: `Thanh toan giu cho kho ${selectedBookingUnit.unitCode}`
+        })
+        if (!payment?.paymentUrl) throw new Error('Không thể tạo liên kết thanh toán. Yêu cầu đã lưu; vui lòng kiểm tra mục Yêu cầu đặt chỗ.')
+        window.location.assign(payment.paymentUrl)
         return
       }
 
-      // Option "Đặt giữ chỗ kho" (Miễn phí 24h): Giữ chỗ và hiển thị màn hình hoàn tất
       const res = await bookingService.createBooking({
         storageUnitId: selectedBookingUnit.id,
         startDate: bookingStartDate,
+        expectedArrivalAt: `${bookingCheckInDate}T${bookingCheckInTime}:00`,
         rentalMonths: bookingEstimate.months,
         totalRentalFee: bookingEstimate.rentAfterDiscount,
         depositPaid: 0,
         signingMethod: 'IN_PERSON'
       })
+      if (!res?.id) throw new Error('Máy chủ chưa xác nhận yêu cầu giữ chỗ. Vui lòng thử lại.')
+      bookingCreated = true
+      void bookingService.getMyRequests()
+        .then(requests => setBookingRequests(Array.isArray(requests) ? requests : []))
+        .catch(err => console.warn('Failed to refresh booking requests:', err))
       setCreatedBookingResult({
-        bookingCode: res?.bookingCode || `BX-${Math.floor(100000 + Math.random() * 900000)}`,
+        bookingCode: res.bookingCode || res.id,
         unitCode: selectedBookingUnit.unitCode,
         facilityName: selectedBookingUnit.facilityName
       })
@@ -646,19 +760,14 @@ export const CustomerDashboard: React.FC = () => {
       await fetchCustomerPayments()
       await fetchAvailableUnits()
     } catch (err) {
-      console.warn('Booking creation fallback:', err)
-      setCreatedBookingResult({
-        bookingCode: `BX-${Math.floor(100000 + Math.random() * 900000)}`,
-        unitCode: selectedBookingUnit.unitCode,
-        facilityName: selectedBookingUnit.facilityName
-      })
-      setBookingSuccess(true)
-      await fetchCustomerBookings()
+      console.warn('Booking creation failed:', err)
+      setBookingError(bookingCreated
+        ? 'Yêu cầu giữ chỗ đã được ghi nhận nhưng chưa thể hoàn tất thanh toán trực tuyến. Vui lòng kiểm tra mục Yêu cầu đặt chỗ.'
+        : (err as any)?.response?.data?.message || (err instanceof Error ? err.message : 'Không thể tạo yêu cầu giữ chỗ. Vui lòng thử lại.'))
     } finally {
       setIsSubmittingBooking(false)
     }
   }
-
   const handleSignContractNow = (contract: RentalContract) => {
     // Open DocuSeal Simulation modal directly for immediate electronic signing
     setContractForDocuSealModal(contract)
@@ -714,9 +823,19 @@ export const CustomerDashboard: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 text-left max-w-7xl mx-auto pb-12">
+      {bookingOnly && (
+        <div className="fixed right-4 top-4 z-[70]">
+          <NotificationCenter userId={user?.id} />
+        </div>
+      )}
+      {bookingOnly && !selectedBookingUnit && (
+        <div className="min-h-screen flex items-center justify-center text-sm text-slate-600">Đang tải kho...</div>
+      )}
+      {!bookingOnly && (
+        <>
       
       {/* 1. Header Greeting & Quick Stats */}
-      <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex flex-col">
             <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 mb-1">
@@ -754,15 +873,15 @@ export const CustomerDashboard: React.FC = () => {
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Kho đang thuê</span>
-              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{activeContracts.length} Kho Hoạt Động</span>
+              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{activatedContracts.length} Kho Hoạt Động</span>
               <span className="text-xs text-slate-500 truncate">
-                {activeContracts.length > 0 ? activeContracts.map(c => `#${c.unitCode}`).join(' & ') : 'Chưa có kho hoạt động'}
+                {activatedContracts.length > 0 ? activatedContracts.map(c => `#${c.unitCode}`).join(' & ') : 'Chưa có kho hoạt động'}
               </span>
             </div>
           </div>
 
           <div 
-            onClick={() => handleTabChange('bookings')}
+            onClick={() => handleTabChange('requests')}
             className="stitch-card p-5 flex items-center gap-4 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all group"
           >
             <div className="w-12 h-12 rounded-xl bg-cyan-50 text-cyan-700 flex items-center justify-center shrink-0 border border-cyan-100 group-hover:scale-105 transition-transform">
@@ -770,14 +889,14 @@ export const CustomerDashboard: React.FC = () => {
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                Đơn đặt giữ chỗ
-                {pendingReservations.length > 0 && <span className="pulsing-dot bg-amber-500"></span>}
+                Yêu cầu đặt chỗ
+                {pendingBookingRequests.length > 0 && <span className="pulsing-dot bg-amber-500"></span>}
               </span>
               <span className="font-mono text-xl font-bold text-cyan-800 mt-0.5">
-                {pendingReservations.length} Chờ Nhận Kho
+                {pendingBookingRequests.length} Đang xử lý
               </span>
               <span className="text-xs text-slate-500 truncate">
-                {customerBookings.length > 0 ? `${customerBookings.length} đơn trong lịch sử` : 'Chưa có đơn đặt chỗ'}
+                {bookingRequests.length > 0 ? `${bookingRequests.length} yêu cầu đã gửi` : 'Chưa có yêu cầu đặt chỗ'}
               </span>
             </div>
           </div>
@@ -789,10 +908,10 @@ export const CustomerDashboard: React.FC = () => {
             <div className="flex flex-col min-w-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                 Bảo mật cửa kho
-                <span className="pulsing-dot bg-emerald-500"></span>
+                {activatedContracts.length > 0 && <span className="pulsing-dot bg-emerald-500"></span>}
               </span>
-              <span className="font-mono text-xl font-bold text-emerald-700 mt-0.5">Đã Khóa An Toàn</span>
-              <span className="text-xs text-slate-500 truncate">Mã PIN điện tử &amp; Mở từ xa</span>
+              <span className="font-mono text-xl font-bold text-emerald-700 mt-0.5">{activatedContracts.length > 0 ? 'Đã kích hoạt' : 'Chưa có kho'}</span>
+              <span className="text-xs text-slate-500 truncate">{activatedContracts.length > 0 ? 'Smart Lock & mã PIN' : 'Tiện ích khóa sẽ mở khi có kho ACTIVE'}</span>
             </div>
           </div>
 
@@ -811,6 +930,57 @@ export const CustomerDashboard: React.FC = () => {
         </div>
       </div>
 
+      {activatedContracts.length > 0 && (
+        <section className="grid grid-cols-1 lg:grid-cols-3 gap-4" aria-label="Tiện ích kho đang hoạt động">
+          <article className="stitch-card p-5">
+            <div className="flex items-center gap-2 text-slate-500 text-xs font-semibold">
+              <span className="material-symbols-outlined text-blue-600">event_repeat</span>
+              Kỳ thanh toán tiếp theo
+            </div>
+            <p className="mt-3 text-xl font-bold font-mono text-slate-900">
+              {nextPaymentDeadline?.toLocaleDateString('vi-VN') || 'Chưa có lịch thanh toán'}
+            </p>
+            <p className="mt-1 text-[11px] text-slate-500">Ngày dự kiến theo chu kỳ bắt đầu hợp đồng.</p>
+          </article>
+
+          <article className="stitch-card p-5">
+            <div className="flex items-center gap-2 text-slate-500 text-xs font-semibold">
+              <span className="material-symbols-outlined text-cyan-700">history</span>
+              Lịch sử ra vào kho
+            </div>
+            <p className="mt-3 text-sm font-semibold text-slate-800">Chưa có lượt ra vào được ghi nhận.</p>
+            <p className="mt-1 text-[11px] text-slate-500">Khi thiết bị gửi dữ liệu, lịch sử sẽ hiển thị tại đây.</p>
+          </article>
+
+          <article className="stitch-card p-5">
+            <div className="flex items-center gap-2 text-slate-500 text-xs font-semibold">
+              <span className="material-symbols-outlined text-emerald-700">lock_open</span>
+              Mở khóa thông minh
+            </div>
+            <div className="mt-3 space-y-2">
+              {activatedContracts.map(contract => (
+                <button
+                  key={contract.id}
+                  type="button"
+                  onClick={() => contract.bookingId && handleRemoteUnlock(contract.unitCode, contract.bookingId)}
+                  disabled={unlockingUnit === contract.unitCode || !contract.bookingId}
+                  className="w-full rounded-lg bg-emerald-700 px-3 py-2.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-60"
+                >
+                  {unlockingUnit === contract.unitCode
+                    ? `Đang gửi lệnh · Kho #${contract.unitCode}`
+                    : !contract.bookingId
+                      ? `Chưa có mã đặt chỗ · Kho #${contract.unitCode}`
+                      : unlockedSuccess === contract.unitCode
+                      ? `Đã gửi lệnh · Kho #${contract.unitCode}`
+                      : `Mở khóa từ xa · Kho #${contract.unitCode}`}
+                </button>
+              ))}
+              {unlockError && <p role="alert" className="text-[11px] text-rose-700">{unlockError}</p>}
+            </div>
+          </article>
+        </section>
+      )}
+
       {/* 2. Main Tab Buttons */}
       <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl w-fit border border-slate-200 shadow-sm overflow-x-auto max-w-full">
         <button
@@ -824,6 +994,20 @@ export const CustomerDashboard: React.FC = () => {
           <span>Kho Của Tôi</span>
           <span className="px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold">
             {activeContracts.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => handleTabChange('requests')}
+          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+            activeTab === 'requests'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <span>Yêu Cầu Đặt Chỗ</span>
+          <span className={`px-1.5 py-0.5 rounded-full text-white text-[10px] font-bold ${bookingRequests.length > 0 ? 'bg-amber-600' : 'bg-slate-700'}`}>
+            {bookingRequests.length}
           </span>
         </button>
 
@@ -888,85 +1072,38 @@ export const CustomerDashboard: React.FC = () => {
       {/* 3. TAB 1: KHO CỦA TÔI ĐANG THUÊ (MY UNITS) */}
       {activeTab === 'my-units' && (
         <div className="flex flex-col gap-6">
-          {bookingRequests.length > 0 && (
-            <section className="stitch-card p-5">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-bold text-slate-900">Yêu cầu thuê kho</h2>
-                  <p className="mt-1 text-xs text-slate-500">Trạng thái được cập nhật tự động.</p>
-                </div>
-                <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-800">{bookingRequests.length} yêu cầu</span>
-              </div>
-              <div className="space-y-2">
-                {bookingRequests.slice(0, 5).map(request => {
-                  const statusLabel = request.status === 'PENDING_APPROVAL'
-                    ? 'Đang chờ quản lý duyệt'
-                    : request.status === 'PENDING_PAYMENT'
-                      ? 'Đã duyệt · chờ thanh toán'
-                      : 'Yêu cầu đã đóng'
-                  const statusClass = request.status === 'PENDING_APPROVAL'
-                    ? 'bg-amber-50 text-amber-800 border-amber-200'
-                    : request.status === 'PENDING_PAYMENT'
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                      : 'bg-slate-100 text-slate-600 border-slate-200'
-                  return (
-                    <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3">
-                      <div>
-                        <p className="text-xs font-bold text-slate-900">Kho #{request.unitCode} · {request.facilityName}</p>
-                        <p className="mt-1 text-[11px] text-slate-500">Mã yêu cầu {request.bookingCode} · {request.rentalMonths} tháng</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusClass}`}>{statusLabel}</span>
-                        {request.status === 'PENDING_PAYMENT' && (
-                          <button
-                            type="button"
-                            onClick={() => setRequestToPay(request)}
-                            className="rounded-lg bg-cyan-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-cyan-800"
-                          >
-                            Tiếp tục thanh toán
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </section>
-          )}
           {loadingContracts ? (
             <div className="p-12 text-center text-slate-500 text-xs">Đang tải dữ liệu kho từ hệ thống database...</div>
           ) : activeContracts.length === 0 ? (
             <div className="stitch-card p-10 text-center flex flex-col items-center justify-center gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                <span className="material-symbols-outlined text-[36px]">warehouse</span>
+              <div className="flex h-24 w-28 items-center justify-center rounded-2xl bg-blue-50">
+                <svg aria-hidden="true" viewBox="0 0 112 88" className="h-20 w-24">
+                  <path d="M12 38 56 12l44 26v39H12V38Z" fill="#fff" stroke="#93c5fd" strokeWidth="3" strokeLinejoin="round" />
+                  <path d="M25 43h62v34H25z" fill="#eff6ff" stroke="#60a5fa" strokeWidth="3" />
+                  <path d="M44 53h24v24H44z" fill="#dbeafe" stroke="#60a5fa" strokeWidth="3" />
+                  <path d="M35 34h10m22 0h10" stroke="#93c5fd" strokeWidth="4" strokeLinecap="round" />
+                  <path d="M52 65h8" stroke="#60a5fa" strokeWidth="3" strokeLinecap="round" />
+                  <circle cx="90" cy="18" r="8" fill="#bfdbfe" />
+                </svg>
               </div>
               <div className="max-w-md">
-                <h3 className="font-headline text-lg font-bold text-slate-900 mb-1">
-                  {pendingReservations.length > 0
-                    ? 'Bạn chưa có kho đang kích hoạt hoạt động'
-                    : 'Bạn chưa có kho đang thuê nào'}
-                </h3>
+                <h3 className="font-headline text-lg font-bold text-slate-900 mb-1">Bạn chưa có kho lưu trữ nào</h3>
                 <p className="text-xs text-slate-500">
-                  {pendingReservations.length > 0
-                    ? 'Các phòng kho bạn đã đặt giữ chỗ đang chờ làm thủ tục nhận kho tại quầy. Sau khi nhân viên bàn giao, kho sẽ hiển thị tại đây kèm mã PIN SmartLock và quyền mở cửa từ xa.'
-                    : 'Hãy khám phá hệ thống vị trí kho tự quản của Boxora để tìm kích thước và cơ sở thuận tiện nhất.'}
+                  Hãy tìm kho gần bạn để chọn vị trí và kích thước phù hợp. Các yêu cầu đã gửi có thể theo dõi trong mục Yêu cầu đặt chỗ.
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                {pendingReservations.length > 0 && (
-                  <button
-                    onClick={() => handleTabChange('bookings')}
-                    className="stitch-btn-secondary text-xs"
-                  >
-                    <span>Xem Lịch Sử Đặt Chỗ</span>
-                  </button>
-                )}
                 <button
-                  onClick={() => handleTabChange('explore')}
+                  onClick={() => navigate('/units')}
                   className="stitch-btn-primary text-xs"
                 >
-                  <span>Tìm &amp; Thuê Thêm Kho</span>
+                  <span>Tìm kho gần bạn ngay</span>
                 </button>
+                {bookingRequests.length > 0 && (
+                  <button onClick={() => handleTabChange('requests')} className="stitch-btn-secondary text-xs">
+                    <span>Xem yêu cầu đặt chỗ</span>
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -976,9 +1113,6 @@ export const CustomerDashboard: React.FC = () => {
                 const pin = loadedPins[c.unitCode] || (c.id.replace(/\D/g, '').slice(0, 6) || '849204').padEnd(6, '9')
                 const isRevealed = revealedPins[c.unitCode]
                 const isLoadingPin = loadingPins[c.unitCode]
-                const isUnlocking = unlockingUnit === c.unitCode
-                const isUnlocked = unlockedSuccess === c.unitCode
-
                 return (
                   <div key={c.id} className="stitch-card p-6 flex flex-col justify-between">
                     <div className="flex flex-col gap-4">
@@ -1043,8 +1177,8 @@ export const CustomerDashboard: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Security PIN Box */}
-                      <div className="p-4 rounded-xl bg-blue-50/40 border border-blue-200 shadow-xs flex flex-col gap-3 relative overflow-hidden">
+          {/* Security PIN Box is available only for activated contracts */}
+                      {c.status === 'ACTIVE' && <div className="p-4 rounded-xl bg-blue-50/40 border border-blue-200 shadow-xs flex flex-col gap-3 relative overflow-hidden">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <span className="text-xs sm:text-sm font-bold text-slate-900">
@@ -1118,7 +1252,7 @@ export const CustomerDashboard: React.FC = () => {
                             </button>
                           </div>
                         )}
-                      </div>
+                      </div>}
 
                       {/* Metrics: Giá thuê & Tiền cọc */}
                       <div className="grid grid-cols-2 gap-2 text-center">
@@ -1137,10 +1271,10 @@ export const CustomerDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="pt-4 mt-4 border-t border-slate-100 flex items-center gap-3">
+                    <div className="pt-4 mt-4 border-t border-slate-100 flex flex-wrap items-center gap-2">
                       <button
                         onClick={() => openRenewModal(c)}
-                        className="stitch-btn-secondary flex-1 text-xs py-2.5 flex items-center justify-center gap-1.5"
+                        className="stitch-btn-secondary flex-1 min-w-[130px] text-xs py-2.5 flex items-center justify-center gap-1.5"
                       >
                         <span className="material-symbols-outlined text-[18px]">autorenew</span>
                         <span>Yêu Cầu Gia Hạn</span>
@@ -1156,6 +1290,21 @@ export const CustomerDashboard: React.FC = () => {
                         <span className="material-symbols-outlined text-[16px]">report</span>
                         <span>Báo Sự Cố</span>
                       </button>
+                      {c.status === 'ACTIVE' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTicketUnit(c.unitCode)
+                            setTicketType('return')
+                            setTicketContent(`Tôi muốn yêu cầu trả kho #${c.unitCode}. Vui lòng hướng dẫn thủ tục.`)
+                            handleTabChange('support')
+                          }}
+                          className="px-3.5 h-10 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">assignment_return</span>
+                          <span>Yêu cầu trả kho</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 )
@@ -1163,6 +1312,87 @@ export const CustomerDashboard: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+
+      {activeTab === 'requests' && (
+        <section className="stitch-card p-5 sm:p-6 space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="font-headline text-lg font-extrabold text-slate-900">Yêu cầu đặt chỗ</h2>
+              <p className="mt-1 text-xs text-slate-500">Theo dõi trạng thái duyệt và thanh toán các yêu cầu giữ chỗ.</p>
+            </div>
+            <button
+              type="button"
+              onClick={fetchBookingRequests}
+              disabled={loadingRequests}
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-60"
+            >
+              <span className={`material-symbols-outlined text-[16px] ${loadingRequests ? 'animate-spin' : ''}`}>refresh</span>
+              {loadingRequests ? 'Đang tải...' : 'Làm mới'}
+            </button>
+          </div>
+
+          {loadingRequests && bookingRequests.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-xs text-slate-500">Đang tải yêu cầu đặt chỗ...</div>
+          ) : bookingRequests.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
+              <span className="material-symbols-outlined text-4xl text-slate-300">inbox</span>
+              <p className="mt-2 text-sm font-semibold text-slate-700">Bạn chưa có yêu cầu đặt chỗ nào</p>
+              <p className="mt-1 text-xs text-slate-500">Khi bạn gửi yêu cầu giữ chỗ, trạng thái xử lý sẽ xuất hiện ở đây.</p>
+              <button type="button" onClick={() => navigate('/units')} className="stitch-btn-primary mt-4 text-xs">
+                Tìm kho gần bạn ngay
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {bookingRequests.map(request => {
+                const statusLabel = request.status === 'PENDING_APPROVAL'
+                  ? 'Đang chờ duyệt'
+                  : request.status === 'PENDING_PAYMENT'
+                    ? 'Đã duyệt · chờ thanh toán'
+                    : request.status === 'CONFIRMED'
+                      ? 'Đã xác nhận'
+                      : request.status === 'ACTIVE'
+                        ? 'Đã kích hoạt'
+                        : request.status === 'CANCELLED'
+                          ? 'Đã hủy'
+                          : request.status === 'COMPLETED'
+                            ? 'Đã hoàn tất'
+                            : request.status
+                const statusClass = request.status === 'PENDING_APPROVAL'
+                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                  : request.status === 'PENDING_PAYMENT'
+                    ? 'bg-blue-50 text-blue-800 border-blue-200'
+                    : request.status === 'CANCELLED'
+                      ? 'bg-slate-100 text-slate-600 border-slate-200'
+                      : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                return (
+                  <article key={request.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
+                    <div>
+                      <p className="text-sm font-bold text-slate-900">Kho #{request.unitCode} · {request.facilityName}</p>
+                      <p className="mt-1 text-xs text-slate-500">Mã yêu cầu {request.bookingCode} · {request.rentalMonths} tháng</p>
+                      {(request.status === 'PENDING_APPROVAL' || request.status === 'PENDING_PAYMENT') && (
+                        <BookingRequestCountdown request={request} />
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusClass}`}>{statusLabel}</span>
+                      {request.status === 'PENDING_PAYMENT' && (
+                        <button
+                          type="button"
+                          onClick={() => setRequestToPay(request)}
+                          className="rounded-lg bg-cyan-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-cyan-800"
+                        >
+                          Tiếp tục thanh toán
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          )}
+        </section>
       )}
 
       {/* 4. TAB: LỊCH SỬ ĐẶT GIỮ CHỖ (BOOKING RESERVATIONS HISTORY) */}
@@ -1528,9 +1758,7 @@ export const CustomerDashboard: React.FC = () => {
           {/* Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {loadingUnits ? (
-              <div className="col-span-full py-12 text-center text-slate-500 text-xs">
-                Đang tải danh sách kho đang trống từ hệ thống database...
-              </div>
+              Array.from({ length: 6 }, (_, index) => <StorageUnitCardSkeleton key={index} />)
             ) : availableUnits.filter(u => {
                 if (filterFacility !== 'all' && u.facilityId !== filterFacility) return false
                 const area = u.areaSqMeters || 6
@@ -1550,98 +1778,50 @@ export const CustomerDashboard: React.FC = () => {
                 if (filterSize === 'family' && (area <= 5 || area > 10)) return false
                 if (filterSize === 'business' && area <= 10) return false
                 return true
-              }).map((unit, idx) => {
-                const bgImg = UNIT_CARD_IMAGES[idx % UNIT_CARD_IMAGES.length]
-                const priceFormatted = Number(unit.pricePerMonth || 1250000).toLocaleString('vi-VN')
-                const areaVal = unit.areaSqMeters ? `${unit.areaSqMeters.toFixed(1)} m²` : '6.0 m²'
-                const volumeVal = unit.areaSqMeters ? `${Math.round(unit.areaSqMeters * 2.8)} m³` : '17 m³'
-
+              }).map((unit) => {
                 return (
-                  <div key={unit.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-                    <div>
-                      <div className="relative h-44 overflow-hidden bg-slate-800">
-                        <div 
-                          className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105 opacity-90"
-                          style={{ backgroundImage: `url('${bgImg}')` }}
-                        ></div>
-                        <div className="absolute top-3 left-3 flex gap-1.5">
-                          <span className="bg-slate-900/90 backdrop-blur text-white font-unit-code text-xs px-2 py-1 rounded-md">
-                            #{unit.unitCode}
-                          </span>
-                          <span className="bg-blue-600 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
-                            {unit.floorLevel || 'Tầng 1'}
-                          </span>
-                        </div>
-                        <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
-                          <span className="text-slate-500">{unit.facilityName || 'Kho Boxora'}</span>
-                        </div>
-                      </div>
-
-                      <div className="p-5 flex flex-col gap-3">
-                        <div className="flex items-baseline justify-between">
-                          <span className="font-headline text-base font-bold text-slate-900">
-                            {unit.unitTypeName || `Kho Tiêu Chuẩn #${unit.unitCode}`}
-                          </span>
-                          <span className="font-headline text-base font-bold text-blue-600">
-                            {priceFormatted} đ<span className="text-xs font-normal text-slate-500">/tháng</span>
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-500">
-                          Phù hợp lưu trữ gia dụng, hành lý, thiết bị cá nhân và hàng hóa thương mại điện tử.
-                        </p>
-
-                        <div className="grid grid-cols-2 gap-2 pt-2">
-                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                            <span className="text-slate-400 block text-[10px] uppercase font-medium">Diện tích</span>
-                            <span className="font-data-tabular font-semibold text-slate-800">{areaVal}</span>
-                          </div>
-                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                            <span className="text-slate-400 block text-[10px] uppercase font-medium">Thể tích</span>
-                            <span className="font-data-tabular font-semibold text-slate-800">{volumeVal}</span>
-                          </div>
-                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                            <span className="text-slate-400 block text-[10px] uppercase font-medium">Khóa cửa</span>
-                            <span className="text-slate-800 font-semibold">Smart Lock + PIN</span>
-                          </div>
-                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                            <span className="text-slate-400 block text-[10px] uppercase font-medium">An ninh</span>
-                            <span className="text-slate-800 font-semibold">CCTV 24/7 chuyên dụng</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="p-5 pt-0">
-                      <button
-                        onClick={() => {
-                          setSelectedBookingUnit({ 
-                            id: unit.id, 
-                            unitCode: unit.unitCode,
-                            name: unit.unitTypeName || `Kho Tiêu Chuẩn #${unit.unitCode}`, 
-                            facilityName: unit.facilityName || 'Hệ thống kho Boxora',
-                            priceFormatted: priceFormatted,
-                            priceNumber: Number(unit.pricePerMonth || 1250000),
-                            depositNumber: Number(unit.depositAmount || unit.pricePerMonth || 1250000),
-                            areaSqMeters: unit.areaSqMeters,
-                            floorLevel: unit.floorLevel || 'Tầng 1'
-                          })
-                          setBookingPackage('3m')
-                          setBookingCustomDays(45)
-                          const todayStr = new Date().toISOString().split('T')[0]
-                          setBookingStartDate(todayStr)
-                          const checkInD = new Date()
-                          checkInD.setDate(checkInD.getDate() + 3)
-                          setBookingCheckInDate(checkInD.toISOString().split('T')[0])
-                          setBookingPolicyAccepted(true)
-                          setBookingWorkflow('HOLD_ONLY')
-                          setBookingSuccess(false)
-                        }}
-                        className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
-                      >
-                        <span>Đặt Giữ Chỗ</span>
-                      </button>
-                    </div>
-                  </div>
+                  <StorageUnitCard
+                    key={unit.id}
+                    unitCode={unit.unitCode}
+                    unitTypeName={unit.unitTypeName}
+                    facilityName={unit.facilityName}
+                    facilityAddress={facilities.find(facility => facility.id === unit.facilityId)?.address}
+                    floorLevel={unit.floorLevel}
+                    pricePerMonth={unit.pricePerMonth}
+                    areaSqMeters={unit.areaSqMeters}
+                    onSelect={() => {
+                      setSelectedDetailModalUnit(unit)
+                      setIsDetailModalOpen(true)
+                    }}
+                    onViewDetails={() => {
+                      setSelectedDetailModalUnit(unit)
+                      setIsDetailModalOpen(true)
+                    }}
+                    onReserve={() => {
+                      const price = Number(unit.pricePerMonth || 1250000)
+                      setSelectedBookingUnit({
+                        id: unit.id,
+                        unitCode: unit.unitCode,
+                        name: unit.unitTypeName || `Kho Tiêu Chuẩn #${unit.unitCode}`,
+                        facilityName: unit.facilityName || 'Hệ thống kho Boxora',
+                        priceFormatted: price.toLocaleString('vi-VN'),
+                        priceNumber: price,
+                        depositNumber: Number(unit.depositAmount || price),
+                        areaSqMeters: unit.areaSqMeters,
+                        floorLevel: unit.floorLevel || 'Tầng 1'
+                      })
+                      setBookingPackage('3m')
+                      setBookingCustomDays(45)
+                      const todayStr = new Date().toISOString().split('T')[0]
+                      setBookingStartDate(todayStr)
+                      const checkInD = new Date()
+                      checkInD.setDate(checkInD.getDate() + 3)
+                      setBookingCheckInDate(checkInD.toISOString().split('T')[0])
+                      setBookingPolicyAccepted(true)
+                      setBookingWorkflow('HOLD_ONLY')
+                      setBookingSuccess(false)
+                    }}
+                  />
                 )
               })
             )}
@@ -1997,6 +2177,7 @@ export const CustomerDashboard: React.FC = () => {
                 </div>
               ) : (
                 <form className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left" onSubmit={handleSupportSubmit}>
+                  {ticketError && <p role="alert" className="sm:col-span-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{ticketError}</p>}
                   <div className="flex flex-col gap-1.5">
                     <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                       Kho lưu trữ liên quan
@@ -2033,6 +2214,7 @@ export const CustomerDashboard: React.FC = () => {
                       <option value="delegate">Ủy quyền mở kho cho tài xế/người thân</option>
                       <option value="climate">Kiểm tra nhiệt độ / độ ẩm phòng</option>
                       <option value="billing">Hỗ trợ thanh toán &amp; Hóa đơn VAT</option>
+                      <option value="return">Yêu cầu trả kho</option>
                     </select>
                   </div>
 
@@ -2064,6 +2246,9 @@ export const CustomerDashboard: React.FC = () => {
             </div>
           </div>
         </section>
+      )}
+
+      </>
       )}
 
       {/* Booking Modal (Đặt giữ chỗ kho) */}
@@ -2103,7 +2288,7 @@ export const CustomerDashboard: React.FC = () => {
                   </div>
                   <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
                     <span className="text-slate-500">Ngày check-in dự kiến:</span>
-                    <span className="font-semibold text-slate-800">{formatDisplayDate(bookingCheckInDate)}</span>
+                    <span className="font-semibold text-slate-800">{formatDisplayDate(bookingCheckInDate)} · {bookingCheckInTime}</span>
                   </div>
                   <div className="flex justify-between items-center py-1">
                     <span className="text-slate-500">Phương thức:</span>
@@ -2122,19 +2307,27 @@ export const CustomerDashboard: React.FC = () => {
                 <div className="pt-2 flex flex-col sm:flex-row gap-2">
                   <button
                     onClick={() => {
-                      setBookingSuccess(false)
-                      setSelectedBookingUnit(null)
-                      handleTabChange('bookings')
+                      if (bookingOnly) {
+                        navigate('/portal/customer?tab=requests')
+                      } else {
+                        setBookingSuccess(false)
+                        setSelectedBookingUnit(null)
+                        handleTabChange('bookings')
+                      }
                     }}
                     className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-all cursor-pointer"
                   >
-                    Xem Danh Sách Đặt Chỗ
+                    Xem Yêu Cầu Đặt Chỗ
                   </button>
                   <button
                     onClick={() => {
-                      setBookingSuccess(false)
-                      setSelectedBookingUnit(null)
-                      handleTabChange('my-units')
+                      if (bookingOnly) {
+                        navigate('/portal/customer?tab=my-units')
+                      } else {
+                        setBookingSuccess(false)
+                        setSelectedBookingUnit(null)
+                        handleTabChange('my-units')
+                      }
                     }}
                     className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm"
                   >
@@ -2144,6 +2337,11 @@ export const CustomerDashboard: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-5">
+                {bookingError && (
+                  <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700">
+                    {bookingError}
+                  </p>
+                )}
                 {/* Modal Header */}
                 <div className="flex items-start justify-between pb-3 border-b border-slate-100">
                   <div>
@@ -2155,7 +2353,7 @@ export const CustomerDashboard: React.FC = () => {
                     </p>
                   </div>
                   <button
-                    onClick={() => setSelectedBookingUnit(null)}
+                    onClick={closeBookingModal}
                     className="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
                   >
                     ✕
@@ -2296,8 +2494,17 @@ export const CustomerDashboard: React.FC = () => {
                         onChange={(e) => setBookingCheckInDate(e.target.value)}
                         className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
                       />
+                      <label className="mt-2 block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                        Giờ dự kiến đến
+                      </label>
+                      <input
+                        type="time"
+                        value={bookingCheckInTime}
+                        onChange={(e) => setBookingCheckInTime(e.target.value)}
+                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
+                      />
                       <p className="text-[10px] text-slate-500 leading-normal">
-                        Ngày bạn đến cơ sở để xác minh thông tin, kiểm tra kho và nhận bàn giao.
+                        Ngày và giờ bạn dự kiến đến để nhân viên chuẩn bị kho và bàn giao.
                       </p>
                     </div>
                   </div>
@@ -2474,7 +2681,7 @@ export const CustomerDashboard: React.FC = () => {
                 <div className="pt-3 border-t border-slate-100 flex items-center gap-2.5">
                   <button
                     type="button"
-                    onClick={() => setSelectedBookingUnit(null)}
+                    onClick={closeBookingModal}
                     disabled={isSubmittingBooking}
                     className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
                   >
@@ -2981,6 +3188,54 @@ export const CustomerDashboard: React.FC = () => {
           onClose={() => setRequestToPay(null)}
         />
       )}
+
+      <StorageUnitDetailModal
+        isOpen={isDetailModalOpen}
+        unit={selectedDetailModalUnit ? {
+          id: selectedDetailModalUnit.id,
+          backendId: selectedDetailModalUnit.id,
+          unitCode: selectedDetailModalUnit.unitCode,
+          unitTypeName: selectedDetailModalUnit.unitTypeName,
+          facilityId: selectedDetailModalUnit.facilityId,
+          facilityName: selectedDetailModalUnit.facilityName,
+          facilityAddress: facilities.find(f => f.id === selectedDetailModalUnit.facilityId)?.address,
+          floorLevel: selectedDetailModalUnit.floorLevel,
+          pricePerMonth: selectedDetailModalUnit.pricePerMonth,
+          depositAmount: selectedDetailModalUnit.depositAmount,
+          areaSqMeters: selectedDetailModalUnit.areaSqMeters,
+          status: selectedDetailModalUnit.status,
+          images: selectedDetailModalUnit.images
+        } : null}
+        onClose={() => setIsDetailModalOpen(false)}
+        onReserve={(unitData) => {
+          setIsDetailModalOpen(false)
+          const matched = availableUnits.find(u => u.id === unitData.id) || selectedDetailModalUnit
+          if (matched) {
+            const price = Number(matched.pricePerMonth || 1250000)
+            setSelectedBookingUnit({
+              id: matched.id,
+              unitCode: matched.unitCode,
+              name: matched.unitTypeName || `Kho Tiêu Chuẩn #${matched.unitCode}`,
+              facilityName: matched.facilityName || 'Hệ thống kho Boxora',
+              priceFormatted: price.toLocaleString('vi-VN'),
+              priceNumber: price,
+              depositNumber: Number(matched.depositAmount || price),
+              areaSqMeters: matched.areaSqMeters,
+              floorLevel: matched.floorLevel || 'Tầng 1'
+            })
+            setBookingPackage('3m')
+            setBookingCustomDays(45)
+            const todayStr = new Date().toISOString().split('T')[0]
+            setBookingStartDate(todayStr)
+            const checkInD = new Date()
+            checkInD.setDate(checkInD.getDate() + 3)
+            setBookingCheckInDate(checkInD.toISOString().split('T')[0])
+            setBookingPolicyAccepted(true)
+            setBookingWorkflow('HOLD_ONLY')
+            setBookingSuccess(false)
+          }
+        }}
+      />
 
     </div>
   )

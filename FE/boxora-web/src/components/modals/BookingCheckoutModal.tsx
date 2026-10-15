@@ -44,6 +44,8 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
   const [step, setStep] = useState<CheckoutStep>(() => existingBooking?.status === 'PENDING_PAYMENT' ? 4 : 1)
   const [rentalMonths, setRentalMonths] = useState(existingBooking?.rentalMonths || 1)
   const [startDate, setStartDate] = useState(existingBooking?.startDate || getToday)
+  const [expectedArrivalDate, setExpectedArrivalDate] = useState(existingBooking?.expectedArrivalAt?.slice(0, 10) || existingBooking?.startDate || getToday())
+  const [expectedArrivalTime, setExpectedArrivalTime] = useState(existingBooking?.expectedArrivalAt?.slice(11, 16) || '10:00')
   const [customerName, setCustomerName] = useState(user.fullName || '')
   const [customerPhone, setCustomerPhone] = useState(user.phone || '')
   const [signingMethod, setSigningMethod] = useState<'ONLINE' | 'IN_PERSON'>(
@@ -136,6 +138,8 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
         storageUnitId: unit.backendId,
         customerId: user.id,
         startDate,
+        expectedArrivalAt: `${expectedArrivalDate}T${expectedArrivalTime}:00`,
+        requiresManagerApproval: true,
         rentalMonths,
         signingMethod,
       })
@@ -227,6 +231,14 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
               <label className="block space-y-1.5 text-xs font-semibold text-slate-700">Ngày bắt đầu thuê
                 <input type="date" min={getToday()} value={startDate} onChange={event => setStartDate(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" required />
               </label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="block space-y-1.5 text-xs font-semibold text-slate-700">Ngày dự kiến đến nhận kho
+                  <input type="date" min={getToday()} value={expectedArrivalDate} onChange={event => setExpectedArrivalDate(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" required />
+                </label>
+                <label className="block space-y-1.5 text-xs font-semibold text-slate-700">Giờ dự kiến đến
+                  <input type="time" value={expectedArrivalTime} onChange={event => setExpectedArrivalTime(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" required />
+                </label>
+              </div>
               <label className="block space-y-1.5 text-xs font-semibold text-slate-700">Kỳ hạn thuê
                 <select value={rentalMonths} onChange={event => setRentalMonths(Number(event.target.value))} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100">
                   {[1, 3, 6, 12].map(months => <option key={months} value={months}>{months} tháng</option>)}
@@ -294,6 +306,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Người thuê</span><strong>{customerName.trim()}</strong></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Email / điện thoại</span><strong className="text-right">{user.email}<br />{normalizedPhone}</strong></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Ngày bắt đầu</span><strong>{new Date(`${startDate}T00:00:00`).toLocaleDateString('vi-VN')}</strong></div>
+                <div className="flex justify-between gap-3"><span className="text-slate-500">Dự kiến đến</span><strong>{new Date(`${expectedArrivalDate}T00:00:00`).toLocaleDateString('vi-VN')} · {expectedArrivalTime}</strong></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Kỳ hạn</span><strong>{rentalMonths} tháng</strong></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Tiền thuê theo kỳ hạn</span><strong>{formatVnd(unit.monthlyPrice * rentalMonths)}</strong></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Tiền cọc dự kiến</span><strong>{formatVnd(unit.depositAmount ?? unit.monthlyPrice)}</strong></div>

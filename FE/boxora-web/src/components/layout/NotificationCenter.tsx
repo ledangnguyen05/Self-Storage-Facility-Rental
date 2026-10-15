@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
 import { NotificationLog, notificationService } from '../../services/notificationService'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -22,6 +24,9 @@ const formatDate = (value?: string) => {
 
 const getTypeLabel = (type?: string) => {
   switch (type) {
+    case 'BOOKING_CREATED': return 'Yêu cầu đã ghi nhận'
+    case 'BOOKING_APPROVAL_REQUEST': return 'Chờ duyệt'
+    case 'BOOKING_PREPARATION': return 'Chuẩn bị kho'
     case 'RENEWAL_REMINDER_3D': return 'Sắp hết hạn'
     case 'RENEWAL_REMINDER_7D': return 'Gia hạn'
     case 'REFUND_STATUS': return 'Hoàn tiền'
@@ -31,7 +36,32 @@ const getTypeLabel = (type?: string) => {
   }
 }
 
+const getNotificationAction = (item: NotificationLog, role?: string | null) => {
+  if (item.notificationType === 'BOOKING_APPROVAL_REQUEST'
+    && ['ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER'].includes(role || '')
+    && item.referenceId) {
+    return {
+      label: 'Xem & duyệt',
+      to: `/portal/facility-manager?bookingApprovalId=${encodeURIComponent(item.referenceId)}`,
+    }
+  }
+
+  if (item.notificationType === 'BOOKING_PREPARATION' && role === 'STAFF' && item.referenceId) {
+    return {
+      label: 'Xem chi tiết kho',
+      to: `/portal/staff?bookingId=${encodeURIComponent(item.referenceId)}`,
+    }
+  }
+
+  if (item.notificationType === 'BOOKING_CREATED' && role === 'CUSTOMER') {
+    return { label: 'Xem yêu cầu đặt chỗ', to: '/portal/customer?tab=requests' }
+  }
+
+  return null
+}
+
 const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
+  const { role } = useAuth()
   const [isOpen, setIsOpen] = useState(false)
   const [items, setItems] = useState<NotificationLog[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -68,6 +98,35 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
       if (requestId === requestIdRef.current) setIsLoading(false)
     }
   }, [userId])
+
+  useEffect(() => {
+    if (userId && UUID_PATTERN.test(userId)) {
+      void loadNotifications()
+    }
+  }, [userId, loadNotifications])
+
+  useEffect(() => {
+    const refreshAfterBooking = () => { void loadNotifications() }
+    window.addEventListener('boxora:notifications-refresh', refreshAfterBooking)
+    return () => window.removeEventListener('boxora:notifications-refresh', refreshAfterBooking)
+  }, [loadNotifications])
+
+  useEffect(() => {
+    if (!userId || !UUID_PATTERN.test(userId)) return
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void loadNotifications()
+    }
+    const intervalId = window.setInterval(refreshWhenVisible, 30_000)
+    window.addEventListener('focus', refreshWhenVisible)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [userId, loadNotifications])
 
   useEffect(() => {
     if (!isOpen) return
@@ -174,6 +233,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
               <ul className="space-y-1.5">
                 {items.map((item) => {
                   const expanded = expandedId === item.id
+                  const action = getNotificationAction(item, role)
                   return (
                     <li key={item.id}>
                       <button
@@ -196,6 +256,16 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
                           <span>{item.status === 'SENT' ? 'Đã gửi' : item.status || item.channel || 'Thông báo'}</span>
                         </div>
                       </button>
+                      {expanded && action && (
+                        <Link
+                          to={action.to}
+                          onClick={() => setIsOpen(false)}
+                          className="mx-2 mt-1 inline-flex items-center gap-1.5 rounded-lg bg-cyan-700 px-3 py-2 text-[11px] font-bold text-white transition-colors hover:bg-cyan-800"
+                        >
+                          <span>{action.label}</span>
+                          <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                        </Link>
+                      )}
                     </li>
                   )
                 })}

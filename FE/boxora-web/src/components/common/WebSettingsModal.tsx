@@ -7,7 +7,6 @@ import {
   DEFAULT_WEB_SETTINGS,
   getWebSettings,
   saveWebSettings,
-  playEmergencySoundPreview,
 } from '../../utils/webSettings'
 
 interface WebSettingsModalProps {
@@ -156,83 +155,7 @@ export const WebSettingsModal: React.FC<WebSettingsModalProps> = ({ isOpen, onCl
             </div>
           </div>
 
-          {/* Section 3: Âm thanh & Cảnh báo khẩn cấp */}
-          <div className="rounded-xl border border-slate-200/80 p-3.5 bg-white space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px] text-slate-500">volume_up</span>
-                <span className="text-xs font-bold text-slate-900">{t('Âm thanh & Cảnh báo kho')}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => playEmergencySoundPreview(settings.soundVolume)}
-                className="px-2 py-1 rounded-lg text-blue-600 hover:bg-blue-50 text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                title={t('Nghe thử')}
-              >
-                <span className="material-symbols-outlined text-[15px]">play_arrow</span>
-                <span>{t('Nghe thử')}</span>
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between py-1">
-              <div className="flex flex-col">
-                <span className="text-xs font-medium text-slate-800">{t('Âm thanh cảnh báo khẩn cấp')}</span>
-                <span className="text-[10px] text-slate-500">{t('Phát còi khi cảm biến nhiệt độ / khói vượt ngưỡng')}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleUpdate('enableEmergencySound', !settings.enableEmergencySound)}
-                className={`w-10 h-6 rounded-full p-0.5 transition-colors cursor-pointer ${
-                  settings.enableEmergencySound ? 'bg-blue-600' : 'bg-slate-300'
-                }`}
-              >
-                <div
-                  className={`w-5 h-5 rounded-full bg-white shadow-xs transition-transform ${
-                    settings.enableEmergencySound ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
-
-            {settings.enableEmergencySound && (
-              <div className="flex items-center gap-3 pt-1 border-t border-slate-100">
-                <span className="text-[11px] text-slate-600 font-medium shrink-0">{t('Âm lượng còi:')}</span>
-                <input
-                  type="range"
-                  min="10"
-                  max="100"
-                  value={settings.soundVolume}
-                  onChange={e => handleUpdate('soundVolume', Number(e.target.value))}
-                  className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                />
-                <span className="text-[11px] font-mono font-bold text-slate-700 w-8 text-right">
-                  {settings.soundVolume}%
-                </span>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between py-1 border-t border-slate-100">
-              <div className="flex flex-col">
-                <span className="text-xs font-medium text-slate-800">{t('Thông báo trình duyệt & IoT')}</span>
-                <span className="text-[10px] text-slate-500">{t('Bật thông báo đẩy trạng thái mở khóa và hợp đồng')}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleUpdate('enableNotifications', !settings.enableNotifications)}
-                className={`w-10 h-6 rounded-full p-0.5 transition-colors cursor-pointer ${
-                  settings.enableNotifications ? 'bg-blue-600' : 'bg-slate-300'
-                }`}
-              >
-                <div
-                  className={`w-5 h-5 rounded-full bg-white shadow-xs transition-transform ${
-                    settings.enableNotifications ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
-          </div>
-
-          {/* Section 4: Ngôn ngữ & Vùng */}
+          {/* Section 3: Ngôn ngữ & Vùng */}
           <div className="rounded-xl border border-slate-200/80 p-3.5 bg-white space-y-2.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -270,7 +193,7 @@ export const WebSettingsModal: React.FC<WebSettingsModalProps> = ({ isOpen, onCl
             </div>
           </div>
 
-          {/* Section 5: Phiên đăng nhập */}
+          {/* Section 4: Phiên đăng nhập */}
           <div className="rounded-xl border border-slate-200/80 p-3.5 bg-white flex items-center justify-between">
             <div className="flex flex-col">
               <div className="flex items-center gap-2">

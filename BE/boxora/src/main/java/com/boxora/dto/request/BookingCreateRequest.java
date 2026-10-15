@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Data
@@ -22,6 +23,10 @@ public class BookingCreateRequest {
 
     @NotNull(message = "Start date is required")
     private LocalDate startDate;
+
+    private LocalDateTime expectedArrivalAt;
+
+    private Boolean requiresManagerApproval;
 
     @NotNull(message = "Rental duration in months is required")
     private Integer rentalMonths;

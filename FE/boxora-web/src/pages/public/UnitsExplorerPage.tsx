@@ -1,11 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import {
   StorageUnitType,
   calculateDistanceKm,
 } from '../../data/storageUnitsData'
-import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import { FloatingContactWidget } from '../../components/common/FloatingContactWidget'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
@@ -15,9 +14,11 @@ import { LogoutConfirmModal } from '../../components/common/LogoutConfirmModal'
 import { WebSettingsModal } from '../../components/common/WebSettingsModal'
 import { UserAvatarDropdown } from '../../components/common/UserAvatarDropdown'
 import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
+import NotificationCenter from '../../components/layout/NotificationCenter'
+import { StorageUnitCard, StorageUnitCardSkeleton } from '../../components/units/StorageUnitCard'
+import { StorageUnitDetailModal } from '../../components/modals/StorageUnitDetailModal'
 import { useLanguage } from '../../context/LanguageContext'
 import { Facility, StorageUnit } from '../../types'
-import { BookingCheckoutModal, BookingCheckoutUnit } from '../../components/modals/BookingCheckoutModal'
 import { geocodeAddressWithNominatim, getNominatimErrorMessage } from '../../services/nominatimGeocodingService'
 
 interface CustomerCoordinates {
@@ -36,6 +37,7 @@ const normalizeSearchText = (value: string) => value
 
 export const UnitsExplorerPage: React.FC = () => {
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const { isAuthenticated, user, logout } = useAuth()
   const { t } = useLanguage()
@@ -48,10 +50,15 @@ export const UnitsExplorerPage: React.FC = () => {
   const [rawUnits, setRawUnits] = useState<StorageUnit[]>([])
   const [loadingUnits, setLoadingUnits] = useState(true)
 
-  // Customer rental access
   const isCustomer = user?.role?.name === 'CUSTOMER'
-  const [customerAccess, setCustomerAccess] = useState(() => checkCustomerPortalAccess(user))
-  const canAccessPortal = !isCustomer || customerAccess.hasAccess
+  const [welcomeMessage, setWelcomeMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    const message = (location.state as { welcomeMessage?: string } | null)?.welcomeMessage
+    if (!message) return
+    setWelcomeMessage(message)
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
+  }, [location.key, location.pathname, location.search, location.state, navigate])
 
   // Filter States
   const [searchQuery, setSearchQuery] = useState('')
@@ -72,8 +79,15 @@ export const UnitsExplorerPage: React.FC = () => {
 
   // Selected Unit & Modal State
   const [selectedUnit, setSelectedUnit] = useState<StorageUnitType | null>(null)
-  const [checkoutUnit, setCheckoutUnit] = useState<BookingCheckoutUnit | null>(null)
+  const [detailModalUnit, setDetailModalUnit] = useState<StorageUnitType | null>(null)
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState<boolean>(false)
   const [dataLoadError, setDataLoadError] = useState('')
+
+  const handleOpenDetailModal = (unit: StorageUnitType) => {
+    setSelectedUnit(unit)
+    setDetailModalUnit(unit)
+    setIsDetailModalOpen(true)
+  }
 
   // Fetch real data from backend database
   useEffect(() => {
@@ -173,6 +187,7 @@ export const UnitsExplorerPage: React.FC = () => {
       return {
         id: unit.id,
         backendId: unit.id,
+        unitCode: unit.unitCode,
         name: `Kho #${unit.unitCode}`,
         unitTypeName: typeName || undefined,
         category,
@@ -184,6 +199,7 @@ export const UnitsExplorerPage: React.FC = () => {
         facilityId: unit.facilityId,
         facilityName: unit.facilityName || facility?.name || '',
         facilityAddress: facility?.address || '',
+        floorLevel: unit.floorLevel || 'Tầng 1',
         floorLocation: unit.floorLevel ? `${unit.floorLevel} · ${unit.unitCode}` : unit.unitCode,
         coords: facility?.coords || null
       };
@@ -205,15 +221,6 @@ export const UnitsExplorerPage: React.FC = () => {
       if (match) setSelectedUnit(match)
     }
   }, [searchParams, effectiveUnits])
-
-  // Listen to rental update events
-  useEffect(() => {
-    const handleRentalChange = () => {
-      setCustomerAccess(checkCustomerPortalAccess(user))
-    }
-    window.addEventListener('boxora_rental_updated', handleRentalChange)
-    return () => window.removeEventListener('boxora_rental_updated', handleRentalChange)
-  }, [user])
 
   const handleGetGpsLocation = () => {
     if (!navigator.geolocation) {
@@ -320,53 +327,43 @@ export const UnitsExplorerPage: React.FC = () => {
   }
   const handleRentUnitClick = (unit: StorageUnitType) => {
     if (unit.status !== 'Sẵn sàng' || !unit.backendId) return
-    if (!isAuthenticated) {
-      navigate(`/login?redirect=${encodeURIComponent(`/units?unit=${unit.backendId}`)}`)
-      return
-    }
-    setCheckoutUnit({
-      backendId: unit.backendId,
-      code: unit.id,
-      name: unit.name,
-      facilityName: unit.facilityName,
-      monthlyPrice: unit.monthlyPriceNumeric,
-      depositAmount: unit.depositAmountNumeric ?? unit.monthlyPriceNumeric,
-      size: unit.areaSqMeters == null ? 'Chưa cập nhật' : `${unit.areaSqMeters} m²`,
-      address: unit.facilityAddress
-    })
+    navigate(`/reserve?unit=${encodeURIComponent(unit.backendId)}`)
   }
 
   return (
     <div className="min-h-screen bg-[var(--surface-canvas,#f8fafc)] text-slate-900 font-sans selection:bg-blue-600 selection:text-white pb-20">
+      {welcomeMessage && (
+        <div role="status" className="fixed right-4 top-20 z-50 flex max-w-md items-start gap-3 rounded-xl border border-emerald-200 bg-white p-4 text-sm text-emerald-900 shadow-lg">
+          <span className="material-symbols-outlined text-emerald-600">check_circle</span>
+          <p className="flex-1">{welcomeMessage}</p>
+          <button type="button" aria-label="Đóng thông báo" onClick={() => setWelcomeMessage(null)} className="text-emerald-700 hover:text-emerald-900">×</button>
+        </div>
+      )}
       
       {/* ============================================================ */}
       {/* 1. TOP HEADER & NAVIGATION                                   */}
       {/* ============================================================ */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-2xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-5 lg:px-6 h-16 flex items-center justify-between">
           
           {/* Logo & Explorer Identity */}
-          <div className="flex items-center gap-4 sm:gap-6">
+          <div className="flex items-center">
             <BrandLogo subtitle="STORAGE EXPLORER" />
-
-            <div className="hidden sm:flex items-center gap-2 border-l border-slate-200 pl-4">
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider font-mono">
-                Tìm Kiếm &amp; Đặt Thuê Kho
-              </span>
-            </div>
           </div>
 
           {/* Navigation Links & User Action */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <Link
               to="/"
-              className="hidden md:flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               <span className="material-symbols-outlined text-[16px]">arrow_back</span>
               <span>{t('Trang Giới Thiệu (Landing)')}</span>
             </Link>
 
             <QuickThemeLanguageToggle />
+
+            {isAuthenticated && <NotificationCenter userId={user?.id} />}
 
             {isAuthenticated ? (
               <UserAvatarDropdown
@@ -376,21 +373,19 @@ export const UnitsExplorerPage: React.FC = () => {
                 onOpenSettings={() => setIsSettingsModalOpen(true)}
                 onOpenLogoutConfirm={() => setIsLogoutConfirmOpen(true)}
                 extraActions={
-                  canAccessPortal ? (
-                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-                      <button
-                        type="button"
-                        onClick={() => navigate(isCustomer ? '/portal/customer' : '/portal')}
-                        className="w-full py-2.5 px-3.5 rounded-xl bg-slate-900 dark:bg-blue-600 text-white font-semibold text-xs flex items-center justify-between hover:bg-neutral-800 dark:hover:bg-blue-700 transition-all shadow-xs cursor-pointer"
-                      >
-                        <span className="flex items-center gap-2">
-                          <span className="material-symbols-outlined text-[18px] text-emerald-400">dashboard</span>
-                          <span>{t('Vào Portal')}</span>
-                        </span>
-                        <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                      </button>
-                    </div>
-                  ) : undefined
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => navigate(isCustomer ? '/portal/customer' : '/portal')}
+                      className="w-full py-2.5 px-3.5 rounded-xl bg-slate-900 dark:bg-blue-600 text-white font-semibold text-xs flex items-center justify-between hover:bg-neutral-800 dark:hover:bg-blue-700 transition-all shadow-xs cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[18px] text-emerald-400">dashboard</span>
+                        <span>{t('Vào Portal')}</span>
+                      </span>
+                      <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                    </button>
+                  </div>
                 }
               />
             ) : (
@@ -418,11 +413,11 @@ export const UnitsExplorerPage: React.FC = () => {
       {/* ============================================================ */}
       {/* 2. DASHBOARD HERO BANNER                                     */}
       {/* ============================================================ */}
-      <section className="bg-gradient-to-b from-white to-slate-50 border-b border-slate-200 py-10 sm:py-14 text-left">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+      <section className="bg-gradient-to-b from-white to-slate-50 border-b border-slate-200 py-6 sm:py-8 text-left">
+        <div className="max-w-7xl mx-auto px-4 sm:px-5 lg:px-6">
           
-          <div className="max-w-3xl space-y-2">
-            <h1 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+          <div className="max-w-3xl space-y-1.5">
+            <h1 className="font-headline text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
               Tìm Kiếm &amp; Đặt Thuê Kho Trực Tuyến
             </h1>
             <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl">
@@ -436,16 +431,16 @@ export const UnitsExplorerPage: React.FC = () => {
       {/* ============================================================ */}
       {/* 3. LOCATION & PROXIMITY CONTROL CENTER                       */}
       {/* ============================================================ */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 space-y-8">
+      <section className="max-w-7xl mx-auto px-4 sm:px-5 lg:px-6 mt-5 sm:mt-6 space-y-5">
         
-        <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm text-left space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center">
+        <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200 shadow-sm text-left space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center">
                 <span className="material-symbols-outlined text-[20px]">near_me</span>
               </div>
               <div>
-                <h2 className="font-headline text-base font-bold text-slate-900">
+                <h2 className="font-headline text-sm font-bold text-slate-900">
                   Tìm kho gần bạn
                 </h2>
                 <p className="text-[11px] text-slate-500">
@@ -465,10 +460,10 @@ export const UnitsExplorerPage: React.FC = () => {
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-5 items-start">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 items-start">
             
             {/* Customer address search */}
-            <div className="lg:col-span-7 space-y-2.5">
+            <div className="lg:col-span-5 space-y-2">
               <label htmlFor="customer-address" className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[17px] text-cyan-600">person_pin_circle</span>
                 <span>Vị trí của bạn</span>
@@ -496,8 +491,8 @@ export const UnitsExplorerPage: React.FC = () => {
               {customerLocation && <p className="text-[11px] text-slate-600 truncate" title={customerLocation.displayName}>Đang tìm quanh: {customerLocation.displayName}</p>}
               {gpsNotice && <p className="text-[11px] text-cyan-700 font-medium" role="status">{gpsNotice}</p>}
             </div>
-            {/* Column 2: VỊ TRÍ CƠ SỞ KHO MUỐN THUÊ (5 Cols) */}
-            <div className="lg:col-span-5 space-y-2.5">
+            {/* Facility filter */}
+            <div className="lg:col-span-4 space-y-2">
               <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[17px] text-[var(--brand-teal,#0891b2)]">domain</span>
                 <span>Cơ sở kho</span>
@@ -530,8 +525,8 @@ export const UnitsExplorerPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Column 3: SORT & PROXIMITY TOGGLE (2 Cols) */}
-            <div className="lg:col-span-2 space-y-2.5">
+            {/* Proximity sorting */}
+            <div className="md:col-span-2 lg:col-span-3 space-y-2">
               <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[17px] text-amber-600">tune</span>
                 <span>Kho gần bạn</span>
@@ -653,8 +648,12 @@ export const UnitsExplorerPage: React.FC = () => {
         {/* 5. STORAGE UNITS INVENTORY (GRID OR LIST)                    */}
         {/* ============================================================ */}
         {loadingUnits ? (
-          <div className="py-16 text-center bg-white rounded-2xl border border-slate-200 text-sm text-slate-500">
-            Đang tải danh sách kho...
+          <div
+            role="status"
+            aria-label="Đang tải danh sách kho"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left items-stretch"
+          >
+            {Array.from({ length: 6 }, (_, index) => <StorageUnitCardSkeleton key={index} />)}
           </div>
         ) : dataLoadError ? (
           <div role="alert" className="py-16 text-center bg-white rounded-2xl border border-rose-200 text-sm text-rose-700">{dataLoadError}</div>
@@ -687,102 +686,22 @@ export const UnitsExplorerPage: React.FC = () => {
             {filteredUnits.map((unit) => {
               const isSelected = selectedUnit?.id === unit.id
               return (
-                <div
+                <StorageUnitCard
                   key={unit.id}
-                  onClick={() => setSelectedUnit(unit)}
-                  className={`p-6 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between space-y-5 h-full ${
-                    isSelected
-                      ? 'border-blue-600 bg-blue-50/20 ring-2 ring-blue-500/20 shadow-md'
-                      : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
-                  }`}
-                >
-                  <div className="flex-1 flex flex-col space-y-3.5">
-                    <div className="flex items-center">
-                      <span className="font-mono text-sm font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-md">{unit.id}</span>
-                    </div>
-
-                    <div>
-                      <h3 className="font-headline text-lg font-bold text-slate-900">{unit.name}</h3>
-                      {(unit.unitTypeName || unit.areaSqMeters != null) && (
-                        <div className="mt-1 text-xs text-slate-600">
-                          {[unit.unitTypeName, unit.areaSqMeters == null ? null : `${unit.areaSqMeters} m²`].filter(Boolean).join(' · ')}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 space-y-2 text-xs">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 font-bold text-slate-800 min-w-0">
-                          <span className="material-symbols-outlined text-[16px] text-blue-600 shrink-0">
-                            domain
-                          </span>
-                          <span className="truncate" title={unit.facilityName}>
-                            {unit.facilityName}
-                          </span>
-                        </div>
-                        {unit.distanceKm != null && (
-                          <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-cyan-100 text-cyan-900 border border-cyan-200 flex items-center gap-1 shrink-0">
-                            <span className="material-symbols-outlined text-[13px] text-cyan-700">near_me</span>
-                            Khoảng {unit.distanceKm} km
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="text-[11px] text-slate-600 flex items-start gap-1">
-                        <span className="material-symbols-outlined text-[14px] text-slate-400 shrink-0 mt-0.5">location_on</span>
-                        <span className="line-clamp-1" title={unit.facilityAddress}>
-                          {unit.facilityAddress}
-                        </span>
-                      </div>
-
-                      <div className="text-[11px] text-slate-700 font-medium flex items-center gap-1 pt-1 border-t border-slate-200/60">
-                        <span className="material-symbols-outlined text-[14px] text-amber-600 shrink-0">door_front</span>
-                        <span className="truncate" title={unit.floorLocation}>
-                          {unit.floorLocation}
-                        </span>
-                      </div>
-
-                      <div className="pt-1 flex items-center justify-end text-[11px]">
-                        <a
-                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(unit.facilityAddress)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-0.5 hover:underline"
-                        >
-                          <span>Xem chỉ đường</span>
-                          <span className="material-symbols-outlined text-[12px]">open_in_new</span>
-                        </a>
-                      </div>
-                    </div>
-
-                    {/* Sức Chứa Thực Tế */}
-                  </div>
-
-                  {/* Price & CTA */}
-                  <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
-                    <div>
-                      <span className="font-mono text-xl font-bold text-slate-900 tabular-nums">
-                        {unit.monthlyPrice}
-                      </span>
-                      <span className="text-xs text-slate-500 font-normal"> / tháng</span>
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={!unit.backendId}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleRentUnitClick(unit)
-                      }}
-                      className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-300"
-                    >
-                      <span>Gửi yêu cầu thuê</span>
-                      <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                    </button>
-                  </div>
-
-                </div>
+                  unitCode={unit.unitCode}
+                  unitTypeName={unit.unitTypeName}
+                  facilityName={unit.facilityName}
+                  facilityAddress={unit.facilityAddress}
+                  floorLevel={unit.floorLevel}
+                  pricePerMonth={unit.monthlyPriceNumeric}
+                  areaSqMeters={unit.areaSqMeters}
+                  distanceKm={unit.distanceKm}
+                  isSelected={isSelected}
+                  reserveDisabled={!unit.backendId}
+                  onSelect={() => handleOpenDetailModal(unit)}
+                  onViewDetails={() => handleOpenDetailModal(unit)}
+                  onReserve={() => handleRentUnitClick(unit)}
+                />
               )
             })}
           </div>
@@ -794,7 +713,7 @@ export const UnitsExplorerPage: React.FC = () => {
               return (
                 <div
                   key={unit.id}
-                  onClick={() => setSelectedUnit(unit)}
+                  onClick={() => handleOpenDetailModal(unit)}
                   className={`p-5 rounded-2xl border transition-all cursor-pointer flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 text-left ${
                     isSelected
                       ? 'border-blue-600 bg-blue-50/20 ring-2 ring-blue-500/20 shadow-md'
@@ -802,8 +721,8 @@ export const UnitsExplorerPage: React.FC = () => {
                   }`}
                 >
                   <div className="space-y-2 min-w-[260px]">
-                    <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded">{unit.id}</span>
-                    <h3 className="font-headline text-base font-bold text-slate-900">{unit.name}</h3>
+                    <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded">#{unit.unitCode}</span>
+                    <h3 className="font-headline text-base font-bold text-slate-900 hover:text-blue-600 transition-colors">{unit.name}</h3>
                     {(unit.unitTypeName || unit.areaSqMeters != null) && (
                       <p className="text-xs text-slate-600">
                         {[unit.unitTypeName, unit.areaSqMeters == null ? null : `${unit.areaSqMeters} m²`].filter(Boolean).join(' · ')}
@@ -832,9 +751,9 @@ export const UnitsExplorerPage: React.FC = () => {
                     </p>
                   </div>
 
-                  {/* Right Column: Price & Button */}
-                  <div className="flex items-center justify-between lg:justify-end gap-6 w-full lg:w-auto pt-4 lg:pt-0 border-t lg:border-t-0 border-slate-100">
-                    <div className="text-left lg:text-right">
+                  {/* Right Column: Price & Buttons */}
+                  <div className="flex items-center justify-between lg:justify-end gap-3 w-full lg:w-auto pt-4 lg:pt-0 border-t lg:border-t-0 border-slate-100">
+                    <div className="text-left lg:text-right mr-2">
                       <span className="font-mono text-xl font-bold text-slate-900 tabular-nums block">
                         {unit.monthlyPrice}
                       </span>
@@ -843,14 +762,26 @@ export const UnitsExplorerPage: React.FC = () => {
 
                     <button
                       type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleOpenDetailModal(unit)
+                      }}
+                      className="px-4 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-800 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">visibility</span>
+                      <span>Chi Tiết &amp; Ảnh</span>
+                    </button>
+
+                    <button
+                      type="button"
                       disabled={!unit.backendId}
                       onClick={(e) => {
                         e.stopPropagation()
                         handleRentUnitClick(unit)
                       }}
-                      className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-300"
+                      className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-300"
                     >
-                      <span>Gửi yêu cầu thuê</span>
+                      <span>Đặt Giữ Chỗ</span>
                       <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
                     </button>
                   </div>
@@ -863,13 +794,6 @@ export const UnitsExplorerPage: React.FC = () => {
 
       </section>
 
-      {checkoutUnit && user && (
-        <BookingCheckoutModal
-          unit={checkoutUnit}
-          user={user}
-          onClose={() => setCheckoutUnit(null)}
-        />
-      )}
       {/* Floating Action Speed-Dial Widget (Scroll Top, Zalo, Hotline, Maps) */}
       <FloatingContactWidget />
 
@@ -891,6 +815,33 @@ export const UnitsExplorerPage: React.FC = () => {
         userName={user?.fullName || user?.username}
         userEmail={user?.email}
         userRole={user?.role?.name || 'CUSTOMER'}
+      />
+
+      <StorageUnitDetailModal
+        isOpen={isDetailModalOpen}
+        unit={detailModalUnit ? {
+          id: detailModalUnit.id,
+          backendId: detailModalUnit.backendId,
+          unitCode: detailModalUnit.unitCode,
+          unitTypeName: detailModalUnit.unitTypeName,
+          facilityId: detailModalUnit.facilityId,
+          facilityName: detailModalUnit.facilityName,
+          facilityAddress: detailModalUnit.facilityAddress,
+          floorLevel: detailModalUnit.floorLevel,
+          pricePerMonth: detailModalUnit.monthlyPriceNumeric,
+          depositAmount: detailModalUnit.depositAmountNumeric,
+          areaSqMeters: detailModalUnit.areaSqMeters,
+          distanceKm: detailModalUnit.distanceKm,
+          status: detailModalUnit.status,
+          images: detailModalUnit.images
+        } : null}
+        onClose={() => setIsDetailModalOpen(false)}
+        onReserve={(unitData) => {
+          const matched = effectiveUnits.find(u => u.id === unitData.id) || detailModalUnit
+          if (matched) {
+            handleRentUnitClick(matched)
+          }
+        }}
       />
 
     </div>
