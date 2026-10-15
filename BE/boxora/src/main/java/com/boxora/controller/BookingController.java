@@ -53,7 +53,7 @@ public class BookingController {
     }
 
     @PostMapping("/{id}/decision")
-    @PreAuthorize("hasAuthority('BOOKING_UPDATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Duyệt hoặc từ chối yêu cầu thuê kho và phân công nhân viên chuẩn bị")
     public ResponseEntity<ApiResponse<BookingResponse>> decideRequest(
             @PathVariable UUID id,

@@ -1,6 +1,7 @@
 export interface StorageUnitType {
   id: string
   backendId?: string
+  unitCode: string
   name: string
   unitTypeName?: string
   category: 'mini' | 'personal' | 'business' | 'special'
@@ -12,9 +13,11 @@ export interface StorageUnitType {
   facilityId: string
   facilityName: string
   facilityAddress: string
+  floorLevel: string
   floorLocation: string
   coords?: { lat: number; lng: number } | null
   distanceKm?: number
+  images?: string[]
 }
 
 export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {

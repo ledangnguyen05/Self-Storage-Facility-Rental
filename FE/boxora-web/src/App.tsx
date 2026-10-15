@@ -12,6 +12,7 @@ import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
 import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
 import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
 import { PaymentResultPage } from './pages/public/PaymentResultPage'
+import { FacilitiesPage } from './pages/public/FacilitiesPage'
 
 // StorageOps Pro Portals (Matching Prototype Stitch Files)
 
@@ -24,12 +25,11 @@ import { CashierJournalPage } from './pages/staff/CashierJournalPage'
 import { IncidentTicketsPage } from './pages/staff/IncidentTicketsPage'
 import { OverdueManagementPage } from './pages/manager/OverdueManagementPage'
 import { ShiftRosterPage } from './pages/manager/ShiftRosterPage'
-import { checkCustomerPortalAccess } from './utils/rentalAccess'
 import { BoxoraChatWidget } from './components/chat/BoxoraChatWidget'
 
 // Root redirect handler based on user role
 function RootRedirect() {
-  const { isAuthenticated, role, user, isLoading } = useAuth()
+  const { isAuthenticated, role, isLoading } = useAuth()
 
   if (isLoading) {
     return (
@@ -54,13 +54,8 @@ function RootRedirect() {
     case 'STAFF':
       return <Navigate to="/portal/staff" replace />
     case 'CUSTOMER':
-    default: {
-      const access = checkCustomerPortalAccess(user)
-      if (!access.hasAccess) {
-        return <Navigate to="/units" replace />
-      }
+    default:
       return <Navigate to="/portal/customer" replace />
-    }
   }
 }
 
@@ -79,6 +74,17 @@ function MainContent() {
           {/* Dedicated Storage Units Explorer & Booking Dashboard */}
           <Route path="/units" element={<UnitsExplorerPage />} />
           <Route path="/explore-units" element={<UnitsExplorerPage />} />
+          <Route path="/facilities" element={<FacilitiesPage />} />
+          <Route path="/branches" element={<FacilitiesPage />} />
+          <Route path="/my-requests" element={<Navigate to="/portal/customer?tab=requests" replace />} />
+          <Route
+            path="/reserve"
+            element={
+              <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}>
+                <CustomerDashboard bookingOnly />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/payment-result" element={<PaymentResultPage />} />
 
           {/* Boxora Terms & Standards Dashboard */}

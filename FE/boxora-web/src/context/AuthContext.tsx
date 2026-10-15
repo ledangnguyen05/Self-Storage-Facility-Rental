@@ -332,7 +332,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return updatedUser
   }
 
-  const role: RoleType | null = (user?.role?.name as RoleType) || null
+  const role: RoleType | null = (user?.role?.name || user?.roleName || null) as RoleType | null
 
   const hasPermission = (allowedRoles: RoleType[]): boolean => {
     if (!role) return false

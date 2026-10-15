@@ -9,6 +9,21 @@ import { storageUnitService } from '../../services/storageUnitService'
 import { contractService, RentalContract } from '../../services/contractService'
 import { Facility, FacilityPolicy, RevenueReport, OccupancyReport, OverdueDebtReport, UnitType } from '../../types'
 
+interface DashboardMetricProps {
+  isLoading: boolean
+  className?: string
+  skeletonClassName: string
+  children: React.ReactNode
+}
+
+const DashboardMetric: React.FC<DashboardMetricProps> = ({ isLoading, className = '', skeletonClassName, children }) => (
+  isLoading ? (
+    <span aria-hidden="true" className={`inline-block animate-pulse rounded bg-slate-200 motion-reduce:animate-none ${skeletonClassName}`} />
+  ) : (
+    <span className={className}>{children}</span>
+  )
+)
+
 export const OperationsDashboard: React.FC = () => {
   const { role } = useAuth()
   const { t } = useLanguage()
@@ -660,17 +675,25 @@ export const OperationsDashboard: React.FC = () => {
       </div>
 
       {/* 4 EXECUTIVE SUMMARY KPI CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div
+        role="group"
+        aria-label="Chỉ số tổng quan"
+        aria-busy={isReportsLoading}
+        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4"
+      >
+        <span role="status" aria-live="polite" className="sr-only">
+          {isReportsLoading ? 'Đang tải các chỉ số báo cáo' : ''}
+        </span>
         {/* Metric 1 */}
         <div className="relative overflow-hidden rounded-xl bg-white p-5 shadow-sm border border-slate-200 flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="flex flex-col">
               <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">Tổng Doanh Thu Hệ Thống</span>
               <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-2xl font-bold font-mono text-slate-900">
+                <DashboardMetric isLoading={isReportsLoading} className="text-2xl font-bold font-data-tabular tabular-nums text-slate-900" skeletonClassName="h-7 w-36">
                   {revenueData ? (revenueForScope ?? 0).toLocaleString('vi-VN') : '—'}
-                </span>
-                <span className="text-xs text-slate-500 font-mono">VNĐ</span>
+                </DashboardMetric>
+                <span className="text-xs text-slate-500">VNĐ</span>
               </div>
             </div>
             <div className="h-10 w-10 rounded-lg bg-orange-50 flex items-center justify-center text-orange-600 border border-orange-100">
@@ -678,9 +701,11 @@ export const OperationsDashboard: React.FC = () => {
             </div>
           </div>
           <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
-            {revenueData != null
-              ? `${(paymentCountForScope ?? 0).toLocaleString('vi-VN')} giao dịch trong kỳ`
-              : 'Chưa có dữ liệu doanh thu'}
+            <DashboardMetric isLoading={isReportsLoading} className="font-data-tabular tabular-nums" skeletonClassName="h-3 w-36">
+              {revenueData != null
+                ? `${(paymentCountForScope ?? 0).toLocaleString('vi-VN')} giao dịch trong kỳ`
+                : 'Chưa có dữ liệu doanh thu'}
+            </DashboardMetric>
           </div>
         </div>
 
@@ -690,12 +715,12 @@ export const OperationsDashboard: React.FC = () => {
             <div className="flex flex-col">
               <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">Tỷ Lệ Lấp Đầy Bình Quân</span>
               <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-2xl font-bold font-mono text-slate-900">
+                <DashboardMetric isLoading={isReportsLoading} className="text-2xl font-bold font-data-tabular tabular-nums text-slate-900" skeletonClassName="h-7 w-20">
                   {occupancyForScope?.occupancyRate != null ? `${occupancyForScope.occupancyRate.toFixed(1)}%` : '—'}
-                </span>
-                <span className="text-xs text-slate-500 font-mono">
+                </DashboardMetric>
+                <DashboardMetric isLoading={isReportsLoading} className="text-xs text-slate-500 font-data-tabular tabular-nums" skeletonClassName="h-3 w-12">
                   {occupancyForScope?.occupiedUnits != null ? `${occupancyForScope.occupiedUnits} / ${occupancyForScope.totalUnits}` : 'kho'}
-                </span>
+                </DashboardMetric>
               </div>
             </div>
             <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100">
@@ -703,10 +728,16 @@ export const OperationsDashboard: React.FC = () => {
             </div>
           </div>
           <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
-            {occupancyForScope?.availableUnits != null ? `Còn trống: ${occupancyForScope.availableUnits} kho` : 'Chưa có dữ liệu công suất'}
+            <DashboardMetric isLoading={isReportsLoading} className="font-data-tabular tabular-nums" skeletonClassName="h-3 w-36">
+              {occupancyForScope?.availableUnits != null ? `Còn trống: ${occupancyForScope.availableUnits} kho` : 'Chưa có dữ liệu công suất'}
+            </DashboardMetric>
           </div>
           <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
-            <div className="bg-blue-600 h-full rounded-full" style={{ width: `${occupancyForScope?.occupancyRate ?? 0}%` }}></div>
+            {isReportsLoading ? (
+              <div className="h-full w-2/3 rounded-full bg-blue-200 animate-pulse motion-reduce:animate-none" />
+            ) : (
+              <div className="bg-blue-600 h-full rounded-full" style={{ width: `${occupancyForScope?.occupancyRate ?? 0}%` }}></div>
+            )}
           </div>
         </div>
 
@@ -716,10 +747,10 @@ export const OperationsDashboard: React.FC = () => {
             <div className="flex flex-col">
               <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">Doanh Thu Tái Ký &amp; Gia Hạn</span>
               <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-2xl font-bold font-mono text-emerald-600">
+                <DashboardMetric isLoading={isReportsLoading} className="text-2xl font-bold font-data-tabular tabular-nums text-emerald-600" skeletonClassName="h-7 w-32">
                   {revenueData ? (renewalRevenueForScope ?? 0).toLocaleString('vi-VN') : '—'}
-                </span>
-                <span className="text-xs text-slate-500 font-mono">VNĐ</span>
+                </DashboardMetric>
+                <span className="text-xs text-slate-500">VNĐ</span>
               </div>
             </div>
             <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 border border-emerald-100">
@@ -727,9 +758,11 @@ export const OperationsDashboard: React.FC = () => {
             </div>
           </div>
           <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
-            {contracts.length > 0
-              ? `${contracts.filter(c => c.status === 'ACTIVE').length} / ${contracts.length} hợp đồng đang hiệu lực`
-              : 'Theo dõi hợp đồng gia hạn trong kỳ'}
+            <DashboardMetric isLoading={isReportsLoading} className="font-data-tabular tabular-nums" skeletonClassName="h-3 w-40">
+              {contracts.length > 0
+                ? `${contracts.filter(c => c.status === 'ACTIVE').length} / ${contracts.length} hợp đồng đang hiệu lực`
+                : 'Theo dõi hợp đồng gia hạn trong kỳ'}
+            </DashboardMetric>
           </div>
         </div>
 
@@ -739,8 +772,10 @@ export const OperationsDashboard: React.FC = () => {
             <div className="flex flex-col">
               <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">Nợ Xấu &amp; Quá Hạn Thu</span>
               <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-2xl font-bold font-mono text-rose-600">{debtData ? debtData.totalDebtAmount.toLocaleString('vi-VN') : '—'}</span>
-                <span className="text-xs text-slate-500 font-mono">VNĐ</span>
+                <DashboardMetric isLoading={isReportsLoading} className="text-2xl font-bold font-data-tabular tabular-nums text-rose-600" skeletonClassName="h-7 w-32">
+                  {debtData ? debtData.totalDebtAmount.toLocaleString('vi-VN') : '—'}
+                </DashboardMetric>
+                <span className="text-xs text-slate-500">VNĐ</span>
               </div>
             </div>
             <div className="h-10 w-10 rounded-lg bg-rose-50 flex items-center justify-center text-rose-600 border border-rose-100">
@@ -748,9 +783,11 @@ export const OperationsDashboard: React.FC = () => {
             </div>
           </div>
           <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
-            {debtData
-              ? `${debtData.totalOverdueCount} khoản quá hạn · ${debtData.accessBlockedCount} kho đã khóa`
-              : 'Chưa có dữ liệu công nợ'}
+            <DashboardMetric isLoading={isReportsLoading} className="font-data-tabular tabular-nums" skeletonClassName="h-3 w-40">
+              {debtData
+                ? `${debtData.totalOverdueCount} khoản quá hạn · ${debtData.accessBlockedCount} kho đã khóa`
+                : 'Chưa có dữ liệu công nợ'}
+            </DashboardMetric>
           </div>
         </div>
       </div>
@@ -813,7 +850,7 @@ export const OperationsDashboard: React.FC = () => {
                       )}
                     </div>
                     <span className="text-[11px] text-slate-600 font-semibold">{m.label}</span>
-                    <span className="font-mono text-[11px] text-slate-900 font-bold">
+                    <span className="font-data-tabular tabular-nums text-[11px] text-slate-900 font-bold">
                       {m.total >= 1_000_000 ? `${(m.total / 1_000_000).toFixed(1)} tr` : `${(m.total / 1_000).toFixed(0)} k`}
                     </span>
                   </div>
@@ -833,9 +870,9 @@ export const OperationsDashboard: React.FC = () => {
                 Biểu đồ cột phản ánh doanh thu thực theo tháng từ lịch sử hóa đơn thanh toán của hệ thống.
               </span>
             </div>
-            <span className="text-xs font-mono font-bold text-slate-900">
+            <DashboardMetric isLoading={isReportsLoading} className="text-xs font-bold font-data-tabular tabular-nums text-slate-900" skeletonClassName="h-3 w-32">
               Tổng cộng: {scopedPayments.length} GD thành công
-            </span>
+            </DashboardMetric>
           </div>
         </div>
 
@@ -844,7 +881,11 @@ export const OperationsDashboard: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-base font-bold text-slate-900">Kênh thanh toán &amp; HĐ</h2>
-              <p className="text-xs text-slate-500">Phân bố thực tế từ {paymentMethodStats.totalCount} giao dịch</p>
+              <p className="text-xs text-slate-500">
+                <DashboardMetric isLoading={isReportsLoading} className="font-data-tabular tabular-nums" skeletonClassName="h-3 w-32">
+                  Phân bố thực tế từ {paymentMethodStats.totalCount} giao dịch
+                </DashboardMetric>
+              </p>
             </div>
             <span className="px-2 py-0.5 rounded bg-slate-100 font-mono text-xs font-bold text-slate-800 border border-slate-200">
               Hệ thống
@@ -882,9 +923,9 @@ export const OperationsDashboard: React.FC = () => {
               />
             </svg>
             <div className="absolute flex flex-col items-center justify-center text-center">
-              <span className="text-3xl font-extrabold font-mono text-slate-900 leading-none">
+              <DashboardMetric isLoading={isReportsLoading} className="text-3xl font-extrabold font-data-tabular tabular-nums text-slate-900 leading-none" skeletonClassName="h-9 w-16">
                 {paymentMethodStats.totalCount}
-              </span>
+              </DashboardMetric>
               <span className="text-[10px] uppercase font-semibold text-slate-400 mt-1">Giao dịch đã thu</span>
             </div>
           </div>
@@ -895,27 +936,27 @@ export const OperationsDashboard: React.FC = () => {
                 <span className="h-2.5 w-2.5 rounded-full bg-blue-600"></span>
                 Cổng VNPay (Thẻ / QR)
               </span>
-              <span className="font-mono text-xs font-bold text-slate-900">
+              <DashboardMetric isLoading={isReportsLoading} className="text-xs font-bold font-data-tabular tabular-nums text-slate-900" skeletonClassName="h-3 w-20">
                 {paymentMethodStats.vnpayCount} GD ({paymentMethodStats.vnpayPercent}%)
-              </span>
+              </DashboardMetric>
             </div>
             <div className="flex items-center justify-between p-2 rounded bg-slate-50 border border-slate-200">
               <span className="flex items-center gap-2 text-xs text-slate-700">
                 <span className="h-2.5 w-2.5 rounded-full bg-slate-900"></span>
                 Chuyển khoản Ngân hàng
               </span>
-              <span className="font-mono text-xs font-bold text-slate-900">
+              <DashboardMetric isLoading={isReportsLoading} className="text-xs font-bold font-data-tabular tabular-nums text-slate-900" skeletonClassName="h-3 w-20">
                 {paymentMethodStats.bankCount} GD ({paymentMethodStats.bankPercent}%)
-              </span>
+              </DashboardMetric>
             </div>
             <div className="flex items-center justify-between p-2 rounded bg-slate-50 border border-slate-200">
               <span className="flex items-center gap-2 text-xs text-slate-500">
                 <span className="h-2.5 w-2.5 rounded-full bg-amber-500"></span>
                 Ví MoMo
               </span>
-              <span className="font-mono text-xs font-bold text-slate-900">
+              <DashboardMetric isLoading={isReportsLoading} className="text-xs font-bold font-data-tabular tabular-nums text-slate-900" skeletonClassName="h-3 w-20">
                 {paymentMethodStats.momoCount} GD ({paymentMethodStats.momoPercent}%)
-              </span>
+              </DashboardMetric>
             </div>
           </div>
         </div>
@@ -984,10 +1025,10 @@ export const OperationsDashboard: React.FC = () => {
                       <td className="py-3.5 px-3 text-slate-600">
                         {facilityInfo?.address ? `${facilityInfo.address}, ${facilityInfo.city}` : '—'}
                       </td>
-                      <td className="py-3.5 px-3 text-right font-mono font-bold text-slate-900">{bf.totalUnits} kho</td>
+                      <td className="py-3.5 px-3 text-right font-data-tabular tabular-nums font-bold text-slate-900">{bf.totalUnits} kho</td>
                       <td className="py-3.5 px-4">
                         <div className="flex flex-col gap-1 items-center">
-                          <span className="font-mono font-bold text-slate-900">{bf.occupancyRate.toFixed(1)}%</span>
+                          <span className="font-data-tabular tabular-nums font-bold text-slate-900">{bf.occupancyRate.toFixed(1)}%</span>
                           <div className="w-24 bg-slate-100 h-1.5 rounded-full overflow-hidden">
                             <div 
                               className={`h-full rounded-full ${bf.occupancyRate >= 70 ? 'bg-orange-600' : bf.occupancyRate >= 30 ? 'bg-blue-600' : 'bg-slate-400'}`} 
@@ -996,10 +1037,10 @@ export const OperationsDashboard: React.FC = () => {
                           </div>
                         </div>
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
+                      <td className="py-3.5 px-4 text-right font-data-tabular tabular-nums font-bold text-slate-900">
                         {facilityRevenue?.totalRevenue != null ? `${facilityRevenue.totalRevenue.toLocaleString('vi-VN')} đ` : '—'}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-semibold text-orange-600">
+                      <td className="py-3.5 px-4 text-right font-data-tabular tabular-nums font-semibold text-orange-600">
                         {facilityRevenue?.rentalFeeRevenue != null ? `${facilityRevenue.rentalFeeRevenue.toLocaleString('vi-VN')} đ` : '—'}
                       </td>
                       <td className="py-3.5 px-3 text-center">

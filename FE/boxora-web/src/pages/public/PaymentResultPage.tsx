@@ -35,7 +35,6 @@ export const PaymentResultPage: React.FC = () => {
 
     if (bookingId.startsWith('mock-')) {
       const mockUnitCode = searchParams.get('unitCode') || 'BX-101'
-      const mockUnitName = searchParams.get('unitName') || 'Kho Tiêu Chuẩn'
       const mockFacility = searchParams.get('facilityName') || 'Boxora District 1'
       const mockResult: any = {
         id: bookingId,
@@ -47,9 +46,6 @@ export const PaymentResultPage: React.FC = () => {
         createdAt: new Date().toISOString()
       }
       setBooking(mockResult)
-      if (status === 'PAID' && user?.role?.name === 'CUSTOMER') {
-        activateCustomerRental(user, mockUnitCode, `${mockUnitName} • ${mockFacility}`)
-      }
       setIsLoading(false)
       return
     }
@@ -136,7 +132,7 @@ export const PaymentResultPage: React.FC = () => {
   const handleContractSignedSuccess = (signed: RentalContract) => {
     setContractForDocuSealModal(null)
     setSignedContractSuccess(true)
-    if (user?.role?.name === 'CUSTOMER') {
+    if (user?.role?.name === 'CUSTOMER' && booking?.id && !booking.id.startsWith('mock-')) {
       const uCode = booking?.unitCode || searchParams.get('unitCode') || signed.unitCode
       activateCustomerRental(user, uCode, `Kho ${uCode} • ${signed.facilityName || 'Boxora'}`)
     }

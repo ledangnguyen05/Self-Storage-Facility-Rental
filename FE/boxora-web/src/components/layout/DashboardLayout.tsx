@@ -316,6 +316,20 @@ export const DashboardLayout: React.FC = () => {
                 </Link>
 
                 <Link
+                  to="/portal/customer?tab=requests"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'requests'
+                      ? 'bg-slate-100 text-slate-900 font-bold'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">pending_actions</span>
+                  <span>Yêu cầu đặt chỗ</span>
+                </Link>
+
+
+
+                <Link
                   to="/portal/customer?tab=explore"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
                     isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'explore'
@@ -694,11 +708,12 @@ export const DashboardLayout: React.FC = () => {
       {/* Main Canvas Area */}
       <div className="lg:pl-64 pt-20 flex-1 min-w-0">
         <main className="min-h-[calc(100vh-5rem)] w-full bg-slate-50 p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto w-full max-w-[1600px]">
+          <div className="dashboard-typography mx-auto w-full max-w-[1600px]">
             <Outlet context={{
               selectedFacility: isFacilityScopedRole && assignedFacilityId ? assignedFacilityId : selectedFacility,
               setSelectedFacility: handleSetSelectedFacility,
-              facilities
+              facilities,
+              openProfile: () => setIsProfileModalOpen(true)
             }} />
           </div>
         </main>

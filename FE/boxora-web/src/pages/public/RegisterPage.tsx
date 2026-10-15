@@ -28,6 +28,7 @@ import { AuthAnimatedBackground } from '../../components/auth/AuthAnimatedBackgr
 import boxoraLogo from '../../assets/boxora-logo.png'
 import { TermsAndStandardsModal } from '../../components/common/TermsAndStandardsModal'
 import { GoogleAuthButton } from '../../components/auth/GoogleAuthButton'
+import { markUserAsNewCustomer } from '../../utils/rentalAccess'
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate()
@@ -78,10 +79,15 @@ export const RegisterPage: React.FC = () => {
       const user = await loginWithGoogle(idToken, 'REGISTER')
       setSocialNotice(null)
       const userRole = user?.role?.name || 'CUSTOMER'
+      if (user && userRole === 'CUSTOMER') {
+        markUserAsNewCustomer(user.id, user.username, user.email)
+      }
       if (userRole === 'ADMIN') {
         navigate('/portal/admin')
       } else {
-        navigate('/portal/customer')
+        navigate('/units', {
+          state: { welcomeMessage: 'Tài khoản đã tạo thành công! Hãy chọn kho lưu trữ gần bạn nhất.' }
+        })
       }
     } catch (err: any) {
       console.error('Google register error:', err)
@@ -199,10 +205,11 @@ export const RegisterPage: React.FC = () => {
         captchaId,
         captchaCode: captchaInput.trim().toUpperCase()
       })
+      markUserAsNewCustomer('', derivedUsername, formData.email.trim())
       setSuccess(true)
-      setTimeout(() => {
-        navigate('/login')
-      }, 1800)
+      navigate('/units', {
+        state: { welcomeMessage: 'Tài khoản đã tạo thành công! Hãy chọn kho lưu trữ gần bạn nhất.' }
+      })
     } catch (err: any) {
       console.error(err)
       setError(err?.response?.data?.message || 'Đăng ký không thành công. Vui lòng kiểm tra lại thông tin.')
@@ -452,7 +459,7 @@ export const RegisterPage: React.FC = () => {
                 <div className="space-y-1">
                   <h3 className="text-xl font-bold text-slate-900">Đăng Ký Thành Công!</h3>
                   <p className="text-xs text-slate-600 max-w-xs mx-auto">
-                    Tài khoản của bạn đã được kích hoạt. Đang chuyển hướng bạn tới trang đăng nhập...
+                    Tài khoản đã được tạo. Đang mở trang tìm kho để bạn chọn vị trí phù hợp...
                   </p>
                 </div>
                 <div className="pt-2">

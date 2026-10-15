@@ -15,6 +15,9 @@ public interface NotificationService {
     /** Gửi nhắc nhở gia hạn thủ công cho một hợp đồng cụ thể. */
     void sendSingleContractRenewalReminder(UUID contractId);
 
+    /** Create in-app booking notices for the customer, facility manager and facility staff. */
+    void notifyBookingCreated(UUID bookingId);
+
     /** Lấy chi tiết lịch sử thông báo theo ID. */
     NotificationLogResponse getById(UUID id);
 

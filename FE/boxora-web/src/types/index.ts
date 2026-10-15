@@ -119,6 +119,8 @@ export interface StorageUnit {
   bookingId?: string
   startDate?: string
   dueDate?: string
+  images?: string[]
+  primaryImageUrl?: string
 }
 
 export type BookingStatusType = 'PENDING_APPROVAL' | 'PENDING_PAYMENT' | 'CONFIRMED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
@@ -136,6 +138,7 @@ export interface Booking {
   facilityName: string
   floorLevel?: string
   startDate: string
+  expectedArrivalAt?: string | null
   endDate: string
   rentalMonths: number
   totalRentalFee: number

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { useOutletContext, useSearchParams } from 'react-router-dom'
 import { storageUnitService } from '../../services/storageUnitService'
 import { facilityService } from '../../services/facilityService'
 import { reportService } from '../../services/reportService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
+import { bookingService } from '../../services/bookingService'
 import { userService } from '../../services/userService'
 import { useLanguage } from '../../context/LanguageContext'
 import { useAuth } from '../../context/AuthContext'
@@ -39,7 +40,27 @@ interface InspectedUnit {
   facilityName?: string
 }
 
+const UnitMapSkeleton: React.FC<{ count?: number }> = ({ count = 12 }) => (
+  <div aria-hidden="true" className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-6 gap-2">
+    {Array.from({ length: count }, (_, index) => (
+      <div
+        key={index}
+        aria-hidden="true"
+        className="min-h-[76px] flex flex-col gap-1.5 p-2.5 rounded-lg bg-white border border-slate-200 border-t-2 border-t-slate-300 animate-pulse motion-reduce:animate-none"
+      >
+        <div className="flex items-center justify-between">
+          <span className="h-3 w-12 rounded bg-slate-200" />
+          <span className="h-2.5 w-6 rounded bg-slate-100" />
+        </div>
+        <span className="h-3 w-8 rounded bg-slate-100" />
+        <span className="mt-1 h-2.5 w-14 rounded bg-slate-100" />
+      </div>
+    ))}
+  </div>
+)
+
 export const ManagerDashboard: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams()
   const { t } = useLanguage()
   const { user, role } = useAuth()
   const { selectedFacility, setSelectedFacility, facilities: contextFacilities } = useOutletContext<{
@@ -80,6 +101,8 @@ export const ManagerDashboard: React.FC = () => {
   const [showIoTModal, setShowIoTModal] = useState(false)
   const [showSurveyModal, setShowSurveyModal] = useState(false)
   const [showBookingApprovalModal, setShowBookingApprovalModal] = useState(false)
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0)
+  const bookingApprovalId = searchParams.get('bookingApprovalId') || undefined
   const [showCreateUnitModal, setShowCreateUnitModal] = useState(false)
   const [showAppActivationModal, setShowAppActivationModal] = useState(false)
   const [showDoorAccessModal, setShowDoorAccessModal] = useState(false)
@@ -110,6 +133,45 @@ export const ManagerDashboard: React.FC = () => {
   const [isRevDatePickerOpen, setIsRevDatePickerOpen] = useState<boolean>(false)
   const [tempRevFrom, setTempRevFrom] = useState<string>('')
   const [tempRevTo, setTempRevTo] = useState<string>('')
+
+  useEffect(() => {
+    if (bookingApprovalId) setShowBookingApprovalModal(true)
+  }, [bookingApprovalId])
+
+  useEffect(() => {
+    let isCurrent = true
+    const refreshPendingApprovals = async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const requests = await bookingService.getPendingApprovals()
+        if (isCurrent) setPendingApprovalCount(requests.length)
+      } catch {
+        // Keep the latest known count while the API is temporarily unavailable.
+      }
+    }
+    const intervalId = window.setInterval(() => void refreshPendingApprovals(), 30_000)
+    window.addEventListener('focus', refreshPendingApprovals)
+    document.addEventListener('visibilitychange', refreshPendingApprovals)
+    window.addEventListener('boxora:notifications-refresh', refreshPendingApprovals)
+    void refreshPendingApprovals()
+
+    return () => {
+      isCurrent = false
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', refreshPendingApprovals)
+      document.removeEventListener('visibilitychange', refreshPendingApprovals)
+      window.removeEventListener('boxora:notifications-refresh', refreshPendingApprovals)
+    }
+  }, [])
+
+  const closeBookingApprovalModal = () => {
+    setShowBookingApprovalModal(false)
+    if (searchParams.has('bookingApprovalId')) {
+      const nextParams = new URLSearchParams(searchParams)
+      nextParams.delete('bookingApprovalId')
+      setSearchParams(nextParams, { replace: true })
+    }
+  }
 
   useEffect(() => {
     if (contextFacilities && contextFacilities.length > 0) {
@@ -540,7 +602,7 @@ export const ManagerDashboard: React.FC = () => {
             <span className="font-mono text-xs font-semibold text-slate-400">#{unit.id}</span>
             <span className="text-[9px] text-slate-400 font-mono uppercase">Slot</span>
           </div>
-          <span className="text-[11px] text-slate-400 mt-0.5">{unit.size}</span>
+          <span className="text-[11px] text-slate-400 mt-0.5 font-data-tabular tabular-nums">{unit.size}</span>
           <div className="mt-1 flex items-center justify-between text-[10px] text-slate-400">
             <span className="flex items-center gap-1 font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
@@ -574,7 +636,7 @@ export const ManagerDashboard: React.FC = () => {
           )}
         </div>
         <div className="flex items-baseline justify-between mt-0.5">
-          <span className="text-[11px] text-slate-600 font-medium">{unit.size}</span>
+          <span className="text-[11px] text-slate-600 font-medium font-data-tabular tabular-nums">{unit.size}</span>
           <span className="text-[10px] text-slate-400 truncate max-w-[65px]" title={unit.type}>
             {unit.type.replace('Storage', '').trim()}
           </span>
@@ -646,14 +708,6 @@ export const ManagerDashboard: React.FC = () => {
             <span className="material-symbols-outlined text-[18px]">add</span>
             <span>{t('Thêm kho mới', 'Add storage unit')}</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setShowBookingApprovalModal(true)}
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-amber-50 text-amber-900 font-semibold text-xs hover:bg-amber-100 transition-all border border-amber-200 cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[18px]">fact_check</span>
-            <span>Yêu cầu thuê</span>
-          </button>
           <button 
             type="button" 
             onClick={() => fetchUnits(selectedFacilityId)}
@@ -695,7 +749,7 @@ export const ManagerDashboard: React.FC = () => {
       </section>
 
       {/* 6 CRITICAL DYNAMIC KPI TILES (GỘP CHỜ BÀN GIAO & PHÂN BIỆT RÕ MÀU BẢO TRÌ/QUÁ HẠN) */}
-      <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
+      <section className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-3.5">
         {/* Tile 1: Total Units */}
         <div 
           onClick={() => setStatusFilter('all')}
@@ -790,7 +844,46 @@ export const ManagerDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Tile 5: Maintenance (MÀU TÍM - ĐẶC TRƯNG BẢO TRÌ SỬA CHỮA, TRÁNH TRÙNG VỚI MÀU ĐỎ CỦA QUÁ HẠN) */}
+        {/* Tile 5: Booking requests waiting for manager approval */}
+        <button
+          type="button"
+          onClick={() => setShowBookingApprovalModal(true)}
+          aria-live="polite"
+          aria-label={`Yêu cầu chờ duyệt: ${pendingApprovalCount} đơn. Nhấn để xem và xử lý.`}
+          className={`p-4 rounded-xl border flex flex-col justify-between text-left transition-all duration-300 cursor-pointer ${
+            pendingApprovalCount > 0
+              ? 'border-orange-400 bg-orange-50/70 ring-2 ring-orange-300/70 shadow-md shadow-orange-100 hover:bg-orange-50'
+              : 'bg-white border-orange-200 shadow-2xs hover:border-orange-300 hover:shadow-md'
+          } ${showBookingApprovalModal ? 'ring-2 ring-orange-500/40' : ''}`}
+          title="Bấm để xem và xử lý các yêu cầu đặt giữ chỗ đang chờ duyệt"
+        >
+          <div className="flex items-start justify-between gap-1">
+            <span className={`text-xs uppercase font-semibold leading-4 ${pendingApprovalCount > 0 ? 'text-orange-900' : 'text-orange-800'}`}>YÊU CẦU CHỜ DUYỆT</span>
+            <span className="relative flex h-5 w-5 items-center justify-center">
+              {pendingApprovalCount > 0 && (
+                <span className="absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-60 motion-safe:animate-ping"></span>
+              )}
+              <span className={`material-symbols-outlined relative text-[18px] ${pendingApprovalCount > 0 ? 'text-orange-700' : 'text-orange-600'}`}>fact_check</span>
+            </span>
+          </div>
+          <div className="flex items-baseline gap-2 mt-2">
+            <span className={`text-3xl font-extrabold font-mono tabular-nums leading-none ${pendingApprovalCount > 0 ? 'text-orange-700 motion-safe:animate-pulse' : 'text-orange-600'}`}>
+              {String(pendingApprovalCount).padStart(2, '0')}
+            </span>
+            <span className="text-xs text-orange-800 font-medium">đơn</span>
+          </div>
+          <div className={`mt-3 flex items-center gap-1.5 text-[11px] font-semibold ${pendingApprovalCount > 0 ? 'text-orange-800' : 'text-orange-700'}`}>
+            <span className="relative flex h-2 w-2">
+              {pendingApprovalCount > 0 && (
+                <span className="absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75 motion-safe:animate-ping"></span>
+              )}
+              <span className={`relative inline-flex h-2 w-2 rounded-full ${pendingApprovalCount > 0 ? 'bg-orange-600' : 'bg-orange-500'}`}></span>
+            </span>
+            <span>{pendingApprovalCount > 0 ? 'Cần xử lý · nhấn để xem & duyệt' : 'Không có đơn chờ duyệt'}</span>
+          </div>
+        </button>
+
+        {/* Tile 6: Maintenance */}
         <div 
           onClick={() => setStatusFilter(prev => prev === 'Maintenance' ? 'all' : 'Maintenance')}
           className={`p-4 bg-white rounded-xl border flex flex-col justify-between hover:shadow-md transition-all duration-150 cursor-pointer ${
@@ -859,10 +952,10 @@ export const ManagerDashboard: React.FC = () => {
                 }`}
               >
                 <span>{facilityProfile.floor1Name}</span>
-                <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
+                <span className={`px-1.5 py-0.2 rounded font-data-tabular tabular-nums text-[11px] font-bold ${
                   selectedFloor === 'floor1' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
                 }`}>
-                  {isAnyFilterActive ? `${floor1MatchingCount}/${permanentFloor1.length}` : permanentFloor1.length}
+                  {isLoading ? <span aria-hidden="true" className="inline-block h-3 w-5 rounded bg-slate-400/50 animate-pulse motion-reduce:animate-none" /> : (isAnyFilterActive ? `${floor1MatchingCount}/${permanentFloor1.length}` : permanentFloor1.length)}
                 </span>
               </button>
               <button 
@@ -875,10 +968,10 @@ export const ManagerDashboard: React.FC = () => {
                 }`}
               >
                 <span>{facilityProfile.floor2Name}</span>
-                <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
+                <span className={`px-1.5 py-0.2 rounded font-data-tabular tabular-nums text-[11px] font-bold ${
                   selectedFloor === 'floor2' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
                 }`}>
-                  {isAnyFilterActive ? `${floor2MatchingCount}/${permanentFloor2.length}` : permanentFloor2.length}
+                  {isLoading ? <span aria-hidden="true" className="inline-block h-3 w-5 rounded bg-slate-400/50 animate-pulse motion-reduce:animate-none" /> : (isAnyFilterActive ? `${floor2MatchingCount}/${permanentFloor2.length}` : permanentFloor2.length)}
                 </span>
               </button>
             </div>
@@ -931,7 +1024,8 @@ export const ManagerDashboard: React.FC = () => {
           </div>
 
           {/* VISUAL MATRIX: WAREHOUSE CORRIDOR LAYOUT */}
-          <div className="relative bg-slate-100 p-4 rounded-xl border border-slate-200 overflow-x-auto">
+          <div className="relative bg-slate-100 p-4 rounded-xl border border-slate-200 overflow-x-auto" aria-busy={isLoading}>
+            {isLoading && <span role="status" aria-live="polite" className="sr-only">Đang tải sơ đồ kho</span>}
             {/* Physical Corridor Blueprint Overlay */}
             <div className="flex items-center justify-between px-3.5 py-2 mb-3 bg-white rounded-lg font-mono text-[11px] text-slate-600 uppercase tracking-wider border border-slate-200 shadow-2xs">
               <span className="flex items-center gap-1">
@@ -959,7 +1053,9 @@ export const ManagerDashboard: React.FC = () => {
                   </div>
                   {facilityProfile.zoneCDesc && <span className="text-[11px] text-slate-500">{facilityProfile.zoneCDesc}</span>}
                 </div>
-                {permanentZoneC.length === 0 ? (
+                {isLoading ? (
+                  <UnitMapSkeleton />
+                ) : permanentZoneC.length === 0 ? (
                   <div className="p-8 text-center text-slate-500 text-xs bg-white rounded-lg border border-slate-200">
                     Chưa có thiết kế kho trên Tầng 2 cho cơ sở này
                   </div>
@@ -983,7 +1079,9 @@ export const ManagerDashboard: React.FC = () => {
                     </div>
                     {facilityProfile.zoneADesc && <span className="text-[11px] text-slate-500">{facilityProfile.zoneADesc}</span>}
                   </div>
-                  {permanentZoneA.length === 0 ? (
+                  {isLoading ? (
+                    <UnitMapSkeleton />
+                  ) : permanentZoneA.length === 0 ? (
                     <div className="p-6 text-center text-slate-500 text-xs bg-white rounded-lg border border-slate-200">
                       Chưa có thiết kế kho tại Phân khu A cho cơ sở này
                     </div>
@@ -1005,7 +1103,9 @@ export const ManagerDashboard: React.FC = () => {
                     </div>
                     {facilityProfile.zoneBDesc && <span className="text-[11px] text-slate-500">{facilityProfile.zoneBDesc}</span>}
                   </div>
-                  {permanentZoneB.length === 0 ? (
+                  {isLoading ? (
+                    <UnitMapSkeleton />
+                  ) : permanentZoneB.length === 0 ? (
                     <div className="p-6 text-center text-slate-500 text-xs bg-white rounded-lg border border-slate-200">
                       Chưa có thiết kế kho tại Phân khu B cho cơ sở này
                     </div>
@@ -1031,7 +1131,7 @@ export const ManagerDashboard: React.FC = () => {
                 </span>
               </div>
               {(selectedFloor === 'floor1' ? facilityProfile.totalAreaFloor1 : facilityProfile.totalAreaFloor2) && (
-                <span className="font-mono font-semibold text-slate-700">
+                <span className="font-data-tabular tabular-nums font-semibold text-slate-700">
                   {selectedFloor === 'floor1' ? facilityProfile.totalAreaFloor1 : facilityProfile.totalAreaFloor2}
                 </span>
               )}
@@ -1282,7 +1382,9 @@ export const ManagerDashboard: React.FC = () => {
 
       <BookingApprovalModal
         isOpen={showBookingApprovalModal}
-        onClose={() => setShowBookingApprovalModal(false)}
+        onClose={closeBookingApprovalModal}
+        focusBookingId={bookingApprovalId}
+        onPendingCountChange={setPendingApprovalCount}
       />
 
       <CreateStorageUnitModal

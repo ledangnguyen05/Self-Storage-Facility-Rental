@@ -2,7 +2,6 @@ import React from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { RoleType } from '../../types'
-import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 
 interface ProtectedRouteProps {
   allowedRoles?: RoleType[]
@@ -26,7 +25,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
 
   // If not logged in, redirect to /login
   if (!isAuthenticated || !user) {
-    return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname)}`} replace />
+    return <Navigate to={`/login?redirect=${encodeURIComponent(`${location.pathname}${location.search}`)}`} replace />
   }
 
   // If allowedRoles is specified and current role is not permitted, automatically route them to their proper portal
@@ -42,21 +41,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
         case 'STAFF':
           return '/portal/staff'
         case 'CUSTOMER':
-        default: {
-          const access = checkCustomerPortalAccess(user)
-          return access.hasAccess ? '/portal/customer' : '/#units'
-        }
+        default:
+          return '/portal/customer'
       }
     }
     return <Navigate to={getTargetPortal(role)} replace />
-  }
-
-  // If role is CUSTOMER, only permit portal management when rental is active and app is confirmed
-  if (role === 'CUSTOMER') {
-    const customerAccess = checkCustomerPortalAccess(user)
-    if (!customerAccess.hasAccess) {
-      return <Navigate to="/#units" replace state={{ notice: 'rental_required' }} />
-    }
   }
 
   return children

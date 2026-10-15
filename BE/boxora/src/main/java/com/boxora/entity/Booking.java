@@ -33,6 +33,9 @@ public class Booking extends BaseEntity {
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
 
+    @Column(name = "expected_arrival_at")
+    private LocalDateTime expectedArrivalAt;
+
     @Column(name = "end_date", nullable = false)
     private LocalDate endDate;
 

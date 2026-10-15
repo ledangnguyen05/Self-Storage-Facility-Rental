@@ -79,11 +79,6 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
     setWebSettings(updated)
   }
 
-  const handleToggleEmergencySound = () => {
-    const updated = saveWebSettings({ enableEmergencySound: !webSettings.enableEmergencySound })
-    setWebSettings(updated)
-  }
-
   const handleSwitchLanguage = (lang: 'vi' | 'en') => {
     setLanguage(lang)
   }
@@ -191,7 +186,7 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
 
           {/* Main Action Items */}
           <div className="flex flex-col gap-1">
-            {/* Chỉnh sửa hồ sơ */}
+            {/* Account and security */}
             <button
               type="button"
               onClick={() => {
@@ -205,10 +200,10 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
               </div>
               <div className="flex flex-col min-w-0">
                 <span className="text-xs font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">
-                  {t('Chỉnh sửa hồ sơ')}
+                  {t('Tài khoản & Bảo mật')}
                 </span>
                 <span className="text-[10px] text-slate-500">
-                  {t('Cập nhật họ tên, số điện thoại')}
+                  {t('Hồ sơ cá nhân và mật khẩu')}
                 </span>
               </div>
               <span className="material-symbols-outlined text-[16px] text-slate-400 ml-auto group-hover:translate-x-0.5 transition-transform">
@@ -233,7 +228,7 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
                   {t('Cài đặt web & hệ thống')}
                 </span>
                 <span className="text-[10px] text-slate-500">
-                  {t('Chủ đề, âm thanh, cảnh báo IoT')}
+                  {t('Chủ đề, phông chữ, ngôn ngữ')}
                 </span>
               </div>
               <span className="material-symbols-outlined text-[16px] text-slate-400 ml-auto group-hover:translate-x-0.5 transition-transform">
@@ -270,28 +265,6 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
                 <div
                   className={`w-5 h-5 rounded-full bg-white shadow-xs transition-transform ${
                     isDark ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
-
-            {/* Emergency sound toggle */}
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium text-slate-700 flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[15px] text-slate-500">volume_up</span>
-                {t('Âm thanh còi kho')}
-              </span>
-              <button
-                type="button"
-                onClick={handleToggleEmergencySound}
-                className={`w-8 h-4.5 rounded-full p-0.5 transition-colors cursor-pointer ${
-                  webSettings.enableEmergencySound ? 'bg-blue-600' : 'bg-slate-300'
-                }`}
-                title={t('Âm thanh còi kho')}
-              >
-                <div
-                  className={`w-3.5 h-3.5 rounded-full bg-white shadow-xs transition-transform ${
-                    webSettings.enableEmergencySound ? 'translate-x-3.5' : 'translate-x-0'
                   }`}
                 />
               </button>

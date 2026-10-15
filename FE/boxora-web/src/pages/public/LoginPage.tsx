@@ -25,6 +25,7 @@ import boxoraLogo from '../../assets/boxora-logo.png'
 import { TermsAndStandardsModal } from '../../components/common/TermsAndStandardsModal'
 import { GoogleAuthButton } from '../../components/auth/GoogleAuthButton'
 import { AuthAnimatedBackground } from '../../components/auth/AuthAnimatedBackground'
+import { syncCustomerPortalAccess } from '../../utils/rentalAccess'
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate()
@@ -87,6 +88,7 @@ export const LoginPage: React.FC = () => {
       const user = await loginWithGoogle(idToken, 'LOGIN')
       setSocialNotice(null)
       const userRole = user?.role?.name || 'CUSTOMER'
+      const customerPortalAccess = user ? await syncCustomerPortalAccess(user) : true
 
       const getPortalForRole = (r: string) => {
         switch (r) {
@@ -100,7 +102,7 @@ export const LoginPage: React.FC = () => {
             return '/portal/staff'
           case 'CUSTOMER':
           default:
-            return '/portal/customer'
+            return customerPortalAccess ? '/portal/customer' : '/units'
         }
       }
 
@@ -183,6 +185,7 @@ export const LoginPage: React.FC = () => {
     try {
       const user = await login(email.trim(), password)
       const userRole = user?.role?.name || 'CUSTOMER'
+      const customerPortalAccess = user ? await syncCustomerPortalAccess(user) : true
 
       const getPortalForRole = (r: string) => {
         switch (r) {
@@ -196,7 +199,7 @@ export const LoginPage: React.FC = () => {
             return '/portal/staff'
           case 'CUSTOMER':
           default:
-            return '/portal/customer'
+            return customerPortalAccess ? '/portal/customer' : '/units'
         }
       }
 

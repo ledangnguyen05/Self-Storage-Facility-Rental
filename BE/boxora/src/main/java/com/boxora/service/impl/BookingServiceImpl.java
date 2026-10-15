@@ -9,6 +9,7 @@ import com.boxora.entity.Booking;
 import com.boxora.entity.FacilityPolicy;
 import com.boxora.entity.StorageUnit;
 import com.boxora.entity.User;
+import com.boxora.event.BookingCreatedEvent;
 import com.boxora.enums.ActivityAction;
 import com.boxora.enums.BookingStatus;
 import com.boxora.enums.UnitStatus;
@@ -27,6 +28,7 @@ import com.boxora.service.StorageUnitLockService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,6 +57,7 @@ public class BookingServiceImpl implements BookingService {
     private final FacilityAccessGuard facilityAccessGuard;
     private final EncryptionService encryptionService;
     private final RequestContext requestContext;
+    private final ApplicationEventPublisher eventPublisher;
     private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractSigningService> contractSigningServiceProvider;
 
     @Value("${app.booking.soft-lock-hours:24}")
@@ -144,19 +147,23 @@ public class BookingServiceImpl implements BookingService {
         String code = "BX-" + (2025 + new Random().nextInt(2)) + "-" + String.format("%04d", new Random().nextInt(10000));
         UUID bookingId = UUID.randomUUID();
 
-        // 8. Khởi tạo Booking ở trạng thái PENDING_PAYMENT (chưa cấp PIN/QR)
+        // 8. Tạo booking chờ quản lý duyệt hoặc chờ thanh toán tùy luồng đặt kho.
         Booking booking = Booking.builder()
                 .bookingCode(code)
                 .customer(customer)
                 .storageUnit(unit)
                 .startDate(startDate)
+                .expectedArrivalAt(request.getExpectedArrivalAt())
                 .endDate(endDate)
                 .rentalMonths(months)
                 .totalRentalFee(totalFee)
                 .depositPaid(request.getDepositPaid() != null ? request.getDepositPaid() : BigDecimal.ZERO)
                 .depositAmount(deposit)
                 .paymentExpiresAt(Instant.now().plusSeconds(approvalTimeoutHours * 60 * 60))
-                .status("ONLINE".equalsIgnoreCase(request.getSigningMethod()) ? BookingStatus.PENDING_PAYMENT : BookingStatus.PENDING_APPROVAL)
+                .status(Boolean.TRUE.equals(request.getRequiresManagerApproval())
+                        || "IN_PERSON".equalsIgnoreCase(request.getSigningMethod())
+                        ? BookingStatus.PENDING_APPROVAL
+                        : BookingStatus.PENDING_PAYMENT)
                 .signingMethod(request.getSigningMethod() != null && !request.getSigningMethod().isBlank() ? request.getSigningMethod().trim().toUpperCase() : "ONLINE")
                 .accessPin(null) // Chưa cấp PIN trước khi thanh toán
                 .qrAccessToken(null) // Chưa cấp QR trước khi thanh toán
@@ -167,6 +174,7 @@ public class BookingServiceImpl implements BookingService {
         storageUnitRepository.save(unit);
 
         booking = bookingRepository.save(booking);
+        eventPublisher.publishEvent(new BookingCreatedEvent(booking.getId()));
 
         // 10. Thực hiện Soft-lock 24 giờ trên Redis cho ngăn kho
         storageUnitLockService.tryLockUnit(unit.getId(), booking.getId(), softLockHours);
@@ -416,6 +424,11 @@ public class BookingServiceImpl implements BookingService {
     public BookingResponse getById(UUID id) {
         Booking booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        UUID facilityId = booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null
+                ? booking.getStorageUnit().getFacility().getId() : null;
+        if (facilityId != null) {
+            facilityAccessGuard.checkFacilityAccess(facilityId);
+        }
         return mapToResponse(booking);
     }
 
@@ -634,6 +647,7 @@ public class BookingServiceImpl implements BookingService {
                         : "Mega Central Tân Bình")
                 .floorLevel(b.getStorageUnit() != null ? b.getStorageUnit().getFloorLevel() : "Tầng 1 - Khu A")
                 .startDate(b.getStartDate())
+                .expectedArrivalAt(b.getExpectedArrivalAt())
                 .endDate(b.getEndDate())
                 .rentalMonths(b.getRentalMonths())
                 .totalRentalFee(b.getTotalRentalFee())
