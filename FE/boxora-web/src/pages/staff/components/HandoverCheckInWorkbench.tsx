@@ -342,8 +342,29 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             <div className="text-[11px] text-slate-500 mt-1">
               Hợp đồng: <strong className="font-mono text-slate-900 font-bold">{prerequisites?.contractCode || 'Chưa khởi tạo'}</strong>
             </div>
+            {currentBooking?.signingMethod && (
+              <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold mt-1.5 ${
+                currentBooking.signingMethod === 'IN_PERSON'
+                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                  : 'bg-blue-100 text-blue-900 border border-blue-200'
+              }`}>
+                {currentBooking.signingMethod === 'IN_PERSON' ? '🏢 Ký Trực Tiếp Tại Kho' : '✍️ Ký Online DocuSeal'}
+              </span>
+            )}
           </div>
         </div>
+
+        {/* Staff Assignment Notes from Manager */}
+        {currentBooking?.staffAssignmentNotes && (
+          <div className="mt-3 pt-2.5 border-t border-slate-200/80 text-xs text-amber-900 flex items-start gap-2">
+            <span className="material-symbols-outlined text-[16px] text-amber-700 shrink-0 mt-0.5">
+              assignment_ind
+            </span>
+            <div>
+              <strong className="text-amber-950 font-bold">Chỉ đạo từ Quản lý cơ sở:</strong> {currentBooking.staffAssignmentNotes}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Backend Error Alert if any */}

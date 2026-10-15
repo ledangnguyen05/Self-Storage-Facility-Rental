@@ -12,6 +12,7 @@ public interface BookingService {
     List<BookingResponse> getMyBookingRequests();
     List<BookingResponse> getPendingApprovalRequests();
     BookingResponse reviewBookingRequest(UUID id, boolean approved);
+    BookingResponse reviewBookingRequest(UUID id, boolean approved, UUID assignedStaffId, String notes);
     List<BookingResponse> getMyBookings(UUID customerId);
     List<BookingResponse> getMyActiveBookings(UUID customerId);
     List<BookingResponse> getUpcomingArrivals();

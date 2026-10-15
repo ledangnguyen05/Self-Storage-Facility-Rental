@@ -71,6 +71,11 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
 
+                // Return 401 Unauthorized instead of default 403 Forbidden on unauthenticated access
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(new org.springframework.security.web.authentication.HttpStatusEntryPoint(org.springframework.http.HttpStatus.UNAUTHORIZED))
+                )
+
                 // Stateless session — no HTTP session stored server-side
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)

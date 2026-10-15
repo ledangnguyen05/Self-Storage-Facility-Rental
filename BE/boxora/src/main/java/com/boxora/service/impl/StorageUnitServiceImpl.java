@@ -229,7 +229,8 @@ public class StorageUnitServiceImpl implements StorageUnitService {
 
         facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
 
-        if (unit.getStatus() == UnitStatus.OCCUPIED || unit.getStatus() == UnitStatus.RESERVED) {
+        // Quy tắc nghiệp vụ: Trước mắt chỉ duy nhất có thể chuyển từ trạng thái AVAILABLE sang UNDER_MAINTENANCE (hoặc từ UNDER_MAINTENANCE về AVAILABLE)
+        if (unit.getStatus() != UnitStatus.AVAILABLE && unit.getStatus() != UnitStatus.UNDER_MAINTENANCE) {
             throw new AppException(ErrorCode.STORAGE_UNIT_CANNOT_MAINTAIN);
         }
 
@@ -263,6 +264,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
         String tenantName = null;
         String contractCode = null;
         UUID contractId = null;
+        String startDate = null;
         String dueDate = null;
 
         if (u.getStatus() == UnitStatus.OCCUPIED || u.getStatus() == UnitStatus.OVERDUE_LOCKED || u.getStatus() == UnitStatus.RESERVED) {
@@ -274,6 +276,9 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 if (contract.getCustomer() != null) {
                     tenantName = contract.getCustomer().getFullName() != null ? contract.getCustomer().getFullName() : contract.getCustomer().getUsername();
                 }
+                if (contract.getStartDate() != null) {
+                    startDate = contract.getStartDate().toString();
+                }
                 if (contract.getEndDate() != null) {
                     dueDate = contract.getEndDate().toString();
                 }
@@ -282,7 +287,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 }
             }
 
-            if (bookingId == null || tenantName == null) {
+            if (bookingId == null || tenantName == null || contractCode == null || startDate == null || dueDate == null) {
                 var optBooking = bookingRepository.findFirstByStorageUnit_IdOrderByCreatedAtDesc(u.getId());
                 if (optBooking.isPresent()) {
                     var booking = optBooking.get();
@@ -291,6 +296,12 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                     }
                     if (tenantName == null && booking.getCustomer() != null) {
                         tenantName = booking.getCustomer().getFullName() != null ? booking.getCustomer().getFullName() : booking.getCustomer().getUsername();
+                    }
+                    if (contractCode == null) {
+                        contractCode = booking.getBookingCode();
+                    }
+                    if (startDate == null && booking.getStartDate() != null) {
+                        startDate = booking.getStartDate().toString();
                     }
                     if (dueDate == null && booking.getEndDate() != null) {
                         dueDate = booking.getEndDate().toString();
@@ -318,6 +329,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .tenantName(tenantName)
                 .contractCode(contractCode)
                 .contractId(contractId)
+                .startDate(startDate)
                 .dueDate(dueDate)
                 .build();
     }

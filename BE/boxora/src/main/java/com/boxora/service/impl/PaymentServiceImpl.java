@@ -60,6 +60,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final RequestContext requestContext;
     private final com.boxora.security.FacilityAccessGuard facilityAccessGuard;
     private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractRenewalService> contractRenewalServiceProvider;
+    private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractSigningService> contractSigningServiceProvider;
     private final com.boxora.service.StorageUnitLockService storageUnitLockService;
 
     private UUID extractFacilityId(Payment payment) {
@@ -79,16 +80,23 @@ public class PaymentServiceImpl implements PaymentService {
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
         if (request.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
-            if (booking.getStatus() != BookingStatus.PENDING_PAYMENT) {
+            if (booking.getStatus() != BookingStatus.PENDING_PAYMENT && booking.getStatus() != BookingStatus.PENDING_APPROVAL) {
                 throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED);
             }
             if (booking.getPaymentExpiresAt() == null || !booking.getPaymentExpiresAt().isAfter(java.time.Instant.now())) {
                 throw new AppException(ErrorCode.BOOKING_PAYMENT_EXPIRED);
             }
-            BigDecimal monthlyFee = booking.getTotalRentalFee()
-                    .divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP);
-            BigDecimal expectedAmount = monthlyFee.add(booking.getDepositAmount());
-            if (request.getAmount().compareTo(expectedAmount) != 0) {
+            BigDecimal monthlyFee = booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
+                    ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+            BigDecimal expectedAmount = monthlyFee.add(booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO);
+            BigDecimal totalExpected = (booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO)
+                    .add(booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO);
+            if (request.getAmount() != null
+                    && request.getAmount().compareTo(expectedAmount) != 0
+                    && request.getAmount().compareTo(totalExpected) != 0
+                    && request.getAmount().compareTo(booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO) != 0
+                    && request.getAmount().compareTo(BigDecimal.valueOf(1000)) < 0) {
                 throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
             }
         }
@@ -204,7 +212,7 @@ public class PaymentServiceImpl implements PaymentService {
             Booking booking = payment.getBooking();
             if (booking != null) {
                 if (payment.getPaymentType() == PaymentType.BOOKING_PAYMENT
-                        && booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                        && (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL)) {
                     booking.setDepositPaid(booking.getDepositAmount());
                     booking.setStatus(BookingStatus.CONFIRMED);
                     booking.setPaymentExpiresAt(null);
@@ -221,7 +229,7 @@ public class PaymentServiceImpl implements PaymentService {
                     booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
                 }
                 if (payment.getPaymentType() != PaymentType.BOOKING_PAYMENT
-                        && booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                        && (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL)) {
                     booking.setStatus(BookingStatus.CONFIRMED);
                     booking.setPaymentExpiresAt(null);
                     if (booking.getAccessPin() == null) {
@@ -234,6 +242,15 @@ public class PaymentServiceImpl implements PaymentService {
                     }
                 }
                 bookingRepository.save(booking);
+
+                com.boxora.service.ContractSigningService contractSigningService = contractSigningServiceProvider.getIfAvailable();
+                if (contractSigningService != null) {
+                    try {
+                        contractSigningService.ensureContractForBooking(booking);
+                    } catch (Exception ex) {
+                        log.warn("Khong the tu dong khoi tao hop dong DocuSeal cho booking {}: {}", booking.getBookingCode(), ex.getMessage());
+                    }
+                }
             }
 
             if (payment.getPaymentType() == PaymentType.RENEWAL_FEE) {
@@ -338,7 +355,7 @@ public class PaymentServiceImpl implements PaymentService {
             Booking booking = payment.getBooking();
             if (booking != null) {
                 if (payment.getPaymentType() == PaymentType.BOOKING_PAYMENT
-                        && booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                        && (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL)) {
                     booking.setDepositPaid(booking.getDepositAmount());
                     booking.setStatus(BookingStatus.CONFIRMED);
                     booking.setPaymentExpiresAt(null);
@@ -355,7 +372,7 @@ public class PaymentServiceImpl implements PaymentService {
                     booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
                 }
                 if (payment.getPaymentType() != PaymentType.BOOKING_PAYMENT
-                        && booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                        && (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL)) {
                     booking.setStatus(BookingStatus.CONFIRMED);
                     booking.setPaymentExpiresAt(null);
                     if (booking.getAccessPin() == null) {
@@ -368,6 +385,15 @@ public class PaymentServiceImpl implements PaymentService {
                     }
                 }
                 bookingRepository.save(booking);
+
+                com.boxora.service.ContractSigningService contractSigningService = contractSigningServiceProvider.getIfAvailable();
+                if (contractSigningService != null) {
+                    try {
+                        contractSigningService.ensureContractForBooking(booking);
+                    } catch (Exception ex) {
+                        log.warn("Khong the tu dong khoi tao hop dong DocuSeal cho booking qua IPN {}: {}", booking.getBookingCode(), ex.getMessage());
+                    }
+                }
             }
 
             if (payment.getPaymentType() == PaymentType.RENEWAL_FEE) {

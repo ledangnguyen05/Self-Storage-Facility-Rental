@@ -46,21 +46,21 @@ public class BookingController {
     }
 
     @GetMapping("/pending-approval")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Lấy yêu cầu đặt kho đang chờ quản lý duyệt")
     public ResponseEntity<ApiResponse<List<BookingResponse>>> getPendingApprovalRequests() {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getPendingApprovalRequests()));
     }
 
     @PostMapping("/{id}/decision")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
-    @Operation(summary = "Duyệt hoặc từ chối yêu cầu thuê kho")
+    @PreAuthorize("hasAuthority('BOOKING_UPDATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Duyệt hoặc từ chối yêu cầu thuê kho và phân công nhân viên chuẩn bị")
     public ResponseEntity<ApiResponse<BookingResponse>> decideRequest(
             @PathVariable UUID id,
             @Valid @RequestBody BookingDecisionRequest request
     ) {
         return ResponseEntity.ok(ApiResponse.success(
-                bookingService.reviewBookingRequest(id, request.getApproved())
+                bookingService.reviewBookingRequest(id, request.getApproved(), request.getAssignedStaffId(), request.getNotes())
         ));
     }
 

@@ -6,6 +6,7 @@ import { reportService } from '../../services/reportService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
 import { userService } from '../../services/userService'
 import { useLanguage } from '../../context/LanguageContext'
+import { useAuth } from '../../context/AuthContext'
 import { Facility, StorageUnit, OverdueDebtItem, User, RevenueReport } from '../../types'
 import { parseFacilityLayoutConfig } from '../../utils/facilityLayout'
 import { IoTTelemetryModal } from './modals/IoTTelemetryModal'
@@ -25,7 +26,7 @@ interface InspectedUnit {
   type: string
   status: 'Available' | 'Rented' | 'Pending' | 'Overdue' | 'Maintenance'
   rawStatus?: string
-  color: 'emerald' | 'blue' | 'amber' | 'rose' | 'red'
+  color: 'emerald' | 'blue' | 'amber' | 'rose' | 'red' | 'purple'
   tenant: string
   contract: string
   due: string
@@ -40,15 +41,21 @@ interface InspectedUnit {
 
 export const ManagerDashboard: React.FC = () => {
   const { t } = useLanguage()
+  const { user, role } = useAuth()
   const { selectedFacility, setSelectedFacility, facilities: contextFacilities } = useOutletContext<{
     selectedFacility?: string
     setSelectedFacility?: (facId: string) => void
     facilities?: Facility[]
   }>() || {}
 
+  const isFacilityScoped = role === 'FACILITY_MANAGER' || role === 'STAFF'
+  const assignedFacilityId = user?.facilityId
+
   const [facilities, setFacilities] = useState<Facility[]>(contextFacilities || [])
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>(
-    selectedFacility && selectedFacility !== 'ALL' ? selectedFacility : (contextFacilities?.[0]?.id || '')
+    isFacilityScoped && assignedFacilityId
+      ? assignedFacilityId
+      : (selectedFacility && selectedFacility !== 'ALL' ? selectedFacility : (contextFacilities?.[0]?.id || ''))
   )
   const [units, setUnits] = useState<InspectedUnit[]>([])
   const [overdueItems, setOverdueItems] = useState<OverdueDebtItem[]>([])
@@ -57,7 +64,6 @@ export const ManagerDashboard: React.FC = () => {
   const [selectedFloor, setSelectedFloor] = useState<'floor1' | 'floor2'>('floor1')
   const [sizeFilter, setSizeFilter] = useState<'all' | 's' | 'm' | 'l'>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'Available' | 'Rented' | 'Pending' | 'Overdue' | 'Maintenance'>('all')
-  const [showHeatmap, setShowHeatmap] = useState<boolean>(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedUnit, setSelectedUnit] = useState<InspectedUnit | null>(null)
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null)
@@ -111,16 +117,22 @@ export const ManagerDashboard: React.FC = () => {
     } else {
       facilityService.getFacilities()
         .then(res => {
-          if (res?.content) setFacilities(res.content)
+          let list = res?.content || []
+          if (isFacilityScoped && assignedFacilityId) {
+            list = list.filter(f => f.id === assignedFacilityId)
+          }
+          if (list.length > 0) setFacilities(list)
         })
         .catch(() => {})
     }
-  }, [contextFacilities])
+  }, [contextFacilities, isFacilityScoped, assignedFacilityId])
 
   useEffect(() => {
-    let targetFacility = selectedFacility
+    let targetFacility = isFacilityScoped && assignedFacilityId ? assignedFacilityId : selectedFacility
     if (!targetFacility || targetFacility === 'ALL') {
-      if (facilities.length > 0) {
+      if (isFacilityScoped && assignedFacilityId) {
+        targetFacility = assignedFacilityId
+      } else if (facilities.length > 0) {
         targetFacility = facilities[0].id
         if (setSelectedFacility) {
           setSelectedFacility(facilities[0].id)
@@ -131,7 +143,7 @@ export const ManagerDashboard: React.FC = () => {
       setSelectedFacilityId(targetFacility)
       void fetchUnits(targetFacility, revFromDate, revToDate)
     }
-  }, [selectedFacility, facilities])
+  }, [selectedFacility, facilities, isFacilityScoped, assignedFacilityId])
 
   const fetchUnits = async (facId?: string, fDate = revFromDate, tDate = revToDate) => {
     setIsLoading(true)
@@ -163,7 +175,7 @@ export const ManagerDashboard: React.FC = () => {
             color = 'blue'
           } else if (isMaint) {
             status = 'Maintenance'
-            color = 'red'
+            color = 'purple'
           } else if (isRes) {
             status = 'Pending'
             color = 'amber'
@@ -177,9 +189,13 @@ export const ManagerDashboard: React.FC = () => {
             status,
             rawStatus: su.status,
             color,
-            tenant: su.tenantName || (isAvail ? 'Kho trống' : 'Đang cập nhật'),
-            contract: su.contractCode || (isAvail ? 'Chưa có hợp đồng' : 'Chưa có mã HĐ'),
-            due: su.dueDate ? new Date(su.dueDate).toLocaleDateString('vi-VN') : (isAvail ? '—' : 'Chưa xác định'),
+            tenant: su.tenantName || (isAvail ? 'Kho trống' : isRes ? 'Đang cập nhật hồ sơ' : 'Đang cập nhật'),
+            contract: su.contractCode || (isAvail ? 'Chưa có hợp đồng' : isRes ? 'Chờ ký HĐ bàn giao' : 'Chưa có mã HĐ'),
+            due: (su.startDate && su.dueDate)
+              ? `${new Date(su.startDate).toLocaleDateString('vi-VN')} - ${new Date(su.dueDate).toLocaleDateString('vi-VN')}`
+              : su.dueDate
+              ? new Date(su.dueDate).toLocaleDateString('vi-VN')
+              : (isAvail ? '—' : 'Chưa xác định'),
             battery: su.batteryLevel || '98%',
             smartlock: su.smartLockSerial || `SL-${su.unitCode.replace('-', '')}`,
             lastAccess: su.lastAccessTime || (isAvail ? 'Chưa ghi nhận' : 'Chưa có lượt ra vào'),
@@ -238,10 +254,19 @@ export const ManagerDashboard: React.FC = () => {
   }
 
   const currentFacility = useMemo(() => {
+    if (isFacilityScoped && assignedFacilityId) {
+      return facilities.find(f => f.id === assignedFacilityId) || ({
+        id: assignedFacilityId,
+        name: user?.facilityName ? user.facilityName.replace(/StoreHub\s*/gi, 'Boxora ') : 'Cơ sở trực thuộc',
+        code: user?.facilityCode || 'FAC',
+      } as Facility)
+    }
     return facilities.find(f => f.id === selectedFacilityId) || facilities[0]
-  }, [facilities, selectedFacilityId])
+  }, [facilities, selectedFacilityId, isFacilityScoped, assignedFacilityId, user?.facilityName, user?.facilityCode])
 
-  const currentFacilityName = currentFacility?.name || 'Cơ sở Boxora'
+  const currentFacilityName = currentFacility?.name
+    ? currentFacility.name.replace(/StoreHub\s*/gi, 'Boxora ')
+    : (user?.facilityName ? user.facilityName.replace(/StoreHub\s*/gi, 'Boxora ') : 'Cơ sở Boxora')
 
   const facilityRevenue = useMemo(() => {
     return revenueData?.totalRevenue ?? facilityPayments.reduce((acc, p) => acc + (p.amount || 0), 0)
@@ -313,26 +338,29 @@ export const ManagerDashboard: React.FC = () => {
   }
 
   const handleStorageUnitCreated = (unit: StorageUnit) => {
-    const targetFacilityId = unit.facilityId || selectedFacilityId
+    const targetFacilityId = unit.facilityId || selectedFacilityId || user?.facilityId
     if (targetFacilityId) {
       setSelectedFacilityId(targetFacilityId)
-      if (setSelectedFacility && selectedFacility !== targetFacilityId) {
-        setSelectedFacility(targetFacilityId)
-      } else {
-        void fetchUnits(targetFacilityId)
-      }
+      void fetchUnits(targetFacilityId)
     }
     triggerAction(`${t('Đã thêm kho', 'Added storage unit')} ${unit.unitCode}.`)
   }
 
   const handleToggleMaintenance = async () => {
     if (!selectedUnit) return
+
+    // Quy định: trước mắt chỉ duy nhất có thể chuyển từ trạng thái available sang maintenance (và ngược lại)
+    if (selectedUnit.status !== 'Available' && selectedUnit.status !== 'Maintenance') {
+      triggerAction(`Chỉ có thể chuyển bảo trì khi kho đang ở trạng thái Trống sẵn sàng (Available).`)
+      return
+    }
+
     try {
       if (selectedUnit.backendId) {
         const updated = await storageUnitService.toggleMaintenance(selectedUnit.backendId)
         const isNowMaint = updated.status === 'UNDER_MAINTENANCE' || updated.status === 'MAINTENANCE'
         const nextStatus: InspectedUnit['status'] = isNowMaint ? 'Maintenance' : 'Available'
-        const nextColor: InspectedUnit['color'] = isNowMaint ? 'red' : 'emerald'
+        const nextColor: InspectedUnit['color'] = isNowMaint ? 'purple' : 'emerald'
 
         setUnits(prev => prev.map(u => {
           if (u.id === selectedUnit.id) {
@@ -361,16 +389,21 @@ export const ManagerDashboard: React.FC = () => {
           }
         })
 
-        triggerAction(`Đã cập nhật trạng thái kho #${selectedUnit.id} thành ${isNowMaint ? 'Bảo trì' : 'Sẵn sàng'} qua StorageUnit API!`)
+        const targetFac = selectedFacilityId || user?.facilityId
+        if (targetFac) {
+          void fetchUnits(targetFac)
+        }
+
+        triggerAction(`Đã cập nhật trạng thái kho #${selectedUnit.id} thành ${isNowMaint ? 'Bảo trì kỹ thuật' : 'Sẵn sàng'} qua StorageUnit API!`)
       } else {
         const nextStatus = selectedUnit.status === 'Maintenance' ? 'Available' : 'Maintenance'
-        setUnits(prev => prev.map(u => u.id === selectedUnit.id ? { ...u, status: nextStatus, color: nextStatus === 'Maintenance' ? 'red' : 'emerald' } : u))
+        setUnits(prev => prev.map(u => u.id === selectedUnit.id ? { ...u, status: nextStatus, color: nextStatus === 'Maintenance' ? 'purple' : 'emerald' } : u))
         setSelectedUnit(prev => {
           if (!prev) return null
           return {
             ...prev,
             status: nextStatus,
-            color: nextStatus === 'Maintenance' ? 'red' : 'emerald'
+            color: nextStatus === 'Maintenance' ? 'purple' : 'emerald'
           }
         })
         triggerAction(`Đã chuyển đổi trạng thái bảo trì cho kho #${selectedUnit.id}`)
@@ -454,6 +487,7 @@ export const ManagerDashboard: React.FC = () => {
 
   const rentedPercent = totalUnitsCount > 0 ? ((rentedUnitsCount / totalUnitsCount) * 100).toFixed(1) : '0.0'
   const availablePercent = totalUnitsCount > 0 ? ((availableUnitsCount / totalUnitsCount) * 100).toFixed(1) : '0.0'
+  const pendingPercent = totalUnitsCount > 0 ? ((pendingUnitsCount / totalUnitsCount) * 100).toFixed(1) : '0.0'
   const maintenancePercent = totalUnitsCount > 0 ? ((maintenanceUnitsCount / totalUnitsCount) * 100).toFixed(1) : '0.0'
   const overduePercent = totalUnitsCount > 0 ? ((overdueUnitsCount / totalUnitsCount) * 100).toFixed(1) : '0.0'
 
@@ -467,35 +501,21 @@ export const ManagerDashboard: React.FC = () => {
       case 'Rented': return 'bg-blue-50 text-blue-700 border-blue-200'
       case 'Pending': return 'bg-amber-50 text-amber-800 border-amber-200'
       case 'Overdue': return 'bg-rose-50 text-rose-700 border-rose-200'
-      case 'Maintenance': return 'bg-rose-50 text-rose-700 border-rose-200'
+      case 'Maintenance': return 'bg-purple-50 text-purple-700 border-purple-200'
     }
   }
 
   const getUnitCardBorder = (unit: InspectedUnit) => {
-    const isSelected = selectedUnit?.id === unit.id ? 'ring-2 ring-slate-900 shadow-md z-10' : 'hover:-translate-y-0.5 hover:shadow-xs'
+    const isSelected = selectedUnit?.id === unit.id
     switch (unit.color) {
-      case 'emerald': return `border-t-2 border-t-emerald-500 hover:bg-slate-50/80 ${isSelected}`
-      case 'blue': return `border-t-2 border-t-blue-600 hover:bg-slate-50/80 ${isSelected}`
-      case 'amber': return `border-t-2 border-t-amber-500 hover:bg-slate-50/80 ${isSelected}`
+      case 'emerald': return `border-t-2 border-t-emerald-500 hover:bg-slate-50/80 ${isSelected ? 'ring-2 ring-emerald-600 shadow-md z-10' : 'hover:-translate-y-0.5 hover:shadow-xs'}`
+      case 'blue': return `border-t-2 border-t-blue-600 hover:bg-slate-50/80 ${isSelected ? 'ring-2 ring-blue-600 shadow-md z-10' : 'hover:-translate-y-0.5 hover:shadow-xs'}`
+      case 'amber': return `border-t-2 border-t-amber-500 hover:bg-slate-50/80 ${isSelected ? 'ring-2 ring-amber-500 shadow-md z-10' : 'hover:-translate-y-0.5 hover:shadow-xs'}`
+      case 'purple': return `border-t-2 border-t-purple-500 hover:bg-purple-50/30 ${isSelected ? 'ring-2 ring-purple-600 shadow-md z-10' : 'hover:-translate-y-0.5 hover:shadow-xs'}`
       case 'rose':
-      case 'red': return `border-t-2 border-t-rose-500 hover:bg-slate-50/80 ${isSelected}`
-      default: return `border-t-2 border-t-slate-400 hover:bg-slate-50/80 ${isSelected}`
+      case 'red': return `border-t-2 border-t-rose-500 hover:bg-rose-50/30 ${isSelected ? 'ring-2 ring-rose-600 shadow-md z-10' : 'hover:-translate-y-0.5 hover:shadow-xs'}`
+      default: return `border-t-2 border-t-slate-400 hover:bg-slate-50/80 ${isSelected ? 'ring-2 ring-slate-900 shadow-md z-10' : 'hover:-translate-y-0.5 hover:shadow-xs'}`
     }
-  }
-
-  const getUnitHeatmapInfo = (unit: InspectedUnit) => {
-    if (unit.status === 'Available') {
-      return { visits: 0, level: 'none', label: '0 lượt/tuần', badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200' }
-    }
-    const charCode = unit.id.charCodeAt(unit.id.length - 1) + (unit.id.charCodeAt(unit.id.length - 2) || 0)
-    const visits = (charCode % 18) + 3
-    if (visits >= 14) {
-      return { visits, level: 'high', label: `${visits} lượt/tuần`, badgeClass: 'bg-slate-100 text-slate-800 border border-slate-300 font-semibold' }
-    }
-    if (visits >= 8) {
-      return { visits, level: 'med', label: `${visits} lượt/tuần`, badgeClass: 'bg-slate-100 text-slate-700 border border-slate-200' }
-    }
-    return { visits, level: 'low', label: `${visits} lượt/tuần`, badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200' }
   }
 
   // Render each physical unit slot: permanently positioned in place
@@ -527,6 +547,7 @@ export const ManagerDashboard: React.FC = () => {
               {unit.status === 'Available' ? 'Trống' :
                unit.status === 'Rented' ? 'Thuê' :
                unit.status === 'Pending' ? 'Chờ giao' :
+               unit.status === 'Maintenance' ? 'Bảo trì' :
                unit.status === 'Overdue' ? 'Quá hạn' : 'Bảo trì'}
             </span>
           </div>
@@ -563,25 +584,23 @@ export const ManagerDashboard: React.FC = () => {
             unit.status === 'Available' ? 'text-emerald-700' :
             unit.status === 'Rented' ? 'text-blue-700' :
             unit.status === 'Pending' ? 'text-amber-700' :
-            unit.status === 'Overdue' ? 'text-rose-700' : 'text-rose-700'
+            unit.status === 'Maintenance' ? 'text-purple-700' :
+            unit.status === 'Overdue' ? 'text-rose-700' : 'text-slate-600'
           }`}>
             <span className={`w-1.5 h-1.5 rounded-full ${
               unit.color === 'emerald' ? 'bg-emerald-500' :
               unit.color === 'blue' ? 'bg-blue-600' :
-              unit.color === 'amber' ? 'bg-amber-500' : 'bg-rose-500'
+              unit.color === 'amber' ? 'bg-amber-500' :
+              unit.color === 'purple' ? 'bg-purple-600' :
+              unit.color === 'rose' || unit.color === 'red' ? 'bg-rose-500' : 'bg-slate-400'
             }`}></span>
             {unit.status === 'Available' ? 'Trống' :
              unit.status === 'Rented' ? 'Thuê' :
              unit.status === 'Pending' ? 'Chờ giao' :
+             unit.status === 'Maintenance' ? 'Bảo trì' :
              unit.status === 'Overdue' ? 'Quá hạn' : 'Bảo trì'}
           </span>
         </div>
-        {showHeatmap && (
-          <span className={`mt-1 text-[9px] px-1 py-0.5 rounded font-mono flex items-center gap-0.5 ${getUnitHeatmapInfo(unit).badgeClass}`}>
-            <span className="material-symbols-outlined icon-xs text-slate-500">trending_up</span>
-            {getUnitHeatmapInfo(unit).label}
-          </span>
-        )}
       </button>
     )
   }
@@ -675,8 +694,8 @@ export const ManagerDashboard: React.FC = () => {
         </div>
       </section>
 
-      {/* 5 CRITICAL DYNAMIC KPI TILES */}
-      <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      {/* 6 CRITICAL DYNAMIC KPI TILES (GỘP CHỜ BÀN GIAO & PHÂN BIỆT RÕ MÀU BẢO TRÌ/QUÁ HẠN) */}
+      <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
         {/* Tile 1: Total Units */}
         <div 
           onClick={() => setStatusFilter('all')}
@@ -746,35 +765,60 @@ export const ManagerDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Tile 4: Maintenance */}
+        {/* Tile 4: Pending / Chờ bàn giao */}
+        <div 
+          onClick={() => setStatusFilter(prev => prev === 'Pending' ? 'all' : 'Pending')}
+          className={`p-4 bg-white rounded-xl border flex flex-col justify-between hover:shadow-md transition-all duration-150 cursor-pointer ${
+            statusFilter === 'Pending' 
+              ? 'border-amber-500 ring-2 ring-amber-500/20 shadow-xs bg-amber-50/20' 
+              : 'border-slate-200 shadow-2xs hover:border-slate-300'
+          }`}
+          title="Bấm để lọc các kho chờ khách nhận bàn giao"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase font-semibold text-slate-500">Chờ bàn giao</span>
+            <span className="material-symbols-outlined text-amber-500 text-[18px]">pending_actions</span>
+          </div>
+          <div className="flex items-baseline gap-2 mt-2">
+            <span className="text-3xl font-extrabold font-mono tabular-nums text-amber-600 leading-none">
+              {pendingUnitsCount < 10 ? `0${pendingUnitsCount}` : pendingUnitsCount}
+            </span>
+            <span className="text-xs text-slate-500 font-medium">chờ nhận phòng</span>
+          </div>
+          <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+            <div className="bg-amber-500 h-full rounded-full" style={{ width: `${pendingPercent}%` }}></div>
+          </div>
+        </div>
+
+        {/* Tile 5: Maintenance (MÀU TÍM - ĐẶC TRƯNG BẢO TRÌ SỬA CHỮA, TRÁNH TRÙNG VỚI MÀU ĐỎ CỦA QUÁ HẠN) */}
         <div 
           onClick={() => setStatusFilter(prev => prev === 'Maintenance' ? 'all' : 'Maintenance')}
           className={`p-4 bg-white rounded-xl border flex flex-col justify-between hover:shadow-md transition-all duration-150 cursor-pointer ${
             statusFilter === 'Maintenance' 
-              ? 'border-rose-500 ring-2 ring-rose-500/20 shadow-xs bg-rose-50/20' 
+              ? 'border-purple-500 ring-2 ring-purple-500/20 shadow-xs bg-purple-50/20' 
               : 'border-slate-200 shadow-2xs hover:border-slate-300'
           }`}
-          title="Bấm để lọc các kho đang bảo trì"
+          title="Bấm để lọc các kho đang bảo trì kỹ thuật"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs uppercase font-semibold text-slate-500">Đang bảo trì kỹ thuật</span>
-            <span className="material-symbols-outlined text-rose-500 text-[18px]">build_circle</span>
+            <span className="material-symbols-outlined text-purple-600 text-[18px]">build_circle</span>
           </div>
           <div className="flex items-baseline gap-2 mt-2">
-            <span className="text-3xl font-extrabold font-mono tabular-nums text-rose-600 leading-none">
+            <span className="text-3xl font-extrabold font-mono tabular-nums text-purple-600 leading-none">
               {maintenanceUnitsCount < 10 ? `0${maintenanceUnitsCount}` : maintenanceUnitsCount}
             </span>
             <span className="text-xs text-slate-500 font-medium">kho ngưng dùng</span>
           </div>
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-            <div className="bg-rose-500 h-full rounded-full" style={{ width: `${maintenancePercent}%` }}></div>
+            <div className="bg-purple-600 h-full rounded-full" style={{ width: `${maintenancePercent}%` }}></div>
           </div>
         </div>
 
-        {/* Tile 5: Overdue */}
+        {/* Tile 6: Overdue (MÀU ĐỎ / ROSE CẢNH BÁO NỢ CƯỚC & KHÓA SMARTLOCK) */}
         <div 
           onClick={() => setStatusFilter(prev => prev === 'Overdue' ? 'all' : 'Overdue')}
-          className={`p-4 bg-white rounded-xl border flex flex-col justify-between col-span-2 md:col-span-1 hover:shadow-md transition-all duration-150 cursor-pointer ${
+          className={`p-4 bg-white rounded-xl border flex flex-col justify-between hover:shadow-md transition-all duration-150 cursor-pointer ${
             statusFilter === 'Overdue' 
               ? 'border-rose-500 ring-2 ring-rose-500/20 shadow-xs bg-rose-50/20' 
               : 'border-slate-200 shadow-2xs hover:border-slate-300'
@@ -841,21 +885,6 @@ export const ManagerDashboard: React.FC = () => {
 
             {/* Filter and Search Matrix */}
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Heatmap Mode Toggle */}
-              <button
-                type="button"
-                onClick={() => setShowHeatmap(prev => !prev)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                  showHeatmap 
-                    ? 'bg-slate-900 text-white border-slate-900 shadow-xs' 
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 shadow-2xs'
-                }`}
-                title="Bật/Tắt hiển thị bản đồ nhiệt mật độ tần suất ra vào kho"
-              >
-                <span className="material-symbols-outlined icon-sm">{showHeatmap ? 'analytics' : 'insights'}</span>
-                <span>Bản đồ nhiệt ({showHeatmap ? 'Bật' : 'Tắt'})</span>
-              </button>
-
               <select 
                 value={sizeFilter}
                 onChange={(e) => setSizeFilter(e.target.value as any)}
@@ -876,93 +905,29 @@ export const ManagerDashboard: React.FC = () => {
                   className="pl-8 pr-3 py-1.5 bg-white text-slate-800 text-xs rounded-lg placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 border border-slate-200 shadow-2xs w-48 sm:w-60 font-mono"
                 />
               </div>
+              {statusFilter !== 'all' && (
+                <button 
+                  type="button" 
+                  onClick={() => setStatusFilter('all')}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-neutral-800 transition-all cursor-pointer shadow-2xs"
+                  title="Nhấp để xóa lọc trạng thái và hiển thị lại tất cả các kho"
+                >
+                  <span className={`w-2 h-2 rounded-full animate-pulse ${
+                    statusFilter === 'Available' ? 'bg-emerald-400' :
+                    statusFilter === 'Rented' ? 'bg-blue-400' :
+                    statusFilter === 'Pending' ? 'bg-amber-400' :
+                    statusFilter === 'Maintenance' ? 'bg-purple-400' : 'bg-rose-400'
+                  }`}></span>
+                  <span>Đang lọc: {
+                    statusFilter === 'Available' ? 'Kho trống' :
+                    statusFilter === 'Rented' ? 'Đang thuê' :
+                    statusFilter === 'Pending' ? 'Chờ bàn giao' :
+                    statusFilter === 'Maintenance' ? 'Bảo trì kỹ thuật' : 'Quá hạn nợ'
+                  }</span>
+                  <span className="material-symbols-outlined text-[14px] hover:text-rose-300">close</span>
+                </button>
+              )}
             </div>
-          </div>
-
-          {/* Dynamic Color Legend Bar */}
-          <div className="flex items-center flex-wrap gap-2 px-3 py-2 bg-slate-50/80 rounded-xl border border-slate-200 text-xs font-medium">
-            <button 
-              type="button" 
-              onClick={() => setStatusFilter(prev => prev === 'Available' ? 'all' : 'Available')}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium cursor-pointer transition-all ${
-                statusFilter === 'Available' 
-                  ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-500/30 text-emerald-950 font-bold shadow-xs' 
-                  : 'bg-white border-slate-200/80 hover:bg-slate-50 text-slate-700 shadow-2xs'
-              }`}
-              title="Nhấp để lọc chỉ hiển thị các kho trống"
-            >
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-              <span>Kho trống</span>
-              <span className="font-mono tabular-nums font-bold text-slate-900 ml-0.5">({availableUnitsCount})</span>
-            </button>
-            <button 
-              type="button" 
-              onClick={() => setStatusFilter(prev => prev === 'Rented' ? 'all' : 'Rented')}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium cursor-pointer transition-all ${
-                statusFilter === 'Rented' 
-                  ? 'bg-blue-50 border-blue-400 ring-2 ring-blue-500/30 text-blue-950 font-bold shadow-xs' 
-                  : 'bg-white border-slate-200/80 hover:bg-slate-50 text-slate-700 shadow-2xs'
-              }`}
-              title="Nhấp để lọc chỉ hiển thị các kho đang cho thuê"
-            >
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
-              <span>Đang thuê</span>
-              <span className="font-mono tabular-nums font-bold text-slate-900 ml-0.5">({rentedUnitsCount})</span>
-            </button>
-            <button 
-              type="button" 
-              onClick={() => setStatusFilter(prev => prev === 'Pending' ? 'all' : 'Pending')}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium cursor-pointer transition-all ${
-                statusFilter === 'Pending' 
-                  ? 'bg-amber-50 border-amber-400 ring-2 ring-amber-500/30 text-amber-950 font-bold shadow-xs' 
-                  : 'bg-white border-slate-200/80 hover:bg-slate-50 text-slate-700 shadow-2xs'
-              }`}
-              title="Nhấp để lọc chỉ hiển thị các kho chờ bàn giao"
-            >
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
-              <span>Chờ bàn giao</span>
-              <span className="font-mono tabular-nums font-bold text-slate-900 ml-0.5">({pendingUnitsCount})</span>
-            </button>
-            <button 
-              type="button" 
-              onClick={() => setStatusFilter(prev => prev === 'Overdue' ? 'all' : 'Overdue')}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium cursor-pointer transition-all ${
-                statusFilter === 'Overdue' 
-                  ? 'bg-rose-50 border-rose-400 ring-2 ring-rose-500/30 text-rose-950 font-bold shadow-xs' 
-                  : 'bg-white border-slate-200/80 hover:bg-slate-50 text-slate-700 shadow-2xs'
-              }`}
-              title="Nhấp để lọc chỉ hiển thị các kho nợ cước quá hạn"
-            >
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-600"></span>
-              <span>Quá hạn nợ</span>
-              <span className="font-mono tabular-nums font-bold text-slate-900 ml-0.5">({overdueUnitsCount})</span>
-            </button>
-            <button 
-              type="button" 
-              onClick={() => setStatusFilter(prev => prev === 'Maintenance' ? 'all' : 'Maintenance')}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium cursor-pointer transition-all ${
-                statusFilter === 'Maintenance' 
-                  ? 'bg-rose-50 border-rose-400 ring-2 ring-rose-500/30 text-rose-950 font-bold shadow-xs' 
-                  : 'bg-white border-slate-200/80 hover:bg-slate-50 text-slate-700 shadow-2xs'
-              }`}
-              title="Nhấp để lọc các kho đang bảo trì kỹ thuật"
-            >
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-              <span>Bảo trì kỹ thuật</span>
-              <span className="font-mono tabular-nums font-bold text-slate-900 ml-0.5">({maintenanceUnitsCount})</span>
-            </button>
-
-            {statusFilter !== 'all' && (
-              <button 
-                type="button" 
-                onClick={() => setStatusFilter('all')}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-900 text-white text-[11px] font-semibold hover:bg-neutral-800 transition-all cursor-pointer shadow-xs ml-auto"
-                title="Bỏ lọc trạng thái và hiển thị lại toàn bộ kho"
-              >
-                <span className="material-symbols-outlined text-[14px]">filter_alt_off</span>
-                <span>Bỏ lọc trạng thái</span>
-              </button>
-            )}
           </div>
 
           {/* VISUAL MATRIX: WAREHOUSE CORRIDOR LAYOUT */}
@@ -975,11 +940,6 @@ export const ManagerDashboard: React.FC = () => {
               </span>
               <span className="font-semibold text-slate-800 flex items-center gap-2">
                 <span>{selectedFloor === 'floor1' ? facilityProfile.corridorNorth : facilityProfile.corridorClimate}</span>
-                {showHeatmap && (
-                  <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300">
-                    Bản đồ nhiệt: Mật độ truy cập 30 ngày
-                  </span>
-                )}
               </span>
               <span className="flex items-center gap-1">
                 <span className="material-symbols-outlined text-[16px] text-rose-500">emergency</span> 
@@ -996,12 +956,6 @@ export const ManagerDashboard: React.FC = () => {
                       <span className="material-symbols-outlined text-cyan-600 text-[18px]">warehouse</span>
                       {facilityProfile.zoneCName}
                     </span>
-                    {showHeatmap && (
-                      <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-900 text-[10px] font-mono font-semibold border border-blue-200 flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[12px]">footprint</span>
-                        Lưu lượng: 38 lượt/ngày
-                      </span>
-                    )}
                   </div>
                   {facilityProfile.zoneCDesc && <span className="text-[11px] text-slate-500">{facilityProfile.zoneCDesc}</span>}
                 </div>
@@ -1026,12 +980,6 @@ export const ManagerDashboard: React.FC = () => {
                         <span className="material-symbols-outlined text-slate-600 text-[18px]">inventory_2</span>
                         {facilityProfile.zoneAName}
                       </span>
-                      {showHeatmap && (
-                        <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 text-[10px] font-mono font-semibold border border-slate-300 flex items-center gap-1">
-                          <span className="material-symbols-outlined icon-xs text-slate-600">trending_up</span>
-                          Mật độ cao: 94 lượt/ngày
-                        </span>
-                      )}
                     </div>
                     {facilityProfile.zoneADesc && <span className="text-[11px] text-slate-500">{facilityProfile.zoneADesc}</span>}
                   </div>
@@ -1054,12 +1002,6 @@ export const ManagerDashboard: React.FC = () => {
                         <span className="material-symbols-outlined text-slate-600 text-[18px]">inventory</span>
                         {facilityProfile.zoneBName}
                       </span>
-                      {showHeatmap && (
-                        <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 text-[10px] font-mono font-semibold border border-slate-300 flex items-center gap-1">
-                          <span className="material-symbols-outlined icon-xs text-slate-600">trending_up</span>
-                          Mật độ vừa: 62 lượt/ngày
-                        </span>
-                      )}
                     </div>
                     {facilityProfile.zoneBDesc && <span className="text-[11px] text-slate-500">{facilityProfile.zoneBDesc}</span>}
                   </div>
@@ -1237,13 +1179,25 @@ export const ManagerDashboard: React.FC = () => {
               <button 
                 type="button" 
                 onClick={handleToggleMaintenance}
-                className={`py-2 px-3 rounded-lg font-medium text-xs flex items-center justify-center gap-1 transition-all border cursor-pointer ${
+                disabled={selectedUnit.status !== 'Available' && selectedUnit.status !== 'Maintenance'}
+                className={`py-2 px-3 rounded-lg font-medium text-xs flex items-center justify-center gap-1 transition-all border ${
                   selectedUnit.status === 'Maintenance'
-                    ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200'
-                    : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border-amber-200'
+                    ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200 cursor-pointer'
+                    : selectedUnit.status === 'Available'
+                    ? 'bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200 cursor-pointer'
+                    : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60 cursor-not-allowed'
                 }`}
+                title={
+                  selectedUnit.status === 'Available'
+                    ? 'Chuyển kho này sang chế độ bảo trì kỹ thuật'
+                    : selectedUnit.status === 'Maintenance'
+                    ? 'Hoàn tất bảo trì và mở lại kho sẵn sàng cho thuê'
+                    : 'Chỉ có thể chuyển bảo trì khi kho đang ở trạng thái Trống sẵn sàng (Available)'
+                }
               >
-                <span className="material-symbols-outlined text-[16px]">build</span>
+                <span className="material-symbols-outlined text-[16px]">
+                  {selectedUnit.status === 'Maintenance' ? 'check_circle' : 'build'}
+                </span>
                 <span>{selectedUnit.status === 'Maintenance' ? 'Mở lại kho (Khả dụng)' : 'Chuyển bảo trì'}</span>
               </button>
             </div>
@@ -1260,443 +1214,9 @@ export const ManagerDashboard: React.FC = () => {
         )}
       </section>
 
-      {/* REVENUE & CASHFLOW REPORT SECTION (REAL DB DATA) */}
-      <section className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 flex flex-col gap-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
-              <span className="material-symbols-outlined text-[24px]">account_balance_wallet</span>
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-slate-900">Báo cáo Doanh thu & Dòng tiền Cơ sở</h3>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                  {currentFacilityName}
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Dữ liệu tài chính đối soát trực tiếp từ cổng VNPay & hệ thống hóa đơn thực tế
-                {revFromDate || revToDate ? ` (${revFromDate || '...'} → ${revToDate || 'nay'})` : ' (Toàn bộ thời gian)'}
-              </p>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-2 flex-wrap relative">
-            {/* Date filter dropdown popover button */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => {
-                  setTempRevFrom(revFromDate)
-                  setTempRevTo(revToDate)
-                  setIsRevDatePickerOpen(!isRevDatePickerOpen)
-                }}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
-                  revFromDate || revToDate
-                    ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[16px]">calendar_today</span>
-                <span>
-                  {revFromDate || revToDate ? `${revFromDate || '...'} - ${revToDate || 'nay'}` : 'Chọn kỳ báo cáo'}
-                </span>
-                <span className="material-symbols-outlined text-[14px]">arrow_drop_down</span>
-              </button>
 
-              {/* Date Filter Dropdown Box */}
-              {isRevDatePickerOpen && (
-                <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-200 p-4 z-50 animate-in fade-in zoom-in-95">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 mb-3">
-                    <span className="text-xs font-bold text-slate-800">Khoảng thời gian</span>
-                    <button
-                      type="button"
-                      onClick={() => setIsRevDatePickerOpen(false)}
-                      className="text-slate-400 hover:text-slate-600 text-xs"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">close</span>
-                    </button>
-                  </div>
-                  <div className="flex flex-col gap-2.5">
-                    <div>
-                      <label className="text-[11px] font-semibold text-slate-600 mb-1 block">Từ ngày:</label>
-                      <input
-                        type="date"
-                        value={tempRevFrom}
-                        onChange={(e) => setTempRevFrom(e.target.value)}
-                        className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[11px] font-semibold text-slate-600 mb-1 block">Đến ngày:</label>
-                      <input
-                        type="date"
-                        value={tempRevTo}
-                        onChange={(e) => setTempRevTo(e.target.value)}
-                        className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div className="flex items-center justify-end gap-2 mt-2 pt-2 border-t border-slate-100">
-                      <button
-                        type="button"
-                        onClick={handleResetRevDateFilter}
-                        className="px-2.5 py-1 rounded-md text-xs text-slate-600 hover:bg-slate-100"
-                      >
-                        Đặt lại
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleApplyRevDateFilter}
-                        className="px-3 py-1 rounded-md text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700"
-                      >
-                        Áp dụng
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* CSV Export Button */}
-            <button
-              type="button"
-              onClick={handleExportFacilityRevenueCsv}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-all shadow-2xs"
-            >
-              <span className="material-symbols-outlined text-[16px]">download</span>
-              <span>Xuất CSV</span>
-            </button>
-          </div>
-        </div>
-
-        {/* 4 Financial Stat Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Card 1: Tổng Doanh thu cơ sở */}
-          <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-4 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500">Tổng doanh thu cơ sở</span>
-              <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100">
-                <span className="material-symbols-outlined text-[18px]">payments</span>
-              </div>
-            </div>
-            <div className="mt-3">
-              <div className="text-xl font-black text-slate-900 tracking-tight">
-                {isRevenueLoading ? (
-                  <span className="inline-block w-24 h-6 bg-slate-200 animate-pulse rounded"></span>
-                ) : (
-                  `${new Intl.NumberFormat('vi-VN').format(facilityRevenue)} ₫`
-                )}
-              </div>
-              <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500">
-                <span className="font-semibold text-emerald-600">{facilityPayments.length}</span> giao dịch đã thanh toán
-              </div>
-            </div>
-          </div>
-
-          {/* Card 2: Doanh thu Tiền thuê kho */}
-          <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-4 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500">Phí thuê kho thực thu</span>
-              <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600 border border-blue-100">
-                <span className="material-symbols-outlined text-[18px]">receipt_long</span>
-              </div>
-            </div>
-            <div className="mt-3">
-              <div className="text-xl font-black text-blue-900 tracking-tight">
-                {isRevenueLoading ? (
-                  <span className="inline-block w-24 h-6 bg-slate-200 animate-pulse rounded"></span>
-                ) : (
-                  `${new Intl.NumberFormat('vi-VN').format(rentalFeeRevenue)} ₫`
-                )}
-              </div>
-              <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500">
-                Tiền thuê kho định kỳ & hợp đồng
-              </div>
-            </div>
-          </div>
-
-          {/* Card 3: Tiền Ký quỹ / Đặt cọc */}
-          <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-4 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500">Tiền ký quỹ đặt cọc</span>
-              <div className="p-1.5 rounded-lg bg-amber-50 text-amber-600 border border-amber-100">
-                <span className="material-symbols-outlined text-[18px]">savings</span>
-              </div>
-            </div>
-            <div className="mt-3">
-              <div className="text-xl font-black text-amber-900 tracking-tight">
-                {isRevenueLoading ? (
-                  <span className="inline-block w-24 h-6 bg-slate-200 animate-pulse rounded"></span>
-                ) : (
-                  `${new Intl.NumberFormat('vi-VN').format(depositRevenue)} ₫`
-                )}
-              </div>
-              <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500">
-                Tiền cọc đảm bảo giữ hộ
-              </div>
-            </div>
-          </div>
-
-          {/* Card 4: Nợ cước quá hạn */}
-          <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-4 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500">Nợ cước quá hạn cần thu</span>
-              <div className="p-1.5 rounded-lg bg-rose-50 text-rose-600 border border-rose-100">
-                <span className="material-symbols-outlined text-[18px]">money_off</span>
-              </div>
-            </div>
-            <div className="mt-3">
-              <div className="text-xl font-black text-rose-700 tracking-tight">
-                {`${new Intl.NumberFormat('vi-VN').format(totalOverdueDebt)} ₫`}
-              </div>
-              <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500">
-                <span className="font-semibold text-rose-600">{overdueItems.length}</span> hợp đồng vi phạm kỳ hạn
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Real Transactions Ledger */}
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-              <span className="material-symbols-outlined text-[16px] text-slate-500">history</span>
-              Nhật ký Giao dịch Thu ngân Cơ sở gần nhất
-            </h4>
-            <span className="text-xs text-slate-400">Hiển thị các giao dịch phát sinh tại cơ sở</span>
-          </div>
-
-          <div className="overflow-x-auto rounded-lg border border-slate-200">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
-                  <th className="py-2.5 px-3">Mã GD / Thời gian</th>
-                  <th className="py-2.5 px-3">Khách hàng</th>
-                  <th className="py-2.5 px-3">Mã Kho</th>
-                  <th className="py-2.5 px-3">Loại thanh toán</th>
-                  <th className="py-2.5 px-3">Phương thức</th>
-                  <th className="py-2.5 px-3 text-right">Số tiền</th>
-                  <th className="py-2.5 px-3 text-center">Trạng thái</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {isRevenueLoading ? (
-                  <tr>
-                    <td colSpan={7} className="py-8 text-center text-slate-400">
-                      <div className="flex items-center justify-center gap-2">
-                        <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
-                        <span>Đang tải dữ liệu doanh thu từ cơ sở dữ liệu...</span>
-                      </div>
-                    </td>
-                  </tr>
-                ) : facilityPayments.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="py-8 text-center text-slate-400">
-                      <span className="material-symbols-outlined text-[32px] text-slate-300 block mb-1">receipt</span>
-                      Chưa ghi nhận giao dịch thanh toán nào cho cơ sở này trong khoảng thời gian đã chọn.
-                    </td>
-                  </tr>
-                ) : (
-                  facilityPayments.map((p) => (
-                    <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-2.5 px-3">
-                        <div className="font-mono font-medium text-slate-900">{p.id.slice(0, 8)}...</div>
-                        <div className="text-[11px] text-slate-400">
-                          {p.paymentTime ? new Date(p.paymentTime).toLocaleString('vi-VN') : '—'}
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-3 font-medium text-slate-800">
-                        {p.customerName || 'Khách hàng Boxora'}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span className="font-mono font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
-                          {p.unitCode || 'N/A'}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span className={`px-2 py-0.5 rounded text-[11px] font-medium border ${
-                          p.paymentType === 'DEPOSIT'
-                            ? 'bg-amber-50 text-amber-800 border-amber-200'
-                            : 'bg-blue-50 text-blue-700 border-blue-200'
-                        }`}>
-                          {p.paymentType === 'DEPOSIT' ? 'Tiền ký quỹ (Cọc)' : 'Tiền thuê kho'}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-600">
-                        {p.paymentMethod || 'VNPay'}
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-bold text-slate-900 font-mono">
-                        {new Intl.NumberFormat('vi-VN').format(p.amount)} ₫
-                      </td>
-                      <td className="py-2.5 px-3 text-center">
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                          p.status === 'SUCCESS'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : p.status === 'PENDING'
-                            ? 'bg-amber-50 text-amber-700 border-amber-200'
-                            : 'bg-rose-50 text-rose-700 border-rose-200'
-                        }`}>
-                          {p.status === 'SUCCESS' ? 'Thành công' : p.status === 'PENDING' ? 'Chờ xử lý' : 'Thất bại'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      {/* BOTTOM SECTION: OVERDUE HANDLING & STAFF WORKFORCE ALLOCATION */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* LEFT (col-span-7): OVERDUE DELINQUENCY & AUTOMATED LOCKOUT CONSOLE */}
-        <div className="lg:col-span-7 flex flex-col gap-4 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-100">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-rose-50 text-rose-700 border border-rose-200">
-                <span className="material-symbols-outlined icon-md">warning</span>
-              </div>
-              <div className="flex flex-col">
-                <h3 className="text-base font-bold text-slate-900">Xử lý Nợ cước Quá hạn (Overdue Handling)</h3>
-                <span className="text-xs text-slate-500">
-                  {overdueItems.length > 0
-                    ? `Phát hiện ${overdueItems.length < 10 ? `0${overdueItems.length}` : overdueItems.length} hợp đồng vi phạm điều khoản thanh toán kỳ hạn`
-                    : 'Không phát hiện vi phạm kỳ hạn thanh toán tại cơ sở'}
-                </span>
-              </div>
-            </div>
-            <span className={`px-3 py-1 rounded-full font-mono text-xs font-bold border ${overdueItems.length > 0 ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
-              {overdueItems.length > 0 ? `${overdueItems.length} Cần xử lý` : 'Ổn định'}
-            </span>
-          </div>
-
-          {/* Delinquent Cases Stack */}
-          <div className="flex flex-col gap-3">
-            {overdueItems.length === 0 ? (
-              <div className="p-8 text-center text-slate-500 text-xs bg-slate-50 rounded-xl border border-slate-200">
-                <span className="material-symbols-outlined text-[32px] text-emerald-500 mb-1">verified</span>
-                <p className="font-bold text-slate-800 text-sm">Không có nợ cước quá hạn</p>
-                <p className="text-slate-500 text-xs mt-0.5">Tất cả hợp đồng tại cơ sở đang được thanh toán đúng kỳ hạn.</p>
-              </div>
-            ) : (
-              overdueItems.map((item) => (
-                <div key={item.contractId} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-slate-50 rounded-xl gap-4 border border-slate-200">
-                  <div className="flex flex-col gap-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded bg-rose-600 text-white font-mono text-xs font-bold">Kho #{item.unitCode}</span>
-                      <span className="text-xs font-bold text-slate-900 truncate">{item.customerName || 'Khách hàng'} (HĐ #{item.contractCode})</span>
-                    </div>
-                    <div className="flex items-center gap-4 flex-wrap text-slate-600 text-xs mt-1">
-                      <span className="text-rose-600 font-semibold flex items-center gap-1">
-                        <span className="material-symbols-outlined icon-xs">schedule</span> Quá hạn {item.daysOverdue} ngày
-                      </span>
-                      <span>Cước nợ: <strong className="text-slate-900 font-mono">{Number(item.unpaidRent || 0).toLocaleString('vi-VN')}đ</strong></span>
-                      <span>Phí phạt: <strong className="text-rose-600 font-mono">{Number(item.totalLateFee || 0).toLocaleString('vi-VN')}đ</strong></span>
-                      <span>Tổng nợ: <strong className="text-rose-700 font-mono font-bold">{Number(item.totalDebt || 0).toLocaleString('vi-VN')}đ</strong></span>
-                    </div>
-                    <span className="text-[11px] text-slate-500 mt-1">
-                      Trạng thái: {item.overdueStage === 'ACCESS_BLOCKED' ? 'Đã khóa tạm SmartLock' : item.overdueStage === 'ELIGIBLE_FOR_SEALING' ? 'Đủ điều kiện niêm phong tài sản' : 'Đang trong thời gian ân hạn / nhắc cước'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-                    <button 
-                      type="button" 
-                      onClick={() => setNoticeModalData({
-                        unitCode: item.unitCode,
-                        tenantName: item.customerName || 'Khách hàng',
-                        contractCode: item.contractCode,
-                        daysOverdue: Number(item.daysOverdue) || 0,
-                        baseDebt: `${Number(item.unpaidRent || 0).toLocaleString('vi-VN')}đ`,
-                        penaltyFee: `${Number(item.totalLateFee || 0).toLocaleString('vi-VN')}đ`,
-                        totalDebt: `${Number(item.totalDebt || 0).toLocaleString('vi-VN')}đ`
-                      })}
-                      className="px-3 py-2 rounded-lg bg-white text-slate-800 text-xs font-medium border border-slate-200 hover:bg-slate-100 transition-all flex items-center gap-1 shadow-xs cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined icon-xs">forward_to_inbox</span>
-                      <span>Gửi thông báo</span>
-                    </button>
-                    <button 
-                      type="button" 
-                      onClick={() => setConfirmModal({
-                        isOpen: true,
-                        title: 'Xác nhận Khóa tạm (Lockout) SmartLock',
-                        description: `Hành động này sẽ ngắt mã PIN và thu hồi quyền mở khóa qua ứng dụng di động của khách hàng ${item.customerName || 'khách'} đối với kho #${item.unitCode} (Quá hạn ${item.daysOverdue} ngày). Thao tác này sẽ ghi nhận vào nhật ký an ninh hệ thống.`,
-                        unitCode: `Kho #${item.unitCode}`,
-                        confirmText: 'Xác nhận Khóa SmartLock',
-                        isDestructive: true,
-                        onConfirm: () => {
-                          triggerAction(`Đã kích hoạt khóa cưỡng chế SmartLock kho #${item.unitCode} thành công!`)
-                          setConfirmModal(null)
-                        }
-                      })}
-                      className="px-3 py-2 rounded-lg bg-rose-600 text-white text-xs font-semibold shadow-xs hover:bg-rose-700 transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined icon-xs">lock_person</span>
-                      <span>Khóa tạm (Lockout)</span>
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* RIGHT (col-span-5): WORKFORCE & ON-DUTY SHIFT ROSTER */}
-        <div className="lg:col-span-5 flex flex-col gap-4 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-slate-100 text-slate-800">
-                <span className="material-symbols-outlined text-[22px]">badge</span>
-              </div>
-              <div className="flex flex-col">
-                <h3 className="text-base font-bold text-slate-900">
-                  Nhân sự Trực ca ({staffList.length} Nhân viên)
-                </h3>
-                <span className="text-xs text-slate-500">Ca trực thực tế tại {currentFacilityName}</span>
-              </div>
-            </div>
-            <button 
-              type="button" 
-              onClick={() => setShowShiftModal(true)}
-              className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-800 text-xs font-semibold hover:bg-slate-200 transition-all flex items-center gap-1 border border-slate-200 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[16px]">person_add</span> Phân công mới
-            </button>
-          </div>
-
-          {/* Staff List */}
-          <div className="flex flex-col gap-2 divide-y divide-slate-100 max-h-96 overflow-y-auto pr-1">
-            {staffList.length === 0 ? (
-              <div className="p-6 text-center text-slate-500 text-xs">
-                Chưa có nhân sự nào được phân công tại cơ sở này.
-              </div>
-            ) : (
-              staffList.slice(0, 6).map((staff, idx) => (
-                <div key={staff.id || idx} className="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-slate-50 transition-all">
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
-                      <div className="w-10 h-10 rounded-full bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-sm border border-slate-300">
-                        {(staff.fullName || staff.username || 'NV').slice(0, 2).toUpperCase()}
-                      </div>
-                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white"></span>
-                    </div>
-                    <div className="flex flex-col text-left">
-                      <span className="text-xs font-bold text-slate-900">{staff.fullName || staff.username}</span>
-                      <span className="text-[11px] text-slate-500">{staff.email || staff.phone || staff.facilityName || 'Nhân viên Boxora'}</span>
-                    </div>
-                  </div>
-                  <span className="px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-mono text-[11px] font-bold border border-emerald-200">
-                    {staff.isActive ? 'Đang trực' : 'Ngoại tuyến'}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* SAFETY CONFIRMATION MODAL */}
+{/* SAFETY CONFIRMATION MODAL */}
       {confirmModal?.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 flex flex-col gap-4">

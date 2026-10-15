@@ -46,6 +46,9 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
   const [startDate, setStartDate] = useState(existingBooking?.startDate || getToday)
   const [customerName, setCustomerName] = useState(user.fullName || '')
   const [customerPhone, setCustomerPhone] = useState(user.phone || '')
+  const [signingMethod, setSigningMethod] = useState<'ONLINE' | 'IN_PERSON'>(
+    (existingBooking?.signingMethod as 'ONLINE' | 'IN_PERSON') || 'ONLINE'
+  )
   const [booking, setBooking] = useState<Booking | null>(existingBooking || null)
   const [paymentUrl, setPaymentUrl] = useState('')
   const [qrCode, setQrCode] = useState('')
@@ -134,6 +137,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
         customerId: user.id,
         startDate,
         rentalMonths,
+        signingMethod,
       })
       setBooking(created)
       setApprovalRejected(false)
@@ -228,6 +232,57 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                   {[1, 3, 6, 12].map(months => <option key={months} value={months}>{months} tháng</option>)}
                 </select>
               </label>
+
+              {/* Lựa chọn hình thức ký hợp đồng */}
+              <div className="space-y-2 pt-2 border-t border-slate-200">
+                <label className="block text-xs font-bold text-slate-900">
+                  Hình thức ký hợp đồng &amp; tiếp nhận kho
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div
+                    onClick={() => setSigningMethod('ONLINE')}
+                    className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                      signingMethod === 'ONLINE'
+                        ? 'border-blue-600 bg-blue-50/70 ring-2 ring-blue-500/20 shadow-sm'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        signingMethod === 'ONLINE' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        <span className="material-symbols-outlined text-[16px]">draw</span>
+                      </div>
+                      <span className="text-xs font-bold text-slate-900">Ký Online DocuSeal</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Quản lý duyệt &rarr; Thanh toán trước qua Sandbox VNPay &rarr; Nhận link ký số DocuSeal &rarr; Kích hoạt mã mở kho ngay.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setSigningMethod('IN_PERSON')}
+                    className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                      signingMethod === 'IN_PERSON'
+                        ? 'border-amber-600 bg-amber-50/70 ring-2 ring-amber-500/20 shadow-sm'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        signingMethod === 'IN_PERSON' ? 'bg-amber-600 text-white' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        <span className="material-symbols-outlined text-[16px]">storefront</span>
+                      </div>
+                      <span className="text-xs font-bold text-slate-900">Ký Trực Tiếp Tại Kho</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Quản lý duyệt &amp; phân công nhân viên đón tiếp &rarr; Quý khách đến kiểm tra kho thực tế &rarr; Ký biên bản &amp; nhận kho tại quầy.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {(!isContactValid || !isDateValid) && <p className="text-xs text-amber-700">Nhập họ tên, số điện thoại Việt Nam hợp lệ và ngày thuê từ hôm nay trở đi.</p>}
             </div>
           )}
@@ -242,8 +297,20 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Kỳ hạn</span><strong>{rentalMonths} tháng</strong></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Tiền thuê theo kỳ hạn</span><strong>{formatVnd(unit.monthlyPrice * rentalMonths)}</strong></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Tiền cọc dự kiến</span><strong>{formatVnd(unit.depositAmount ?? unit.monthlyPrice)}</strong></div>
+                <div className="flex justify-between items-center gap-3 pt-1 border-t border-slate-100">
+                  <span className="text-slate-500">Hình thức ký hợp đồng</span>
+                  <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${
+                    signingMethod === 'ONLINE' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-900'
+                  }`}>
+                    {signingMethod === 'ONLINE' ? '✍️ Ký Online DocuSeal (VNPay)' : '🏢 Ký trực tiếp tại cơ sở kho'}
+                  </span>
+                </div>
               </div>
-              <p className="rounded-lg bg-cyan-50 p-3 text-xs leading-relaxed text-cyan-900">Gửi yêu cầu chưa tạo thanh toán. Kho chỉ được giữ khi quản lý duyệt; sau đó bạn mới chọn thanh toán.</p>
+              <p className="rounded-lg bg-cyan-50 p-3 text-xs leading-relaxed text-cyan-900">
+                {signingMethod === 'ONLINE'
+                  ? 'Gửi yêu cầu thuê kho tới Quản lý cơ sở. Khi được duyệt, bạn sẽ thanh toán VNPay và nhận link ký DocuSeal trực tuyến.'
+                  : 'Gửi yêu cầu thuê kho tới Quản lý cơ sở. Quản lý sẽ duyệt và phân công nhân viên chi nhánh chuẩn bị kho, tiếp đón bạn tới xem kho và ký trực tiếp.'}
+              </p>
             </div>
           )}
 

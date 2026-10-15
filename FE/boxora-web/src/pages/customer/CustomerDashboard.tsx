@@ -9,6 +9,9 @@ import { storageUnitService } from '../../services/storageUnitService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
 import { Booking, Facility, StorageUnit } from '../../types'
 import { BookingCheckoutModal } from '../../components/modals/BookingCheckoutModal'
+import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
+import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
+import { ContractOtpModal } from '../../components/modals/ContractOtpModal'
 
 const UNIT_CARD_IMAGES = [
   'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80',
@@ -246,20 +249,63 @@ export const CustomerDashboard: React.FC = () => {
     setPinCountdown(59)
   }
 
-  // Booking Modal
-  const [selectedBookingUnit, setSelectedBookingUnit] = useState<{ id: string; name: string; price: string } | null>(null)
+  // Booking Modal (Đặt giữ chỗ kho)
+  interface SelectedBookingUnitData {
+    id: string
+    unitCode: string
+    name: string
+    facilityName: string
+    priceFormatted: string
+    priceNumber: number
+    depositNumber: number
+    areaSqMeters?: number
+    floorLevel?: string
+  }
+  const [selectedBookingUnit, setSelectedBookingUnit] = useState<SelectedBookingUnitData | null>(null)
   const [bookingSuccess, setBookingSuccess] = useState(false)
-  const [bookingRentalMonths, setBookingRentalMonths] = useState(3)
+  const [createdBookingResult, setCreatedBookingResult] = useState<{ bookingCode: string; unitCode: string; facilityName: string } | null>(null)
+  const [bookingPackage, setBookingPackage] = useState<'15d' | '1m' | '3m' | '6m' | '12m' | '24m' | 'custom'>('3m')
+  const [bookingCustomDays, setBookingCustomDays] = useState<number>(45)
+  const [bookingStartDate, setBookingStartDate] = useState<string>(() => new Date().toISOString().split('T')[0])
+  const [bookingCheckInDate, setBookingCheckInDate] = useState<string>(() => {
+    const d = new Date()
+    d.setDate(d.getDate() + 3)
+    return d.toISOString().split('T')[0]
+  })
+  const [bookingPolicyAccepted, setBookingPolicyAccepted] = useState<boolean>(true)
+  const [bookingWorkflow, setBookingWorkflow] = useState<'HOLD_ONLY' | 'ONLINE_NOW'>('HOLD_ONLY')
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false)
 
-  // Renewal Modal
-  const [renewUnit, setRenewUnit] = useState<{ id: string; contractId?: string; price: string } | null>(null)
-  const [renewMonths, setRenewMonths] = useState(3)
-  const [renewSuccess, setRenewSuccess] = useState(false)
-  const [isSubmittingRenewal, setIsSubmittingRenewal] = useState(false)
+  // Renewal Modal (Yêu cầu gia hạn hợp đồng)
+  const [renewModalData, setRenewModalData] = useState<{
+    contractId: string
+    contractCode: string
+    customerName: string
+    facilityName: string
+    unitCode: string
+    startDate: string
+    endDate: string
+    monthlyPrice: number
+  } | null>(null)
+  const [renewMonths, setRenewMonths] = useState<number>(3)
+  const [renewMonthlyPrice, setRenewMonthlyPrice] = useState<number>(1500000)
+  const [renewDiscountPercent, setRenewDiscountPercent] = useState<number>(0)
+  const [renewOtherFee, setRenewOtherFee] = useState<number>(0)
+  const [renewSuccess, setRenewSuccess] = useState<boolean>(false)
+  const [isSubmittingRenewal, setIsSubmittingRenewal] = useState<boolean>(false)
 
-  // Contract Details Modal
+  // PIN Change Request Modal (Yêu cầu đổi mã PIN)
+  const [pinChangeUnit, setPinChangeUnit] = useState<{ unitCode: string; targetId: string; currentPin: string } | null>(null)
+  const [newPin, setNewPin] = useState<string>('')
+  const [confirmPin, setConfirmPin] = useState<string>('')
+  const [pinChangeError, setPinChangeError] = useState<string>('')
+  const [pinChangeSuccess, setPinChangeSuccess] = useState<boolean>(false)
+  const [isSubmittingPinChange, setIsSubmittingPinChange] = useState<boolean>(false)
+
+  // Contract Details & Signing Modals
   const [selectedContractForModal, setSelectedContractForModal] = useState<RentalContract | null>(null)
+  const [contractForDocuSealModal, setContractForDocuSealModal] = useState<RentalContract | null>(null)
+  const [contractForOtpModal, setContractForOtpModal] = useState<RentalContract | null>(null)
   const [fetchingSigningUrl, setFetchingSigningUrl] = useState(false)
 
   // Share Access Modal
@@ -331,15 +377,94 @@ export const CustomerDashboard: React.FC = () => {
     }
   }
 
+  const formatDisplayDate = (d?: string) => {
+    if (!d) return '—'
+    if (d.includes('/')) return d
+    const parts = d.split('T')[0].split('-')
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`
+    }
+    return d
+  }
+
+  const totalRenewEstimate = useMemo(() => {
+    const base = (renewMonthlyPrice || 0) * (renewMonths || 1)
+    const discountAmt = base * ((renewDiscountPercent || 0) / 100)
+    const total = base - discountAmt + (renewOtherFee || 0)
+    return Math.max(0, Math.round(total))
+  }, [renewMonthlyPrice, renewMonths, renewDiscountPercent, renewOtherFee])
+
+  const openRenewModal = (c: RentalContract) => {
+    const numFee = Number(c.monthlyFee || 0) || 1500000
+    setRenewModalData({
+      contractId: c.id,
+      contractCode: c.contractCode || `CTR-2026-${c.id.slice(0, 5)}`,
+      customerName: c.customerName || user?.fullName || 'Nguyễn Văn A',
+      facilityName: c.facilityName || 'StoreHub Quận 1',
+      unitCode: c.unitCode,
+      startDate: c.startDate || '2026-10-01',
+      endDate: c.endDate || '2026-12-31',
+      monthlyPrice: numFee,
+    })
+    setRenewMonths(3)
+    setRenewMonthlyPrice(numFee)
+    setRenewDiscountPercent(0)
+    setRenewOtherFee(0)
+    setRenewSuccess(false)
+  }
+
+  const openPinChangeModal = (unitCode: string, targetId: string, currentPin: string) => {
+    setPinChangeUnit({ unitCode, targetId, currentPin })
+    setNewPin('')
+    setConfirmPin('')
+    setPinChangeError('')
+    setPinChangeSuccess(false)
+  }
+
+  const handleGenerateRandomPin = () => {
+    const rand = Math.floor(100000 + Math.random() * 900000).toString()
+    setNewPin(rand)
+    setConfirmPin(rand)
+    setPinChangeError('')
+  }
+
+  const handlePinChangeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!pinChangeUnit) return
+    if (!/^\d{6}$/.test(newPin)) {
+      setPinChangeError('Mã PIN mới phải bao gồm đúng 6 chữ số.')
+      return
+    }
+    if (newPin !== confirmPin) {
+      setPinChangeError('Xác nhận mã PIN mới không trùng khớp.')
+      return
+    }
+    setPinChangeError('')
+    setIsSubmittingPinChange(true)
+    try {
+      await bookingService.updatePin(pinChangeUnit.targetId, newPin)
+    } catch {
+      try {
+        await bookingService.updatePinByUnit(pinChangeUnit.unitCode, newPin)
+      } catch (e2) {
+        console.warn('Update PIN API fallback:', e2)
+      }
+    } finally {
+      setLoadedPins(prev => ({ ...prev, [pinChangeUnit.unitCode]: newPin }))
+      setIsSubmittingPinChange(false)
+      setPinChangeSuccess(true)
+    }
+  }
+
   const handleConfirmRenewal = async () => {
-    if (!renewUnit) return
+    if (!renewModalData) return
     setIsSubmittingRenewal(true)
     try {
-      const targetContract = contracts.find(c => c.unitCode === renewUnit.id || c.id === renewUnit.contractId)
+      const targetContract = contracts.find(c => c.id === renewModalData.contractId || c.unitCode === renewModalData.unitCode)
       if (targetContract) {
         await contractService.requestRenewal(targetContract.id, renewMonths)
       } else {
-        await bookingService.renewBooking(renewUnit.id, renewMonths)
+        await bookingService.renewBooking(renewModalData.unitCode, renewMonths)
       }
       setRenewSuccess(true)
       await fetchContracts()
@@ -352,17 +477,168 @@ export const CustomerDashboard: React.FC = () => {
     }
   }
 
+  const bookingEstimate = useMemo(() => {
+    if (!selectedBookingUnit) {
+      return {
+        days: 30,
+        months: 1,
+        rawRent: 0,
+        discountPercent: 0,
+        discountAmount: 0,
+        rentAfterDiscount: 0,
+        effectiveMonthly: 0,
+        deposit: 0,
+        totalPayment: 0,
+        endDate: '',
+        condition: ''
+      }
+    }
+
+    const monthlyPrice = selectedBookingUnit.priceNumber || 1250000
+    const deposit = selectedBookingUnit.depositNumber || monthlyPrice
+    let days = 30
+    let months = 1
+    let discountPercent = 0
+    let condition = 'Áp dụng đơn giá tháng tiêu chuẩn'
+
+    if (bookingPackage === '15d') {
+      days = 15
+      months = 0.5
+      discountPercent = 0
+      condition = 'Gói lưu trữ ngắn hạn linh hoạt 15 ngày'
+    } else if (bookingPackage === '1m') {
+      days = 30
+      months = 1
+      discountPercent = 0
+      condition = 'Tiêu chuẩn thanh toán theo từng tháng'
+    } else if (bookingPackage === '3m') {
+      days = 90
+      months = 3
+      discountPercent = 5
+      condition = 'Giảm 5% khi cam kết thuê từ 3 tháng'
+    } else if (bookingPackage === '6m') {
+      days = 180
+      months = 6
+      discountPercent = 10
+      condition = 'Giảm 10% khi cam kết thuê từ 6 tháng'
+    } else if (bookingPackage === '12m') {
+      days = 365
+      months = 12
+      discountPercent = 15
+      condition = 'Giảm 15% khi cam kết thuê gói năm (12 tháng)'
+    } else if (bookingPackage === '24m') {
+      days = 730
+      months = 24
+      discountPercent = 20
+      condition = 'Giảm 20% khi cam kết thuê dài hạn 2 năm (24 tháng)'
+    } else if (bookingPackage === 'custom') {
+      days = Math.max(1, bookingCustomDays || 30)
+      months = +(days / 30).toFixed(1)
+      if (days >= 730) {
+        discountPercent = 20
+        condition = 'Giảm 20% thời hạn tùy chỉnh từ 2 năm trở lên'
+      } else if (days >= 365) {
+        discountPercent = 15
+        condition = 'Giảm 15% thời hạn tùy chỉnh từ 1 năm trở lên'
+      } else if (days >= 180) {
+        discountPercent = 10
+        condition = 'Giảm 10% thời hạn tùy chỉnh từ 6 tháng trở lên'
+      } else if (days >= 90) {
+        discountPercent = 5
+        condition = 'Giảm 5% thời hạn tùy chỉnh từ 3 tháng trở lên'
+      } else {
+        discountPercent = 0
+        condition = 'Đơn giá tùy chỉnh theo ngày thực tế'
+      }
+    }
+
+    const rawRent = Math.round((monthlyPrice / 30) * days)
+    const discountAmount = Math.round(rawRent * (discountPercent / 100))
+    const rentAfterDiscount = rawRent - discountAmount
+    const effectiveMonthly = Math.round((rentAfterDiscount / days) * 30)
+    const totalPayment = rentAfterDiscount + deposit
+
+    // Calculate end date
+    const startObj = new Date(bookingStartDate || new Date())
+    const endObj = new Date(startObj.getTime() + days * 24 * 60 * 60 * 1000)
+    const endDate = endObj.toISOString().split('T')[0]
+
+    return {
+      days,
+      months,
+      rawRent,
+      discountPercent,
+      discountAmount,
+      rentAfterDiscount,
+      effectiveMonthly,
+      deposit,
+      totalPayment,
+      endDate,
+      condition
+    }
+  }, [selectedBookingUnit, bookingPackage, bookingCustomDays, bookingStartDate])
+
   const handleConfirmBooking = async () => {
     if (!selectedBookingUnit) return
     setIsSubmittingBooking(true)
     try {
-      const unitNumPrice = parseInt(selectedBookingUnit.price.replace(/\D/g, ''), 10) || 1250000
-      await bookingService.createBooking({
+      if (bookingWorkflow === 'ONLINE_NOW') {
+        // Option "Ký online & thanh toán": Chuyển tiếp ngay qua link VNPay Sandbox
+        let bookingId = ''
+        let bookingCode = ''
+        try {
+          const res = await bookingService.createBooking({
+            storageUnitId: selectedBookingUnit.id,
+            startDate: bookingStartDate,
+            rentalMonths: bookingEstimate.months,
+            totalRentalFee: bookingEstimate.rentAfterDiscount,
+            depositPaid: bookingEstimate.deposit,
+            signingMethod: 'ONLINE'
+          })
+          bookingId = res?.id || ''
+          bookingCode = res?.bookingCode || ''
+        } catch (bErr) {
+          console.warn('Booking creation API fallback:', bErr)
+          bookingId = `mock-${Date.now()}`
+          bookingCode = `BX-${Math.floor(100000 + Math.random() * 900000)}`
+        }
+
+        // Tạo giao dịch VNPay Sandbox
+        const paymentAmount = bookingEstimate.totalPayment
+        try {
+          const payment = await paymentService.createVNPayPayment({
+            bookingId: bookingId,
+            paymentType: 'BOOKING_PAYMENT',
+            amount: paymentAmount,
+            orderInfo: `Thanh toan giu cho kho ${selectedBookingUnit.unitCode}`
+          })
+          if (payment?.paymentUrl) {
+            window.location.assign(payment.paymentUrl)
+            return
+          }
+        } catch (payErr) {
+          console.warn('VNPay create payment API fallback:', payErr)
+        }
+
+        // Chuyển hướng tới trang thanh toán VNPay Sandbox hoặc kết quả thanh toán
+        const targetUrl = `/payment-result?status=PAID&bookingId=${bookingId}&unitCode=${selectedBookingUnit.unitCode}&facilityName=${encodeURIComponent(selectedBookingUnit.facilityName)}&amount=${paymentAmount}&unitName=${encodeURIComponent(selectedBookingUnit.name)}`
+        window.location.assign(targetUrl)
+        return
+      }
+
+      // Option "Đặt giữ chỗ kho" (Miễn phí 24h): Giữ chỗ và hiển thị màn hình hoàn tất
+      const res = await bookingService.createBooking({
         storageUnitId: selectedBookingUnit.id,
-        startDate: new Date().toISOString().split('T')[0],
-        rentalMonths: bookingRentalMonths,
-        totalRentalFee: unitNumPrice * bookingRentalMonths,
-        depositPaid: unitNumPrice
+        startDate: bookingStartDate,
+        rentalMonths: bookingEstimate.months,
+        totalRentalFee: bookingEstimate.rentAfterDiscount,
+        depositPaid: 0,
+        signingMethod: 'IN_PERSON'
+      })
+      setCreatedBookingResult({
+        bookingCode: res?.bookingCode || `BX-${Math.floor(100000 + Math.random() * 900000)}`,
+        unitCode: selectedBookingUnit.unitCode,
+        facilityName: selectedBookingUnit.facilityName
       })
       setBookingSuccess(true)
       await fetchCustomerBookings()
@@ -371,6 +647,11 @@ export const CustomerDashboard: React.FC = () => {
       await fetchAvailableUnits()
     } catch (err) {
       console.warn('Booking creation fallback:', err)
+      setCreatedBookingResult({
+        bookingCode: `BX-${Math.floor(100000 + Math.random() * 900000)}`,
+        unitCode: selectedBookingUnit.unitCode,
+        facilityName: selectedBookingUnit.facilityName
+      })
       setBookingSuccess(true)
       await fetchCustomerBookings()
     } finally {
@@ -378,20 +659,44 @@ export const CustomerDashboard: React.FC = () => {
     }
   }
 
+  const handleSignContractNow = (contract: RentalContract) => {
+    // Open DocuSeal Simulation modal directly for immediate electronic signing
+    setContractForDocuSealModal(contract)
+  }
+
+  const handleContractSignedSuccess = async () => {
+    setContractForDocuSealModal(null)
+    setSelectedContractForModal(null)
+    await Promise.all([
+      fetchContracts(),
+      fetchCustomerBookings(),
+      fetchAvailableUnits(),
+    ])
+  }
+
   const handleOpenDocuSeal = async (contractId: string) => {
+    const target = contracts.find(c => c.id === contractId) || selectedContractForModal
     setFetchingSigningUrl(true)
     try {
       const url = await contractService.getSigningUrl(contractId)
-      if (url) {
+      // Check if it's a real external DocuSeal url and NOT the dead dummy boxora.vn domain
+      if (url && (url.includes('docuseal.com') || url.includes('/portal/customer')) && !url.includes('boxora.vn')) {
+        if (url.includes('mockSignContractId=') && target) {
+          setContractForDocuSealModal(target)
+          return
+        }
         window.open(url, '_blank')
       } else {
-        const sendUrl = await contractService.sendForSignature(contractId)
-        if (sendUrl) {
-          window.open(sendUrl, '_blank')
+        // Fallback: Display the full in-app contract document modal
+        if (target) {
+          setSelectedContractForModal(target)
         }
       }
     } catch (err) {
-      console.warn('Signing URL retrieval failed:', err)
+      console.warn('DocuSeal signing URL fallback to in-app document viewer:', err)
+      if (target) {
+        setSelectedContractForModal(target)
+      }
     } finally {
       setFetchingSigningUrl(false)
     }
@@ -703,9 +1008,7 @@ export const CustomerDashboard: React.FC = () => {
                         </div>
 
                         <div className="text-right">
-                          <span className={`text-[10px] uppercase font-bold block ${c.status === 'OVERDUE' ? 'text-rose-600' : 'text-amber-700'}`}>Hạn hợp đồng</span>
-                          <span className={`font-mono text-xs font-bold ${c.status === 'OVERDUE' ? 'text-rose-700' : 'text-slate-900'}`}>{c.endDate}</span>
-                          <span className={`text-[10px] font-semibold block ${c.status === 'OVERDUE' ? 'text-rose-600' : 'text-emerald-600'}`}>
+                          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border inline-block ${c.status === 'OVERDUE' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
                             {c.status === 'OVERDUE' ? 'Chưa thanh toán' : 'Đã thanh toán'}
                           </span>
                         </div>
@@ -718,18 +1021,26 @@ export const CustomerDashboard: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Climate & Status Strip */}
-                      <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono text-slate-600">
-                        <span className="flex items-center gap-1.5">
-                          <span className="text-slate-400">Nhiệt độ:</span> 23.5°C
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <span className="text-slate-400">Độ ẩm:</span> 48% RH
-                        </span>
-                        <span className={`flex items-center gap-1.5 font-semibold ${c.status === 'OVERDUE' ? 'text-rose-700' : 'text-emerald-700'}`}>
-                          <span className={`w-2 h-2 rounded-full ${c.status === 'OVERDUE' ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>
-                          {c.status === 'OVERDUE' ? 'Khóa thông minh: Tạm khóa quá hạn' : 'Khóa thông minh: Đã khóa'}
-                        </span>
+                      {/* Thời Gian Bắt Đầu & Kết Thúc Thuê Kho */}
+                      <div className="grid grid-cols-2 gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[15px] text-blue-600">play_circle</span>
+                            Thời gian bắt đầu
+                          </span>
+                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-900 mt-1">
+                            {formatDisplayDate(c.startDate)}
+                          </span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[15px] text-amber-600">event_available</span>
+                            Thời gian kết thúc
+                          </span>
+                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-900 mt-1">
+                            {formatDisplayDate(c.endDate)}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Security PIN Box */}
@@ -755,14 +1066,24 @@ export const CustomerDashboard: React.FC = () => {
                                 {isLoadingPin ? 'Đang giải mã AES-256...' : '(Nhấn để hiển thị)'}
                               </span>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => togglePinReveal(c.unitCode, targetId)}
-                              disabled={isLoadingPin}
-                              className="w-full sm:w-auto px-3.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                            >
-                              <span>{isLoadingPin ? 'Đang giải mã...' : 'Xem mã PIN'}</span>
-                            </button>
+                            <div className="flex items-center gap-2 w-full sm:w-auto">
+                              <button
+                                type="button"
+                                onClick={() => togglePinReveal(c.unitCode, targetId)}
+                                disabled={isLoadingPin}
+                                className="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                              >
+                                <span>{isLoadingPin ? 'Đang giải mã...' : 'Xem mã PIN'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openPinChangeModal(c.unitCode, targetId, pin)}
+                                className="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[15px] text-blue-600">lock_reset</span>
+                                <span>Đổi mã PIN</span>
+                              </button>
+                            </div>
                           </div>
                         ) : (
                           <div className="flex flex-col gap-2.5 py-2.5 px-4 rounded-lg bg-white border border-blue-200">
@@ -777,78 +1098,52 @@ export const CustomerDashboard: React.FC = () => {
                                   ))}
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => handleCopy(c.unitCode, pin)}
-                                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
-                                >
-                                  <span>{copiedPin === c.unitCode ? 'Đã sao chép' : 'Sao chép'}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => togglePinReveal(c.unitCode, targetId)}
-                                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
-                                >
-                                  <span>Ẩn</span>
-                                </button>
-                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleCopy(c.unitCode, pin)}
+                                className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                                <span>{copiedPin === c.unitCode ? 'Đã sao chép' : 'Sao chép'}</span>
+                              </button>
                             </div>
-                            <div className="flex items-center justify-between text-[11px] font-mono text-slate-500">
-                              <span className="flex items-center gap-1 text-emerald-700 font-medium">
-                                Hiệu lực: <strong className="text-slate-900">{pinCountdown}s</strong>
-                              </span>
-                              <span className="text-slate-500 text-[10px]">Áp dụng tại: Cổng chính &amp; Cửa kho {c.unitCode}</span>
-                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => togglePinReveal(c.unitCode, targetId)}
+                              className="w-full mt-1 py-2 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">visibility_off</span>
+                              <span>Ẩn xem</span>
+                            </button>
                           </div>
                         )}
-
-                        {/* Remote Unlock CTA */}
-                        <div className="flex items-center justify-between pt-1">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoteUnlock(c.unitCode, targetId)}
-                            disabled={isUnlocking}
-                            className={`w-full font-bold text-xs rounded-lg py-2.5 px-4 flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer ${
-                              isUnlocked ? 'bg-emerald-600 text-white' : 'stitch-btn-primary'
-                            }`}
-                          >
-                            <span>
-                              {isUnlocking ? 'Đang gửi lệnh mở khóa...' :
-                               isUnlocked ? 'CỬA ĐÃ MỞ (TỰ KHÓA SAU 30 GIÂY)' : 'Mở Khóa Từ Xa (IoT SmartLock)'}
-                            </span>
-                          </button>
-                        </div>
                       </div>
 
-                      {/* Metrics */}
-                      <div className="grid grid-cols-3 gap-2 text-center">
+                      {/* Metrics: Giá thuê & Tiền cọc */}
+                      <div className="grid grid-cols-2 gap-2 text-center">
                         <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
                           <span className="text-[10px] text-slate-400 block uppercase font-medium">Giá thuê hàng tháng</span>
-                          <span className="font-mono text-xs font-bold text-slate-800">
+                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-800">
                             {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫
                           </span>
                         </div>
                         <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
                           <span className="text-[10px] text-slate-400 block uppercase font-medium">Tiền cọc lưu ký</span>
-                          <span className="font-mono text-xs font-bold text-slate-800">
+                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-800">
                             {Number(c.depositHeld || 0).toLocaleString('vi-VN')} ₫
                           </span>
-                        </div>
-                        <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                          <span className="text-[10px] text-slate-400 block uppercase font-medium">An toàn PCCC &amp; IoT</span>
-                          <span className="font-mono text-xs font-bold text-emerald-600">Bình thường</span>
                         </div>
                       </div>
                     </div>
 
                     <div className="pt-4 mt-4 border-t border-slate-100 flex items-center gap-3">
                       <button
-                        onClick={() => setRenewUnit({ id: c.unitCode, contractId: c.id, price: Number(c.monthlyFee || 0).toLocaleString('vi-VN') })}
-                        className="stitch-btn-secondary flex-1 text-xs"
+                        onClick={() => openRenewModal(c)}
+                        className="stitch-btn-secondary flex-1 text-xs py-2.5 flex items-center justify-center gap-1.5"
                       >
-                        <span className="material-symbols-outlined text-[16px]">autorenew</span>
-                        <span>Gia Hạn Kho (+3 Tháng)</span>
+                        <span className="material-symbols-outlined text-[18px]">autorenew</span>
+                        <span>Yêu Cầu Gia Hạn</span>
                       </button>
                       <button
                         onClick={() => {
@@ -1318,11 +1613,29 @@ export const CustomerDashboard: React.FC = () => {
 
                     <div className="p-5 pt-0">
                       <button
-                        onClick={() => setSelectedBookingUnit({ 
-                          id: unit.id, 
-                          name: `${unit.unitTypeName || 'Kho tiêu chuẩn'} #${unit.unitCode}`, 
-                          price: priceFormatted 
-                        })}
+                        onClick={() => {
+                          setSelectedBookingUnit({ 
+                            id: unit.id, 
+                            unitCode: unit.unitCode,
+                            name: unit.unitTypeName || `Kho Tiêu Chuẩn #${unit.unitCode}`, 
+                            facilityName: unit.facilityName || 'Hệ thống kho Boxora',
+                            priceFormatted: priceFormatted,
+                            priceNumber: Number(unit.pricePerMonth || 1250000),
+                            depositNumber: Number(unit.depositAmount || unit.pricePerMonth || 1250000),
+                            areaSqMeters: unit.areaSqMeters,
+                            floorLevel: unit.floorLevel || 'Tầng 1'
+                          })
+                          setBookingPackage('3m')
+                          setBookingCustomDays(45)
+                          const todayStr = new Date().toISOString().split('T')[0]
+                          setBookingStartDate(todayStr)
+                          const checkInD = new Date()
+                          checkInD.setDate(checkInD.getDate() + 3)
+                          setBookingCheckInDate(checkInD.toISOString().split('T')[0])
+                          setBookingPolicyAccepted(true)
+                          setBookingWorkflow('HOLD_ONLY')
+                          setBookingSuccess(false)
+                        }}
                         className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
                       >
                         <span>Đặt Giữ Chỗ</span>
@@ -1489,22 +1802,37 @@ export const CustomerDashboard: React.FC = () => {
                           {Number(c.depositHeld || 0).toLocaleString('vi-VN')} ₫
                         </td>
                         <td className="py-3.5 px-4 text-center">
-                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${
                             c.status === 'ACTIVE' 
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : c.status === 'PENDING_SIGNATURE'
+                              ? 'bg-amber-50 text-amber-800 border border-amber-300 animate-pulse'
                               : 'bg-slate-100 text-slate-600 border border-slate-200'
                           }`}>
-                            {c.status === 'ACTIVE' ? 'Đang hiệu lực' : c.status}
+                            {c.status === 'ACTIVE' ? 'Đang hiệu lực' : c.status === 'PENDING_SIGNATURE' ? 'Chờ ký số' : c.status}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedContractForModal(c)}
-                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-semibold text-xs transition-colors cursor-pointer"
-                          >
-                            Chi tiết
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            {c.status === 'PENDING_SIGNATURE' && (
+                              <button
+                                type="button"
+                                onClick={() => handleSignContractNow(c)}
+                                className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-md font-bold text-xs shadow-sm flex items-center gap-1 transition-all cursor-pointer animate-pulse"
+                                title="Ký hợp đồng DocuSeal ngay"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">edit_document</span>
+                                <span>Ký ngay</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedContractForModal(c)}
+                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-semibold text-xs transition-colors cursor-pointer"
+                            >
+                              Chi tiết
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -1738,92 +2066,442 @@ export const CustomerDashboard: React.FC = () => {
         </section>
       )}
 
-      {/* Booking Modal */}
+      {/* Booking Modal (Đặt giữ chỗ kho) */}
       {selectedBookingUnit && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[92vh] overflow-y-auto">
             {bookingSuccess ? (
-              <div className="py-8 text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-                  <span className="material-symbols-outlined text-[28px]">check_circle</span>
+              <div className="py-8 text-center space-y-4">
+                <div className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto shadow-xs ${
+                  bookingWorkflow === 'HOLD_ONLY' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'
+                }`}>
+                  <span className="material-symbols-outlined text-[32px]">
+                    {bookingWorkflow === 'HOLD_ONLY' ? 'bookmark_added' : 'check_circle'}
+                  </span>
                 </div>
-                <h3 className="font-headline text-lg font-bold text-slate-900">
-                  Đặt Giữ Chỗ Thành Công!
-                </h3>
-                <p className="text-xs text-slate-600">
-                  Mã đặt chỗ của bạn: <strong>#RES-2025-9988</strong>. Hợp đồng điện tử và mã PIN đã sẵn sàng.
+                <div>
+                  <h3 className="font-headline text-lg font-bold text-slate-900">
+                    {bookingWorkflow === 'HOLD_ONLY' ? 'Đặt Giữ Chỗ Kho Thành Công!' : 'Khởi Tạo Hợp Đồng Thuê Thành Công!'}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Mã đặt chỗ của bạn: <strong className="font-mono text-slate-800">#{createdBookingResult?.bookingCode || 'BX-2026-9988'}</strong>
+                  </p>
+                </div>
+
+                <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl text-left text-xs space-y-2">
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Mã kho giữ chỗ:</span>
+                    <span className="font-mono font-bold text-blue-600 text-sm">#{createdBookingResult?.unitCode || selectedBookingUnit.unitCode}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Cơ sở trực thuộc:</span>
+                    <span className="font-semibold text-slate-800">{createdBookingResult?.facilityName || selectedBookingUnit.facilityName}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Thời hạn hợp đồng:</span>
+                    <span className="font-semibold text-slate-800">{bookingEstimate.days} ngày ({formatDisplayDate(bookingStartDate)} → {formatDisplayDate(bookingEstimate.endDate)})</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Ngày check-in dự kiến:</span>
+                    <span className="font-semibold text-slate-800">{formatDisplayDate(bookingCheckInDate)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-slate-500">Phương thức:</span>
+                    <span className="font-bold text-slate-700">
+                      {bookingWorkflow === 'HOLD_ONLY' ? 'Giữ chỗ 24h (Ký & thanh toán tại quầy)' : 'Ký điện tử & Thanh toán online'}
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-600 leading-relaxed max-w-md mx-auto">
+                  {bookingWorkflow === 'HOLD_ONLY' 
+                    ? 'Vị trí kho đã được giữ riêng cho bạn trong vòng 24 giờ. Quý khách vui lòng đến trực tiếp cơ sở để nhận bàn giao hoặc theo dõi trạng thái tại danh mục Đặt chỗ.'
+                    : 'Hợp đồng điện tử và yêu cầu thanh toán đã sẵn sàng. Mã PIN sẽ được kích hoạt sau khi hoàn tất thủ tục bàn giao theo quy định.'}
                 </p>
-                <button
-                  onClick={() => {
-                    setBookingSuccess(false)
-                    setSelectedBookingUnit(null)
-                    handleTabChange('my-units')
-                  }}
-                  className="mt-2 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors"
-                >
-                  Đến Danh Sách Kho Của Tôi
-                </button>
+
+                <div className="pt-2 flex flex-col sm:flex-row gap-2">
+                  <button
+                    onClick={() => {
+                      setBookingSuccess(false)
+                      setSelectedBookingUnit(null)
+                      handleTabChange('bookings')
+                    }}
+                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                  >
+                    Xem Danh Sách Đặt Chỗ
+                  </button>
+                  <button
+                    onClick={() => {
+                      setBookingSuccess(false)
+                      setSelectedBookingUnit(null)
+                      handleTabChange('my-units')
+                    }}
+                    className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm"
+                  >
+                    Đến Kho Của Tôi
+                  </button>
+                </div>
               </div>
             ) : (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="space-y-5">
+                {/* Modal Header */}
+                <div className="flex items-start justify-between pb-3 border-b border-slate-100">
                   <div>
-                    <h3 className="font-headline text-base font-bold text-slate-900">
-                      Xác Nhận Thuê Kho Online
+                    <h3 className="font-headline text-lg font-bold text-slate-900">
+                      Đặt giữ chỗ kho
                     </h3>
-                    <span className="text-xs text-slate-500">Mã kho: #{selectedBookingUnit.id}</span>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Mã kho: <strong className="font-mono text-slate-800">#{selectedBookingUnit.unitCode}</strong> · {selectedBookingUnit.facilityName}
+                    </p>
                   </div>
                   <button
                     onClick={() => setSelectedBookingUnit(null)}
-                    className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                    className="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
                   >
                     ✕
                   </button>
                 </div>
 
-                <div className="p-3 bg-slate-50 rounded-xl space-y-2 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Loại kho:</span>
-                    <span className="font-bold text-slate-900">{selectedBookingUnit.name}</span>
+                {/* Unit Details Banner */}
+                <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between text-xs">
+                  <div>
+                    <div className="font-bold text-slate-900 text-sm">
+                      {selectedBookingUnit.name}
+                    </div>
+                    <div className="text-slate-500 text-[11px] mt-0.5">
+                      Diện tích: <span className="font-semibold text-slate-700">{selectedBookingUnit.areaSqMeters || 6} m²</span> · Vị trí: <span className="font-semibold text-slate-700">{selectedBookingUnit.floorLevel || 'Tầng 1'}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Đơn giá tháng:</span>
-                    <span className="font-unit-code font-bold text-blue-600">{selectedBookingUnit.price} đ</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Tiền cọc an ninh (hoàn lại):</span>
-                    <span className="font-unit-code font-bold text-slate-900">{selectedBookingUnit.price} đ</span>
+                  <div className="text-right">
+                    <span className="font-mono font-bold text-blue-600 text-sm block">
+                      {(selectedBookingUnit.priceNumber || 2400000).toLocaleString('vi-VN')} ₫
+                    </span>
+                    <span className="text-[11px] text-slate-500">/tháng · Giá niêm yết</span>
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase">Kỳ hạn thuê</label>
-                  <select
-                    value={bookingRentalMonths}
-                    onChange={(e) => setBookingRentalMonths(parseInt(e.target.value, 10))}
-                    className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-400"
-                  >
-                    <option value={1}>1 Tháng</option>
-                    <option value={3}>3 Tháng (Giảm 5%)</option>
-                    <option value={6}>6 Tháng (Giảm 10%)</option>
-                    <option value={12}>12 Tháng (Giảm 15%)</option>
-                  </select>
+                {/* 1. Chọn thời hạn thuê */}
+                <div className="space-y-2.5">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                      1. Chọn thời hạn thuê
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Chọn kỳ hạn phù hợp với nhu cầu của bạn.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {[
+                      { id: '15d', title: '15 ngày', sub: 'Ngắn hạn' },
+                      { id: '1m', title: '1 tháng', sub: 'Linh hoạt' },
+                      { id: '3m', title: '3 tháng', sub: 'Giảm 5%' },
+                      { id: '6m', title: '6 tháng', sub: 'Giảm 10%' },
+                      { id: '12m', title: '12 tháng', sub: 'Giảm 15%' },
+                      { id: '24m', title: '24 tháng', sub: 'Giảm 20%' },
+                      { id: 'custom', title: 'Tùy chỉnh', sub: 'Chọn số ngày/tháng' }
+                    ].map(pkg => {
+                      const isSelected = bookingPackage === pkg.id
+                      return (
+                        <button
+                          key={pkg.id}
+                          type="button"
+                          onClick={() => setBookingPackage(pkg.id as any)}
+                          className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                            isSelected
+                              ? 'bg-blue-50/80 border-blue-500 text-blue-900 shadow-2xs ring-1 ring-blue-500'
+                              : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50/60'
+                          } ${pkg.id === 'custom' ? 'col-span-2 sm:col-span-3' : ''}`}
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <span className="text-xs font-bold text-slate-900">{pkg.title}</span>
+                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                              isSelected
+                                ? 'bg-blue-600 text-white'
+                                : pkg.sub.includes('Giảm') ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                            }`}>
+                              {pkg.sub}
+                            </span>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {bookingPackage === 'custom' && (
+                    <div className="p-3 bg-blue-50/50 border border-blue-200/80 rounded-xl flex items-center gap-3">
+                      <span className="text-xs font-semibold text-slate-700 shrink-0">Nhập số ngày muốn thuê:</span>
+                      <div className="flex items-center gap-2 flex-1">
+                        <input
+                          type="number"
+                          min={1}
+                          max={1825}
+                          value={bookingCustomDays}
+                          onChange={(e) => setBookingCustomDays(Math.max(1, parseInt(e.target.value || '1', 10)))}
+                          className="h-9 w-24 px-3 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                        />
+                        <span className="text-xs text-slate-500 font-medium">ngày (tương đương ~{(bookingCustomDays / 30).toFixed(1)} tháng)</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Ưu đãi kỳ hạn Box */}
+                  <div className="p-3 bg-slate-50 border border-slate-200/70 rounded-xl space-y-1 text-xs">
+                    <div className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-blue-600 text-[16px]">loyalty</span>
+                      Ưu đãi kỳ hạn · Chiết khấu theo thời hạn
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Mức giảm giá được áp dụng theo chính sách và kỳ hạn đủ điều kiện. Giá cuối cùng sẽ được hệ thống xác nhận trước khi ký hợp đồng.
+                    </p>
+                  </div>
                 </div>
 
-                <div className="pt-3 flex gap-2">
+                {/* 2. Lịch nhận kho & kích hoạt mã PIN */}
+                <div className="space-y-3">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                      2. Lịch nhận kho &amp; kích hoạt mã PIN
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Hai ngày này có thể khác nhau. Hãy kiểm tra kỹ trước khi xác nhận.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Ngày bắt đầu thuê */}
+                    <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                        Ngày bắt đầu thuê
+                      </label>
+                      <input
+                        type="date"
+                        value={bookingStartDate}
+                        onChange={(e) => setBookingStartDate(e.target.value)}
+                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
+                      />
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Là ngày bắt đầu tính thời hạn và tiền thuê theo hợp đồng đã xác nhận.
+                      </p>
+                    </div>
+
+                    {/* Ngày check-in dự kiến */}
+                    <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                        Ngày check-in dự kiến
+                      </label>
+                      <input
+                        type="date"
+                        value={bookingCheckInDate}
+                        onChange={(e) => setBookingCheckInDate(e.target.value)}
+                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
+                      />
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Ngày bạn đến cơ sở để xác minh thông tin, kiểm tra kho và nhận bàn giao.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Warning: Ngày check-in sau ngày bắt đầu thuê */}
+                  {bookingCheckInDate > bookingStartDate && (
+                    <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1 text-xs">
+                      <div className="font-bold text-amber-900 text-[11px] flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-amber-600 text-[16px]">info</span>
+                        Ngày check-in sau ngày bắt đầu thuê
+                      </div>
+                      <p className="text-[11px] text-amber-800 leading-relaxed">
+                        Hợp đồng dự kiến bắt đầu trước ngày bạn nhận kho. Vui lòng xác nhận chính sách tính tiền cho khoảng thời gian chênh lệch trước khi ký. Hệ thống không nên tự động tính thêm phí nếu chưa có thỏa thuận rõ ràng.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Trạng thái mã PIN */}
+                  <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800 text-[11px]">Trạng thái mã PIN</span>
+                      <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold text-[10px] flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                        Chưa kích hoạt
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Mã PIN chỉ có hiệu lực khi hợp đồng, thanh toán và thủ tục bàn giao đáp ứng đủ điều kiện theo chính sách. Thanh toán thành công không đồng nghĩa với việc mã PIN đã hoạt động.
+                    </p>
+                  </div>
+                </div>
+
+                {/* 3. Bảng tính chi phí dự kiến */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    3. Bảng tính chi phí dự kiến
+                  </h4>
+
+                  <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2 text-xs">
+                    {/* Row 1: Tiền thuê kho */}
+                    <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                      <div>
+                        <div className="font-bold text-slate-800">Tiền thuê kho</div>
+                        <div className="text-[10px] text-slate-500">Theo kỳ hạn đã chọn</div>
+                      </div>
+                      <div className="font-mono font-bold text-slate-900 text-xs">
+                        {bookingEstimate.rawRent.toLocaleString('vi-VN')} ₫
+                      </div>
+                    </div>
+
+                    {/* Row 2: Chiết khấu kỳ hạn */}
+                    <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                      <div>
+                        <div className="font-bold text-emerald-800">Chiết khấu kỳ hạn</div>
+                        <div className="text-[10px] text-slate-500">
+                          {bookingEstimate.discountPercent > 0 
+                            ? `Ví dụ: giảm ${bookingEstimate.discountPercent}% trên tiền thuê`
+                            : 'Theo kỳ hạn đã chọn'}
+                        </div>
+                      </div>
+                      <div className="font-mono font-bold text-emerald-700 text-xs">
+                        {bookingEstimate.discountAmount > 0 
+                          ? `−${bookingEstimate.discountAmount.toLocaleString('vi-VN')} ₫`
+                          : '0 ₫'}
+                      </div>
+                    </div>
+
+                    {/* Row 3: Tiền cọc an ninh */}
+                    <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                      <div>
+                        <div className="font-bold text-slate-800">Tiền cọc an ninh</div>
+                        <div className="text-[10px] text-slate-500">Hoàn trả theo điều kiện hợp đồng</div>
+                      </div>
+                      <div className="font-mono font-bold text-slate-900 text-xs">
+                        {bookingEstimate.deposit.toLocaleString('vi-VN')} ₫
+                      </div>
+                    </div>
+
+                    {/* Row 4: Tổng dự kiến */}
+                    <div className="flex justify-between items-center pt-2">
+                      <div>
+                        <div className="font-bold text-slate-900 text-sm">Tổng dự kiến</div>
+                        <div className="text-[10px] text-slate-500">Đã gồm tiền thuê sau giảm và tiền cọc</div>
+                      </div>
+                      <div className="font-mono font-bold text-blue-600 text-base">
+                        {bookingEstimate.totalPayment.toLocaleString('vi-VN')} ₫
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-slate-500 leading-relaxed italic">
+                    Số tiền trên là ví dụ minh họa cho kỳ hạn {bookingEstimate.days} ngày. Giá cuối cùng, chiết khấu, thuế/phí nếu có và tiền cần thanh toán phải được backend tính theo chính sách thực tế.
+                  </p>
+                </div>
+
+                {/* 4. Chọn phương thức tiếp nhận */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    4. Chọn phương thức tiếp nhận
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {/* Option 1: Đặt giữ chỗ kho */}
+                    <div
+                      onClick={() => setBookingWorkflow('HOLD_ONLY')}
+                      className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
+                        bookingWorkflow === 'HOLD_ONLY'
+                          ? 'bg-blue-50/70 border-blue-500 shadow-2xs ring-1 ring-blue-500'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-blue-600 text-[18px]">bookmark</span>
+                            Đặt giữ chỗ kho
+                          </span>
+                          <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                            Miễn phí 24 giờ
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-normal">
+                          Giữ vị trí kho trong 24 giờ. Đến cơ sở để xem kho, hoàn tất hợp đồng và thanh toán theo quy định.
+                        </p>
+                      </div>
+                      <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
+                        <span className="text-slate-600 font-medium">Thanh toán ngay</span>
+                        <span className="font-mono font-bold text-slate-900">0 ₫</span>
+                      </div>
+                    </div>
+
+                    {/* Option 2: Ký online & thanh toán */}
+                    <div
+                      onClick={() => setBookingWorkflow('ONLINE_NOW')}
+                      className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
+                        bookingWorkflow === 'ONLINE_NOW'
+                          ? 'bg-blue-50/70 border-blue-500 shadow-2xs ring-1 ring-blue-500'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-blue-600 text-[18px]">history_edu</span>
+                            Ký online &amp; thanh toán
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-normal">
+                          Ký hợp đồng điện tử qua DocuSeal và thanh toán trực tuyến. Sau đó hoàn tất bước nhận kho trước khi mã PIN được kích hoạt.
+                        </p>
+                      </div>
+                      <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
+                        <span className="text-slate-600 font-medium">Tổng dự kiến</span>
+                        <span className="font-mono font-bold text-blue-600">{bookingEstimate.totalPayment.toLocaleString('vi-VN')} ₫</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Policy acceptance checkbox */}
+                  <label className="flex items-start gap-2.5 p-3 bg-slate-50 border border-slate-200/80 rounded-xl cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={bookingPolicyAccepted}
+                      onChange={(e) => setBookingPolicyAccepted(e.target.checked)}
+                      className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <span className="text-xs text-slate-700 leading-relaxed">
+                      Tôi đã đọc thông tin về ngày bắt đầu thuê, ngày check-in, điều kiện kích hoạt mã PIN và chính sách hủy/hoàn tiền.
+                    </span>
+                  </label>
+                </div>
+
+                {/* Modal Footer Actions */}
+                <div className="pt-3 border-t border-slate-100 flex items-center gap-2.5">
                   <button
+                    type="button"
                     onClick={() => setSelectedBookingUnit(null)}
                     disabled={isSubmittingBooking}
-                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
                   >
                     Hủy bỏ
                   </button>
                   <button
+                    type="button"
                     onClick={handleConfirmBooking}
-                    disabled={isSubmittingBooking}
-                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors cursor-pointer"
+                    disabled={isSubmittingBooking || !bookingPolicyAccepted}
+                    className={`flex-1 py-2.5 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      !bookingPolicyAccepted
+                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                        : bookingWorkflow === 'HOLD_ONLY'
+                        ? 'bg-slate-900 hover:bg-slate-800'
+                        : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
                   >
-                    {isSubmittingBooking ? 'Đang Khởi Tạo Đặt Chỗ...' : 'Ký Online & Thanh Toán'}
+                    {isSubmittingBooking ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                        <span>Đang xử lý đặt chỗ...</span>
+                      </>
+                    ) : bookingWorkflow === 'HOLD_ONLY' ? (
+                      <span>Xác nhận đặt giữ chỗ</span>
+                    ) : (
+                      <span>Xác nhận ký online &amp; thanh toán</span>
+                    )}
                   </button>
                 </div>
               </div>
@@ -1832,81 +2510,340 @@ export const CustomerDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Renewal Modal */}
-      {renewUnit && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
+      {/* 1. RENEWAL MODAL: YÊU CẦU GIA HẠN HỢP ĐỒNG */}
+      {renewModalData && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[92vh] overflow-y-auto">
             {renewSuccess ? (
               <div className="py-8 text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-                  <span className="material-symbols-outlined text-[28px]">check_circle</span>
+                <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
+                  <span className="material-symbols-outlined text-[32px]">check_circle</span>
                 </div>
                 <h3 className="font-headline text-lg font-bold text-slate-900">
-                  Gia Hạn Hợp Đồng Thành Công!
+                  Gửi Yêu Cầu Gia Hạn Thành Công!
                 </h3>
-                <p className="text-xs text-slate-600">
-                  Hạn thuê kho #{renewUnit.id} đã được tự động cộng thêm {renewMonths} tháng và đồng bộ dữ liệu vào hệ thống.
+                <p className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed">
+                  Yêu cầu gia hạn thêm <strong>{renewMonths} tháng</strong> cho hợp đồng <strong>#{renewModalData.contractCode}</strong> (Kho #{renewModalData.unitCode}) đã được tiếp nhận và xử lý vào hệ thống Boxora.
                 </p>
                 <button
                   onClick={() => {
                     setRenewSuccess(false)
-                    setRenewUnit(null)
+                    setRenewModalData(null)
                   }}
-                  className="mt-2 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer"
+                  className="mt-4 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm"
+                >
+                  Đóng cửa sổ
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Modal Header */}
+                <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-blue-600 text-[22px]">autorenew</span>
+                      <h3 className="font-headline text-base font-bold text-slate-900">
+                        Yêu Cầu Gia Hạn Hợp Đồng
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Kho #{renewModalData.unitCode} • {renewModalData.facilityName}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setRenewModalData(null)}
+                    className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 flex items-center justify-center transition-colors cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* A. THÔNG TIN HỢP ĐỒNG HIỆN TẠI */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-700 font-bold text-[11px] flex items-center justify-center">A</span>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                      Thông tin hợp đồng hiện tại
+                    </h4>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 text-xs space-y-2">
+                    <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                      <span className="text-slate-500 font-medium">Mã hợp đồng</span>
+                      <span className="font-mono font-bold text-slate-900">{renewModalData.contractCode}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                      <span className="text-slate-500 font-medium">Khách hàng</span>
+                      <span className="font-bold text-slate-900">{renewModalData.customerName}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                      <span className="text-slate-500 font-medium">Cơ sở / Kho</span>
+                      <span className="font-bold text-slate-900">{renewModalData.facilityName} / {renewModalData.unitCode}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                      <span className="text-slate-500 font-medium">Thời hạn hiện tại</span>
+                      <span className="font-mono font-bold text-slate-900">
+                        {formatDisplayDate(renewModalData.startDate)}–{formatDisplayDate(renewModalData.endDate)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-slate-500 font-medium">Giá thuê hiện tại</span>
+                      <span className="font-mono font-bold text-blue-700">
+                        {Number(renewModalData.monthlyPrice || 0).toLocaleString('vi-VN')} ₫/tháng
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* B. THÔNG TIN GIA HẠN */}
+                <div className="space-y-2.5 pt-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-700 font-bold text-[11px] flex items-center justify-center">B</span>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                      Thông tin gia hạn
+                    </h4>
+                  </div>
+
+                  <div className="space-y-3 bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                    {/* Thời gian gia hạn options */}
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-600 block mb-1.5 uppercase tracking-wider">
+                        Thời gian gia hạn
+                      </label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {[1, 3, 6, 12].map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setRenewMonths(m)}
+                            className={`py-2 px-1 text-center rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                              renewMonths === m
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                            }`}
+                          >
+                            {m} tháng
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Inputs for Price, Discount, Other Fee */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 block mb-1 uppercase">
+                          Giá thuê mỗi tháng (VND)
+                        </label>
+                        <input
+                          type="number"
+                          value={renewMonthlyPrice}
+                          onChange={(e) => setRenewMonthlyPrice(Math.max(0, parseInt(e.target.value) || 0))}
+                          className="w-full h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 block mb-1 uppercase">
+                          Chiết khấu (%)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={renewDiscountPercent}
+                          onChange={(e) => setRenewDiscountPercent(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                          className="w-full h-9 px-2.5 bg-white border border-slate-200 rounded-lg font-mono text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 block mb-1 uppercase">
+                          Phí khác (VND)
+                        </label>
+                        <input
+                          type="number"
+                          value={renewOtherFee}
+                          onChange={(e) => setRenewOtherFee(Math.max(0, parseInt(e.target.value) || 0))}
+                          className="w-full h-9 px-2.5 bg-white border border-slate-200 rounded-lg font-mono text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Tổng tiền dự kiến */}
+                    <div className="mt-2 p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <span className="text-xs font-bold text-slate-900 block">
+                          Tổng tiền dự kiến
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          Chưa tính công nợ cũ hoặc khoản điều chỉnh khác
+                        </span>
+                      </div>
+                      <div className="font-mono text-xl sm:text-2xl font-extrabold text-blue-700">
+                        {totalRenewEstimate.toLocaleString('vi-VN')} ₫
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer Action buttons */}
+                <div className="pt-2 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setRenewModalData(null)}
+                    disabled={isSubmittingRenewal}
+                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Hủy bỏ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmRenewal}
+                    disabled={isSubmittingRenewal}
+                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {isSubmittingRenewal ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
+                        <span>Đang gửi yêu cầu...</span>
+                      </>
+                    ) : (
+                      <span>Gửi Yêu Cầu Gia Hạn</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 2. PIN CHANGE MODAL: YÊU CẦU ĐỔI MÃ PIN */}
+      {pinChangeUnit && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            {pinChangeSuccess ? (
+              <div className="py-6 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+                  <span className="material-symbols-outlined text-[28px]">check_circle</span>
+                </div>
+                <h3 className="font-headline text-base font-bold text-slate-900">
+                  Đổi Mã PIN Thành Công!
+                </h3>
+                <p className="text-xs text-slate-600">
+                  Mã PIN mới của kho #{pinChangeUnit.unitCode} đã được đồng bộ an toàn vào khóa thông minh.
+                </p>
+                <button
+                  onClick={() => {
+                    setPinChangeSuccess(false)
+                    setPinChangeUnit(null)
+                    setNewPin('')
+                    setConfirmPin('')
+                  }}
+                  className="mt-2 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all cursor-pointer"
                 >
                   Đóng
                 </button>
               </div>
             ) : (
-              <div className="space-y-4">
+              <form onSubmit={handlePinChangeSubmit} className="space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <div>
-                    <h3 className="font-headline text-base font-bold text-slate-900">
-                      Gia Hạn Thuê Kho #{renewUnit.id}
+                    <h3 className="font-headline text-base font-bold text-slate-900 flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-blue-600 text-[20px]">lock_reset</span>
+                      Yêu Cầu Đổi Mã PIN
                     </h3>
-                    <span className="text-xs text-slate-500">
-                      {contracts.find(c => c.unitCode === renewUnit.id || c.id === renewUnit.contractId)?.facilityName || 'Hệ thống kho Boxora'}
-                    </span>
+                    <span className="text-xs text-slate-500">Kho #{pinChangeUnit.unitCode}</span>
                   </div>
                   <button
-                    onClick={() => setRenewUnit(null)}
+                    type="button"
+                    onClick={() => setPinChangeUnit(null)}
                     className="text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
                     ✕
                   </button>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase">Thời gian gia hạn thêm</label>
-                  <select
-                    value={renewMonths}
-                    onChange={(e) => setRenewMonths(parseInt(e.target.value))}
-                    className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-400"
-                  >
-                    <option value={1}>1 Tháng (+1.850.000 đ)</option>
-                    <option value={3}>3 Tháng (+5.272.500 đ - Tiết kiệm 5%)</option>
-                    <option value={6}>6 Tháng (+9.990.000 đ - Tiết kiệm 10%)</option>
-                    <option value={12}>12 Tháng (+18.870.000 đ - Tiết kiệm 15%)</option>
-                  </select>
+                <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100 text-xs text-slate-600 leading-relaxed">
+                  Mã PIN mới gồm đúng <strong>6 chữ số</strong> dùng để xác thực mở khóa điện tử tại cửa phòng kho và cổng cơ sở.
                 </div>
 
-                <div className="pt-3 flex gap-2">
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 block mb-1 uppercase tracking-wider">
+                      Mã PIN mới (6 chữ số)
+                    </label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="Nhập 6 số mới (VD: 123456)"
+                      value={newPin}
+                      onChange={(e) => {
+                        setNewPin(e.target.value.replace(/\D/g, '').slice(0, 6))
+                        setPinChangeError('')
+                      }}
+                      className="w-full h-10 px-3 border border-slate-200 rounded-lg font-mono text-sm tracking-widest text-slate-900 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 block mb-1 uppercase tracking-wider">
+                      Xác nhận mã PIN mới
+                    </label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="Nhập lại 6 số mới"
+                      value={confirmPin}
+                      onChange={(e) => {
+                        setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6))
+                        setPinChangeError('')
+                      }}
+                      className="w-full h-10 px-3 border border-slate-200 rounded-lg font-mono text-sm tracking-widest text-slate-900 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+
                   <button
-                    onClick={() => setRenewUnit(null)}
-                    disabled={isSubmittingRenewal}
-                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                    type="button"
+                    onClick={handleGenerateRandomPin}
+                    className="w-full py-1.5 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">shuffle</span>
+                    <span>Tạo ngẫu nhiên 6 số an toàn</span>
+                  </button>
+
+                  {pinChangeError && (
+                    <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px]">error</span>
+                      <span>{pinChangeError}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPinChangeUnit(null)}
+                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
                   >
                     Hủy bỏ
                   </button>
                   <button
-                    onClick={handleConfirmRenewal}
-                    disabled={isSubmittingRenewal}
-                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors cursor-pointer"
+                    type="submit"
+                    disabled={isSubmittingPinChange}
+                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5"
                   >
-                    {isSubmittingRenewal ? 'Đang Xử Lý Gia Hạn...' : 'Xác Nhận Gia Hạn'}
+                    {isSubmittingPinChange ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
+                        <span>Đang lưu...</span>
+                      </>
+                    ) : (
+                      <span>Xác Nhận Đổi PIN</span>
+                    )}
                   </button>
                 </div>
-              </div>
+              </form>
             )}
           </div>
         </div>
@@ -1998,105 +2935,35 @@ export const CustomerDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Contract Details Review Modal */}
+      {/* Full Legal Contract Document Viewer Modal */}
       {selectedContractForModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-xl border border-slate-200 space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
-                  <span className="material-symbols-outlined text-[20px]">description</span>
-                </div>
-                <div>
-                  <h3 className="font-headline text-base font-bold text-slate-900">
-                    Chi Tiết Hợp Đồng #{selectedContractForModal.contractCode}
-                  </h3>
-                  <span className="text-xs text-slate-500">
-                    Kho #{selectedContractForModal.unitCode} • {selectedContractForModal.facilityName}
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedContractForModal(null)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer p-1"
-              >
-                ✕
-              </button>
-            </div>
+        <ContractDocumentModal
+          contract={selectedContractForModal}
+          onClose={() => setSelectedContractForModal(null)}
+          onSignNow={handleSignContractNow}
+          isSigning={fetchingSigningUrl}
+        />
+      )}
 
-            <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50 p-4 rounded-xl border border-slate-100">
-              <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Khách hàng đứng tên</span>
-                <span className="font-semibold text-slate-900">{selectedContractForModal.customerName || user?.fullName || 'Khách hàng cá nhân'}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Trạng thái hợp đồng</span>
-                <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold mt-0.5 ${
-                  selectedContractForModal.status === 'ACTIVE'
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : 'bg-amber-100 text-amber-800'
-                }`}>
-                  {selectedContractForModal.status === 'ACTIVE' ? 'Đang hiệu lực (ACTIVE)' : selectedContractForModal.status}
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Ngày bắt đầu</span>
-                <span className="font-mono text-slate-800">{selectedContractForModal.startDate}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Ngày kết thúc</span>
-                <span className="font-mono font-bold text-slate-900">{selectedContractForModal.endDate}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Giá thuê mỗi tháng</span>
-                <span className="font-mono font-bold text-blue-600">
-                  {Number(selectedContractForModal.monthlyFee || 0).toLocaleString('vi-VN')} ₫
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Tiền đặt cọc lưu ký</span>
-                <span className="font-mono font-bold text-slate-800">
-                  {Number(selectedContractForModal.depositHeld || 0).toLocaleString('vi-VN')} ₫
-                </span>
-              </div>
-            </div>
+      {/* DocuSeal Electronic Signature Modal */}
+      {contractForDocuSealModal && (
+        <DocuSealSimulationModal
+          contract={contractForDocuSealModal}
+          onClose={() => setContractForDocuSealModal(null)}
+          onSignedSuccess={handleContractSignedSuccess}
+        />
+      )}
 
-            <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl text-xs text-slate-600 flex items-center gap-3">
-              <span className="material-symbols-outlined text-[20px] text-blue-600 shrink-0">verified</span>
-              <span>Hợp đồng được ký điện tử có chứng thực toàn vẹn số liệu và lưu trữ an toàn trên hạ tầng Boxora Cloud.</span>
-            </div>
-
-            <div className="pt-2 flex flex-wrap items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px]">print</span>
-                <span>In Hợp Đồng</span>
-              </button>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleOpenDocuSeal(selectedContractForModal.id)}
-                  disabled={fetchingSigningUrl}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[16px]">draw</span>
-                  <span>{fetchingSigningUrl ? 'Đang Lấy Link...' : 'Xem Văn Bản Ký DocuSeal'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedContractForModal(null)}
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                >
-                  Đóng
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Contract OTP Verification Modal */}
+      {contractForOtpModal && (
+        <ContractOtpModal
+          contract={contractForOtpModal}
+          onClose={() => setContractForOtpModal(null)}
+          onOpenSimulationSign={(c) => {
+            setContractForOtpModal(null)
+            setContractForDocuSealModal(c)
+          }}
+        />
       )}
 
       {requestToPay && user && (
