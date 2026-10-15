@@ -2,12 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { storageUnitService } from '../../services/storageUnitService'
 import { facilityService } from '../../services/facilityService'
+import { facilityPolicyService } from '../../services/facilityPolicyService'
 import { reportService } from '../../services/reportService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
 import { userService } from '../../services/userService'
 import { useLanguage } from '../../context/LanguageContext'
 import { useAuth } from '../../context/AuthContext'
-import { Facility, StorageUnit, OverdueDebtItem, User, RevenueReport } from '../../types'
+import { Facility, FacilityPolicy, StorageUnit, OverdueDebtItem, User, RevenueReport } from '../../types'
 import { parseFacilityLayoutConfig } from '../../utils/facilityLayout'
 import { IoTTelemetryModal } from './modals/IoTTelemetryModal'
 import { FacilitySurveyModal } from './modals/FacilitySurveyModal'
@@ -58,6 +59,7 @@ export const ManagerDashboard: React.FC = () => {
       : (selectedFacility && selectedFacility !== 'ALL' ? selectedFacility : (contextFacilities?.[0]?.id || ''))
   )
   const [units, setUnits] = useState<InspectedUnit[]>([])
+  const [facilityPolicy, setFacilityPolicy] = useState<FacilityPolicy | null>(null)
   const [overdueItems, setOverdueItems] = useState<OverdueDebtItem[]>([])
   const [staffList, setStaffList] = useState<User[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
@@ -153,12 +155,13 @@ export const ManagerDashboard: React.FC = () => {
         ? facId
         : (selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : facilities[0]?.id)
 
-      const [unitsRes, debtRes, staffRes, revRes, payRes] = await Promise.allSettled([
+      const [unitsRes, debtRes, staffRes, revRes, payRes, polRes] = await Promise.allSettled([
         storageUnitService.getUnits(targetId ? { facilityId: targetId } : undefined),
         reportService.getOverdueDebtReport(targetId ? { facilityId: targetId } : undefined),
         userService.getAllUsers({ role: 'STAFF', facilityId: targetId, size: 50 }),
         reportService.getRevenueReport(fDate || undefined, tDate || undefined, targetId),
-        paymentService.getPayments({ size: 15, facilityId: targetId })
+        paymentService.getPayments({ size: 15, facilityId: targetId }),
+        targetId ? facilityPolicyService.getByFacilityId(targetId) : Promise.resolve(null),
       ])
 
       if (unitsRes.status === 'fulfilled' && Array.isArray(unitsRes.value) && unitsRes.value.length > 0) {
@@ -236,6 +239,12 @@ export const ManagerDashboard: React.FC = () => {
       } else {
         setFacilityPayments([])
       }
+
+      if (polRes.status === 'fulfilled' && polRes.value) {
+        setFacilityPolicy(polRes.value)
+      } else {
+        setFacilityPolicy(null)
+      }
     } catch {
       setUnits([])
       setOverdueItems([])
@@ -243,6 +252,7 @@ export const ManagerDashboard: React.FC = () => {
       setSelectedUnit(null)
       setRevenueData(null)
       setFacilityPayments([])
+      setFacilityPolicy(null)
     } finally {
       setIsLoading(false)
       setIsRevenueLoading(false)
@@ -837,6 +847,138 @@ export const ManagerDashboard: React.FC = () => {
           </div>
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-rose-600 h-full rounded-full" style={{ width: `${overduePercent}%` }}></div>
+          </div>
+        </div>
+      </section>
+
+      {/* FACILITY OPERATING POLICY CARD (READ-ONLY FOR FACILITY MANAGER) */}
+      <section className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center">
+              <span className="material-symbols-outlined text-[20px]">verified_user</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-slate-900">
+                  Chính Sách Vận Hành Chi Nhánh: {currentFacilityName}
+                </h2>
+                {facilityPolicy ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    Đang áp dụng
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold border border-amber-200">
+                    Chính sách tiêu chuẩn mặc định
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Chế độ chỉ đọc (Read-only) • Thẩm quyền ban hành &amp; điều chỉnh: Business Manager &amp; Ban Quản Trị Boxora
+              </p>
+            </div>
+          </div>
+          <div className="text-xs text-slate-400 font-medium">
+            Mã cơ sở: <span className="font-mono font-bold text-slate-700">{currentFacility?.code || 'FAC'}</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4 text-xs">
+          {/* Nhóm 1: Tiền cọc & Thuê */}
+          <div className="p-3.5 rounded-lg bg-slate-50/70 border border-slate-200/80 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-1.5">
+                <span className="material-symbols-outlined text-[16px] text-cyan-700">payments</span>
+                <span>Tiền cọc &amp; Thuê kho</span>
+              </div>
+              <ul className="space-y-1.5 text-slate-600">
+                <li className="flex justify-between">
+                  <span>Tỷ lệ tiền cọc:</span>
+                  <strong className="text-slate-900">{facilityPolicy?.depositPercentage ?? facilityPolicy?.depositPercent ?? 100}%</strong>
+                </li>
+                <li className="flex justify-between">
+                  <span>Thời hạn thuê min:</span>
+                  <strong className="text-slate-900">{facilityPolicy?.minimumRentalMonths ?? 1} tháng</strong>
+                </li>
+                <li className="flex justify-between">
+                  <span>Mở gia hạn trước:</span>
+                  <strong className="text-slate-900">{facilityPolicy?.renewalWindowDays ?? 7} ngày</strong>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Nhóm 2: Hủy đặt kho */}
+          <div className="p-3.5 rounded-lg bg-slate-50/70 border border-slate-200/80 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-1.5">
+                <span className="material-symbols-outlined text-[16px] text-amber-600">cancel</span>
+                <span>Hủy phòng &amp; Hoàn cọc</span>
+              </div>
+              <ul className="space-y-1.5 text-slate-600">
+                <li className="flex justify-between">
+                  <span>Hoàn 100% trước:</span>
+                  <strong className="text-emerald-700">{facilityPolicy?.cancellationFullRefundHours ?? 48} giờ</strong>
+                </li>
+                <li className="flex justify-between">
+                  <span>Hoàn một phần trước:</span>
+                  <strong className="text-amber-700">{facilityPolicy?.cancellationPartialRefundHours ?? 24} giờ</strong>
+                </li>
+                <li className="flex justify-between">
+                  <span>Tỷ lệ hoàn 1 phần:</span>
+                  <strong className="text-slate-900">{facilityPolicy?.cancellationPartialRefundPercent ?? 50}%</strong>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Nhóm 3: Trả kho & SLA */}
+          <div className="p-3.5 rounded-lg bg-slate-50/70 border border-slate-200/80 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-1.5">
+                <span className="material-symbols-outlined text-[16px] text-emerald-600">assignment_turned_in</span>
+                <span>Nghiệm thu Trả kho &amp; SLA</span>
+              </div>
+              <ul className="space-y-1.5 text-slate-600">
+                <li className="flex justify-between">
+                  <span>Báo trước trả kho:</span>
+                  <strong className="text-slate-900">{facilityPolicy?.returnNoticeDays ?? 3} ngày</strong>
+                </li>
+                <li className="flex justify-between">
+                  <span>SLA xử lý hoàn cọc:</span>
+                  <strong className="text-blue-700 font-bold">{facilityPolicy?.depositRefundSlaDays ?? 3} ngày làm việc</strong>
+                </li>
+                <li className="flex justify-between">
+                  <span>Hình thức hoàn:</span>
+                  <strong className="text-slate-900">Chuyển khoản</strong>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Nhóm 4: Nợ quá hạn & Niêm phong */}
+          <div className="p-3.5 rounded-lg bg-slate-50/70 border border-slate-200/80 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-1.5">
+                <span className="material-symbols-outlined text-[16px] text-rose-600">lock_clock</span>
+                <span>Quá hạn &amp; Niêm phong</span>
+              </div>
+              <ul className="space-y-1.5 text-slate-600">
+                <li className="flex justify-between">
+                  <span>Phí trễ hạn:</span>
+                  <strong className="text-rose-600 font-mono">{Number(facilityPolicy?.dailyLateFee ?? facilityPolicy?.lateFeePerDay ?? 50000).toLocaleString('vi-VN')} đ/ngày</strong>
+                </li>
+                <li className="flex justify-between">
+                  <span>Ân hạn nợ:</span>
+                  <strong className="text-slate-900">{facilityPolicy?.overdueGraceDays ?? facilityPolicy?.gracePeriodDays ?? 3} ngày</strong>
+                </li>
+                <li className="flex justify-between">
+                  <span>Khóa thẻ / Niêm phong:</span>
+                  <strong className="text-rose-700">Ngày {facilityPolicy?.overdueAccessDisableDays ?? 5} / {facilityPolicy?.overdueSealingDays ?? 7}</strong>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
       </section>
