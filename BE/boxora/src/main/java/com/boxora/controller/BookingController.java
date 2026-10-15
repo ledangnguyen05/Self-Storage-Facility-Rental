@@ -83,7 +83,6 @@ public class BookingController {
         }
         return ResponseEntity.ok(ApiResponse.success(list));
     }
-    }
 
     @GetMapping("/my-active")
     @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
