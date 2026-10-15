@@ -320,6 +320,37 @@ export const AdminDashboard: React.FC = () => {
     rose: 'bg-rose-50 text-rose-700 border-rose-100',
   }
 
+  const facilitySummaryCards = [
+    {
+      label: 'Tổng số chi nhánh',
+      value: facilities.length,
+      helper: 'Mạng lưới kho Boxora toàn quốc',
+      icon: 'domain',
+      tone: 'cyan',
+    },
+    {
+      label: 'Đang hoạt động',
+      value: facilities.filter(f => f.status === 'ACTIVE' || !f.status).length,
+      helper: 'Chi nhánh mở cửa vận hành',
+      icon: 'check_circle',
+      tone: 'teal',
+    },
+    {
+      label: 'Tạm ngưng / Bảo trì',
+      value: facilities.filter(f => f.status === 'INACTIVE' || f.status === 'MAINTENANCE').length,
+      helper: 'Đang sửa chữa hoặc tạm khóa',
+      icon: 'engineering',
+      tone: 'rose',
+    },
+    {
+      label: 'Đã định vị GPS',
+      value: facilities.filter(f => f.latitude != null && f.longitude != null).length,
+      helper: 'Đã gắn tọa độ bản đồ',
+      icon: 'location_on',
+      tone: 'indigo',
+    },
+  ]
+
   const getRoleBadge = (roleName?: string) => {
     switch (roleName) {
       case 'ADMIN':
@@ -344,124 +375,181 @@ export const AdminDashboard: React.FC = () => {
           <button type="button" aria-label="Đóng thông báo" onClick={() => setFeedbackMessage(null)} className="ml-2 text-slate-400 hover:text-slate-700">×</button>
         </div>
       )}
-      {/* Top Banner - Stitch Header Style */}
-      <div className="relative w-full overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-sm border border-slate-200">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-800 text-xs font-mono font-semibold uppercase tracking-wider mb-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span>
-              Hệ thống phân quyền &amp; Quản trị vai trò
-            </div>
-            <h1 className="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight font-headline">
-              Quản lý người dùng &amp; phân quyền
-            </h1>
-            <p className="text-sm text-slate-600 mt-1 max-w-3xl">
-              Tạo tài khoản, cấu hình vai trò và tra cứu nhật ký hoạt động hệ thống.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-            <button
-              type="button"
-              onClick={() => setActiveTab('facilities')}
-              className="px-3 py-2 rounded-xl border border-cyan-200 bg-cyan-50 text-xs font-bold text-cyan-800 hover:bg-cyan-100 transition-colors flex items-center gap-1.5 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[16px]">domain</span>
-              <span>{t('Cấu hình chi nhánh', 'Branch configuration')}</span>
-            </button>
-            <button 
-              type="button" 
-              onClick={() => fetchUsers(facilityFilter)}
-              disabled={isLoadingUsers}
-              className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-              title="Tải lại dữ liệu từ cơ sở dữ liệu"
-            >
-              <span className={`material-symbols-outlined text-[16px] text-blue-600 ${isLoadingUsers ? 'animate-spin' : ''}`}>
-                refresh
-              </span>
-              <span>{isLoadingUsers ? 'Đang tải...' : 'Làm mới'}</span>
-            </button>
-            <button 
-              type="button" 
-              onClick={() => setIsCreateModalOpen(true)}
-              className="stitch-btn-primary text-xs"
-            >
-              <span className="material-symbols-outlined text-[18px]">person_add</span>
-              <span>Cấp Tài Khoản Mới</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Tóm tắt tài khoản: số liệu lấy từ danh sách đang hiển thị */}
-        <div className="mt-6 grid grid-cols-1 gap-3 border-t border-slate-100 pt-5 sm:grid-cols-2 xl:grid-cols-4">
-          {summaryCards.map((card) => (
-            <div key={card.label} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition-colors hover:border-slate-300">
-              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${summaryToneClasses[card.tone]}`}>
-                <span className="material-symbols-outlined text-[21px]">{card.icon}</span>
-              </span>
-              <div className="min-w-0">
-                <div className="truncate text-xs font-semibold text-slate-500" title={card.label}>{card.label}</div>
-                <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  <span className="font-mono text-2xl font-extrabold tabular-nums text-slate-900">{card.value}</span>
-                  <span className="text-[11px] text-slate-500">{card.helper}</span>
+      {activeTab === 'facilities' ? (
+        /* ========================================================
+           PHẦN 1: CẤU HÌNH CHI NHÁNH (Hoàn toàn độc lập)
+           URL: /portal/admin?tab=facilities
+           ======================================================== */
+        <div className="flex flex-col gap-6 w-full">
+          {/* Top Banner - Chi Nhánh */}
+          <div className="relative w-full overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-sm border border-slate-200">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-800 text-xs font-mono font-semibold uppercase tracking-wider mb-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span>
+                  Hạ Tầng Cơ Sở &amp; Sơ Đồ Kho
                 </div>
+                <h1 className="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight font-headline">
+                  {t('Cấu hình chi nhánh & cơ sở', 'Branch & Facility Configuration')}
+                </h1>
+                <p className="text-sm text-slate-600 mt-1 max-w-3xl">
+                  {t(
+                    'Quản lý thông tin chi nhánh, địa chỉ, vị trí GPS bản đồ và cấu hình sơ đồ mặt bằng các tầng kho bãi Boxora.',
+                    'Manage branch details, addresses, GPS map coordinates, and floor layout configs.'
+                  )}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    facilityService.getFacilities({ size: 100 })
+                      .then((res) => {
+                        if (res?.content) {
+                          setFacilities(res.content)
+                          setFeedbackMessage('Đã làm mới danh sách chi nhánh thành công.')
+                          setTimeout(() => setFeedbackMessage(null), 3000)
+                        }
+                      })
+                      .catch((err) => {
+                        setFeedbackMessage('Không thể tải lại danh sách chi nhánh: ' + (err?.message || ''))
+                      })
+                  }}
+                  className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <span className="material-symbols-outlined text-[16px] text-cyan-700">refresh</span>
+                  <span>{t('Làm mới', 'Refresh')}</span>
+                </button>
               </div>
             </div>
-          ))}
-        </div>
 
-        {/* Tab Controls */}
-        <div className="mt-6 flex w-full flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
-          <button
-            onClick={() => setActiveTab('users')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-              activeTab === 'users'
-                ? 'bg-cyan-50 text-cyan-800 border border-cyan-200 shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[16px]">group</span>
-            <span>Danh Sách Người Dùng ({filteredUsers.length})</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('roles')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-              activeTab === 'roles'
-                ? 'bg-cyan-50 text-cyan-800 border border-cyan-200 shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[16px]">security</span>
-            <span>Ma Trận Phân Quyền (RBAC)</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('logs')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-              activeTab === 'logs'
-                ? 'bg-cyan-50 text-cyan-800 border border-cyan-200 shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[16px]">history</span>
-            <span>Nhật Ký Kiểm Toán (Audit Logs)</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('facilities')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-              activeTab === 'facilities'
-                ? 'bg-cyan-50 text-cyan-800 border border-cyan-200 shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[16px]">domain</span>
-            <span>{t('Cấu hình chi nhánh', 'Branch configuration')}</span>
-          </button>
-        </div>
-      </div>
+            {/* KPI Cards Chi Nhánh */}
+            <div className="mt-6 grid grid-cols-1 gap-3 border-t border-slate-100 pt-5 sm:grid-cols-2 xl:grid-cols-4">
+              {facilitySummaryCards.map((card) => (
+                <div key={card.label} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition-colors hover:border-slate-300">
+                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${summaryToneClasses[card.tone]}`}>
+                    <span className="material-symbols-outlined text-[21px]">{card.icon}</span>
+                  </span>
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-semibold text-slate-500" title={card.label}>{card.label}</div>
+                    <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span className="font-mono text-2xl font-extrabold tabular-nums text-slate-900">{card.value}</span>
+                      <span className="text-[11px] text-slate-500">{card.helper}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
 
-      {activeTab === 'facilities' && (
-        <FacilityConfigurationPanel facilities={facilities} onFacilitiesChange={setFacilities} />
-      )}
+          {/* Panel chi tiết cấu hình chi nhánh */}
+          <FacilityConfigurationPanel facilities={facilities} onFacilitiesChange={setFacilities} />
+        </div>
+      ) : (
+        /* ========================================================
+           PHẦN 2: PHÂN QUYỀN RBAC & USERS (Hoàn toàn độc lập)
+           URL: /portal/admin
+           ======================================================== */
+        <div className="flex flex-col gap-6 w-full">
+          {/* Top Banner - Stitch Header Style for RBAC & Users */}
+          <div className="relative w-full overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-sm border border-slate-200">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-800 text-xs font-mono font-semibold uppercase tracking-wider mb-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span>
+                  Hệ thống phân quyền &amp; Quản trị vai trò
+                </div>
+                <h1 className="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight font-headline">
+                  Phân quyền RBAC &amp; Quản lý người dùng
+                </h1>
+                <p className="text-sm text-slate-600 mt-1 max-w-3xl">
+                  Quản lý danh sách tài khoản người dùng, ma trận phân quyền vai trò (Role-Based Access Control) và tra cứu nhật ký kiểm toán hệ thống.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                <button 
+                  type="button" 
+                  onClick={() => fetchUsers(facilityFilter)}
+                  disabled={isLoadingUsers}
+                  className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  title="Tải lại dữ liệu từ cơ sở dữ liệu"
+                >
+                  <span className={`material-symbols-outlined text-[16px] text-blue-600 ${isLoadingUsers ? 'animate-spin' : ''}`}>
+                    refresh
+                  </span>
+                  <span>{isLoadingUsers ? 'Đang tải...' : 'Làm mới'}</span>
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="stitch-btn-primary text-xs"
+                >
+                  <span className="material-symbols-outlined text-[18px]">person_add</span>
+                  <span>Cấp Tài Khoản Mới</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Tóm tắt tài khoản: số liệu lấy từ danh sách đang hiển thị */}
+            <div className="mt-6 grid grid-cols-1 gap-3 border-t border-slate-100 pt-5 sm:grid-cols-2 xl:grid-cols-4">
+              {summaryCards.map((card) => (
+                <div key={card.label} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition-colors hover:border-slate-300">
+                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${summaryToneClasses[card.tone]}`}>
+                    <span className="material-symbols-outlined text-[21px]">{card.icon}</span>
+                  </span>
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-semibold text-slate-500" title={card.label}>{card.label}</div>
+                    <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span className="font-mono text-2xl font-extrabold tabular-nums text-slate-900">{card.value}</span>
+                      <span className="text-[11px] text-slate-500">{card.helper}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Tab Controls - CHỈ gồm users, roles, logs - KHÔNG có facilities */}
+            <div className="mt-6 flex w-full flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab('users')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                  activeTab === 'users'
+                    ? 'bg-cyan-50 text-cyan-800 border border-cyan-200 shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">group</span>
+                <span>Danh Sách Người Dùng ({filteredUsers.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('roles')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                  activeTab === 'roles'
+                    ? 'bg-cyan-50 text-cyan-800 border border-cyan-200 shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">security</span>
+                <span>Ma Trận Phân Quyền (RBAC)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('logs')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                  activeTab === 'logs'
+                    ? 'bg-cyan-50 text-cyan-800 border border-cyan-200 shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">history</span>
+                <span>Nhật Ký Kiểm Toán (Audit Logs)</span>
+              </button>
+            </div>
+          </div>
 
       {/* TAB 1: USERS */}
       {activeTab === 'users' && (
@@ -965,6 +1053,8 @@ export const AdminDashboard: React.FC = () => {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
         </div>
       )}
 
