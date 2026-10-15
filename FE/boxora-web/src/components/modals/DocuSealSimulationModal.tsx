@@ -100,7 +100,32 @@ export function DocuSealSimulationModal({
     setIsSigning(true)
     setError(null)
     try {
-      const updated = await contractService.mockSignContract(contract.id)
+      let signatureData: string | undefined = undefined
+
+      if (signatureMode === 'draw' && canvasRef.current && hasDrawn) {
+        // Lấy chính xác nét vẽ chữ ký tay thực tế của khách hàng từ canvas
+        signatureData = canvasRef.current.toDataURL('image/png')
+      } else if (signatureMode === 'type') {
+        // Tạo chữ ký nét vẽ tay vector chân thực thay vì chữ in font thẳng
+        const nameToUse = (signerName || customerDisplayName || 'nguyen').toLowerCase()
+        const svgContent = nameToUse.includes('nguyen')
+          ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 85" width="260" height="85"><path d="M 26 55 C 30 38 36 20 44 15 C 50 11 55 18 58 32 C 63 50 69 58 75 38 C 79 26 85 22 91 30 C 97 38 101 52 108 48 C 114 44 118 32 123 30 C 129 28 131 42 135 48 C 139 54 144 48 148 38 C 152 26 156 22 160 34 C 164 46 170 76 158 84 C 146 91 140 78 148 64 C 158 48 168 40 178 38 C 186 36 191 44 196 46 C 203 48 210 36 217 34 C 224 32 228 42 234 40 C 240 38 244 32 248 34" fill="none" stroke="%231e3a8a" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="218" cy="23" r="2.2" fill="%231e3a8a"/><path d="M 34 68 C 74 65 132 67 198 59 C 220 56 236 55 248 57" fill="none" stroke="%232563eb" stroke-width="2.2" stroke-linecap="round"/></svg>`
+          : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 85" width="260" height="85"><path d="M 28 58 C 32 40 36 22 45 16 C 52 12 58 20 62 38 C 66 54 72 56 78 36 C 82 24 88 20 94 36 C 98 52 104 56 110 38 C 114 26 120 28 126 44 C 132 60 138 60 144 42 C 148 30 154 28 158 38 C 162 48 166 74 172 16 C 174 12 178 14 180 24 C 182 38 188 56 196 48 C 204 40 210 34 218 36" fill="none" stroke="%231e3a8a" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="127" cy="20" r="2.2" fill="%231e3a8a"/><path d="M 32 70 C 72 68 135 69 205 60 C 226 57 242 56 250 58" fill="none" stroke="%232563eb" stroke-width="2.2" stroke-linecap="round"/></svg>`
+        signatureData = `data:image/svg+xml;utf8,${encodeURIComponent(svgContent)}`
+      }
+
+      if (signatureData) {
+        try {
+          localStorage.setItem('boxora_sig_' + contract.id, signatureData)
+        } catch {
+          // ignore quota error
+        }
+      }
+
+      const updated = await contractService.mockSignContract(contract.id, signatureData)
+      if (signatureData && !updated.signatureData) {
+        updated.signatureData = signatureData
+      }
       onSignedSuccess(updated)
     } catch (err: unknown) {
       let msg = 'Ký hợp đồng thất bại. Vui lòng thử lại.'

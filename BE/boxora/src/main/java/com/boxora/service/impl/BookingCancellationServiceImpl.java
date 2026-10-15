@@ -325,19 +325,58 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         int unitsReleasedCount = 0;
         List<AutoCancelDetail> detailList = new ArrayList<>();
 
-        for (Booking booking : expiredBookings) {
+        for (Booking candidate : expiredBookings) {
+            // Lock booking row to serialize against concurrent payment returns / IPN webhooks
+            Booking booking = bookingRepository.findByIdForUpdate(candidate.getId()).orElse(null);
+            if (booking == null) {
+                continue;
+            }
+
+            // Idempotency: skip if already cancelled or moved out of pending status
+            if (booking.getStatus() == BookingStatus.CANCELLED) {
+                continue;
+            }
+            if (booking.getStatus() != BookingStatus.PENDING_PAYMENT && booking.getStatus() != BookingStatus.PENDING_APPROVAL) {
+                continue;
+            }
+
+            // Check if payment was marked PAID in a race condition
+            boolean hasPaidPayment = paymentRepository.existsByBooking_IdAndStatus(booking.getId(), PaymentStatus.PAID);
+            if (hasPaidPayment) {
+                log.info("[AUTO-CANCEL_RECONCILE] Booking {} has PAID payment; reconciling to CONFIRMED instead of CANCELLED", booking.getBookingCode());
+                booking.setStatus(BookingStatus.CONFIRMED);
+                booking.setPaymentExpiresAt(null);
+                bookingRepository.save(booking);
+                if (booking.getStorageUnit() != null) {
+                    storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
+                }
+                continue;
+            }
+
             booking.setStatus(BookingStatus.CANCELLED);
+            booking.setPaymentExpiresAt(null);
             booking.setAccessPin(null);
             booking.setQrAccessToken("REVOKED_AUTO_CANCEL");
 
             boolean released = false;
             StorageUnit unit = booking.getStorageUnit();
             if (unit != null) {
-                unit.setStatus(UnitStatus.AVAILABLE);
-                storageUnitRepository.save(unit);
-                storageUnitLockService.releaseLock(unit.getId());
-                released = true;
-                unitsReleasedCount++;
+                UUID unitId = unit.getId();
+                StorageUnit lockedUnit = storageUnitRepository.findWithDetailsByIdForUpdate(unitId).orElse(null);
+                if (lockedUnit != null) {
+                    boolean hasOtherActive = bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(
+                            unitId,
+                            List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING_APPROVAL),
+                            booking.getId()
+                    );
+                    if (!hasOtherActive && lockedUnit.getStatus() == UnitStatus.RESERVED) {
+                        lockedUnit.setStatus(UnitStatus.AVAILABLE);
+                        storageUnitRepository.save(lockedUnit);
+                        storageUnitLockService.releaseLock(unitId);
+                        released = true;
+                        unitsReleasedCount++;
+                    }
+                }
             }
 
             bookingRepository.save(booking);

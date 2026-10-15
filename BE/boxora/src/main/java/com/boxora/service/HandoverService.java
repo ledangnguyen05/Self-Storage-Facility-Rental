@@ -24,6 +24,16 @@ public interface HandoverService {
     HandoverResponse checkIn(HandoverRequest request);
 
     /**
+     * Hành động 1 Trả kho: Khách hàng hoặc nhân viên yêu cầu trả kho
+     */
+    HandoverResponse requestCheckout(UUID bookingId, String notes);
+
+    /**
+     * Hành động 2 Trả kho: Nhân viên kiểm tra hiện trường, lưu ảnh & ghi nhận hư hỏng
+     */
+    HandoverResponse performInspection(HandoverRequest request);
+
+    /**
      * Xem trước quyết toán tiền cọc và thẩm định hiện trường trả kho (BR-RULE-013/014/015)
      */
     ReturnSettlementPreviewResponse getReturnSettlementPreview(UUID bookingId);

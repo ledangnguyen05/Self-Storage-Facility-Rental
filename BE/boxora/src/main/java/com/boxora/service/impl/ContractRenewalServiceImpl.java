@@ -93,6 +93,15 @@ public class ContractRenewalServiceImpl implements ContractRenewalService {
             throw new AppException(ErrorCode.CONTRACT_NOT_ACTIVE);
         }
 
+        boolean hasPending = contractRenewalRepository.existsByContract_IdAndStatusIn(
+                contractId,
+                List.of(ContractRenewalStatus.PENDING_SIGNATURE, ContractRenewalStatus.PENDING_PAYMENT)
+        );
+        if (hasPending) {
+            log.warn("Contract {} already has an active pending renewal request", contractId);
+            throw new AppException(ErrorCode.CONTRACT_RENEWAL_ALREADY_PENDING);
+        }
+
         // Kiểm tra chính sách gia hạn của cơ sở (FacilityPolicy)
         FacilityPolicy policy = facilityPolicyRepository.findByFacilityId(contract.getFacility().getId())
                 .orElse(null);

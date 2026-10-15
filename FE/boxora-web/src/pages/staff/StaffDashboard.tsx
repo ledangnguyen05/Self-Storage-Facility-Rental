@@ -68,10 +68,6 @@ export const StaffDashboard: React.FC = () => {
     status: string
   }>>([])
 
-  // Live Shift Revenue & Cashier Payments from DB
-  const [shiftPayments, setShiftPayments] = useState<PaymentItem[]>([])
-  const [isShiftPaymentsLoading, setIsShiftPaymentsLoading] = useState(false)
-
   useEffect(() => {
     const targetFacility = (!selectedFacility || selectedFacility === 'ALL') ? undefined : selectedFacility
     fetchArrivals(targetFacility)
@@ -80,24 +76,7 @@ export const StaffDashboard: React.FC = () => {
     loadTicketQueue()
     loadActiveRentals(targetFacility)
     loadRadarUnits(targetFacility)
-    loadShiftPayments(targetFacility)
   }, [selectedFacility])
-
-  const loadShiftPayments = async (facilityId?: string) => {
-    setIsShiftPaymentsLoading(true)
-    try {
-      const res = await paymentService.getPayments({ size: 20, facilityId: facilityId || undefined })
-      if (Array.isArray(res)) {
-        setShiftPayments(res)
-      } else {
-        setShiftPayments([])
-      }
-    } catch {
-      setShiftPayments([])
-    } finally {
-      setIsShiftPaymentsLoading(false)
-    }
-  }
 
   const loadRadarUnits = async (facilityId?: string) => {
     try {
@@ -261,11 +240,13 @@ export const StaffDashboard: React.FC = () => {
       const targetId = backendId || ticketId.replace('#', '')
       if (targetId) {
         await supportTicketService.resolveTicket(targetId, 'Đã kiểm tra hiện trường và xử lý xong tại chỗ')
+        setTickets(prev => prev.map(t => (t.id === ticketId || (backendId && t.backendId === backendId)) ? { ...t, status: 'RESOLVED' } : t))
       }
-    } catch (err) {
-      console.warn('Ticket resolve fallback:', err)
+    } catch (err: any) {
+      console.error('Ticket resolve failed:', err)
+      const msg = err?.response?.data?.message || err?.message || 'Không thể cập nhật trạng thái phiếu sự cố trên máy chủ.'
+      alert(msg)
     }
-    setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: 'RESOLVED' } : t))
   }
 
   // Quick Walkin Modal
@@ -293,50 +274,7 @@ export const StaffDashboard: React.FC = () => {
   const currentReturnBooking = activeRentals.find(r => r.id === (selectedReturnBookingId || activeRentals[0]?.id)) || activeRentals[0]
   const returnDepositAmt = currentReturnBooking ? (currentReturnBooking.depositPaid || currentReturnBooking.depositAmount || 0) : 0
 
-  // Live shift revenue calculations from DB
-  const shiftTotalCollected = useMemo(() => {
-    return shiftPayments.filter(p => p.status === 'SUCCESS').reduce((sum, p) => sum + (p.amount || 0), 0)
-  }, [shiftPayments])
 
-  const shiftRentalRevenue = useMemo(() => {
-    return shiftPayments
-      .filter(p => p.status === 'SUCCESS' && (!p.paymentType || p.paymentType === 'RENTAL' || p.paymentType === 'CONTRACT' || p.paymentType === 'EXTEND'))
-      .reduce((sum, p) => sum + (p.amount || 0), 0)
-  }, [shiftPayments])
-
-  const shiftDepositRevenue = useMemo(() => {
-    return shiftPayments
-      .filter(p => p.status === 'SUCCESS' && p.paymentType === 'DEPOSIT')
-      .reduce((sum, p) => sum + (p.amount || 0), 0)
-  }, [shiftPayments])
-
-  const handleExportShiftLedgerCsv = () => {
-    if (!shiftPayments || shiftPayments.length === 0) {
-      alert('Không có dữ liệu giao dịch để xuất sổ thu ngân.')
-      return
-    }
-    const headers = ['Mã GD', 'Khách hàng', 'Mã Kho', 'Cơ sở', 'Số tiền (VNĐ)', 'Phương thức', 'Loại thanh toán', 'Thời gian', 'Trạng thái']
-    const rows = shiftPayments.map(p => [
-      p.id,
-      p.customerName || 'N/A',
-      p.unitCode || 'N/A',
-      p.facilityName || 'Boxora',
-      p.amount,
-      p.paymentMethod || 'VNPay',
-      p.paymentType || 'RENTAL',
-      p.paymentTime ? new Date(p.paymentTime).toLocaleString('vi-VN') : '',
-      p.status
-    ])
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.setAttribute('download', `So_Thu_Ngan_Ca_Truc_${new Date().toISOString().slice(0, 10)}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }
 
   return (
     <div className="flex flex-col gap-6 text-left max-w-7xl mx-auto">
@@ -867,107 +805,7 @@ export const StaffDashboard: React.FC = () => {
 
       </div>
 
-      {/* QUICK WORKSPACE ACCESS: BÁO CÁO THU NGÂN & XỬ LÝ SỰ CỐ (ĐÃ CHUYỂN THÀNH 2 PHẦN RIÊNG CÓ PHÂN TRANG) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Card 1: Báo Cáo Thu Ngân */}
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col justify-between hover:border-emerald-300 transition-all group">
-          <div>
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center group-hover:scale-105 transition-transform">
-                  <span className="material-symbols-outlined text-[22px]">point_of_sale</span>
-                </div>
-                <div>
-                  <h3 className="font-headline text-base font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">
-                    Báo Cáo Thu Ngân & Dòng Tiền Ca Trực
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Đối soát giao dịch, tiền mặt, VNPay và phân trang chuyên sâu
-                  </p>
-                </div>
-              </div>
-              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                {shiftPayments.length} giao dịch
-              </span>
-            </div>
 
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="text-[11px] text-slate-500 font-medium block">Tổng thực thu</span>
-                <span className="text-lg font-bold text-slate-900 font-mono">
-                  {shiftTotalCollected.toLocaleString('vi-VN')} ₫
-                </span>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="text-[11px] text-slate-500 font-medium block">Tiền cọc giữ chỗ</span>
-                <span className="text-lg font-bold text-emerald-700 font-mono">
-                  {shiftDepositRevenue.toLocaleString('vi-VN')} ₫
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <Link
-            to="/portal/cashier"
-            className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
-          >
-            <span>Mở Trang Báo Cáo Thu Ngân (Có Phân Trang)</span>
-            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-          </Link>
-        </div>
-
-        {/* Card 2: Danh Sách Ticket */}
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col justify-between hover:border-rose-300 transition-all group">
-          <div>
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-                  <span className="material-symbols-outlined text-[22px]">build_circle</span>
-                </div>
-                <div>
-                  <h3 className="font-headline text-base font-bold text-slate-900 group-hover:text-rose-700 transition-colors">
-                    Xử Lý Sự Cố Tại Chỗ & Ticket
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Theo dõi phiếu kỹ thuật, xử lý cửa cuốn, khóa điện tử và phân trang
-                  </p>
-                </div>
-              </div>
-              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                tickets.filter(t => t.status !== 'RESOLVED').length > 0
-                  ? 'bg-rose-50 text-rose-700 border border-rose-200 animate-pulse'
-                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-              }`}
-              >
-                {tickets.filter(t => t.status !== 'RESOLVED').length} đang mở
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="text-[11px] text-slate-500 font-medium block">Tổng phiếu ca trực</span>
-                <span className="text-lg font-bold text-slate-900 font-mono">
-                  {tickets.length} ticket
-                </span>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="text-[11px] text-slate-500 font-medium block">Ưu tiên khẩn cấp</span>
-                <span className="text-lg font-bold text-rose-600 font-mono">
-                  {tickets.filter(t => t.priority === 'HIGH' && t.status !== 'RESOLVED').length} phiếu
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <Link
-            to="/portal/tickets"
-            className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
-          >
-            <span>Mở Trang Xử Lý Sự Cố (Có Phân Trang)</span>
-            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-          </Link>
-        </div>
-      </div>
 
       {/* Walkin Modal */}
       {isWalkinOpen && (
@@ -982,7 +820,7 @@ export const StaffDashboard: React.FC = () => {
                   Đã Đăng Ký Khách Vãng Lai!
                 </h3>
                 <p className="text-xs text-slate-600">
-                  Mã thẻ tạm #WALK-{Math.floor(100 + Math.random() * 900)} đã được kích hoạt cho khách tham quan.
+                  [Mô phỏng tại quầy] Đã ghi nhận tiếp đón khách vãng lai và cấp phát thẻ khách tham quan.
                 </p>
               </div>
             ) : (

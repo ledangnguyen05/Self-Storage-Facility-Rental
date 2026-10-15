@@ -135,6 +135,7 @@ public enum ErrorCode {
     CONTRACT_RENEWAL_NOT_FOUND(1506, "Contract renewal request not found", HttpStatus.NOT_FOUND),
     CONTRACT_RENEWAL_ALREADY_COMPLETED(1507, "Contract renewal has already been completed", HttpStatus.BAD_REQUEST),
     CONTRACT_RENEWAL_ALREADY_SIGNED(1508, "Contract renewal is already signed", HttpStatus.BAD_REQUEST),
+    CONTRACT_RENEWAL_ALREADY_PENDING(1515, "There is already a pending renewal request for this contract", HttpStatus.BAD_REQUEST),
     RENEWAL_CONTRACT_NOT_FOUND(1509, "Rental contract not found", HttpStatus.NOT_FOUND),
     CONTRACT_OTP_NOT_FOUND(1510, "No active contract OTP request was found", HttpStatus.BAD_REQUEST),
     CONTRACT_OTP_INVALID(1511, "The contract OTP is invalid or has expired", HttpStatus.BAD_REQUEST),

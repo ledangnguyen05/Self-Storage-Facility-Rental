@@ -46,8 +46,8 @@ export const contractService = {
     return response.data?.data as ContractOtpResponse
   },
 
-  async mockSignContract(contractId: string) {
-    const response = await api.post(`/api/v1/contracts/${contractId}/mock-sign`)
+  async mockSignContract(contractId: string, signatureData?: string) {
+    const response = await api.post(`/api/v1/contracts/${contractId}/mock-sign`, { signatureData })
     return response.data?.data as RentalContract
   },
 

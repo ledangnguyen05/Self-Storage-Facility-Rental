@@ -89,6 +89,18 @@ export const handoverService = {
     return response.data?.data as ReturnSettlementPreview
   },
 
+  async requestCheckout(bookingId: string, notes?: string) {
+    const response = await api.post(`/api/v1/handovers/checkout-request/${bookingId}`, null, {
+      params: { notes }
+    })
+    return response.data?.data as HandoverRecord
+  },
+
+  async performInspection(data: HandoverPayload) {
+    const response = await api.post('/api/v1/handovers/inspection', data)
+    return response.data?.data as HandoverRecord
+  },
+
   async processReturn(data: HandoverPayload) {
     const response = await api.post('/api/v1/handovers/return', data)
     return response.data?.data as HandoverRecord

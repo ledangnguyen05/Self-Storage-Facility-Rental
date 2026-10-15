@@ -54,4 +54,6 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     );
 
     List<User> findAllByRole_NameInAndIsActiveTrue(List<String> roleNames);
+    List<User> findByFacility_IdAndRole_Name(UUID facilityId, String roleName);
+    List<User> findByRole_Name(String roleName);
 }

@@ -58,6 +58,12 @@ class HandoverServiceTest {
     private FacilityPolicyRepository facilityPolicyRepository;
 
     @Mock
+    private RefundRequestRepository refundRequestRepository;
+
+    @Mock
+    private EncryptionService encryptionService;
+
+    @Mock
     private ActivityLogService activityLogService;
 
     @Mock
@@ -92,12 +98,14 @@ class HandoverServiceTest {
                 .fullName("Trần Minh Tuấn")
                 .email("tuan.tran@gmail.com")
                 .phone("0912.345.678")
+                .role(Role.builder().name("CUSTOMER").build())
                 .build();
         testCustomer.setId(UUID.randomUUID());
 
         testStaff = User.builder()
                 .fullName("Lê Nhân Viên")
                 .email("staff@boxora.com")
+                .role(Role.builder().name("STAFF").build())
                 .build();
         testStaff.setId(staffId);
 
@@ -131,9 +139,24 @@ class HandoverServiceTest {
                 .endDate(LocalDate.now().plusMonths(12))
                 .monthlyFee(new BigDecimal("1500000.00"))
                 .status(RentalContractStatus.ACTIVE)
+                .signedAt(LocalDateTime.now())
                 .docusealSubmissionId(998822L)
                 .build();
         testContract.setId(UUID.randomUUID());
+
+        lenient().when(encryptionService.encrypt(anyString())).thenReturn("739215");
+        lenient().when(encryptionService.decrypt(anyString())).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(refundRequestRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Payment rentPayment = Payment.builder()
+                .paymentType(PaymentType.RENTAL_FEE)
+                .status(PaymentStatus.PAID)
+                .amount(new BigDecimal("1500000.00"))
+                .build();
+        lenient().when(paymentRepository.findAllByBooking_Id(any())).thenReturn(List.of(rentPayment));
+
+        lenient().when(requestContext.currentUserId()).thenReturn(staffId);
+        lenient().when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
     }
 
     @Nested
@@ -293,6 +316,85 @@ class HandoverServiceTest {
             AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_ALREADY_ACTIVE);
         }
+
+        @Test
+        @DisplayName("Người thực hiện checkIn là CUSTOMER (không có quyền STAFF) -> Ném FORBIDDEN")
+        void checkIn_CustomerRoleAttempt_ThrowsForbidden() {
+            User customerOperator = User.builder()
+                    .fullName("Khách hàng tự checkin")
+                    .role(Role.builder().name("CUSTOMER").build())
+                    .build();
+            UUID custOpId = UUID.randomUUID();
+            customerOperator.setId(custOpId);
+
+            HandoverRequest request = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .staffId(custOpId)
+                    .idCardNumber("001092003891")
+                    .identityVerified(true)
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(userRepository.findById(custOpId)).thenReturn(Optional.of(customerOperator));
+
+            AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("Không xác định được nhân viên thực hiện bàn giao -> Ném FORBIDDEN")
+        void checkIn_MissingStaff_ThrowsForbidden() {
+            UUID unknownStaffId = UUID.randomUUID();
+            HandoverRequest request = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .staffId(unknownStaffId)
+                    .idCardNumber("001092003891")
+                    .identityVerified(true)
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(userRepository.findById(unknownStaffId)).thenReturn(Optional.empty());
+            when(requestContext.currentUserId()).thenReturn(null);
+
+            AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("Số CCCD sai định dạng (không phải 9-12 chữ số) -> Ném HANDOVER_PREREQUISITES_NOT_MET")
+        void checkIn_InvalidCccdFormat_ThrowsPrerequisitesNotMet() {
+            HandoverRequest request = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .staffId(staffId)
+                    .idCardNumber("123ABC_NOT_CCCD")
+                    .identityVerified(true)
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
+
+            AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
+        }
+
+        @Test
+        @DisplayName("Nhân viên chưa đối soát thực tế (identityVerified = false) -> Ném HANDOVER_PREREQUISITES_NOT_MET")
+        void checkIn_StaffDidNotAttestIdentity_ThrowsPrerequisitesNotMet() {
+            HandoverRequest request = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .staffId(staffId)
+                    .idCardNumber("001092003891")
+                    .identityVerified(false)
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
+
+            AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
+        }
     }
 
     @Nested
@@ -405,11 +507,11 @@ class HandoverServiceTest {
             assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.AVAILABLE); // Storage unit released
             assertThat(testContract.getStatus()).isEqualTo(RentalContractStatus.TERMINATED); // Contract terminated
 
-            // Verify Payment created with REFUNDED status
+            // Verify Payment created with REFUND_PENDING status
             verify(paymentRepository).save(argThat(payment ->
                     payment.getAmount().compareTo(new BigDecimal("1500000.00")) == 0
                             && payment.getPaymentType() == PaymentType.DEPOSIT
-                            && payment.getStatus() == PaymentStatus.REFUNDED
+                            && payment.getStatus() == PaymentStatus.REFUND_PENDING
             ));
 
             // Verify Activity Logs
@@ -481,11 +583,11 @@ class HandoverServiceTest {
             // 1,500,000 - 500,000 = 1,000,000
             assertThat(response.getRefundAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
 
-            // Verify Payment created with PENDING status for accounting review
+            // Verify Payment created with REFUND_PENDING status for accounting review
             verify(paymentRepository).save(argThat(payment ->
                     payment.getAmount().compareTo(new BigDecimal("1000000.00")) == 0
                             && payment.getPaymentType() == PaymentType.DEPOSIT
-                            && payment.getStatus() == PaymentStatus.PENDING
+                            && payment.getStatus() == PaymentStatus.REFUND_PENDING
             ));
 
             // Verify DAMAGE_FEE_RECORDED activity log

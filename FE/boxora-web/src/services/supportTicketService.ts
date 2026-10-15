@@ -54,21 +54,10 @@ export const supportTicketService = {
   },
 
   async getMyTickets(customerId?: string) {
-    try {
-      const response = await api.get('/api/v1/support-tickets/my-tickets', {
-        params: customerId ? { customerId } : undefined,
-      })
-      return (response.data?.data || []) as SupportTicketRecord[]
-    } catch {
-      try {
-        const fallback = await api.get('/api/v1/support-tickets/my', {
-          params: customerId ? { customerId } : undefined,
-        })
-        return (fallback.data?.data || []) as SupportTicketRecord[]
-      } catch {
-        return []
-      }
-    }
+    const response = await api.get('/api/v1/support-tickets/my-tickets', {
+      params: customerId ? { customerId } : undefined,
+    })
+    return (response.data?.data || []) as SupportTicketRecord[]
   },
 
   async resolveTicket(id: string, resolutionNote = 'Đã xử lý hiện trường bởi nhân viên trực ca') {
@@ -92,11 +81,7 @@ export const supportTicketService = {
   },
 
   async uploadAttachment(file: File): Promise<string> {
-    try {
-      const result = await this.uploadEvidence(file)
-      return (result?.url || result || '') as string
-    } catch {
-      return URL.createObjectURL(file)
-    }
+    const result = await this.uploadEvidence(file)
+    return (result?.url || result || '') as string
   },
 }

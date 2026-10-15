@@ -112,6 +112,8 @@ class PaymentServiceTest {
                 .paymentTime(LocalDateTime.now())
                 .build();
         mockPayment.setId(paymentId);
+
+        lenient().when(bookingRepository.findByIdForUpdate(any())).thenReturn(Optional.of(mockBooking));
     }
 
     @Test
@@ -255,5 +257,50 @@ class PaymentServiceTest {
         VNPayIpnResponse ipnSuccess = paymentService.processVNPayIPN(params);
         assertThat(ipnSuccess.getRspCode()).isEqualTo("00");
         assertThat(mockPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
+    }
+
+    @Test
+    @DisplayName("Race condition: VNPay return arriving after booking expiration/cancellation should flag REFUND_PENDING")
+    void testProcessVNPayReturn_RaceWithExpiration_BookingCancelled_FlagsRefundPending() {
+        Map<String, String> params = new HashMap<>();
+        params.put("vnp_TxnRef", "BOX123456789");
+        params.put("vnp_Amount", "50000000");
+        params.put("vnp_ResponseCode", "00");
+        params.put("vnp_TransactionStatus", "00");
+
+        mockBooking.setStatus(BookingStatus.CANCELLED);
+
+        when(vnPayService.verifySignature(params)).thenReturn(true);
+        when(paymentRepository.findByTransactionId("BOX123456789")).thenReturn(Optional.of(mockPayment));
+        when(bookingRepository.findByIdForUpdate(mockBooking.getId())).thenReturn(Optional.of(mockBooking));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        paymentService.processVNPayReturn(params);
+
+        assertThat(mockPayment.getStatus()).isEqualTo(PaymentStatus.REFUND_PENDING);
+        assertThat(mockBooking.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+    }
+
+    @Test
+    @DisplayName("Race condition: VNPay IPN arriving after booking expiration/cancellation should flag REFUND_PENDING and return 00")
+    void testProcessVNPayIPN_RaceWithExpiration_BookingCancelled_FlagsRefundPending() {
+        Map<String, String> params = new HashMap<>();
+        params.put("vnp_TxnRef", "BOX123456789");
+        params.put("vnp_Amount", "50000000");
+        params.put("vnp_ResponseCode", "00");
+        params.put("vnp_TransactionStatus", "00");
+
+        mockBooking.setStatus(BookingStatus.CANCELLED);
+
+        when(vnPayService.verifySignature(params)).thenReturn(true);
+        when(paymentRepository.findByTransactionId("BOX123456789")).thenReturn(Optional.of(mockPayment));
+        when(bookingRepository.findByIdForUpdate(mockBooking.getId())).thenReturn(Optional.of(mockBooking));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        VNPayIpnResponse ipnResponse = paymentService.processVNPayIPN(params);
+
+        assertThat(ipnResponse.getRspCode()).isEqualTo("00");
+        assertThat(mockPayment.getStatus()).isEqualTo(PaymentStatus.REFUND_PENDING);
+        assertThat(mockBooking.getStatus()).isEqualTo(BookingStatus.CANCELLED);
     }
 }

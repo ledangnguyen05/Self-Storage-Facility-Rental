@@ -37,4 +37,9 @@ public interface OverdueProcessingService {
      * Mở niêm phong kho lưu trữ sau khi khách hàng đã thanh toán công nợ và phí quá hạn (BR-RULE-012).
      */
     SealingRecordResponse unsealUnit(UUID sealingRecordId, UnsealRequest request);
+
+    /**
+     * Khóa mã PIN và thu hồi quyền truy cập của hợp đồng quá hạn (P0-04, BR-RULE-012).
+     */
+    com.boxora.dto.response.LockoutResponse lockoutContract(UUID contractId, String reason);
 }
