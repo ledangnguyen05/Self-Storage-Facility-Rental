@@ -146,7 +146,7 @@ class ContractRenewalServiceTest {
                 .overdueGraceDays(2)
                 .build();
         when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(mockContract));
-        when(facilityPolicyRepository.findByFacilityId(mockFacility.getId())).thenReturn(Optional.of(policy));
+        when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(mockFacility.getId())).thenReturn(Optional.of(policy));
         when(contractRenewalRepository.save(any(ContractRenewal.class))).thenAnswer(inv -> {
             ContractRenewal r = inv.getArgument(0);
             r.setId(renewalId);
@@ -188,7 +188,7 @@ class ContractRenewalServiceTest {
                 .overdueGraceDays(1)
                 .build();
         when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(mockContract));
-        when(facilityPolicyRepository.findByFacilityId(mockFacility.getId())).thenReturn(Optional.of(policy));
+        when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(mockFacility.getId())).thenReturn(Optional.of(policy));
 
         AppException ex = assertThrows(AppException.class, () -> contractRenewalService.requestRenewal(contractId, 1));
         assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_RENEWAL_WINDOW_CLOSED);

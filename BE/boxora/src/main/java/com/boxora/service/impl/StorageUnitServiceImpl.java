@@ -4,6 +4,7 @@ import com.boxora.dto.request.StorageUnitCreateRequest;
 import com.boxora.dto.request.StorageUnitUpdateRequest;
 import com.boxora.dto.response.StorageUnitResponse;
 import com.boxora.entity.Facility;
+import com.boxora.entity.FacilityPolicy;
 import com.boxora.entity.StorageUnit;
 import com.boxora.entity.UnitType;
 import com.boxora.enums.ActivityAction;
@@ -12,6 +13,7 @@ import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.repository.BookingRepository;
 import com.boxora.repository.FacilityRepository;
+import com.boxora.repository.FacilityPolicyRepository;
 import com.boxora.repository.RentalContractRepository;
 import com.boxora.repository.StorageUnitRepository;
 import com.boxora.repository.UnitTypeRepository;
@@ -25,8 +27,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.Collections;
+import java.util.Map;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -37,6 +41,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
 
     private final StorageUnitRepository storageUnitRepository;
     private final FacilityRepository facilityRepository;
+    private final FacilityPolicyRepository facilityPolicyRepository;
     private final UnitTypeRepository unitTypeRepository;
     private final BookingRepository bookingRepository;
     private final RentalContractRepository rentalContractRepository;
@@ -80,7 +85,11 @@ public class StorageUnitServiceImpl implements StorageUnitService {
             units = storageUnitRepository.findAll();
         }
 
-        return units.stream().map(this::mapToResponse).collect(Collectors.toList());
+        Map<UUID, FacilityPolicy> activePolicies = facilityPolicyRepository.findByIsActiveTrue().stream()
+                .collect(Collectors.toMap(policy -> policy.getFacility().getId(), Function.identity()));
+        return units.stream()
+                .map(unit -> mapToResponse(unit, activePolicies.get(unit.getFacility().getId())))
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -93,7 +102,10 @@ public class StorageUnitServiceImpl implements StorageUnitService {
             facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
         }
 
-        return mapToResponse(unit);
+        FacilityPolicy activePolicy = unit.getFacility() == null
+                ? null
+                : facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(unit.getFacility().getId()).orElse(null);
+        return mapToResponse(unit, activePolicy);
     }
 
     @Override
@@ -255,8 +267,15 @@ public class StorageUnitServiceImpl implements StorageUnitService {
         return mapToResponse(unit);
     }
 
-    private StorageUnitResponse mapToResponse(StorageUnit u) {
-        BigDecimal price = u.getEffectiveBasePrice();
+    private StorageUnitResponse mapToResponse(StorageUnit u, FacilityPolicy activePolicy) {
+        BigDecimal price = activePolicy == null || u.getUnitType() == null
+                ? null
+                : activePolicy.getPrices().stream()
+                        .filter(policyPrice -> policyPrice.getUnitType().getId().equals(u.getUnitType().getId()))
+                        .map(policyPrice -> policyPrice.getMonthlyPrice())
+                        .findFirst()
+                        .orElse(null);
+        if (price == null) price = u.getEffectiveBasePrice();
         Double area = (u.getUnitType() != null) ? u.getUnitType().getAreaSqm() : null;
 
         UUID bookingId = null;

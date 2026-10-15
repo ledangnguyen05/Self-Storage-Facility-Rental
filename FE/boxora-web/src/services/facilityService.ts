@@ -48,4 +48,17 @@ export const facilityService = {
     const response = await api.post('/api/v1/facility-policies', data)
     return response.data?.data as FacilityPolicy
   },
+
+  async getPolicyExceptionGrants(policyId: string) {
+    const response = await api.get(`/api/v1/facility-policies/${policyId}/exceptions`)
+    return response.data?.data as string[]
+  },
+
+  async setPolicyExceptionGrant(policyId: string, facilityManagerId: string, granted: boolean) {
+    const response = await api.put(`/api/v1/facility-policies/${policyId}/exceptions`, {
+      facilityManagerId,
+      granted,
+    })
+    return response.data
+  },
 }

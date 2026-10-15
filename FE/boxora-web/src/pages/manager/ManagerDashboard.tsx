@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useAuth } from '../../context/AuthContext'
 import { storageUnitService } from '../../services/storageUnitService'
 import { facilityService } from '../../services/facilityService'
 import { staffAssignmentService, StaffAssignmentResponse } from '../../services/staffAssignmentService'
@@ -10,6 +11,7 @@ import { DoorAccessHistoryModal } from './modals/DoorAccessHistoryModal'
 import { ShiftAssignmentModal } from './modals/ShiftAssignmentModal'
 import { NoticeDispatcherModal } from './modals/NoticeDispatcherModal'
 import { AssetSealingModal } from './modals/AssetSealingModal'
+import { FacilityPolicyViewModal } from './modals/FacilityPolicyViewModal'
 
 interface InspectedUnit {
   id: string
@@ -34,6 +36,7 @@ interface InspectedUnit {
 }
 
 export const ManagerDashboard: React.FC = () => {
+  const { role } = useAuth()
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>('')
   const [units, setUnits] = useState<InspectedUnit[]>([])
@@ -58,6 +61,8 @@ export const ManagerDashboard: React.FC = () => {
   } | null>(null)
 
   const [showIoTModal, setShowIoTModal] = useState(false)
+  const [showPolicyModal, setShowPolicyModal] = useState(false)
+  const [canEditPolicyException, setCanEditPolicyException] = useState(false)
   const [showSurveyModal, setShowSurveyModal] = useState(false)
   const [showAppActivationModal, setShowAppActivationModal] = useState(false)
   const [showDoorAccessModal, setShowDoorAccessModal] = useState(false)
@@ -291,6 +296,25 @@ export const ManagerDashboard: React.FC = () => {
 
   const currentFacilityName = facilities.find(f => f.id === selectedFacilityId)?.name || 'Cơ sở StoreHub District 1'
 
+  useEffect(() => {
+    let isCurrent = true
+    setCanEditPolicyException(false)
+    if (!showPolicyModal || !selectedFacilityId || role !== 'FACILITY_MANAGER') return
+
+    facilityService.getPolicyByFacilityId(selectedFacilityId)
+      .then((policy) => facilityService.getPolicyExceptionGrants(policy.id))
+      .then((grantedUserIds) => {
+        if (isCurrent) setCanEditPolicyException(grantedUserIds.length > 0)
+      })
+      .catch(() => {
+        if (isCurrent) setCanEditPolicyException(false)
+      })
+
+    return () => {
+      isCurrent = false
+    }
+  }, [showPolicyModal, selectedFacilityId, role])
+
   const getStatusBadgeStyle = (status: InspectedUnit['status']) => {
     switch (status) {
       case 'Available': return 'bg-emerald-100 text-emerald-800 border-emerald-300'
@@ -371,7 +395,16 @@ export const ManagerDashboard: React.FC = () => {
 
         {/* Quick action & Facility Switcher */}
         <div className="flex items-center gap-3 self-start lg:self-center shrink-0 z-10 flex-wrap">
-          <button 
+        <button
+          type="button"
+          onClick={() => setShowPolicyModal(true)}
+          disabled={!selectedFacilityId}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3.5 py-2.5 text-xs font-semibold text-indigo-900 transition-all hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <span className="material-symbols-outlined text-[18px]">policy</span>
+          Chính sách cơ sở
+        </button>
+        <button
             type="button" 
             onClick={() => fetchUnits(selectedFacilityId)}
             className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-slate-100 text-slate-800 font-semibold text-xs hover:bg-slate-200 transition-all border border-slate-200 cursor-pointer shadow-2xs"
@@ -1417,6 +1450,13 @@ export const ManagerDashboard: React.FC = () => {
           }}
         />
       )}
+      <FacilityPolicyViewModal
+        isOpen={showPolicyModal}
+        onClose={() => setShowPolicyModal(false)}
+        facilityId={selectedFacilityId}
+        facilityName={currentFacilityName}
+        canEdit={canEditPolicyException}
+      />
     </div>
   )
 }

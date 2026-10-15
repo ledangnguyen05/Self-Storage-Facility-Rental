@@ -1,9 +1,15 @@
 import React, { useState, useEffect } from 'react'
+import axios from 'axios'
+import { useAuth } from '../../context/AuthContext'
 import { reportService } from '../../services/reportService'
 import { facilityService } from '../../services/facilityService'
 import { Facility, FacilityPolicy, RevenueReport, OccupancyReport } from '../../types'
+import { FACILITY_POLICY_DEFAULTS, FacilityPolicyValues } from '../../utils/facilityPolicyDefaults'
+import { userService } from '../../services/userService'
+import { User } from '../../types'
 
 export const OperationsDashboard: React.FC = () => {
+  const { role } = useAuth()
   // Policy configuration state
   const [miniPrice, setMiniPrice] = useState('650.000')
   const [standardPrice, setStandardPrice] = useState('1.450.000')
@@ -20,11 +26,17 @@ export const OperationsDashboard: React.FC = () => {
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>('all')
   const [currentPolicy, setCurrentPolicy] = useState<FacilityPolicy | null>(null)
+  const [policyValues, setPolicyValues] = useState<FacilityPolicyValues>({ ...FACILITY_POLICY_DEFAULTS })
+  const [facilityManagers, setFacilityManagers] = useState<User[]>([])
+  const [policyExceptionIds, setPolicyExceptionIds] = useState<string[]>([])
+  const [isUpdatingException, setIsUpdatingException] = useState<string | null>(null)
+  const [isSavingPolicies, setIsSavingPolicies] = useState(false)
   const [revenueData, setRevenueData] = useState<RevenueReport | null>(null)
   const [occupancyData, setOccupancyData] = useState<OccupancyReport | null>(null)
 
   // Notification toast
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const [toastIsError, setToastIsError] = useState(false)
 
   useEffect(() => {
     loadDashboardData()
@@ -32,11 +44,10 @@ export const OperationsDashboard: React.FC = () => {
 
   const loadDashboardData = async () => {
     try {
-      const [facRes, revRes, occRes, polRes] = await Promise.allSettled([
+      const [facRes, revRes, occRes] = await Promise.allSettled([
         facilityService.getFacilities(),
         reportService.getRevenueReport(),
         reportService.getOccupancyReport(),
-        facilityService.getPolicies({ size: 10 }),
       ])
       if (facRes.status === 'fulfilled' && facRes.value?.content) {
         setFacilities(facRes.value.content)
@@ -47,39 +58,148 @@ export const OperationsDashboard: React.FC = () => {
       if (occRes.status === 'fulfilled' && occRes.value) {
         setOccupancyData(occRes.value)
       }
-      if (polRes.status === 'fulfilled' && polRes.value?.content && polRes.value.content.length > 0) {
-        const pol = polRes.value.content[0]
-        setCurrentPolicy(pol)
-        if (pol.lateFeePerDay) setLateFee(pol.lateFeePerDay.toLocaleString())
-        if (pol.gracePeriodDays) setGraceDays(`0${pol.gracePeriodDays} Ngày`)
-        if (pol.discount3Months) setDiscount3M(`-${pol.discount3Months}`)
-        if (pol.discount6Months) setDiscount6M(`-${pol.discount6Months}`)
-        if (pol.discount12Months) setDiscount12M(`-${pol.discount12Months}`)
-      }
     } catch {
       // Keep static defaults on network error
     }
   }
 
-  const showToast = (msg: string) => {
+  const showToast = (msg: string, isError = false) => {
     setToastMessage(msg)
+    setToastIsError(isError)
     setTimeout(() => setToastMessage(null), 3000)
+  }
+
+  useEffect(() => {
+    let isCurrent = true
+    if (selectedFacilityId === 'all') {
+      setCurrentPolicy(null)
+      setPolicyValues({ ...FACILITY_POLICY_DEFAULTS })
+      return
+    }
+
+    facilityService.getPolicyByFacilityId(selectedFacilityId)
+      .then((policy) => {
+        if (!isCurrent) return
+        setCurrentPolicy(policy)
+        setPolicyValues({
+          isActive: policy.isActive !== false,
+          depositPercentage: policy.depositPercentage ?? policy.depositPercent ?? FACILITY_POLICY_DEFAULTS.depositPercentage,
+          minimumRentalMonths: policy.minimumRentalMonths ?? FACILITY_POLICY_DEFAULTS.minimumRentalMonths,
+          renewalWindowDays: policy.renewalWindowDays ?? FACILITY_POLICY_DEFAULTS.renewalWindowDays,
+          cancellationFullRefundHours: policy.cancellationFullRefundHours ?? FACILITY_POLICY_DEFAULTS.cancellationFullRefundHours,
+          cancellationPartialRefundHours: policy.cancellationPartialRefundHours ?? FACILITY_POLICY_DEFAULTS.cancellationPartialRefundHours,
+          cancellationPartialRefundPercent: policy.cancellationPartialRefundPercent ?? FACILITY_POLICY_DEFAULTS.cancellationPartialRefundPercent,
+          returnNoticeDays: policy.returnNoticeDays ?? FACILITY_POLICY_DEFAULTS.returnNoticeDays,
+          depositRefundSlaDays: policy.depositRefundSlaDays ?? FACILITY_POLICY_DEFAULTS.depositRefundSlaDays,
+          dailyLateFee: policy.dailyLateFee ?? policy.lateFeePerDay ?? FACILITY_POLICY_DEFAULTS.dailyLateFee,
+          overdueGraceDays: policy.overdueGraceDays ?? policy.gracePeriodDays ?? FACILITY_POLICY_DEFAULTS.overdueGraceDays,
+          overdueAccessDisableDays: policy.overdueAccessDisableDays ?? FACILITY_POLICY_DEFAULTS.overdueAccessDisableDays,
+          overdueSealingDays: policy.overdueSealingDays ?? FACILITY_POLICY_DEFAULTS.overdueSealingDays,
+        })
+        void facilityService.getPolicyExceptionGrants(policy.id)
+          .then((ids) => {
+            if (isCurrent) setPolicyExceptionIds(ids)
+          })
+          .catch(() => {
+            if (isCurrent) showToast('Không tải được danh sách quyền ngoại lệ policy.', true)
+          })
+      })
+      .catch((error: unknown) => {
+        if (!isCurrent) return
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          setCurrentPolicy(null)
+          setPolicyValues({ ...FACILITY_POLICY_DEFAULTS })
+          setPolicyExceptionIds([])
+          return
+        }
+        showToast('Không tải được policy của cơ sở. Vui lòng thử lại.', true)
+      })
+
+    return () => {
+      isCurrent = false
+    }
+  }, [selectedFacilityId])
+
+  useEffect(() => {
+    let isCurrent = true
+    setFacilityManagers([])
+    if (selectedFacilityId === 'all') return
+
+    userService.getAllUsers({
+      role: 'FACILITY_MANAGER',
+      facilityId: selectedFacilityId,
+      isActive: true,
+      size: 100,
+    }).then((result) => {
+      if (isCurrent) setFacilityManagers(result.data)
+    }).catch(() => {
+      if (isCurrent) showToast('Không tải được danh sách Facility Manager của cơ sở.', true)
+    })
+
+    return () => {
+      isCurrent = false
+    }
+  }, [selectedFacilityId])
+
+  const updatePolicyValue = <K extends keyof FacilityPolicyValues>(
+    key: K,
+    value: FacilityPolicyValues[K],
+  ) => {
+    setPolicyValues((current) => ({ ...current, [key]: value }))
   }
 
   const handleSavePolicies = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (role !== 'BUSINESS_MANAGER') {
+      showToast('Chỉ Business Operations Manager được cấu hình chính sách.', true)
+      return
+    }
+    if (selectedFacilityId === 'all') {
+      showToast('Hãy chọn một cơ sở cụ thể trước khi ban hành policy.', true)
+      return
+    }
+    if (policyValues.cancellationFullRefundHours < policyValues.cancellationPartialRefundHours) {
+      showToast('Mốc hoàn 100% phải lớn hơn hoặc bằng mốc hoàn một phần.', true)
+      return
+    }
+    setIsSavingPolicies(true)
     try {
-      if (currentPolicy?.id) {
-        await facilityService.updatePolicy(currentPolicy.id, {
-          lateFeePerDay: parseInt(lateFee.replace(/\./g, '')) || 50000,
-          discount3Months: Math.abs(parseInt(discount3M)) || 5,
-          discount6Months: Math.abs(parseInt(discount6M)) || 10,
-          discount12Months: Math.abs(parseInt(discount12M)) || 15,
-        })
+      const payload: Partial<FacilityPolicy> = {
+        facilityId: selectedFacilityId,
+        ...policyValues,
       }
-      showToast('Đã lưu và đồng bộ bảng giá động & chính sách quá hạn qua Facility Policy API!')
-    } catch {
-      showToast('Đã lưu cấu hình bảng giá thành công!')
+      const saved = currentPolicy?.id
+        ? await facilityService.updatePolicy(currentPolicy.id, payload)
+        : await facilityService.createPolicy(payload)
+      setCurrentPolicy(saved)
+      if (saved.id !== currentPolicy?.id) setPolicyExceptionIds([])
+      showToast(`Đã ${saved.id === currentPolicy?.id ? 'cập nhật' : 'ban hành'} policy cho ${facilities.find((facility) => facility.id === selectedFacilityId)?.name || 'cơ sở'}.`)
+    } catch (error: unknown) {
+      const message = axios.isAxiosError<{ message?: string }>(error)
+        ? error.response?.data?.message || error.message
+        : error instanceof Error ? error.message : 'Không thể lưu policy. Vui lòng thử lại.'
+      showToast(message, true)
+    } finally {
+      setIsSavingPolicies(false)
+    }
+  }
+
+  const handlePolicyExceptionChange = async (manager: User, granted: boolean) => {
+    if (!currentPolicy?.id) return
+    setIsUpdatingException(manager.id)
+    try {
+      await facilityService.setPolicyExceptionGrant(currentPolicy.id, manager.id, granted)
+      setPolicyExceptionIds((current) => granted
+        ? [...new Set([...current, manager.id])]
+        : current.filter((id) => id !== manager.id))
+      showToast(`${granted ? 'Đã cấp' : 'Đã thu hồi'} quyền sửa ngoại lệ policy cho ${manager.fullName || manager.email}.`)
+    } catch (error: unknown) {
+      const message = axios.isAxiosError<{ message?: string }>(error)
+        ? error.response?.data?.message || error.message
+        : error instanceof Error ? error.message : 'Không thể cập nhật quyền ngoại lệ.'
+      showToast(message, true)
+    } finally {
+      setIsUpdatingException(null)
     }
   }
 
@@ -88,7 +208,9 @@ export const OperationsDashboard: React.FC = () => {
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed top-24 right-8 z-50 flex items-center gap-2 px-4 py-3 bg-neutral-900 text-white rounded-lg shadow-xl border border-neutral-700 animate-in fade-in duration-200">
-          <span className="material-symbols-outlined text-emerald-400 text-[20px]">check_circle</span>
+          <span className={`material-symbols-outlined text-[20px] ${toastIsError ? 'text-rose-400' : 'text-emerald-400'}`}>
+            {toastIsError ? 'error' : 'check_circle'}
+          </span>
           <span className="text-xs font-semibold">{toastMessage}</span>
         </div>
       )}
@@ -544,6 +666,7 @@ export const OperationsDashboard: React.FC = () => {
       </div>
 
       {/* 4-TIER DYNAMIC PRICING MATRIX & BUSINESS POLICY ENGINE */}
+      {role === 'BUSINESS_MANAGER' && (
       <form onSubmit={handleSavePolicies} className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
@@ -552,12 +675,30 @@ export const OperationsDashboard: React.FC = () => {
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900">
-                Cấu Hình Quy Tắc Kinh Doanh &amp; Chính Sách Giá Động (Pricing Matrix)
+                Chính sách kinh doanh áp dụng tại cơ sở
               </h2>
-              <p className="text-xs text-slate-500">Áp dụng tức thời cho toàn bộ cổng thanh toán và phần mềm booking tại quầy</p>
+              <p className="text-xs text-slate-500">Tạo, chỉnh sửa và kích hoạt policy riêng cho từng cơ sở. Chọn cơ sở cụ thể để ban hành.</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${
+              currentPolicy && !policyValues.isActive
+                ? 'border-rose-200 bg-rose-50 text-rose-700'
+                : currentPolicy
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-slate-200 bg-slate-50 text-slate-600'
+            }`}>
+              {currentPolicy ? policyValues.isActive ? 'Đang áp dụng' : 'Đã ngừng áp dụng' : 'Chưa có policy'}
+            </span>
+            <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                checked={policyValues.isActive}
+                onChange={(event) => updatePolicyValue('isActive', event.target.checked)}
+                className="rounded border-slate-300 text-emerald-600"
+              />
+              Kích hoạt
+            </label>
             <button 
               type="button" 
               onClick={() => {
@@ -568,7 +709,8 @@ export const OperationsDashboard: React.FC = () => {
                 setDiscount3M('-5')
                 setDiscount6M('-10')
                 setDiscount12M('-15')
-                showToast('Đã khôi phục thông số chính sách mặc định')
+                setPolicyValues({ ...FACILITY_POLICY_DEFAULTS })
+                showToast('Đã khôi phục thông số policy mặc định')
               }}
               className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all border border-slate-200"
             >
@@ -576,13 +718,88 @@ export const OperationsDashboard: React.FC = () => {
             </button>
             <button 
               type="submit" 
+              disabled={selectedFacilityId === 'all' || isSavingPolicies}
               className="px-4 py-2 rounded-lg bg-orange-600 text-white hover:bg-orange-700 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
             >
-              <span className="material-symbols-outlined text-[18px]">save</span>
-              Lưu &amp; Phổ Biến Toàn Chuỗi
+              <span className="material-symbols-outlined text-[18px]">{isSavingPolicies ? 'sync' : 'save'}</span>
+              {isSavingPolicies ? 'Đang lưu...' : currentPolicy ? 'Lưu thay đổi policy' : 'Ban hành policy'}
             </button>
           </div>
         </div>
+
+        {selectedFacilityId === 'all' && (
+          <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            Chọn một cơ sở trong bộ lọc phía trên để xem hoặc cấu hình policy riêng.
+          </p>
+        )}
+
+        <div className="mb-6 grid grid-cols-1 gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 sm:grid-cols-2 lg:grid-cols-4">
+          {([
+            ['depositPercentage', 'Tiền cọc (%)', 0, 100],
+            ['minimumRentalMonths', 'Thuê tối thiểu (tháng)', 1, 36],
+            ['renewalWindowDays', 'Mở gia hạn trước (ngày)', 0, 365],
+            ['cancellationFullRefundHours', 'Hoàn 100% trước (giờ)', 0, 720],
+            ['cancellationPartialRefundHours', 'Hoàn một phần trước (giờ)', 0, 720],
+            ['cancellationPartialRefundPercent', 'Tỷ lệ hoàn một phần (%)', 0, 100],
+            ['returnNoticeDays', 'Báo trước khi trả (ngày)', 0, 365],
+            ['depositRefundSlaDays', 'SLA hoàn cọc (ngày)', 0, 365],
+            ['dailyLateFee', 'Phí trễ hạn mỗi ngày (đ)', 0, 100000000],
+            ['overdueGraceDays', 'Ân hạn quá hạn (ngày)', 0, 365],
+            ['overdueAccessDisableDays', 'Khóa truy cập sau (ngày)', 0, 365],
+            ['overdueSealingDays', 'Niêm phong sau (ngày)', 0, 365],
+          ] as const).map(([key, label, min, max]) => (
+            <label key={key} className="space-y-1 text-[11px] font-semibold text-slate-700">
+              {label}
+              <input
+                type="number"
+                min={min}
+                max={max}
+                value={policyValues[key]}
+                onChange={(event) => updatePolicyValue(key, Number(event.target.value))}
+                disabled={selectedFacilityId === 'all'}
+                className="w-full rounded border border-slate-300 bg-white px-2.5 py-2 text-xs font-mono"
+              />
+            </label>
+          ))}
+        </div>
+
+        {currentPolicy && (
+          <section className="mb-6 rounded-xl border border-slate-200 p-4">
+            <h3 className="text-sm font-bold text-slate-900">Ủy quyền ngoại lệ cho Facility Manager</h3>
+            <p className="mt-1 text-xs text-slate-600">
+              Chỉ những quản lý được Business Operations Manager cấp quyền mới có thể sửa policy của cơ sở này.
+            </p>
+            {facilityManagers.length === 0 ? (
+              <p className="mt-3 text-xs text-slate-500">Không có Facility Manager đang hoạt động tại cơ sở.</p>
+            ) : (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {facilityManagers.map((manager) => {
+                  const isGranted = policyExceptionIds.includes(manager.id)
+                  return (
+                    <label key={manager.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 text-xs">
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold text-slate-800">{manager.fullName || manager.username}</span>
+                        <span className="block truncate text-slate-500">{manager.email}</span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span className={isGranted ? 'text-emerald-700' : 'text-slate-500'}>
+                          {isGranted ? 'Được sửa' : 'Chỉ xem'}
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={isGranted}
+                          disabled={isUpdatingException === manager.id}
+                          onChange={(event) => void handlePolicyExceptionChange(manager, event.target.checked)}
+                          className="rounded border-slate-300 text-indigo-600"
+                        />
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           {/* Tier 1: Base Pricing */}
@@ -785,6 +1002,7 @@ export const OperationsDashboard: React.FC = () => {
           </div>
         </div>
       </form>
+      )}
     </div>
   )
 }

@@ -177,7 +177,7 @@ public class ReportServiceImpl implements ReportService {
 
             FacilityPolicy policy = null;
             if (facilityId != null) {
-                policy = policyCache.computeIfAbsent(facilityId, id -> facilityPolicyRepository.findByFacilityId(id).orElse(null));
+                policy = policyCache.computeIfAbsent(facilityId, id -> facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(id).orElse(null));
             }
 
             int graceDays = (policy != null && policy.getOverdueGraceDays() != null) ? policy.getOverdueGraceDays() : 1;
@@ -253,7 +253,7 @@ public class ReportServiceImpl implements ReportService {
 
             FacilityPolicy policy = null;
             if (facilityId != null) {
-                policy = policyCache.computeIfAbsent(facilityId, id -> facilityPolicyRepository.findByFacilityId(id).orElse(null));
+                policy = policyCache.computeIfAbsent(facilityId, id -> facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(id).orElse(null));
             }
 
             int graceDays = (policy != null && policy.getOverdueGraceDays() != null) ? policy.getOverdueGraceDays() : 1;
@@ -408,7 +408,7 @@ public class ReportServiceImpl implements ReportService {
         }
 
         FacilityPolicy policy = (contract.getFacility() != null)
-                ? facilityPolicyRepository.findByFacilityId(contract.getFacility().getId()).orElse(null)
+                ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(contract.getFacility().getId()).orElse(null)
                 : null;
 
         int graceDays = (policy != null && policy.getOverdueGraceDays() != null) ? policy.getOverdueGraceDays() : 1;

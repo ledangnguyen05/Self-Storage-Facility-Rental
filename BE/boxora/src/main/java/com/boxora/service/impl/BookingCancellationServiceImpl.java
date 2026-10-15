@@ -383,10 +383,9 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
 
     private FacilityPolicy getFacilityPolicy(Booking booking) {
         if (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null) {
-            return facilityPolicyRepository.findByFacility_Id(booking.getStorageUnit().getFacility().getId())
+            return facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(booking.getStorageUnit().getFacility().getId())
                     .orElse(null);
         }
         return null;
     }
 }
-
