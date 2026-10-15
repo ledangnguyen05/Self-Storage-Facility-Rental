@@ -15,7 +15,7 @@ import { FacilityPolicyModal } from './components/FacilityPolicyModal'
 export const OperationsDashboard: React.FC = () => {
   const { role } = useAuth()
   const { t } = useLanguage()
-  const canManagePolicies = role === 'ADMIN' || role === 'BUSINESS_MANAGER'
+  const canManagePolicies = role === 'BUSINESS_MANAGER'
   const { selectedFacility, setSelectedFacility, facilities: contextFacilities } = useOutletContext<{
     selectedFacility?: string
     setSelectedFacility?: (facId: string) => void
@@ -1656,10 +1656,10 @@ export const OperationsDashboard: React.FC = () => {
       ) : (
         <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
           <div className="flex items-start gap-3">
-            <span className="material-symbols-outlined rounded-lg bg-slate-100 p-2 text-slate-600 dark:bg-slate-800 dark:text-slate-300">admin_panel_settings</span>
+            <span className="material-symbols-outlined rounded-lg bg-slate-100 p-2 text-slate-600 dark:bg-slate-800 dark:text-slate-300">visibility</span>
             <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{t('Cấu hình chính sách toàn hệ thống', 'System-wide policy settings')}</h2>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{t('Chỉ Business Manager và Admin được phép chỉnh sửa chính sách và bảng giá.', 'Only Business Manager and Admin can edit system policies and pricing.')}</p>
+              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{t('Chính sách kinh doanh & Bảng giá hệ thống (Chế độ xem)', 'Business policies & System pricing (Read-only)')}</h2>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{t('Quản trị viên (Admin) chỉ có quyền xem chính sách và bảng giá. Thẩm quyền ban hành, cấu hình quy tắc và kích hoạt chính sách thuộc về Business Operations Manager.', 'Admin is only authorized to view policies and pricing. Policy creation, rule configuration, and activation are managed by Business Operations Manager.')}</p>
             </div>
           </div>
         </section>

@@ -137,11 +137,11 @@ function MainContent() {
               }
             />
 
-            {/* 5. System Admin Portal: Strictly Admin */}
+            {/* 5. System Admin Portal: Admin and Business Manager (branch configuration) */}
             <Route
               path="admin"
               element={
-                <ProtectedRoute allowedRoles={['ADMIN']}>
+                <ProtectedRoute allowedRoles={['ADMIN', 'BUSINESS_MANAGER']}>
                   <AdminDashboard />
                 </ProtectedRoute>
               }

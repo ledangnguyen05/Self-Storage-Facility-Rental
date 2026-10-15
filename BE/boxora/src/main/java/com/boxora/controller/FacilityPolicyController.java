@@ -52,7 +52,7 @@ public class FacilityPolicyController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('POLICY_CREATE') or hasRole('BUSINESS_MANAGER')")
+    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Create a new facility policy")
     public ResponseEntity<ApiResponse<FacilityPolicyResponse>> create(
             @Valid @RequestBody FacilityPolicyCreateRequest request) {
@@ -64,7 +64,7 @@ public class FacilityPolicyController {
     }
 
     @PutMapping("{id}")
-    @PreAuthorize("hasAuthority('POLICY_UPDATE') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Update an existing facility policy")
     public ResponseEntity<ApiResponse<FacilityPolicyResponse>> update(
             @PathVariable UUID id,
@@ -77,7 +77,7 @@ public class FacilityPolicyController {
     }
 
     @GetMapping("{id}/exceptions")
-    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "List facility-manager policy exception grants")
     public ResponseEntity<ApiResponse<List<UUID>>> getExceptionGrants(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(facilityPolicyService.getExceptionGrants(id)));
@@ -94,7 +94,7 @@ public class FacilityPolicyController {
     }
 
     @DeleteMapping("{id}")
-    @PreAuthorize("hasAuthority('POLICY_DELETE') or hasRole('BUSINESS_MANAGER')")
+    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Delete a facility policy")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         facilityPolicyService.delete(id);

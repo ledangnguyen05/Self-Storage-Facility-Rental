@@ -36,7 +36,7 @@ public class FacilityController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Create a new facility")
     public ResponseEntity<ApiResponse<FacilityResponse>> create(
             @Valid @RequestBody FacilityCreateRequest request) {
@@ -46,7 +46,7 @@ public class FacilityController {
     }
 
     @PutMapping("{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Update an existing facility")
     public ResponseEntity<ApiResponse<FacilityResponse>> update(
             @PathVariable UUID id,
@@ -56,7 +56,7 @@ public class FacilityController {
     }
 
     @DeleteMapping("{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Delete a facility")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         facilityService.delete(id);
