@@ -127,7 +127,7 @@ class BookingServiceTest {
             when(storageUnitLockService.isUnitLocked(unitId)).thenReturn(false);
             when(storageUnitLockService.tryLockUnit(eq(unitId), any(), eq(24L))).thenReturn(true);
             when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
-            when(facilityPolicyRepository.findByFacility_Id(testFacility.getId())).thenReturn(Optional.of(testPolicy));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(testPolicy));
             when(bookingRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
             BookingResponse response = bookingService.createBooking(request);
@@ -243,11 +243,10 @@ class BookingServiceTest {
 
             when(storageUnitRepository.findWithDetailsById(unitId)).thenReturn(Optional.of(testUnit));
             when(storageUnitLockService.isUnitLocked(unitId)).thenReturn(false);
-            when(facilityPolicyRepository.findByFacility_Id(testFacility.getId())).thenReturn(Optional.of(testPolicy));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(testPolicy));
 
             AppException ex = assertThrows(AppException.class, () -> bookingService.createBooking(request));
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BOOKING_MINIMUM_DURATION_INVALID);
         }
     }
 }
-

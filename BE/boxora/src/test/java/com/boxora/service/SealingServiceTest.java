@@ -151,7 +151,7 @@ class SealingServiceTest {
         when(requestContext.currentUserId()).thenReturn(performerId);
         when(userRepository.findById(performerId)).thenReturn(Optional.of(mockPerformer));
         when(userRepository.findById(witnessId)).thenReturn(Optional.of(mockWitness));
-        when(facilityPolicyRepository.findByFacilityId(facilityId)).thenReturn(Optional.empty());
+        when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facilityId)).thenReturn(Optional.empty());
         when(sealingRecordRepository.save(any(SealingRecord.class))).thenAnswer(inv -> inv.getArgument(0));
 
         SealingRecordResponse response = sealingService.createSealing(request);

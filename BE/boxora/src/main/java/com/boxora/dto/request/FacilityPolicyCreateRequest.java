@@ -1,9 +1,11 @@
 package com.boxora.dto.request;
 
 import jakarta.validation.constraints.*;
+import jakarta.validation.Valid;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -13,6 +15,8 @@ public class FacilityPolicyCreateRequest {
 
     @NotNull(message = "Facility id is required")
     private java.util.UUID facilityId;
+
+    private Boolean isActive;
 
     @NotNull @DecimalMin(value = "0.0") @DecimalMax(value = "100.0")
     private Double depositPercentage;
@@ -50,4 +54,7 @@ public class FacilityPolicyCreateRequest {
 
     @NotNull @Min(1)
     private Integer minimumRentalMonths;
+
+    @Valid
+    private List<FacilityPolicyPriceRequest> prices;
 }

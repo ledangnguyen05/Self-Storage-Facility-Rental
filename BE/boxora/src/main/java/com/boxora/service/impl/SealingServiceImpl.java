@@ -124,7 +124,7 @@ public class SealingServiceImpl implements SealingService {
         BigDecimal monthlyFee = (contract != null && contract.getMonthlyFee() != null) ? contract.getMonthlyFee() : BigDecimal.ZERO;
         BigDecimal dailyLateFee = BigDecimal.ZERO;
         if (facility != null) {
-            FacilityPolicy policy = facilityPolicyRepository.findByFacilityId(facility.getId()).orElse(null);
+            FacilityPolicy policy = facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facility.getId()).orElse(null);
             if (policy != null && policy.getDailyLateFee() != null) {
                 dailyLateFee = policy.getDailyLateFee();
             }

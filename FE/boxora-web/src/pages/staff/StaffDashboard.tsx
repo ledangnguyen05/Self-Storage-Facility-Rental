@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react'
+import { useAuth } from '../../context/AuthContext'
+import { StaffPolicyGuideModal } from './components/StaffPolicyGuideModal'
 import { bookingService } from '../../services/bookingService'
 import { handoverService } from '../../services/handoverService'
 import { reportService } from '../../services/reportService'
@@ -7,6 +9,7 @@ import { HandoverCheckInWorkbench } from './components/HandoverCheckInWorkbench'
 import { QrCameraCheckInModal } from './components/QrCameraCheckInModal'
 
 export const StaffDashboard: React.FC = () => {
+  const { user } = useAuth()
   // Stepper state for Spotlight Handover (Trần Minh Tuấn - #A-112)
   const [handoverStep, setHandoverStep] = useState(4)
   const [handoverCompleted, setHandoverCompleted] = useState(false)
@@ -15,6 +18,7 @@ export const StaffDashboard: React.FC = () => {
 
   // QR Code Scanner State
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false)
+  const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false)
 
   // Dynamic arrivals from BE
   const [arrivals, setArrivals] = useState<Booking[]>([])
@@ -155,6 +159,15 @@ export const StaffDashboard: React.FC = () => {
             >
               <span className="material-symbols-outlined text-[18px]">lock_open</span>
               <span>Mở Cửa Khẩn Cấp</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsPolicyModalOpen(true)}
+              disabled={!user?.facilityId}
+              className="px-4 py-2.5 rounded-xl border border-indigo-200 bg-indigo-50 text-xs font-bold text-indigo-900 transition-colors hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined mr-1 align-middle text-[18px]">policy</span>
+              Quy định cơ sở
             </button>
           </div>
         </div>
@@ -801,8 +814,13 @@ export const StaffDashboard: React.FC = () => {
           setActiveBookingId(bookingId)
         }}
       />
+      <StaffPolicyGuideModal
+        isOpen={isPolicyModalOpen}
+        onClose={() => setIsPolicyModalOpen(false)}
+        facilityId={user?.facilityId}
+        facilityName="Cơ sở được phân công"
+      />
 
     </div>
   )
 }
-

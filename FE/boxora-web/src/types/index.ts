@@ -205,6 +205,18 @@ export interface FacilityPolicy {
   id: string
   facilityId: string
   facilityName?: string
+  isActive?: boolean
+  depositPercentage?: number
+  renewalWindowDays?: number
+  minimumRentalMonths?: number
+  cancellationFullRefundHours?: number
+  cancellationPartialRefundHours?: number
+  cancellationPartialRefundPercent?: number
+  returnNoticeDays?: number
+  depositRefundSlaDays?: number
+  dailyLateFee?: number
+  overdueGraceDays?: number
+  overdueAccessDisableDays?: number
   depositPercent?: number
   lateFeePerDay?: number
   gracePeriodDays?: number
@@ -253,4 +265,3 @@ export interface OccupancyReport {
     occupancyRate: number
   }>
 }
-

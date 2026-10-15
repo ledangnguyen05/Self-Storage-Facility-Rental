@@ -94,7 +94,7 @@ public class ContractRenewalServiceImpl implements ContractRenewalService {
         }
 
         // Kiểm tra chính sách gia hạn của cơ sở (FacilityPolicy)
-        FacilityPolicy policy = facilityPolicyRepository.findByFacilityId(contract.getFacility().getId())
+        FacilityPolicy policy = facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(contract.getFacility().getId())
                 .orElse(null);
 
         int renewalWindowDays = policy != null && policy.getRenewalWindowDays() != null

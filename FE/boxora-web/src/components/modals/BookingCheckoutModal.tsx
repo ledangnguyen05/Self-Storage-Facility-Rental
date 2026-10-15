@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import axios from 'axios'
 import QRCode from 'qrcode'
-import { Booking, User } from '../../types'
+import { Booking, FacilityPolicy, User } from '../../types'
 import { bookingService } from '../../services/bookingService'
 import { paymentService } from '../../services/paymentService'
 import { activateCustomerRental } from '../../utils/rentalAccess'
@@ -15,6 +15,9 @@ export interface BookingCheckoutUnit {
   depositAmount?: number
   size?: string
   address?: string
+  facilityPolicy?: FacilityPolicy | null
+  facilityPolicyError?: string | null
+  isPolicyLoading?: boolean
 }
 
 interface BookingCheckoutModalProps {
@@ -213,6 +216,28 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
               {formatVnd(monthlyPrice)}
               <span className="block text-[10px] font-medium text-slate-500">/ tháng</span>
             </p>
+          </div>
+
+          <div className="rounded-xl border border-cyan-200 bg-cyan-50/60 p-3">
+            <details>
+              <summary className="cursor-pointer text-xs font-bold text-cyan-950">
+                Chính sách thuê, thanh toán và hợp đồng
+              </summary>
+              {unit.isPolicyLoading && <p className="mt-2 text-xs text-slate-600">Đang tải chính sách áp dụng...</p>}
+              {unit.facilityPolicyError && <p className="mt-2 text-xs text-rose-700" role="alert">{unit.facilityPolicyError}</p>}
+              {unit.facilityPolicy && (
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-700">
+                  {unit.facilityPolicy.isActive === false && (
+                    <li className="font-semibold text-rose-700">Policy cơ sở đã ngừng áp dụng; các điều khoản mặc định đang được sử dụng.</li>
+                  )}
+                  <li>Tiền cọc: {unit.facilityPolicy.depositPercentage ?? unit.facilityPolicy.depositPercent ?? '—'}% tiền thuê.</li>
+                  <li>Thời hạn thuê tối thiểu: {unit.facilityPolicy.minimumRentalMonths ?? '—'} tháng.</li>
+                  <li>Hủy trước {unit.facilityPolicy.cancellationFullRefundHours ?? '—'} giờ: hoàn 100%; trước {unit.facilityPolicy.cancellationPartialRefundHours ?? '—'} giờ: hoàn {unit.facilityPolicy.cancellationPartialRefundPercent ?? '—'}% tiền cọc.</li>
+                  <li>Thông báo trả kho: {unit.facilityPolicy.returnNoticeDays ?? '—'} ngày; SLA hoàn cọc: {unit.facilityPolicy.depositRefundSlaDays ?? '—'} ngày.</li>
+                  <li>Phí quá hạn: {unit.facilityPolicy.dailyLateFee != null ? Number(unit.facilityPolicy.dailyLateFee).toLocaleString('vi-VN') : unit.facilityPolicy.lateFeePerDay?.toLocaleString('vi-VN') ?? '—'} ₫/ngày.</li>
+                </ul>
+              )}
+            </details>
           </div>
 
           {step === 1 && (

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import axios from 'axios'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { facilityService } from '../../services/facilityService'
@@ -11,7 +12,8 @@ import { CustomerBookingCard } from '../../components/customer/CustomerBookingCa
 import { contractService } from '../../services/contractService'
 import { supportTicketService } from '../../services/supportTicketService'
 import { getCustomerRentals, CustomerRentalRecord } from '../../utils/rentalAccess'
-import { Facility, StorageUnit, Booking, RentalContract, SupportTicket } from '../../types'
+import { createDefaultFacilityPolicy } from '../../utils/facilityPolicyDefaults'
+import { Facility, FacilityPolicy, StorageUnit, Booking, RentalContract, SupportTicket } from '../../types'
 
 function formatVnd(amount: number) {
   return new Intl.NumberFormat('vi-VN').format(Math.round(amount))
@@ -91,11 +93,15 @@ export const CustomerDashboard: React.FC = () => {
   const [selectedBookingUnit, setSelectedBookingUnit] = useState<{
     id: string
     backendId?: string
+    facilityId?: string
     name: string
     price: string
     rawPrice?: number
     facilityName?: string
   } | null>(null)
+  const [bookingFacilityPolicy, setBookingFacilityPolicy] = useState<FacilityPolicy | null>(null)
+  const [isBookingPolicyLoading, setIsBookingPolicyLoading] = useState(false)
+  const [bookingPolicyError, setBookingPolicyError] = useState<string | null>(null)
   // Renewal Modal
   const [renewUnit, setRenewUnit] = useState<{
     id: string
@@ -109,6 +115,37 @@ export const CustomerDashboard: React.FC = () => {
   const [renewSuccess, setRenewSuccess] = useState(false)
   const [isRenewing, setIsRenewing] = useState(false)
   const [renewalError, setRenewalError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let isCurrent = true
+    const facilityId = selectedBookingUnit?.facilityId
+    setBookingFacilityPolicy(null)
+    setBookingPolicyError(null)
+    setIsBookingPolicyLoading(false)
+
+    if (!facilityId) return
+
+    setIsBookingPolicyLoading(true)
+    facilityService.getPolicyByFacilityId(facilityId)
+      .then((policy) => {
+        if (isCurrent) setBookingFacilityPolicy(policy)
+      })
+      .catch((error: unknown) => {
+        if (!isCurrent) return
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          setBookingFacilityPolicy(createDefaultFacilityPolicy(facilityId))
+        } else {
+          setBookingPolicyError('Không thể tải chính sách cơ sở. Vui lòng thử lại trước khi xác nhận đặt kho.')
+        }
+      })
+      .finally(() => {
+        if (isCurrent) setIsBookingPolicyLoading(false)
+      })
+
+    return () => {
+      isCurrent = false
+    }
+  }, [selectedBookingUnit?.facilityId])
 
   // Share Access Modal
   const [shareModalUnit, setShareModalUnit] = useState<string | null>(null)
@@ -819,6 +856,7 @@ export const CustomerDashboard: React.FC = () => {
                           setSelectedBookingUnit({
                             id: unit.unitCode,
                             backendId: unit.id,
+                            facilityId: unit.facilityId,
                             name: `${unit.unitTypeName || 'Kho'} (${area}m²)`,
                             price: priceStr,
                             rawPrice: Number(unit.pricePerMonth || 1500000),
@@ -1285,6 +1323,9 @@ export const CustomerDashboard: React.FC = () => {
             code: selectedBookingUnit.id,
             name: selectedBookingUnit.name,
             facilityName: selectedBookingUnit.facilityName,
+            facilityPolicy: bookingFacilityPolicy,
+            facilityPolicyError: bookingPolicyError,
+            isPolicyLoading: isBookingPolicyLoading,
             monthlyPrice: selectedBookingUnit.rawPrice || 1500000,
           }}
           user={user}

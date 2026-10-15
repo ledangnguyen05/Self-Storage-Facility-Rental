@@ -96,12 +96,12 @@ public class BookingServiceImpl implements BookingService {
             throw new AppException(ErrorCode.BOOKING_MINIMUM_DURATION_INVALID);
         }
 
-        if (unit.getFacility() != null) {
-            FacilityPolicy policy = facilityPolicyRepository.findByFacility_Id(unit.getFacility().getId())
-                    .orElse(null);
-            if (policy != null && policy.getMinimumRentalMonths() != null && months < policy.getMinimumRentalMonths()) {
-                throw new AppException(ErrorCode.BOOKING_MINIMUM_DURATION_INVALID);
-            }
+        FacilityPolicy activePolicy = unit.getFacility() == null
+                ? null
+                : facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(unit.getFacility().getId()).orElse(null);
+        if (activePolicy != null && activePolicy.getMinimumRentalMonths() != null
+                && months < activePolicy.getMinimumRentalMonths()) {
+            throw new AppException(ErrorCode.BOOKING_MINIMUM_DURATION_INVALID);
         }
 
         LocalDate endDate = startDate.plusMonths(months);
@@ -121,16 +121,41 @@ public class BookingServiceImpl implements BookingService {
         }
 
         // 6. Tính toán đơn giá và tiền cọc
-        BigDecimal pricePerMonth = unit.getEffectiveBasePrice() != null
-                ? unit.getEffectiveBasePrice()
-                : new BigDecimal("1450000");
+        BigDecimal pricePerMonth = activePolicy == null || unit.getUnitType() == null
+                ? null
+                : activePolicy.getPrices().stream()
+                        .filter(price -> price.getUnitType().getId().equals(unit.getUnitType().getId()))
+                        .map(price -> price.getMonthlyPrice())
+                        .findFirst()
+                        .orElse(null);
+        if (pricePerMonth == null) {
+            pricePerMonth = unit.getEffectiveBasePrice() != null
+                    ? unit.getEffectiveBasePrice()
+                    : new BigDecimal("1450000");
+        }
 
-        BigDecimal totalFee = request.getTotalRentalFee() != null
-                ? request.getTotalRentalFee()
-                : pricePerMonth.multiply(BigDecimal.valueOf(months));
+        BigDecimal discountPercent = activePolicy == null || unit.getUnitType() == null
+                ? BigDecimal.ZERO
+                : activePolicy.getPrices().stream()
+                        .filter(price -> price.getUnitType().getId().equals(unit.getUnitType().getId()))
+                        .map(price -> months >= 12 ? price.getDiscount12MonthPercent()
+                                : months >= 6 ? price.getDiscount6MonthPercent()
+                                : months >= 3 ? price.getDiscount3MonthPercent() : 0.0)
+                        .filter(percent -> percent != null)
+                        .map(BigDecimal::valueOf)
+                        .findFirst()
+                        .orElse(BigDecimal.ZERO);
+        BigDecimal undiscountedTotal = pricePerMonth.multiply(BigDecimal.valueOf(months));
+        BigDecimal calculatedTotal = undiscountedTotal
+                .multiply(BigDecimal.valueOf(100).subtract(discountPercent))
+                .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+        BigDecimal totalFee = request.getTotalRentalFee() != null ? request.getTotalRentalFee() : calculatedTotal;
 
         BigDecimal deposit = request.getDepositPaid() != null
                 ? request.getDepositPaid()
+                : activePolicy != null && activePolicy.getDepositPercentage() != null
+                        ? pricePerMonth.multiply(BigDecimal.valueOf(activePolicy.getDepositPercentage()))
+                                .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP)
                 : ((unit.getUnitType() != null && unit.getUnitType().getDepositAmount() != null)
                         ? unit.getUnitType().getDepositAmount()
                         : pricePerMonth);

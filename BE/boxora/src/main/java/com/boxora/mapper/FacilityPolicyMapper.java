@@ -16,5 +16,6 @@ public interface FacilityPolicyMapper {
     FacilityPolicyResponse toResponse(FacilityPolicy entity);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    @Mapping(target = "prices", ignore = true)
     void updateEntityFromRequest(FacilityPolicyUpdateRequest request, @MappingTarget FacilityPolicy entity);
 }
