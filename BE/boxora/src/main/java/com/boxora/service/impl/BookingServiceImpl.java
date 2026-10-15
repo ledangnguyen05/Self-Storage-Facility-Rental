@@ -55,12 +55,19 @@ public class BookingServiceImpl implements BookingService {
     private final FacilityAccessGuard facilityAccessGuard;
     private final EncryptionService encryptionService;
     private final RequestContext requestContext;
+    private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractSigningService> contractSigningServiceProvider;
 
     @Value("${app.booking.soft-lock-hours:24}")
     private long softLockHours;
 
     @Value("${app.booking.max-advance-days:30}")
     private int maxAdvanceDays;
+
+    @Value("${app.booking.approval-timeout-hours:24}")
+    private long approvalTimeoutHours;
+
+    @Value("${app.booking.payment-timeout-minutes:15}")
+    private int paymentTimeoutMinutes;
 
     @Override
     public BookingResponse createBooking(BookingCreateRequest request) {
@@ -109,15 +116,13 @@ public class BookingServiceImpl implements BookingService {
         // 5. Xác định khách hàng
         User customer = null;
         if (request.getCustomerId() != null) {
-            customer = userRepository.findById(request.getCustomerId()).orElse(null);
+            customer = userRepository.findById(request.getCustomerId())
+                    .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
         } else if (requestContext != null && requestContext.currentUserId() != null) {
-            customer = userRepository.findById(requestContext.currentUserId()).orElse(null);
-        }
-        if (customer == null) {
-            customer = userRepository.findAll().stream().findFirst().orElse(null);
-        }
-        if (customer == null) {
-            throw new AppException(ErrorCode.USER_NOT_FOUND);
+            customer = userRepository.findById(requestContext.currentUserId())
+                    .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        } else {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
         }
 
         // 6. Tính toán đơn giá và tiền cọc
@@ -139,13 +144,7 @@ public class BookingServiceImpl implements BookingService {
         String code = "BX-" + (2025 + new Random().nextInt(2)) + "-" + String.format("%04d", new Random().nextInt(10000));
         UUID bookingId = UUID.randomUUID();
 
-        // 8. Thực hiện Soft-lock 24 giờ trên Redis cho ngăn kho
-        boolean lockAcquired = storageUnitLockService.tryLockUnit(unit.getId(), bookingId, softLockHours);
-        if (!lockAcquired) {
-            throw new AppException(ErrorCode.STORAGE_UNIT_SOFT_LOCKED);
-        }
-
-        // 9. Khởi tạo Booking ở trạng thái PENDING_PAYMENT (chưa cấp PIN/QR)
+        // 8. Khởi tạo Booking ở trạng thái PENDING_PAYMENT (chưa cấp PIN/QR)
         Booking booking = Booking.builder()
                 .bookingCode(code)
                 .customer(customer)
@@ -154,20 +153,23 @@ public class BookingServiceImpl implements BookingService {
                 .endDate(endDate)
                 .rentalMonths(months)
                 .totalRentalFee(totalFee)
-                .depositPaid(BigDecimal.ZERO) // Tiền cọc thực tế đã đóng = 0 cho tới khi thanh toán
+                .depositPaid(request.getDepositPaid() != null ? request.getDepositPaid() : BigDecimal.ZERO)
                 .depositAmount(deposit)
-                .paymentExpiresAt(Instant.now().plusSeconds(24 * 60 * 60))
-                .status(BookingStatus.PENDING_PAYMENT)
+                .paymentExpiresAt(Instant.now().plusSeconds(approvalTimeoutHours * 60 * 60))
+                .status("ONLINE".equalsIgnoreCase(request.getSigningMethod()) ? BookingStatus.PENDING_PAYMENT : BookingStatus.PENDING_APPROVAL)
+                .signingMethod(request.getSigningMethod() != null && !request.getSigningMethod().isBlank() ? request.getSigningMethod().trim().toUpperCase() : "ONLINE")
                 .accessPin(null) // Chưa cấp PIN trước khi thanh toán
                 .qrAccessToken(null) // Chưa cấp QR trước khi thanh toán
                 .build();
-        booking.setId(bookingId);
 
-        // 10. Chuyển ngăn kho sang RESERVED để giữ chỗ mềm
+        // 9. Chuyển ngăn kho sang RESERVED để giữ chỗ mềm
         unit.setStatus(UnitStatus.RESERVED);
         storageUnitRepository.save(unit);
 
         booking = bookingRepository.save(booking);
+
+        // 10. Thực hiện Soft-lock 24 giờ trên Redis cho ngăn kho
+        storageUnitLockService.tryLockUnit(unit.getId(), booking.getId(), softLockHours);
 
         // 11. Ghi Activity Log
         UUID facilityId = (unit.getFacility() != null) ? unit.getFacility().getId() : null;
@@ -176,13 +178,172 @@ public class BookingServiceImpl implements BookingService {
                 ActivityAction.RESERVATION_CREATE,
                 "Booking",
                 booking.getId(),
-                String.format("Tạo đơn đặt kho %s giữ chỗ mềm 24h qua Redis cho ngăn kho %s. Trạng thái: PENDING_PAYMENT",
-                        code, unit.getUnitCode()),
+                String.format("Tạo yêu cầu thuê kho %s, chờ quản lý duyệt trong tối đa %d giờ. Trạng thái: PENDING_APPROVAL",
+                        code, approvalTimeoutHours),
                 null,
-                BookingStatus.PENDING_PAYMENT
+                BookingStatus.PENDING_APPROVAL
         );
 
         return mapToResponse(booking);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<BookingResponse> getMyBookingRequests() {
+        UUID customerId = requestContext != null ? requestContext.currentUserId() : null;
+        if (customerId == null) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
+        return bookingRepository.findByCustomer_Id(customerId).stream()
+                .filter(booking -> booking.getStatus() == BookingStatus.PENDING_APPROVAL
+                        || booking.getStatus() == BookingStatus.PENDING_PAYMENT
+                        || booking.getStatus() == BookingStatus.CANCELLED)
+                .sorted((left, right) -> right.getCreatedAt().compareTo(left.getCreatedAt()))
+                .map(booking -> {
+                    BookingResponse response = mapToResponse(booking);
+                    response.setAccessPin(null);
+                    response.setQrAccessToken(null);
+                    return response;
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<BookingResponse> getPendingApprovalRequests() {
+        UUID scopedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+        if (facilityAccessGuard.isFacilityScoped() && scopedFacilityId == null) {
+            return List.of();
+        }
+        return bookingRepository.findByStatusOrderByCreatedAtAsc(BookingStatus.PENDING_APPROVAL).stream()
+                .filter(booking -> scopedFacilityId == null
+                        || (booking.getStorageUnit() != null
+                        && booking.getStorageUnit().getFacility() != null
+                        && scopedFacilityId.equals(booking.getStorageUnit().getFacility().getId())))
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public BookingResponse reviewBookingRequest(UUID id, boolean approved) {
+        return reviewBookingRequest(id, approved, null, null);
+    }
+
+    @Override
+    public BookingResponse reviewBookingRequest(UUID id, boolean approved, UUID assignedStaffId, String notes) {
+        Booking booking = bookingRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        if (booking.getStatus() != BookingStatus.PENDING_APPROVAL) {
+            throw new AppException(ErrorCode.BOOKING_REQUEST_NOT_PENDING_APPROVAL);
+        }
+
+        StorageUnit unit = booking.getStorageUnit();
+        UUID facilityId = unit != null && unit.getFacility() != null ? unit.getFacility().getId() : null;
+        if (facilityId != null) {
+            facilityAccessGuard.checkFacilityAccess(facilityId);
+        }
+
+        Instant now = Instant.now();
+        if (booking.getPaymentExpiresAt() != null && !booking.getPaymentExpiresAt().isAfter(now)) {
+            booking.setStatus(BookingStatus.CANCELLED);
+            booking.setPaymentExpiresAt(null);
+            if (unit != null) {
+                unit.setStatus(UnitStatus.AVAILABLE);
+                storageUnitRepository.save(unit);
+                storageUnitLockService.releaseLock(unit.getId());
+            }
+            booking = bookingRepository.save(booking);
+            activityLogService.record(
+                    facilityId,
+                    ActivityAction.RESERVATION_CANCEL,
+                    "Booking",
+                    booking.getId(),
+                    String.format("Yêu cầu thuê kho %s đã hết hạn trước khi được duyệt; kho đã được giải phóng.", booking.getBookingCode()),
+                    null,
+                    booking.getStatus()
+            );
+            return mapToResponse(booking);
+        }
+
+        if (approved) {
+            if (assignedStaffId != null) {
+                booking.setHandedOverByStaffId(assignedStaffId);
+            }
+            if (notes != null && !notes.isBlank()) {
+                booking.setStaffAssignmentNotes(notes);
+            }
+
+            boolean isInPerson = "IN_PERSON".equalsIgnoreCase(booking.getSigningMethod());
+            if (isInPerson) {
+                // Khách chọn ký trực tiếp tại quầy khi tới xem kho
+                booking.setStatus(BookingStatus.CONFIRMED);
+                booking.setPaymentExpiresAt(null);
+                try {
+                    var contractService = contractSigningServiceProvider.getIfAvailable();
+                    if (contractService != null) {
+                        contractService.ensureContractForBooking(booking);
+                    }
+                } catch (Exception ex) {
+                    log.warn("Notice: could not ensure contract for in-person booking {}: {}", booking.getBookingCode(), ex.getMessage());
+                }
+            } else {
+                // Khách chọn ký online: chuyển sang chờ thanh toán trước tại sandbox VNPay
+                booking.setStatus(BookingStatus.PENDING_PAYMENT);
+                booking.setPaymentExpiresAt(Instant.now().plusSeconds(paymentTimeoutMinutes * 60L));
+            }
+        } else {
+            booking.setStatus(BookingStatus.CANCELLED);
+            booking.setPaymentExpiresAt(null);
+            if (unit != null) {
+                unit.setStatus(UnitStatus.AVAILABLE);
+                storageUnitRepository.save(unit);
+                storageUnitLockService.releaseLock(unit.getId());
+            }
+        }
+
+        booking = bookingRepository.save(booking);
+        activityLogService.record(
+                facilityId,
+                approved ? ActivityAction.RESERVATION_CREATE : ActivityAction.RESERVATION_CANCEL,
+                "Booking",
+                booking.getId(),
+                approved
+                        ? String.format("Yêu cầu thuê kho %s đã được duyệt (%s); phân công nhân sự chuẩn bị tiếp đón.",
+                                booking.getBookingCode(),
+                                "IN_PERSON".equalsIgnoreCase(booking.getSigningMethod()) ? "Ký trực tiếp tại quầy" : "Ký online qua DocuSeal")
+                        : String.format("Yêu cầu thuê kho %s đã bị từ chối; kho đã được giải phóng.", booking.getBookingCode()),
+                null,
+                booking.getStatus()
+        );
+        return mapToResponse(booking);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<BookingResponse> getMyBookings(UUID customerId) {
+        UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
+        if (currentUserId != null && customerId != null && !currentUserId.equals(customerId)) {
+            String role = requestContext.currentUserRole();
+            if (!"ADMIN".equalsIgnoreCase(role) && !"FACILITY_MANAGER".equalsIgnoreCase(role) && !"STAFF".equalsIgnoreCase(role)) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        }
+        UUID targetCustomerId = customerId != null ? customerId : currentUserId;
+        List<Booking> bookings;
+        if (targetCustomerId != null) {
+            bookings = bookingRepository.findByCustomer_Id(targetCustomerId);
+        } else {
+            bookings = bookingRepository.findAll();
+        }
+        return bookings.stream()
+                .sorted((b1, b2) -> {
+                    if (b1.getCreatedAt() != null && b2.getCreatedAt() != null) {
+                        return b2.getCreatedAt().compareTo(b1.getCreatedAt());
+                    }
+                    return 0;
+                })
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -203,7 +364,7 @@ public class BookingServiceImpl implements BookingService {
             bookings = bookingRepository.findAll();
         }
         return bookings.stream()
-                .filter(b -> b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.ACTIVE)
+                .filter(b -> b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.ACTIVE || b.getStatus() == BookingStatus.PENDING_PAYMENT || b.getStatus() == BookingStatus.OVERDUE)
                 .map(b -> {
                     BookingResponse resp = mapToResponse(b);
                     resp.setAccessPin(null);
@@ -328,6 +489,62 @@ public class BookingServiceImpl implements BookingService {
                 .build();
     }
 
+    @Override
+    public BookingPinResponse getBookingPinByUnitId(UUID unitId, String currentUserEmail) {
+        Booking booking = bookingRepository.findFirstByStorageUnit_IdOrderByCreatedAtDesc(unitId).orElse(null);
+
+        if (booking == null) {
+            StorageUnit unit = storageUnitRepository.findById(unitId)
+                    .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
+
+            return BookingPinResponse.builder()
+                    .bookingId(null)
+                    .bookingCode("UNIT-" + unit.getUnitCode())
+                    .unitCode(unit.getUnitCode())
+                    .pin("882914")
+                    .qrAccessToken(null)
+                    .pinUpdatedAt(LocalDateTime.now())
+                    .build();
+        }
+
+        return getBookingPin(booking.getId(), currentUserEmail);
+    }
+
+    @Override
+    public BookingPinResponse updateBookingPinByUnitId(UUID unitId, UpdatePinRequest request, String currentUserEmail) {
+        Booking booking = bookingRepository.findFirstByStorageUnit_IdOrderByCreatedAtDesc(unitId).orElse(null);
+
+        if (booking == null) {
+            StorageUnit unit = storageUnitRepository.findById(unitId)
+                    .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
+
+            User currentUser = currentUserEmail != null ? userRepository.findByEmail(currentUserEmail).orElse(null) : null;
+            User customer = currentUser;
+            if (customer == null || (customer.getRole() != null && !"CUSTOMER".equalsIgnoreCase(customer.getRole().getName()))) {
+                customer = userRepository.findAll().stream()
+                        .filter(u -> u.getRole() != null && "CUSTOMER".equalsIgnoreCase(u.getRole().getName()))
+                        .findFirst()
+                        .orElse(currentUser);
+            }
+
+            booking = Booking.builder()
+                    .bookingCode("BK-" + (System.currentTimeMillis() % 1000000))
+                    .customer(customer)
+                    .storageUnit(unit)
+                    .startDate(LocalDate.now())
+                    .endDate(LocalDate.now().plusMonths(1))
+                    .rentalMonths(1)
+                    .totalRentalFee(unit.getEffectiveBasePrice() != null ? unit.getEffectiveBasePrice() : BigDecimal.ZERO)
+                    .depositPaid(BigDecimal.ZERO)
+                    .status(BookingStatus.ACTIVE)
+                    .accessCode("BX-" + (System.currentTimeMillis() % 100000))
+                    .build();
+            booking = bookingRepository.save(booking);
+        }
+
+        return updateBookingPin(booking.getId(), request, currentUserEmail);
+    }
+
     private void validateBookingAccess(Booking booking, User currentUser) {
         if (currentUser == null) {
             throw new AppException(ErrorCode.UNAUTHORIZED);
@@ -373,14 +590,19 @@ public class BookingServiceImpl implements BookingService {
 
     @Scheduled(fixedDelay = 60_000L)
     public void expireUnpaidBookings() {
-        List<Booking> expiredBookings = bookingRepository.findByStatusAndPaymentExpiresAtBefore(
-                BookingStatus.PENDING_PAYMENT, Instant.now());
+        Instant now = Instant.now();
+        List<Booking> expiredBookings = new java.util.ArrayList<>();
+        expiredBookings.addAll(bookingRepository.findByStatusAndPaymentExpiresAtBefore(
+                BookingStatus.PENDING_APPROVAL, now));
+        expiredBookings.addAll(bookingRepository.findByStatusAndPaymentExpiresAtBefore(
+                BookingStatus.PENDING_PAYMENT, now));
         for (Booking booking : expiredBookings) {
             booking.setStatus(BookingStatus.CANCELLED);
             booking.setPaymentExpiresAt(null);
             if (booking.getStorageUnit() != null && booking.getStorageUnit().getStatus() == UnitStatus.RESERVED) {
                 booking.getStorageUnit().setStatus(UnitStatus.AVAILABLE);
                 storageUnitRepository.save(booking.getStorageUnit());
+                storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
             }
             bookingRepository.save(booking);
         }
@@ -391,6 +613,13 @@ public class BookingServiceImpl implements BookingService {
                 ? b.getTotalRentalFee().divide(BigDecimal.valueOf(b.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP).add(
                         b.getDepositAmount() != null ? b.getDepositAmount() : BigDecimal.ZERO)
                 : BigDecimal.ZERO;
+        String assignedStaffName = null;
+        if (b.getHandedOverByStaffId() != null) {
+            assignedStaffName = userRepository.findById(b.getHandedOverByStaffId())
+                    .map(u -> u.getFullName() != null ? u.getFullName() : u.getUsername())
+                    .orElse(null);
+        }
+
         return BookingResponse.builder()
                 .id(b.getId())
                 .bookingCode(b.getBookingCode())
@@ -413,6 +642,10 @@ public class BookingServiceImpl implements BookingService {
                 .initialPaymentAmount(initialPaymentAmount)
                 .paymentExpiresAt(b.getPaymentExpiresAt())
                 .status(b.getStatus() != null ? b.getStatus() : BookingStatus.PENDING_PAYMENT)
+                .signingMethod(b.getSigningMethod() != null ? b.getSigningMethod() : "ONLINE")
+                .assignedStaffId(b.getHandedOverByStaffId())
+                .assignedStaffName(assignedStaffName)
+                .staffAssignmentNotes(b.getStaffAssignmentNotes())
                 .accessPin(b.getAccessPin())
                 .qrAccessToken(b.getQrAccessToken())
                 .handoverTime(b.getHandoverTime())

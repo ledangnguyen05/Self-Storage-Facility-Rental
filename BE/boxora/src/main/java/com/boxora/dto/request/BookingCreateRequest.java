@@ -29,4 +29,6 @@ public class BookingCreateRequest {
     private BigDecimal totalRentalFee;
 
     private BigDecimal depositPaid;
+
+    private String signingMethod;
 }

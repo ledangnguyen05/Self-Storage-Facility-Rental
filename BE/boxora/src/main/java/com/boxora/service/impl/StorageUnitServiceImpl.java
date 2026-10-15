@@ -229,7 +229,8 @@ public class StorageUnitServiceImpl implements StorageUnitService {
 
         facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
 
-        if (unit.getStatus() == UnitStatus.OCCUPIED || unit.getStatus() == UnitStatus.RESERVED) {
+        // Quy tắc nghiệp vụ: Trước mắt chỉ duy nhất có thể chuyển từ trạng thái AVAILABLE sang UNDER_MAINTENANCE (hoặc từ UNDER_MAINTENANCE về AVAILABLE)
+        if (unit.getStatus() != UnitStatus.AVAILABLE && unit.getStatus() != UnitStatus.UNDER_MAINTENANCE) {
             throw new AppException(ErrorCode.STORAGE_UNIT_CANNOT_MAINTAIN);
         }
 
@@ -259,6 +260,56 @@ public class StorageUnitServiceImpl implements StorageUnitService {
         BigDecimal price = u.getEffectiveBasePrice();
         Double area = (u.getUnitType() != null) ? u.getUnitType().getAreaSqm() : null;
 
+        UUID bookingId = null;
+        String tenantName = null;
+        String contractCode = null;
+        UUID contractId = null;
+        String startDate = null;
+        String dueDate = null;
+
+        if (u.getStatus() == UnitStatus.OCCUPIED || u.getStatus() == UnitStatus.OVERDUE_LOCKED || u.getStatus() == UnitStatus.RESERVED) {
+            var optContract = rentalContractRepository.findFirstByUnit_IdOrderByCreatedAtDesc(u.getId());
+            if (optContract.isPresent()) {
+                var contract = optContract.get();
+                contractId = contract.getId();
+                contractCode = contract.getContractCode();
+                if (contract.getCustomer() != null) {
+                    tenantName = contract.getCustomer().getFullName() != null ? contract.getCustomer().getFullName() : contract.getCustomer().getUsername();
+                }
+                if (contract.getStartDate() != null) {
+                    startDate = contract.getStartDate().toString();
+                }
+                if (contract.getEndDate() != null) {
+                    dueDate = contract.getEndDate().toString();
+                }
+                if (contract.getBooking() != null) {
+                    bookingId = contract.getBooking().getId();
+                }
+            }
+
+            if (bookingId == null || tenantName == null || contractCode == null || startDate == null || dueDate == null) {
+                var optBooking = bookingRepository.findFirstByStorageUnit_IdOrderByCreatedAtDesc(u.getId());
+                if (optBooking.isPresent()) {
+                    var booking = optBooking.get();
+                    if (bookingId == null) {
+                        bookingId = booking.getId();
+                    }
+                    if (tenantName == null && booking.getCustomer() != null) {
+                        tenantName = booking.getCustomer().getFullName() != null ? booking.getCustomer().getFullName() : booking.getCustomer().getUsername();
+                    }
+                    if (contractCode == null) {
+                        contractCode = booking.getBookingCode();
+                    }
+                    if (startDate == null && booking.getStartDate() != null) {
+                        startDate = booking.getStartDate().toString();
+                    }
+                    if (dueDate == null && booking.getEndDate() != null) {
+                        dueDate = booking.getEndDate().toString();
+                    }
+                }
+            }
+        }
+
         return StorageUnitResponse.builder()
                 .id(u.getId())
                 .unitCode(u.getUnitCode())
@@ -269,10 +320,17 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .unitTypeId(u.getUnitType() != null ? u.getUnitType().getId() : null)
                 .unitTypeName(u.getUnitType() != null ? u.getUnitType().getTypeName() : null)
                 .pricePerMonth(price)
+                .depositAmount(u.getUnitType() != null ? u.getUnitType().getDepositAmount() : price)
                 .areaSqMeters(area)
                 .batteryLevel("98%")
                 .smartLockSerial("SL-" + (u.getUnitCode() != null ? u.getUnitCode().replace("-", "") : "8841"))
                 .lastAccessTime(null)
+                .bookingId(bookingId)
+                .tenantName(tenantName)
+                .contractCode(contractCode)
+                .contractId(contractId)
+                .startDate(startDate)
+                .dueDate(dueDate)
                 .build();
     }
 }

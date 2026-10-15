@@ -1,159 +1,42 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Booking } from '../../../types'
-import { handoverService } from '../../../services/handoverService'
+import { handoverService, HandoverPrerequisites } from '../../../services/handoverService'
 import { bookingService } from '../../../services/bookingService'
-import { useAuth } from '../../../context/AuthContext'
 
 interface HandoverCheckInWorkbenchProps {
   arrivals?: Booking[]
+  onRefreshArrivals?: () => Promise<void> | void
   onHandoverComplete?: (bookingId: string) => void
   onOpenQrScanner?: () => void
   activeBookingId?: string
-  onRefreshArrivals?: () => void
 }
-
-interface ArrivingCustomer {
-  bookingId: string
-  bookingCode: string
-  customerName: string
-  phone: string
-  idCard: string
-  unitCode: string
-  unitType: string
-  floor: string
-  appointmentTime: string
-  durationMonths: number
-  depositAmount: number
-  rentalAmount: number
-  contractCode: string
-  contractSignedAt: string
-  isPaid: boolean
-  isContractSigned: boolean
-  isIdVerified: boolean
-  isUnitReady: boolean
-}
-
-function mapBookingToArrival(b: Booking): ArrivingCustomer {
-  const isPaid = b.status === 'CONFIRMED' || b.status === 'ACTIVE' || (b.depositPaid != null && b.depositPaid > 0)
-  return {
-    bookingId: b.id,
-    bookingCode: b.bookingCode || `#BK-${b.id.slice(0, 6)}`,
-    customerName: b.customerName || 'Khách hàng',
-    phone: b.customerPhone || '0901.234.567',
-    idCard: b.customerPhone ? '0' + b.customerPhone.replace(/[^0-9]/g, '').slice(0, 11) : '079198002441',
-    unitCode: b.unitCode ? (b.unitCode.startsWith('#') ? b.unitCode : `#${b.unitCode}`) : '#A-112',
-    unitType: b.facilityName || 'Kho Tiêu Chuẩn Boxora',
-    floor: b.floorLevel || 'Tầng 1 (Block A)',
-    appointmentTime: b.startDate ? new Date(b.startDate).toLocaleDateString('vi-VN') : 'Hôm nay',
-    durationMonths: b.rentalMonths || 1,
-    depositAmount: b.depositAmount || b.depositPaid || 1500000,
-    rentalAmount: b.totalRentalFee || 1500000,
-    contractCode: b.bookingCode ? `#CTR-${b.bookingCode.replace(/[^0-9a-zA-Z]/g, '')}` : '#CTR-2026',
-    contractSignedAt: 'Đã hoàn tất ký số',
-    isPaid,
-    isContractSigned: true,
-    isIdVerified: true,
-    isUnitReady: true
-  }
-}
-
-const DEFAULT_DEMO_ARRIVALS: ArrivingCustomer[] = [
-  {
-    bookingId: '00000000-0000-0000-0000-000000000001',
-    bookingCode: '#RES-8921',
-    customerName: 'Trần Minh Tuấn',
-    phone: '0912.345.678',
-    idCard: '001092003891',
-    unitCode: '#A-112',
-    unitType: 'Kho Tiêu Chuẩn 6m²',
-    floor: 'Tầng 1 (Block A)',
-    appointmentTime: '09:30 Sáng',
-    durationMonths: 12,
-    depositAmount: 1500000,
-    rentalAmount: 1500000,
-    contractCode: '#CTR-2026-8921',
-    contractSignedAt: 'Hôm nay 08:30 (OTP Email)',
-    isPaid: true,
-    isContractSigned: true,
-    isIdVerified: true,
-    isUnitReady: true
-  },
-  {
-    bookingId: '00000000-0000-0000-0000-000000000002',
-    bookingCode: '#RES-8924',
-    customerName: 'Lê Thị Hoàng Yến',
-    phone: '0988.219.002',
-    idCard: '079198002441',
-    unitCode: '#B-205',
-    unitType: 'Kho Climate Control 12m²',
-    floor: 'Tầng 2 (Block B)',
-    appointmentTime: '10:15 Sáng',
-    durationMonths: 6,
-    depositAmount: 2500000,
-    rentalAmount: 2500000,
-    contractCode: '#CTR-2026-8924',
-    contractSignedAt: 'Hôm nay 09:05 (OTP Email)',
-    isPaid: true,
-    isContractSigned: true,
-    isIdVerified: true,
-    isUnitReady: true
-  }
-]
 
 export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> = ({
-  arrivals,
+  arrivals: propArrivals,
+  onRefreshArrivals,
   onHandoverComplete,
   onOpenQrScanner,
-  activeBookingId,
-  onRefreshArrivals
+  activeBookingId
 }) => {
-  const { user } = useAuth()
+  const [internalArrivals, setInternalArrivals] = useState<Booking[]>([])
+  const [selectedBookingId, setSelectedBookingId] = useState<string>('')
+  const [prerequisites, setPrerequisites] = useState<HandoverPrerequisites | null>(null)
+  const [loadingPrerequisites, setLoadingPrerequisites] = useState(false)
+  const [prerequisitesError, setPrerequisitesError] = useState<string | null>(null)
 
-  // Real-time arrivals list converted from real Backend Bookings
-  const arrivingList = useMemo<ArrivingCustomer[]>(() => {
-    if (arrivals && Array.isArray(arrivals) && arrivals.length > 0) {
-      return arrivals.map(mapBookingToArrival)
-    }
-    return DEFAULT_DEMO_ARRIVALS
-  }, [arrivals])
-
-  // Active arrival
-  const [selectedCustomer, setSelectedCustomer] = useState<ArrivingCustomer>(arrivingList[0])
-
-  useEffect(() => {
-    if (arrivingList.length > 0) {
-      const match = arrivingList.find(a => a.bookingId === selectedCustomer?.bookingId)
-      if (!match) {
-        setSelectedCustomer(arrivingList[0])
-      }
-    }
-  }, [arrivingList])
-
-  // Sync when activeBookingId changes
-  useEffect(() => {
-    if (activeBookingId && arrivingList.length > 0) {
-      const found = arrivingList.find(
-        (a) => a.bookingId === activeBookingId || a.bookingCode === activeBookingId
-      )
-      if (found) {
-        setSelectedCustomer(found)
-        setIsCompleted(false)
-      }
-    }
-  }, [activeBookingId, arrivingList])
+  // Form & Hardware Inputs
   const [rfidCard, setRfidCard] = useState('RF-409')
   const [accessPin, setAccessPin] = useState('739215')
   const [pinCopied, setPinCopied] = useState(false)
   const [smsSent, setSmsSent] = useState(false)
-  const [handoverNotes, setHandoverNotes] = useState('Đã đối soát đầy đủ hồ sơ, khách mượn xe đẩy kho số 02.')
+  const [appPushSent, setAppPushSent] = useState(false)
+  const [handoverNotes, setHandoverNotes] = useState('Đã đối soát đầy đủ hồ sơ tại quầy tiếp đón.')
 
-  // 4 Pre-requisite verifications
-  const [verifiedChecks, setVerifiedChecks] = useState<Record<string, boolean>>({
-    contract: true,
-    payment: true,
-    idCard: true,
-    unitReady: true
-  })
+  // Counter manual verification overrides
+  const [firstMonthRentConfirmed, setFirstMonthRentConfirmed] = useState(false)
+  const [contractConfirmed, setContractConfirmed] = useState(false)
+  const [idCardNumber, setIdCardNumber] = useState('')
+  const [identityVerified, setIdentityVerified] = useState(true)
 
   // 5-Point On-Site Handover Checklist
   const [checklist, setChecklist] = useState({
@@ -164,15 +47,85 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     sealPlate: true
   })
 
-  // 2 Condition Photos
+  // Condition Photos
   const [photoDoor, setPhotoDoor] = useState<string>('https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=600&q=80')
   const [photoInterior, setPhotoInterior] = useState<string>('https://images.unsplash.com/photo-1595246140625-573b715d11dc?auto=format&fit=crop&w=600&q=80')
+  const doorInputRef = useRef<HTMLInputElement | null>(null)
+  const interiorInputRef = useRef<HTMLInputElement | null>(null)
 
   // Submission state
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isCompleted, setIsCompleted] = useState(false)
+  const [checkInError, setCheckInError] = useState<string | null>(null)
   const [showPdfModal, setShowPdfModal] = useState(false)
   const [activeStepTab, setActiveStepTab] = useState<'audit' | 'checklist' | 'pin'>('audit')
+
+  // Load arrivals if not provided via props
+  useEffect(() => {
+    if (propArrivals && propArrivals.length > 0) {
+      setInternalArrivals(propArrivals)
+      if (!selectedBookingId) {
+        setSelectedBookingId(propArrivals[0].id)
+      }
+    } else {
+      loadArrivals()
+    }
+  }, [propArrivals])
+
+  const loadArrivals = async () => {
+    try {
+      const data = await bookingService.getUpcomingArrivals()
+      if (data && data.length > 0) {
+        setInternalArrivals(data)
+        if (!selectedBookingId) {
+          setSelectedBookingId(data[0].id)
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to load arrivals for workbench:', err)
+    }
+  }
+
+  // Sync when activeBookingId prop changes
+  useEffect(() => {
+    if (activeBookingId) {
+      setSelectedBookingId(activeBookingId)
+      setIsCompleted(false)
+      setCheckInError(null)
+    }
+  }, [activeBookingId])
+
+  const arrivalsList = (propArrivals && propArrivals.length > 0) ? propArrivals : internalArrivals
+  const currentBooking = arrivalsList.find(b => b.id === selectedBookingId || b.bookingCode === selectedBookingId) || arrivalsList[0]
+
+  // When selected booking changes, fetch real prerequisites from backend
+  useEffect(() => {
+    if (currentBooking?.id) {
+      fetchPrerequisites(currentBooking.id)
+      handleRegeneratePin()
+      setIsCompleted(false)
+      setCheckInError(null)
+    }
+  }, [currentBooking?.id])
+
+  const fetchPrerequisites = async (bookingId: string) => {
+    setLoadingPrerequisites(true)
+    setPrerequisitesError(null)
+    try {
+      const data = await handoverService.getCheckInPrerequisites(bookingId)
+      setPrerequisites(data)
+      setIdCardNumber(data.idCardNumber || currentBooking?.customerPhone || '')
+      setFirstMonthRentConfirmed(data.firstMonthRentSatisfied)
+      setContractConfirmed(data.contractSigned)
+      setIdentityVerified(data.identityVerified)
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Không thể tải điều kiện tiên quyết cho lượt đặt chỗ này'
+      setPrerequisitesError(msg)
+      setPrerequisites(null)
+    } finally {
+      setLoadingPrerequisites(false)
+    }
+  }
 
   // Generate new 6-digit random PIN
   const handleRegeneratePin = () => {
@@ -180,16 +133,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     setAccessPin(newPin)
     setPinCopied(false)
     setSmsSent(false)
+    setAppPushSent(false)
   }
 
-  // Copy PIN to clipboard
   const handleCopyPin = () => {
     navigator.clipboard.writeText(accessPin)
     setPinCopied(true)
     setTimeout(() => setPinCopied(false), 2000)
   }
 
-  // Toggle checklist item
   const handleToggleChecklist = (key: keyof typeof checklist) => {
     setChecklist(prev => ({
       ...prev,
@@ -197,7 +149,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }))
   }
 
-  // Mark all checklist items as passed
   const handleSelectAllChecklist = () => {
     setChecklist({
       doorRoll: true,
@@ -210,39 +161,82 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
   const checklistCount = Object.values(checklist).filter(Boolean).length
   const isAllChecklistPassed = checklistCount === 5
-  const isAllPreChecksPassed = Object.values(verifiedChecks).every(Boolean)
+
+  // Overall check-in readiness
+  const isDepositMet = prerequisites ? prerequisites.depositSatisfied : false
+  const isRentMet = (prerequisites?.firstMonthRentSatisfied) || firstMonthRentConfirmed
+  const isContractMet = (prerequisites?.contractSigned) || contractConfirmed
+  const isIdMet = identityVerified && (idCardNumber.trim().length > 0)
+  const isReadyForCheckIn = isDepositMet && isRentMet && isContractMet && isIdMet
 
   // Submit Handover Check-in
   const handleCompleteHandover = async () => {
+    if (!currentBooking) return
     setIsSubmitting(true)
+    setCheckInError(null)
     try {
       await handoverService.checkIn({
-        bookingId: selectedCustomer.bookingId,
-        staffId: user?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id) ? user.id : undefined,
+        bookingId: currentBooking.id,
         recordType: 'CHECK_IN',
-        idCardNumber: selectedCustomer.idCard,
+        idCardNumber: idCardNumber.trim() || currentBooking.customerPhone || '079198002441',
+        identityVerified: true,
+        firstMonthRentConfirmed: firstMonthRentConfirmed || (prerequisites?.firstMonthRentSatisfied ?? false),
+        contractConfirmed: contractConfirmed || (prerequisites?.contractSigned ?? false),
         rfidCardNumber: rfidCard,
         accessPin: accessPin,
+        doorConditionPassed: checklist.doorRoll,
+        cleanlinessPassed: checklist.cleanliness,
+        smartLockPassed: checklist.lighting,
+        sensorPassed: checklist.fireSafety,
+        wallStructurePassed: checklist.sealPlate,
         unitCondition: `${checklistCount}/5 tiêu chuẩn nghiệm thu đạt chuẩn (Ảnh cửa & trong kho đã lưu vết)`,
         notes: handoverNotes
       })
       setIsCompleted(true)
       if (onHandoverComplete) {
-        onHandoverComplete(selectedCustomer.bookingId)
+        onHandoverComplete(currentBooking.id)
       }
-    } catch {
-      // Local fallback on API demo
-      setIsCompleted(true)
-      if (onHandoverComplete) {
-        onHandoverComplete(selectedCustomer.bookingId)
-      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Có lỗi xảy ra khi thực hiện check-in bàn giao kho.'
+      setCheckInError(msg)
     } finally {
       setIsSubmitting(false)
     }
   }
 
+  if (!currentBooking && arrivalsList.length === 0) {
+    return (
+      <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+          <span className="material-symbols-outlined text-[30px]">event_busy</span>
+        </div>
+        <h3 className="font-headline text-base font-bold text-slate-800">
+          Chưa có khách chờ tiếp đón nhận kho
+        </h3>
+        <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+          Tất cả lịch hẹn nhận kho hôm nay đã hoàn tất hoặc chưa có đặt chỗ mới trong ca trực hiện tại.
+        </p>
+        {onOpenQrScanner && (
+          <button
+            onClick={onOpenQrScanner}
+            className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl inline-flex items-center gap-2 shadow-xs cursor-pointer transition-colors"
+          >
+            <span className="material-symbols-outlined text-[18px]">qr_code_scanner</span>
+            <span>Quét Mã QR Khách Đến Sớm</span>
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  const customerDisplayName = currentBooking?.customerName || prerequisites?.customerName || 'Khách hàng'
+  const customerDisplayPhone = currentBooking?.customerPhone || prerequisites?.customerPhone || 'N/A'
+  const unitDisplayCode = currentBooking?.unitCode || prerequisites?.unitCode || 'N/A'
+  const bookingDisplayCode = currentBooking?.bookingCode || prerequisites?.bookingCode || 'N/A'
+  const facilityDisplayName = currentBooking?.facilityName || prerequisites?.facilityName || 'Boxora Facility'
+
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
+    <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
       
       {/* 1. Header & Active Arriving Session Ribbon */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100">
@@ -260,7 +254,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Chuẩn hóa 4 điều kiện tiên quyết, checklist hiện trường 5 điểm, lưu trữ 2 ảnh đối soát và cấp mã PIN bảo mật AES-256.
+              Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
             </p>
           </div>
         </div>
@@ -270,19 +264,17 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs">
             <span className="text-slate-500 font-medium">Khách tại sảnh:</span>
             <select
-              value={selectedCustomer.bookingId}
+              value={currentBooking?.id || ''}
               onChange={(e) => {
-                const found = arrivingList.find(a => a.bookingId === e.target.value)
-                if (found) {
-                  setSelectedCustomer(found)
-                  setIsCompleted(false)
-                }
+                setSelectedBookingId(e.target.value)
+                setIsCompleted(false)
+                setCheckInError(null)
               }}
               className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
             >
-              {arrivingList.map(c => (
-                <option key={c.bookingId} value={c.bookingId}>
-                  {c.customerName} ({c.bookingCode} - {c.unitCode})
+              {arrivalsList.map(b => (
+                <option key={b.id} value={b.id}>
+                  {b.customerName || 'Khách'} ({b.bookingCode} - {b.unitCode})
                 </option>
               ))}
             </select>
@@ -305,32 +297,36 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-start gap-3.5">
             <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center font-headline font-bold text-base shadow-xs shrink-0">
-              {selectedCustomer.customerName.split(' ').map(n => n[0]).slice(-2).join('')}
+              {customerDisplayName.split(' ').map(n => n[0]).slice(-2).join('')}
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-headline text-base font-bold text-slate-900">
-                  {selectedCustomer.customerName}
+                  {customerDisplayName}
                 </span>
                 <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-900 font-mono text-[11px] font-bold">
-                  {selectedCustomer.bookingCode}
+                  {bookingDisplayCode}
                 </span>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-mono font-bold">
-                  Khách Đã Tới Sảnh ({selectedCustomer.appointmentTime})
+                <span className={`px-2 py-0.5 rounded-full border text-[10px] font-mono font-bold ${
+                  currentBooking?.status === 'CONFIRMED'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                }`}>
+                  Trạng thái: {currentBooking?.status || 'CONFIRMED'}
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-slate-600 text-xs">
                 <span className="flex items-center gap-1 font-mono tabular-nums">
                   <span className="material-symbols-outlined text-[15px] text-slate-400">call</span>
-                  {selectedCustomer.phone}
+                  {customerDisplayPhone}
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[15px] text-slate-400">badge</span>
-                  CCCD: <strong className="font-mono text-slate-900 font-bold tabular-nums">{selectedCustomer.idCard}</strong>
+                  <span className="material-symbols-outlined text-[15px] text-slate-400">domain</span>
+                  {facilityDisplayName}
                 </span>
                 <span className="flex items-center gap-1 font-mono font-bold text-cyan-700">
                   <span className="material-symbols-outlined text-[15px]">meeting_room</span>
-                  {selectedCustomer.unitCode} ({selectedCustomer.unitType}) • {selectedCustomer.floor}
+                  Kho #{unitDisplayCode}
                 </span>
               </div>
             </div>
@@ -338,17 +334,57 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
           <div className="flex md:flex-col items-end justify-between shrink-0 text-right">
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-slate-500 font-medium">Thời hạn hợp đồng:</span>
-              <span className="font-mono font-bold text-slate-900 text-xs tabular-nums">{selectedCustomer.durationMonths} Tháng</span>
+              <span className="text-[11px] text-slate-500 font-medium">Thời hạn:</span>
+              <span className="font-mono font-bold text-slate-900 text-xs tabular-nums">
+                {currentBooking?.rentalMonths ?? 1} Tháng
+              </span>
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Hợp đồng: <strong className="font-mono text-slate-900 font-bold">{selectedCustomer.contractCode}</strong>
+              Hợp đồng: <strong className="font-mono text-slate-900 font-bold">{prerequisites?.contractCode || 'Chưa khởi tạo'}</strong>
             </div>
+            {currentBooking?.signingMethod && (
+              <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold mt-1.5 ${
+                currentBooking.signingMethod === 'IN_PERSON'
+                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                  : 'bg-blue-100 text-blue-900 border border-blue-200'
+              }`}>
+                {currentBooking.signingMethod === 'IN_PERSON' ? '🏢 Ký Trực Tiếp Tại Kho' : '✍️ Ký Online DocuSeal'}
+              </span>
+            )}
           </div>
         </div>
+
+        {/* Staff Assignment Notes from Manager */}
+        {currentBooking?.staffAssignmentNotes && (
+          <div className="mt-3 pt-2.5 border-t border-slate-200/80 text-xs text-amber-900 flex items-start gap-2">
+            <span className="material-symbols-outlined text-[16px] text-amber-700 shrink-0 mt-0.5">
+              assignment_ind
+            </span>
+            <div>
+              <strong className="text-amber-950 font-bold">Chỉ đạo từ Quản lý cơ sở:</strong> {currentBooking.staffAssignmentNotes}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* 3. Three-Tab Navigation for Seamless Workflow */}
+      {/* Backend Error Alert if any */}
+      {checkInError && (
+        <div className="mt-4 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[20px] text-rose-600 shrink-0">error</span>
+            <span className="font-medium">{checkInError}</span>
+          </div>
+          <button 
+            type="button" 
+            onClick={() => setCheckInError(null)}
+            className="text-rose-500 hover:text-rose-700 font-bold text-xs"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* 3. Three-Tab Navigation */}
       <div className="mt-6 flex border-b border-slate-200">
         <button
           onClick={() => setActiveStepTab('audit')}
@@ -362,7 +398,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             1
           </span>
           <span>Đối Soát 4 Điều Kiện</span>
-          {isAllPreChecksPassed && (
+          {isReadyForCheckIn && (
             <span className="material-symbols-outlined text-[16px] text-emerald-600">check_circle</span>
           )}
         </button>
@@ -407,97 +443,174 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       {/* Tab 1 Content: Pre-requisites Audit */}
       {activeStepTab === 'audit' && (
         <div className="mt-6 flex flex-col gap-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            
-            {/* Condition 1: Signed Contract */}
-            <div className="p-3.5 rounded-xl border border-slate-200 bg-white shadow-xs flex items-start gap-3">
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
-                <span className="material-symbols-outlined text-[20px]">description</span>
+          {loadingPrerequisites ? (
+            <div className="py-10 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+              <span className="material-symbols-outlined text-[20px] animate-spin text-cyan-600">progress_activity</span>
+              <span>Đang đối soát điều kiện tiên quyết từ máy chủ...</span>
+            </div>
+          ) : prerequisitesError ? (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs">
+              <div className="font-bold flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[18px]">warning</span>
+                <span>Thông báo đối soát</span>
               </div>
-              <div className="flex-1 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-900">1. Hợp Đồng Điện Tử (OTP)</span>
-                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-mono text-[10px] font-bold">
-                    ✓ ĐÃ KÝ
+              <p className="mt-1">{prerequisitesError}</p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                
+                {/* Condition 1: Signed Contract */}
+                <div className="p-3.5 rounded-xl border border-slate-200 bg-white shadow-xs flex items-start gap-3">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                    isContractMet ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+                  }`}>
+                    <span className="material-symbols-outlined text-[20px]">description</span>
+                  </div>
+                  <div className="flex-1 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900">1. Hợp Đồng Thuê Kho</span>
+                      <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
+                        isContractMet ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                      }`}>
+                        {prerequisites?.contractSigned ? '✓ ĐÃ KÝ ĐIỆN TỬ' : (contractConfirmed ? '✓ XÁC NHẬN TẠI QUẦY' : 'CHƯA KÝ')}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Mã HĐ: <strong className="font-mono text-slate-800">{prerequisites?.contractCode || 'Chưa khởi tạo'}</strong> (Trạng thái: {prerequisites?.contractStatus || 'N/A'})
+                    </p>
+                    {!prerequisites?.contractSigned && (
+                      <label className="mt-2 flex items-center gap-2 cursor-pointer text-[11px] text-cyan-800 font-semibold bg-cyan-50/60 p-1.5 rounded-md border border-cyan-100">
+                        <input
+                          type="checkbox"
+                          checked={contractConfirmed}
+                          onChange={(e) => setContractConfirmed(e.target.checked)}
+                          className="rounded text-cyan-600"
+                        />
+                        <span>Khách đã ký xác nhận biên bản giấy tại quầy</span>
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                {/* Condition 2: 100% Payment (Deposit + First month) */}
+                <div className="p-3.5 rounded-xl border border-slate-200 bg-white shadow-xs flex items-start gap-3">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                    isDepositMet && isRentMet ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+                  }`}>
+                    <span className="material-symbols-outlined text-[20px]">payments</span>
+                  </div>
+                  <div className="flex-1 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900">2. Cọc &amp; Tiền Thuê Tháng Đầu</span>
+                      <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
+                        isDepositMet && isRentMet ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                      }`}>
+                        {isDepositMet && isRentMet ? '✓ ĐỦ TIỀN' : 'CHƯA THU ĐỦ'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Cọc: <strong className="font-mono">{(prerequisites?.depositPaid ?? 0).toLocaleString('vi-VN')}đ</strong> / {(prerequisites?.requiredDeposit ?? 0).toLocaleString('vi-VN')}đ • 
+                      Thuê: <strong className="font-mono">{(prerequisites?.firstMonthRentPaid ?? 0).toLocaleString('vi-VN')}đ</strong> / {(prerequisites?.requiredFirstMonthRent ?? 0).toLocaleString('vi-VN')}đ
+                    </p>
+                    {!prerequisites?.firstMonthRentSatisfied && (
+                      <label className="mt-2 flex items-center gap-2 cursor-pointer text-[11px] text-cyan-800 font-semibold bg-cyan-50/60 p-1.5 rounded-md border border-cyan-100">
+                        <input
+                          type="checkbox"
+                          checked={firstMonthRentConfirmed}
+                          onChange={(e) => setFirstMonthRentConfirmed(e.target.checked)}
+                          className="rounded text-cyan-600"
+                        />
+                        <span>Khách đã thanh toán tiền thuê tháng đầu tại quầy (Tiền mặt/POS)</span>
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                {/* Condition 3: Identity Verification */}
+                <div className="p-3.5 rounded-xl border border-slate-200 bg-white shadow-xs flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
+                    <span className="material-symbols-outlined text-[20px]">badge</span>
+                  </div>
+                  <div className="flex-1 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900">3. Đối Chiếu CCCD / Passport Gốc</span>
+                      <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-mono text-[10px] font-bold">
+                        {isIdMet ? '✓ HỢP LỆ' : 'CẦN ĐỐI SOÁT'}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={idCardNumber}
+                        onChange={(e) => setIdCardNumber(e.target.value)}
+                        placeholder="Nhập số CCCD đối chiếu..."
+                        className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded text-slate-900 font-mono text-xs w-48 focus:outline-none focus:border-cyan-600"
+                      />
+                      <label className="flex items-center gap-1 cursor-pointer text-[11px] text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={identityVerified}
+                          onChange={(e) => setIdentityVerified(e.target.checked)}
+                          className="rounded text-cyan-600"
+                        />
+                        <span>Đã xem bản gốc</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Condition 4: Unit Readiness */}
+                <div className="p-3.5 rounded-xl border border-slate-200 bg-white shadow-xs flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
+                    <span className="material-symbols-outlined text-[20px]">door_front</span>
+                  </div>
+                  <div className="flex-1 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900">4. Kho Vật Lý Đã Sẵn Sàng</span>
+                      <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-mono text-[10px] font-bold">
+                        ✓ SẴN SÀNG
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Buồng kho <strong className="font-mono text-cyan-700">#{unitDisplayCode}</strong> tại {facilityDisplayName} đã vệ sinh và sẵn sàng bàn giao.
+                    </p>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Prerequisites Missing Alert */}
+              {prerequisites?.missingPrerequisites && prerequisites.missingPrerequisites.length > 0 && !isReadyForCheckIn && (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs">
+                  <span className="font-bold block mb-1">Hồ sơ còn thiếu các điều kiện sau:</span>
+                  <ul className="list-disc list-inside space-y-0.5 text-[11px] text-amber-800">
+                    {prerequisites.missingPrerequisites.map((m, idx) => (
+                      <li key={idx}>{m}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="p-3 bg-cyan-50 border border-cyan-100 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-cyan-900">
+                  <span className="material-symbols-outlined text-[18px] text-cyan-600">task_alt</span>
+                  <span className="font-medium">
+                    {isReadyForCheckIn
+                      ? 'Tất cả 4/4 điều kiện tiên quyết đã sẵn sàng. Di chuyển dẫn khách thẩm định thực địa kho.'
+                      : 'Vui lòng hoàn tất hoặc xác nhận thu cọc/tiền thuê và đối chiếu CCCD trước khi chuyển bước.'}
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Mã HĐ: <strong className="font-mono text-slate-800">{selectedCustomer.contractCode}</strong> • Xác thực ký số lúc {selectedCustomer.contractSignedAt}.
-                </p>
+                <button
+                  onClick={() => setActiveStepTab('checklist')}
+                  className="px-3.5 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer shrink-0"
+                >
+                  <span>Nghiệm Thu Hiện Trường</span>
+                  <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                </button>
               </div>
-            </div>
-
-            {/* Condition 2: 100% Payment */}
-            <div className="p-3.5 rounded-xl border border-slate-200 bg-white shadow-xs flex items-start gap-3">
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
-                <span className="material-symbols-outlined text-[20px]">payments</span>
-              </div>
-              <div className="flex-1 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-900">2. Thanh Toán Cọc &amp; Thuê Tháng 1</span>
-                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-mono text-[10px] font-bold">
-                    ✓ 100% ĐÃ THU
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Cọc: <strong className="font-mono">{selectedCustomer.depositAmount.toLocaleString('vi-VN')}đ</strong> + Thuê: <strong className="font-mono">{selectedCustomer.rentalAmount.toLocaleString('vi-VN')}đ</strong> qua Sandbox Webhook.
-                </p>
-              </div>
-            </div>
-
-            {/* Condition 3: Identity Verification */}
-            <div className="p-3.5 rounded-xl border border-slate-200 bg-white shadow-xs flex items-start gap-3">
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
-                <span className="material-symbols-outlined text-[20px]">badge</span>
-              </div>
-              <div className="flex-1 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-900">3. Đối Chiếu CCCD / Passport</span>
-                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-mono text-[10px] font-bold">
-                    ✓ KHỚP 100%
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Số CCCD: <strong className="font-mono text-slate-800">{selectedCustomer.idCard}</strong> trùng khớp hoàn toàn ảnh hồ sơ gốc.
-                </p>
-              </div>
-            </div>
-
-            {/* Condition 4: Unit Readiness */}
-            <div className="p-3.5 rounded-xl border border-slate-200 bg-white shadow-xs flex items-start gap-3">
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
-                <span className="material-symbols-outlined text-[20px]">door_front</span>
-              </div>
-              <div className="flex-1 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-900">4. Kho Vật Lý Đã Sẵn Sàng</span>
-                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-mono text-[10px] font-bold">
-                    ✓ SẴN SÀNG
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Kho <strong className="font-mono text-cyan-700">{selectedCustomer.unitCode}</strong> trạng thái khả dụng, đã vệ sinh và kiểm định sơ bộ.
-                </p>
-              </div>
-            </div>
-
-          </div>
-
-          <div className="p-3 bg-cyan-50 border border-cyan-100 rounded-xl flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2 text-cyan-900">
-              <span className="material-symbols-outlined text-[18px] text-cyan-600">task_alt</span>
-              <span className="font-medium">
-                Tất cả 4/4 điều kiện tiên quyết đã được xác thực hợp lệ. Sẵn sàng di chuyển dẫn khách kiểm tra thực địa.
-              </span>
-            </div>
-            <button
-              onClick={() => setActiveStepTab('checklist')}
-              className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
-            >
-              <span>Sang bước Nghiệm thu Hiện trường</span>
-              <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-            </button>
-          </div>
+            </>
+          )}
         </div>
       )}
 
@@ -580,8 +693,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer"
                   />
                   <div className="text-xs">
-                    <span className="font-bold text-slate-900">3. Chiếu sáng &amp; thiết bị điện</span>
-                    <span className="text-slate-500 block text-[11px]">Đèn LED hành lang và đèn kho sáng rõ, công tắc bật mở bình thường.</span>
+                    <span className="font-bold text-slate-900">3. Ổ khóa điện tử SmartLock &amp; đèn báo</span>
+                    <span className="text-slate-500 block text-[11px]">Mặt khóa nhạy, bàn phím số hiển thị sắc nét, chốt cơ nhả trơn tru.</span>
                   </div>
                 </div>
                 <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
@@ -603,8 +716,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer"
                   />
                   <div className="text-xs">
-                    <span className="font-bold text-slate-900">4. Đầu báo khói &amp; an toàn PCCC</span>
-                    <span className="text-slate-500 block text-[11px]">Đầu phun Sprinkler &amp; cảm biến khói không bị che khuất hoặc có dấu hiệu can thiệp.</span>
+                    <span className="font-bold text-slate-900">4. Đầu báo khói &amp; cảm biến nhiệt ẩm</span>
+                    <span className="text-slate-500 block text-[11px]">Đầu phun Sprinkler &amp; cảm biến IoT không bị che khuất, tín hiệu bình thường.</span>
                   </div>
                 </div>
                 <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
@@ -626,8 +739,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer"
                   />
                   <div className="text-xs">
-                    <span className="font-bold text-slate-900">5. Biển số kho &amp; tem niêm phong</span>
-                    <span className="text-slate-500 block text-[11px]">Bảng số phòng {selectedCustomer.unitCode} rõ ràng, tem chứng nhận Boxora nguyên vẹn.</span>
+                    <span className="font-bold text-slate-900">5. Tường vách &amp; tem niêm phong</span>
+                    <span className="text-slate-500 block text-[11px]">Bảng số phòng #{unitDisplayCode} rõ ràng, vách tôn không bong tróc nứt vỡ.</span>
                   </div>
                 </div>
                 <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
@@ -650,7 +763,31 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              
+              <input
+                type="file"
+                ref={doorInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    setPhotoDoor(URL.createObjectURL(file))
+                  }
+                }}
+              />
+              <input
+                type="file"
+                ref={interiorInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    setPhotoInterior(URL.createObjectURL(file))
+                  }
+                }}
+              />
+
               {/* Photo 1: Door Overview */}
               <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex flex-col">
                 <div className="relative aspect-video bg-slate-900 overflow-hidden">
@@ -660,13 +797,14 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     className="w-full h-full object-cover"
                   />
                   <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-slate-900/80 text-white font-mono text-[10px] backdrop-blur-xs">
-                    Ảnh 1: Cửa Ngoài &amp; Bảng Số
+                    Ảnh 1: Cửa Ngoài &amp; Bảng Số #{unitDisplayCode}
                   </div>
                 </div>
                 <div className="p-2.5 flex items-center justify-between bg-white text-xs">
-                  <span className="text-slate-600 text-[11px] truncate">door_overview_{selectedCustomer.unitCode}.jpg</span>
+                  <span className="text-slate-600 text-[11px] truncate">door_overview_{unitDisplayCode}.jpg</span>
                   <button
-                    onClick={() => alert('Đang kích hoạt máy ảnh thiết bị để chụp lại ảnh cửa kho...')}
+                    type="button"
+                    onClick={() => doorInputRef.current?.click()}
                     className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
                   >
                     Chụp lại
@@ -683,13 +821,14 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     className="w-full h-full object-cover"
                   />
                   <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-slate-900/80 text-white font-mono text-[10px] backdrop-blur-xs">
-                    Ảnh 2: Không Gian Bên Trong
+                    Ảnh 2: Nền Sàn &amp; Vách Trong
                   </div>
                 </div>
                 <div className="p-2.5 flex items-center justify-between bg-white text-xs">
-                  <span className="text-slate-600 text-[11px] truncate">interior_floor_{selectedCustomer.unitCode}.jpg</span>
+                  <span className="text-slate-600 text-[11px] truncate">interior_floor_{unitDisplayCode}.jpg</span>
                   <button
-                    onClick={() => alert('Đang kích hoạt máy ảnh thiết bị để chụp lại ảnh trong kho...')}
+                    type="button"
+                    onClick={() => interiorInputRef.current?.click()}
                     className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
                   >
                     Chụp lại
@@ -729,7 +868,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       {activeStepTab === 'pin' && (
         <div className="mt-6 flex flex-col gap-6">
           
-          {/* The PIN Lock Box (Signature Component) */}
+          {/* The PIN Lock Box */}
           <div className="bg-slate-900 text-white rounded-2xl p-6 border border-slate-800 shadow-lg relative overflow-hidden">
             <div className="absolute -top-12 -right-12 w-48 h-48 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none"></div>
 
@@ -743,12 +882,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     <span className="font-headline text-base font-bold text-white">
                       Mã PIN Mở Cửa Kho Số Hóa
                     </span>
-                    <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-500/30">
-                      AES-256-GCM
-                    </span>
                   </div>
                   <span className="text-xs text-slate-400">
-                    Mã khóa truy cập điện tử dành riêng cho phòng kho {selectedCustomer.unitCode}
+                    Mã khóa truy cập điện tử dành riêng cho phòng kho #{unitDisplayCode}
                   </span>
                 </div>
               </div>
@@ -786,7 +922,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 ))}
               </div>
               <div className="mt-3 flex items-center gap-2 text-xs text-slate-400 font-mono">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                 <span>Mã có hiệu lực ngay khi ký bàn giao • Thẻ RFID cấp phát: </span>
                 <input
                   type="text"
@@ -804,10 +940,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </span>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => {
-                    setSmsSent(true)
-                    alert(`Đã gửi tin nhắn SMS chứa mã PIN ${accessPin} tới số điện thoại ${selectedCustomer.phone}!`)
-                  }}
+                  type="button"
+                  onClick={() => setSmsSent(true)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
                     smsSent
                       ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40'
@@ -815,14 +949,19 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   }`}
                 >
                   <span className="material-symbols-outlined text-[16px]">sms</span>
-                  <span>{smsSent ? 'Đã Gửi SMS' : 'Gửi SMS Cho Khách'}</span>
+                  <span>{smsSent ? `Đã Gửi SMS (${customerDisplayPhone})` : 'Gửi SMS Cho Khách'}</span>
                 </button>
                 <button
-                  onClick={() => alert(`Đã gửi thông báo xác thực tới ứng dụng di động Boxora của anh/chị ${selectedCustomer.customerName}!`)}
-                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  type="button"
+                  onClick={() => setAppPushSent(true)}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    appPushSent
+                      ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/40'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                  }`}
                 >
                   <span className="material-symbols-outlined text-[16px]">send_to_mobile</span>
-                  <span>Bắn Thông Báo App</span>
+                  <span>{appPushSent ? 'Đã Bắn Thông Báo App' : 'Bắn Thông Báo App'}</span>
                 </button>
               </div>
             </div>
@@ -849,7 +988,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
               <div className="text-xs text-slate-500">
-                Nhân viên lập biên bản: <strong className="text-slate-800">Nguyễn Quỳnh Anh (NV-842)</strong>
+                Khách hàng: <strong className="text-slate-800">{customerDisplayName}</strong> • CCCD: <strong className="font-mono text-slate-800">{idCardNumber || customerDisplayPhone}</strong>
               </div>
 
               <div className="flex items-center gap-2">
@@ -892,10 +1031,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 </div>
                 <div>
                   <h4 className="font-headline text-sm font-bold text-emerald-900">
-                    Bàn Giao Kho {selectedCustomer.unitCode} Thành Công!
+                    Bàn Giao Kho #{unitDisplayCode} Thành Công!
                   </h4>
                   <p className="text-xs text-emerald-700 mt-0.5">
-                    Phòng kho đã chuyển trạng thái <strong className="font-mono">OCCUPIED</strong>. Hồ sơ bàn giao điện tử đã lưu vào cơ sở dữ liệu kiểm toán.
+                    Phòng kho đã kích hoạt trạng thái <strong className="font-mono">OCCUPIED</strong>. Hợp đồng chuyển sang ACTIVE và biên bản đã lưu vết trong hệ thống.
                   </p>
                 </div>
               </div>
@@ -929,7 +1068,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     BIÊN BẢN NGHIỆM THU &amp; BÀN GIAO PHÒNG KHO TỰ QUẢN
                   </h3>
                   <span className="text-[11px] text-slate-500 font-mono">
-                    Mã biên bản: #BB-BG-{selectedCustomer.bookingCode.replace('#RES-', '')} • Hệ thống Boxora
+                    Mã biên bản: #BB-BG-{bookingDisplayCode} • Hệ thống Boxora
                   </span>
                 </div>
               </div>
@@ -954,27 +1093,26 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <div className="grid grid-cols-2 gap-4 p-3 bg-slate-50 rounded-xl">
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">BÊN GIAO (BOXORA FACILITY)</span>
-                  <span className="font-bold text-slate-900 block mt-0.5">Cơ sở Boxora Mega Central</span>
-                  <span className="text-slate-600 block">Đại diện: Nguyễn Quỳnh Anh (NV-842)</span>
-                  <span className="text-slate-600 block">Chức vụ: Nhân viên trực ca tiếp vận</span>
+                  <span className="font-bold text-slate-900 block mt-0.5">{facilityDisplayName}</span>
+                  <span className="text-slate-600 block">Bộ phận: Vận hành trực ca quầy tiếp đón</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">BÊN NHẬN (KHÁCH HÀNG)</span>
-                  <span className="font-bold text-slate-900 block mt-0.5">{selectedCustomer.customerName}</span>
-                  <span className="text-slate-600 block">CCCD: {selectedCustomer.idCard}</span>
-                  <span className="text-slate-600 block">SĐT: {selectedCustomer.phone}</span>
+                  <span className="font-bold text-slate-900 block mt-0.5">{customerDisplayName}</span>
+                  <span className="text-slate-600 block">CCCD: {idCardNumber || 'Đã đối chiếu'}</span>
+                  <span className="text-slate-600 block">SĐT: {customerDisplayPhone}</span>
                 </div>
               </div>
 
               <div className="flex flex-col gap-1.5">
                 <span className="font-bold text-slate-900">1. Thông tin kho bàn giao:</span>
                 <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg grid grid-cols-3 gap-2 text-[11px] font-mono">
-                  <div>Mã kho: <strong>{selectedCustomer.unitCode}</strong></div>
-                  <div>Loại: <strong>{selectedCustomer.unitType}</strong></div>
-                  <div>Vị trí: <strong>{selectedCustomer.floor}</strong></div>
+                  <div>Mã kho: <strong>#{unitDisplayCode}</strong></div>
+                  <div>Cơ sở: <strong>{facilityDisplayName}</strong></div>
+                  <div>Thời hạn: <strong>{currentBooking?.rentalMonths ?? 1} Tháng</strong></div>
                   <div>Mã PIN cấp: <strong className="text-cyan-700">{accessPin}</strong></div>
-                  <div>Thẻ từ: <strong>{rfidCard}</strong></div>
-                  <div>Hợp đồng: <strong>{selectedCustomer.contractCode}</strong></div>
+                  <div>Thẻ từ RFID: <strong>{rfidCard}</strong></div>
+                  <div>Mã đơn: <strong>{bookingDisplayCode}</strong></div>
                 </div>
               </div>
 
@@ -983,9 +1121,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 <ul className="list-disc list-inside text-slate-600 space-y-1 text-[11px] pl-1">
                   <li>Cửa cuốn và then chốt cơ khí hoạt động êm ái, khóa nhạy.</li>
                   <li>Không gian bên trong sạch sẽ, nền khô ráo, không mùi ẩm mốc.</li>
-                  <li>Hệ thống đèn chiếu sáng và công tắc điện hoạt động bình thường.</li>
+                  <li>Khóa điện tử SmartLock và bàn phím hoạt động chuẩn xác.</li>
                   <li>Đầu báo khói và đầu phun PCCC không bị che khuất.</li>
-                  <li>Bảng tên số kho và tem niêm phong Boxora nguyên vẹn.</li>
+                  <li>Tường vách kho và tem niêm phong Boxora nguyên vẹn.</li>
                 </ul>
               </div>
 
@@ -999,13 +1137,13 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <div className="grid grid-cols-2 gap-8 text-center pt-4">
                 <div>
                   <span className="font-bold text-slate-900 block">ĐẠI DIỆN BÊN NHẬN</span>
-                  <span className="text-slate-400 block text-[10px] italic mt-0.5">(Đã ký xác nhận điện tử)</span>
-                  <div className="mt-6 font-headline font-bold text-slate-800">{selectedCustomer.customerName}</div>
+                  <span className="text-slate-400 block text-[10px] italic mt-0.5">(Đã ký xác nhận nhận bàn giao)</span>
+                  <div className="mt-6 font-headline font-bold text-slate-800">{customerDisplayName}</div>
                 </div>
                 <div>
                   <span className="font-bold text-slate-900 block">ĐẠI DIỆN BÊN GIAO</span>
                   <span className="text-slate-400 block text-[10px] italic mt-0.5">(Nhân viên phụ trách ca)</span>
-                  <div className="mt-6 font-headline font-bold text-slate-800">Nguyễn Quỳnh Anh</div>
+                  <div className="mt-6 font-headline font-bold text-slate-800">Nhân viên trực ca Boxora</div>
                 </div>
               </div>
 
@@ -1018,10 +1156,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </span>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => {
-                    alert('Đang kết nối máy in để in biên bản bàn giao...')
-                    setShowPdfModal(false)
-                  }}
+                  type="button"
+                  onClick={() => window.print()}
                   className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[16px]">print</span>

@@ -55,10 +55,14 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
     @Value("${app.scheduling.pending-payment-timeout-minutes:15}")
     private int defaultPendingPaymentTimeoutMinutes;
 
+    @Value("${app.booking.approval-timeout-hours:24}")
+    private int pendingApprovalTimeoutHours;
+
     /**
      * Tự động quét và hủy các booking PENDING_PAYMENT quá hạn mỗi 15 phút (0 *\/15 * * * ?).
      */
     @Scheduled(cron = "${app.scheduling.auto-cancel-cron:0 */15 * * * ?}")
+    @Transactional
     public void runAutoCancelCron() {
         log.info("[CRON] Starting 15-minute automated pending payment booking cancellation...");
         try {
@@ -101,7 +105,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         BigDecimal totalRentalFee = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO;
 
         // Nếu booking ở trạng thái PENDING_PAYMENT: chưa thanh toán cọc -> không có tiền hoàn và không phạt
-        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
             long hoursUntilCheckin = Duration.between(LocalDateTime.now(), booking.getStartDate().atStartOfDay()).toHours();
             return BookingCancellationPreviewResponse.builder()
                     .bookingId(booking.getId())
@@ -309,8 +313,10 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         LocalDateTime threshold = LocalDateTime.now().minusMinutes(timeout);
         LocalDate today = LocalDate.now();
 
-        List<Booking> expiredBookings = bookingRepository.findExpiredPendingBookings(
-                BookingStatus.PENDING_PAYMENT, threshold, today);
+        List<Booking> expiredBookings = new ArrayList<>(bookingRepository.findExpiredPendingBookings(
+                BookingStatus.PENDING_PAYMENT, threshold, today));
+        expiredBookings.addAll(bookingRepository.findExpiredPendingBookings(
+                BookingStatus.PENDING_APPROVAL, LocalDateTime.now().minusHours(pendingApprovalTimeoutHours), today));
 
         log.info("[AUTO-CANCEL] Found {} pending payment bookings exceeding {} minutes or start date",
                 expiredBookings.size(), timeout);
@@ -376,7 +382,9 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         if (booking.getStatus() == BookingStatus.COMPLETED) {
             throw new AppException(ErrorCode.BOOKING_ALREADY_COMPLETED);
         }
-        if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.PENDING_PAYMENT) {
+        if (booking.getStatus() != BookingStatus.CONFIRMED
+                && booking.getStatus() != BookingStatus.PENDING_PAYMENT
+                && booking.getStatus() != BookingStatus.PENDING_APPROVAL) {
             throw new AppException(ErrorCode.BOOKING_CANNOT_BE_CANCELLED);
         }
     }

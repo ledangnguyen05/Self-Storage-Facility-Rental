@@ -324,27 +324,6 @@ export const HeroDynamicBackground: React.FC = () => {
           <circle cx="50" cy="49" r="2.5" className="fill-teal-600" />
         </svg>
       </div>
-
-      {/* 6. Floating Glassmorphic IoT Status Badges */}
-      {/* Badge Left: SmartLock Telemetry */}
-      <div className="hidden lg:flex absolute top-28 left-8 xl:left-24 items-center gap-2 px-3 py-1.5 rounded-xl bg-white/80 backdrop-blur-md border border-cyan-200/80 shadow-sm animate-float-slow text-xs font-mono text-slate-800">
-        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-        <span className="font-semibold text-[11px] text-cyan-900">SL-9000 // IoT SmartLock ONLINE</span>
-        <span className="text-[10px] text-slate-400 font-bold ml-1">98% PIN</span>
-      </div>
-
-      {/* Badge Right: Climate Controlled Telemetry */}
-      <div className="hidden lg:flex absolute top-36 right-8 xl:right-24 items-center gap-2 px-3 py-1.5 rounded-xl bg-white/80 backdrop-blur-md border border-teal-200/80 shadow-sm animate-float-delayed text-xs font-mono text-slate-800">
-        <span className="material-symbols-outlined text-teal-600 text-[16px]">thermostat</span>
-        <span className="font-semibold text-[11px] text-slate-800">21.5°C // 45% RH Ổn Định</span>
-        <span className="text-[9px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 font-bold border border-teal-200">ISO</span>
-      </div>
-
-      {/* Badge Center-Left: Encrypted Security Badge */}
-      <div className="hidden 2xl:flex absolute bottom-28 left-20 items-center gap-2 px-3 py-1.5 rounded-xl bg-white/80 backdrop-blur-md border border-slate-200 shadow-sm animate-float-fast text-xs font-mono text-slate-700">
-        <span className="material-symbols-outlined text-cyan-600 text-[16px]">encrypted</span>
-        <span className="text-[11px] font-semibold">AES-256 GCM Vault Protection</span>
-      </div>
     </div>
   )
 }

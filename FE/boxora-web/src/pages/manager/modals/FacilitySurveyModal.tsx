@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useAuth } from '../../../context/AuthContext'
 
 interface FacilitySurveyModalProps {
   isOpen: boolean
@@ -21,8 +22,9 @@ export const FacilitySurveyModal: React.FC<FacilitySurveyModalProps> = ({
   facilityName,
   onSubmitSurvey
 }) => {
+  const { user } = useAuth()
   const [ticketCode] = useState(() => `PKS-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`)
-  const [inspectorName, setInspectorName] = useState('Nguyễn Văn An (Quản lý Cơ sở)')
+  const [inspectorName, setInspectorName] = useState(() => `${user?.fullName || user?.username || 'Quản lý Cơ sở'} (Quản lý)`)
   const [overallRating, setOverallRating] = useState<'EXCELLENT' | 'GOOD' | 'NEEDS_MAINTENANCE'>('EXCELLENT')
   const [generalNotes, setGeneralNotes] = useState('Hệ thống PCCC áp lực ổn định. Cửa cuốn 32 kho vận hành trơn tru. Vi khí hậu Zone C đạt chuẩn 20.4°C.')
   
@@ -104,6 +106,20 @@ export const FacilitySurveyModal: React.FC<FacilitySurveyModalProps> = ({
           >
             <span className="material-symbols-outlined text-[22px]">close</span>
           </button>
+        </div>
+
+        {/* Development State Warning Banner */}
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3 text-amber-900 text-xs">
+          <span className="material-symbols-outlined text-[20px] text-amber-600 shrink-0">construction</span>
+          <div>
+            <div className="font-bold flex items-center gap-1.5">
+              <span>TÍNH NĂNG ĐANG PHÁT TRIỂN &bull; CHƯA KẾT NỐI PHẦN CỨNG THỰC TẾ</span>
+              <span className="px-1.5 py-0.2 bg-amber-200 text-amber-900 font-mono text-[10px] rounded font-bold uppercase">Thử nghiệm</span>
+            </div>
+            <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+              Biểu mẫu kiểm định an toàn PCCC và vi khí hậu đang trong giai đoạn phát triển tích hợp với thiết bị đo đạc cầm tay. Kết quả khảo sát hiện tại mang tính chất xem trước quy trình số hóa.
+            </p>
+          </div>
         </div>
 
         {/* Content Form Scrollable */}
@@ -224,10 +240,9 @@ export const FacilitySurveyModal: React.FC<FacilitySurveyModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-4 py-2 rounded-lg bg-orange-600 text-white text-xs font-bold hover:bg-orange-700 transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
             >
-              <span className="material-symbols-outlined text-[16px]">verified</span>
-              Lưu &amp; Ký Phiếu Khảo Sát
+              <span>Lưu &amp; Ký Phiếu Khảo Sát</span>
             </button>
           </div>
         </form>

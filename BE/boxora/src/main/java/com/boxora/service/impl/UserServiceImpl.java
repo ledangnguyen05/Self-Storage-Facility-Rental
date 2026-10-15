@@ -2,6 +2,7 @@ package com.boxora.service.impl;
 
 import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.UserCreateRequest;
+import com.boxora.dto.request.ProfileUpdateRequest;
 import com.boxora.dto.request.UserUpdateRequest;
 import com.boxora.dto.response.UserResponse;
 import com.boxora.entity.Facility;
@@ -26,6 +27,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -153,6 +155,28 @@ public class UserServiceImpl implements UserService {
         return userMapper.toResponse(updated);
     }
 
+    @Override
+    public UserResponse updateOwnProfile(String email, ProfileUpdateRequest request) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+
+        user.setFullName(request.getFullName().trim());
+        user.setPhone(request.getPhone().trim());
+        User updated = userRepository.save(user);
+
+        activityLogService.record(
+                updated.getFacility() != null ? updated.getFacility().getId() : null,
+                ActivityAction.USER_UPDATE,
+                "User",
+                updated.getId(),
+                "Cap nhat ho so tai khoan: " + updated.getUsername(),
+                null,
+                updated.getUsername()
+        );
+
+        return userMapper.toResponse(updated);
+    }
+
 
     @Override
     public void delete(UUID id) {
@@ -204,6 +228,7 @@ public class UserServiceImpl implements UserService {
             String search,
             Boolean isActive,
             UUID roleId,
+            String role,
             UUID facilityId,
             int page,
             int size,
@@ -223,7 +248,7 @@ public class UserServiceImpl implements UserService {
         }
 
         Page<UserResponse> result = userRepository
-                .findAllWithFilters(search, isActive, roleId, effectiveFacilityId, pageable)
+                .findAllWithFilters(search, isActive, roleId, role, effectiveFacilityId, pageable)
                 .map(userMapper::toResponse);
 
         return PageResponse.from(result);

@@ -3,6 +3,7 @@ package com.boxora.dto.request;
 import jakarta.validation.constraints.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalTime;
 import java.util.UUID;
 
@@ -39,4 +40,19 @@ public class FacilityUpdateRequest {
     private LocalTime closeTime;
 
     private String description;
+
+    @Digits(integer = 3, fraction = 7, message = "Latitude must have at most 7 decimal places")
+    @DecimalMin(value = "-90.0", message = "Latitude must be at least -90")
+    @DecimalMax(value = "90.0", message = "Latitude must be at most 90")
+    private BigDecimal latitude;
+
+    @Digits(integer = 3, fraction = 7, message = "Longitude must have at most 7 decimal places")
+    @DecimalMin(value = "-180.0", message = "Longitude must be at least -180")
+    @DecimalMax(value = "180.0", message = "Longitude must be at most 180")
+    private BigDecimal longitude;
+
+    private String layoutConfig;
+
+    /** Explicitly clears both coordinates when the admin removes the GPS location. */
+    private Boolean clearCoordinates;
 }

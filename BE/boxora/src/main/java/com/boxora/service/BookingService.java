@@ -9,6 +9,11 @@ import java.util.UUID;
 
 public interface BookingService {
     BookingResponse createBooking(BookingCreateRequest request);
+    List<BookingResponse> getMyBookingRequests();
+    List<BookingResponse> getPendingApprovalRequests();
+    BookingResponse reviewBookingRequest(UUID id, boolean approved);
+    BookingResponse reviewBookingRequest(UUID id, boolean approved, UUID assignedStaffId, String notes);
+    List<BookingResponse> getMyBookings(UUID customerId);
     List<BookingResponse> getMyActiveBookings(UUID customerId);
     List<BookingResponse> getUpcomingArrivals();
     BookingResponse renewBooking(UUID id, int extraMonths);
@@ -16,5 +21,7 @@ public interface BookingService {
     BookingResponse getById(UUID id);
     com.boxora.dto.response.BookingPinResponse getBookingPin(UUID id, String currentUserEmail);
     com.boxora.dto.response.BookingPinResponse updateBookingPin(UUID id, com.boxora.dto.request.UpdatePinRequest request, String currentUserEmail);
+    com.boxora.dto.response.BookingPinResponse getBookingPinByUnitId(UUID unitId, String currentUserEmail);
+    com.boxora.dto.response.BookingPinResponse updateBookingPinByUnitId(UUID unitId, com.boxora.dto.request.UpdatePinRequest request, String currentUserEmail);
     BookingAccessCredentialsResponse getAccessCredentials(UUID id);
 }

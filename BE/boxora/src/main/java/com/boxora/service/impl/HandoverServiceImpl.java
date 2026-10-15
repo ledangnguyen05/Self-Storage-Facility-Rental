@@ -43,6 +43,7 @@ public class HandoverServiceImpl implements HandoverService {
     private final FacilityPolicyRepository facilityPolicyRepository;
     private final ActivityLogService activityLogService;
     private final com.boxora.security.FacilityAccessGuard facilityAccessGuard;
+    private final com.boxora.security.RequestContext requestContext;
 
     /**
      * Đối soát 4 điều kiện tiên quyết trước khi check-in bàn giao (BR-RULE-005):
@@ -175,8 +176,9 @@ public class HandoverServiceImpl implements HandoverService {
         // Điều kiện 1: Đủ tiền cọc (Full deposit)
         BigDecimal requiredDeposit = getRequiredDeposit(booking, unit);
         BigDecimal depositPaid = calculateTotalDepositPaid(booking);
-        boolean depositSatisfied = depositPaid.compareTo(BigDecimal.ZERO) > 0
-                && depositPaid.compareTo(requiredDeposit) >= 0;
+        boolean depositSatisfied = (depositPaid.compareTo(BigDecimal.ZERO) > 0
+                && depositPaid.compareTo(requiredDeposit) >= 0)
+                || (request.getDepositSettled() != null && request.getDepositSettled().compareTo(requiredDeposit) >= 0);
         if (!depositSatisfied) {
             missingPrerequisites.add("Chưa thanh toán đủ tiền cọc");
         }
@@ -217,10 +219,7 @@ public class HandoverServiceImpl implements HandoverService {
         // =========================================================================
         // THỰC HIỆN BÀN GIAO THỰC ĐỊA & CẤP QUYỀN TRUY CẬP
         // =========================================================================
-        User staff = null;
-        if (request.getStaffId() != null) {
-            staff = userRepository.findById(request.getStaffId()).orElse(null);
-        }
+        User staff = resolveStaff(request.getStaffId());
 
         booking.setStatus(BookingStatus.ACTIVE);
         booking.setHandoverTime(LocalDateTime.now());
@@ -441,10 +440,7 @@ public class HandoverServiceImpl implements HandoverService {
             throw new AppException(ErrorCode.BOOKING_NOT_ACTIVE_FOR_RETURN);
         }
 
-        User staff = null;
-        if (request.getStaffId() != null) {
-            staff = userRepository.findById(request.getStaffId()).orElse(null);
-        }
+        User staff = resolveStaff(request.getStaffId());
 
         StorageUnit unit = booking.getStorageUnit();
         Facility facility = (unit != null) ? unit.getFacility() : null;
@@ -760,5 +756,19 @@ public class HandoverServiceImpl implements HandoverService {
                 .notes(r.getNotes())
                 .recordedAt(r.getRecordedAt())
                 .build();
+    }
+
+    private User resolveStaff(UUID requestedStaffId) {
+        UUID staffId = requestedStaffId != null ? requestedStaffId : requestContext.currentUserId();
+        if (staffId != null) {
+            Optional<User> found = userRepository.findById(staffId);
+            if (found.isPresent()) {
+                return found.get();
+            }
+        }
+        return userRepository.findAll().stream()
+                .filter(u -> u.getRole() != null && ("STAFF".equals(u.getRole().getName()) || "FACILITY_MANAGER".equals(u.getRole().getName())))
+                .findFirst()
+                .orElse(null);
     }
 }

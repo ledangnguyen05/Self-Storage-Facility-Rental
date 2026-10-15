@@ -1,35 +1,49 @@
-import { Facility, UnitType, StorageUnit, Booking, SupportTicket, HandoverRecord } from '../types'
+import { Facility, UnitType, Booking, SupportTicket, HandoverRecord } from '../types'
 
 export const MOCK_FACILITIES: Facility[] = [
   {
-    id: 'fac-1',
-    name: 'Boxora Central Landmark — District 1',
-    address: '142 Nguyen Thi Minh Khai, Ben Thanh Ward, District 1',
+    id: 'f7af2794-0d0d-4c68-9e36-c44bf3034f6c',
+    name: 'Boxora District 1',
+    code: 'HCM-D1',
+    address: '123 Nguyen Hue, Ben Nghe Ward',
     city: 'Ho Chi Minh City',
-    contactPhone: '028 3822 9901',
-    totalUnits: 120,
-    availableUnits: 34,
+    contactPhone: '0901234567',
+    totalUnits: 9,
+    availableUnits: 5,
     imageUrl: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&q=80&w=1000'
   },
   {
-    id: 'fac-2',
-    name: 'Boxora Tech Park — Thu Duc City',
-    address: 'Lot E2a-7, D1 Road, Saigon Hi-Tech Park, District 9',
+    id: '45e03ded-5da1-43d5-bea7-96c645d5f96c',
+    name: 'Boxora District 7',
+    code: 'HCM-D7',
+    address: '456 Nguyen Huu Tho, Tan Hung Ward',
     city: 'Ho Chi Minh City',
-    contactPhone: '028 7300 8822',
-    totalUnits: 250,
-    availableUnits: 88,
-    imageUrl: 'https://images.unsplash.com/photo-1590247813693-5541d1c609fd?auto=format&fit=crop&q=80&w=1000'
+    contactPhone: '0902345678',
+    totalUnits: 9,
+    availableUnits: 4,
+    imageUrl: 'https://images.unsplash.com/photo-1549488344-1f9b8d2bd1f3?auto=format&fit=crop&q=80&w=1000'
   },
   {
-    id: 'fac-3',
-    name: 'Boxora Riverside — Binh Thanh',
-    address: '208 Nguyen Huu Canh, Ward 22, Binh Thanh District',
+    id: 'fd8f948e-fdff-4a81-ad0f-fc45639b545d',
+    name: 'Boxora Thu Duc',
+    code: 'HCM-TD',
+    address: '789 Vo Van Ngan, Linh Chieu Ward',
     city: 'Ho Chi Minh City',
-    contactPhone: '028 3514 6677',
-    totalUnits: 180,
-    availableUnits: 42,
+    contactPhone: '0903456789',
+    totalUnits: 9,
+    availableUnits: 5,
     imageUrl: 'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&q=80&w=1000'
+  },
+  {
+    id: 'a1111111-2222-3333-4444-555555555555',
+    name: 'Boxora Tan Binh Mega Hub',
+    code: 'HCM-TB',
+    address: '102 Truong Son, Ward 2, Tan Binh District',
+    city: 'Ho Chi Minh City',
+    contactPhone: '0904567890',
+    totalUnits: 9,
+    availableUnits: 4,
+    imageUrl: 'https://images.unsplash.com/photo-1590247813693-5541d1c609fd?auto=format&fit=crop&q=80&w=1000'
   }
 ]
 
@@ -74,17 +88,6 @@ export const MOCK_UNIT_TYPES: UnitType[] = [
     description: 'Equipped with heavy-duty shelving, climate-controlled insulation, dedicated electrical outlets and pallet access.',
     suitableFor: 'E-commerce inventory, office archives, retail merchandise'
   }
-]
-
-export const MOCK_STORAGE_UNITS: StorageUnit[] = [
-  { id: 'u-101', unitCode: 'A-101', floorLevel: 'Floor 1', status: 'OCCUPIED', facilityId: 'fac-1', facilityName: 'Boxora Central Landmark', unitTypeId: 'ut-compact', unitTypeName: 'Compact Studio Unit', pricePerMonth: 1250000 },
-  { id: 'u-102', unitCode: 'A-102', floorLevel: 'Floor 1', status: 'AVAILABLE', facilityId: 'fac-1', facilityName: 'Boxora Central Landmark', unitTypeId: 'ut-compact', unitTypeName: 'Compact Studio Unit', pricePerMonth: 1250000 },
-  { id: 'u-103', unitCode: 'A-103', floorLevel: 'Floor 1', status: 'AVAILABLE', facilityId: 'fac-1', facilityName: 'Boxora Central Landmark', unitTypeId: 'ut-standard', unitTypeName: 'Standard 1-Bedroom', pricePerMonth: 2400000 },
-  { id: 'u-104', unitCode: 'B-201', floorLevel: 'Floor 2', status: 'MAINTENANCE', facilityId: 'fac-1', facilityName: 'Boxora Central Landmark', unitTypeId: 'ut-locker', unitTypeName: 'Personal Locker', pricePerMonth: 450000 },
-  { id: 'u-105', unitCode: 'B-202', floorLevel: 'Floor 2', status: 'AVAILABLE', facilityId: 'fac-1', facilityName: 'Boxora Central Landmark', unitTypeId: 'ut-locker', unitTypeName: 'Personal Locker', pricePerMonth: 450000 },
-  { id: 'u-106', unitCode: 'C-301', floorLevel: 'Floor 3', status: 'OCCUPIED', facilityId: 'fac-1', facilityName: 'Boxora Central Landmark', unitTypeId: 'ut-business', unitTypeName: 'Commercial Suite', pricePerMonth: 4800000 },
-  { id: 'u-201', unitCode: 'T-101', floorLevel: 'Ground Floor', status: 'AVAILABLE', facilityId: 'fac-2', facilityName: 'Boxora Tech Park', unitTypeId: 'ut-business', unitTypeName: 'Commercial Suite', pricePerMonth: 4800000 },
-  { id: 'u-202', unitCode: 'T-102', floorLevel: 'Ground Floor', status: 'AVAILABLE', facilityId: 'fac-2', facilityName: 'Boxora Tech Park', unitTypeId: 'ut-standard', unitTypeName: 'Standard 1-Bedroom', pricePerMonth: 2400000 },
 ]
 
 export const MOCK_BOOKINGS: Booking[] = [

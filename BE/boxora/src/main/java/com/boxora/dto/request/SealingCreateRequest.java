@@ -13,16 +13,14 @@ import java.util.UUID;
 @Builder
 public class SealingCreateRequest {
 
-    @NotNull(message = "contractId is required")
     private UUID contractId;
 
-    @NotBlank(message = "sealTagNumber is required")
+    private UUID unitId;
+
     private String sealTagNumber;
 
-    @NotNull(message = "witnessId is required")
     private UUID witnessId;
 
-    @NotBlank(message = "reason is required")
     private String reason;
 
     private String inventorySummary;

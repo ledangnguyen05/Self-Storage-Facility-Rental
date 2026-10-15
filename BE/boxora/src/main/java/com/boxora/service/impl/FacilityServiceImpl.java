@@ -49,11 +49,21 @@ public class FacilityServiceImpl implements FacilityService {
 
     @Override
     public FacilityResponse create(FacilityCreateRequest request) {
+        validateCoordinates(request.getLatitude(), request.getLongitude());
         if (facilityRepository.existsByCode(request.getCode())) {
             throw new AppException(ErrorCode.FACILITY_CODE_EXISTED);
         }
 
         Facility facility = facilityMapper.toEntity(request);
+        if (facility.getStatus() == null) {
+            facility.setStatus(FacilityStatus.ACTIVE);
+        }
+        if (facility.getOpenTime() == null) {
+            facility.setOpenTime(java.time.LocalTime.of(8, 0));
+        }
+        if (facility.getCloseTime() == null) {
+            facility.setCloseTime(java.time.LocalTime.of(20, 0));
+        }
 
         if (request.getManagerId() != null) {
             User manager = userRepository.findById(request.getManagerId())
@@ -88,6 +98,11 @@ public class FacilityServiceImpl implements FacilityService {
         }
 
         facilityMapper.updateEntityFromRequest(request, facility);
+        if (Boolean.TRUE.equals(request.getClearCoordinates())) {
+            facility.setLatitude(null);
+            facility.setLongitude(null);
+        }
+        validateCoordinates(facility.getLatitude(), facility.getLongitude());
 
         if (request.getManagerId() != null) {
             User manager = userRepository.findById(request.getManagerId())
@@ -145,5 +160,11 @@ public class FacilityServiceImpl implements FacilityService {
                 .findAllWithFilters(search, status, scopedFacilityId, pageable)
                 .map(facilityMapper::toResponse);
         return PageResponse.from(result);
+    }
+
+    private void validateCoordinates(java.math.BigDecimal latitude, java.math.BigDecimal longitude) {
+        if ((latitude == null) != (longitude == null)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST);
+        }
     }
 }

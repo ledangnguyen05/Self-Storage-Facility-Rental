@@ -2,6 +2,7 @@ package com.boxora.controller;
 
 import com.boxora.common.response.ApiResponse;
 import com.boxora.dto.request.BookingCreateRequest;
+import com.boxora.dto.request.BookingDecisionRequest;
 import com.boxora.dto.request.UpdatePinRequest;
 import com.boxora.dto.response.BookingAccessCredentialsResponse;
 import com.boxora.dto.response.BookingPinResponse;
@@ -35,6 +36,52 @@ public class BookingController {
     public ResponseEntity<ApiResponse<BookingResponse>> create(@Valid @RequestBody BookingCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Booking created with access credentials", bookingService.createBooking(request)));
+    }
+
+@GetMapping("/my-requests")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN')")
+    @Operation(summary = "Lấy các yêu cầu đặt kho đang chờ duyệt hoặc chờ thanh toán")
+    public ResponseEntity<ApiResponse<List<BookingResponse>>> getMyRequests() {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getMyBookingRequests()));
+    }
+
+    @GetMapping("/pending-approval")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Lấy yêu cầu đặt kho đang chờ quản lý duyệt")
+    public ResponseEntity<ApiResponse<List<BookingResponse>>> getPendingApprovalRequests() {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getPendingApprovalRequests()));
+    }
+
+    @PostMapping("/{id}/decision")
+    @PreAuthorize("hasAuthority('BOOKING_UPDATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Duyệt hoặc từ chối yêu cầu thuê kho và phân công nhân viên chuẩn bị")
+    public ResponseEntity<ApiResponse<BookingResponse>> decideRequest(
+            @PathVariable UUID id,
+            @Valid @RequestBody BookingDecisionRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                bookingService.reviewBookingRequest(id, request.getApproved(), request.getAssignedStaffId(), request.getNotes())
+        ));
+    }
+
+    @GetMapping("/my-bookings")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Lấy toàn bộ lịch sử các lượt đặt kho của khách hàng")
+    public ResponseEntity<ApiResponse<List<BookingResponse>>> getMyBookings(@RequestParam(required = false) UUID customerId) {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getMyBookings(customerId)));
+    }
+
+    @GetMapping
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Truy vấn danh sách đơn đặt kho")
+    public ResponseEntity<ApiResponse<List<BookingResponse>>> getAll(
+            @RequestParam(required = false) UUID customerId,
+            @RequestParam(required = false) com.boxora.enums.BookingStatus status) {
+        List<BookingResponse> list = bookingService.getMyBookings(customerId);
+        if (status != null) {
+            list = list.stream().filter(b -> b.getStatus() == status).toList();
+        }
+        return ResponseEntity.ok(ApiResponse.success(list));
     }
 
     @GetMapping("/my-active")
@@ -91,6 +138,35 @@ public class BookingController {
         return ResponseEntity.ok(ApiResponse.success(
                 "Đã đổi mã PIN và mã hóa AES-256-GCM thành công",
                 bookingService.updateBookingPin(id, request, email)
+        ));
+    }
+
+    @GetMapping("/unit/{unitId}/access-pin")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "API tra cứu mã PIN giải mã AES-256-GCM theo mã ID phòng kho")
+    public ResponseEntity<ApiResponse<BookingPinResponse>> getBookingPinByUnit(
+            @PathVariable UUID unitId,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        String email = userDetails != null ? userDetails.getUsername() : null;
+        return ResponseEntity.ok(ApiResponse.success(
+                "Tra cứu mã PIN phòng kho thành công",
+                bookingService.getBookingPinByUnitId(unitId, email)
+        ));
+    }
+
+    @PutMapping("/unit/{unitId}/access-pin")
+    @PreAuthorize("hasAuthority('BOOKING_UPDATE') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "API cập nhật hoặc tái cấp mã PIN mã hóa AES-256-GCM theo phòng kho")
+    public ResponseEntity<ApiResponse<BookingPinResponse>> updateBookingPinByUnit(
+            @PathVariable UUID unitId,
+            @Valid @RequestBody UpdatePinRequest request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        String email = userDetails != null ? userDetails.getUsername() : null;
+        return ResponseEntity.ok(ApiResponse.success(
+                "Đã đổi mã PIN và mã hóa AES-256-GCM thành công cho phòng kho",
+                bookingService.updateBookingPinByUnitId(unitId, request, email)
         ));
     }
 

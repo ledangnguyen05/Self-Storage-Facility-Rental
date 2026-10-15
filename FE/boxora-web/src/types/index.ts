@@ -12,9 +12,14 @@ export interface User {
     name: RoleType
     description?: string
   }
-  isActive?: boolean
+  roleName?: RoleType | string
+  roleId?: string
   facilityId?: string
+  facilityName?: string
+  facilityCode?: string
+  isActive?: boolean
   createdAt?: string
+  updatedAt?: string
 }
 
 export interface Facility {
@@ -29,6 +34,32 @@ export interface Facility {
   code?: string
   openTime?: string
   closeTime?: string
+  latitude?: number | null
+  longitude?: number | null
+  layoutConfig?: string | null
+  description?: string
+  email?: string
+  status?: string
+}
+
+export interface FacilityLayoutConfig {
+  title: string
+  floor1Name: string
+  floor2Name: string
+  zoneAName: string
+  zoneADesc: string
+  zoneBName: string
+  zoneBDesc: string
+  zoneCName: string
+  zoneCDesc: string
+  loadingBayFloor1: string
+  corridorNorth: string
+  exitFloor1: string
+  loadingBayFloor2: string
+  corridorClimate: string
+  exitFloor2: string
+  totalAreaFloor1: string
+  totalAreaFloor2: string
 }
 
 export interface UnitType {
@@ -38,11 +69,34 @@ export interface UnitType {
   areaSqm: number // e.g. 3.0
   basePricePerMonth: number // e.g. 1200000
   depositAmount: number // e.g. 1200000
-  description: string
-  suitableFor: string
+  description?: string
+  suitableFor?: string
+  activeUnitsCount?: number
 }
 
-export type UnitStatusType = 'AVAILABLE' | 'RESERVED' | 'OCCUPIED' | 'MAINTENANCE' | 'UNDER_MAINTENANCE'
+export interface UnitTypePriceAdjustmentRequest {
+  newPrice: number
+  reason: string
+  effectiveFrom?: string
+  cascadeToAvailableUnits?: boolean
+}
+
+export interface StorageUnitPriceHistory {
+  id: string
+  storageUnitId?: string
+  unitCode?: string
+  unitTypeId?: string
+  unitTypeName?: string
+  oldPrice: number
+  newPrice: number
+  effectiveFrom: string
+  reason: string
+  changedById?: string
+  changedByName?: string
+  createdAt?: string
+}
+
+export type UnitStatusType = 'AVAILABLE' | 'RESERVED' | 'OCCUPIED' | 'MAINTENANCE' | 'UNDER_MAINTENANCE' | 'OVERDUE_LOCKED'
 
 export interface StorageUnit {
   id: string
@@ -54,16 +108,20 @@ export interface StorageUnit {
   unitTypeId: string
   unitTypeName: string
   pricePerMonth: number
+  depositAmount?: number
   areaSqMeters?: number
   batteryLevel?: string
   smartLockSerial?: string
   lastAccessTime?: string
   tenantName?: string
   contractCode?: string
+  contractId?: string
+  bookingId?: string
+  startDate?: string
   dueDate?: string
 }
 
-export type BookingStatusType = 'PENDING_PAYMENT' | 'CONFIRMED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
+export type BookingStatusType = 'PENDING_APPROVAL' | 'PENDING_PAYMENT' | 'CONFIRMED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
 
 export interface Booking {
   id: string
@@ -74,6 +132,7 @@ export interface Booking {
   customerPhone: string
   storageUnitId: string
   unitCode: string
+  facilityId?: string
   facilityName: string
   floorLevel?: string
   startDate: string
@@ -90,6 +149,10 @@ export interface Booking {
   qrAccessToken?: string | null
   handoverTime?: string
   returnTime?: string
+  signingMethod?: 'ONLINE' | 'IN_PERSON'
+  assignedStaffId?: string | null
+  assignedStaffName?: string | null
+  staffAssignmentNotes?: string | null
 }
 
 export type RentalContractStatus =
@@ -99,6 +162,7 @@ export type RentalContractStatus =
   | 'EXPIRED'
   | 'TERMINATED'
   | 'CANCELLED'
+  | 'OVERDUE'
 
 export interface RentalContract {
   id: string
@@ -107,6 +171,9 @@ export interface RentalContract {
   customerEmail: string
   customerName?: string
   customerPhone?: string
+  bookingId?: string
+  storageUnitId?: string
+  facilityId?: string
   unitCode: string
   facilityName: string
   startDate: string
@@ -115,6 +182,12 @@ export interface RentalContract {
   depositHeld: number
   status: RentalContractStatus
   signedDocumentUrl?: string | null
+  docusealSubmissionId?: string | null
+  docusealSubmitterSlug?: string | null
+  signedAt?: string | null
+  signingMethod?: 'ONLINE' | 'IN_PERSON'
+  unitTypeName?: string | null
+  unitPricePerMonth?: number | null
 }
 
 export interface SupportTicket {
@@ -184,7 +257,11 @@ export interface ActivityLog {
   id: string
   userId?: string
   username?: string
+  userName?: string
   userFullName?: string
+  userEmail?: string
+  userRole?: string
+  emailAttempted?: string
   facilityId?: string
   facilityName?: string
   logType: string
@@ -193,6 +270,7 @@ export interface ActivityLog {
   isCritical?: boolean
   resourceType?: string
   resourceId?: string
+  description?: string
   details?: string
   ipAddress?: string
   userAgent?: string
@@ -217,20 +295,67 @@ export interface FacilityPolicy {
 export interface RevenueReport {
   fromDate?: string
   toDate?: string
+  totalRevenue?: number
   systemSummary?: {
     totalRevenue: number
-    rentalRevenue: number
+    rentalFeeRevenue: number
     depositRevenue: number
-    penaltyRevenue: number
-    totalTransactions: number
+    renewalFeeRevenue?: number
+    extraChargeRevenue?: number
+    paymentCount: number
   }
   byFacility?: Array<{
     facilityId: string
     facilityName: string
     totalRevenue: number
-    rentalRevenue: number
+    rentalFeeRevenue: number
     depositRevenue: number
+    renewalFeeRevenue?: number
+    extraChargeRevenue?: number
+    paymentCount?: number
   }>
+}
+
+export interface OverdueDebtReport {
+  asOfDate?: string
+  totalOverdueCount: number
+  totalDebtAmount: number
+  totalUnpaidRent: number
+  totalLateFees: number
+  gracePeriodCount: number
+  warningCount: number
+  accessBlockedCount: number
+  eligibleForSealingCount: number
+  aging1To3DaysDebt?: number
+  aging4To7DaysDebt?: number
+  aging8To14DaysDebt?: number
+  aging15PlusDaysDebt?: number
+  items?: OverdueDebtItem[]
+}
+
+export interface OverdueDebtItem {
+  contractId: string
+  contractCode: string
+  bookingId?: string
+  bookingCode?: string
+  customerId?: string
+  customerName?: string
+  customerPhone?: string
+  customerEmail?: string
+  unitId?: string
+  unitCode: string
+  facilityId?: string
+  facilityName?: string
+  startDate?: string
+  dueDate?: string
+  daysOverdue: number
+  unpaidRent: number
+  dailyLateFee: number
+  totalLateFee: number
+  totalDebt: number
+  debtAmount?: number
+  overdueStage?: string
+  smartLockStatus?: string
 }
 
 export interface OccupancyReport {

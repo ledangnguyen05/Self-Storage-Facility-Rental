@@ -1,40 +1,92 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { userService } from '../../../services/userService'
+import { staffAssignmentService } from '../../../services/staffAssignmentService'
+import { User } from '../../../types'
 
 interface ShiftAssignmentModalProps {
   isOpen: boolean
   onClose: () => void
+  facilityId?: string
   onSaveShift: (summary: string) => void
 }
-
-const STAFF_MEMBERS = [
-  { id: 'staff_1', name: 'Lê Hoàng Nam', role: 'Kỹ thuật Trưởng & SmartLock', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80' },
-  { id: 'staff_2', name: 'Trần Thùy Linh', role: 'Điều phối Bàn giao & Ký gửi', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&auto=format&fit=crop&q=80' },
-  { id: 'staff_3', name: 'Nguyễn Văn Đạt', role: 'An ninh Tuần tra & Camera Bay B', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80' },
-  { id: 'staff_4', name: 'Phạm Quốc Tuấn', role: 'Kỹ thuật viên Trạm Vi Khí Hậu Zone C', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120&auto=format&fit=crop&q=80' }
-]
 
 export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
   isOpen,
   onClose,
+  facilityId,
   onSaveShift
 }) => {
-  const [selectedStaffId, setSelectedStaffId] = useState(STAFF_MEMBERS[0].id)
+  const [staffList, setStaffList] = useState<User[]>([])
+  const [isLoadingStaff, setIsLoadingStaff] = useState(false)
+  const [selectedStaffId, setSelectedStaffId] = useState<string>('')
   const [shiftType, setShiftType] = useState<'MORNING' | 'AFTERNOON' | 'NIGHT'>('AFTERNOON')
   const [targetZone, setTargetZone] = useState('Phân khu A (Hành lang Aisle North)')
   const [assignmentDate, setAssignmentDate] = useState(() => new Date().toISOString().split('T')[0])
   const [taskNotes, setTaskNotes] = useState('Tuần tra định kỳ 2 giờ/lần, kiểm tra pin SmartLock các kho nợ quá hạn và hỗ trợ khách bàn giao.')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (isOpen) {
+      loadStaff()
+    }
+  }, [isOpen, facilityId])
+
+  const loadStaff = async () => {
+    setIsLoadingStaff(true)
+    setErrorMessage(null)
+    try {
+      const res = await userService.getAllUsers({ role: 'STAFF', facilityId })
+      const users = res?.data || []
+      setStaffList(users)
+      if (users.length > 0) {
+        setSelectedStaffId(users[0].id)
+      } else {
+        setSelectedStaffId('')
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.response?.data?.message || 'Không thể tải danh sách nhân viên từ hệ thống.')
+    } finally {
+      setIsLoadingStaff(false)
+    }
+  }
 
   if (!isOpen) return null
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const staff = STAFF_MEMBERS.find(s => s.id === selectedStaffId) || STAFF_MEMBERS[0]
-    const shiftLabel = shiftType === 'MORNING' ? 'Ca Sáng (07:00 - 15:30)' : shiftType === 'AFTERNOON' ? 'Ca Chiều (14:30 - 22:00)' : 'Ca Đêm (21:30 - 07:30)'
-    onSaveShift(`Đã phân công ${staff.name} trực ${shiftLabel} tại ${targetZone}!`)
-    onClose()
-  }
+    if (!selectedStaffId) {
+      setErrorMessage('Vui lòng chọn nhân viên trực ca.')
+      return
+    }
 
-  const selectedStaff = STAFF_MEMBERS.find(s => s.id === selectedStaffId) || STAFF_MEMBERS[0]
+    setIsSubmitting(true)
+    setErrorMessage(null)
+
+    try {
+      const staff = staffList.find(s => s.id === selectedStaffId)
+      const staffDisplayName = staff?.fullName || staff?.username || 'Nhân viên'
+      const shiftLabel = shiftType === 'MORNING' ? 'Ca Sáng (07:00 - 15:30)' : shiftType === 'AFTERNOON' ? 'Ca Chiều (14:30 - 22:00)' : 'Ca Đêm (21:30 - 07:30)'
+
+      await staffAssignmentService.createAssignment({
+        staffId: selectedStaffId,
+        facilityId: facilityId || staff?.facilityId || '',
+        assignedDate: assignmentDate,
+        shift: shiftType,
+        assignedZone: targetZone,
+        roleInShift: 'PRIMARY_STAFF',
+        notes: taskNotes
+      })
+
+      onSaveShift(`Đã phân công ${staffDisplayName} trực ${shiftLabel} tại ${targetZone} vào CSDL!`)
+      onClose()
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Lỗi khi lưu phân công ca trực vào cơ sở dữ liệu.'
+      setErrorMessage(msg)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200">
@@ -48,7 +100,7 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
             <div>
               <h2 className="text-lg font-bold text-slate-900">Phân Công Ca Trực Nhân Sự</h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Điều phối nhân viên an ninh, kỹ thuật và bàn giao kho
+                Nối dữ liệu thật qua API StaffAssignmentController
               </p>
             </div>
           </div>
@@ -61,36 +113,68 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
           </button>
         </div>
 
+        {errorMessage && (
+          <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px]">error</span>
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
         {/* Assignment Form */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-xs">
           {/* Select Staff */}
           <div>
-            <label className="block text-slate-700 font-semibold mb-1.5">
-              Chọn nhân viên trực ca
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {STAFF_MEMBERS.map(staff => (
-                <div
-                  key={staff.id}
-                  onClick={() => setSelectedStaffId(staff.id)}
-                  className={`p-2.5 rounded-xl border flex items-center gap-2.5 cursor-pointer transition-all ${
-                    selectedStaffId === staff.id
-                      ? 'border-slate-900 bg-slate-50 ring-2 ring-slate-900/10 shadow-xs'
-                      : 'border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <img
-                    src={staff.avatar}
-                    alt={staff.name}
-                    className="w-8 h-8 rounded-full object-cover border border-slate-200"
-                  />
-                  <div className="flex flex-col min-w-0">
-                    <span className="font-bold text-slate-900 truncate">{staff.name}</span>
-                    <span className="text-[10px] text-slate-500 truncate">{staff.role}</span>
-                  </div>
-                </div>
-              ))}
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-slate-700 font-semibold">
+                Chọn nhân viên trực ca (Dữ liệu thật)
+              </label>
+              {isLoadingStaff && (
+                <span className="text-[11px] text-cyan-600 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[14px] animate-spin">sync</span>
+                  Đang tải...
+                </span>
+              )}
             </div>
+
+            {staffList.length === 0 && !isLoadingStaff ? (
+              <div className="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-500">
+                Không tìm thấy nhân viên (STAFF) nào thuộc cơ sở này.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
+                {staffList.map(staff => (
+                  <div
+                    key={staff.id}
+                    onClick={() => setSelectedStaffId(staff.id)}
+                    className={`p-2.5 rounded-xl border flex items-center gap-2.5 cursor-pointer transition-all ${
+                      selectedStaffId === staff.id
+                        ? 'border-slate-900 bg-slate-50 ring-2 ring-slate-900/10 shadow-xs'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    {staff.avatar ? (
+                      <img
+                        src={staff.avatar}
+                        alt={staff.fullName || staff.username}
+                        className="w-8 h-8 rounded-full object-cover border border-slate-200"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center font-bold text-slate-700 text-xs shrink-0">
+                        {(staff.fullName || staff.username).substring(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-bold text-slate-900 truncate">
+                        {staff.fullName || staff.username}
+                      </span>
+                      <span className="text-[10px] text-slate-500 truncate">
+                        {staff.email}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Shift Type Selection */}
@@ -147,6 +231,7 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
               <input
                 type="date"
                 value={assignmentDate}
+                min={new Date().toISOString().split('T')[0]}
                 onChange={(e) => setAssignmentDate(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-50 rounded-lg border border-slate-200 font-medium text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-400"
               />
@@ -178,10 +263,13 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-4 py-2 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-neutral-800 transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+              disabled={isSubmitting || staffList.length === 0}
+              className="px-4 py-2 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-neutral-800 transition-all shadow-sm cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
             >
-              <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
-              Lưu &amp; Phát Lệnh Phân Công
+              <span className={`material-symbols-outlined text-[16px] ${isSubmitting ? 'animate-spin' : ''}`}>
+                {isSubmitting ? 'sync' : 'how_to_reg'}
+              </span>
+              <span>{isSubmitting ? 'Đang lưu vào CSDL...' : 'Lưu & Phát Lệnh Phân Công'}</span>
             </button>
           </div>
         </form>

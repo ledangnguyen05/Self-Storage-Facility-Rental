@@ -13,12 +13,16 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpecificationExecutor<Booking> {
 
     List<Booking> findByCustomer_Id(UUID customerId);
+
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "storageUnit", "storageUnit.facility"})
+    List<Booking> findByStatusOrderByCreatedAtAsc(BookingStatus status);
 
     List<Booking> findByStatusIn(Collection<BookingStatus> statuses);
 
@@ -28,9 +32,14 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
 
     boolean existsByStorageUnit_IdAndStatusIn(UUID storageUnitId, Collection<BookingStatus> statuses);
 
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "storageUnit", "storageUnit.facility"})
+    Optional<Booking> findFirstByStorageUnit_IdOrderByCreatedAtDesc(UUID storageUnitId);
+
     List<Booking> findByStatusAndCreatedAtBefore(BookingStatus status, LocalDateTime threshold);
 
-    @Query("SELECT b FROM Booking b WHERE b.status = :status AND (b.createdAt < :threshold OR b.startDate < :today)")
+    @Query("SELECT b FROM Booking b WHERE b.status = :status AND ("
+            + "(b.paymentExpiresAt IS NOT NULL AND b.paymentExpiresAt < CURRENT_TIMESTAMP) OR "
+            + "(b.paymentExpiresAt IS NULL AND b.createdAt < :threshold) OR b.startDate < :today)")
     List<Booking> findExpiredPendingBookings(
             @Param("status") BookingStatus status,
             @Param("threshold") LocalDateTime threshold,
