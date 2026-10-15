@@ -3,6 +3,7 @@ package com.boxora.controller;
 import com.boxora.common.response.ApiResponse;
 import com.boxora.dto.request.*;
 import com.boxora.dto.response.AuthResponse;
+import com.boxora.dto.response.UserResponse;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.service.AuthService;
@@ -30,6 +31,14 @@ public class AuthController {
     private boolean cookieSecure;
 
     private final AuthService authService;
+    private final com.boxora.service.CaptchaService captchaService;
+    private final com.boxora.service.UserService userService;
+
+    @GetMapping("/captcha")
+    public ResponseEntity<ApiResponse<com.boxora.dto.response.CaptchaResponse>> getCaptcha() {
+        com.boxora.dto.response.CaptchaResponse response = captchaService.generateCaptcha();
+        return ResponseEntity.ok(ApiResponse.success("Captcha generated successfully", response));
+    }
 
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<AuthResponse>> register(
@@ -63,6 +72,21 @@ public class AuthController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
                 .body(ApiResponse.success("Logged in successfully", response));
+    }
+
+    @PostMapping("/google")
+    public ResponseEntity<ApiResponse<AuthResponse>> googleLogin(
+            @Valid @RequestBody GoogleLoginRequest request
+    ) {
+        AuthResponse response = authService.googleLogin(request);
+        String refreshTokenValue = response.getRefreshToken();
+
+        ResponseCookie cookie = createRefreshTokenCookie(refreshTokenValue, REFRESH_TOKEN_MAX_AGE_SECONDS);
+        response.setRefreshToken(null);
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .body(ApiResponse.success("Logged in with Google successfully", response));
     }
 
     @PostMapping("/logout")
@@ -143,6 +167,16 @@ public class AuthController {
     ) {
         authService.changePassword(userDetails.getUsername(), request);
         return ResponseEntity.ok(ApiResponse.success("Password changed successfully", null));
+    }
+
+    @PutMapping("/profile")
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<UserResponse>> updateProfile(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody ProfileUpdateRequest request
+    ) {
+        UserResponse response = userService.updateOwnProfile(userDetails.getUsername(), request);
+        return ResponseEntity.ok(ApiResponse.success("Profile updated successfully", response));
     }
 
     private ResponseCookie createRefreshTokenCookie(String value, long maxAgeSeconds) {

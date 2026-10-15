@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" fill="none">
+  <defs>
+    <linearGradient id="canvas" x1="0" y1="0" x2="1600" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FCFCF8"/>
+      <stop offset=".52" stop-color="#F8FBF9"/>
+      <stop offset="1" stop-color="#F3FAF8"/>
+    </linearGradient>
+    <radialGradient id="mintGlow" cx="0" cy="0" r="1" gradientTransform="matrix(532 310 -226 387 1425 755)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8DE7D5" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#8DE7D5" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="cyanGlow" cx="0" cy="0" r="1" gradientTransform="matrix(448 280 -210 336 210 148)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B3F0EC" stop-opacity=".42"/>
+      <stop offset="1" stop-color="#B3F0EC" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ribbonA" x1="-70" y1="72" x2="890" y2="350" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#37CDB8" stop-opacity=".08"/>
+      <stop offset=".46" stop-color="#6FDCCB" stop-opacity=".38"/>
+      <stop offset="1" stop-color="#37B8D6" stop-opacity=".04"/>
+    </linearGradient>
+    <linearGradient id="ribbonB" x1="75" y1="-30" x2="900" y2="456" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DFFFF8" stop-opacity=".88"/>
+      <stop offset=".55" stop-color="#8FE0D3" stop-opacity=".56"/>
+      <stop offset="1" stop-color="#46BCCD" stop-opacity=".08"/>
+    </linearGradient>
+    <linearGradient id="ribbonC" x1="1590" y1="260" x2="930" y2="940" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#31C8C5" stop-opacity=".08"/>
+      <stop offset=".52" stop-color="#62D7C4" stop-opacity=".34"/>
+      <stop offset="1" stop-color="#B7F1E0" stop-opacity=".05"/>
+    </linearGradient>
+    <linearGradient id="fineLine" x1="102" y1="10" x2="1522" y2="880" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#46BDAE" stop-opacity=".08"/>
+      <stop offset=".54" stop-color="#16AFA8" stop-opacity=".54"/>
+      <stop offset="1" stop-color="#4E9ED0" stop-opacity=".12"/>
+    </linearGradient>
+    <filter id="softBlur" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="30"/>
+    </filter>
+    <filter id="glint" x="-100%" y="-100%" width="300%" height="300%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#canvas)"/>
+  <rect width="1600" height="900" fill="url(#mintGlow)"/>
+  <rect width="1600" height="900" fill="url(#cyanGlow)"/>
+
+  <!-- Soft glass ribbons frame the open center without competing with the UI. -->
+  <g opacity=".72" filter="url(#softBlur)">
+    <path d="M-155 132C80-95 269-38 424 73c133 95 240 159 460 109 132-30 220-90 334-66" stroke="#8CE1D1" stroke-width="90"/>
+    <path d="M1500 284c-138 132-174 260-233 390-65 142-154 233-355 278" stroke="#82DDD0" stroke-width="112"/>
+    <path d="M-100 705c208-114 323-101 476-39 195 79 264 173 505 181" stroke="#A4E9D9" stroke-width="72"/>
+  </g>
+  <g stroke-linecap="round">
+    <path d="M-90 166C104-47 273 3 426 112c144 102 255 166 459 117 149-36 244-101 378-57" stroke="url(#ribbonA)" stroke-width="100"/>
+    <path d="M-112 123C98-94 262-34 422 78c146 102 253 171 472 120 146-34 253-107 383-64" stroke="url(#ribbonB)" stroke-width="42"/>
+    <path d="M-134 95C80-109 245-61 408 52c155 108 263 174 488 126 148-31 260-104 388-57" stroke="#FFFFFF" stroke-opacity=".7" stroke-width="11"/>
+    <path d="M1680 220c-160 94-215 247-277 391-75 176-187 259-422 326" stroke="url(#ribbonC)" stroke-width="112"/>
+    <path d="M1650 190c-168 102-224 255-286 397-79 179-189 262-425 327" stroke="#FFFFFF" stroke-opacity=".76" stroke-width="34"/>
+    <path d="M1637 174c-171 107-230 258-292 400-77 176-188 256-420 321" stroke="url(#fineLine)" stroke-width="4"/>
+    <path d="M-90 746c189-118 313-119 468-61 190 71 290 174 516 183" stroke="url(#ribbonB)" stroke-width="56"/>
+    <path d="M-108 774c184-119 308-121 467-65 191 68 288 171 518 180" stroke="#FFFFFF" stroke-opacity=".7" stroke-width="17"/>
+  </g>
+
+  <!-- Fine orbital traces and a few restrained signal glints. -->
+  <g stroke="url(#fineLine)" stroke-width="1.5" opacity=".72">
+    <path d="M44 278c77-98 161-130 255-105 60 16 99 60 164 63"/>
+    <path d="M1317 802c81-119 145-170 238-179"/>
+    <path d="M1230 130c73 39 127 84 175 145"/>
+  </g>
+  <g fill="#FFFFFF" filter="url(#glint)">
+    <circle cx="202" cy="146" r="3.5"/>
+    <circle cx="379" cy="219" r="2.5"/>
+    <circle cx="1447" cy="623" r="3"/>
+    <circle cx="1340" cy="793" r="2.5"/>
+  </g>
+  <g fill="#32BDB1" opacity=".75">
+    <circle cx="202" cy="146" r="1.5"/>
+    <circle cx="379" cy="219" r="1.25"/>
+    <circle cx="1447" cy="623" r="1.5"/>
+    <circle cx="1340" cy="793" r="1.25"/>
+  </g>
+</svg>

@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Data
+@NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class PaymentResponse {
@@ -19,6 +20,10 @@ public class PaymentResponse {
     private String bookingCode;
 
     private UUID contractId;
+
+    private String unitCode;
+    private String facilityName;
+    private String customerName;
 
     private BigDecimal amount;
     private PaymentType paymentType;

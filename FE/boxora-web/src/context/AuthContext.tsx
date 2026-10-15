@@ -18,7 +18,7 @@ export const ROLE_PRESETS: RolePreset[] = [
     label: 'Quản trị viên Hệ thống',
     sublabel: 'Toàn quyền kiểm soát, cấp phát RBAC & Audit Log',
     email: 'admin@gmail.com',
-    password: 'admin',
+    password: '123456',
     color: 'border-rose-500 text-rose-600 bg-rose-50',
     portalPath: '/portal/admin'
   },
@@ -27,7 +27,7 @@ export const ROLE_PRESETS: RolePreset[] = [
     label: 'Giám đốc Vận hành & Doanh thu',
     sublabel: 'Báo cáo C-Level, đối chuẩn 5 chi nhánh & ma trận giá',
     email: 'business@gmail.com',
-    password: 'business',
+    password: '123456',
     color: 'border-violet-500 text-violet-600 bg-violet-50',
     portalPath: '/portal/business-manager'
   },
@@ -35,8 +35,8 @@ export const ROLE_PRESETS: RolePreset[] = [
     role: 'FACILITY_MANAGER',
     label: 'Quản lý Cơ sở Chi nhánh',
     sublabel: 'Sơ đồ kho 2 tầng, ma trận hành lang & khóa cưỡng chế',
-    email: 'facility@gmail.com',
-    password: 'facility',
+    email: 'facility1q1@gmail.com',
+    password: '123456',
     color: 'border-blue-500 text-blue-600 bg-blue-50',
     portalPath: '/portal/facility-manager'
   },
@@ -44,8 +44,8 @@ export const ROLE_PRESETS: RolePreset[] = [
     role: 'STAFF',
     label: 'Nhân viên Tiếp đón & Bàn giao',
     sublabel: 'Check-in CCCD/RFID, nghiệm thu trả kho & hoàn cọc',
-    email: 'staff@gmail.com',
-    password: 'staff',
+    email: 'staff1q1@gmail.com',
+    password: '123456',
     color: 'border-amber-500 text-amber-600 bg-amber-50',
     portalPath: '/portal/staff'
   },
@@ -54,7 +54,7 @@ export const ROLE_PRESETS: RolePreset[] = [
     label: 'Khách hàng Thuê kho',
     sublabel: 'Tự quản lý kho, mở khóa từ xa IoT 24/7 & Hợp đồng',
     email: 'customer@gmail.com',
-    password: 'customer',
+    password: '123456',
     color: 'border-emerald-500 text-emerald-600 bg-emerald-50',
     portalPath: '/portal/customer'
   }
@@ -67,8 +67,10 @@ interface AuthContextType {
   isLoading: boolean
   isAuthenticated: boolean
   login: (emailOrUsername: string, password: string) => Promise<User>
+  loginWithGoogle: (idToken: string, mode?: 'LOGIN' | 'REGISTER') => Promise<User>
   logout: () => Promise<void>
   setSessionUser: (user: User) => void
+  updateProfile: (profile: { fullName: string; phone: string }) => Promise<User>
   switchRole: (targetRole: RoleType) => Promise<User>
   hasPermission: (allowedRoles: RoleType[]) => boolean
 }
@@ -81,18 +83,73 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState<boolean>(true)
 
   useEffect(() => {
-    try {
-      const storedToken = localStorage.getItem('boxora_access_token')
-      const storedUser = localStorage.getItem('boxora_user')
-      if (storedToken && storedUser) {
-        setToken(storedToken)
-        setUser(JSON.parse(storedUser))
+    let isMounted = true
+
+    const initAuth = async () => {
+      try {
+        const storedToken = localStorage.getItem('boxora_access_token')
+        const storedUser = localStorage.getItem('boxora_user')
+
+        if (storedToken && storedUser) {
+          const parsed = JSON.parse(storedUser)
+          const isMock = storedToken.startsWith('mock-token-')
+
+          if (isMock) {
+            // Find appropriate account to authenticate against backend
+            const email = parsed.email || (parsed.roleName === 'BUSINESS_MANAGER' ? 'business@gmail.com' : 'admin@gmail.com')
+            const preset = ROLE_PRESETS.find(
+              p => p.email.toLowerCase() === email.toLowerCase() ||
+                   p.role === parsed.roleName ||
+                   p.role === parsed.role?.name
+            )
+            const emailToUse = preset?.email || email
+            const passwordToUse = preset?.password || '123456'
+
+            try {
+              const res = await authService.login(emailToUse, passwordToUse)
+              if (res.data?.accessToken && isMounted) {
+                const { accessToken, refreshToken, user: rawUser } = res.data
+                const jwtRole = parseJwtRole(accessToken)
+                const enriched: User = {
+                  ...rawUser,
+                  role: rawUser?.role || { name: (rawUser?.roleName || jwtRole || preset?.role || 'ADMIN') as RoleType },
+                  roleName: rawUser?.roleName || jwtRole || preset?.role,
+                  roleId: rawUser?.roleId,
+                  facilityId: rawUser?.facilityId,
+                  facilityName: rawUser?.facilityName,
+                  facilityCode: rawUser?.facilityCode
+                }
+                localStorage.setItem('boxora_access_token', accessToken)
+                if (refreshToken) localStorage.setItem('boxora_refresh_token', refreshToken)
+                localStorage.setItem('boxora_user', JSON.stringify(enriched))
+                setToken(accessToken)
+                setUser(enriched)
+                return
+              }
+            } catch (autoLoginErr) {
+              console.warn('Auto-upgrade to real DB token failed, keeping existing session:', autoLoginErr)
+            }
+          }
+
+          if (isMounted) {
+            setToken(storedToken)
+            setUser(parsed)
+          }
+        }
+      } catch {
+        localStorage.removeItem('boxora_access_token')
+        localStorage.removeItem('boxora_user')
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
+        }
       }
-    } catch {
-      localStorage.removeItem('boxora_access_token')
-      localStorage.removeItem('boxora_user')
-    } finally {
-      setIsLoading(false)
+    }
+
+    void initAuth()
+
+    return () => {
+      isMounted = false
     }
   }, [])
 
@@ -124,7 +181,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const jwtRole = parseJwtRole(accessToken)
           const enrichedUser: User = {
             ...rawUser,
-            role: rawUser?.role || (jwtRole ? { name: jwtRole } : undefined)
+            role: rawUser?.role || (rawUser?.roleName ? {
+              id: rawUser.roleId,
+              name: rawUser.roleName as RoleType,
+              description: rawUser.roleName
+            } : (jwtRole ? { name: jwtRole } : undefined)),
+            roleName: (rawUser?.roleName || rawUser?.role?.name || jwtRole || undefined) as (RoleType | string | undefined),
+            roleId: rawUser?.roleId || rawUser?.role?.id || undefined,
+            facilityId: rawUser?.facilityId || undefined,
+            facilityName: rawUser?.facilityName || undefined,
+            facilityCode: rawUser?.facilityCode || undefined
           }
           localStorage.setItem('boxora_access_token', accessToken)
           localStorage.setItem('boxora_refresh_token', refreshToken)
@@ -133,7 +199,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setUser(enrichedUser)
           return enrichedUser
         }
-      } catch (backendError) {
+      } catch (backendError: any) {
+        if (backendError?.response) {
+          throw backendError
+        }
         console.warn('Backend authentication offline, falling back to mock session:', backendError)
         const matchedPreset = ROLE_PRESETS.find(
           p => p.email.toLowerCase() === emailOrUsername.toLowerCase() ||
@@ -166,6 +235,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
+  const loginWithGoogle = async (idToken: string, mode: 'LOGIN' | 'REGISTER' = 'LOGIN'): Promise<User> => {
+    setIsLoading(true)
+    try {
+      const res = await authService.googleLogin(idToken, mode)
+      if (res.data) {
+        const { accessToken, refreshToken, user: rawUser } = res.data
+        const jwtRole = parseJwtRole(accessToken)
+        const enrichedUser: User = {
+          ...rawUser,
+          role: rawUser?.role || (jwtRole ? { name: jwtRole } : undefined)
+        }
+        localStorage.setItem('boxora_access_token', accessToken)
+        if (refreshToken) {
+          localStorage.setItem('boxora_refresh_token', refreshToken)
+        }
+        localStorage.setItem('boxora_user', JSON.stringify(enrichedUser))
+        setToken(accessToken)
+        setUser(enrichedUser)
+        return enrichedUser
+      }
+      throw new Error('Đăng nhập với Google không thành công, vui lòng thử lại.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const switchRole = async (targetRole: RoleType): Promise<User> => {
     const preset = ROLE_PRESETS.find(p => p.role === targetRole)
     if (!preset) throw new Error(`Role ${targetRole} not found`)
@@ -173,9 +268,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       // Try backend authentication first
       return await login(preset.email, preset.password)
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.response) {
+        throw err
+      }
       console.warn('Backend login fallback to mock session for preset:', targetRole, err)
-      // Fallback session to guarantee smooth demo
+      // Fallback session only when backend is completely offline
       const mockUser: User = {
         id: `mock-${targetRole.toLowerCase()}`,
         username: preset.email.split('@')[0],
@@ -212,6 +310,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('boxora_user', JSON.stringify(updatedUser))
   }
 
+  const updateProfile = async (profile: { fullName: string; phone: string }) => {
+    if (!user) throw new Error('Bạn cần đăng nhập để cập nhật hồ sơ.')
+
+    if (user.id.startsWith('mock-')) {
+      const updatedUser = { ...user, fullName: profile.fullName.trim(), phone: profile.phone.trim() }
+      setSessionUser(updatedUser)
+      return updatedUser
+    }
+
+    const updatedProfile = await authService.updateProfile({
+      fullName: profile.fullName.trim(),
+      phone: profile.phone.trim()
+    })
+    const updatedUser: User = {
+      ...user,
+      ...updatedProfile,
+      role: updatedProfile.role || user.role
+    }
+    setSessionUser(updatedUser)
+    return updatedUser
+  }
+
   const role: RoleType | null = (user?.role?.name as RoleType) || null
 
   const hasPermission = (allowedRoles: RoleType[]): boolean => {
@@ -228,8 +348,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         isAuthenticated: !!user,
         login,
+        loginWithGoogle,
         logout,
         setSessionUser,
+        updateProfile,
         switchRole,
         hasPermission
       }}

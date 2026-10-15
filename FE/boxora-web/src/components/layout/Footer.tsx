@@ -47,15 +47,19 @@ export const Footer: React.FC = () => {
             <ul className="space-y-2.5 text-[14px] text-[#555555]">
               <li className="flex items-start gap-2">
                 <MapPin size={15} className="text-[#8A8A8A] shrink-0 mt-1" />
-                <span>District 1 — Central Landmark</span>
+                <span>Boxora District 1 — 123 Nguyễn Huệ</span>
               </li>
               <li className="flex items-start gap-2">
                 <MapPin size={15} className="text-[#8A8A8A] shrink-0 mt-1" />
-                <span>Thu Duc — Saigon Hi-Tech Park</span>
+                <span>Boxora District 7 — 456 Nguyễn Hữu Thọ</span>
               </li>
               <li className="flex items-start gap-2">
                 <MapPin size={15} className="text-[#8A8A8A] shrink-0 mt-1" />
-                <span>Binh Thanh — Riverside Facility</span>
+                <span>Boxora Thu Duc — 789 Võ Văn Ngân</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <MapPin size={15} className="text-[#8A8A8A] shrink-0 mt-1" />
+                <span>Boxora Tan Binh — 102 Trường Sơn</span>
               </li>
             </ul>
           </div>
@@ -78,9 +82,9 @@ export const Footer: React.FC = () => {
         <div className="pt-8 border-t border-[#E5E5E1] flex flex-col sm:flex-row items-center justify-between text-[13px] text-[#8A8A8A]">
           <div>© 2026 Boxora Self-Storage Systems Inc. All rights reserved.</div>
           <div className="flex items-center gap-6 mt-4 sm:mt-0">
-            <a href="#" className="hover:text-[#111111] transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-[#111111] transition-colors">Terms of Service</a>
-            <a href="#" className="hover:text-[#111111] transition-colors">Facility Safety Regulations</a>
+            <Link to="/terms" className="hover:text-[#111111] transition-colors">Chính sách bảo mật</Link>
+            <Link to="/terms" className="hover:text-[#111111] transition-colors">Điều khoản dịch vụ</Link>
+            <Link to="/terms" className="hover:text-[#111111] transition-colors">Quy chuẩn an toàn kho</Link>
           </div>
         </div>
       </div>

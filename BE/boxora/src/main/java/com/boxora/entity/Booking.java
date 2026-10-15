@@ -76,4 +76,11 @@ public class Booking extends BaseEntity {
 
     @Column(name = "return_time")
     private LocalDateTime returnTime;
+
+    @Column(name = "signing_method", length = 30)
+    @Builder.Default
+    private String signingMethod = "ONLINE";
+
+    @Column(name = "staff_assignment_notes", columnDefinition = "TEXT")
+    private String staffAssignmentNotes;
 }

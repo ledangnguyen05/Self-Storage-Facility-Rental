@@ -24,6 +24,10 @@ public enum ErrorCode {
     INVALID_CREDENTIALS(300, "Invalid email or password", HttpStatus.UNAUTHORIZED),
     UNAUTHORIZED(301, "Authentication is required", HttpStatus.UNAUTHORIZED),
     FORBIDDEN(302, "You do not have permission to access this resource", HttpStatus.FORBIDDEN),
+    INVALID_CAPTCHA(303, "Mã xác thực Captcha không chính xác hoặc đã hết hạn", HttpStatus.BAD_REQUEST),
+    CAPTCHA_REQUIRED(304, "Vui lòng nhập mã xác thực Captcha để chống bot tự động", HttpStatus.BAD_REQUEST),
+    INVALID_GOOGLE_TOKEN(305, "Mã xác thực Google không hợp lệ hoặc đã hết hạn", HttpStatus.UNAUTHORIZED),
+    GOOGLE_ACCOUNT_NOT_REGISTERED(306, "Tài khoản Google này chưa được đăng ký trong hệ thống Boxora. Vui lòng đăng ký tài khoản trước.", HttpStatus.NOT_FOUND),
 
     // ========================= TOKEN (400 - 499) =========================
     INVALID_TOKEN(400, "Invalid refresh token", HttpStatus.UNAUTHORIZED),
@@ -71,6 +75,7 @@ public enum ErrorCode {
     BOOKING_NOT_ACTIVE_FOR_RETURN(725, "Đơn đặt kho phải ở trạng thái đang hoạt động (ACTIVE) mới được thực hiện trả kho", HttpStatus.BAD_REQUEST),
     RETURN_PHOTO_EVIDENCE_REQUIRED(726, "Cần tối thiểu 2 ảnh chụp hiện trường để xác nhận nghiệm thu trả kho theo BR-RULE-013", HttpStatus.BAD_REQUEST),
     BOOKING_PAYMENT_EXPIRED(727, "The 24-hour booking payment window has expired", HttpStatus.CONFLICT),
+    BOOKING_REQUEST_NOT_PENDING_APPROVAL(728, "Booking request is no longer waiting for approval", HttpStatus.CONFLICT),
 
     // ========================= PAYMENT (750 - 799) =========================
     PAYMENT_NOT_FOUND(750, "Payment transaction not found", HttpStatus.NOT_FOUND),

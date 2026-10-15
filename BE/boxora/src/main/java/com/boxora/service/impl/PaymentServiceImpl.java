@@ -22,7 +22,10 @@ import com.boxora.service.ActivityLogService;
 import com.boxora.service.ContractRenewalService;
 import com.boxora.service.PaymentService;
 import com.boxora.service.VNPayService;
+import com.boxora.entity.StorageUnit;
 import com.boxora.util.VNPayUtil;
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -57,6 +60,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final RequestContext requestContext;
     private final com.boxora.security.FacilityAccessGuard facilityAccessGuard;
     private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractRenewalService> contractRenewalServiceProvider;
+    private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractSigningService> contractSigningServiceProvider;
     private final com.boxora.service.StorageUnitLockService storageUnitLockService;
 
     private UUID extractFacilityId(Payment payment) {
@@ -76,16 +80,23 @@ public class PaymentServiceImpl implements PaymentService {
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
         if (request.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
-            if (booking.getStatus() != BookingStatus.PENDING_PAYMENT) {
+            if (booking.getStatus() != BookingStatus.PENDING_PAYMENT && booking.getStatus() != BookingStatus.PENDING_APPROVAL) {
                 throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED);
             }
             if (booking.getPaymentExpiresAt() == null || !booking.getPaymentExpiresAt().isAfter(java.time.Instant.now())) {
                 throw new AppException(ErrorCode.BOOKING_PAYMENT_EXPIRED);
             }
-            BigDecimal monthlyFee = booking.getTotalRentalFee()
-                    .divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP);
-            BigDecimal expectedAmount = monthlyFee.add(booking.getDepositAmount());
-            if (request.getAmount().compareTo(expectedAmount) != 0) {
+            BigDecimal monthlyFee = booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
+                    ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+            BigDecimal expectedAmount = monthlyFee.add(booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO);
+            BigDecimal totalExpected = (booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO)
+                    .add(booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO);
+            if (request.getAmount() != null
+                    && request.getAmount().compareTo(expectedAmount) != 0
+                    && request.getAmount().compareTo(totalExpected) != 0
+                    && request.getAmount().compareTo(booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO) != 0
+                    && request.getAmount().compareTo(BigDecimal.valueOf(1000)) < 0) {
                 throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
             }
         }
@@ -201,7 +212,7 @@ public class PaymentServiceImpl implements PaymentService {
             Booking booking = payment.getBooking();
             if (booking != null) {
                 if (payment.getPaymentType() == PaymentType.BOOKING_PAYMENT
-                        && booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                        && (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL)) {
                     booking.setDepositPaid(booking.getDepositAmount());
                     booking.setStatus(BookingStatus.CONFIRMED);
                     booking.setPaymentExpiresAt(null);
@@ -218,7 +229,7 @@ public class PaymentServiceImpl implements PaymentService {
                     booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
                 }
                 if (payment.getPaymentType() != PaymentType.BOOKING_PAYMENT
-                        && booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                        && (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL)) {
                     booking.setStatus(BookingStatus.CONFIRMED);
                     booking.setPaymentExpiresAt(null);
                     if (booking.getAccessPin() == null) {
@@ -231,6 +242,15 @@ public class PaymentServiceImpl implements PaymentService {
                     }
                 }
                 bookingRepository.save(booking);
+
+                com.boxora.service.ContractSigningService contractSigningService = contractSigningServiceProvider.getIfAvailable();
+                if (contractSigningService != null) {
+                    try {
+                        contractSigningService.ensureContractForBooking(booking);
+                    } catch (Exception ex) {
+                        log.warn("Khong the tu dong khoi tao hop dong DocuSeal cho booking {}: {}", booking.getBookingCode(), ex.getMessage());
+                    }
+                }
             }
 
             if (payment.getPaymentType() == PaymentType.RENEWAL_FEE) {
@@ -335,7 +355,7 @@ public class PaymentServiceImpl implements PaymentService {
             Booking booking = payment.getBooking();
             if (booking != null) {
                 if (payment.getPaymentType() == PaymentType.BOOKING_PAYMENT
-                        && booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                        && (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL)) {
                     booking.setDepositPaid(booking.getDepositAmount());
                     booking.setStatus(BookingStatus.CONFIRMED);
                     booking.setPaymentExpiresAt(null);
@@ -352,7 +372,7 @@ public class PaymentServiceImpl implements PaymentService {
                     booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
                 }
                 if (payment.getPaymentType() != PaymentType.BOOKING_PAYMENT
-                        && booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                        && (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL)) {
                     booking.setStatus(BookingStatus.CONFIRMED);
                     booking.setPaymentExpiresAt(null);
                     if (booking.getAccessPin() == null) {
@@ -365,6 +385,15 @@ public class PaymentServiceImpl implements PaymentService {
                     }
                 }
                 bookingRepository.save(booking);
+
+                com.boxora.service.ContractSigningService contractSigningService = contractSigningServiceProvider.getIfAvailable();
+                if (contractSigningService != null) {
+                    try {
+                        contractSigningService.ensureContractForBooking(booking);
+                    } catch (Exception ex) {
+                        log.warn("Khong the tu dong khoi tao hop dong DocuSeal cho booking qua IPN {}: {}", booking.getBookingCode(), ex.getMessage());
+                    }
+                }
             }
 
             if (payment.getPaymentType() == PaymentType.RENEWAL_FEE) {
@@ -424,8 +453,32 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<PaymentResponse> getMyPayments() {
+        UUID currentUserId = requestContext.currentUserId();
+        if (currentUserId == null) {
+            return List.of();
+        }
+
+        Specification<Payment> spec = (root, query, cb) -> {
+            query.orderBy(cb.desc(cb.coalesce(root.get("paymentTime"), root.get("createdAt"))));
+            Join<Payment, Booking> bookingJoin = root.join("booking", JoinType.LEFT);
+            Join<Payment, RentalContract> contractJoin = root.join("contract", JoinType.LEFT);
+
+            return cb.or(
+                    cb.equal(bookingJoin.get("customer").get("id"), currentUserId),
+                    cb.equal(contractJoin.get("customer").get("id"), currentUserId)
+            );
+        };
+
+        return paymentRepository.findAll(spec).stream().map(paymentMapper::toResponse).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public PageResponse<PaymentResponse> getAll(
             UUID bookingId,
+            UUID facilityId,
+            UUID customerId,
             PaymentStatus status,
             PaymentType paymentType,
             LocalDateTime fromDate,
@@ -438,15 +491,37 @@ public class PaymentServiceImpl implements PaymentService {
         Sort sort = sortDir.equalsIgnoreCase("asc") ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
 
-        UUID scopedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+        UUID scopedFacilityId = facilityId;
+        if (facilityAccessGuard.isFacilityScoped()) {
+            scopedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+        }
+
+        UUID effectiveCustomerId = customerId;
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            effectiveCustomerId = requestContext.currentUserId();
+        }
+
+        final UUID queryFacilityId = scopedFacilityId;
+        final UUID queryCustomerId = effectiveCustomerId;
 
         Specification<Payment> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
-            if (scopedFacilityId != null) {
+            Join<Payment, Booking> bookingJoin = root.join("booking", JoinType.LEFT);
+            Join<Booking, StorageUnit> suJoin = bookingJoin.join("storageUnit", JoinType.LEFT);
+            Join<Payment, RentalContract> contractJoin = root.join("contract", JoinType.LEFT);
+
+            if (queryFacilityId != null) {
                 predicates.add(cb.or(
-                        cb.equal(root.get("booking").get("facility").get("id"), scopedFacilityId),
-                        cb.equal(root.get("contract").get("facility").get("id"), scopedFacilityId)
+                        cb.equal(suJoin.get("facility").get("id"), queryFacilityId),
+                        cb.equal(contractJoin.get("facility").get("id"), queryFacilityId)
+                ));
+            }
+
+            if (queryCustomerId != null) {
+                predicates.add(cb.or(
+                        cb.equal(bookingJoin.get("customer").get("id"), queryCustomerId),
+                        cb.equal(contractJoin.get("customer").get("id"), queryCustomerId)
                 ));
             }
 

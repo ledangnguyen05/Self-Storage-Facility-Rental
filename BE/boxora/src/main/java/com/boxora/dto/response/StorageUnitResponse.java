@@ -22,8 +22,15 @@ public class StorageUnitResponse {
     private UUID unitTypeId;
     private String unitTypeName;
     private BigDecimal pricePerMonth;
+    private BigDecimal depositAmount;
     private Double areaSqMeters;
     private String batteryLevel;
     private String smartLockSerial;
     private String lastAccessTime;
+    private UUID bookingId;
+    private String tenantName;
+    private String contractCode;
+    private UUID contractId;
+    private String startDate;
+    private String dueDate;
 }

@@ -12,7 +12,7 @@ export interface LoginResponse {
 }
 
 export const authService = {
-  async login(emailOrUsername: string, password: string):Promise<LoginResponse> {
+  async login(emailOrUsername: string, password: string): Promise<LoginResponse> {
     const response = await api.post('/api/v1/auth/login', {
       email: emailOrUsername,
       password,
@@ -20,7 +20,20 @@ export const authService = {
     return response.data
   },
 
-  async register(data: { username: string; email: string; password: string; phone: string; fullName: string }) {
+  async getCaptcha(): Promise<{ success: boolean; data: { captchaId: string; captchaImage: string } }> {
+    const response = await api.get('/api/v1/auth/captcha')
+    return response.data
+  },
+
+  async register(data: {
+    username: string
+    email: string
+    password: string
+    phone: string
+    fullName: string
+    captchaId?: string
+    captchaCode?: string
+  }) {
     const response = await api.post('/api/v1/auth/register', data)
     return response.data
   },
@@ -32,4 +45,40 @@ export const authService = {
       // Ignore cleanup error
     }
   },
+
+  async forgotPassword(email: string): Promise<{ success: boolean; message: string }> {
+    const response = await api.post('/api/v1/auth/forgot-password', { email })
+    return response.data
+  },
+
+  async resetPassword(data: {
+    token: string
+    newPassword: string
+    confirmPassword: string
+  }): Promise<{ success: boolean; message: string }> {
+    const response = await api.post('/api/v1/auth/reset-password', data)
+    return response.data
+  },
+
+  async updateProfile(data: { fullName: string; phone: string }): Promise<User> {
+    const response = await api.put('/api/v1/auth/profile', data)
+    const profile = response.data?.data
+    return {
+      id: profile.id,
+      username: profile.username,
+      email: profile.email,
+      fullName: profile.fullName,
+      phone: profile.phone,
+      isActive: profile.isActive,
+      facilityId: profile.facilityId,
+      createdAt: profile.createdAt,
+      role: profile.roleName ? { name: profile.roleName } : undefined
+    } as User
+  },
+
+  async googleLogin(idToken: string, mode: 'LOGIN' | 'REGISTER' = 'LOGIN'): Promise<LoginResponse> {
+    const response = await api.post('/api/v1/auth/google', { idToken, mode })
+    return response.data
+  },
 }
+

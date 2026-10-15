@@ -42,10 +42,13 @@ public class AuthServiceImpl implements AuthService {
     private final AuthenticationManager authenticationManager;
     private final EmailService emailService;
     private final com.boxora.service.ActivityLogService activityLogService;
+    private final com.boxora.service.CaptchaService captchaService;
 
 
     @Override
     public AuthResponse register(RegisterRequest request) {
+
+        captchaService.validate(request.getCaptchaId(), request.getCaptchaCode());
 
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new AppException(ErrorCode.EMAIL_ALREADY_EXISTS);
@@ -284,6 +287,148 @@ public class AuthServiceImpl implements AuthService {
 
     }
 
+    @org.springframework.beans.factory.annotation.Value("${google.client-id:}")
+    private String googleClientId;
+
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
+    @Override
+    public AuthResponse googleLogin(GoogleLoginRequest request) {
+        String idToken = request.getIdToken();
+        if (idToken == null || idToken.isBlank()) {
+            throw new AppException(ErrorCode.INVALID_GOOGLE_TOKEN);
+        }
+
+        try {
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofSeconds(10))
+                    .build();
+
+            String verifyUrl = "https://oauth2.googleapis.com/tokeninfo?id_token=" 
+                    + java.net.URLEncoder.encode(idToken, java.nio.charset.StandardCharsets.UTF_8);
+
+            java.net.http.HttpRequest httpRequest = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(verifyUrl))
+                    .GET()
+                    .timeout(java.time.Duration.ofSeconds(10))
+                    .build();
+
+            java.net.http.HttpResponse<String> httpResponse = client.send(
+                    httpRequest, 
+                    java.net.http.HttpResponse.BodyHandlers.ofString()
+            );
+
+            if (httpResponse.statusCode() != 200) {
+                log.warn("Google token verification failed with status: {}, body: {}", httpResponse.statusCode(), httpResponse.body());
+                throw new AppException(ErrorCode.INVALID_GOOGLE_TOKEN);
+            }
+
+            com.fasterxml.jackson.databind.JsonNode jsonNode = objectMapper.readTree(httpResponse.body());
+
+            // Optional client-id check if configured
+            if (googleClientId != null && !googleClientId.isBlank()) {
+                String aud = jsonNode.has("aud") ? jsonNode.get("aud").asText() : "";
+                String azp = jsonNode.has("azp") ? jsonNode.get("azp").asText() : "";
+                if (!googleClientId.equals(aud) && !googleClientId.equals(azp)) {
+                    log.warn("Google token audience mismatch. Expected: {}, Got aud: {}, azp: {}", googleClientId, aud, azp);
+                    throw new AppException(ErrorCode.INVALID_GOOGLE_TOKEN);
+                }
+            }
+
+            String email = jsonNode.has("email") ? jsonNode.get("email").asText() : null;
+            if (email == null || email.isBlank()) {
+                throw new AppException(ErrorCode.INVALID_GOOGLE_TOKEN);
+            }
+
+            boolean emailVerified = jsonNode.has("email_verified") && 
+                    ("true".equalsIgnoreCase(jsonNode.get("email_verified").asText()) || jsonNode.get("email_verified").asBoolean(false));
+            if (!emailVerified) {
+                log.warn("Google account email is not verified: {}", email);
+                throw new AppException(ErrorCode.INVALID_GOOGLE_TOKEN);
+            }
+
+            String name = jsonNode.has("name") ? jsonNode.get("name").asText() : null;
+            String picture = jsonNode.has("picture") ? jsonNode.get("picture").asText() : null;
+            String mode = request.getMode() != null ? request.getMode().trim().toUpperCase() : "LOGIN";
+
+            User user = userRepository.findByEmail(email).orElse(null);
+
+            if (user == null) {
+                if ("LOGIN".equals(mode)) {
+                    log.info("Google login attempt for unregistered email: {}", email);
+                    throw new AppException(ErrorCode.GOOGLE_ACCOUNT_NOT_REGISTERED);
+                }
+
+                // Auto-register new customer account via Google (mode is REGISTER)
+                String baseUsername = email.split("@")[0].replaceAll("[^a-zA-Z0-9_]", "");
+                if (baseUsername.length() > 20) {
+                    baseUsername = baseUsername.substring(0, 20);
+                }
+                if (baseUsername.isEmpty()) {
+                    baseUsername = "user";
+                }
+
+                String finalUsername = baseUsername;
+                int counter = 1;
+                while (userRepository.existsByUsername(finalUsername)) {
+                    finalUsername = baseUsername + (counter++);
+                    if (finalUsername.length() > 30) {
+                        finalUsername = "u_" + java.util.UUID.randomUUID().toString().substring(0, 8);
+                    }
+                }
+
+                String fullName = (name != null && !name.isBlank()) ? name : baseUsername;
+                if (fullName.length() > 30) {
+                    fullName = fullName.substring(0, 30);
+                }
+
+                Role customerRole = roleRepository.findByName("CUSTOMER")
+                        .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
+
+                String randomPassword = passwordEncoder.encode(java.util.UUID.randomUUID().toString());
+
+                User newUser = User.builder()
+                        .username(finalUsername)
+                        .email(email)
+                        .password(randomPassword)
+                        .fullName(fullName)
+                        .phone("0000000000") // Default placeholder for Google users
+                        .avatar(picture)
+                        .role(customerRole)
+                        .isActive(true)
+                        .build();
+
+                user = userRepository.save(newUser);
+                log.info("New user registered via Google OAuth: {} (ID: {})", email, user.getId());
+
+                activityLogService.recordForUser(user.getId(), ActivityAction.USER_CREATE, "User", user.getId(),
+                        "Dang ky tai khoan moi qua Google OAuth: " + user.getEmail(), null, user.getId());
+                activityLogService.recordLogin(user.getId(), user.getEmail(), true, "Google OAuth Register & Login");
+            } else {
+                if (Boolean.FALSE.equals(user.getIsActive())) {
+                    throw new AppException(ErrorCode.USER_INACTIVE);
+                }
+
+                if ((user.getAvatar() == null || user.getAvatar().isBlank()) && picture != null) {
+                    user.setAvatar(picture);
+                    userRepository.save(user);
+                }
+
+                activityLogService.recordLogin(user.getId(), user.getEmail(), true, "Google OAuth Login");
+            }
+
+            // Revoke old refresh tokens
+            refreshTokenRepository.revokeAllUserTokensByType(user, TokenType.REFRESH);
+
+            return buildAuthResponse(user);
+
+        } catch (AppException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Google authentication error: {}", e.getMessage(), e);
+            throw new AppException(ErrorCode.INVALID_GOOGLE_TOKEN);
+        }
+    }
 
     private AuthResponse buildAuthResponse(User user) {
         String accessToken = jwtService.generateAccessToken(user);

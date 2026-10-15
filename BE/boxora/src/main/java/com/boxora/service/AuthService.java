@@ -11,4 +11,5 @@ public interface AuthService {
     void forgotPassword(ForgotPasswordRequest request);
     void resetPassword(ResetPasswordRequest request);
     void changePassword(String email, ChangePasswordRequest request);
+    AuthResponse googleLogin(GoogleLoginRequest request);
 }

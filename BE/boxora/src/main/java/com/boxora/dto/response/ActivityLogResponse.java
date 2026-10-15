@@ -8,14 +8,16 @@ import lombok.*;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-@Data
+@Getter
+@Setter
+@NoArgsConstructor
 @AllArgsConstructor
-@Builder
 public class ActivityLogResponse {
     private UUID id;
     private UUID userId;
     private String userName;
     private String userEmail;
+    private String userRole;
 
     private ActivityLogType logType;
     private ActivityAction action;

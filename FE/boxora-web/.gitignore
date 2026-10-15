@@ -24,3 +24,8 @@ dist-ssr
 *.sw?
 
 .impeccable/
+
+# Environment files
+.env
+.env.*
+!.env.example

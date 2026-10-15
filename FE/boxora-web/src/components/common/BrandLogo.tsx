@@ -21,31 +21,26 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
   onClick,
 }) => {
   const sizeMap = {
-    sm: { img: 'w-7 h-7 rounded-lg', title: 'text-base', sub: 'text-[8px]' },
-    md: { img: 'w-9 h-9 sm:w-10 sm:h-10 rounded-xl', title: 'text-lg sm:text-xl', sub: 'text-[9px] sm:text-[10px]' },
-    lg: { img: 'w-12 h-12 rounded-2xl', title: 'text-2xl', sub: 'text-[11px]' },
-    xl: { img: 'w-16 h-16 rounded-3xl', title: 'text-3xl', sub: 'text-xs' },
+    sm: { img: 'h-7 w-auto', sub: 'text-[8px]' },
+    md: { img: 'h-9 sm:h-10 w-auto', sub: 'text-[9px] sm:text-[10px]' },
+    lg: { img: 'h-12 sm:h-14 w-auto', sub: 'text-[11px]' },
+    xl: { img: 'h-16 sm:h-20 w-auto', sub: 'text-xs' },
   }
 
-  const { img, title, sub } = sizeMap[size]
+  const { img, sub } = sizeMap[size]
 
   const content = (
     <div className={`flex items-center gap-2.5 sm:gap-3 group select-none ${className}`} onClick={onClick}>
       <img
         src="/logo.png"
         alt="BOXORA Smart Storage"
-        className={`${img} object-cover shadow-xs ring-1 ring-slate-900/10 group-hover:scale-95 transition-transform shrink-0 ${imgClassName}`}
+        className={`${img} object-contain group-hover:scale-105 transition-transform shrink-0 ${imgClassName}`}
       />
-      {showText && (
-        <div className="flex flex-col text-left leading-none">
-          <span className={`font-headline font-black tracking-tight text-slate-900 ${title}`}>
-            BOXORA<span className="text-cyan-600">.</span>
+      {showText && subtitle && (
+        <div className="hidden md:flex flex-col text-left leading-none">
+          <span className={`font-mono text-blue-800/80 font-bold tracking-wider uppercase ${sub}`}>
+            {subtitle}
           </span>
-          {subtitle && (
-            <span className={`font-mono text-cyan-800/80 font-bold tracking-wider uppercase mt-1 ${sub}`}>
-              {subtitle}
-            </span>
-          )}
         </div>
       )}
     </div>
@@ -61,3 +56,5 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
 
   return content
 }
+
+export default BrandLogo

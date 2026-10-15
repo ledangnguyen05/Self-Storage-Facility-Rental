@@ -37,21 +37,24 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
                 COUNT(p)
             )
             FROM Payment p
-            JOIN p.booking b
-            JOIN b.storageUnit su
-            JOIN su.facility f
+            LEFT JOIN p.booking b
+            LEFT JOIN b.storageUnit bSu
+            LEFT JOIN p.contract c
+            JOIN Facility f ON (f.id = bSu.facility.id OR (bSu.facility.id IS NULL AND f.id = c.facility.id))
             WHERE p.status = com.boxora.enums.PaymentStatus.PAID
             AND (CAST(:fromDate AS timestamp) IS NULL OR p.paymentTime >= :fromDate)
             AND (CAST(:toDate AS timestamp) IS NULL OR p.paymentTime <= :toDate)
+            AND (:facilityId IS NULL OR f.id = :facilityId)
             GROUP BY f.id, f.name
             ORDER BY f.name
             """)
     List<FacilityRevenueResponse> sumRevenueByFacility(
             @Param("fromDate") LocalDateTime fromDate,
-            @Param("toDate") LocalDateTime toDate
+            @Param("toDate") LocalDateTime toDate,
+            @Param("facilityId") UUID facilityId
     );
 
-    // Same breakdown but collapsed to one system-wide row; COALESCE guards against
+    // Same breakdown but collapsed to one system-wide or facility-specific row; COALESCE guards against
     // a null SUM when there are no matching payments in the period.
     @Query("""
             SELECT new com.boxora.dto.response.SystemRevenueSummaryResponse(
@@ -63,12 +66,18 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
                 COUNT(p)
             )
             FROM Payment p
+            LEFT JOIN p.booking b
+            LEFT JOIN b.storageUnit bSu
+            LEFT JOIN p.contract c
+            LEFT JOIN Facility f ON (f.id = bSu.facility.id OR (bSu.facility.id IS NULL AND f.id = c.facility.id))
             WHERE p.status = com.boxora.enums.PaymentStatus.PAID
             AND (CAST(:fromDate AS timestamp) IS NULL OR p.paymentTime >= :fromDate)
             AND (CAST(:toDate AS timestamp) IS NULL OR p.paymentTime <= :toDate)
+            AND (:facilityId IS NULL OR f.id = :facilityId)
             """)
     SystemRevenueSummaryResponse sumSystemRevenue(
             @Param("fromDate") LocalDateTime fromDate,
-            @Param("toDate") LocalDateTime toDate
+            @Param("toDate") LocalDateTime toDate,
+            @Param("facilityId") UUID facilityId
     );
 }

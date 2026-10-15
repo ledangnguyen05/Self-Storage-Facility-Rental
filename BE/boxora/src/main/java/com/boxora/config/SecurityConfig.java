@@ -23,6 +23,8 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import org.springframework.http.HttpMethod;
+
 import java.util.List;
 
 @Configuration
@@ -47,7 +49,8 @@ public class SecurityConfig {
             "/swagger-ui.html",
             "/api-docs/**",
             "/v3/api-docs/**",
-            "/uploads/**"
+            "/uploads/**",
+            "/api/v1/chatbot/**"
     };
 
     @Bean
@@ -60,7 +63,17 @@ public class SecurityConfig {
                 // Configure route permissions
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_URLS).permitAll()
-                        .anyRequest().permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/facilities/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/storage-units/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/unit-types/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/facility-policies/**").permitAll()
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .anyRequest().authenticated()
+                )
+
+                // Return 401 Unauthorized instead of default 403 Forbidden on unauthenticated access
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(new org.springframework.security.web.authentication.HttpStatusEntryPoint(org.springframework.http.HttpStatus.UNAUTHORIZED))
                 )
 
                 // Stateless session — no HTTP session stored server-side

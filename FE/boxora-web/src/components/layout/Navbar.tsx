@@ -1,16 +1,25 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Box, User as UserIcon, LogOut, LayoutDashboard, ArrowRight, Menu, X } from 'lucide-react'
+import { LogOut, LayoutDashboard, ArrowRight, Menu, X, Pencil, Compass } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { Button } from '../ui/Button'
-import { Badge } from '../ui/Badge'
 import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import { BrandLogo } from '../common/BrandLogo'
+import { AccountProfileModal } from '../common/AccountProfileModal'
+import { LogoutConfirmModal } from '../common/LogoutConfirmModal'
+import { WebSettingsModal } from '../common/WebSettingsModal'
+import { UserAvatarDropdown } from '../common/UserAvatarDropdown'
+import { QuickThemeLanguageToggle } from '../common/QuickThemeLanguageToggle'
+import { useLanguage } from '../../context/LanguageContext'
 
 export const Navbar: React.FC = () => {
   const { user, role, logout } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
 
   const isCustomer = role === 'CUSTOMER'
   const customerAccess = checkCustomerPortalAccess(user)
@@ -54,77 +63,67 @@ export const Navbar: React.FC = () => {
           {/* Desktop Navigation Links */}
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
             <Link to="/units" className="text-cyan-800 font-bold hover:text-cyan-900 transition-colors flex items-center gap-1">
-              <span>Tìm &amp; Thuê Kho</span>
+              <span>{t('Tìm & Thuê Kho', 'Find & Rent Units')}</span>
             </Link>
             <Link to="/facilities" className="hover:text-slate-900 transition-colors">
-              Hệ thống cơ sở
+              {t('Hệ thống cơ sở')}
             </Link>
             <Link to="/#process" className="hover:text-slate-900 transition-colors">
-              Quy trình 3 bước
+              {t('Quy trình 3 bước')}
             </Link>
             <Link to="/#iot-access" className="hover:text-slate-900 transition-colors">
-              Khóa IoT &amp; An ninh
+              {t('Khóa IoT & An ninh')}
             </Link>
           </nav>
         </div>
 
         {/* Desktop CTA / User State */}
         <div className="hidden sm:flex items-center gap-3">
+          <QuickThemeLanguageToggle />
           {user ? (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
               <button
                 onClick={handleDashboardRedirect}
-                title={canAccessPortal ? 'Truy cập Cổng Quản lý Portal' : 'Tài khoản chưa có phòng kho hoạt động - Bấm để chọn và thuê kho'}
-                className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg border transition-colors cursor-pointer text-left ${
+                title={canAccessPortal ? t('Vào Portal') : t('Khám Phá Thuê Kho')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all cursor-pointer text-left ${
                   !canAccessPortal
-                    ? 'bg-amber-50/80 hover:bg-amber-100/90 border-amber-200'
-                    : 'bg-slate-100 hover:bg-slate-200 border-slate-200'
+                    ? 'bg-amber-50/80 hover:bg-amber-100/90 border-amber-200 text-amber-900'
+                    : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-900'
                 }`}
               >
-                <div
-                  className={`w-7 h-7 rounded-full text-white flex items-center justify-center text-xs font-bold ${
-                    !canAccessPortal ? 'bg-amber-700' : 'bg-slate-900'
-                  }`}
-                >
-                  {user.fullName ? user.fullName[0].toUpperCase() : user.username[0].toUpperCase()}
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-900 leading-tight">
-                    {user.fullName || user.username}
-                  </div>
-                  <div
-                    className={`text-[10px] uppercase tracking-wider font-mono ${
-                      !canAccessPortal ? 'text-amber-800 font-bold' : 'text-slate-500'
-                    }`}
-                  >
-                    {!canAccessPortal ? 'Khách Mới • Thuê Kho' : role}
-                  </div>
-                </div>
                 {!canAccessPortal ? (
-                  <span className="material-symbols-outlined text-[16px] text-amber-700 ml-1">travel_explore</span>
+                  <Compass size={16} className="text-amber-700" />
                 ) : (
-                  <LayoutDashboard size={15} className="text-slate-500 ml-1" />
+                  <LayoutDashboard size={16} className="text-slate-700" />
                 )}
+                <div className="flex flex-col">
+                  <span className="text-xs font-bold leading-tight">
+                    {!canAccessPortal ? t('Khám Phá Thuê Kho') : t('Vào Portal')}
+                  </span>
+                  <span className="text-[9px] uppercase tracking-wider font-mono text-slate-500 leading-none">
+                    {!canAccessPortal ? t('Chưa Có Kho') : (role || 'PORTAL')}
+                  </span>
+                </div>
               </button>
 
-              <button
-                onClick={() => logout()}
-                className="p-2 rounded-lg text-slate-500 hover:text-rose-700 hover:bg-rose-100/60 transition-colors cursor-pointer"
-                title="Đăng xuất"
-              >
-                <LogOut size={18} />
-              </button>
+              <UserAvatarDropdown
+                user={user}
+                role={role}
+                onOpenProfile={() => setIsProfileModalOpen(true)}
+                onOpenSettings={() => setIsSettingsModalOpen(true)}
+                onOpenLogoutConfirm={() => setIsLogoutConfirmOpen(true)}
+              />
             </div>
           ) : (
             <div className="flex items-center gap-3">
               <Link to="/login">
                 <Button variant="secondary" size="sm">
-                  Đăng nhập
+                  {t('Đăng nhập')}
                 </Button>
               </Link>
               <Link to="/facilities">
                 <Button variant="primary" size="sm" icon={<ArrowRight size={14} />}>
-                  Thuê kho ngay
+                  {t('Thuê kho ngay')}
                 </Button>
               </Link>
             </div>
@@ -155,13 +154,43 @@ export const Navbar: React.FC = () => {
       {/* Mobile Drawer */}
       {isMobileMenuOpen && (
         <div className="sm:hidden border-t border-slate-200 bg-white px-4 py-5 shadow-xl animate-in slide-in-from-top-2 duration-150">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
+            <span className="text-xs font-semibold text-slate-500">{t('Giao diện & Ngôn ngữ')}</span>
+            <QuickThemeLanguageToggle />
+          </div>
           <nav className="flex flex-col gap-3 font-medium text-slate-700 mb-5">
+            {user && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsProfileModalOpen(true)
+                    setIsMobileMenuOpen(false)
+                  }}
+                  className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-left text-sm font-semibold"
+                >
+                  <Pencil size={16} />
+                  {t('Chỉnh sửa hồ sơ')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSettingsModalOpen(true)
+                    setIsMobileMenuOpen(false)
+                  }}
+                  className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-left text-sm font-semibold text-slate-700"
+                >
+                  <span className="material-symbols-outlined text-[18px]">settings</span>
+                  {t('Cài đặt web & hệ thống')}
+                </button>
+              </>
+            )}
             <Link
               to="/facilities"
               onClick={() => setIsMobileMenuOpen(false)}
               className="px-3 py-2.5 rounded-lg hover:bg-slate-50 transition-colors flex items-center justify-between"
             >
-              <span>Hệ thống cơ sở</span>
+              <span>{t('Hệ thống cơ sở')}</span>
               <ArrowRight size={14} className="text-slate-400" />
             </Link>
             <Link
@@ -169,7 +198,7 @@ export const Navbar: React.FC = () => {
               onClick={() => setIsMobileMenuOpen(false)}
               className="px-3 py-2.5 rounded-lg hover:bg-slate-50 transition-colors flex items-center justify-between"
             >
-              <span>Quy trình 3 bước</span>
+              <span>{t('Quy trình 3 bước')}</span>
               <ArrowRight size={14} className="text-slate-400" />
             </Link>
             <Link
@@ -177,7 +206,7 @@ export const Navbar: React.FC = () => {
               onClick={() => setIsMobileMenuOpen(false)}
               className="px-3 py-2.5 rounded-lg hover:bg-slate-50 transition-colors flex items-center justify-between"
             >
-              <span>Khóa IoT &amp; An ninh</span>
+              <span>{t('Khóa IoT & An ninh')}</span>
               <ArrowRight size={14} className="text-slate-400" />
             </Link>
           </nav>
@@ -192,33 +221,34 @@ export const Navbar: React.FC = () => {
                   }`}
                 >
                   {!canAccessPortal ? (
-                    <span className="material-symbols-outlined text-[18px]">travel_explore</span>
+                    <Compass size={16} />
                   ) : (
                     <LayoutDashboard size={16} />
                   )}
-                  <span>{canAccessPortal ? `Vào bảng điều khiển (${role})` : 'Khám Phá & Đăng Ký Thuê Kho'}</span>
+                  <span>{canAccessPortal ? `${t('Vào bảng điều khiển')} (${role})` : t('Khám Phá & Đăng Ký Thuê Kho')}</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
-                    logout()
                     setIsMobileMenuOpen(false)
+                    setIsLogoutConfirmOpen(true)
                   }}
                   className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-red-600 bg-red-50 hover:bg-red-100 font-medium text-sm transition-colors cursor-pointer"
                 >
                   <LogOut size={16} />
-                  <span>Đăng xuất</span>
+                  <span>{t('Đăng xuất')}</span>
                 </button>
               </>
             ) : (
               <>
                 <Link to="/login" onClick={() => setIsMobileMenuOpen(false)} className="w-full">
                   <Button variant="secondary" className="w-full justify-center">
-                    Đăng nhập
+                    {t('Đăng nhập')}
                   </Button>
                 </Link>
                 <Link to="/facilities" onClick={() => setIsMobileMenuOpen(false)} className="w-full">
                   <Button variant="primary" className="w-full justify-center" icon={<ArrowRight size={16} />}>
-                    Thuê kho ngay
+                    {t('Thuê kho ngay')}
                   </Button>
                 </Link>
               </>
@@ -226,6 +256,19 @@ export const Navbar: React.FC = () => {
           </div>
         </div>
       )}
+      <AccountProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
+      <WebSettingsModal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} />
+      <LogoutConfirmModal
+        isOpen={isLogoutConfirmOpen}
+        onClose={() => setIsLogoutConfirmOpen(false)}
+        onConfirm={async () => {
+          await logout()
+          navigate('/login')
+        }}
+        userName={user?.fullName || user?.username}
+        userEmail={user?.email}
+        userRole={role || 'USER'}
+      />
     </header>
   )
 }

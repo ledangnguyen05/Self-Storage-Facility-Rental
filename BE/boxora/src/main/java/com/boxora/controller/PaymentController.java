@@ -119,11 +119,21 @@ public class PaymentController {
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
+    @GetMapping("my-payments")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Lấy toàn bộ lịch sử thanh toán của tài khoản khách hàng đang đăng nhập")
+    public ResponseEntity<ApiResponse<List<PaymentResponse>>> getMyPayments() {
+        List<PaymentResponse> response = paymentService.getMyPayments();
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
     @GetMapping
-    @PreAuthorize("hasAuthority('PAYMENT_VIEW') or hasAnyRole('ADMIN', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('PAYMENT_VIEW') or hasAnyRole('ADMIN', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'STAFF', 'CUSTOMER')")
     @Operation(summary = "Lấy danh sách thanh toán phân trang và lọc theo tiêu chí")
     public ResponseEntity<ApiResponse<PageResponse<PaymentResponse>>> getAll(
             @RequestParam(required = false) UUID bookingId,
+            @RequestParam(required = false) UUID facilityId,
+            @RequestParam(required = false) UUID customerId,
             @RequestParam(required = false) PaymentStatus status,
             @RequestParam(required = false) PaymentType paymentType,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fromDate,
@@ -134,7 +144,7 @@ public class PaymentController {
             @RequestParam(defaultValue = "desc") String sortDir
     ) {
         PageResponse<PaymentResponse> response = paymentService.getAll(
-                bookingId, status, paymentType, fromDate, toDate, page, size, sortBy, sortDir
+                bookingId, facilityId, customerId, status, paymentType, fromDate, toDate, page, size, sortBy, sortDir
         );
         return ResponseEntity.ok(ApiResponse.success(response));
     }
