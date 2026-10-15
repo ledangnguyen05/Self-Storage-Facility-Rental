@@ -13,6 +13,7 @@ import { paymentService, PaymentItem } from '../../services/paymentService'
 import { Booking, OccupancyReport, StorageUnit, Facility, FacilityPolicy } from '../../types'
 import { HandoverCheckInWorkbench } from './components/HandoverCheckInWorkbench'
 import { QrCameraCheckInModal } from './components/QrCameraCheckInModal'
+import { StaffPolicyGuideModal } from './components/StaffPolicyGuideModal'
 
 export const StaffDashboard: React.FC = () => {
   const { user } = useAuth()
@@ -22,6 +23,7 @@ export const StaffDashboard: React.FC = () => {
   }>() || {}
 
   const [staffFacilityPolicy, setStaffFacilityPolicy] = useState<FacilityPolicy | null>(null)
+  const [isPolicyGuideOpen, setIsPolicyGuideOpen] = useState(false)
 
   // Stepper state for Spotlight Handover (Trần Minh Tuấn - #A-112)
   const [handoverStep, setHandoverStep] = useState(4)
@@ -375,34 +377,46 @@ export const StaffDashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs shrink-0">
-          <div className="bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-700/80">
-            <span className="text-[10px] text-slate-400 block font-medium">SLA Hoàn cọc</span>
-            <strong className="text-cyan-300 text-xs font-mono font-bold">
-              {staffFacilityPolicy?.depositRefundSlaDays ?? 3} ngày làm việc
-            </strong>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-700/80">
+              <span className="text-[10px] text-slate-400 block font-medium">SLA Hoàn cọc</span>
+              <strong className="text-cyan-300 text-xs font-mono font-bold">
+                {staffFacilityPolicy?.depositRefundSlaDays ?? 3} ngày làm việc
+              </strong>
+            </div>
+
+            <div className="bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-700/80">
+              <span className="text-[10px] text-slate-400 block font-medium">Báo trước trả kho</span>
+              <strong className="text-white text-xs font-mono font-bold">
+                {staffFacilityPolicy?.returnNoticeDays ?? 3} ngày
+              </strong>
+            </div>
+
+            <div className="bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-700/80">
+              <span className="text-[10px] text-slate-400 block font-medium">Phí trễ hạn</span>
+              <strong className="text-rose-400 text-xs font-mono font-bold">
+                {Number(staffFacilityPolicy?.dailyLateFee ?? staffFacilityPolicy?.lateFeePerDay ?? 50000).toLocaleString('vi-VN')} đ/ngày
+              </strong>
+            </div>
+
+            <div className="bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-700/80">
+              <span className="text-[10px] text-slate-400 block font-medium">Hủy hoàn tiền 100%</span>
+              <strong className="text-emerald-400 text-xs font-mono font-bold">
+                ≥ {staffFacilityPolicy?.cancellationFullRefundHours ?? 48}h nhận kho
+              </strong>
+            </div>
           </div>
 
-          <div className="bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-700/80">
-            <span className="text-[10px] text-slate-400 block font-medium">Báo trước trả kho</span>
-            <strong className="text-white text-xs font-mono font-bold">
-              {staffFacilityPolicy?.returnNoticeDays ?? 3} ngày
-            </strong>
-          </div>
-
-          <div className="bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-700/80">
-            <span className="text-[10px] text-slate-400 block font-medium">Phí trễ hạn</span>
-            <strong className="text-rose-400 text-xs font-mono font-bold">
-              {Number(staffFacilityPolicy?.dailyLateFee ?? staffFacilityPolicy?.lateFeePerDay ?? 50000).toLocaleString('vi-VN')} đ/ngày
-            </strong>
-          </div>
-
-          <div className="bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-700/80">
-            <span className="text-[10px] text-slate-400 block font-medium">Hủy hoàn tiền 100%</span>
-            <strong className="text-emerald-400 text-xs font-mono font-bold">
-              ≥ {staffFacilityPolicy?.cancellationFullRefundHours ?? 48}h nhận kho
-            </strong>
-          </div>
+          <button
+            type="button"
+            onClick={() => setIsPolicyGuideOpen(true)}
+            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-bold text-xs border border-cyan-500/40 transition cursor-pointer"
+            title="Tra cứu cẩm nang quy định nghiệp vụ dành cho nhân viên"
+          >
+            <span className="material-symbols-outlined text-[18px]">menu_book</span>
+            <span>Cẩm nang SLA</span>
+          </button>
         </div>
       </div>
 
@@ -1197,6 +1211,14 @@ export const StaffDashboard: React.FC = () => {
         onSelectBookingForWorkbench={(bookingId) => {
           setActiveBookingId(bookingId)
         }}
+      />
+
+      {/* Staff Policy Guide Modal (Strictly Read-Only) */}
+      <StaffPolicyGuideModal
+        isOpen={isPolicyGuideOpen}
+        onClose={() => setIsPolicyGuideOpen(false)}
+        facilityId={user?.facilityId || selectedFacility}
+        facilityName={staffFacilityPolicy?.facilityName || 'Boxora Chi nhánh'}
       />
 
     </div>

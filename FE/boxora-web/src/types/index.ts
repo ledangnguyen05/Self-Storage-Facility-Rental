@@ -312,6 +312,7 @@ export interface FacilityPolicy {
 
 export interface FacilityPolicyCreateRequest {
   facilityId: string
+  isActive?: boolean
   depositPercentage: number
   renewalWindowDays: number
   cancellationFullRefundHours: number
@@ -327,6 +328,7 @@ export interface FacilityPolicyCreateRequest {
 }
 
 export interface FacilityPolicyUpdateRequest {
+  isActive?: boolean
   depositPercentage?: number
   renewalWindowDays?: number
   cancellationFullRefundHours?: number

@@ -12,6 +12,7 @@ import { BookingCheckoutModal } from '../../components/modals/BookingCheckoutMod
 import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
 import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
 import { ContractOtpModal } from '../../components/modals/ContractOtpModal'
+import { CustomerPolicyModal } from '../../components/modals/CustomerPolicyModal'
 
 const UNIT_CARD_IMAGES = [
   'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80',
@@ -43,6 +44,7 @@ export const CustomerDashboard: React.FC = () => {
   // Real facilities & available units state
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [availableUnits, setAvailableUnits] = useState<StorageUnit[]>([])
+  const [isCustomerPolicyModalOpen, setIsCustomerPolicyModalOpen] = useState<boolean>(false)
   const [loadingUnits, setLoadingUnits] = useState<boolean>(true)
   const [bookingRequests, setBookingRequests] = useState<Booking[]>([])
   const [requestToPay, setRequestToPay] = useState<Booking | null>(null)
@@ -1218,7 +1220,16 @@ export const CustomerDashboard: React.FC = () => {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 self-start sm:self-auto">
+              <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setIsCustomerPolicyModalOpen(true)}
+                  className="px-3 py-2 bg-cyan-50 hover:bg-cyan-100 text-cyan-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer border border-cyan-200"
+                  title="Xem quy định đặt cọc, hủy đặt kho và SLA hoàn tiền"
+                >
+                  <span className="material-symbols-outlined text-[16px]">policy</span>
+                  <span>Chính sách cọc &amp; hủy</span>
+                </button>
                 <button
                   type="button"
                   onClick={fetchCustomerBookings}
@@ -1802,9 +1813,20 @@ export const CustomerDashboard: React.FC = () => {
                   <span className="text-xs text-slate-500">Xem chi tiết điều khoản, thời hạn thuê và văn bản ký DocuSeal</span>
                 </div>
               </div>
-              <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 font-mono text-xs font-bold text-emerald-700">
-                {activeContracts.length} Hợp đồng đang hiệu lực
-              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setIsCustomerPolicyModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-700 text-xs font-bold border border-cyan-200 transition cursor-pointer"
+                  title="Xem các quy định về hợp đồng, thanh toán và hoàn trả tiền cọc"
+                >
+                  <span className="material-symbols-outlined text-[16px]">policy</span>
+                  <span>Chính sách thuê kho &amp; Hợp đồng</span>
+                </button>
+                <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 font-mono text-xs font-bold text-emerald-700">
+                  {activeContracts.length} Hợp đồng đang hiệu lực
+                </span>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -3155,6 +3177,14 @@ export const CustomerDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Customer Policy Modal (Read-Only) */}
+      <CustomerPolicyModal
+        isOpen={isCustomerPolicyModalOpen}
+        onClose={() => setIsCustomerPolicyModalOpen(false)}
+        facilityId={facilities[0]?.id}
+        facilityName={facilities[0]?.name}
+      />
 
     </div>
   )
