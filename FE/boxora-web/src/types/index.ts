@@ -285,15 +285,58 @@ export interface FacilityPolicy {
   id: string
   facilityId: string
   facilityName?: string
+  depositPercentage?: number
+  renewalWindowDays?: number
+  cancellationFullRefundHours?: number
+  cancellationPartialRefundHours?: number
+  cancellationPartialRefundPercent?: number
+  returnNoticeDays?: number
+  depositRefundSlaDays?: number
+  dailyLateFee?: number
+  overdueGraceDays?: number
+  overdueAccessDisableDays?: number
+  overdueSealingDays?: number
+  minimumRentalMonths?: number
+  // Legacy / UI helper aliases
   depositPercent?: number
   lateFeePerDay?: number
   gracePeriodDays?: number
-  overdueSealingDays?: number
   overdueAuctionDays?: number
   discount3Months?: number
   discount6Months?: number
   discount12Months?: number
   updatedAt?: string
+}
+
+export interface FacilityPolicyCreateRequest {
+  facilityId: string
+  depositPercentage: number
+  renewalWindowDays: number
+  cancellationFullRefundHours: number
+  cancellationPartialRefundHours: number
+  cancellationPartialRefundPercent: number
+  returnNoticeDays: number
+  depositRefundSlaDays: number
+  dailyLateFee: number
+  overdueGraceDays: number
+  overdueAccessDisableDays: number
+  overdueSealingDays: number
+  minimumRentalMonths: number
+}
+
+export interface FacilityPolicyUpdateRequest {
+  depositPercentage?: number
+  renewalWindowDays?: number
+  cancellationFullRefundHours?: number
+  cancellationPartialRefundHours?: number
+  cancellationPartialRefundPercent?: number
+  returnNoticeDays?: number
+  depositRefundSlaDays?: number
+  dailyLateFee?: number
+  overdueGraceDays?: number
+  overdueAccessDisableDays?: number
+  overdueSealingDays?: number
+  minimumRentalMonths?: number
 }
 
 export interface RevenueReport {

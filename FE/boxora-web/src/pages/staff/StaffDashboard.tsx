@@ -7,9 +7,10 @@ import { reportService } from '../../services/reportService'
 import { masterKeyService } from '../../services/masterKeyService'
 import { supportTicketService } from '../../services/supportTicketService'
 import { facilityService } from '../../services/facilityService'
+import { facilityPolicyService } from '../../services/facilityPolicyService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
-import { Booking, OccupancyReport, StorageUnit, Facility } from '../../types'
+import { Booking, OccupancyReport, StorageUnit, Facility, FacilityPolicy } from '../../types'
 import { HandoverCheckInWorkbench } from './components/HandoverCheckInWorkbench'
 import { QrCameraCheckInModal } from './components/QrCameraCheckInModal'
 
@@ -19,6 +20,8 @@ export const StaffDashboard: React.FC = () => {
     selectedFacility?: string
     facilities?: Facility[]
   }>() || {}
+
+  const [staffFacilityPolicy, setStaffFacilityPolicy] = useState<FacilityPolicy | null>(null)
 
   // Stepper state for Spotlight Handover (Trần Minh Tuấn - #A-112)
   const [handoverStep, setHandoverStep] = useState(4)
@@ -76,8 +79,25 @@ export const StaffDashboard: React.FC = () => {
     loadTicketQueue()
     loadActiveRentals(targetFacility)
     loadRadarUnits(targetFacility)
+    loadFacilityPolicy(targetFacility)
   }, [selectedFacility])
 
+  const loadFacilityPolicy = async (facilityId?: string) => {
+    try {
+      const facId = facilityId || user?.facilityId
+      if (facId) {
+        const pol = await facilityPolicyService.getByFacilityId(facId)
+        setStaffFacilityPolicy(pol)
+      } else {
+        const all = await facilityPolicyService.getAll({ size: 1 })
+        if (all?.content?.[0]) {
+          setStaffFacilityPolicy(all.content[0])
+        }
+      }
+    } catch {
+      setStaffFacilityPolicy(null)
+    }
+  }
   const loadRadarUnits = async (facilityId?: string) => {
     try {
       const units = await storageUnitService.getUnits(facilityId ? { facilityId } : undefined)
@@ -330,6 +350,58 @@ export const StaffDashboard: React.FC = () => {
               <span className="material-symbols-outlined text-[18px]">lock_open</span>
               <span>Mở Cửa Khẩn Cấp (Master Key)</span>
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* QUICK POLICY REFERENCE STRIP FOR STAFF (READ-ONLY) */}
+      <div className="w-full bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 rounded-2xl p-4 sm:p-5 text-white shadow-sm border border-slate-700/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-[22px]">policy</span>
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-bold text-white tracking-wide">
+                Quy Chuẩn Chính Sách &amp; SLA Cơ Sở
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-500/30">
+                {staffFacilityPolicy?.facilityName || 'Boxora Facility'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Cẩm nang quy chuẩn cho nhân viên quầy khi hướng dẫn khách nhận kho, hủy phòng và trả cọc.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs shrink-0">
+          <div className="bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-700/80">
+            <span className="text-[10px] text-slate-400 block font-medium">SLA Hoàn cọc</span>
+            <strong className="text-cyan-300 text-xs font-mono font-bold">
+              {staffFacilityPolicy?.depositRefundSlaDays ?? 3} ngày làm việc
+            </strong>
+          </div>
+
+          <div className="bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-700/80">
+            <span className="text-[10px] text-slate-400 block font-medium">Báo trước trả kho</span>
+            <strong className="text-white text-xs font-mono font-bold">
+              {staffFacilityPolicy?.returnNoticeDays ?? 3} ngày
+            </strong>
+          </div>
+
+          <div className="bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-700/80">
+            <span className="text-[10px] text-slate-400 block font-medium">Phí trễ hạn</span>
+            <strong className="text-rose-400 text-xs font-mono font-bold">
+              {Number(staffFacilityPolicy?.dailyLateFee ?? staffFacilityPolicy?.lateFeePerDay ?? 50000).toLocaleString('vi-VN')} đ/ngày
+            </strong>
+          </div>
+
+          <div className="bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-700/80">
+            <span className="text-[10px] text-slate-400 block font-medium">Hủy hoàn tiền 100%</span>
+            <strong className="text-emerald-400 text-xs font-mono font-bold">
+              ≥ {staffFacilityPolicy?.cancellationFullRefundHours ?? 48}h nhận kho
+            </strong>
           </div>
         </div>
       </div>
