@@ -22,7 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import com.boxora.security.RequestContext;
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 @Service
@@ -35,23 +37,57 @@ public class SupportTicketServiceImpl implements SupportTicketService {
     private final UserRepository userRepository;
     private final BookingRepository bookingRepository;
     private final FileStorageService fileStorageService;
+    private final RequestContext requestContext;
 
     @Override
     public SupportTicketResponse createTicket(SupportTicketRequest request) {
-        User customer = null;
-        if (request.getCustomerId() != null) {
-            customer = userRepository.findById(request.getCustomerId()).orElse(null);
-        }
-        if (customer == null) {
-            customer = userRepository.findAll().stream().findFirst().orElse(null);
+        UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
+        String currentUserRole = requestContext != null ? requestContext.currentUserRole() : null;
+        boolean isStaffOrAdmin = "STAFF".equalsIgnoreCase(currentUserRole)
+                || "FACILITY_MANAGER".equalsIgnoreCase(currentUserRole)
+                || "ADMIN".equalsIgnoreCase(currentUserRole);
+
+        User customer;
+        if (isStaffOrAdmin) {
+            if (request.getCustomerId() != null) {
+                customer = userRepository.findById(request.getCustomerId())
+                        .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+            } else if (currentUserId != null) {
+                customer = userRepository.findById(currentUserId).orElse(null);
+            } else {
+                throw new AppException(ErrorCode.USER_NOT_FOUND);
+            }
+        } else {
+            // Customer role: customer MUST be the authenticated principal
+            if (currentUserId == null) {
+                throw new AppException(ErrorCode.UNAUTHORIZED);
+            }
+            if (request.getCustomerId() != null && !request.getCustomerId().equals(currentUserId)) {
+                log.warn("[SECURITY] Customer {} attempted to create support ticket for another user {}",
+                        currentUserId, request.getCustomerId());
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+            customer = userRepository.findById(currentUserId)
+                    .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
         }
 
+        // Validate access to any booking linked to a support ticket
         Booking booking = null;
         if (request.getBookingId() != null) {
-            booking = bookingRepository.findById(request.getBookingId()).orElse(null);
+            booking = bookingRepository.findById(request.getBookingId())
+                    .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+            if (!isStaffOrAdmin) {
+                if (booking.getCustomer() == null || !booking.getCustomer().getId().equals(customer.getId())) {
+                    log.warn("[SECURITY] Customer {} attempted to link support ticket to booking {} owned by customer {}",
+                            customer.getId(), booking.getId(), booking.getCustomer() != null ? booking.getCustomer().getId() : "null");
+                    throw new AppException(ErrorCode.FORBIDDEN);
+                }
+            }
         }
 
-        String ticketCode = "TK-" + String.format("%04d", new Random().nextInt(10000));
+        // Collision-resistant unique ticket identifier: TK-YYMMDD-XXXX
+        String ticketCode = generateUniqueTicketCode();
 
         TicketCategory category = TicketCategory.OTHER;
         if (request.getCategory() != null && !request.getCategory().isBlank()) {
@@ -76,7 +112,7 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .build();
 
         ticket = supportTicketRepository.save(ticket);
-        log.info("Created support ticket {} with image evidence: {}", ticketCode, combinedEvidence);
+        log.info("Created support ticket {} for customer {} with image evidence: {}", ticketCode, customer.getId(), combinedEvidence);
         return mapToResponse(ticket);
     }
 
@@ -115,17 +151,45 @@ public class SupportTicketServiceImpl implements SupportTicketService {
     @Override
     @Transactional(readOnly = true)
     public List<SupportTicketResponse> getMyTickets(UUID customerId) {
-        List<SupportTicket> list = supportTicketRepository.findAll();
-        if (customerId != null) {
-            list = list.stream()
-                    .filter(t -> t.getCustomer() != null && customerId.equals(t.getCustomer().getId()))
-                    .collect(Collectors.toList());
+        UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
+        String currentUserRole = requestContext != null ? requestContext.currentUserRole() : null;
+        boolean isStaffOrAdmin = "STAFF".equalsIgnoreCase(currentUserRole)
+                || "FACILITY_MANAGER".equalsIgnoreCase(currentUserRole)
+                || "ADMIN".equalsIgnoreCase(currentUserRole);
+
+        UUID targetCustomerId = customerId;
+        if (!isStaffOrAdmin) {
+            if (currentUserId == null) {
+                throw new AppException(ErrorCode.UNAUTHORIZED);
+            }
+            if (customerId != null && !customerId.equals(currentUserId)) {
+                log.warn("[SECURITY] Customer {} attempted to view tickets of customer {}", currentUserId, customerId);
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+            targetCustomerId = currentUserId;
+        }
+
+        List<SupportTicket> list;
+        if (targetCustomerId != null) {
+            list = supportTicketRepository.findByCustomer_Id(targetCustomerId);
+        } else {
+            list = supportTicketRepository.findAll();
         }
         return list.stream().map(this::mapToResponse).collect(Collectors.toList());
     }
 
     @Override
     public SupportTicketResponse resolveTicket(UUID id, String resolutionNote) {
+        String currentUserRole = requestContext != null ? requestContext.currentUserRole() : null;
+        boolean isStaffOrAdmin = "STAFF".equalsIgnoreCase(currentUserRole)
+                || "FACILITY_MANAGER".equalsIgnoreCase(currentUserRole)
+                || "ADMIN".equalsIgnoreCase(currentUserRole);
+
+        if (requestContext != null && requestContext.currentUserId() != null && !isStaffOrAdmin) {
+            log.warn("[SECURITY] Non-staff user attempted to resolve support ticket {}", id);
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
         SupportTicket ticket = supportTicketRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
@@ -134,6 +198,17 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         ticket = supportTicketRepository.save(ticket);
 
         return mapToResponse(ticket);
+    }
+
+    private String generateUniqueTicketCode() {
+        String datePart = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMdd"));
+        for (int i = 0; i < 5; i++) {
+            String candidate = String.format("TK-%s-%04d", datePart, ThreadLocalRandom.current().nextInt(10000));
+            if (supportTicketRepository.findByTicketCode(candidate).isEmpty()) {
+                return candidate;
+            }
+        }
+        return "TK-" + datePart + "-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
     }
 
     private String resolveImageEvidence(String singleEvidence, List<String> evidenceUrls) {

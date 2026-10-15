@@ -186,6 +186,7 @@ export interface RentalContract {
   docusealSubmitterSlug?: string | null
   signedAt?: string | null
   signingMethod?: 'ONLINE' | 'IN_PERSON'
+  signatureData?: string | null
   unitTypeName?: string | null
   unitPricePerMonth?: number | null
 }
@@ -219,6 +220,9 @@ export interface HandoverRecord {
   recordType: 'CHECK_IN' | 'RETURN'
   status?: 'PENDING_CHECKIN' | 'HANDED_OVER' | 'RETURN_INSPECTED'
   accessCode?: string
+  accessPin?: string
+  rfidCardNumber?: string
+  qrAccessToken?: string
   handoverDate?: string
   unitCondition: string
   notes?: string
@@ -281,15 +285,58 @@ export interface FacilityPolicy {
   id: string
   facilityId: string
   facilityName?: string
+  depositPercentage?: number
+  renewalWindowDays?: number
+  cancellationFullRefundHours?: number
+  cancellationPartialRefundHours?: number
+  cancellationPartialRefundPercent?: number
+  returnNoticeDays?: number
+  depositRefundSlaDays?: number
+  dailyLateFee?: number
+  overdueGraceDays?: number
+  overdueAccessDisableDays?: number
+  overdueSealingDays?: number
+  minimumRentalMonths?: number
+  // Legacy / UI helper aliases
   depositPercent?: number
   lateFeePerDay?: number
   gracePeriodDays?: number
-  overdueSealingDays?: number
   overdueAuctionDays?: number
   discount3Months?: number
   discount6Months?: number
   discount12Months?: number
   updatedAt?: string
+}
+
+export interface FacilityPolicyCreateRequest {
+  facilityId: string
+  depositPercentage: number
+  renewalWindowDays: number
+  cancellationFullRefundHours: number
+  cancellationPartialRefundHours: number
+  cancellationPartialRefundPercent: number
+  returnNoticeDays: number
+  depositRefundSlaDays: number
+  dailyLateFee: number
+  overdueGraceDays: number
+  overdueAccessDisableDays: number
+  overdueSealingDays: number
+  minimumRentalMonths: number
+}
+
+export interface FacilityPolicyUpdateRequest {
+  depositPercentage?: number
+  renewalWindowDays?: number
+  cancellationFullRefundHours?: number
+  cancellationPartialRefundHours?: number
+  cancellationPartialRefundPercent?: number
+  returnNoticeDays?: number
+  depositRefundSlaDays?: number
+  dailyLateFee?: number
+  overdueGraceDays?: number
+  overdueAccessDisableDays?: number
+  overdueSealingDays?: number
+  minimumRentalMonths?: number
 }
 
 export interface RevenueReport {

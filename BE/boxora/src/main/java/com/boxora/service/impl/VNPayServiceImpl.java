@@ -16,13 +16,16 @@ import java.util.Map;
 import java.util.SortedMap;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class VNPayServiceImpl implements VNPayService {
 
     private static final DateTimeFormatter VNP_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
     private final VNPayConfig vnPayConfig;
+
+    public VNPayServiceImpl(VNPayConfig vnPayConfig) {
+        this.vnPayConfig = vnPayConfig;
+    }
 
     @Override
     public String createPaymentUrl(String txnRef, BigDecimal amount, String orderInfo, String ipAddress) {
@@ -32,9 +35,9 @@ public class VNPayServiceImpl implements VNPayService {
             throw new IllegalStateException("VNPay configuration is missing. Please set VNPAY_TMN_CODE and VNPAY_HASH_SECRET in your environment.");
         }
 
-        String safeOrderInfo = (orderInfo != null && !orderInfo.isBlank())
-                ? orderInfo
-                : "Thanh toan don hang " + txnRef;
+        String safeOrderInfo = VNPayUtil.sanitizeOrderInfo(
+                (orderInfo != null && !orderInfo.isBlank()) ? orderInfo : "Thanh toan don hang " + txnRef
+        );
 
         Map<String, String> params = new HashMap<>();
         params.put("vnp_Version", vnPayConfig.getVersion());
@@ -55,15 +58,17 @@ public class VNPayServiceImpl implements VNPayService {
         params.put("vnp_ExpireDate", LocalDateTime.now().plusMinutes(15).format(VNP_DATE_FORMAT));
 
         SortedMap<String, String> sorted = VNPayUtil.sortParams(params);
-        String hashData = VNPayUtil.buildHashData(sorted);
+        String hashData = VNPayUtil.buildHashData(sorted, StandardCharsets.UTF_8);
         String secureHash = VNPayUtil.hmacSHA512(vnPayConfig.getHashSecret(), hashData);
 
         StringBuilder query = new StringBuilder();
         sorted.forEach((key, value) -> query.append(key).append('=')
-                .append(java.net.URLEncoder.encode(value, StandardCharsets.US_ASCII)).append('&'));
+                .append(java.net.URLEncoder.encode(value, StandardCharsets.UTF_8)).append('&'));
         query.append("vnp_SecureHash=").append(secureHash);
 
-        return vnPayConfig.getPayUrl() + "?" + query;
+        String paymentUrl = vnPayConfig.getPayUrl() + "?" + query;
+        log.info("Generated VNPay payment URL for txnRef={}, amount={}", txnRef, amount);
+        return paymentUrl;
     }
 
     @Override

@@ -12,11 +12,18 @@ import java.util.UUID;
 
 @Getter
 @Setter
-@NoArgsConstructor
-@AllArgsConstructor
 @MappedSuperclass
 @EntityListeners(AuditingEntityListener.class)
 public abstract class BaseEntity implements Serializable {
+
+    public BaseEntity() {
+    }
+
+    public BaseEntity(UUID id, LocalDateTime createdAt, LocalDateTime updatedAt) {
+        this.id = id;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
+    }
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

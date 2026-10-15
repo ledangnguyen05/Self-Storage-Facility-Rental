@@ -399,6 +399,12 @@ public class ContractSigningServiceImpl implements ContractSigningService {
     @Override
     @Transactional
     public RentalContractResponse mockSign(UUID contractId) {
+        return mockSign(contractId, null);
+    }
+
+    @Override
+    @Transactional
+    public RentalContractResponse mockSign(UUID contractId, String signatureData) {
         RentalContract contract = rentalContractRepository.findById(contractId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
 
@@ -412,7 +418,14 @@ public class ContractSigningServiceImpl implements ContractSigningService {
             }
         }
 
+        if (signatureData != null && !signatureData.isBlank()) {
+            contract.setSignatureData(signatureData);
+        }
+
         if (contract.getSignedAt() != null && contract.getStatus() == RentalContractStatus.ACTIVE) {
+            if (signatureData != null && !signatureData.isBlank()) {
+                rentalContractRepository.save(contract);
+            }
             return rentalContractMapper.toResponse(contract);
         }
 
@@ -427,18 +440,13 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         contract.setStatus(RentalContractStatus.ACTIVE);
         rentalContractRepository.save(contract);
 
-        // 1. Transition associated booking to ACTIVE
+        // 1. Maintain booking in CONFIRMED state awaiting physical staff handover
         if (contract.getBooking() != null) {
             Booking booking = contract.getBooking();
-            booking.setStatus(BookingStatus.ACTIVE);
-            bookingRepository.save(booking);
-        }
-
-        // 2. Transition storage unit to OCCUPIED
-        if (contract.getUnit() != null) {
-            StorageUnit unit = contract.getUnit();
-            unit.setStatus(UnitStatus.OCCUPIED);
-            storageUnitRepository.save(unit);
+            if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                booking.setStatus(BookingStatus.CONFIRMED);
+                bookingRepository.save(booking);
+            }
         }
 
         // 3. Decrypt PIN and dispatch confirmation email

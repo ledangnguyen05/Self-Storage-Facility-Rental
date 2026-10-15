@@ -161,34 +161,7 @@ export const AdminDashboard: React.FC = () => {
         setIsSampleUserData(false)
       }
     } catch (err: any) {
-      console.warn('Initial fetch users failed, attempting token auto-recovery:', err)
-      // If 401 Unauthorized or stale token, attempt seamless admin re-auth
-      if (err?.response?.status === 401 || localStorage.getItem('boxora_access_token')?.startsWith('mock-token-')) {
-        try {
-          let loginRes
-          try {
-            loginRes = await authService.login('admin@gmail.com', '123456')
-          } catch {
-            loginRes = await authService.login('admin@gmail.com', 'admin')
-          }
-          if (loginRes.data?.accessToken) {
-            localStorage.setItem('boxora_access_token', loginRes.data.accessToken)
-            if (loginRes.data.refreshToken) {
-              localStorage.setItem('boxora_refresh_token', loginRes.data.refreshToken)
-            }
-            const retryRes = await userService.getAllUsers({ facilityId: effectiveFacId })
-            if (retryRes?.data && Array.isArray(retryRes.data)) {
-              setUsers(retryRes.data)
-              setIsSampleUserData(false)
-              setFeedbackMessage(null)
-              setIsLoadingUsers(false)
-              return
-            }
-          }
-        } catch (authErr) {
-          console.error('Auto-recovery login failed:', authErr)
-        }
-      }
+      console.warn('Initial fetch users failed:', err)
       setFeedbackMessage('Không thể kết nối danh sách tài khoản từ máy chủ. Vui lòng bấm làm mới.')
       setIsSampleUserData(false)
     } finally {

@@ -396,6 +396,66 @@ VALUES
         TRUE,
         '55555555-5555-5555-5555-555555555555',
         NULL
+    ),
+    (
+        'cd45b91a-5267-4478-aa59-f6f37e678344',
+        NOW(), NOW(),
+        'customer',
+        'customer@gmail.com',
+        '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
+        '0900000005',
+        'Quý Khách Hàng',
+        TRUE,
+        '55555555-5555-5555-5555-555555555555',
+        '45e03ded-5da1-43d5-bea7-96c645d5f96c'
+    ),
+    (
+        '539baeff-b6a8-4b46-aed1-1206777f2155',
+        NOW(), NOW(),
+        'admin',
+        'admin@gmail.com',
+        '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
+        '0900000001',
+        'Quản Trị Viên Hệ Thống',
+        TRUE,
+        '11111111-1111-1111-1111-111111111111',
+        NULL
+    ),
+    (
+        '2e398528-931b-4d06-bcd7-5a1d6424aeab',
+        NOW(), NOW(),
+        'danguyen',
+        'ledangnguyena1@gmail.com',
+        '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
+        '0377477557',
+        'nguyen',
+        TRUE,
+        '55555555-5555-5555-5555-555555555555',
+        'a1111111-2222-3333-4444-555555555555'
+    ),
+    (
+        'e4048fe9-bbc6-4b41-8f93-bd8e7b73e7a0',
+        NOW(), NOW(),
+        'Shelfy',
+        'shelfyorganization@gmail.com',
+        '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
+        '0377288599',
+        'shelfy',
+        TRUE,
+        '55555555-5555-5555-5555-555555555555',
+        'fd8f948e-fdff-4a81-ad0f-fc45639b545d'
+    ),
+    (
+        'afc5e388-0c32-40f2-b909-4df9837d2253',
+        NOW(), NOW(),
+        'dnguyen',
+        'ledangnguyena6@gmail.com',
+        '$2a$10$hMVUHe8WiMBj0XuOXrEQ0.wyoGmDycfNfG0czBbbWym/hf.7rYYyG',
+        '0377222333',
+        'nguyen',
+        TRUE,
+        '55555555-5555-5555-5555-555555555555',
+        '45e03ded-5da1-43d5-bea7-96c645d5f96c'
     )
 ON CONFLICT (id) DO NOTHING;
 

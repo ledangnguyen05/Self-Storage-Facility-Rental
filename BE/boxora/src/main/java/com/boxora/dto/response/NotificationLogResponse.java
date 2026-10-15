@@ -30,5 +30,7 @@ public class NotificationLogResponse {
     private String title;
     private String content;
     private String status;
+    private Integer retryCount;
+    private String errorMessage;
     private LocalDateTime createdAt;
 }

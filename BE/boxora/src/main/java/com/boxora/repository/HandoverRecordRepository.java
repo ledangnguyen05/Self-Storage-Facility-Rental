@@ -11,6 +11,8 @@ import java.util.UUID;
 public interface HandoverRecordRepository extends JpaRepository<HandoverRecord, UUID> {
     List<HandoverRecord> findByBooking_Id(UUID bookingId);
 
+    boolean existsByBooking_IdAndRecordType(UUID bookingId, String recordType);
+
     default List<HandoverRecord> findByBookingId(UUID bookingId) {
         return findByBooking_Id(bookingId);
     }

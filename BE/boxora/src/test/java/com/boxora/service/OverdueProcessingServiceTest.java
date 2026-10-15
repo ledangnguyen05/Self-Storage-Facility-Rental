@@ -60,6 +60,9 @@ class OverdueProcessingServiceTest {
     private ActivityLogService activityLogService;
 
     @Mock
+    private ActivityLogRepository activityLogRepository;
+
+    @Mock
     private FacilityAccessGuard facilityAccessGuard;
 
     @Mock

@@ -65,4 +65,7 @@ public class RentalContract extends BaseEntity {
 
     @Column(name = "signed_at")
     private LocalDateTime signedAt;
+
+    @Column(name = "signature_data", columnDefinition = "TEXT")
+    private String signatureData;
 }

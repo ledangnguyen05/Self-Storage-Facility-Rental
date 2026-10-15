@@ -20,7 +20,7 @@ public class HandoverRecord extends BaseEntity {
     private Booking booking;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "staff_id", nullable = false)
+    @JoinColumn(name = "staff_id", nullable = true)
     private User staff;
 
     @Column(name = "record_type", nullable = false, length = 30)

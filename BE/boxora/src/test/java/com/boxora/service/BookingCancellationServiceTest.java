@@ -338,6 +338,7 @@ class BookingCancellationServiceTest {
         @Test
         @DisplayName("Trigger auto-cancel quét và hủy thành công các booking PENDING_PAYMENT quá hạn")
         void triggerAutoCancel_Success() {
+            testUnit.setStatus(UnitStatus.RESERVED);
             Booking expiredBooking1 = Booking.builder()
                     .bookingCode("BK-PENDING-001")
                     .status(BookingStatus.PENDING_PAYMENT)
@@ -368,6 +369,10 @@ class BookingCancellationServiceTest {
             when(bookingRepository.findExpiredPendingBookings(
                     eq(BookingStatus.PENDING_PAYMENT), any(LocalDateTime.class), any(LocalDate.class)))
                     .thenReturn(List.of(expiredBooking1, expiredBooking2));
+            when(bookingRepository.findByIdForUpdate(expiredBooking1.getId())).thenReturn(Optional.of(expiredBooking1));
+            when(bookingRepository.findByIdForUpdate(expiredBooking2.getId())).thenReturn(Optional.of(expiredBooking2));
+            when(storageUnitRepository.findWithDetailsByIdForUpdate(testUnit.getId())).thenReturn(Optional.of(testUnit));
+            when(storageUnitRepository.findWithDetailsByIdForUpdate(unit2.getId())).thenReturn(Optional.of(unit2));
 
             AutoCancelResult result = cancellationService.triggerAutoCancel(15);
 
@@ -406,6 +411,41 @@ class BookingCancellationServiceTest {
             assertThat(result.getCancelledCount()).isEqualTo(0);
             assertThat(result.getUnitsReleasedCount()).isEqualTo(0);
             verify(bookingRepository, never()).save(any(Booking.class));
+        }
+
+        @Test
+        @DisplayName("triggerAutoCancel: Idempotent - Booking đã bị CANCELLED được bỏ qua an toàn")
+        void triggerAutoCancel_Idempotent_AlreadyCancelledBooking_SkippedSafely() {
+            testBooking.setStatus(BookingStatus.CANCELLED);
+            when(bookingRepository.findExpiredPendingBookings(
+                    eq(BookingStatus.PENDING_PAYMENT), any(LocalDateTime.class), any(LocalDate.class)))
+                    .thenReturn(List.of(testBooking));
+            when(bookingRepository.findByIdForUpdate(testBooking.getId())).thenReturn(Optional.of(testBooking));
+
+            AutoCancelResult result = cancellationService.triggerAutoCancel(15);
+
+            assertThat(result.getCancelledCount()).isEqualTo(0);
+            assertThat(result.getUnitsReleasedCount()).isEqualTo(0);
+            verify(storageUnitRepository, never()).save(any(StorageUnit.class));
+        }
+
+        @Test
+        @DisplayName("triggerAutoCancel: Race condition với Payment - Đơn đã PAID được chuyển CONFIRMED thay vì hủy")
+        void triggerAutoCancel_RaceWithPayment_PaidBookingReconcilesToConfirmed() {
+            testBooking.setStatus(BookingStatus.PENDING_PAYMENT);
+            when(bookingRepository.findExpiredPendingBookings(
+                    eq(BookingStatus.PENDING_PAYMENT), any(LocalDateTime.class), any(LocalDate.class)))
+                    .thenReturn(List.of(testBooking));
+            when(bookingRepository.findByIdForUpdate(testBooking.getId())).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.existsByBooking_IdAndStatus(testBooking.getId(), PaymentStatus.PAID)).thenReturn(true);
+
+            AutoCancelResult result = cancellationService.triggerAutoCancel(15);
+
+            assertThat(result.getCancelledCount()).isEqualTo(0);
+            assertThat(testBooking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+            assertThat(testBooking.getPaymentExpiresAt()).isNull();
+            verify(bookingRepository).save(testBooking);
+            verify(storageUnitLockService).releaseLock(testUnit.getId());
         }
     }
 }
