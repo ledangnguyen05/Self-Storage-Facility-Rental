@@ -4,6 +4,7 @@ import com.boxora.common.response.ApiResponse;
 import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.FacilityPolicyCreateRequest;
 import com.boxora.dto.request.FacilityPolicyUpdateRequest;
+import com.boxora.dto.request.FacilityPolicyExceptionGrantRequest;
 import com.boxora.dto.response.FacilityPolicyResponse;
 import com.boxora.service.FacilityPolicyService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -16,6 +17,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.UUID;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/facility-policies")
@@ -62,7 +64,7 @@ public class FacilityPolicyController {
     }
 
     @PutMapping("{id}")
-    @PreAuthorize("hasAuthority('POLICY_UPDATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('POLICY_UPDATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Update an existing facility policy")
     public ResponseEntity<ApiResponse<FacilityPolicyResponse>> update(
             @PathVariable UUID id,
@@ -72,6 +74,23 @@ public class FacilityPolicyController {
 
         return ResponseEntity.ok(
                 ApiResponse.success("Updated facility policy successfully.", response));
+    }
+
+    @GetMapping("{id}/exceptions")
+    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @Operation(summary = "List facility-manager policy exception grants")
+    public ResponseEntity<ApiResponse<List<UUID>>> getExceptionGrants(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(facilityPolicyService.getExceptionGrants(id)));
+    }
+
+    @PutMapping("{id}/exceptions")
+    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
+    @Operation(summary = "Grant or revoke a facility-manager policy exception")
+    public ResponseEntity<ApiResponse<Void>> setExceptionGrant(
+            @PathVariable UUID id,
+            @Valid @RequestBody FacilityPolicyExceptionGrantRequest request) {
+        facilityPolicyService.setExceptionGrant(id, request.getFacilityManagerId(), request.getGranted());
+        return ResponseEntity.ok(ApiResponse.success("Updated policy exception grant successfully.", null));
     }
 
     @DeleteMapping("{id}")

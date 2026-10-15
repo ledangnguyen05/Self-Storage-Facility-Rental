@@ -126,12 +126,12 @@ public class BookingServiceImpl implements BookingService {
             throw new AppException(ErrorCode.BOOKING_MINIMUM_DURATION_INVALID);
         }
 
-        if (unit.getFacility() != null) {
-            FacilityPolicy policy = facilityPolicyRepository.findByFacility_Id(unit.getFacility().getId())
-                    .orElse(null);
-            if (policy != null && policy.getMinimumRentalMonths() != null && months < policy.getMinimumRentalMonths()) {
-                throw new AppException(ErrorCode.BOOKING_MINIMUM_DURATION_INVALID);
-            }
+        FacilityPolicy activePolicy = unit.getFacility() == null
+                ? null
+                : facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(unit.getFacility().getId()).orElse(null);
+        if (activePolicy != null && activePolicy.getMinimumRentalMonths() != null
+                && months < activePolicy.getMinimumRentalMonths()) {
+            throw new AppException(ErrorCode.BOOKING_MINIMUM_DURATION_INVALID);
         }
 
         LocalDate endDate = startDate.plusMonths(months);

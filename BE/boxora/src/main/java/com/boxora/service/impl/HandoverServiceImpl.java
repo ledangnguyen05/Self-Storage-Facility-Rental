@@ -337,7 +337,7 @@ public class HandoverServiceImpl implements HandoverService {
         String contractStatus = contractOpt.map(c -> c.getStatus().name()).orElse("N/A");
 
         Optional<FacilityPolicy> policyOpt = (facility != null)
-                ? facilityPolicyRepository.findByFacilityId(facility.getId())
+                ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facility.getId())
                 : Optional.empty();
 
         int slaDays = policyOpt.map(FacilityPolicy::getDepositRefundSlaDays).orElse(5);
@@ -538,7 +538,7 @@ public class HandoverServiceImpl implements HandoverService {
         StorageUnit unit = (booking != null) ? booking.getStorageUnit() : null;
         Facility facility = (unit != null) ? unit.getFacility() : null;
         Optional<FacilityPolicy> policyOpt = (facility != null)
-                ? facilityPolicyRepository.findByFacilityId(facility.getId())
+                ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facility.getId())
                 : Optional.empty();
         int refundSlaDays = policyOpt.map(FacilityPolicy::getDepositRefundSlaDays).orElse(5);
 
@@ -600,7 +600,7 @@ public class HandoverServiceImpl implements HandoverService {
         }
 
         Optional<FacilityPolicy> policyOpt = (facility != null)
-                ? facilityPolicyRepository.findByFacilityId(facility.getId())
+                ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facility.getId())
                 : Optional.empty();
 
         int refundSlaDays = policyOpt.map(FacilityPolicy::getDepositRefundSlaDays).orElse(5);
@@ -915,7 +915,7 @@ public class HandoverServiceImpl implements HandoverService {
         Integer slaDays = null;
         if (r.getBooking() != null && r.getBooking().getStorageUnit() != null
                 && r.getBooking().getStorageUnit().getFacility() != null) {
-            slaDays = facilityPolicyRepository.findByFacilityId(r.getBooking().getStorageUnit().getFacility().getId())
+            slaDays = facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(r.getBooking().getStorageUnit().getFacility().getId())
                     .map(FacilityPolicy::getDepositRefundSlaDays)
                     .orElse(5);
         }
