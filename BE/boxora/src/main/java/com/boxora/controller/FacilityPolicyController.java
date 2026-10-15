@@ -30,6 +30,7 @@ public class FacilityPolicyController {
     private final FacilityPolicyService facilityPolicyService;
 
     @GetMapping("{id}")
+    @PreAuthorize("hasAuthority('POLICY_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF', 'CUSTOMER')")
     @Operation(summary = "Lấy chính sách cơ sở theo ID")
     public ResponseEntity<ApiResponse<FacilityPolicyResponse>> getById(@PathVariable UUID id) {
         FacilityPolicyResponse response = facilityPolicyService.getById(id);
@@ -37,6 +38,7 @@ public class FacilityPolicyController {
     }
 
     @GetMapping("/by-facility/{facilityId}")
+    @PreAuthorize("hasAuthority('POLICY_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF', 'CUSTOMER')")
     @Operation(summary = "Get facility policy by facility ID")
     public ResponseEntity<ApiResponse<FacilityPolicyResponse>> getByFacilityId(
             @PathVariable UUID facilityId) {
@@ -45,7 +47,7 @@ public class FacilityPolicyController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('POLICY_CREATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Create a new facility policy")
     public ResponseEntity<ApiResponse<FacilityPolicyResponse>> create(
             @Valid @RequestBody FacilityPolicyCreateRequest request) {
@@ -57,7 +59,7 @@ public class FacilityPolicyController {
     }
 
     @PutMapping("{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('POLICY_UPDATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Update an existing facility policy")
     public ResponseEntity<ApiResponse<FacilityPolicyResponse>> update(
             @PathVariable UUID id,
@@ -70,7 +72,7 @@ public class FacilityPolicyController {
     }
 
     @DeleteMapping("{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('POLICY_DELETE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Delete a facility policy")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         facilityPolicyService.delete(id);
@@ -80,6 +82,7 @@ public class FacilityPolicyController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('POLICY_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF', 'CUSTOMER')")
     @Operation(summary = "Get all facility policies with pagination and search")
     public ResponseEntity<ApiResponse<PageResponse<FacilityPolicyResponse>>> getAll(
             @RequestParam(required = false) String search,
