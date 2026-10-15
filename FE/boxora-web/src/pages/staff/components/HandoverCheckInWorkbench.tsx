@@ -25,8 +25,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const [prerequisitesError, setPrerequisitesError] = useState<string | null>(null)
 
   // Form & Hardware Inputs
-  const [rfidCard, setRfidCard] = useState('RF-409')
-  const [accessPin, setAccessPin] = useState('739215')
+  const [rfidCard, setRfidCard] = useState('')
+  const [accessPin, setAccessPin] = useState('')
   const [pinCopied, setPinCopied] = useState(false)
   const [smsSent, setSmsSent] = useState(false)
   const [appPushSent, setAppPushSent] = useState(false)
@@ -36,7 +36,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const [firstMonthRentConfirmed, setFirstMonthRentConfirmed] = useState(false)
   const [contractConfirmed, setContractConfirmed] = useState(false)
   const [idCardNumber, setIdCardNumber] = useState('')
-  const [identityVerified, setIdentityVerified] = useState(true)
+  const [identityVerified, setIdentityVerified] = useState(false)
 
   // 5-Point On-Site Handover Checklist
   const [checklist, setChecklist] = useState({
@@ -47,9 +47,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     sealPlate: true
   })
 
-  // Condition Photos
-  const [photoDoor, setPhotoDoor] = useState<string>('https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=600&q=80')
-  const [photoInterior, setPhotoInterior] = useState<string>('https://images.unsplash.com/photo-1595246140625-573b715d11dc?auto=format&fit=crop&w=600&q=80')
+  // Condition Photos (Khởi tạo rỗng, nhân viên phải tải ảnh hiện trường thực tế)
+  const [photoDoor, setPhotoDoor] = useState<string>('')
+  const [photoInterior, setPhotoInterior] = useState<string>('')
   const doorInputRef = useRef<HTMLInputElement | null>(null)
   const interiorInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -102,9 +102,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   useEffect(() => {
     if (currentBooking?.id) {
       fetchPrerequisites(currentBooking.id)
-      handleRegeneratePin()
       setIsCompleted(false)
       setCheckInError(null)
+      setAccessPin('------')
     }
   }, [currentBooking?.id])
 
@@ -127,19 +127,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
   }
 
-  // Generate new 6-digit random PIN
-  const handleRegeneratePin = () => {
-    const newPin = Math.floor(100000 + Math.random() * 900000).toString()
-    setAccessPin(newPin)
-    setPinCopied(false)
-    setSmsSent(false)
-    setAppPushSent(false)
-  }
-
   const handleCopyPin = () => {
-    navigator.clipboard.writeText(accessPin)
-    setPinCopied(true)
-    setTimeout(() => setPinCopied(false), 2000)
+    if (accessPin && accessPin !== '------') {
+      navigator.clipboard.writeText(accessPin)
+      setPinCopied(true)
+      setTimeout(() => setPinCopied(false), 2000)
+    }
   }
 
   const handleToggleChecklist = (key: keyof typeof checklist) => {
@@ -162,28 +155,25 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const checklistCount = Object.values(checklist).filter(Boolean).length
   const isAllChecklistPassed = checklistCount === 5
 
-  // Overall check-in readiness
+  // Overall check-in readiness (P0-02: Backend là nguồn chân lý duy nhất)
   const isDepositMet = prerequisites ? prerequisites.depositSatisfied : false
-  const isRentMet = (prerequisites?.firstMonthRentSatisfied) || firstMonthRentConfirmed
-  const isContractMet = (prerequisites?.contractSigned) || contractConfirmed
-  const isIdMet = identityVerified && (idCardNumber.trim().length > 0)
+  const isRentMet = prerequisites ? prerequisites.firstMonthRentSatisfied : false
+  const isContractMet = prerequisites ? prerequisites.contractSigned : false
+  const isIdMet = /^[0-9]{9,12}$/.test(idCardNumber.trim()) && identityVerified
   const isReadyForCheckIn = isDepositMet && isRentMet && isContractMet && isIdMet
 
-  // Submit Handover Check-in
+  // Submit Handover Check-in (P0-02 & P0-03)
   const handleCompleteHandover = async () => {
     if (!currentBooking) return
     setIsSubmitting(true)
     setCheckInError(null)
     try {
-      await handoverService.checkIn({
+      const res = await handoverService.checkIn({
         bookingId: currentBooking.id,
         recordType: 'CHECK_IN',
-        idCardNumber: idCardNumber.trim() || currentBooking.customerPhone || '079198002441',
-        identityVerified: true,
-        firstMonthRentConfirmed: firstMonthRentConfirmed || (prerequisites?.firstMonthRentSatisfied ?? false),
-        contractConfirmed: contractConfirmed || (prerequisites?.contractSigned ?? false),
-        rfidCardNumber: rfidCard,
-        accessPin: accessPin,
+        idCardNumber: idCardNumber.trim(),
+        identityVerified: identityVerified,
+        rfidCardNumber: rfidCard.trim() || undefined,
         doorConditionPassed: checklist.doorRoll,
         cleanlinessPassed: checklist.cleanliness,
         smartLockPassed: checklist.lighting,
@@ -192,6 +182,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         unitCondition: `${checklistCount}/5 tiêu chuẩn nghiệm thu đạt chuẩn (Ảnh cửa & trong kho đã lưu vết)`,
         notes: handoverNotes
       })
+      if (res?.accessPin) {
+        setAccessPin(res.accessPin)
+      }
       setIsCompleted(true)
       if (onHandoverComplete) {
         onHandoverComplete(currentBooking.id)
@@ -480,15 +473,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       Mã HĐ: <strong className="font-mono text-slate-800">{prerequisites?.contractCode || 'Chưa khởi tạo'}</strong> (Trạng thái: {prerequisites?.contractStatus || 'N/A'})
                     </p>
                     {!prerequisites?.contractSigned && (
-                      <label className="mt-2 flex items-center gap-2 cursor-pointer text-[11px] text-cyan-800 font-semibold bg-cyan-50/60 p-1.5 rounded-md border border-cyan-100">
-                        <input
-                          type="checkbox"
-                          checked={contractConfirmed}
-                          onChange={(e) => setContractConfirmed(e.target.checked)}
-                          className="rounded text-cyan-600"
-                        />
-                        <span>Khách đã ký xác nhận biên bản giấy tại quầy</span>
-                      </label>
+                      <div className="mt-2 text-[11px] text-amber-700 bg-amber-50 p-2 rounded-md border border-amber-200">
+                        Hợp đồng thuê điện tử chưa được ký kết. Khách hàng cần ký trực tuyến hoặc ký qua DocuSeal trước khi bàn giao.
+                      </div>
                     )}
                   </div>
                 </div>
@@ -513,16 +500,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       Cọc: <strong className="font-mono">{(prerequisites?.depositPaid ?? 0).toLocaleString('vi-VN')}đ</strong> / {(prerequisites?.requiredDeposit ?? 0).toLocaleString('vi-VN')}đ • 
                       Thuê: <strong className="font-mono">{(prerequisites?.firstMonthRentPaid ?? 0).toLocaleString('vi-VN')}đ</strong> / {(prerequisites?.requiredFirstMonthRent ?? 0).toLocaleString('vi-VN')}đ
                     </p>
-                    {!prerequisites?.firstMonthRentSatisfied && (
-                      <label className="mt-2 flex items-center gap-2 cursor-pointer text-[11px] text-cyan-800 font-semibold bg-cyan-50/60 p-1.5 rounded-md border border-cyan-100">
-                        <input
-                          type="checkbox"
-                          checked={firstMonthRentConfirmed}
-                          onChange={(e) => setFirstMonthRentConfirmed(e.target.checked)}
-                          className="rounded text-cyan-600"
-                        />
-                        <span>Khách đã thanh toán tiền thuê tháng đầu tại quầy (Tiền mặt/POS)</span>
-                      </label>
+                    {(!isDepositMet || !isRentMet) && (
+                      <div className="mt-2 text-[11px] text-amber-700 bg-amber-50 p-2 rounded-md border border-amber-200">
+                        Chưa thu đủ tiền cọc và tiền thuê tháng đầu theo quy chuẩn. Cần thanh toán VNPay hoặc chuyển khoản để hệ thống ghi nhận.
+                      </div>
                     )}
                   </div>
                 </div>
@@ -790,48 +771,74 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
               {/* Photo 1: Door Overview */}
               <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex flex-col">
-                <div className="relative aspect-video bg-slate-900 overflow-hidden">
-                  <img
-                    src={photoDoor}
-                    alt="Ảnh Cửa Ngoài Kho"
-                    className="w-full h-full object-cover"
-                  />
+                <div className="relative aspect-video bg-slate-900 overflow-hidden flex items-center justify-center">
+                  {photoDoor ? (
+                    <img
+                      src={photoDoor}
+                      alt="Ảnh Cửa Ngoài Kho"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => doorInputRef.current?.click()}
+                      className="text-slate-400 hover:text-white flex flex-col items-center gap-1.5 p-4 text-xs cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[28px]">add_a_photo</span>
+                      <span>Bấm chụp/tải ảnh cửa ngoài kho #{unitDisplayCode}</span>
+                    </button>
+                  )}
                   <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-slate-900/80 text-white font-mono text-[10px] backdrop-blur-xs">
                     Ảnh 1: Cửa Ngoài &amp; Bảng Số #{unitDisplayCode}
                   </div>
                 </div>
                 <div className="p-2.5 flex items-center justify-between bg-white text-xs">
-                  <span className="text-slate-600 text-[11px] truncate">door_overview_{unitDisplayCode}.jpg</span>
+                  <span className="text-slate-600 text-[11px] truncate">
+                    {photoDoor ? `door_overview_${unitDisplayCode}.jpg` : 'Chưa có ảnh'}
+                  </span>
                   <button
                     type="button"
                     onClick={() => doorInputRef.current?.click()}
                     className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
                   >
-                    Chụp lại
+                    {photoDoor ? 'Chụp lại' : 'Tải ảnh lên'}
                   </button>
                 </div>
               </div>
 
               {/* Photo 2: Inside Storage Unit */}
               <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex flex-col">
-                <div className="relative aspect-video bg-slate-900 overflow-hidden">
-                  <img
-                    src={photoInterior}
-                    alt="Ảnh Bên Trong Kho"
-                    className="w-full h-full object-cover"
-                  />
+                <div className="relative aspect-video bg-slate-900 overflow-hidden flex items-center justify-center">
+                  {photoInterior ? (
+                    <img
+                      src={photoInterior}
+                      alt="Ảnh Bên Trong Kho"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => interiorInputRef.current?.click()}
+                      className="text-slate-400 hover:text-white flex flex-col items-center gap-1.5 p-4 text-xs cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[28px]">add_a_photo</span>
+                      <span>Bấm chụp/tải ảnh nền sàn &amp; vách trong kho</span>
+                    </button>
+                  )}
                   <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-slate-900/80 text-white font-mono text-[10px] backdrop-blur-xs">
                     Ảnh 2: Nền Sàn &amp; Vách Trong
                   </div>
                 </div>
                 <div className="p-2.5 flex items-center justify-between bg-white text-xs">
-                  <span className="text-slate-600 text-[11px] truncate">interior_floor_{unitDisplayCode}.jpg</span>
+                  <span className="text-slate-600 text-[11px] truncate">
+                    {photoInterior ? `interior_floor_${unitDisplayCode}.jpg` : 'Chưa có ảnh'}
+                  </span>
                   <button
                     type="button"
                     onClick={() => interiorInputRef.current?.click()}
                     className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
                   >
-                    Chụp lại
+                    {photoInterior ? 'Chụp lại' : 'Tải ảnh lên'}
                   </button>
                 </div>
               </div>
@@ -891,15 +898,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={handleRegeneratePin}
-                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[16px]">refresh</span>
-                  <span>Sinh Mã Mới</span>
-                </button>
-                <button
                   onClick={handleCopyPin}
-                  className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                  disabled={!isCompleted || !accessPin || accessPin === '------'}
+                  className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
                 >
                   <span className="material-symbols-outlined text-[16px]">
                     {pinCopied ? 'check' : 'content_copy'}
@@ -909,10 +910,18 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </div>
             </div>
 
+            {/* Disclaimer Banner: Software Simulation MVP */}
+            <div className="mt-4 p-2.5 rounded-lg bg-cyan-950/50 border border-cyan-800/60 text-cyan-200 text-[11px] flex items-center gap-2">
+              <span className="material-symbols-outlined text-[16px] text-cyan-400">info</span>
+              <span>
+                <strong>[Mô phỏng phần mềm - MVP Boxora]:</strong> Mã PIN và QR được tạo ngẫu nhiên bảo mật (SecureRandom &amp; AES-256) từ máy chủ Boxora và hiển thị khi hoàn tất bàn giao. Chưa kết nối vật lý trực tiếp bộ điều khiển SmartLock IoT.
+              </span>
+            </div>
+
             {/* Large 6-Digit PIN Display */}
             <div className="my-6 flex flex-col items-center justify-center">
               <div className="flex items-center gap-2.5 sm:gap-3.5">
-                {accessPin.split('').map((char, index) => (
+                {(accessPin || '------').split('').map((char, index) => (
                   <div
                     key={index}
                     className="w-12 h-16 sm:w-14 sm:h-20 rounded-xl bg-slate-800/90 border border-slate-700 flex items-center justify-center font-mono text-3xl sm:text-4xl font-extrabold text-cyan-400 shadow-inner"
@@ -923,12 +932,13 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </div>
               <div className="mt-3 flex items-center gap-2 text-xs text-slate-400 font-mono">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                <span>Mã có hiệu lực ngay khi ký bàn giao • Thẻ RFID cấp phát: </span>
+                <span>{accessPin ? 'Mã đã được cấp từ hệ thống' : 'Mã PIN sẽ được máy chủ cấp tự động khi hoàn tất bàn giao'} • Thẻ RFID cấp phát: </span>
                 <input
                   type="text"
                   value={rfidCard}
+                  placeholder="Mã thẻ..."
                   onChange={(e) => setRfidCard(e.target.value)}
-                  className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-white rounded font-mono text-xs w-24 text-center focus:outline-none focus:border-cyan-500"
+                  className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-white rounded font-mono text-xs w-28 text-center focus:outline-none focus:border-cyan-500"
                 />
               </div>
             </div>

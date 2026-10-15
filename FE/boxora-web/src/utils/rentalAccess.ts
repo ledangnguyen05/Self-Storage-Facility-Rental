@@ -89,7 +89,7 @@ export const activateCustomerRental = (
   const newRental: CustomerRentalRecord = {
     unitCode,
     unitName,
-    contractCode: `HD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+    contractCode: `CTR-${unitCode.replace(/[^a-zA-Z0-9]/g, '')}`,
     startDate: new Date().toLocaleDateString('vi-VN'),
     isAppConfirmed: true
   }

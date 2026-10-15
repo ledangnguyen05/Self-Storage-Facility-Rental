@@ -11,6 +11,7 @@ import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.repository.*;
 import com.boxora.service.ActivityLogService;
+import com.boxora.service.EncryptionService;
 import com.boxora.service.HandoverService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +43,8 @@ public class HandoverServiceImpl implements HandoverService {
     private final RentalContractRepository rentalContractRepository;
     private final FacilityPolicyRepository facilityPolicyRepository;
     private final ActivityLogService activityLogService;
+    private final EncryptionService encryptionService;
+    private final RefundRequestRepository refundRequestRepository;
     private final com.boxora.security.FacilityAccessGuard facilityAccessGuard;
     private final com.boxora.security.RequestContext requestContext;
 
@@ -81,15 +84,14 @@ public class HandoverServiceImpl implements HandoverService {
         Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
         boolean contractSigned = contractOpt.isPresent() && (
                 contractOpt.get().getStatus() == RentalContractStatus.ACTIVE
-                        || contractOpt.get().getDocusealSubmissionId() != null
+                        && contractOpt.get().getSignedAt() != null
         );
         String contractCode = contractOpt.map(RentalContract::getContractCode).orElse(null);
         String contractStatus = contractOpt.map(c -> c.getStatus().name()).orElse("CHƯA_TẠO");
 
         // 4. Tính toán Điều kiện 4: Đối soát CCCD gốc (Original identity verification)
-        // Khi truy vấn xem trước, nếu khách hàng đã có thông tin CCCD hoặc đã xác minh trên hồ sơ
-        boolean identityVerified = customer != null && customer.getPhone() != null && !customer.getPhone().isBlank();
-        String idCardNumber = null;
+        boolean identityVerified = customer != null && Boolean.TRUE.equals(customer.getIsActive()) && customer.getPhone() != null && !customer.getPhone().isBlank();
+        String idCardNumber = customer != null ? customer.getPhone() : null;
 
         List<String> missing = new ArrayList<>();
         if (!depositSatisfied) {
@@ -142,14 +144,6 @@ public class HandoverServiceImpl implements HandoverService {
         Booking booking = bookingRepository.findById(request.getBookingId())
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
-        if (booking.getStatus() == BookingStatus.ACTIVE) {
-            throw new AppException(ErrorCode.HANDOVER_ALREADY_ACTIVE);
-        }
-
-        if (booking.getStatus() == BookingStatus.CANCELLED || booking.getStatus() == BookingStatus.COMPLETED) {
-            throw new AppException(ErrorCode.BOOKING_CANNOT_BE_CANCELLED);
-        }
-
         StorageUnit unit = booking.getStorageUnit();
         if (unit == null) {
             throw new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND);
@@ -157,6 +151,17 @@ public class HandoverServiceImpl implements HandoverService {
 
         if (unit.getFacility() != null) {
             facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
+        }
+
+        // Kiểm tra ngăn ngừa bàn giao trùng lặp cho cùng một đặt chỗ
+        if (booking.getStatus() == BookingStatus.ACTIVE
+                || handoverRecordRepository.existsByBooking_IdAndRecordType(booking.getId(), "CHECK_IN")) {
+            log.warn("[P0-02] Duplicate check-in attempt for booking {}", booking.getBookingCode());
+            throw new AppException(ErrorCode.HANDOVER_ALREADY_ACTIVE);
+        }
+
+        if (booking.getStatus() == BookingStatus.CANCELLED || booking.getStatus() == BookingStatus.COMPLETED) {
+            throw new AppException(ErrorCode.BOOKING_CANNOT_BE_CANCELLED);
         }
 
         // =========================================================================
@@ -169,45 +174,64 @@ public class HandoverServiceImpl implements HandoverService {
         }
 
         // =========================================================================
-        // BR-RULE-005: KIỂM TRA 4 ĐIỀU KIỆN BẮT BUỘC
+        // BR-RULE-005 & P0-02: BACKEND KIỂM TRA 4 ĐIỀU KIỆN TIÊN QUYẾT BẮT BUỘC TỪ DB
+        // Không chấp nhận cờ giả mạo do frontend tự quyết định
         // =========================================================================
         List<String> missingPrerequisites = new ArrayList<>();
 
-        // Điều kiện 1: Đủ tiền cọc (Full deposit)
+        // Điều kiện 1: Đủ tiền cọc (Full deposit) từ lịch sử giao dịch thực tế
         BigDecimal requiredDeposit = getRequiredDeposit(booking, unit);
         BigDecimal depositPaid = calculateTotalDepositPaid(booking);
-        boolean depositSatisfied = (depositPaid.compareTo(BigDecimal.ZERO) > 0
-                && depositPaid.compareTo(requiredDeposit) >= 0)
-                || (request.getDepositSettled() != null && request.getDepositSettled().compareTo(requiredDeposit) >= 0);
+        boolean depositSatisfied = depositPaid.compareTo(BigDecimal.ZERO) > 0
+                && depositPaid.compareTo(requiredDeposit) >= 0;
         if (!depositSatisfied) {
-            missingPrerequisites.add("Chưa thanh toán đủ tiền cọc");
+            missingPrerequisites.add(String.format("Chưa thanh toán đủ tiền cọc (Đã đóng: %s / Yêu cầu: %s)",
+                    depositPaid, requiredDeposit));
         }
 
-        // Điều kiện 2: Đủ tiền thuê tháng đầu (First month rent)
+        // Điều kiện 2: Đủ tiền thuê tháng đầu (First month rent) từ lịch sử giao dịch thực tế
         BigDecimal requiredFirstMonthRent = getRequiredFirstMonthRent(booking, unit);
         BigDecimal firstMonthRentPaid = calculateTotalFirstMonthRentPaid(booking);
-        boolean firstMonthRentSatisfied = (firstMonthRentPaid.compareTo(BigDecimal.ZERO) > 0
-                && firstMonthRentPaid.compareTo(requiredFirstMonthRent) >= 0)
-                || Boolean.TRUE.equals(request.getFirstMonthRentConfirmed());
+        boolean firstMonthRentSatisfied = firstMonthRentPaid.compareTo(BigDecimal.ZERO) > 0
+                && firstMonthRentPaid.compareTo(requiredFirstMonthRent) >= 0;
         if (!firstMonthRentSatisfied) {
-            missingPrerequisites.add("Chưa thanh toán tiền thuê tháng đầu tiên");
+            missingPrerequisites.add(String.format("Chưa thanh toán đủ tiền thuê tháng đầu (Đã đóng: %s / Yêu cầu: %s)",
+                    firstMonthRentPaid, requiredFirstMonthRent));
         }
 
-        // Điều kiện 3: Hợp đồng điện tử đã ký (Signed e-contract)
+        // Điều kiện 3: Hợp đồng điện tử đã ký hợp lệ qua OTP / DocuSeal
         Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
-        boolean contractSigned = (contractOpt.isPresent() && (
+        boolean contractSigned = contractOpt.isPresent() && (
                 contractOpt.get().getStatus() == RentalContractStatus.ACTIVE
-                        || contractOpt.get().getDocusealSubmissionId() != null
-        )) || Boolean.TRUE.equals(request.getContractConfirmed());
+                        && contractOpt.get().getSignedAt() != null
+        );
         if (!contractSigned) {
-            missingPrerequisites.add("Hợp đồng điện tử chưa được ký qua OTP/DocuSeal");
+            missingPrerequisites.add("Hợp đồng thuê điện tử chưa được ký kết hợp lệ qua OTP/DocuSeal");
         }
 
-        // Điều kiện 4: Xác minh CCCD / giấy tờ tùy thân gốc (Identity verification)
-        boolean identityVerified = (request.getIdCardNumber() != null && !request.getIdCardNumber().trim().isEmpty())
-                || Boolean.TRUE.equals(request.getIdentityVerified());
-        if (!identityVerified) {
-            missingPrerequisites.add("Chưa đối soát giấy tờ tùy thân / CCCD gốc của khách hàng tại quầy");
+        // Operator authorization check: Handover check-in MUST be performed by authorized staff/manager/admin
+        User staff = resolveStaff(request.getStaffId());
+        if (staff == null) {
+            log.warn("[HANDOVER_AUTH] Handover check-in requires an authorized staff operator");
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+        if (staff.getRole() != null && "CUSTOMER".equalsIgnoreCase(staff.getRole().getName())) {
+            log.warn("[HANDOVER_AUTH] Customer {} cannot authorize their own handover", staff.getId());
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        // Điều kiện 4: Nhân viên tại quầy đối soát CCCD / giấy tờ tùy thân gốc
+        // 4a. Input validation: Định dạng chuỗi số 9-12 chữ số
+        String idCard = request.getIdCardNumber() != null ? request.getIdCardNumber().trim() : "";
+        boolean validIdFormat = idCard.matches("^[0-9]{9,12}$");
+        if (!validIdFormat) {
+            missingPrerequisites.add("Định dạng số CCCD/giấy tờ tùy thân không hợp lệ (yêu cầu chuỗi số 9-12 chữ số)");
+        }
+
+        // 4b. Proof of identity: Yêu cầu hành động đối soát thực tế từ nhân viên có thẩm quyền
+        boolean staffAttested = Boolean.TRUE.equals(request.getIdentityVerified());
+        if (!staffAttested) {
+            missingPrerequisites.add("Nhân viên tại quầy chưa xác nhận hoàn tất đối soát giấy tờ tùy thân / CCCD gốc của khách hàng");
         }
 
         if (!missingPrerequisites.isEmpty()) {
@@ -217,22 +241,19 @@ public class HandoverServiceImpl implements HandoverService {
         }
 
         // =========================================================================
-        // THỰC HIỆN BÀN GIAO THỰC ĐỊA & CẤP QUYỀN TRUY CẬP
+        // THỰC HIỆN BÀN GIAO THỰC ĐỊA & CẤP QUYỀN TRUY CẬP (P0-03)
         // =========================================================================
-        User staff = resolveStaff(request.getStaffId());
-
         booking.setStatus(BookingStatus.ACTIVE);
         booking.setHandoverTime(LocalDateTime.now());
-        if (staff != null) {
-            booking.setHandedOverByStaffId(staff.getId());
-        }
+        booking.setHandedOverByStaffId(staff.getId());
 
-        // Cập nhật hoặc cấp mã PIN và QR truy cập SmartLock
-        if (request.getAccessPin() != null && !request.getAccessPin().isBlank()) {
-            booking.setAccessPin(request.getAccessPin());
-        } else if (booking.getAccessPin() == null) {
-            booking.setAccessPin(String.format("%06d", new java.util.Random().nextInt(1000000)));
-        }
+        // P0-03: Sinh mã PIN an toàn ở Backend bằng SecureRandom và mã hóa AES-256-GCM
+        java.security.SecureRandom secureRandom = new java.security.SecureRandom();
+        String plainPin = String.format("%06d", secureRandom.nextInt(1_000_000));
+        String encryptedPin = encryptionService.encrypt(plainPin);
+
+        booking.setAccessPin(encryptedPin);
+        booking.setPinUpdatedAt(LocalDateTime.now());
         if (booking.getQrAccessToken() == null) {
             booking.setQrAccessToken("QR-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
         }
@@ -253,7 +274,7 @@ public class HandoverServiceImpl implements HandoverService {
 
         // Ghi biên bản bàn giao HandoverRecord
         String notes = String.format("Check-in hoàn tất đạt chuẩn 4 điều kiện BR-RULE-005. Số CCCD đối soát: %s. Mã thẻ RFID: %s. %s",
-                request.getIdCardNumber() != null ? request.getIdCardNumber() : "Đã đối chiếu",
+                idCard,
                 request.getRfidCardNumber() != null ? request.getRfidCardNumber() : "N/A",
                 request.getNotes() != null ? request.getNotes() : "");
 
@@ -268,15 +289,15 @@ public class HandoverServiceImpl implements HandoverService {
 
         record = handoverRecordRepository.save(record);
 
-        // Ghi Audit Trail ActivityLog
+        // Ghi Audit Trail ActivityLog (không ghi PIN bí mật vào log)
         UUID facilityId = (unit.getFacility() != null) ? unit.getFacility().getId() : null;
         activityLogService.record(
                 facilityId,
                 ActivityAction.CHECKIN_VERIFIED,
                 "Booking",
                 booking.getId(),
-                String.format("Xác minh đủ 4 điều kiện check-in (Cọc + Tiền thuê + Hợp đồng + CCCD: %s) cho đơn %s",
-                        request.getIdCardNumber() != null ? request.getIdCardNumber() : "Hợp lệ", booking.getBookingCode()),
+                String.format("Nhân viên %s đối soát đạt chuẩn 4 điều kiện check-in cho đơn %s (CCCD: %s)",
+                        staff != null ? staff.getFullName() : "Quầy giao dịch", booking.getBookingCode(), idCard),
                 null,
                 null
         );
@@ -286,13 +307,15 @@ public class HandoverServiceImpl implements HandoverService {
                 ActivityAction.HANDOVER_COMPLETE,
                 "HandoverRecord",
                 record.getId(),
-                String.format("Bàn giao thành công ngăn kho %s cho khách hàng %s. Đã kích hoạt SmartLock.",
+                String.format("Bàn giao thành công ngăn kho %s cho khách hàng %s. Đã phát hành mã PIN và QR truy cập bảo mật.",
                         unit.getUnitCode(), booking.getCustomer() != null ? booking.getCustomer().getFullName() : "Khách"),
                 UnitStatus.RESERVED,
                 UnitStatus.OCCUPIED
         );
 
-        return mapToResponse(record);
+        HandoverResponse response = mapToResponse(record);
+        response.setAccessPin(plainPin); // Trả về PIN nguyên bản một lần duy nhất trên màn hình bàn giao
+        return response;
     }
 
     @Override
@@ -370,6 +393,122 @@ public class HandoverServiceImpl implements HandoverService {
     }
 
     @Override
+    @Transactional
+    public HandoverResponse requestCheckout(UUID bookingId, String notes) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        if (booking.getStatus() != BookingStatus.ACTIVE && booking.getStatus() != BookingStatus.OVERDUE) {
+            throw new AppException(ErrorCode.BOOKING_NOT_ACTIVE_FOR_RETURN);
+        }
+
+        if (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null) {
+            if (facilityAccessGuard.isFacilityScoped()) {
+                facilityAccessGuard.checkFacilityAccess(booking.getStorageUnit().getFacility().getId());
+            }
+        }
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            UUID currentUserId = requestContext.currentUserId();
+            if (currentUserId != null && !currentUserId.equals(booking.getCustomer().getId())) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        }
+
+        booking.setStatus(BookingStatus.CHECKOUT_REQUESTED);
+        bookingRepository.save(booking);
+
+        UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                ? booking.getStorageUnit().getFacility().getId() : null;
+
+        activityLogService.record(
+                facilityId,
+                ActivityAction.CHECKOUT_REQUEST,
+                "Booking",
+                booking.getId(),
+                "Khách hàng gửi yêu cầu trả kho cho đơn " + booking.getBookingCode() + (notes != null ? ": " + notes : ""),
+                BookingStatus.ACTIVE,
+                BookingStatus.CHECKOUT_REQUESTED
+        );
+
+        User staff = resolveStaff(booking.getHandedOverByStaffId());
+
+        HandoverRecord record = HandoverRecord.builder()
+                .booking(booking)
+                .staff(staff)
+                .recordType("CHECKOUT_REQUEST")
+                .unitCondition("Chờ nhân viên kiểm định hiện trường")
+                .notes(notes)
+                .recordedAt(LocalDateTime.now())
+                .build();
+        record = handoverRecordRepository.save(record);
+
+        return mapToResponse(record);
+    }
+
+    @Override
+    @Transactional
+    public HandoverResponse performInspection(HandoverRequest request) {
+        Booking booking = bookingRepository.findById(request.getBookingId())
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        User staff = resolveStaff(request.getStaffId());
+        StorageUnit unit = booking.getStorageUnit();
+        Facility facility = (unit != null) ? unit.getFacility() : null;
+
+        if (facility != null) {
+            facilityAccessGuard.checkFacilityAccess(facility.getId());
+        }
+
+        boolean doorPassed = request.getDoorConditionPassed() == null || Boolean.TRUE.equals(request.getDoorConditionPassed());
+        boolean cleanlinessPassed = request.getCleanlinessPassed() == null || Boolean.TRUE.equals(request.getCleanlinessPassed());
+        boolean smartLockPassed = request.getSmartLockPassed() == null || Boolean.TRUE.equals(request.getSmartLockPassed());
+        boolean sensorPassed = request.getSensorPassed() == null || Boolean.TRUE.equals(request.getSensorPassed());
+        boolean wallPassed = request.getWallStructurePassed() == null || Boolean.TRUE.equals(request.getWallStructurePassed());
+
+        String checklistSummary = String.format(
+                "Cửa cuốn: %s | Vệ sinh: %s | SmartLock: %s | Cảm biến: %s | Tường vách: %s",
+                doorPassed ? "Đạt" : "Không đạt",
+                cleanlinessPassed ? "Sạch sẽ" : "Chưa dọn",
+                smartLockPassed ? "Tốt" : "Lỗi",
+                sensorPassed ? "Chuẩn" : "Lỗi",
+                wallPassed ? "Nguyên vẹn" : "Hư hại"
+        );
+
+        List<String> evidencePhotos = request.getEvidencePhotos() != null ? request.getEvidencePhotos() : List.of();
+        String photosStr = String.join(";", evidencePhotos);
+
+        booking.setStatus(BookingStatus.INSPECTED);
+        bookingRepository.save(booking);
+
+        HandoverRecord record = HandoverRecord.builder()
+                .booking(booking)
+                .staff(staff)
+                .recordType("INSPECTION")
+                .unitCondition(request.getUnitCondition() != null ? request.getUnitCondition() : "Đã hoàn thành kiểm định hiện trường")
+                .checklistSummary(checklistSummary)
+                .evidencePhotos(photosStr)
+                .notes(request.getNotes())
+                .recordedAt(LocalDateTime.now())
+                .build();
+        record = handoverRecordRepository.save(record);
+
+        activityLogService.record(
+                facility != null ? facility.getId() : null,
+                ActivityAction.CHECKOUT_INSPECTION_COMPLETE,
+                "HandoverRecord",
+                record.getId(),
+                String.format("Nhân viên %s hoàn thành kiểm định hiện trường ngăn kho %s: %s",
+                        staff != null ? staff.getFullName() : "N/A",
+                        unit != null ? unit.getUnitCode() : "N/A",
+                        checklistSummary),
+                BookingStatus.CHECKOUT_REQUESTED,
+                BookingStatus.INSPECTED
+        );
+
+        return mapToResponse(record);
+    }
+
+    @Override
     public HandoverResponse processReturn(HandoverRequest request) {
         HandoverRecord record = processReturnSettlementInternal(request);
         return mapToResponse(record);
@@ -434,10 +573,21 @@ public class HandoverServiceImpl implements HandoverService {
         Booking booking = bookingRepository.findById(request.getBookingId())
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
-        if (booking.getStatus() != BookingStatus.ACTIVE) {
-            log.warn("[BR-RULE-013] Booking {} is in status {}, must be ACTIVE for return",
+        if (booking.getStatus() != BookingStatus.INSPECTED
+                && booking.getStatus() != BookingStatus.CHECKOUT_REQUESTED
+                && booking.getStatus() != BookingStatus.ACTIVE
+                && booking.getStatus() != BookingStatus.OVERDUE) {
+            log.warn("[BR-RULE-013] Booking {} is in status {}, must be INSPECTED, CHECKOUT_REQUESTED, or ACTIVE for return",
                     booking.getBookingCode(), booking.getStatus());
             throw new AppException(ErrorCode.BOOKING_NOT_ACTIVE_FOR_RETURN);
+        }
+
+        if (booking.getStatus() == BookingStatus.CHECKOUT_REQUESTED) {
+            boolean hasInspection = handoverRecordRepository.existsByBooking_IdAndRecordType(booking.getId(), "INSPECTION");
+            if (!hasInspection) {
+                log.warn("[BR-RULE-013] Booking {} has checkout request but inspection has not been completed yet", booking.getBookingCode());
+                throw new AppException(ErrorCode.RETURN_INSPECTION_CHECKLIST_INCOMPLETE);
+            }
         }
 
         User staff = resolveStaff(request.getStaffId());
@@ -526,12 +676,11 @@ public class HandoverServiceImpl implements HandoverService {
             reviewStatus = "AUTO_REFUND_APPROVED";
         }
 
-        // 4. Sinh bản ghi giao dịch hoàn tiền Payment
+        Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
+
+        // 4. Sinh bản ghi giao dịch hoàn tiền Payment và tạo RefundRequest cho kế toán duyệt (9.5.D)
         String refundTxnId = null;
         if (actualRefund.compareTo(BigDecimal.ZERO) > 0) {
-            PaymentStatus refundPaymentStatus = "AUTO_REFUND_APPROVED".equals(reviewStatus)
-                    ? PaymentStatus.REFUNDED
-                    : PaymentStatus.PENDING;
             refundTxnId = "REFUND-RET-" + booking.getBookingCode() + "-" + System.currentTimeMillis();
 
             Payment refundPayment = Payment.builder()
@@ -539,12 +688,31 @@ public class HandoverServiceImpl implements HandoverService {
                     .booking(booking)
                     .amount(actualRefund)
                     .paymentType(PaymentType.DEPOSIT)
-                    .status(refundPaymentStatus)
-                    .paymentMethod(request.getRefundMethod() != null ? request.getRefundMethod()
-                            : ("AUTO_REFUND_APPROVED".equals(reviewStatus) ? "VNPAY_REFUND" : "BANK_TRANSFER"))
+                    .status(PaymentStatus.REFUND_PENDING)
+                    .paymentMethod(request.getRefundMethod() != null ? request.getRefundMethod() : "BANK_TRANSFER")
                     .paymentTime(LocalDateTime.now())
                     .build();
             paymentRepository.save(refundPayment);
+
+            String reqCode = "REF-" + System.currentTimeMillis() + "-" + com.boxora.util.VNPayUtil.randomAlphaNumeric(4).toUpperCase();
+            RefundRequest refundRequest = RefundRequest.builder()
+                    .requestCode(reqCode)
+                    .customer(booking.getCustomer())
+                    .facility(facility)
+                    .booking(booking)
+                    .contract(contractOpt.orElse(null))
+                    .requestedAmount(depositPaid)
+                    .deductionAmount(totalDeduction)
+                    .finalRefundAmount(actualRefund)
+                    .bankName(request.getRefundMethod() != null ? request.getRefundMethod() : "Chuyển khoản / VNPay")
+                    .bankAccountNumber("N/A")
+                    .bankAccountName(booking.getCustomer() != null ? booking.getCustomer().getFullName() : "Khách hàng")
+                    .reason(String.format("Quyết toán trả kho %s (Cọc: %sđ, Khấu trừ: %sđ)",
+                            unit != null ? unit.getUnitCode() : "", depositPaid, totalDeduction))
+                    .status(RefundStatus.PENDING_REVIEW)
+                    .requestedBy(staff != null ? staff : booking.getCustomer())
+                    .build();
+            refundRequestRepository.save(refundRequest);
         }
 
         // 5. Thu hồi mã SmartLock và hoàn tất booking
@@ -554,14 +722,24 @@ public class HandoverServiceImpl implements HandoverService {
         booking.setReturnTime(LocalDateTime.now());
         bookingRepository.save(booking);
 
-        // 6. Giải phóng ngăn kho sang AVAILABLE
+        // 6. Giải phóng ngăn kho: Nếu có hư hại/vệ sinh -> UNDER_MAINTENANCE; Nếu đạt chuẩn -> AVAILABLE
         if (unit != null) {
-            unit.setStatus(UnitStatus.AVAILABLE);
+            boolean hasDamageOrIssues = damageFee.compareTo(BigDecimal.ZERO) > 0
+                    || cleaningFee.compareTo(BigDecimal.ZERO) > 0
+                    || !doorPassed || !cleanlinessPassed || !smartLockPassed || !sensorPassed || !wallPassed
+                    || (request.getDamageNotes() != null && !request.getDamageNotes().isBlank());
+
+            if (hasDamageOrIssues) {
+                unit.setStatus(UnitStatus.UNDER_MAINTENANCE);
+                log.info("Storage unit {} moved to UNDER_MAINTENANCE due to damage/inspection issues upon checkout", unit.getUnitCode());
+            } else {
+                unit.setStatus(UnitStatus.AVAILABLE);
+                log.info("Storage unit {} returned in pristine condition, released to AVAILABLE", unit.getUnitCode());
+            }
             storageUnitRepository.save(unit);
         }
 
         // 7. Chuyển hợp đồng thuê sang TERMINATED nếu có
-        Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
         contractOpt.ifPresent(contract -> {
             if (contract.getStatus() != RentalContractStatus.TERMINATED) {
                 contract.setStatus(RentalContractStatus.TERMINATED);
@@ -707,6 +885,15 @@ public class HandoverServiceImpl implements HandoverService {
 
     private BigDecimal calculateTotalFirstMonthRentPaid(Booking booking) {
         List<Payment> payments = paymentRepository.findAllByBooking_Id(booking.getId());
+        boolean hasBookingPayment = payments.stream()
+                .anyMatch(p -> p.getPaymentType() == PaymentType.BOOKING_PAYMENT && p.getStatus() == PaymentStatus.PAID);
+        if (hasBookingPayment) {
+            BigDecimal firstMonthRent = (booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0)
+                    ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP)
+                    : ((booking.getStorageUnit() != null && booking.getStorageUnit().getEffectiveBasePrice() != null)
+                    ? booking.getStorageUnit().getEffectiveBasePrice() : BigDecimal.ZERO);
+            return firstMonthRent != null ? firstMonthRent : BigDecimal.ZERO;
+        }
         return payments.stream()
                 .filter(p -> p.getPaymentType() == PaymentType.RENTAL_FEE && p.getStatus() == PaymentStatus.PAID)
                 .map(Payment::getAmount)
@@ -733,6 +920,15 @@ public class HandoverServiceImpl implements HandoverService {
                     .orElse(5);
         }
 
+        String plainPin = null;
+        if (r.getBooking() != null && r.getBooking().getAccessPin() != null) {
+            try {
+                plainPin = encryptionService.decrypt(r.getBooking().getAccessPin());
+            } catch (Exception ex) {
+                plainPin = r.getBooking().getAccessPin();
+            }
+        }
+
         return HandoverResponse.builder()
                 .id(r.getId())
                 .bookingId(r.getBooking() != null ? r.getBooking().getId() : null)
@@ -755,6 +951,8 @@ public class HandoverServiceImpl implements HandoverService {
                 .evidencePhotos(photos)
                 .notes(r.getNotes())
                 .recordedAt(r.getRecordedAt())
+                .accessPin(plainPin)
+                .qrAccessToken(r.getBooking() != null ? r.getBooking().getQrAccessToken() : null)
                 .build();
     }
 
@@ -766,9 +964,9 @@ public class HandoverServiceImpl implements HandoverService {
                 return found.get();
             }
         }
-        return userRepository.findAll().stream()
-                .filter(u -> u.getRole() != null && ("STAFF".equals(u.getRole().getName()) || "FACILITY_MANAGER".equals(u.getRole().getName())))
-                .findFirst()
-                .orElse(null);
+        if (requestContext != null && requestContext.currentUserId() != null) {
+            return userRepository.findById(requestContext.currentUserId()).orElse(null);
+        }
+        return null;
     }
 }

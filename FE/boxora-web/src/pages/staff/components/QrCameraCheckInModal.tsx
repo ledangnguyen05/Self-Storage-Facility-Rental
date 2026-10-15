@@ -284,27 +284,21 @@ export const QrCameraCheckInModal: React.FC<QrCameraCheckInModalProps> = ({
     setIsApiCheckingIn(true)
     setErrorMessage(null)
 
-    const randomPin = Math.floor(100000 + Math.random() * 900000).toString()
-    const rfidCard = 'RF-409'
-
     try {
       const payload = {
         bookingId: matchedBooking.bookingId,
-        staffId: 'NV-842',
         recordType: 'CHECK_IN' as const,
         idCardNumber: matchedBooking.idCard,
-        rfidCardNumber: rfidCard,
-        accessPin: randomPin,
         unitCondition: '5/5 tiêu chuẩn nghiệm thu đạt chuẩn (Quét mã QR tự động)',
         notes: `Check-in tự động qua QR Camera lúc ${new Date().toLocaleTimeString('vi-VN')}`
       }
 
-      await handoverService.checkIn(payload)
+      const res = await handoverService.checkIn(payload)
 
       const result = {
-        accessPin: randomPin,
-        rfidCard,
-        handoverId: `HO-${Date.now().toString().slice(-6)}`,
+        accessPin: res?.accessPin || 'Đang cấp từ máy chủ',
+        rfidCard: res?.rfidCardNumber || 'Chưa gán thẻ RFID',
+        handoverId: res?.id || '',
         timestamp: new Date().toLocaleTimeString('vi-VN')
       }
 
@@ -314,17 +308,8 @@ export const QrCameraCheckInModal: React.FC<QrCameraCheckInModalProps> = ({
         onCheckInSuccess(matchedBooking.bookingId, result)
       }
     } catch (err: any) {
-      // Local fallback on demo backend response
-      const result = {
-        accessPin: randomPin,
-        rfidCard,
-        handoverId: `HO-${Date.now().toString().slice(-6)}`,
-        timestamp: new Date().toLocaleTimeString('vi-VN')
-      }
-      setApiCheckInResult(result)
-      if (onCheckInSuccess) {
-        onCheckInSuccess(matchedBooking.bookingId, result)
-      }
+      const msg = err?.response?.data?.message || err?.message || 'Check-in thất bại. Vui lòng kiểm tra lại điều kiện hợp đồng và thanh toán.'
+      setErrorMessage(msg)
     } finally {
       setIsApiCheckingIn(false)
     }
@@ -653,7 +638,7 @@ export const QrCameraCheckInModal: React.FC<QrCameraCheckInModalProps> = ({
 
                 <div className="text-[11px] text-emerald-800 font-semibold flex items-center gap-1.5 pt-1">
                   <span className="material-symbols-outlined text-[15px]">lock_open</span>
-                  <span>Đã kích hoạt chốt khóa thông minh buồng kho {matchedBooking?.unitCode}</span>
+                  <span>[Mô phỏng IoT] Đã gửi tín hiệu kích hoạt khóa buồng kho {matchedBooking?.unitCode}</span>
                 </div>
               </div>
 

@@ -46,52 +46,7 @@ api.interceptors.response.use(
         }
       }
 
-      // Auto-heal session if access token was mock or expired for any account
-      const storedUser = localStorage.getItem('boxora_user')
-      let emailToHeal = 'admin@gmail.com'
-      if (storedUser) {
-        try {
-          const u = JSON.parse(storedUser)
-          if (u?.email) {
-            emailToHeal = u.email
-          }
-        } catch {
-          // ignore parsing error
-        }
-      }
-
-      try {
-        let loginRes
-        try {
-          loginRes = await axios.post(`${API_BASE_URL}/api/v1/auth/login`, {
-            email: emailToHeal,
-            password: '123456'
-          })
-        } catch {
-          if (emailToHeal === 'admin@gmail.com') {
-            loginRes = await axios.post(`${API_BASE_URL}/api/v1/auth/login`, {
-              email: 'admin@gmail.com',
-              password: 'admin'
-            })
-          }
-        }
-
-        const newAccessToken = loginRes?.data?.data?.accessToken
-        if (newAccessToken) {
-          localStorage.setItem('boxora_access_token', newAccessToken)
-          if (loginRes?.data?.data?.refreshToken) {
-            localStorage.setItem('boxora_refresh_token', loginRes.data.data.refreshToken)
-          }
-          if (loginRes?.data?.data?.user) {
-            localStorage.setItem('boxora_user', JSON.stringify(loginRes.data.data.user))
-          }
-          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
-          return api(originalRequest)
-        }
-      } catch {
-        // Backend login failed
-      }
-
+      // If refresh token fails or does not exist, purge stored auth and reject
       localStorage.removeItem('boxora_access_token')
       localStorage.removeItem('boxora_refresh_token')
       localStorage.removeItem('boxora_user')

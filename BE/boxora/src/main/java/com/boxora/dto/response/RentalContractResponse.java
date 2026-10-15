@@ -45,6 +45,7 @@ public class RentalContractResponse {
     private String signingUrl;
     private String signedDocumentUrl;
     private LocalDateTime signedAt;
+    private String signatureData;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

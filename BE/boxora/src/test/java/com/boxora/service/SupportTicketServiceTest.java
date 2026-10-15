@@ -52,6 +52,9 @@ class SupportTicketServiceTest {
     @Mock
     private FileStorageService fileStorageService;
 
+    @Mock
+    private com.boxora.security.RequestContext requestContext;
+
     @InjectMocks
     private SupportTicketServiceImpl supportTicketService;
 
@@ -82,6 +85,9 @@ class SupportTicketServiceTest {
                 .storageUnit(testUnit)
                 .build();
         testBooking.setId(bookingId);
+
+        lenient().when(requestContext.currentUserId()).thenReturn(customerId);
+        lenient().when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
     }
 
     @Nested
@@ -290,6 +296,7 @@ class SupportTicketServiceTest {
                     .build();
             ticket.setId(ticketId);
 
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
             when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
             when(supportTicketRepository.save(any(SupportTicket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -305,6 +312,7 @@ class SupportTicketServiceTest {
         @DisplayName("resolveTicket with non-existent id should throw AppException TICKET_NOT_FOUND")
         void resolveTicket_notFound_shouldThrowException() {
             UUID randomId = UUID.randomUUID();
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
             when(supportTicketRepository.findById(randomId)).thenReturn(Optional.empty());
 
             AppException ex = assertThrows(AppException.class, () ->
@@ -349,12 +357,110 @@ class SupportTicketServiceTest {
             SupportTicket t2 = SupportTicket.builder().customer(otherUser).build();
             t2.setId(UUID.randomUUID());
 
-            when(supportTicketRepository.findAll()).thenReturn(List.of(t1, t2));
+            when(supportTicketRepository.findByCustomer_Id(customerId)).thenReturn(List.of(t1));
 
             List<SupportTicketResponse> list = supportTicketService.getMyTickets(customerId);
 
             assertThat(list).hasSize(1);
             assertThat(list.get(0).getCustomerId()).isEqualTo(customerId);
+        }
+
+        @Test
+        @DisplayName("createTicket với customerId giả mạo (khác authenticated principal) -> Ném FORBIDDEN")
+        void createTicket_CrossCustomerForgedId_ThrowsForbidden() {
+            UUID forgedCustomerId = UUID.randomUUID();
+            SupportTicketRequest request = SupportTicketRequest.builder()
+                    .customerId(forgedCustomerId)
+                    .title("Sự cố giả mạo")
+                    .build();
+
+            when(requestContext.currentUserId()).thenReturn(customerId);
+            when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+
+            AppException ex = assertThrows(AppException.class, () -> supportTicketService.createTicket(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("createTicket chưa đăng nhập -> Ném UNAUTHORIZED")
+        void createTicket_Unauthenticated_ThrowsUnauthorized() {
+            SupportTicketRequest request = SupportTicketRequest.builder()
+                    .title("Sự cố ẩn danh")
+                    .build();
+
+            when(requestContext.currentUserId()).thenReturn(null);
+            when(requestContext.currentUserRole()).thenReturn(null);
+
+            AppException ex = assertThrows(AppException.class, () -> supportTicketService.createTicket(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.UNAUTHORIZED);
+        }
+
+        @Test
+        @DisplayName("createTicket với bookingId của khách hàng khác -> Ném FORBIDDEN")
+        void createTicket_ForeignBookingId_ThrowsForbidden() {
+            User otherCustomer = User.builder().fullName("Người khác").build();
+            otherCustomer.setId(UUID.randomUUID());
+
+            Booking foreignBooking = Booking.builder()
+                    .customer(otherCustomer)
+                    .storageUnit(testUnit)
+                    .build();
+            UUID foreignBookingId = UUID.randomUUID();
+            foreignBooking.setId(foreignBookingId);
+
+            SupportTicketRequest request = SupportTicketRequest.builder()
+                    .customerId(customerId)
+                    .bookingId(foreignBookingId)
+                    .title("Cố gắng link đơn của người khác")
+                    .build();
+
+            when(requestContext.currentUserId()).thenReturn(customerId);
+            when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+            when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
+            when(bookingRepository.findById(foreignBookingId)).thenReturn(Optional.of(foreignBooking));
+
+            AppException ex = assertThrows(AppException.class, () -> supportTicketService.createTicket(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("createTicket khi customerId không tồn tại trong DB -> Ném USER_NOT_FOUND (không fallback về user đầu tiên)")
+        void createTicket_CustomerNotFound_ThrowsUserNotFound() {
+            SupportTicketRequest request = SupportTicketRequest.builder()
+                    .title("Không tìm thấy user")
+                    .build();
+
+            when(requestContext.currentUserId()).thenReturn(customerId);
+            when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+            when(userRepository.findById(customerId)).thenReturn(Optional.empty());
+
+            AppException ex = assertThrows(AppException.class, () -> supportTicketService.createTicket(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.USER_NOT_FOUND);
+            verify(userRepository, never()).findAll();
+        }
+
+        @Test
+        @DisplayName("getMyTickets khi khách hàng cố truy vấn tickets của khách hàng khác -> Ném FORBIDDEN")
+        void getMyTickets_CrossCustomerAccess_ThrowsForbidden() {
+            UUID anotherCustomerId = UUID.randomUUID();
+            when(requestContext.currentUserId()).thenReturn(customerId);
+            when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+
+            AppException ex = assertThrows(AppException.class, () -> supportTicketService.getMyTickets(anotherCustomerId));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("resolveTicket khi người dùng là CUSTOMER (không phải staff) -> Ném FORBIDDEN")
+        void resolveTicket_CustomerRole_ThrowsForbidden() {
+            UUID ticketId = UUID.randomUUID();
+            when(requestContext.currentUserId()).thenReturn(customerId);
+            when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    supportTicketService.resolveTicket(ticketId, "Khách hàng tự resolve"));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
         }
     }
 }

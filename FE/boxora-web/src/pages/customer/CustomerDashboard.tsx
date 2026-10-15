@@ -163,11 +163,11 @@ export const CustomerDashboard: React.FC = () => {
 
   // Real Customer Financial Summaries from DB
   const totalAmountPaid = useMemo(() => {
-    return customerPayments.filter(p => p.status === 'SUCCESS').reduce((sum, p) => sum + (p.amount || 0), 0)
+    return customerPayments.filter(p => p.status === 'PAID' || p.status === 'SUCCESS').reduce((sum, p) => sum + (p.amount || 0), 0)
   }, [customerPayments])
 
   const totalDepositsHeld = useMemo(() => {
-    const fromPayments = customerPayments.filter(p => p.status === 'SUCCESS' && p.paymentType === 'DEPOSIT').reduce((sum, p) => sum + (p.amount || 0), 0)
+    const fromPayments = customerPayments.filter(p => (p.status === 'PAID' || p.status === 'SUCCESS') && p.paymentType === 'DEPOSIT').reduce((sum, p) => sum + (p.amount || 0), 0)
     const fromContracts = contracts.reduce((sum, c) => sum + (c.depositHeld || 0), 0)
     return fromPayments > 0 ? fromPayments : fromContracts
   }, [customerPayments, contracts])
@@ -177,7 +177,7 @@ export const CustomerDashboard: React.FC = () => {
   }, [activeContracts])
 
   const successfulPaymentsCount = useMemo(() => {
-    return customerPayments.filter(p => p.status === 'SUCCESS').length
+    return customerPayments.filter(p => p.status === 'PAID' || p.status === 'SUCCESS').length
   }, [customerPayments])
 
   // Support Ticket Form State
@@ -292,6 +292,7 @@ export const CustomerDashboard: React.FC = () => {
   const [renewDiscountPercent, setRenewDiscountPercent] = useState<number>(0)
   const [renewOtherFee, setRenewOtherFee] = useState<number>(0)
   const [renewSuccess, setRenewSuccess] = useState<boolean>(false)
+  const [renewError, setRenewError] = useState<string | null>(null)
   const [isSubmittingRenewal, setIsSubmittingRenewal] = useState<boolean>(false)
 
   // PIN Change Request Modal (Yêu cầu đổi mã PIN)
@@ -317,6 +318,7 @@ export const CustomerDashboard: React.FC = () => {
   const [ticketType, setTicketType] = useState('lock')
   const [ticketContent, setTicketContent] = useState('')
   const [ticketSubmitted, setTicketSubmitted] = useState(false)
+  const [ticketError, setTicketError] = useState<string | null>(null)
   const [isSubmittingTicket, setIsSubmittingTicket] = useState(false)
 
   // Filter explore state
@@ -339,9 +341,10 @@ export const CustomerDashboard: React.FC = () => {
       setUnlockedSuccess(unitCode)
       setTimeout(() => setUnlockedSuccess(null), 5000)
     } catch (err: any) {
-      console.warn('Remote unlock request fallback:', err)
-      setUnlockedSuccess(unitCode)
-      setTimeout(() => setUnlockedSuccess(null), 5000)
+      console.warn('Remote unlock request failed:', err)
+      const msg = err?.response?.data?.message || err?.message || 'Gửi tín hiệu mở khóa từ xa thất bại. Vui lòng kiểm tra kết nối thiết bị.'
+      setUnlockError(msg)
+      setTimeout(() => setUnlockError(null), 5000)
     } finally {
       setUnlockingUnit(null)
     }
@@ -350,6 +353,7 @@ export const CustomerDashboard: React.FC = () => {
   const handleSupportSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmittingTicket(true)
+    setTicketError(null)
     try {
       const activeUnit = contracts.find(c => c.unitCode === ticketUnit)
       await supportTicketService.createTicket({
@@ -365,13 +369,14 @@ export const CustomerDashboard: React.FC = () => {
         setTicketSubmitted(false)
         setTicketContent('')
       }, 3500)
-    } catch (err) {
-      console.warn('Support ticket creation fallback:', err)
-      setTicketSubmitted(true)
+    } catch (err: any) {
+      console.error('Support ticket creation failed:', err)
+      const msg = err?.response?.data?.message || err?.message || 'Gửi yêu cầu hỗ trợ thất bại. Vui lòng thử lại sau.'
+      setTicketError(msg)
+      setTicketSubmitted(false)
       setTimeout(() => {
-        setTicketSubmitted(false)
-        setTicketContent('')
-      }, 3500)
+        setTicketError(null)
+      }, 6000)
     } finally {
       setIsSubmittingTicket(false)
     }
@@ -443,22 +448,27 @@ export const CustomerDashboard: React.FC = () => {
     setIsSubmittingPinChange(true)
     try {
       await bookingService.updatePin(pinChangeUnit.targetId, newPin)
-    } catch {
+      setLoadedPins(prev => ({ ...prev, [pinChangeUnit.unitCode]: newPin }))
+      setPinChangeSuccess(true)
+    } catch (e1: any) {
       try {
         await bookingService.updatePinByUnit(pinChangeUnit.unitCode, newPin)
-      } catch (e2) {
-        console.warn('Update PIN API fallback:', e2)
+        setLoadedPins(prev => ({ ...prev, [pinChangeUnit.unitCode]: newPin }))
+        setPinChangeSuccess(true)
+      } catch (e2: any) {
+        console.warn('Update PIN API error:', e2)
+        const msg = e2?.response?.data?.message || e1?.response?.data?.message || 'Cập nhật mã PIN thất bại. Vui lòng thử lại.'
+        setPinChangeError(msg)
       }
     } finally {
-      setLoadedPins(prev => ({ ...prev, [pinChangeUnit.unitCode]: newPin }))
       setIsSubmittingPinChange(false)
-      setPinChangeSuccess(true)
     }
   }
 
   const handleConfirmRenewal = async () => {
     if (!renewModalData) return
     setIsSubmittingRenewal(true)
+    setRenewError(null)
     try {
       const targetContract = contracts.find(c => c.id === renewModalData.contractId || c.unitCode === renewModalData.unitCode)
       if (targetContract) {
@@ -469,9 +479,11 @@ export const CustomerDashboard: React.FC = () => {
       setRenewSuccess(true)
       await fetchContracts()
       await fetchCustomerPayments()
-    } catch (err) {
-      console.warn('Renewal API fallback:', err)
-      setRenewSuccess(true)
+    } catch (err: any) {
+      console.warn('Renewal API error:', err)
+      setRenewSuccess(false)
+      const msg = err?.response?.data?.message || err?.message || 'Không thể gia hạn hợp đồng. Vui lòng kiểm tra lại điều kiện hợp đồng.'
+      setRenewError(msg)
     } finally {
       setIsSubmittingRenewal(false)
     }
@@ -578,32 +590,56 @@ export const CustomerDashboard: React.FC = () => {
     }
   }, [selectedBookingUnit, bookingPackage, bookingCustomDays, bookingStartDate])
 
+  const handlePayBookingVNPay = async (b: Booking) => {
+    try {
+      const amount = b.initialPaymentAmount || (
+        (b.totalRentalFee && b.rentalMonths ? b.totalRentalFee / b.rentalMonths : 0) + (b.depositAmount || 0)
+      ) || 1000000
+      const payment = await paymentService.createVNPayPayment({
+        bookingId: b.id,
+        paymentType: 'BOOKING_PAYMENT',
+        amount: Math.round(amount),
+        orderInfo: `Thanh toan don dat cho ${b.bookingCode}`
+      })
+      if (payment?.paymentUrl) {
+        window.location.href = payment.paymentUrl
+        return
+      }
+      alert('Không nhận được liên kết thanh toán từ cổng VNPay.')
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || 'Không thể tạo liên kết thanh toán VNPay.')
+    }
+  }
+
   const handleConfirmBooking = async () => {
     if (!selectedBookingUnit) return
     setIsSubmittingBooking(true)
     try {
+      const months = Math.max(1, Math.round(bookingEstimate.months || 1))
       if (bookingWorkflow === 'ONLINE_NOW') {
-        // Option "Ký online & thanh toán": Chuyển tiếp ngay qua link VNPay Sandbox
+        // Option "Ký online & thanh toán": Tạo booking và chuyển tiếp ngay sang cổng VNPay Sandbox thực
         let bookingId = ''
-        let bookingCode = ''
         try {
           const res = await bookingService.createBooking({
             storageUnitId: selectedBookingUnit.id,
             startDate: bookingStartDate,
-            rentalMonths: bookingEstimate.months,
+            rentalMonths: months,
             totalRentalFee: bookingEstimate.rentAfterDiscount,
             depositPaid: bookingEstimate.deposit,
             signingMethod: 'ONLINE'
           })
-          bookingId = res?.id || ''
-          bookingCode = res?.bookingCode || ''
-        } catch (bErr) {
-          console.warn('Booking creation API fallback:', bErr)
-          bookingId = `mock-${Date.now()}`
-          bookingCode = `BX-${Math.floor(100000 + Math.random() * 900000)}`
+          if (!res?.id) {
+            throw new Error('Hệ thống không trả về mã đơn đặt kho hợp lệ.')
+          }
+          bookingId = res.id
+        } catch (bErr: any) {
+          console.error('Booking creation error:', bErr)
+          const errorMsg = bErr?.response?.data?.message || bErr?.message || 'Không thể tạo đơn đặt kho. Ngăn kho này có thể vừa được đặt hoặc đang có người giữ chỗ.'
+          alert(errorMsg)
+          return
         }
 
-        // Tạo giao dịch VNPay Sandbox
+        // Tạo giao dịch thanh toán VNPay Sandbox và lấy URL chính thức
         const paymentAmount = bookingEstimate.totalPayment
         try {
           const payment = await paymentService.createVNPayPayment({
@@ -613,47 +649,47 @@ export const CustomerDashboard: React.FC = () => {
             orderInfo: `Thanh toan giu cho kho ${selectedBookingUnit.unitCode}`
           })
           if (payment?.paymentUrl) {
-            window.location.assign(payment.paymentUrl)
+            // Chuyển hướng trực tiếp sang cổng thanh toán VNPay Sandbox để khách tự nhập thẻ test
+            window.location.href = payment.paymentUrl
             return
           }
-        } catch (payErr) {
-          console.warn('VNPay create payment API fallback:', payErr)
+          throw new Error('Cổng VNPay không phản hồi đường dẫn thanh toán.')
+        } catch (payErr: any) {
+          console.error('VNPay create payment error:', payErr)
+          const errorMsg = payErr?.response?.data?.message || payErr?.message || 'Không thể khởi tạo giao dịch VNPay. Vui lòng thử lại.'
+          alert(errorMsg)
+          return
         }
-
-        // Chuyển hướng tới trang thanh toán VNPay Sandbox hoặc kết quả thanh toán
-        const targetUrl = `/payment-result?status=PAID&bookingId=${bookingId}&unitCode=${selectedBookingUnit.unitCode}&facilityName=${encodeURIComponent(selectedBookingUnit.facilityName)}&amount=${paymentAmount}&unitName=${encodeURIComponent(selectedBookingUnit.name)}`
-        window.location.assign(targetUrl)
-        return
       }
 
       // Option "Đặt giữ chỗ kho" (Miễn phí 24h): Giữ chỗ và hiển thị màn hình hoàn tất
-      const res = await bookingService.createBooking({
-        storageUnitId: selectedBookingUnit.id,
-        startDate: bookingStartDate,
-        rentalMonths: bookingEstimate.months,
-        totalRentalFee: bookingEstimate.rentAfterDiscount,
-        depositPaid: 0,
-        signingMethod: 'IN_PERSON'
-      })
-      setCreatedBookingResult({
-        bookingCode: res?.bookingCode || `BX-${Math.floor(100000 + Math.random() * 900000)}`,
-        unitCode: selectedBookingUnit.unitCode,
-        facilityName: selectedBookingUnit.facilityName
-      })
-      setBookingSuccess(true)
-      await fetchCustomerBookings()
-      await fetchContracts()
-      await fetchCustomerPayments()
-      await fetchAvailableUnits()
-    } catch (err) {
-      console.warn('Booking creation fallback:', err)
-      setCreatedBookingResult({
-        bookingCode: `BX-${Math.floor(100000 + Math.random() * 900000)}`,
-        unitCode: selectedBookingUnit.unitCode,
-        facilityName: selectedBookingUnit.facilityName
-      })
-      setBookingSuccess(true)
-      await fetchCustomerBookings()
+      try {
+        const res = await bookingService.createBooking({
+          storageUnitId: selectedBookingUnit.id,
+          startDate: bookingStartDate,
+          rentalMonths: months,
+          totalRentalFee: bookingEstimate.rentAfterDiscount,
+          depositPaid: 0,
+          signingMethod: 'IN_PERSON'
+        })
+        if (!res?.id) {
+          throw new Error('Hệ thống không trả về thông tin xác nhận.')
+        }
+        setCreatedBookingResult({
+          bookingCode: res.bookingCode,
+          unitCode: selectedBookingUnit.unitCode,
+          facilityName: selectedBookingUnit.facilityName
+        })
+        setBookingSuccess(true)
+        await fetchCustomerBookings()
+        await fetchContracts()
+        await fetchCustomerPayments()
+        await fetchAvailableUnits()
+      } catch (err: any) {
+        console.error('In-person booking error:', err)
+        const errorMsg = err?.response?.data?.message || err?.message || 'Không thể giữ chỗ kho này. Vui lòng kiểm tra lại.'
+        alert(errorMsg)
+      }
     } finally {
       setIsSubmittingBooking(false)
     }
@@ -973,7 +1009,7 @@ export const CustomerDashboard: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {activeContracts.map((c) => {
                 const targetId = c.bookingId || c.id
-                const pin = loadedPins[c.unitCode] || (c.id.replace(/\D/g, '').slice(0, 6) || '849204').padEnd(6, '9')
+                const pin = loadedPins[c.unitCode] || ''
                 const isRevealed = revealedPins[c.unitCode]
                 const isLoadingPin = loadingPins[c.unitCode]
                 const isUnlocking = unlockingUnit === c.unitCode
@@ -1091,7 +1127,7 @@ export const CustomerDashboard: React.FC = () => {
                               <div className="flex items-center gap-2">
                                 <span className="text-[11px] font-mono text-slate-600 font-semibold">Mã số PIN:</span>
                                 <div className="flex items-center gap-1 font-mono text-base font-bold text-blue-900 tracking-wider">
-                                  {pin.split('').map((digit: string, idx: number) => (
+                                  {(pin || '------').split('').map((digit: string, idx: number) => (
                                     <span key={idx} className="px-2 py-1 rounded bg-blue-50 border border-blue-200 text-blue-900">
                                       {digit}
                                     </span>
@@ -1100,8 +1136,9 @@ export const CustomerDashboard: React.FC = () => {
                               </div>
                               <button
                                 type="button"
+                                disabled={!pin}
                                 onClick={() => handleCopy(c.unitCode, pin)}
-                                className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
+                                className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
                               >
                                 <span className="material-symbols-outlined text-[14px]">content_copy</span>
                                 <span>{copiedPin === c.unitCode ? 'Đã sao chép' : 'Sao chép'}</span>
@@ -1422,12 +1459,24 @@ export const CustomerDashboard: React.FC = () => {
                         )}
 
                         {b.status === 'PENDING_PAYMENT' && (
-                          <div className="p-3 rounded-lg bg-amber-50/80 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
-                            <span className="material-symbols-outlined text-[16px] text-amber-700 shrink-0 mt-0.5">
-                              schedule
-                            </span>
-                            <div className="leading-relaxed">
-                              Đơn đặt kho đang trong thời gian giữ chỗ 24h. Vui lòng thanh toán tiền cọc để xác nhận giữ kho chính thức.
+                          <div className="space-y-2">
+                            <div className="p-3 rounded-lg bg-amber-50/80 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
+                              <span className="material-symbols-outlined text-[16px] text-amber-700 shrink-0 mt-0.5">
+                                schedule
+                              </span>
+                              <div className="leading-relaxed">
+                                Đơn đặt kho đang trong thời gian giữ chỗ 24h. Vui lòng thanh toán tiền cọc để xác nhận giữ kho chính thức.
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-end">
+                              <button
+                                type="button"
+                                onClick={() => handlePayBookingVNPay(b)}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                              >
+                                <span className="material-symbols-outlined text-sm">credit_card</span>
+                                Thanh toán qua VNPay Sandbox
+                              </button>
                             </div>
                           </div>
                         )}
@@ -1927,13 +1976,15 @@ export const CustomerDashboard: React.FC = () => {
                         </td>
                         <td className="py-3.5 px-4 text-center">
                           <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                            p.status === 'SUCCESS'
+                            p.status === 'PAID' || p.status === 'SUCCESS'
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               : p.status === 'PENDING'
                               ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : p.status === 'REFUNDED'
+                              ? 'bg-purple-50 text-purple-700 border-purple-200'
                               : 'bg-rose-50 text-rose-700 border-rose-200'
                           }`}>
-                            {p.status === 'SUCCESS' ? 'Thành công' : p.status === 'PENDING' ? 'Chờ xử lý' : 'Thất bại'}
+                            {p.status === 'PAID' || p.status === 'SUCCESS' ? 'Thành công' : p.status === 'PENDING' ? 'Chờ xử lý' : p.status === 'REFUNDED' ? 'Đã hoàn tiền' : 'Thất bại'}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-right">
@@ -2050,13 +2101,21 @@ export const CustomerDashboard: React.FC = () => {
                     ></textarea>
                   </div>
 
+                  {ticketError && (
+                    <div className="sm:col-span-2 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[18px]">error</span>
+                      <span>{ticketError}</span>
+                    </div>
+                  )}
+
                   <div className="sm:col-span-2 flex items-center justify-between pt-2">
                     <span className="text-[11px] text-slate-400">Thời gian phản hồi cam kết: &lt; 3 phút</span>
                     <button
                       type="submit"
-                      className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-colors shadow-sm cursor-pointer"
+                      disabled={isSubmittingTicket}
+                      className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold text-xs rounded-lg transition-colors shadow-sm cursor-pointer"
                     >
-                      Gửi Yêu Cầu
+                      {isSubmittingTicket ? 'Đang gửi...' : 'Gửi Yêu Cầu'}
                     </button>
                   </div>
                 </form>
@@ -2084,7 +2143,7 @@ export const CustomerDashboard: React.FC = () => {
                     {bookingWorkflow === 'HOLD_ONLY' ? 'Đặt Giữ Chỗ Kho Thành Công!' : 'Khởi Tạo Hợp Đồng Thuê Thành Công!'}
                   </h3>
                   <p className="text-xs text-slate-500 mt-1">
-                    Mã đặt chỗ của bạn: <strong className="font-mono text-slate-800">#{createdBookingResult?.bookingCode || 'BX-2026-9988'}</strong>
+                    Mã đặt chỗ của bạn: <strong className="font-mono text-slate-800">#{createdBookingResult?.bookingCode || 'Đã ghi nhận'}</strong>
                   </p>
                 </div>
 
@@ -2966,20 +3025,135 @@ export const CustomerDashboard: React.FC = () => {
         />
       )}
 
-      {requestToPay && user && (
-        <BookingCheckoutModal
-          unit={{
-            backendId: requestToPay.storageUnitId,
-            code: requestToPay.unitCode,
-            name: `Kho #${requestToPay.unitCode}`,
-            facilityName: requestToPay.facilityName,
-            monthlyPrice: requestToPay.rentalMonths > 0 ? requestToPay.totalRentalFee / requestToPay.rentalMonths : requestToPay.totalRentalFee,
-            depositAmount: requestToPay.depositAmount,
-          }}
-          user={user}
-          existingBooking={requestToPay}
-          onClose={() => setRequestToPay(null)}
-        />
+      {/* VAT Invoice / Official Receipt Modal */}
+      {selectedVatPayment && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm overflow-y-auto">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="bg-slate-900 px-6 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-emerald-400 text-2xl">receipt_long</span>
+                <div>
+                  <h3 className="font-bold text-sm tracking-wide uppercase">Biên Lai Thu Tiền Điện Tử (VAT)</h3>
+                  <p className="text-[10px] text-slate-400 font-mono">Mã tra cứu: {selectedVatPayment.transactionId || selectedVatPayment.id.slice(0, 16)}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedVatPayment(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            {/* Receipt Body */}
+            <div className="p-6 space-y-5 text-xs text-slate-700">
+              {/* Unit & Issuer Header */}
+              <div className="border-b border-slate-200 pb-4 flex justify-between items-start gap-4">
+                <div>
+                  <h4 className="font-extrabold text-slate-900 text-sm uppercase">CÔNG TY CỔ PHẦN HỆ THỐNG KHO BOXORA</h4>
+                  <p className="text-[11px] text-slate-500">Mã số thuế: 0317894562 · Hotline: 1900 6868</p>
+                  <p className="text-[11px] text-slate-500">Cơ sở phát hành: {selectedVatPayment.facilityName || 'Boxora Storage'}</p>
+                </div>
+                <div className="text-right">
+                  <span className="inline-block px-2.5 py-1 bg-emerald-50 text-emerald-700 font-bold rounded-lg border border-emerald-200 text-[11px]">
+                    ✓ ĐÃ THANH TOÁN
+                  </span>
+                  <div className="text-[10px] text-slate-400 mt-1 font-mono">
+                    {selectedVatPayment.paymentTime ? new Date(selectedVatPayment.paymentTime).toLocaleString('vi-VN') : '—'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Customer Info */}
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                <div>
+                  <span className="text-slate-400 text-[10px] uppercase font-bold block">Khách hàng (Người nộp tiền):</span>
+                  <strong className="text-slate-900 text-xs">{user?.fullName || selectedVatPayment.customerName || 'Quý Khách Hàng'}</strong>
+                  <div className="text-slate-500 text-[11px] font-mono">{user?.email || 'customer@gmail.com'}</div>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] uppercase font-bold block">Ngăn kho tiếp nhận:</span>
+                  <strong className="text-blue-600 font-mono text-xs">#{selectedVatPayment.unitCode || 'N/A'}</strong>
+                  <div className="text-slate-500 text-[11px]">Phương thức: {selectedVatPayment.paymentMethod || 'VNPay'}</div>
+                </div>
+              </div>
+
+              {/* Line Items Table */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
+                    <tr>
+                      <th className="py-2.5 px-3">Nội dung thanh toán</th>
+                      <th className="py-2.5 px-3 text-right">Thuế suất</th>
+                      <th className="py-2.5 px-3 text-right">Thành tiền</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    <tr>
+                      <td className="py-3 px-3">
+                        <span className="font-semibold text-slate-900">
+                          {selectedVatPayment.paymentType === 'DEPOSIT'
+                            ? `Tiền đặt cọc bảo đảm ngăn kho #${selectedVatPayment.unitCode}`
+                            : `Tiền thuê ngăn kho tự quản Boxora #${selectedVatPayment.unitCode}`}
+                        </span>
+                        <div className="text-[10px] text-slate-400">Mã GD đối soát: {selectedVatPayment.transactionId || selectedVatPayment.id}</div>
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono">10% VAT</td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
+                        {selectedVatPayment.amount.toLocaleString('vi-VN')} ₫
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Totals Breakdown */}
+              <div className="bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80 space-y-1.5 font-mono text-xs">
+                <div className="flex justify-between text-slate-500">
+                  <span>Tiền dịch vụ (chưa thuế):</span>
+                  <span>{Math.round(selectedVatPayment.amount / 1.1).toLocaleString('vi-VN')} ₫</span>
+                </div>
+                <div className="flex justify-between text-slate-500">
+                  <span>Tiền thuế GTGT (10%):</span>
+                  <span>{(selectedVatPayment.amount - Math.round(selectedVatPayment.amount / 1.1)).toLocaleString('vi-VN')} ₫</span>
+                </div>
+                <div className="flex justify-between text-sm font-bold text-slate-900 pt-2 border-t border-slate-200">
+                  <span>TỔNG CỘNG THANH TOÁN:</span>
+                  <span className="text-emerald-600 text-base">{selectedVatPayment.amount.toLocaleString('vi-VN')} ₫</span>
+                </div>
+              </div>
+
+              {/* Boxora e-Invoice Seal */}
+              <div className="pt-2 flex items-center justify-between text-[11px] text-slate-400">
+                <div className="flex items-center gap-1.5 text-emerald-700 font-semibold">
+                  <span className="material-symbols-outlined text-[16px]">verified</span>
+                  <span>Hóa đơn điện tử có giá trị khấu trừ thuế theo quy định Bộ Tài Chính.</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="bg-slate-50 px-6 py-3.5 border-t border-slate-200 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-sm">print</span>
+                <span>In Biên Lai</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedVatPayment(null)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

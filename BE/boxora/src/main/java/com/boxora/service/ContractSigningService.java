@@ -37,6 +37,9 @@ public interface ContractSigningService {
     /** Ký hợp đồng điện tử ở chế độ mô phỏng / local simulation. */
     RentalContractResponse mockSign(UUID contractId);
 
+    /** Ký hợp đồng điện tử ở chế độ mô phỏng kèm theo chữ ký tay thực của khách hàng. */
+    RentalContractResponse mockSign(UUID contractId, String signatureData);
+
     /** Đảm bảo tồn tại hợp đồng ở trạng thái PENDING_SIGNATURE cho đơn đặt kho đã xác nhận. */
     RentalContract ensureContractForBooking(com.boxora.entity.Booking booking);
 }

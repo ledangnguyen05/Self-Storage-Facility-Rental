@@ -4,14 +4,17 @@ import { useAuth } from '../../context/AuthContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { reportService } from '../../services/reportService'
 import { facilityService } from '../../services/facilityService'
+import { facilityPolicyService } from '../../services/facilityPolicyService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { contractService, RentalContract } from '../../services/contractService'
-import { Facility, FacilityPolicy, RevenueReport, OccupancyReport, OverdueDebtReport, UnitType } from '../../types'
+import { Facility, FacilityPolicy, FacilityPolicyCreateRequest, FacilityPolicyUpdateRequest, RevenueReport, OccupancyReport, OverdueDebtReport, UnitType } from '../../types'
+import { FacilityPolicyModal } from './components/FacilityPolicyModal'
 
 export const OperationsDashboard: React.FC = () => {
   const { role } = useAuth()
   const { t } = useLanguage()
+  const canManagePolicies = role === 'ADMIN' || role === 'BUSINESS_MANAGER'
   const { selectedFacility, setSelectedFacility, facilities: contextFacilities } = useOutletContext<{
     selectedFacility?: string
     setSelectedFacility?: (facId: string) => void
@@ -37,6 +40,10 @@ export const OperationsDashboard: React.FC = () => {
     return selectedFacility
   })
   const [currentPolicy, setCurrentPolicy] = useState<FacilityPolicy | null>(null)
+  const [allPolicies, setAllPolicies] = useState<FacilityPolicy[]>([])
+  const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false)
+  const [editingPolicyFacility, setEditingPolicyFacility] = useState<Facility | null>(null)
+  const [editingExistingPolicy, setEditingExistingPolicy] = useState<FacilityPolicy | null>(null)
   const [revenueData, setRevenueData] = useState<RevenueReport | null>(null)
   const [occupancyData, setOccupancyData] = useState<OccupancyReport | null>(null)
   const [debtData, setDebtData] = useState<OverdueDebtReport | null>(null)
@@ -79,17 +86,18 @@ export const OperationsDashboard: React.FC = () => {
       const queryTo = tDate || undefined
       const scope = targetScope !== undefined ? targetScope : selectedFacilityId
       const targetFacilityId = scope === 'all' ? undefined : scope
-      const [facRes, revRes, occRes, debtRes, polRes, payRes, utRes, ctRes] = await Promise.allSettled([
+      const [facRes, revRes, occRes, debtRes, polRes, payRes, utRes, ctRes, allPolRes] = await Promise.allSettled([
         facilityService.getFacilities(),
         reportService.getRevenueReport(queryFrom, queryTo, targetFacilityId),
         reportService.getOccupancyReport(targetFacilityId),
         reportService.getOverdueDebtReport(targetFacilityId ? { facilityId: targetFacilityId } : undefined),
         targetFacilityId
-          ? facilityService.getPolicyByFacilityId(targetFacilityId)
+          ? facilityPolicyService.getByFacilityId(targetFacilityId)
           : Promise.resolve(null),
         paymentService.getPayments({ size: 100 }),
         storageUnitService.getUnitTypes(),
         contractService.getMyContracts({ size: 100 }),
+        facilityPolicyService.getAll({ size: 100 }),
       ])
       if (facRes.status === 'fulfilled' && facRes.value?.content) {
         setFacilities(facRes.value.content)
@@ -125,16 +133,23 @@ export const OperationsDashboard: React.FC = () => {
       if (ctRes.status === 'fulfilled' && ctRes.value?.content) {
         setContracts(ctRes.value.content)
       }
+      if (allPolRes.status === 'fulfilled' && allPolRes.value?.content) {
+        setAllPolicies(allPolRes.value.content)
+      }
       if (polRes.status === 'fulfilled' && polRes.value) {
         const pol = polRes.value
         setCurrentPolicy(pol)
-        if (pol.lateFeePerDay != null) setLateFee(pol.lateFeePerDay.toLocaleString('vi-VN'))
-        if (pol.gracePeriodDays != null) setGraceDays(`${pol.gracePeriodDays} Ngày`)
+        const dep = pol.depositPercentage ?? pol.depositPercent
+        if (dep != null) setDepositOption(dep >= 100 ? '1month' : '1month')
+        const lf = pol.dailyLateFee ?? pol.lateFeePerDay
+        if (lf != null) setLateFee(Number(lf).toLocaleString('vi-VN'))
+        const gr = pol.overdueGraceDays ?? pol.gracePeriodDays
+        if (gr != null) setGraceDays(`${gr} Ngày`)
         if (pol.discount3Months != null) setDiscount3M(`-${pol.discount3Months}`)
         if (pol.discount6Months != null) setDiscount6M(`-${pol.discount6Months}`)
         if (pol.discount12Months != null) setDiscount12M(`-${pol.discount12Months}`)
-        if (pol.overdueSealingDays != null) setLockoutDay(`Ngày thứ ${pol.overdueSealingDays}`)
-        if (pol.depositPercent != null) setDepositOption(pol.depositPercent >= 200 ? '2months' : '1month')
+        const seal = pol.overdueSealingDays
+        if (seal != null) setLockoutDay(`Ngày thứ ${seal}`)
       } else {
         setCurrentPolicy(null)
       }
@@ -143,6 +158,36 @@ export const OperationsDashboard: React.FC = () => {
     } finally {
       setIsReportsLoading(false)
     }
+  }
+
+  const handleOpenCreatePolicy = (fac?: Facility) => {
+    setEditingPolicyFacility(fac || null)
+    setEditingExistingPolicy(null)
+    setIsPolicyModalOpen(true)
+  }
+
+  const handleOpenEditPolicy = (fac: Facility, pol: FacilityPolicy) => {
+    setEditingPolicyFacility(fac)
+    setEditingExistingPolicy(pol)
+    setIsPolicyModalOpen(true)
+  }
+
+  const handleDeletePolicy = async (pol: FacilityPolicy) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa chính sách của cơ sở ${pol.facilityName || ''}?`)) {
+      return
+    }
+    try {
+      await facilityPolicyService.delete(pol.id)
+      showToast('Đã xóa chính sách cơ sở thành công!')
+      void loadDashboardData(fromDate, toDate, selectedFacilityId)
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Không thể xóa chính sách.', true)
+    }
+  }
+
+  const handlePolicySaved = (saved: FacilityPolicy, isNew: boolean) => {
+    showToast(isNew ? 'Đã ban hành chính sách mới cho cơ sở thành công!' : 'Đã cập nhật chính sách cơ sở thành công!')
+    void loadDashboardData(fromDate, toDate, selectedFacilityId)
   }
 
   const occupancyRows = [...(occupancyData?.byFacility ?? [])]
@@ -270,7 +315,7 @@ export const OperationsDashboard: React.FC = () => {
 
   const handleSavePolicies = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (role !== 'ADMIN') return
+    if (!canManagePolicies) return
     setIsSavingPolicies(true)
     try {
       const priceUpdates: string[] = []
@@ -314,21 +359,44 @@ export const OperationsDashboard: React.FC = () => {
       // 2. Save FacilityPolicy if a specific facility is selected
       let policySaved = false
       if (selectedFacilityId !== 'all') {
-        const payload: Partial<FacilityPolicy> = {
-          facilityId: selectedFacilityId,
-          lateFeePerDay: Number(lateFee.replace(/\D/g, '')),
-          discount3Months: Math.abs(Number(discount3M)) || 0,
-          discount6Months: Math.abs(Number(discount6M)) || 0,
-          discount12Months: Math.abs(Number(discount12M)) || 0,
-          depositPercent: depositOption === '2months' ? 200 : 100,
-          gracePeriodDays: Number.parseInt(graceDays, 10) || 0,
-          overdueSealingDays: Number.parseInt(lockoutDay.replace(/\D/g, ''), 10) || 5,
+        if (currentPolicy?.id) {
+          const updatePayload: FacilityPolicyUpdateRequest = {
+            depositPercentage: 100,
+            dailyLateFee: Number(lateFee.replace(/\D/g, '')) || 50000,
+            overdueGraceDays: Number.parseInt(graceDays, 10) || 3,
+            overdueSealingDays: Number.parseInt(lockoutDay.replace(/\D/g, ''), 10) || 7,
+            minimumRentalMonths: currentPolicy.minimumRentalMonths ?? 1,
+            renewalWindowDays: currentPolicy.renewalWindowDays ?? 7,
+            cancellationFullRefundHours: currentPolicy.cancellationFullRefundHours ?? 48,
+            cancellationPartialRefundHours: currentPolicy.cancellationPartialRefundHours ?? 24,
+            cancellationPartialRefundPercent: currentPolicy.cancellationPartialRefundPercent ?? 50,
+            returnNoticeDays: currentPolicy.returnNoticeDays ?? 3,
+            depositRefundSlaDays: currentPolicy.depositRefundSlaDays ?? 3,
+            overdueAccessDisableDays: currentPolicy.overdueAccessDisableDays ?? 5,
+          }
+          const saved = await facilityPolicyService.update(currentPolicy.id, updatePayload)
+          setCurrentPolicy(saved)
+          policySaved = true
+        } else {
+          const createPayload: FacilityPolicyCreateRequest = {
+            facilityId: selectedFacilityId,
+            depositPercentage: 100,
+            dailyLateFee: Number(lateFee.replace(/\D/g, '')) || 50000,
+            overdueGraceDays: Number.parseInt(graceDays, 10) || 3,
+            overdueSealingDays: Number.parseInt(lockoutDay.replace(/\D/g, ''), 10) || 7,
+            minimumRentalMonths: 1,
+            renewalWindowDays: 7,
+            cancellationFullRefundHours: 48,
+            cancellationPartialRefundHours: 24,
+            cancellationPartialRefundPercent: 50,
+            returnNoticeDays: 3,
+            depositRefundSlaDays: 3,
+            overdueAccessDisableDays: 5,
+          }
+          const saved = await facilityPolicyService.create(createPayload)
+          setCurrentPolicy(saved)
+          policySaved = true
         }
-        const saved = currentPolicy?.id
-          ? await facilityService.updatePolicy(currentPolicy.id, payload)
-          : await facilityService.createPolicy(payload)
-        setCurrentPolicy(saved)
-        policySaved = true
       }
 
       // 3. Re-fetch updated unit types
@@ -1039,8 +1107,196 @@ export const OperationsDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* FACILITY OPERATING POLICIES MANAGEMENT (BUSINESS MANAGER & ADMIN) */}
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-cyan-50 flex items-center justify-center text-cyan-600 border border-cyan-100">
+              <span className="material-symbols-outlined text-[24px]">policy</span>
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">
+                Chính Sách Vận Hành Cơ Sở (Facility Operating Policies)
+              </h2>
+              <p className="text-xs text-slate-500">
+                Quản lý các quy định tiền cọc, điều kiện hủy hoàn tiền, SLA hoàn cọc và quy trình xử lý nợ quá hạn của từng cơ sở theo phân quyền.
+              </p>
+            </div>
+          </div>
+          {canManagePolicies && (
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => handleOpenCreatePolicy()}
+                className="px-4 py-2 rounded-lg bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                <span>Tạo chính sách cơ sở mới</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50/75 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                <th className="py-3 px-4">Cơ sở / Chi nhánh</th>
+                <th className="py-3 px-3">Trạng thái</th>
+                <th className="py-3 px-3 text-center">Tiền cọc &amp; Thuê min</th>
+                <th className="py-3 px-3 text-center">Gia hạn &amp; Báo trước</th>
+                <th className="py-3 px-3 text-center">Hủy hoàn tiền (Full / 1 phần)</th>
+                <th className="py-3 px-3 text-center">SLA Hoàn cọc</th>
+                <th className="py-3 px-3 text-center">Xử lý Nợ &amp; Quá hạn</th>
+                {canManagePolicies && <th className="py-3 px-4 text-center">Thao tác</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {facilities.length > 0 ? (
+                facilities.map((fac) => {
+                  const policy = allPolicies.find((p) => p.facilityId === fac.id)
+                  const hasPolicy = Boolean(policy)
+
+                  return (
+                    <tr key={fac.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="py-3.5 px-4">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-slate-900 text-sm">{fac.name}</span>
+                          <span className="text-[11px] text-slate-500 font-mono">
+                            {fac.code || 'MÃ CHƯA CẬP NHẬT'} • {fac.address || fac.city || 'Chưa có địa chỉ'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-3">
+                        {hasPolicy ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            Đã ban hành
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-[11px] font-bold border border-amber-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                            Chưa cấu hình
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-3 text-center">
+                        {hasPolicy ? (
+                          <div className="flex flex-col items-center">
+                            <span className="font-bold text-slate-900">
+                              {policy?.depositPercentage ?? policy?.depositPercent ?? 100}%
+                            </span>
+                            <span className="text-[10px] text-slate-500">
+                              Tối thiểu {policy?.minimumRentalMonths ?? 1} tháng
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-3 text-center">
+                        {hasPolicy ? (
+                          <div className="flex flex-col items-center">
+                            <span className="font-medium text-slate-800">
+                              Mở trước {policy?.renewalWindowDays ?? 7} ngày
+                            </span>
+                            <span className="text-[10px] text-slate-500">
+                              Báo trả: {policy?.returnNoticeDays ?? 3} ngày
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-3 text-center">
+                        {hasPolicy ? (
+                          <div className="flex flex-col items-center">
+                            <span className="font-bold text-emerald-700">
+                              100% (≥ {policy?.cancellationFullRefundHours ?? 48}h)
+                            </span>
+                            <span className="text-[10px] text-amber-600">
+                              {policy?.cancellationPartialRefundPercent ?? 50}% (≥ {policy?.cancellationPartialRefundHours ?? 24}h)
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-3 text-center">
+                        {hasPolicy ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold text-xs border border-blue-200">
+                            {policy?.depositRefundSlaDays ?? 3} ngày làm việc
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-3 text-center">
+                        {hasPolicy ? (
+                          <div className="flex flex-col items-center">
+                            <span className="font-bold text-rose-600">
+                              {formatCurrency(policy?.dailyLateFee ?? policy?.lateFeePerDay)} đ/ngày
+                            </span>
+                            <span className="text-[10px] text-slate-500">
+                              Ân hạn {policy?.overdueGraceDays ?? 3}d • Khóa {policy?.overdueAccessDisableDays ?? 5}d • Niêm phong {policy?.overdueSealingDays ?? 7}d
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      {canManagePolicies && (
+                        <td className="py-3.5 px-4 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            {hasPolicy && policy ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditPolicy(fac, policy)}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-bold text-xs transition border border-cyan-200 cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">edit</span>
+                                  <span>Sửa</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeletePolicy(policy)}
+                                  className="inline-flex items-center p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                                  title="Xóa chính sách"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">delete</span>
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenCreatePolicy(fac)}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs transition border border-emerald-200 cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">add</span>
+                                <span>Tạo chính sách</span>
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })
+              ) : (
+                <tr>
+                  <td colSpan={8} className="py-6 text-center text-slate-500">
+                    Chưa có danh sách cơ sở.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* 4-TIER DYNAMIC PRICING MATRIX & BUSINESS POLICY ENGINE */}
-      {role === 'ADMIN' ? (
+      {canManagePolicies ? (
       <form onSubmit={handleSavePolicies} className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
@@ -1309,11 +1565,25 @@ export const OperationsDashboard: React.FC = () => {
             <span className="material-symbols-outlined rounded-lg bg-slate-100 p-2 text-slate-600 dark:bg-slate-800 dark:text-slate-300">admin_panel_settings</span>
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{t('Cấu hình chính sách toàn hệ thống', 'System-wide policy settings')}</h2>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{t('Chỉ Admin được phép chỉnh sửa chính sách và bảng giá.', 'Only Admin can edit system policies and pricing.')}</p>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{t('Chỉ Business Manager và Admin được phép chỉnh sửa chính sách và bảng giá.', 'Only Business Manager and Admin can edit system policies and pricing.')}</p>
             </div>
           </div>
         </section>
       )}
+
+      {/* Facility Policy Modal for Business Manager & Admin */}
+      <FacilityPolicyModal
+        isOpen={isPolicyModalOpen}
+        onClose={() => {
+          setIsPolicyModalOpen(false)
+          setEditingPolicyFacility(null)
+          setEditingExistingPolicy(null)
+        }}
+        onSuccess={handlePolicySaved}
+        facility={editingPolicyFacility}
+        existingPolicy={editingExistingPolicy}
+        availableFacilities={facilities}
+      />
     </div>
   )
 }

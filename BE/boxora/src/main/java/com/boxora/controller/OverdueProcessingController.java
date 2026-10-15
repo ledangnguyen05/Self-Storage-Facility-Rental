@@ -83,4 +83,16 @@ public class OverdueProcessingController {
         SealingRecordResponse response = overdueProcessingService.unsealUnit(id, request);
         return ResponseEntity.ok(ApiResponse.success("Unit unsealed successfully", response));
     }
+
+    @PostMapping("/overdue/contracts/{contractId}/lockout")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @Operation(summary = "Khóa mã PIN và thu hồi quyền truy cập hợp đồng quá hạn (P0-04, BR-RULE-012)")
+    public ResponseEntity<ApiResponse<com.boxora.dto.response.LockoutResponse>> lockoutContract(
+            @PathVariable UUID contractId,
+            @RequestBody(required = false) com.boxora.dto.request.LockoutRequest request
+    ) {
+        String reason = (request != null && request.getReason() != null) ? request.getReason() : "Quá hạn thanh toán cước thuê";
+        com.boxora.dto.response.LockoutResponse response = overdueProcessingService.lockoutContract(contractId, reason);
+        return ResponseEntity.ok(ApiResponse.success("Khóa quyền truy cập PIN/QR thành công", response));
+    }
 }

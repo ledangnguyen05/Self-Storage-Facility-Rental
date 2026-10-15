@@ -204,10 +204,12 @@ public class ContractSigningController {
 
     @PostMapping("{contractId}/mock-sign")
     @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
-    @Operation(summary = "Ký xác nhận hợp đồng điện tử ở chế độ mô phỏng / local development")
+    @Operation(summary = "Ký xác nhận hợp đồng điện tử ở chế độ mô phỏng / local development kèm chữ ký tay")
     public ResponseEntity<ApiResponse<RentalContractResponse>> mockSign(
-            @PathVariable UUID contractId) {
-        RentalContractResponse response = contractSigningService.mockSign(contractId);
+            @PathVariable UUID contractId,
+            @RequestBody(required = false) com.boxora.dto.request.ContractMockSignRequest request) {
+        String signatureData = request != null ? request.getSignatureData() : null;
+        RentalContractResponse response = contractSigningService.mockSign(contractId, signatureData);
         return ResponseEntity.ok(ApiResponse.success("Ký hợp đồng điện tử thành công", response));
     }
 
@@ -224,9 +226,11 @@ public class ContractSigningController {
             @RequestBody Map<String, Object> payload) {
         String expectedToken = docuSealConfig.getWebhookToken();
         String actualToken = webhookToken != null ? webhookToken : (headerToken != null ? headerToken : queryToken);
-        if (expectedToken != null && !expectedToken.isBlank() && actualToken != null && !expectedToken.equals(actualToken)) {
-            log.warn("Invalid DocuSeal webhook token received: {}", actualToken);
-            throw new AppException(ErrorCode.CONTRACT_SIGNING_INVALID_WEBHOOK_TOKEN);
+        if (expectedToken != null && !expectedToken.isBlank()) {
+            if (actualToken == null || !expectedToken.equals(actualToken)) {
+                log.warn("Unauthorized DocuSeal webhook call attempt. Received token: {}", actualToken);
+                throw new AppException(ErrorCode.CONTRACT_SIGNING_INVALID_WEBHOOK_TOKEN);
+            }
         }
         contractSigningService.handleWebhook(payload);
         return ResponseEntity.ok().build();

@@ -79,6 +79,7 @@ public class PaymentServiceImpl implements PaymentService {
         Booking booking = bookingRepository.findById(request.getBookingId())
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
+        BigDecimal authoritativeAmount;
         if (request.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
             if (booking.getStatus() != BookingStatus.PENDING_PAYMENT && booking.getStatus() != BookingStatus.PENDING_APPROVAL) {
                 throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED);
@@ -89,16 +90,25 @@ public class PaymentServiceImpl implements PaymentService {
             BigDecimal monthlyFee = booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
                     ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP)
                     : BigDecimal.ZERO;
-            BigDecimal expectedAmount = monthlyFee.add(booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO);
+            BigDecimal expectedInitialAmount = monthlyFee.add(booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO);
             BigDecimal totalExpected = (booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO)
                     .add(booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO);
+            BigDecimal depositOnly = booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO;
+
             if (request.getAmount() != null
-                    && request.getAmount().compareTo(expectedAmount) != 0
+                    && request.getAmount().compareTo(expectedInitialAmount) != 0
                     && request.getAmount().compareTo(totalExpected) != 0
-                    && request.getAmount().compareTo(booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO) != 0
-                    && request.getAmount().compareTo(BigDecimal.valueOf(1000)) < 0) {
+                    && request.getAmount().compareTo(depositOnly) != 0) {
+                log.warn("VNPay payment amount mismatch. Received={}, ExpectedInitial={}, TotalExpected={}, DepositOnly={}",
+                        request.getAmount(), expectedInitialAmount, totalExpected, depositOnly);
                 throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
             }
+            authoritativeAmount = (request.getAmount() != null) ? request.getAmount() : expectedInitialAmount;
+        } else {
+            if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new AppException(ErrorCode.INVALID_REQUEST);
+            }
+            authoritativeAmount = request.getAmount();
         }
 
         // Generate unique transaction reference (e.g. BOX + timestamp + 6 random chars)
@@ -122,11 +132,11 @@ public class PaymentServiceImpl implements PaymentService {
             orderInfo = "Thanh toan don dat cho " + booking.getBookingCode();
         }
 
-        // Create PENDING payment entity
+        // Create PENDING payment entity with server-verified authoritative amount
         Payment payment = Payment.builder()
                 .transactionId(txnRef)
                 .booking(booking)
-                .amount(request.getAmount())
+                .amount(authoritativeAmount)
                 .paymentType(request.getPaymentType())
                 .status(PaymentStatus.PENDING)
                 .paymentMethod("VNPAY")
@@ -142,13 +152,13 @@ public class PaymentServiceImpl implements PaymentService {
                 ActivityAction.PAYMENT_INITIATED,
                 "PAYMENT",
                 payment.getId(),
-                "Khoi tao giao dich thanh toan VNPAY cho booking " + booking.getBookingCode() + ", so tien: " + request.getAmount(),
+                "Khoi tao giao dich thanh toan VNPAY cho booking " + booking.getBookingCode() + ", so tien: " + authoritativeAmount,
                 null,
                 payment.getId()
         );
 
         // Generate VNPay checkout URL
-        String paymentUrl = vnPayService.createPaymentUrl(txnRef, request.getAmount(), orderInfo, ipAddress);
+        String paymentUrl = vnPayService.createPaymentUrl(txnRef, authoritativeAmount, orderInfo, ipAddress);
 
         return VNPayPaymentResponse.builder()
                 .paymentUrl(paymentUrl)
@@ -211,15 +221,25 @@ public class PaymentServiceImpl implements PaymentService {
             // Update Booking status & deposit amount if applicable
             Booking booking = payment.getBooking();
             if (booking != null) {
-                if (payment.getPaymentType() == PaymentType.BOOKING_PAYMENT
-                        && (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL)) {
-                    booking.setDepositPaid(booking.getDepositAmount());
+                // Pessimistic lock on booking to prevent race condition with expiration jobs
+                booking = bookingRepository.findByIdForUpdate(booking.getId()).orElse(booking);
+                // Nếu thanh toán thành công sau khi reservation hết hạn/bị hủy, đưa vào đối soát thay vì tự cấp kho
+                if (booking.getStatus() == BookingStatus.CANCELLED) {
+                    log.warn("[PAYMENT_EXPIRED] Payment {} received after booking {} was already CANCELLED. Flagged for refund/reconciliation.",
+                            txnRef, booking.getBookingCode());
+                    payment.setStatus(PaymentStatus.REFUND_PENDING);
+                    paymentRepository.save(payment);
+                    return paymentMapper.toResponse(payment);
+                }
+
+                if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
                     booking.setStatus(BookingStatus.CONFIRMED);
                     booking.setPaymentExpiresAt(null);
-                    if (booking.getAccessPin() == null) {
-                        booking.setAccessPin(String.format("%06d", SECURE_RANDOM.nextInt(1000000)));
-                        booking.setQrAccessToken("QR-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase());
-                        booking.setPinUpdatedAt(LocalDateTime.now());
+                    if (payment.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
+                        booking.setDepositPaid(booking.getDepositAmount() != null ? booking.getDepositAmount() : payment.getAmount());
+                    } else if (payment.getPaymentType() == PaymentType.DEPOSIT) {
+                        BigDecimal cur = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
+                        booking.setDepositPaid(cur.add(payment.getAmount()));
                     }
                     if (booking.getStorageUnit() != null) {
                         storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
@@ -228,19 +248,9 @@ public class PaymentServiceImpl implements PaymentService {
                     BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
                     booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
                 }
-                if (payment.getPaymentType() != PaymentType.BOOKING_PAYMENT
-                        && (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL)) {
-                    booking.setStatus(BookingStatus.CONFIRMED);
-                    booking.setPaymentExpiresAt(null);
-                    if (booking.getAccessPin() == null) {
-                        booking.setAccessPin(String.format("%06d", SECURE_RANDOM.nextInt(1000000)));
-                        booking.setQrAccessToken("QR-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase());
-                        booking.setPinUpdatedAt(LocalDateTime.now());
-                    }
-                    if (booking.getStorageUnit() != null) {
-                        storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
-                    }
-                }
+
+                // Lưu ý (P0-03 & BR-RULE-005): Không cấp mã PIN/QR ở bước thanh toán.
+                // Quyền truy cập PIN/QR chỉ được cấp phát chính thức khi nhân viên hoàn tất thủ tục bàn giao check-in.
                 bookingRepository.save(booking);
 
                 com.boxora.service.ContractSigningService contractSigningService = contractSigningServiceProvider.getIfAvailable();
@@ -354,15 +364,24 @@ public class PaymentServiceImpl implements PaymentService {
 
             Booking booking = payment.getBooking();
             if (booking != null) {
-                if (payment.getPaymentType() == PaymentType.BOOKING_PAYMENT
-                        && (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL)) {
-                    booking.setDepositPaid(booking.getDepositAmount());
+                // Pessimistic lock on booking to prevent race condition with expiration jobs
+                booking = bookingRepository.findByIdForUpdate(booking.getId()).orElse(booking);
+                if (booking.getStatus() == BookingStatus.CANCELLED) {
+                    log.warn("[PAYMENT_EXPIRED] VNPay IPN payment {} received after booking {} was already CANCELLED. Flagged for refund/reconciliation.",
+                            txnRef, booking.getBookingCode());
+                    payment.setStatus(PaymentStatus.REFUND_PENDING);
+                    paymentRepository.save(payment);
+                    return VNPayIpnResponse.success();
+                }
+
+                if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
                     booking.setStatus(BookingStatus.CONFIRMED);
                     booking.setPaymentExpiresAt(null);
-                    if (booking.getAccessPin() == null) {
-                        booking.setAccessPin(String.format("%06d", SECURE_RANDOM.nextInt(1000000)));
-                        booking.setQrAccessToken("QR-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase());
-                        booking.setPinUpdatedAt(LocalDateTime.now());
+                    if (payment.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
+                        booking.setDepositPaid(booking.getDepositAmount() != null ? booking.getDepositAmount() : payment.getAmount());
+                    } else if (payment.getPaymentType() == PaymentType.DEPOSIT) {
+                        BigDecimal cur = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
+                        booking.setDepositPaid(cur.add(payment.getAmount()));
                     }
                     if (booking.getStorageUnit() != null) {
                         storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
@@ -371,19 +390,9 @@ public class PaymentServiceImpl implements PaymentService {
                     BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
                     booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
                 }
-                if (payment.getPaymentType() != PaymentType.BOOKING_PAYMENT
-                        && (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL)) {
-                    booking.setStatus(BookingStatus.CONFIRMED);
-                    booking.setPaymentExpiresAt(null);
-                    if (booking.getAccessPin() == null) {
-                        booking.setAccessPin(String.format("%06d", SECURE_RANDOM.nextInt(1000000)));
-                        booking.setQrAccessToken("QR-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase());
-                        booking.setPinUpdatedAt(LocalDateTime.now());
-                    }
-                    if (booking.getStorageUnit() != null) {
-                        storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
-                    }
-                }
+
+                // Lưu ý (P0-03 & BR-RULE-005): Không cấp mã PIN/QR ở bước thanh toán.
+                // Quyền truy cập PIN/QR chỉ được cấp phát chính thức khi nhân viên hoàn tất thủ tục bàn giao check-in.
                 bookingRepository.save(booking);
 
                 com.boxora.service.ContractSigningService contractSigningService = contractSigningServiceProvider.getIfAvailable();

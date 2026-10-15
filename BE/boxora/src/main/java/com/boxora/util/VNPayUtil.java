@@ -33,9 +33,21 @@ public final class VNPayUtil {
         return sorted;
     }
 
-    /** Builds the exact string VNPay expects to be signed / verified using US_ASCII encoding. */
+    /** Sanitizes text to remove Vietnamese diacritics and special characters for VNPay compliance. */
+    public static String sanitizeOrderInfo(String info) {
+        if (info == null || info.isBlank()) {
+            return "Thanh toan";
+        }
+        String normalized = java.text.Normalizer.normalize(info, java.text.Normalizer.Form.NFD);
+        String noAccents = normalized.replaceAll("\\p{M}", "");
+        noAccents = noAccents.replace('đ', 'd').replace('Đ', 'D');
+        String clean = noAccents.replaceAll("[^a-zA-Z0-9 _-]", " ").trim().replaceAll("\\s+", " ");
+        return clean.isEmpty() ? "Thanh toan" : clean;
+    }
+
+    /** Builds the exact string VNPay expects to be signed / verified using UTF_8 encoding. */
     public static String buildHashData(SortedMap<String, String> sortedParams) {
-        return buildHashData(sortedParams, StandardCharsets.US_ASCII);
+        return buildHashData(sortedParams, StandardCharsets.UTF_8);
     }
 
     /** Builds the hash data string with specified charset encoding for values. */
