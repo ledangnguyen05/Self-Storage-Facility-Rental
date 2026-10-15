@@ -87,11 +87,11 @@ export const AdminDashboard: React.FC = () => {
 
   // Activity Log state
   const fallbackRoles: Role[] = [
-    { id: 'r-1', name: 'ADMIN', description: 'Quản trị viên toàn quyền hệ thống' },
-    { id: 'r-2', name: 'BUSINESS_MANAGER', description: 'Giám đốc vận hành chuỗi và chính sách giá' },
-    { id: 'r-3', name: 'FACILITY_MANAGER', description: 'Quản lý cơ sở kho vật lý và ca trực' },
-    { id: 'r-4', name: 'STAFF', description: 'Nhân viên trạm tiếp đón và nghiệm thu bàn giao' },
-    { id: 'r-5', name: 'CUSTOMER', description: 'Khách hàng thuê kho và quản lý mã PIN' },
+    { id: 'r-1', name: 'ADMIN', description: 'Quản lý tài khoản, vai trò và quyền truy cập; không quyết định chính sách kinh doanh' },
+    { id: 'r-2', name: 'BUSINESS_MANAGER', description: 'Tạo, sửa, kích hoạt hoặc ngừng áp dụng chính sách chung về cọc, giá, gia hạn, hủy, trả kho và quá hạn' },
+    { id: 'r-3', name: 'FACILITY_MANAGER', description: 'Xem chính sách cơ sở, thực thi nghiệp vụ; chỉ sửa ngoại lệ nếu được Business Manager cấp quyền' },
+    { id: 'r-4', name: 'STAFF', description: 'Chỉ xem các quy định cần thiết để làm việc; không được cấu hình chính sách' },
+    { id: 'r-5', name: 'CUSTOMER', description: 'Xem các chính sách liên quan đến thuê kho, thanh toán và hợp đồng' },
   ]
 
   const fallbackPermissions: Permission[] = [

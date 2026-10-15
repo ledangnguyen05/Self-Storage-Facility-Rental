@@ -8,7 +8,8 @@ import { facilityPolicyService } from '../../services/facilityPolicyService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { contractService, RentalContract } from '../../services/contractService'
-import { Facility, FacilityPolicy, FacilityPolicyCreateRequest, FacilityPolicyUpdateRequest, RevenueReport, OccupancyReport, OverdueDebtReport, UnitType } from '../../types'
+import { userService } from '../../services/userService'
+import { Facility, FacilityPolicy, FacilityPolicyCreateRequest, FacilityPolicyUpdateRequest, RevenueReport, OccupancyReport, OverdueDebtReport, UnitType, User } from '../../types'
 import { FacilityPolicyModal } from './components/FacilityPolicyModal'
 
 export const OperationsDashboard: React.FC = () => {
@@ -44,6 +45,13 @@ export const OperationsDashboard: React.FC = () => {
   const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false)
   const [editingPolicyFacility, setEditingPolicyFacility] = useState<Facility | null>(null)
   const [editingExistingPolicy, setEditingExistingPolicy] = useState<FacilityPolicy | null>(null)
+  const [grantModalData, setGrantModalData] = useState<{
+    facility: Facility
+    policy: FacilityPolicy
+    managers: User[]
+    grantedManagerIds: string[]
+    loading: boolean
+  } | null>(null)
   const [revenueData, setRevenueData] = useState<RevenueReport | null>(null)
   const [occupancyData, setOccupancyData] = useState<OccupancyReport | null>(null)
   const [debtData, setDebtData] = useState<OverdueDebtReport | null>(null)
@@ -188,6 +196,60 @@ export const OperationsDashboard: React.FC = () => {
   const handlePolicySaved = (saved: FacilityPolicy, isNew: boolean) => {
     showToast(isNew ? 'Đã ban hành chính sách mới cho cơ sở thành công!' : 'Đã cập nhật chính sách cơ sở thành công!')
     void loadDashboardData(fromDate, toDate, selectedFacilityId)
+  }
+
+  const handleTogglePolicyActive = async (pol: FacilityPolicy) => {
+    const newActive = pol.isActive === false ? true : false
+    try {
+      await facilityPolicyService.update(pol.id, { isActive: newActive })
+      showToast(newActive ? 'Đã kích hoạt áp dụng chính sách cơ sở thành công!' : 'Đã ngừng áp dụng chính sách cơ sở.')
+      void loadDashboardData(fromDate, toDate, selectedFacilityId)
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Không thể thay đổi trạng thái chính sách.', true)
+    }
+  }
+
+  const handleOpenGrantModal = async (fac: Facility, pol: FacilityPolicy) => {
+    setGrantModalData({
+      facility: fac,
+      policy: pol,
+      managers: [],
+      grantedManagerIds: [],
+      loading: true,
+    })
+    try {
+      const [managersRes, grantsRes] = await Promise.all([
+        userService.getAllUsers({ role: 'FACILITY_MANAGER', facilityId: fac.id }),
+        facilityService.getPolicyExceptionGrants(pol.id),
+      ])
+      setGrantModalData({
+        facility: fac,
+        policy: pol,
+        managers: managersRes.data || [],
+        grantedManagerIds: Array.isArray(grantsRes) ? grantsRes : [],
+        loading: false,
+      })
+    } catch (err: any) {
+      showToast('Không thể tải danh sách quản lý cơ sở: ' + (err?.message || ''), true)
+      setGrantModalData(null)
+    }
+  }
+
+  const handleToggleGrant = async (managerId: string, currentlyGranted: boolean) => {
+    if (!grantModalData) return
+    try {
+      await facilityService.setPolicyExceptionGrant(grantModalData.policy.id, managerId, !currentlyGranted)
+      setGrantModalData((prev) => {
+        if (!prev) return null
+        const updatedIds = currentlyGranted
+          ? prev.grantedManagerIds.filter((id) => id !== managerId)
+          : [...prev.grantedManagerIds, managerId]
+        return { ...prev, grantedManagerIds: updatedIds }
+      })
+      showToast(!currentlyGranted ? 'Đã cấp quyền sửa ngoại lệ cho Quản lý cơ sở!' : 'Đã thu hồi quyền sửa ngoại lệ!')
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Lỗi khi cập nhật quyền ngoại lệ.', true)
+    }
   }
 
   const occupancyRows = [...(occupancyData?.byFacility ?? [])]
@@ -1169,10 +1231,17 @@ export const OperationsDashboard: React.FC = () => {
                       </td>
                       <td className="py-3.5 px-3">
                         {hasPolicy ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                            Đã ban hành
-                          </span>
+                          policy?.isActive === false ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 text-[11px] font-bold border border-rose-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                              Ngừng áp dụng
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                              Đang kích hoạt
+                            </span>
+                          )
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-[11px] font-bold border border-amber-200">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
@@ -1247,16 +1316,41 @@ export const OperationsDashboard: React.FC = () => {
                       </td>
                       {canManagePolicies && (
                         <td className="py-3.5 px-4 text-center">
-                          <div className="flex items-center justify-center gap-2">
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
                             {hasPolicy && policy ? (
                               <>
                                 <button
                                   type="button"
                                   onClick={() => handleOpenEditPolicy(fac, policy)}
-                                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-bold text-xs transition border border-cyan-200 cursor-pointer"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-bold text-xs transition border border-cyan-200 cursor-pointer"
+                                  title="Chỉnh sửa quy định chính sách"
                                 >
-                                  <span className="material-symbols-outlined text-[16px]">edit</span>
+                                  <span className="material-symbols-outlined text-[15px]">edit</span>
                                   <span>Sửa</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleTogglePolicyActive(policy)}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold text-xs transition border cursor-pointer ${
+                                    policy.isActive === false
+                                      ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                                      : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200'
+                                  }`}
+                                  title={policy.isActive === false ? 'Kích hoạt chính sách này' : 'Ngừng áp dụng chính sách này'}
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">
+                                    {policy.isActive === false ? 'toggle_on' : 'toggle_off'}
+                                  </span>
+                                  <span>{policy.isActive === false ? 'Kích hoạt' : 'Ngừng áp dụng'}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenGrantModal(fac, policy)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs transition border border-indigo-200 cursor-pointer"
+                                  title="Cấp quyền sửa ngoại lệ cho Quản lý cơ sở"
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">key</span>
+                                  <span>Ngoại lệ FM</span>
                                 </button>
                                 <button
                                   type="button"
@@ -1264,7 +1358,7 @@ export const OperationsDashboard: React.FC = () => {
                                   className="inline-flex items-center p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition cursor-pointer"
                                   title="Xóa chính sách"
                                 >
-                                  <span className="material-symbols-outlined text-[18px]">delete</span>
+                                  <span className="material-symbols-outlined text-[16px]">delete</span>
                                 </button>
                               </>
                             ) : (
@@ -1584,6 +1678,100 @@ export const OperationsDashboard: React.FC = () => {
         existingPolicy={editingExistingPolicy}
         availableFacilities={facilities}
       />
+
+      {/* Policy Exception Grant Modal for Business Manager */}
+      {grantModalData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col gap-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                  <span className="material-symbols-outlined text-[22px]">admin_panel_settings</span>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Cấp Quyền Sửa Ngoại Lệ Chính Sách
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {grantModalData.facility.name} • Thẩm quyền: Business Operations Manager
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGrantModalData(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50 rounded-xl text-xs text-indigo-950 dark:text-indigo-200">
+              <p className="leading-relaxed">
+                Theo quy chuẩn, Quản lý cơ sở (Facility Manager) chỉ xem chính sách và thực hiện nghiệp vụ. Bạn có thể cấp quyền sửa ngoại lệ để Facility Manager linh hoạt điều chỉnh quy định riêng tại cơ sở khi cần thiết.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                Danh sách Quản lý cơ sở (Facility Managers):
+              </h4>
+              {grantModalData.loading ? (
+                <div className="py-6 text-center text-xs text-slate-500">Đang tải danh sách nhân sự...</div>
+              ) : grantModalData.managers.length === 0 ? (
+                <div className="py-6 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700">
+                  Chưa có nhân sự vai trò Facility Manager nào được phân công tại cơ sở này.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {grantModalData.managers.map((mgr) => {
+                    const isGranted = grantModalData.grantedManagerIds.includes(mgr.id)
+                    return (
+                      <div
+                        key={mgr.id}
+                        className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50"
+                      >
+                        <div className="flex flex-col">
+                          <span className="text-xs font-bold text-slate-900 dark:text-white">
+                            {mgr.fullName || mgr.username}
+                          </span>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                            {mgr.email}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleGrant(mgr.id, isGranted)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            isGranted
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                              : 'bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[16px]">
+                            {isGranted ? 'check_circle' : 'lock'}
+                          </span>
+                          <span>{isGranted ? 'Đã cấp quyền' : 'Chưa cấp quyền'}</span>
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setGrantModalData(null)}
+                className="px-4 py-2 rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-xs font-bold hover:bg-slate-800 transition cursor-pointer"
+              >
+                Hoàn tất
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

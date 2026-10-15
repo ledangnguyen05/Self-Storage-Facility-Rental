@@ -19,6 +19,7 @@ import { NoticeDispatcherModal } from './modals/NoticeDispatcherModal'
 import { AssetSealingModal } from './modals/AssetSealingModal'
 import { BookingApprovalModal } from './modals/BookingApprovalModal'
 import { CreateStorageUnitModal } from './modals/CreateStorageUnitModal'
+import { FacilityPolicyViewModal } from './modals/FacilityPolicyViewModal'
 
 interface InspectedUnit {
   id: string
@@ -60,6 +61,8 @@ export const ManagerDashboard: React.FC = () => {
   )
   const [units, setUnits] = useState<InspectedUnit[]>([])
   const [facilityPolicy, setFacilityPolicy] = useState<FacilityPolicy | null>(null)
+  const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false)
+  const [hasPolicyException, setHasPolicyException] = useState(false)
   const [overdueItems, setOverdueItems] = useState<OverdueDebtItem[]>([])
   const [staffList, setStaffList] = useState<User[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
@@ -243,9 +246,21 @@ export const ManagerDashboard: React.FC = () => {
       }
 
       if (polRes.status === 'fulfilled' && polRes.value) {
-        setFacilityPolicy(polRes.value)
+        const loadedPol = polRes.value
+        setFacilityPolicy(loadedPol)
+        if (loadedPol?.id && user?.id) {
+          try {
+            const grants = await facilityService.getPolicyExceptionGrants(loadedPol.id)
+            setHasPolicyException(Array.isArray(grants) && grants.includes(user.id))
+          } catch {
+            setHasPolicyException(false)
+          }
+        } else {
+          setHasPolicyException(false)
+        }
       } else {
         setFacilityPolicy(null)
+        setHasPolicyException(false)
       }
     } catch {
       setUnits([])
@@ -255,6 +270,7 @@ export const ManagerDashboard: React.FC = () => {
       setRevenueData(null)
       setFacilityPayments([])
       setFacilityPolicy(null)
+      setHasPolicyException(false)
     } finally {
       setIsLoading(false)
       setIsRevenueLoading(false)
@@ -861,28 +877,61 @@ export const ManagerDashboard: React.FC = () => {
               <span className="material-symbols-outlined text-[20px]">verified_user</span>
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-sm font-bold text-slate-900">
                   Chính Sách Vận Hành Chi Nhánh: {currentFacilityName}
                 </h2>
                 {facilityPolicy ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                    Đang áp dụng
-                  </span>
+                  facilityPolicy.isActive === false ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                      Ngừng áp dụng
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      Đang áp dụng
+                    </span>
+                  )
                 ) : (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold border border-amber-200">
                     Chính sách tiêu chuẩn mặc định
                   </span>
                 )}
+                {hasPolicyException ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200">
+                    <span className="material-symbols-outlined text-[13px]">tune</span>
+                    Được cấp quyền sửa ngoại lệ
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold border border-slate-200">
+                    <span className="material-symbols-outlined text-[13px]">visibility</span>
+                    Chế độ xem nghiệp vụ
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Chế độ chỉ đọc (Read-only) • Thẩm quyền ban hành &amp; điều chỉnh: Business Manager &amp; Ban Quản Trị Boxora
+                {hasPolicyException
+                  ? 'Bạn đã được Business Operations Manager cấp quyền chỉnh sửa ngoại lệ cho cơ sở này.'
+                  : 'Chế độ chỉ đọc • Thực hiện nghiệp vụ theo chính sách chung của Business Operations Manager.'}
               </p>
             </div>
           </div>
-          <div className="text-xs text-slate-400 font-medium">
-            Mã cơ sở: <span className="font-mono font-bold text-slate-700">{currentFacility?.code || 'FAC'}</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsPolicyModalOpen(true)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer ${
+                hasPolicyException
+                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">
+                {hasPolicyException ? 'tune' : 'description'}
+              </span>
+              <span>{hasPolicyException ? 'Chỉnh sửa ngoại lệ cơ sở' : 'Xem chi tiết chính sách'}</span>
+            </button>
           </div>
         </div>
 
@@ -1503,6 +1552,20 @@ export const ManagerDashboard: React.FC = () => {
             setSealingModalData(null)
             void fetchUnits(selectedFacilityId)
           }}
+        />
+      )}
+
+      {/* Facility Policy View & Exception Modal */}
+      {currentFacility && (
+        <FacilityPolicyViewModal
+          isOpen={isPolicyModalOpen}
+          onClose={() => {
+            setIsPolicyModalOpen(false)
+            if (currentFacility.id) void fetchUnits(currentFacility.id)
+          }}
+          facilityId={currentFacility.id}
+          facilityName={currentFacility.name}
+          canEdit={hasPolicyException}
         />
       )}
     </div>

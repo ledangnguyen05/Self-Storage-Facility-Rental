@@ -22,6 +22,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
   const isEdit = Boolean(existingPolicy?.id)
 
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>('')
+  const [isActive, setIsActive] = useState<boolean>(true)
   const [depositPercentage, setDepositPercentage] = useState<number>(100)
   const [minimumRentalMonths, setMinimumRentalMonths] = useState<number>(1)
   const [renewalWindowDays, setRenewalWindowDays] = useState<number>(7)
@@ -47,6 +48,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
     setErrorMsg(null)
     if (existingPolicy) {
       setSelectedFacilityId(existingPolicy.facilityId || facility?.id || '')
+      setIsActive(existingPolicy.isActive ?? true)
       setDepositPercentage(existingPolicy.depositPercentage ?? existingPolicy.depositPercent ?? 100)
       setMinimumRentalMonths(existingPolicy.minimumRentalMonths ?? 1)
       setRenewalWindowDays(existingPolicy.renewalWindowDays ?? 7)
@@ -61,6 +63,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
       setOverdueSealingDays(existingPolicy.overdueSealingDays ?? 7)
     } else {
       setSelectedFacilityId(facility?.id || (availableFacilities[0]?.id ?? ''))
+      setIsActive(true)
       setDepositPercentage(100)
       setMinimumRentalMonths(1)
       setRenewalWindowDays(7)
@@ -112,6 +115,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
     try {
       if (isEdit && existingPolicy?.id) {
         const updatePayload: FacilityPolicyUpdateRequest = {
+          isActive,
           depositPercentage: Number(depositPercentage),
           renewalWindowDays: Number(renewalWindowDays),
           cancellationFullRefundHours: Number(cancellationFullRefundHours),
@@ -130,6 +134,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
       } else {
         const createPayload: FacilityPolicyCreateRequest = {
           facilityId: selectedFacilityId,
+          isActive,
           depositPercentage: Number(depositPercentage),
           renewalWindowDays: Number(renewalWindowDays),
           cancellationFullRefundHours: Number(cancellationFullRefundHours),
@@ -168,10 +173,10 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                {isEdit ? 'Chỉnh sửa chính sách vận hành' : 'Tạo mới chính sách cơ sở'}
+                {isEdit ? 'Chỉnh sửa chính sách vận hành cơ sở' : 'Tạo mới chính sách cơ sở'}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {targetFacilityName} • Thẩm quyền: Business Manager & Admin
+                {targetFacilityName} • Thẩm quyền: Business Operations Manager (Ban hành, kích hoạt &amp; ngừng áp dụng)
               </p>
             </div>
           </div>
@@ -179,7 +184,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
           >
             <span className="material-symbols-outlined text-[20px]">close</span>
           </button>
@@ -193,6 +198,35 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
               <span>{errorMsg}</span>
             </div>
           )}
+
+          {/* Trạng thái Kích hoạt / Ngừng áp dụng chính sách */}
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'}`}>
+                <span className="material-symbols-outlined text-[20px]">{isActive ? 'check_circle' : 'pause_circle'}</span>
+              </div>
+              <div>
+                <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider block">
+                  Trạng thái áp dụng chính sách
+                </span>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {isActive ? 'Chính sách đang ĐƯỢC KÍCH HOẠT và có hiệu lực trực tiếp tại cơ sở.' : 'Chính sách đang NGỪNG ÁP DỤNG (Tạm dừng tính phí & quy định theo cấu hình này).'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsActive(!isActive)}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                isActive
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                  : 'bg-rose-600 hover:bg-rose-700 text-white shadow-xs'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">{isActive ? 'toggle_on' : 'toggle_off'}</span>
+              <span>{isActive ? 'Đang kích hoạt' : 'Ngừng áp dụng'}</span>
+            </button>
+          </div>
 
           {/* Chọn cơ sở (nếu chưa cố định) */}
           {!facility && !isEdit && availableFacilities.length > 0 && (
