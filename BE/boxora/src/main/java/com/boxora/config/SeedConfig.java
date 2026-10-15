@@ -13,10 +13,14 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import java.util.List;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
+@Profile("!prod & !production")
+@ConditionalOnProperty(name = "boxora.seed.enabled", havingValue = "true", matchIfMissing = true)
 @Slf4j
 public class SeedConfig implements ApplicationRunner {
 
@@ -39,44 +43,22 @@ public class SeedConfig implements ApplicationRunner {
     private final RoleRepository roleRepository;
     private final FacilityRepository facilityRepository;
     private final PasswordEncoder passwordEncoder;
-    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     public SeedConfig(
             UserRepository userRepository,
             RoleRepository roleRepository,
             FacilityRepository facilityRepository,
-            PasswordEncoder passwordEncoder,
-            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+            PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.facilityRepository = facilityRepository;
         this.passwordEncoder = passwordEncoder;
-        this.jdbcTemplate = jdbcTemplate;
     }
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        try {
-            jdbcTemplate.execute("ALTER TABLE bookings ALTER COLUMN access_pin TYPE VARCHAR(255)");
-        } catch (Exception e) {
-            log.warn("Notice altering bookings.access_pin: {}", e.getMessage());
-        }
-        try {
-            jdbcTemplate.execute("UPDATE facilities SET name = REPLACE(name, 'StoreHub', 'Boxora'), email = REPLACE(email, 'storehub', 'boxora') WHERE name LIKE '%StoreHub%' OR email LIKE '%storehub%'");
-        } catch (Exception e) {
-            log.warn("Notice updating facility names: {}", e.getMessage());
-        }
-        try {
-            jdbcTemplate.execute("UPDATE users SET full_name = TRIM(REGEXP_REPLACE(full_name, '\\s*\\([^)]*\\)', '', 'g')) WHERE full_name LIKE '%(%'");
-        } catch (Exception e) {
-            log.warn("Notice updating user full names: {}", e.getMessage());
-        }
-        try {
-            jdbcTemplate.execute("UPDATE rental_contracts SET end_date = CURRENT_DATE + INTERVAL '2 days' WHERE contract_code = 'CTR-2026-1010'");
-        } catch (Exception e) {
-            log.warn("Notice updating CTR-2026-1010 end_date: {}", e.getMessage());
-        }
+        log.info("Running non-production seed fixtures check...");
         seedUsers();
         distributeCustomersToFacilities();
     }

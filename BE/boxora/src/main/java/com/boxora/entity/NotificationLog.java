@@ -55,4 +55,11 @@ public class NotificationLog extends BaseEntity {
     @Column(nullable = false, length = 30)
     @Builder.Default
     private String status = "SENT";
+
+    @Column(name = "retry_count")
+    @Builder.Default
+    private Integer retryCount = 0;
+
+    @Column(name = "error_message", length = 1000)
+    private String errorMessage;
 }

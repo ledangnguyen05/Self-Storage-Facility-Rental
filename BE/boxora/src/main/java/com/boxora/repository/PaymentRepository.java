@@ -21,6 +21,8 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
 
     boolean existsByTransactionId(String transactionId);
 
+    boolean existsByBooking_IdAndStatus(UUID bookingId, com.boxora.enums.PaymentStatus status);
+
     java.util.List<Payment> findAllByBooking_Id(UUID bookingId);
 
     // Revenue grouped by facility - only PAID payments count as real revenue.

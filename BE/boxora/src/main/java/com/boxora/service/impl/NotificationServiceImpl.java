@@ -232,6 +232,8 @@ public class NotificationServiceImpl implements NotificationService {
                 .title(n.getTitle())
                 .content(n.getContent())
                 .status(n.getStatus())
+                .retryCount(n.getRetryCount())
+                .errorMessage(n.getErrorMessage())
                 .createdAt(n.getCreatedAt())
                 .build();
     }

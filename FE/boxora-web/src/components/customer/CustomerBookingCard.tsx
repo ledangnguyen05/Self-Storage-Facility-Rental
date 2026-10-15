@@ -73,23 +73,19 @@ export function CustomerBookingCard({
     setIsLoadingCredentials(true)
     setCredentialsError(null)
     try {
-      if (booking.id && !booking.id.startsWith('mock-')) {
-        const result = await bookingService.getAccessCredentials(booking.id)
-        setCredentials(result)
-        setRemainingSeconds(ACCESS_CREDENTIAL_VISIBILITY_SECONDS)
-      } else {
-        setCredentials({
-          accessPin: booking.accessPin || '582194',
-          qrAccessToken: booking.qrAccessToken || `BX-QR-${booking.unitCode}-${booking.id}`
-        })
-        setRemainingSeconds(ACCESS_CREDENTIAL_VISIBILITY_SECONDS)
+      if (!booking.id) {
+        throw new Error('Đơn đặt kho không hợp lệ.')
       }
-    } catch (error) {
-      setCredentials({
-        accessPin: booking.accessPin || '582194',
-        qrAccessToken: booking.qrAccessToken || `BX-QR-${booking.unitCode}-${booking.id}`
-      })
+      const result = await bookingService.getAccessCredentials(booking.id)
+      if (!result?.accessPin) {
+        throw new Error('Mã PIN chưa được phát hành. Vui lòng hoàn tất thủ tục bàn giao tại quầy.')
+      }
+      setCredentials(result)
       setRemainingSeconds(ACCESS_CREDENTIAL_VISIBILITY_SECONDS)
+    } catch (error: any) {
+      setCredentials(null)
+      const msg = error?.response?.data?.message || error?.message || 'Không thể lấy mã PIN bảo mật. Vui lòng liên hệ quầy tiếp tân.'
+      setCredentialsError(msg)
     } finally {
       setIsLoadingCredentials(false)
     }

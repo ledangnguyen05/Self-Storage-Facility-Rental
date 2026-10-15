@@ -186,6 +186,7 @@ export interface RentalContract {
   docusealSubmitterSlug?: string | null
   signedAt?: string | null
   signingMethod?: 'ONLINE' | 'IN_PERSON'
+  signatureData?: string | null
   unitTypeName?: string | null
   unitPricePerMonth?: number | null
 }
@@ -219,6 +220,9 @@ export interface HandoverRecord {
   recordType: 'CHECK_IN' | 'RETURN'
   status?: 'PENDING_CHECKIN' | 'HANDED_OVER' | 'RETURN_INSPECTED'
   accessCode?: string
+  accessPin?: string
+  rfidCardNumber?: string
+  qrAccessToken?: string
   handoverDate?: string
   unitCondition: string
   notes?: string

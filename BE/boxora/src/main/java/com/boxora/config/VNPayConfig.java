@@ -35,4 +35,24 @@ public class VNPayConfig {
 
     /** vnp_OrderType - VNPay's fixed category code for "other" services. */
     private String orderType = "other";
+
+    public String getVersion() {
+        return (version != null && !version.isBlank()) ? version : "2.1.0";
+    }
+
+    public String getCommand() {
+        return (command != null && !command.isBlank()) ? command : "pay";
+    }
+
+    public String getCurrCode() {
+        return (currCode != null && !currCode.isBlank()) ? currCode : "VND";
+    }
+
+    public String getLocale() {
+        return (locale != null && !locale.isBlank()) ? locale : "vn";
+    }
+
+    public String getOrderType() {
+        return (orderType != null && !orderType.isBlank()) ? orderType : "other";
+    }
 }

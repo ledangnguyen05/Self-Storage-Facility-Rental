@@ -69,49 +69,7 @@ export const IncidentTicketsPage: React.FC = () => {
       }
     } catch (err) {
       console.warn('Failed to fetch ticket queue:', err)
-      // Provide fallback demo tickets if backend queue is empty
-      setTickets([
-        {
-          id: '#TK-482',
-          title: 'Khách hàng báo cấn cửa cuốn khi đóng',
-          detail: 'Khu vực Tầng 1 - Cửa kho trượt nặng cần tra dầu bôi trơn và siết lại ray hướng dẫn.',
-          location: 'Kho #A-110 (Tầng 1)',
-          priority: 'MEDIUM',
-          staff: 'Nguyễn Quỳnh Anh (Trực ca)',
-          time: '10:15',
-          status: 'IN_PROGRESS'
-        },
-        {
-          id: '#TK-481',
-          title: 'Khóa SmartLock pin yếu dưới 15%',
-          detail: 'Cảnh báo tự động từ IoT Gateway - Cần thay pin 4x AA dự phòng trước 12:00.',
-          location: 'Kho #B-105 (Tầng 1)',
-          priority: 'HIGH',
-          staff: 'Trần Văn Mạnh (Kỹ thuật)',
-          time: '09:40',
-          status: 'IN_PROGRESS'
-        },
-        {
-          id: '#TK-480',
-          title: 'Cảm biến nhiệt độ vi khí hậu vượt ngưỡng 24°C',
-          detail: 'Điều hòa chiller phân khu C phòng lạnh bị ngắt cầu dao bảo vệ.',
-          location: 'Phân khu C - Tầng 2',
-          priority: 'CRITICAL',
-          staff: 'Lê Hoàng Long (An ninh)',
-          time: '08:20',
-          status: 'RESOLVED'
-        },
-        {
-          id: '#TK-479',
-          title: 'Yêu cầu kiểm tra đèn chiếu sáng hành lang số 3',
-          detail: 'Bóng LED cảm ứng 18W chập chờn khi có người di chuyển qua.',
-          location: 'Aisle South 03',
-          priority: 'LOW',
-          staff: 'Phạm Đức Anh (Kỹ thuật)',
-          time: '07:50',
-          status: 'RESOLVED'
-        }
-      ])
+      setTickets([])
     } finally {
       setIsLoading(false)
     }
@@ -131,11 +89,13 @@ export const IncidentTicketsPage: React.FC = () => {
       const targetId = backendId || ticketId.replace('#', '')
       if (targetId) {
         await supportTicketService.resolveTicket(targetId, 'Đã kiểm tra hiện trường và xử lý xong tại chỗ bởi nhân viên')
+        setTickets(prev => prev.map(t => (t.id === ticketId || (backendId && t.backendId === backendId)) ? { ...t, status: 'RESOLVED' } : t))
       }
-    } catch (err) {
-      console.warn('Ticket resolve fallback:', err)
+    } catch (err: any) {
+      console.error('Ticket resolve failed:', err)
+      const msg = err?.response?.data?.message || err?.message || 'Không thể cập nhật trạng thái phiếu sự cố trên máy chủ.'
+      alert(msg)
     }
-    setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: 'RESOLVED' } : t))
   }
 
   const handleCreateTicket = async (e: React.FormEvent) => {
@@ -144,9 +104,21 @@ export const IncidentTicketsPage: React.FC = () => {
 
     setIsSubmitting(true)
     try {
-      const randomCode = `#TK-${Math.floor(400 + Math.random() * 200)}`
+      const createdTicket = await supportTicketService.createTicket({
+        category: newCategory,
+        title: newTitle.trim(),
+        description: newDescription.trim() || 'Báo cáo sự cố tại hiện trường',
+        priority: newPriority
+      })
+
+      const ticketCode = createdTicket?.ticketCode
+        ? `#${createdTicket.ticketCode}`
+        : createdTicket?.id
+          ? `#TK-${createdTicket.id.slice(0, 8).toUpperCase()}`
+          : ''
+
       const newTk: TicketItem = {
-        id: randomCode,
+        id: ticketCode,
         title: newTitle.trim(),
         detail: newDescription.trim() || 'Sự cố được nhân viên trực tiếp ghi nhận tại hiện trường.',
         location: newUnitCode.trim() ? `Kho #${newUnitCode.trim()}` : 'Khu vực cơ sở',
@@ -155,13 +127,6 @@ export const IncidentTicketsPage: React.FC = () => {
         time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
         status: 'IN_PROGRESS'
       }
-
-      await supportTicketService.createTicket({
-        category: newCategory,
-        title: newTitle.trim(),
-        description: newDescription.trim() || 'Báo cáo sự cố tại hiện trường',
-        priority: newPriority
-      }).catch(() => null)
 
       setTickets([newTk, ...tickets])
       setSubmitNotice('Đã tạo phiếu sự cố thành công!')

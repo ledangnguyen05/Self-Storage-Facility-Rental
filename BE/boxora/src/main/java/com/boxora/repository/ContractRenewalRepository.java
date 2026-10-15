@@ -27,5 +27,7 @@ public interface ContractRenewalRepository extends JpaRepository<ContractRenewal
 
     List<ContractRenewal> findByStatus(ContractRenewalStatus status);
 
+    boolean existsByContract_IdAndStatusIn(UUID contractId, List<ContractRenewalStatus> statuses);
+
     Optional<ContractRenewal> findFirstByContractIdOrderByCreatedAtDesc(UUID contractId);
 }

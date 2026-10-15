@@ -51,6 +51,24 @@ public class HandoverController {
         return ResponseEntity.ok(ApiResponse.success("Xem trước thông tin quyết toán cọc và thẩm định trả kho thành công", response));
     }
 
+    @PostMapping("/checkout-request/{bookingId}")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN', 'CUSTOMER')")
+    @Operation(summary = "Hành động 1 Trả kho: Khách hàng yêu cầu trả kho")
+    public ResponseEntity<ApiResponse<HandoverResponse>> requestCheckout(
+            @PathVariable UUID bookingId,
+            @RequestParam(required = false) String notes) {
+        return ResponseEntity.ok(ApiResponse.success("Yêu cầu trả kho đã được tiếp nhận thành công",
+                handoverService.requestCheckout(bookingId, notes)));
+    }
+
+    @PostMapping("/inspection")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @Operation(summary = "Hành động 2 Trả kho: Nhân viên kiểm tra hiện trường, lưu ảnh & ghi nhận hư hỏng")
+    public ResponseEntity<ApiResponse<HandoverResponse>> performInspection(@Valid @RequestBody HandoverRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Biên bản kiểm tra hiện trường đã được ghi nhận thành công",
+                handoverService.performInspection(request)));
+    }
+
     @PostMapping("/return")
     @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Xử lý trả kho và hoàn cọc (BR-RULE-013/014/015)")

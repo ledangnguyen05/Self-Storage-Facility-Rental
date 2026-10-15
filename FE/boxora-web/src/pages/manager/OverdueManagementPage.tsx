@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext'
 import { OverdueDebtItem, Facility } from '../../types'
 import { NoticeDispatcherModal } from './modals/NoticeDispatcherModal'
 import { AssetSealingModal } from './modals/AssetSealingModal'
+import { overdueService } from '../../services/overdueService'
 
 export const OverdueManagementPage: React.FC = () => {
   const { user } = useAuth()
@@ -40,6 +41,8 @@ export const OverdueManagementPage: React.FC = () => {
   } | null>(null)
 
   const [confirmLockoutItem, setConfirmLockoutItem] = useState<OverdueDebtItem | null>(null)
+  const [isLocking, setIsLocking] = useState(false)
+  const [lockoutError, setLockoutError] = useState<string | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   const showToast = (msg: string) => {
@@ -134,11 +137,25 @@ export const OverdueManagementPage: React.FC = () => {
     return filteredItems.slice(start, start + itemsPerPage)
   }, [filteredItems, currentPage, itemsPerPage])
 
-  const handleLockoutConfirm = () => {
+  const handleLockoutConfirm = async () => {
     if (!confirmLockoutItem) return
-    showToast(`Đã kích hoạt ngắt mã PIN và khóa tạm SmartLock kho #${confirmLockoutItem.unitCode} thành công!`)
-    setConfirmLockoutItem(null)
-    fetchOverdueReport()
+    setIsLocking(true)
+    setLockoutError(null)
+    try {
+      await overdueService.lockoutContract(
+        confirmLockoutItem.contractId,
+        `Quá hạn thanh toán ${confirmLockoutItem.daysOverdue} ngày (Nợ: ${confirmLockoutItem.totalDebt?.toLocaleString('vi-VN')}đ)`
+      )
+      showToast(`Đã ngắt mã PIN và khóa tạm SmartLock kho #${confirmLockoutItem.unitCode} thành công!`)
+      setConfirmLockoutItem(null)
+      await fetchOverdueReport()
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Không thể thực hiện khóa kho. Vui lòng kiểm tra quyền hoặc kết nối máy chủ.'
+      setLockoutError(msg)
+      showToast(`Lỗi khóa kho: ${msg}`)
+    } finally {
+      setIsLocking(false)
+    }
   }
 
   const handleExportCsv = () => {
@@ -550,20 +567,39 @@ export const OverdueManagementPage: React.FC = () => {
               </div>
             </div>
 
+            {lockoutError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px]">error</span>
+                <span>{lockoutError}</span>
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => setConfirmLockoutItem(null)}
-                className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer"
+                disabled={isLocking}
+                onClick={() => {
+                  setConfirmLockoutItem(null)
+                  setLockoutError(null)
+                }}
+                className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer disabled:opacity-50"
               >
                 Hủy bỏ
               </button>
               <button
                 type="button"
+                disabled={isLocking}
                 onClick={handleLockoutConfirm}
-                className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold cursor-pointer shadow-xs"
+                className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold cursor-pointer shadow-xs flex items-center gap-1.5 disabled:opacity-50"
               >
-                Xác nhận Khóa SmartLock
+                {isLocking ? (
+                  <>
+                    <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                    <span>Đang ngắt quyền truy cập...</span>
+                  </>
+                ) : (
+                  <span>Xác nhận Khóa SmartLock</span>
+                )}
               </button>
             </div>
           </div>

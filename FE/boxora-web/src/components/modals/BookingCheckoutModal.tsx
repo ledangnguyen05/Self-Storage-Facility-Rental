@@ -5,6 +5,7 @@ import { Booking, User } from '../../types'
 import { useAuth } from '../../context/AuthContext'
 import { bookingService } from '../../services/bookingService'
 import { paymentService } from '../../services/paymentService'
+import { pricingService, PricingQuoteResponse } from '../../services/pricingService'
 
 export interface BookingCheckoutUnit {
   backendId?: string
@@ -57,6 +58,24 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
   const [errorMessage, setErrorMessage] = useState('')
   const [approvalRejected, setApprovalRejected] = useState(false)
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null)
+  const [serverQuote, setServerQuote] = useState<PricingQuoteResponse | null>(null)
+
+  useEffect(() => {
+    if (!unit.backendId) return
+    let isCurrent = true
+    pricingService.getQuote({
+      storageUnitId: unit.backendId,
+      rentalMonths,
+      startDate: startDate || undefined
+    })
+      .then(quote => {
+        if (isCurrent) setServerQuote(quote)
+      })
+      .catch(err => {
+        console.warn('Could not fetch server quote:', err)
+      })
+    return () => { isCurrent = false }
+  }, [unit.backendId, rentalMonths, startDate])
 
   useEffect(() => {
     if (booking?.status !== 'PENDING_APPROVAL') return
@@ -107,11 +126,11 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
     return () => { isCurrent = false }
   }, [paymentUrl])
 
-  const monthlyPrice = booking && booking.rentalMonths > 0
+  const monthlyPrice = serverQuote?.monthlyRate ?? (booking && booking.rentalMonths > 0
     ? booking.totalRentalFee / booking.rentalMonths
-    : unit.monthlyPrice
-  const depositAmount = booking?.depositAmount ?? unit.depositAmount ?? unit.monthlyPrice
-  const amountDue = booking?.initialPaymentAmount ?? monthlyPrice + depositAmount
+    : unit.monthlyPrice)
+  const depositAmount = serverQuote?.depositAmount ?? booking?.depositAmount ?? unit.depositAmount ?? unit.monthlyPrice
+  const amountDue = serverQuote?.initialPaymentAmount ?? booking?.initialPaymentAmount ?? (monthlyPrice + depositAmount)
   const isExpired = secondsRemaining !== null && secondsRemaining <= 0
   const formattedCountdown = secondsRemaining === null
     ? ''

@@ -26,6 +26,8 @@ export const PaymentResultPage: React.FC = () => {
   const [contractForDocuSealModal, setContractForDocuSealModal] = useState<RentalContract | null>(null)
   const [signedContractSuccess, setSignedContractSuccess] = useState<boolean>(false)
 
+  const [reconcileAttempts, setReconcileAttempts] = useState(0)
+
   useEffect(() => {
     let isCurrent = true
     if (!bookingId) {
@@ -34,56 +36,70 @@ export const PaymentResultPage: React.FC = () => {
     }
 
     if (bookingId.startsWith('mock-')) {
-      const mockUnitCode = searchParams.get('unitCode') || 'BX-101'
-      const mockUnitName = searchParams.get('unitName') || 'Kho Tiêu Chuẩn'
-      const mockFacility = searchParams.get('facilityName') || 'Boxora District 1'
-      const mockResult: any = {
-        id: bookingId,
-        bookingCode: `BX-2026-${mockUnitCode.replace(/[^0-9]/g, '') || Math.floor(1000 + Math.random() * 9000)}`,
-        unitCode: mockUnitCode,
-        facilityName: mockFacility,
-        status: 'CONFIRMED',
-        initialPaymentAmount: Number(amountParam) || 2400000,
-        createdAt: new Date().toISOString()
-      }
-      setBooking(mockResult)
-      if (status === 'PAID' && user?.role?.name === 'CUSTOMER') {
-        activateCustomerRental(user, mockUnitCode, `${mockUnitName} • ${mockFacility}`)
-      }
+      setErrorMessage('Giao dịch không hợp lệ hoặc chưa được thanh toán qua cổng VNPay.')
       setIsLoading(false)
       return
     }
 
-    setIsLoading(true)
-    bookingService.getById(bookingId)
-      .then((result) => {
-        if (!isCurrent) return
-        setBooking(result)
-        if (status === 'PAID') {
-          if (user?.role?.name === 'CUSTOMER') {
+    const checkStatus = () => {
+      bookingService.getById(bookingId)
+        .then((result) => {
+          if (!isCurrent) return
+          setBooking(result)
+          const isConfirmed = result.status === 'CONFIRMED' || result.status === 'ACTIVE' || (result.depositPaid && Number(result.depositPaid) > 0)
+          if (isConfirmed && user?.role?.name === 'CUSTOMER') {
             activateCustomerRental(user, result.unitCode, `Kho ${result.unitCode} • ${result.facilityName}`)
           }
+        })
+        .catch((error: unknown) => {
+          if (!isCurrent) return
+          const message = axios.isAxiosError<{ message?: string }>(error) ? error.response?.data?.message : undefined
+          setErrorMessage(message || (error instanceof Error ? error.message : 'Không thể tải thông tin booking.'))
+        })
+        .finally(() => {
+          if (isCurrent) setIsLoading(false)
+        })
+    }
+
+    setIsLoading(true)
+    checkStatus()
+
+    // Nếu redirect trả về status=PAID nhưng backend chưa xác nhận xong webhook, poll mỗi 3 giây
+    const interval = setInterval(() => {
+      setReconcileAttempts(prev => {
+        if (prev < 4) {
+          checkStatus()
+          return prev + 1
         }
+        clearInterval(interval)
+        return prev
       })
-      .catch((error: unknown) => {
-        if (!isCurrent) return
-        const message = axios.isAxiosError<{ message?: string }>(error) ? error.response?.data?.message : undefined
-        setErrorMessage(message || (error instanceof Error ? error.message : 'Không thể tải thông tin booking.'))
-      })
-      .finally(() => {
-        if (isCurrent) setIsLoading(false)
-      })
+    }, 3000)
 
     return () => {
       isCurrent = false
+      clearInterval(interval)
     }
-  }, [bookingId, status, user, amountParam])
+  }, [bookingId, user])
 
   const retryPayment = async () => {
     if (!booking?.initialPaymentAmount) return
     setIsRetrying(true)
     setErrorMessage('')
     try {
+      // Query backend status before retrying to prevent duplicate payment if already confirmed
+      const latestBooking = await bookingService.getById(booking.id)
+      if (
+        latestBooking &&
+        (latestBooking.status === 'CONFIRMED' ||
+          latestBooking.status === 'ACTIVE' ||
+          (latestBooking.depositPaid && Number(latestBooking.depositPaid) > 0))
+      ) {
+        setBooking(latestBooking)
+        setIsRetrying(false)
+        return
+      }
+
       const payment = await paymentService.createVNPayPayment({
         bookingId: booking.id,
         paymentType: 'BOOKING_PAYMENT',
@@ -106,31 +122,11 @@ export const PaymentResultPage: React.FC = () => {
         setContractForDocuSealModal(found)
         return
       }
-    } catch (err) {
+      setErrorMessage('Hợp đồng điện tử đang được hệ thống khởi tạo. Vui lòng thử lại sau giây lát hoặc kiểm tra danh sách hợp đồng trong trang cá nhân.')
+    } catch (err: any) {
       console.warn('Could not fetch existing contract:', err)
+      setErrorMessage('Không thể tải thông tin hợp đồng từ máy chủ. Vui lòng tải lại trang.')
     }
-
-    // Fallback contract data for immediate signature simulation
-    const uCode = booking?.unitCode || searchParams.get('unitCode') || 'TD-B101'
-    const fName = booking?.facilityName || searchParams.get('facilityName') || 'Boxora Thu Duc'
-    const rawAmt = Number(amountParam) || Number(booking?.initialPaymentAmount) || 2400000
-
-    setContractForDocuSealModal({
-      id: booking?.id || `CTR-${Date.now()}`,
-      contractCode: `CTR-2026-${uCode.replace(/[^0-9A-Z]/g, '') || '9042'}`,
-      customerId: user?.id || 'CUST-DEMO',
-      customerEmail: user?.email || 'customer@boxora.vn',
-      customerName: user?.fullName || 'Khách hàng Boxora',
-      customerPhone: user?.phone || '0912 345 678',
-      unitCode: uCode,
-      facilityName: fName,
-      startDate: booking?.startDate || new Date().toISOString().split('T')[0],
-      endDate: booking?.endDate || new Date(Date.now() + 90 * 86400000).toISOString().split('T')[0],
-      monthlyFee: Math.round(rawAmt / 2),
-      depositHeld: Math.round(rawAmt / 2),
-      status: 'PENDING_SIGNATURE',
-      signingMethod: 'ONLINE'
-    })
   }
 
   const handleContractSignedSuccess = (signed: RentalContract) => {
@@ -142,7 +138,15 @@ export const PaymentResultPage: React.FC = () => {
     }
   }
 
-  const isPaid = status === 'PAID'
+  const isServerConfirmedPaid = Boolean(
+    booking && (
+      booking.status === 'CONFIRMED' ||
+      booking.status === 'ACTIVE' ||
+      (booking.depositPaid && Number(booking.depositPaid) > 0)
+    )
+  )
+  const isPaid = isServerConfirmedPaid && Boolean(txnRef) && !bookingId?.startsWith('mock-')
+  const isPendingReconciliation = status === 'PAID' && !isServerConfirmedPaid && !errorMessage
   const paymentExpired = booking?.paymentExpiresAt
     ? new Date(booking.paymentExpiresAt).getTime() <= Date.now()
     : false
@@ -158,6 +162,42 @@ export const PaymentResultPage: React.FC = () => {
           <div className="space-y-3 py-10">
             <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
             <p className="text-sm font-semibold text-slate-700">Đang xác minh kết quả thanh toán từ cổng VNPay Sandbox...</p>
+          </div>
+        ) : isPendingReconciliation ? (
+          <div className="space-y-5 py-6">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-amber-600 shadow-xs">
+              <span className="material-symbols-outlined text-4xl animate-pulse">sync</span>
+            </div>
+            <div>
+              <span className="px-3 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold uppercase tracking-wider inline-block">
+                Đang Đối Soát Chữ Ký Giao Dịch
+              </span>
+              <h1 className="mt-2 text-2xl font-extrabold text-slate-900 tracking-tight">
+                Đang Chờ Ngân Hàng Xác Thực
+              </h1>
+              <p className="mt-2 text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                Hệ thống đã nhận được tín hiệu chuyển hướng từ VNPay (Mã GD: <strong className="text-slate-800 font-mono">{txnRef}</strong>) và đang chờ webhook HMAC-SHA512 xác thực số tiền {displayPaidAmount.toLocaleString('vi-VN')} ₫.
+              </p>
+            </div>
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl text-left text-xs text-blue-900 space-y-1">
+              <div className="font-semibold flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-base text-blue-600">info</span>
+                Lưu ý an toàn thanh toán Boxora
+              </div>
+              <p className="text-[11px] text-blue-700 leading-normal">
+                Hệ thống Boxora không coi redirect trình duyệt là bằng chứng thanh toán cuối cùng. Sau khi nhận webhook đối soát hợp lệ, kho của bạn sẽ được kích hoạt tức thì.
+              </p>
+            </div>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2"
+              >
+                <span className="material-symbols-outlined text-sm">refresh</span>
+                Kiểm tra lại trạng thái
+              </button>
+            </div>
           </div>
         ) : isPaid ? (
           <div className="space-y-5">
@@ -182,7 +222,7 @@ export const PaymentResultPage: React.FC = () => {
             <div className="rounded-xl border border-slate-200/90 bg-slate-50/70 p-4 text-left text-xs space-y-2">
               <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
                 <span className="text-slate-500">Mã giao dịch VNPay:</span>
-                <span className="font-mono font-bold text-slate-800">{txnRef || 'BOX-VNPAY-ONLINE'}</span>
+                <span className="font-mono font-bold text-slate-800">{txnRef || 'Chưa xác thực'}</span>
               </div>
               <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
                 <span className="text-slate-500">Số tiền đã thanh toán:</span>

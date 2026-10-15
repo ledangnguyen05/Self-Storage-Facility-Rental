@@ -30,8 +30,8 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
   totalDebt,
   onCompleteSealing
 }) => {
-  const [sealReportCode] = useState(() => `BB-NP-${new Date().getFullYear()}${Math.floor(100 + Math.random() * 900)}`)
-  const [sealStickerCode, setSealStickerCode] = useState(() => `TEM-BOXORA-${Math.floor(10000 + Math.random() * 90000)}`)
+  const [sealReportCode] = useState(() => `BB-NP-${new Date().getFullYear()}${Date.now().toString().slice(-4)}`)
+  const [sealStickerCode, setSealStickerCode] = useState(() => `TEM-BOXORA-${Date.now().toString().slice(-5)}`)
   const [witnesses, setWitnesses] = useState<User[]>([])
   const [selectedWitnessId, setSelectedWitnessId] = useState<string>('')
   const [reason, setReason] = useState('Khách hàng vi phạm nghĩa vụ thanh toán quá hạn trên 7 ngày theo quy định BR-RULE-012. Tiến hành niêm phong bảo toàn tài sản.')

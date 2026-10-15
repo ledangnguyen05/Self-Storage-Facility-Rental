@@ -31,4 +31,6 @@ public class BookingCreateRequest {
     private BigDecimal depositPaid;
 
     private String signingMethod;
+
+    private String discountCode;
 }

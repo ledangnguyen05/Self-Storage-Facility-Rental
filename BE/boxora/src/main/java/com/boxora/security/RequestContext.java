@@ -30,6 +30,12 @@ public class RequestContext {
                 .orElse(null);
     }
 
+    public String currentUserEmail() {
+        return currentUser()
+                .map(User::getEmail)
+                .orElse(null);
+    }
+
     /** Facility the current user is scoped to (STAFF/FACILITY_MANAGER only), or null. */
     public UUID currentUserFacilityId() {
         return currentUser()

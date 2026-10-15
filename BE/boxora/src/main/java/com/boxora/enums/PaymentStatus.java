@@ -3,6 +3,8 @@ package com.boxora.enums;
 public enum PaymentStatus {
     PENDING,
     PAID,
-    REFUNDED,
-    FAILED
+    FAILED,
+    EXPIRED,
+    REFUND_PENDING,
+    REFUNDED
 }

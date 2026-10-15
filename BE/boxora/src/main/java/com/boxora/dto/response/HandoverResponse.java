@@ -38,4 +38,8 @@ public class HandoverResponse {
 
     private String notes;
     private LocalDateTime recordedAt;
+
+    // --- Cấp quyền truy cập SmartLock phát hành bởi máy chủ ---
+    private String accessPin;
+    private String qrAccessToken;
 }
