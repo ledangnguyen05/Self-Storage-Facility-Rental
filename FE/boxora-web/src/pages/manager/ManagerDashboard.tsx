@@ -95,8 +95,10 @@ export const ManagerDashboard: React.FC = () => {
   } | null>(null)
   const [sealingModalData, setSealingModalData] = useState<{
     unitCode: string
+    unitId?: string
     tenantName: string
     contractCode: string
+    contractId?: string
     overdueDays: number
     totalDebt: string
   } | null>(null)
@@ -1146,7 +1148,14 @@ export const ManagerDashboard: React.FC = () => {
                 } else if (selectedUnit.status === 'Rented') {
                   setShowAppActivationModal(true)
                 } else if (selectedUnit.status === 'Overdue') {
-                  triggerAction(`Chuyển tới giao diện xử lý nợ cước kho #${selectedUnit.id}`)
+                  setSealingModalData({
+                    unitCode: selectedUnit.id,
+                    unitId: selectedUnit.backendId,
+                    tenantName: selectedUnit.tenant,
+                    contractCode: selectedUnit.contract,
+                    overdueDays: 15,
+                    totalDebt: '3.650.000 ₫'
+                  })
                 } else if (selectedUnit.status === 'Maintenance') {
                   handleToggleMaintenance()
                 }
@@ -1300,7 +1309,10 @@ export const ManagerDashboard: React.FC = () => {
           onClose={() => setShowAppActivationModal(false)}
           mode={selectedUnit.status === 'Rented' ? 'REISSUE' : 'HANDOVER'}
           unit={selectedUnit}
-          onCompleteActivation={(msg) => triggerAction(msg)}
+          onCompleteActivation={(msg) => {
+            triggerAction(msg)
+            void fetchUnits(selectedFacilityId)
+          }}
         />
       )}
 
@@ -1317,6 +1329,7 @@ export const ManagerDashboard: React.FC = () => {
       <ShiftAssignmentModal
         isOpen={showShiftModal}
         onClose={() => setShowShiftModal(false)}
+        facilityId={selectedFacilityId}
         onSaveShift={(summary) => triggerAction(summary)}
       />
 
@@ -1336,11 +1349,18 @@ export const ManagerDashboard: React.FC = () => {
           isOpen={true}
           onClose={() => setSealingModalData(null)}
           unitCode={sealingModalData.unitCode}
+          unitId={sealingModalData.unitId}
           tenantName={sealingModalData.tenantName}
           contractCode={sealingModalData.contractCode}
+          contractId={sealingModalData.contractId}
+          facilityId={selectedFacilityId}
           overdueDays={sealingModalData.overdueDays}
           totalDebt={sealingModalData.totalDebt}
-          onCompleteSealing={(msg) => triggerAction(msg)}
+          onCompleteSealing={(msg) => {
+            triggerAction(msg)
+            setSealingModalData(null)
+            void fetchUnits(selectedFacilityId)
+          }}
         />
       )}
     </div>
