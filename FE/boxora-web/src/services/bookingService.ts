@@ -39,6 +39,13 @@ export const bookingService = {
     return (response.data?.data || []) as Booking[]
   },
 
+  async getMyBookings(customerId?: string) {
+    const response = await api.get('/api/v1/bookings/my-bookings', {
+      params: customerId ? { customerId } : undefined,
+    })
+    return (response.data?.data || []) as Booking[]
+  },
+
   async getMyRequests() {
     const response = await api.get('/api/v1/bookings/my-requests')
     return (response.data?.data || []) as Booking[]

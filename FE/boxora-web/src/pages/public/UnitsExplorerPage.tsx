@@ -74,9 +74,6 @@ export const UnitsExplorerPage: React.FC = () => {
   const [selectedUnit, setSelectedUnit] = useState<StorageUnitType | null>(null)
   const [checkoutUnit, setCheckoutUnit] = useState<BookingCheckoutUnit | null>(null)
   const [dataLoadError, setDataLoadError] = useState('')
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
-  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
 
   // Fetch real data from backend database
   useEffect(() => {
