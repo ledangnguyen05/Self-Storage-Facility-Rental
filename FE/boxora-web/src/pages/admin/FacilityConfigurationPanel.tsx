@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { facilityService } from '../../services/facilityService'
 import { getNominatimErrorMessage, geocodeAddressWithNominatim } from '../../services/nominatimGeocodingService'
@@ -101,6 +102,8 @@ const getRequestError = (error: unknown) => {
 }
 
 export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProps> = ({ facilities, onFacilitiesChange }) => {
+  const { role } = useAuth()
+  const canManage = role === 'BUSINESS_MANAGER'
   const { t } = useLanguage()
   const navigate = useNavigate()
   const [editingFacility, setEditingFacility] = useState<Facility | null>(null)
@@ -217,21 +220,28 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
           <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{t('Cấu hình chi nhánh', 'Branch configuration')}</h2>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{t('Quản lý thông tin, vị trí GPS và sơ đồ mặt bằng của từng cơ sở.', 'Manage branch details, GPS location, and floor layout.')}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => navigate('/portal/business-manager')} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => navigate('/portal/business-manager')} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800 cursor-pointer">
             <span className="material-symbols-outlined text-[18px]">tune</span>
             {t('Chính sách & bảng giá', 'Policies & pricing')}
           </button>
-          <button type="button" onClick={startCreate} className="inline-flex items-center gap-2 rounded-lg bg-cyan-700 px-3.5 py-2.5 text-xs font-bold text-white hover:bg-cyan-800">
-            <span className="material-symbols-outlined text-[18px]">add_business</span>
-            {t('Thêm chi nhánh', 'Add branch')}
-          </button>
+          {canManage ? (
+            <button type="button" onClick={startCreate} className="inline-flex items-center gap-2 rounded-lg bg-cyan-700 px-3.5 py-2.5 text-xs font-bold text-white hover:bg-cyan-800 cursor-pointer">
+              <span className="material-symbols-outlined text-[18px]">add_business</span>
+              {t('Thêm chi nhánh', 'Add branch')}
+            </button>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+              <span className="material-symbols-outlined text-[16px] text-slate-500">lock</span>
+              <span>{t('Chỉ xem (Chỉ Business Operations Manager được phép thêm chi nhánh)', 'Read-only (Only Business Operations Manager can add branches)')}</span>
+            </div>
+          )}
         </div>
       </section>
 
       {notice && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">{notice}</p>}
 
-      {isFormOpen && (
+      {canManage && isFormOpen && (
         <section className="rounded-2xl border border-cyan-200 bg-white p-5 shadow-sm dark:border-cyan-900 dark:bg-slate-900">
           <form onSubmit={handleSave} className="space-y-6">
             <header className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4 dark:border-slate-800">
@@ -352,10 +362,12 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                     <h3 className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{facility.name}</h3>
                     <span className="mt-1 inline-flex rounded bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{facility.code}</span>
                   </div>
-                  <button type="button" onClick={() => startEdit(facility)} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
-                    <span className="material-symbols-outlined text-[15px]">edit</span>
-                    {t('Chỉnh sửa', 'Edit')}
-                  </button>
+                  {canManage && (
+                    <button type="button" onClick={() => startEdit(facility)} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800 cursor-pointer">
+                      <span className="material-symbols-outlined text-[15px]">edit</span>
+                      {t('Chỉnh sửa', 'Edit')}
+                    </button>
+                  )}
                 </div>
                 <p className="mt-3 text-xs text-slate-600 dark:text-slate-400">{facility.address}{facility.city ? `, ${facility.city}` : ''}</p>
                 <div className="mt-3 flex flex-wrap gap-2 text-[11px]">

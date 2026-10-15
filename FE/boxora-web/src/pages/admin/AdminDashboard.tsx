@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useOutletContext, useSearchParams } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
 import { userService } from '../../services/userService'
 import { roleService } from '../../services/roleService'
 import { permissionService } from '../../services/permissionService'
@@ -23,12 +24,13 @@ const isDashboardTab = (tab: string | null): tab is AdminDashboardTab =>
   tab === 'users' || tab === 'roles' || tab === 'logs' || tab === 'facilities'
 
 export const AdminDashboard: React.FC = () => {
+  const { role } = useAuth()
   const { t } = useLanguage()
   const outletContext = useOutletContext<DashboardOutletContextType | undefined>()
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab')
   const [activeTab, setActiveTabState] = useState<AdminDashboardTab>(
-    isDashboardTab(requestedTab) ? requestedTab : 'users'
+    role === 'BUSINESS_MANAGER' ? 'facilities' : (isDashboardTab(requestedTab) ? requestedTab : 'users')
   )
   const setActiveTab = (tab: AdminDashboardTab) => {
     setActiveTabState(tab)
@@ -40,8 +42,13 @@ export const AdminDashboard: React.FC = () => {
   }
 
   useEffect(() => {
-    if (isDashboardTab(requestedTab)) setActiveTabState(requestedTab)
-  }, [requestedTab])
+    if (role === 'BUSINESS_MANAGER' && activeTab !== 'facilities') {
+      setActiveTabState('facilities')
+      setSearchParams({ tab: 'facilities' }, { replace: true })
+    } else if (isDashboardTab(requestedTab)) {
+      setActiveTabState(requestedTab)
+    }
+  }, [role, requestedTab, activeTab, setSearchParams])
 
   // Facility state
   const [facilities, setFacilities] = useState<Facility[]>(outletContext?.facilities || [])
@@ -390,13 +397,20 @@ export const AdminDashboard: React.FC = () => {
                   Hạ Tầng Cơ Sở &amp; Sơ Đồ Kho
                 </div>
                 <h1 className="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight font-headline">
-                  {t('Cấu hình chi nhánh & cơ sở', 'Branch & Facility Configuration')}
+                  {role === 'ADMIN'
+                    ? t('Chi nhánh & cơ sở lưu trữ (Chế độ xem)', 'Branches & Facilities (View Only)')
+                    : t('Cấu hình chi nhánh & cơ sở', 'Branch & Facility Configuration')}
                 </h1>
                 <p className="text-sm text-slate-600 mt-1 max-w-3xl">
-                  {t(
-                    'Quản lý thông tin chi nhánh, địa chỉ, vị trí GPS bản đồ và cấu hình sơ đồ mặt bằng các tầng kho bãi Boxora.',
-                    'Manage branch details, addresses, GPS map coordinates, and floor layout configs.'
-                  )}
+                  {role === 'ADMIN'
+                    ? t(
+                        'Tra cứu thông tin chi nhánh, địa chỉ, vị trí GPS bản đồ và sơ đồ mặt bằng các tầng kho bãi Boxora (Chế độ chỉ xem cho Quản trị viên). Thẩm quyền thêm mới và cấu hình chi nhánh thuộc về Business Operations Manager.',
+                        'View branch details, addresses, GPS coordinates, and floor layout configs (Admin view-only mode. Branch creation & management belong to Business Operations Manager).'
+                      )
+                    : t(
+                        'Thêm mới và quản lý thông tin chi nhánh, địa chỉ, vị trí GPS bản đồ và cấu hình sơ đồ mặt bằng các tầng kho bãi Boxora.',
+                        'Add and manage branch details, addresses, GPS map coordinates, and floor layout configs.'
+                      )}
                 </p>
               </div>
 

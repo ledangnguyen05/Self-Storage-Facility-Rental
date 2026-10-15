@@ -44,7 +44,7 @@ public class UnitTypeController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'ADMIN')")
     @Operation(summary = "Tạo mới loại kho lưu trữ và ghi nhận giá niêm yết ban đầu")
     public ResponseEntity<ApiResponse<UnitTypeResponse>> createUnitType(
             @Valid @RequestBody UnitTypeCreateRequest request
@@ -55,7 +55,7 @@ public class UnitTypeController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'ADMIN')")
     @Operation(summary = "Cập nhật thông tin loại kho (nếu đổi giá phải kèm lý do theo BR-RULE-011)")
     public ResponseEntity<ApiResponse<UnitTypeResponse>> updateUnitType(
             @PathVariable UUID id,
@@ -66,7 +66,7 @@ public class UnitTypeController {
     }
 
     @PostMapping("/{id}/price-adjustment")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'ADMIN')")
     @Operation(summary = "Điều chỉnh giá niêm yết loại kho theo BR-RULE-011 (bắt buộc lý do và lưu lịch sử)")
     public ResponseEntity<ApiResponse<UnitTypeResponse>> adjustPrice(
             @PathVariable UUID id,
