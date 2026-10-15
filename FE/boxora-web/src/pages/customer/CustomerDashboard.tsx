@@ -6,6 +6,7 @@ import { bookingService } from '../../services/bookingService'
 import { supportTicketService } from '../../services/supportTicketService'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
+import { paymentService, PaymentItem } from '../../services/paymentService'
 import { Booking, Facility, StorageUnit } from '../../types'
 import { BookingCheckoutModal } from '../../components/modals/BookingCheckoutModal'
 

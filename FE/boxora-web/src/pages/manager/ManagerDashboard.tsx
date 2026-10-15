@@ -6,7 +6,7 @@ import { reportService } from '../../services/reportService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
 import { userService } from '../../services/userService'
 import { useLanguage } from '../../context/LanguageContext'
-import { Facility, StorageUnit, OverdueDebtItem, User } from '../../types'
+import { Facility, StorageUnit, OverdueDebtItem, User, RevenueReport } from '../../types'
 import { parseFacilityLayoutConfig } from '../../utils/facilityLayout'
 import { IoTTelemetryModal } from './modals/IoTTelemetryModal'
 import { FacilitySurveyModal } from './modals/FacilitySurveyModal'
@@ -237,6 +237,76 @@ export const ManagerDashboard: React.FC = () => {
     setSelectedUnit(unit)
   }
 
+  const currentFacility = useMemo(() => {
+    return facilities.find(f => f.id === selectedFacilityId) || facilities[0]
+  }, [facilities, selectedFacilityId])
+
+  const currentFacilityName = currentFacility?.name || 'Cơ sở Boxora'
+
+  const facilityRevenue = useMemo(() => {
+    return revenueData?.totalRevenue ?? facilityPayments.reduce((acc, p) => acc + (p.amount || 0), 0)
+  }, [revenueData, facilityPayments])
+
+  const rentalFeeRevenue = useMemo(() => {
+    return facilityPayments
+      .filter(p => !p.paymentType || p.paymentType === 'RENTAL' || p.paymentType === 'CONTRACT' || p.paymentType === 'RENTAL_FEE' || p.paymentType === 'EXTEND')
+      .reduce((sum, p) => sum + (p.amount || 0), 0)
+  }, [facilityPayments])
+
+  const depositRevenue = useMemo(() => {
+    return facilityPayments
+      .filter(p => p.paymentType === 'DEPOSIT')
+      .reduce((sum, p) => sum + (p.amount || 0), 0)
+  }, [facilityPayments])
+
+  const totalOverdueDebt = useMemo(() => {
+    return overdueItems.reduce((acc, item) => acc + (item.debtAmount || 0), 0)
+  }, [overdueItems])
+
+  const handleApplyRevDateFilter = () => {
+    setRevFromDate(tempRevFrom)
+    setRevToDate(tempRevTo)
+    setIsRevDatePickerOpen(false)
+    void fetchUnits(selectedFacilityId, tempRevFrom, tempRevTo)
+  }
+
+  const handleResetRevDateFilter = () => {
+    setTempRevFrom('')
+    setTempRevTo('')
+    setRevFromDate('')
+    setRevToDate('')
+    setIsRevDatePickerOpen(false)
+    void fetchUnits(selectedFacilityId, '', '')
+  }
+
+  const handleExportFacilityRevenueCsv = () => {
+    if (!facilityPayments || facilityPayments.length === 0) {
+      alert('Không có dữ liệu giao dịch để xuất báo cáo.')
+      return
+    }
+    const headers = ['Mã GD', 'Mã Kho', 'Cơ Sở', 'Khách Hàng', 'Số Tiền (VNĐ)', 'Phương Thức', 'Loại Thanh Toán', 'Thời Gian', 'Trạng Thái']
+    const rows = facilityPayments.map(p => [
+      p.id,
+      p.unitCode || 'N/A',
+      p.facilityName || currentFacilityName,
+      p.customerName || 'N/A',
+      p.amount,
+      p.paymentMethod || 'VNPay',
+      p.paymentType || 'RENTAL',
+      p.paymentTime ? new Date(p.paymentTime).toLocaleString('vi-VN') : '',
+      p.status
+    ])
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', `Bao_Cao_Doanh_Thu_${currentFacility?.code || 'CO_SO'}_${new Date().toISOString().slice(0, 10)}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   const triggerAction = (msg: string) => {
     setActionSuccessMessage(msg)
     setTimeout(() => setActionSuccessMessage(null), 3000)
@@ -387,11 +457,6 @@ export const ManagerDashboard: React.FC = () => {
   const maintenancePercent = totalUnitsCount > 0 ? ((maintenanceUnitsCount / totalUnitsCount) * 100).toFixed(1) : '0.0'
   const overduePercent = totalUnitsCount > 0 ? ((overdueUnitsCount / totalUnitsCount) * 100).toFixed(1) : '0.0'
 
-  const currentFacility = useMemo(() => {
-    return facilities.find(f => f.id === selectedFacilityId) || facilities[0] || null
-  }, [facilities, selectedFacilityId])
-
-  const currentFacilityName = currentFacility?.name || 'Cơ sở Boxora'
 
   // Display the floor plan configured by an admin, with generic defaults for unconfigured branches.
   const facilityProfile = useMemo(() => parseFacilityLayoutConfig(currentFacility?.layoutConfig), [currentFacility])
