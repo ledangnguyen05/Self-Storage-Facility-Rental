@@ -16,7 +16,7 @@ public class MigrationVerificationTest {
     private static final String POSTGRES_PASSWORD = "12345";
 
     @Test
-    @DisplayName("Phase E: Verify all Flyway migrations (V1 to V35) succeed cleanly on a disposable clean database")
+    @DisplayName("Phase E: Verify all Flyway migrations (V1 to V37) succeed cleanly on a disposable clean database")
     void testMigrationOnDisposableCleanDatabase() {
         String cleanDbUrl = "jdbc:postgresql://localhost:5432/boxora_disposable_clean";
 
@@ -35,7 +35,7 @@ public class MigrationVerificationTest {
         MigrateResult result = flyway.migrate();
         assertTrue(result.success, "Clean database migration should succeed");
         assertTrue(result.migrationsExecuted > 0, "Should execute all migrations on a clean database");
-        assertEquals("35", flyway.info().current().getVersion().getVersion(), "Current version should be 35");
+        assertEquals("37", flyway.info().current().getVersion().getVersion(), "Current version should be 37");
     }
 
     @Test
@@ -52,7 +52,7 @@ public class MigrationVerificationTest {
 
         MigrateResult result = flyway.migrate();
         assertTrue(result.success, "Migration on existing database copy should succeed");
-        assertEquals("35", flyway.info().current().getVersion().getVersion(), "Current version should be 35");
+        assertEquals("37", flyway.info().current().getVersion().getVersion(), "Current version should be 37");
     }
 
     @Test

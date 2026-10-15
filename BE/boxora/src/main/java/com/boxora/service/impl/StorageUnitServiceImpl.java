@@ -268,6 +268,13 @@ public class StorageUnitServiceImpl implements StorageUnitService {
         return mapToResponse(unit);
     }
 
+    private StorageUnitResponse mapToResponse(StorageUnit u) {
+        FacilityPolicy policy = (u.getFacility() != null && u.getFacility().getId() != null)
+                ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(u.getFacility().getId()).orElse(null)
+                : null;
+        return mapToResponse(u, policy);
+    }
+
     private StorageUnitResponse mapToResponse(StorageUnit u, FacilityPolicy activePolicy) {
         BigDecimal price = activePolicy == null || u.getUnitType() == null
                 ? null
