@@ -105,6 +105,7 @@ public enum ErrorCode {
     FACILITY_POLICY_NOT_FOUND(1100, "Facility policy not found", HttpStatus.NOT_FOUND),
     FACILITY_POLICY_ALREADY_EXISTS(1101, "This facility already has a policy configured", HttpStatus.BAD_REQUEST),
     FACILITY_POLICY_INVALID_CANCELLATION(1102, "Cancellation full refund hours must be greater than or equal to partial refund hours", HttpStatus.BAD_REQUEST),
+    FACILITY_POLICY_INVALID_PRICES(1103, "A unit type can only have one price per facility policy", HttpStatus.BAD_REQUEST),
 
     // ========================= SUPPORT_TICKET (1200 - 1299) =========================
     TICKET_NOT_FOUND(1200, "Support ticket not found or does not belong to user", HttpStatus.NOT_FOUND),

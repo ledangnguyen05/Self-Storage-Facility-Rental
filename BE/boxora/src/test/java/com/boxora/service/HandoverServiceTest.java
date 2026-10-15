@@ -415,7 +415,7 @@ class HandoverServiceTest {
 
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
             when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
-            when(facilityPolicyRepository.findByFacilityId(testFacility.getId())).thenReturn(Optional.of(policy));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(policy));
 
             ReturnSettlementPreviewResponse preview = handoverService.getReturnSettlementPreview(bookingId);
 
@@ -443,7 +443,7 @@ class HandoverServiceTest {
 
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
             when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
-            when(facilityPolicyRepository.findByFacilityId(testFacility.getId())).thenReturn(Optional.of(policy));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(policy));
 
             ReturnSettlementPreviewResponse preview = handoverService.getReturnSettlementPreview(bookingId);
 
@@ -486,7 +486,7 @@ class HandoverServiceTest {
 
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
             when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
-            when(facilityPolicyRepository.findByFacilityId(testFacility.getId())).thenReturn(Optional.of(policy));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(policy));
             when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
             when(handoverRecordRepository.save(any(HandoverRecord.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
@@ -570,7 +570,7 @@ class HandoverServiceTest {
 
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
             when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
-            when(facilityPolicyRepository.findByFacilityId(testFacility.getId())).thenReturn(Optional.of(policy));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(policy));
             when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
             when(handoverRecordRepository.save(any(HandoverRecord.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
@@ -643,7 +643,7 @@ class HandoverServiceTest {
 
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
             when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
-            when(facilityPolicyRepository.findByFacilityId(testFacility.getId())).thenReturn(Optional.of(policy));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(policy));
             when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
             when(handoverRecordRepository.save(any(HandoverRecord.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
@@ -680,7 +680,7 @@ class HandoverServiceTest {
 
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
             when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
-            when(facilityPolicyRepository.findByFacilityId(testFacility.getId())).thenReturn(Optional.of(policy));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(policy));
             when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
             when(handoverRecordRepository.save(any(HandoverRecord.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
@@ -698,5 +698,4 @@ class HandoverServiceTest {
         }
     }
 }
-
 

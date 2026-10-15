@@ -134,7 +134,7 @@ class BookingCancellationServiceTest {
             // >= 48h trước check-in
             testBooking.setStartDate(LocalDate.now().plusDays(4));
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(facilityPolicyRepository.findByFacility_Id(testFacility.getId()))
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));
 
             BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
@@ -153,7 +153,7 @@ class BookingCancellationServiceTest {
             // 24h - 48h trước check-in (ngày T+2 cách now từ 24h đến dưới 48h)
             testBooking.setStartDate(LocalDate.now().plusDays(2));
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(facilityPolicyRepository.findByFacility_Id(testFacility.getId()))
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));
 
             BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
@@ -172,7 +172,7 @@ class BookingCancellationServiceTest {
             // < 24h trước check-in (ngày T+1 cách now dưới 24h)
             testBooking.setStartDate(LocalDate.now().plusDays(1));
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(facilityPolicyRepository.findByFacility_Id(testFacility.getId()))
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));
 
             BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
@@ -191,7 +191,7 @@ class BookingCancellationServiceTest {
             testBooking.setStatus(BookingStatus.PENDING_PAYMENT);
             testBooking.setDepositPaid(BigDecimal.ZERO);
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(facilityPolicyRepository.findByFacility_Id(testFacility.getId()))
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));
 
             BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
@@ -236,7 +236,7 @@ class BookingCancellationServiceTest {
         void cancelBooking_Stage1_Success() {
             testBooking.setStartDate(LocalDate.now().plusDays(4));
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(facilityPolicyRepository.findByFacility_Id(testFacility.getId()))
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));
             when(requestContext.currentUserId()).thenReturn(customerId);
             when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
@@ -293,7 +293,7 @@ class BookingCancellationServiceTest {
         void cancelBooking_Stage3_NoRefund_DoesNotCreatePayment() {
             testBooking.setStartDate(LocalDate.now().plusDays(1));
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(facilityPolicyRepository.findByFacility_Id(testFacility.getId()))
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));
             when(requestContext.currentUserId()).thenReturn(customerId);
             when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
@@ -449,4 +449,3 @@ class BookingCancellationServiceTest {
         }
     }
 }
-

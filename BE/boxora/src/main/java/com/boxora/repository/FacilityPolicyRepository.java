@@ -16,11 +16,17 @@ import java.util.UUID;
 public interface FacilityPolicyRepository extends JpaRepository<FacilityPolicy, UUID> {
 
     @Override
-    @EntityGraph(attributePaths = {"facility"})
+    @EntityGraph(attributePaths = {"facility", "prices", "prices.unitType"})
     Optional<FacilityPolicy> findById(UUID id);
 
-    @EntityGraph(attributePaths = {"facility"})
+    @EntityGraph(attributePaths = {"facility", "prices", "prices.unitType"})
     Optional<FacilityPolicy> findByFacility_Id(UUID facilityId);
+
+    @EntityGraph(attributePaths = {"facility", "prices", "prices.unitType"})
+    Optional<FacilityPolicy> findByFacility_IdAndIsActiveTrue(UUID facilityId);
+
+    @EntityGraph(attributePaths = {"facility", "prices", "prices.unitType"})
+    java.util.List<FacilityPolicy> findByIsActiveTrue();
 
     default Optional<FacilityPolicy> findByFacilityId(UUID facilityId) {
         return findByFacility_Id(facilityId);
@@ -28,7 +34,7 @@ public interface FacilityPolicyRepository extends JpaRepository<FacilityPolicy, 
 
     boolean existsByFacility_Id(UUID facilityId);
 
-    @EntityGraph(attributePaths = {"facility"})
+    @EntityGraph(attributePaths = {"facility", "prices", "prices.unitType"})
     @Query("""
             SELECT fp FROM FacilityPolicy fp
             WHERE (:search IS NULL

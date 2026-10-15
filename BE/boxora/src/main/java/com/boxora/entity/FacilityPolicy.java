@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "facility_policies")
@@ -17,6 +19,10 @@ public class FacilityPolicy extends BaseEntity {
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "facility_id", nullable = false, unique = true)
     private Facility facility;
+
+    @Column(name = "is_active", nullable = false)
+    @Builder.Default
+    private Boolean isActive = true;
 
     //ty lệ tiền cọc so với tiền thuê,
     // nếu thuê 1 tháng 10tr và percent là 100% thì phải cọc 10tr de thue kho
@@ -81,4 +87,7 @@ public class FacilityPolicy extends BaseEntity {
     // sau bao nhiêu ngày overdue thì unit có thể bị niêm phong(sealing)
     private Integer overdueSealingDays = 7;
 
+    @OneToMany(mappedBy = "facilityPolicy", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<FacilityPolicyPrice> prices = new ArrayList<>();
 }
