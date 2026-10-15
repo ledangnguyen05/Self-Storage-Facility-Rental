@@ -18,16 +18,19 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("api/v1/facility-policies")
+@RequestMapping("/api/v1/facility-policies")
 @Tag(
         name = "Facility policy ",
         description = "API quản lý chính sách của các cơ sở lưu trữ"
 )
-@RequiredArgsConstructor
 @Slf4j
 public class FacilityPolicyController {
 
     private final FacilityPolicyService facilityPolicyService;
+
+    public FacilityPolicyController(FacilityPolicyService facilityPolicyService) {
+        this.facilityPolicyService = facilityPolicyService;
+    }
 
     @GetMapping("{id}")
     @PreAuthorize("hasAuthority('POLICY_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF', 'CUSTOMER')")
