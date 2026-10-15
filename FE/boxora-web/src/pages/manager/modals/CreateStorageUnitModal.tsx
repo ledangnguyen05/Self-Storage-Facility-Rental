@@ -29,28 +29,45 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
   onClose,
   onCreated,
 }) => {
-  const { role } = useAuth()
+  const { role, user } = useAuth()
   const { language, t } = useLanguage()
   const [unitTypes, setUnitTypes] = useState<UnitType[]>([])
   const [isLoadingTypes, setIsLoadingTypes] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [unitCode, setUnitCode] = useState('')
-  const [facilityId, setFacilityId] = useState(selectedFacilityId)
+  const [facilityId, setFacilityId] = useState('')
   const [unitTypeId, setUnitTypeId] = useState('')
   const [floorLevel, setFloorLevel] = useState('Tầng 1')
   const [pricePerMonth, setPricePerMonth] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
 
+  const effectiveFacilityId = user?.facilityId || selectedFacilityId || ''
+
   const selectedType = useMemo(
     () => unitTypes.find(unitType => unitType.id === unitTypeId),
     [unitTypes, unitTypeId]
   )
-  const availableFacilities = useMemo(
-    () => role === 'FACILITY_MANAGER'
-      ? facilities.filter(facility => facility.id === selectedFacilityId)
-      : facilities,
-    [facilities, role, selectedFacilityId]
-  )
+  const availableFacilities = useMemo(() => {
+    if ((role === 'FACILITY_MANAGER' || role === 'STAFF') && effectiveFacilityId) {
+      const filtered = facilities.filter(facility => facility.id === effectiveFacilityId)
+      if (filtered.length > 0) return filtered
+      if (user?.facilityName) {
+        return [{
+          id: effectiveFacilityId,
+          name: user.facilityName,
+          code: user.facilityCode || 'HCM-D1',
+          address: '',
+          city: '',
+          status: 'ACTIVE' as const,
+          openTime: '',
+          closeTime: '',
+          createdAt: '',
+          updatedAt: ''
+        }]
+      }
+    }
+    return facilities.length > 0 ? facilities : []
+  }, [facilities, role, effectiveFacilityId, user?.facilityName, user?.facilityCode])
 
   useEffect(() => {
     if (!isOpen) return
@@ -60,27 +77,33 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
     setFloorLevel('Tầng 1')
     setPricePerMonth('')
     setErrorMessage('')
-    setFacilityId(selectedFacilityId || availableFacilities[0]?.id || '')
+    const initialFac = effectiveFacilityId || availableFacilities[0]?.id || facilities[0]?.id || ''
+    setFacilityId(initialFac)
     setIsLoadingTypes(true)
 
     storageUnitService.getUnitTypes()
       .then(types => {
         const availableTypes = Array.isArray(types) ? types : []
         setUnitTypes(availableTypes)
-        setUnitTypeId(availableTypes[0]?.id || '')
+        if (availableTypes.length > 0) {
+          setUnitTypeId(availableTypes[0].id)
+        }
       })
       .catch(error => {
         setUnitTypes([])
         setErrorMessage(getErrorMessage(error, t('Không thể tải danh sách loại kho.', 'Could not load storage types.')))
       })
       .finally(() => setIsLoadingTypes(false))
-  }, [isOpen])
+  }, [isOpen, effectiveFacilityId])
 
   useEffect(() => {
-    if (isOpen && !facilityId && availableFacilities.length > 0) {
-      setFacilityId(selectedFacilityId || availableFacilities[0].id)
+    if (isOpen && !facilityId) {
+      const resolved = effectiveFacilityId || availableFacilities[0]?.id || facilities[0]?.id || ''
+      if (resolved) {
+        setFacilityId(resolved)
+      }
     }
-  }, [isOpen, facilityId, availableFacilities, selectedFacilityId])
+  }, [isOpen, facilityId, availableFacilities, effectiveFacilityId, facilities])
 
   const close = () => {
     if (!isSubmitting) onClose()
@@ -95,7 +118,8 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
       setErrorMessage(t('Vui lòng nhập mã kho.', 'Enter a storage unit code.'))
       return
     }
-    if (!facilityId) {
+    const targetFacility = facilityId || effectiveFacilityId || availableFacilities[0]?.id || facilities[0]?.id
+    if (!targetFacility) {
       setErrorMessage(t('Chưa có cơ sở để thêm kho.', 'No facility is available for this storage unit.'))
       return
     }

@@ -26,7 +26,8 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    const isAuthError = error.response?.status === 401 || error.response?.status === 403
+    if (isAuthError && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true
       const refreshToken = localStorage.getItem('boxora_refresh_token')
       if (refreshToken) {

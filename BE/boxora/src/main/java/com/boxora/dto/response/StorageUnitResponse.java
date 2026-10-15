@@ -31,5 +31,6 @@ public class StorageUnitResponse {
     private String tenantName;
     private String contractCode;
     private UUID contractId;
+    private String startDate;
     private String dueDate;
 }

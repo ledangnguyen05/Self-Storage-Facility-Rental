@@ -55,6 +55,7 @@ public class BookingServiceImpl implements BookingService {
     private final FacilityAccessGuard facilityAccessGuard;
     private final EncryptionService encryptionService;
     private final RequestContext requestContext;
+    private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractSigningService> contractSigningServiceProvider;
 
     @Value("${app.booking.soft-lock-hours:24}")
     private long softLockHours;
@@ -155,7 +156,8 @@ public class BookingServiceImpl implements BookingService {
                 .depositPaid(request.getDepositPaid() != null ? request.getDepositPaid() : BigDecimal.ZERO)
                 .depositAmount(deposit)
                 .paymentExpiresAt(Instant.now().plusSeconds(approvalTimeoutHours * 60 * 60))
-                .status(BookingStatus.PENDING_APPROVAL)
+                .status("ONLINE".equalsIgnoreCase(request.getSigningMethod()) ? BookingStatus.PENDING_PAYMENT : BookingStatus.PENDING_APPROVAL)
+                .signingMethod(request.getSigningMethod() != null && !request.getSigningMethod().isBlank() ? request.getSigningMethod().trim().toUpperCase() : "ONLINE")
                 .accessPin(null) // Chưa cấp PIN trước khi thanh toán
                 .qrAccessToken(null) // Chưa cấp QR trước khi thanh toán
                 .build();
@@ -224,6 +226,11 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     public BookingResponse reviewBookingRequest(UUID id, boolean approved) {
+        return reviewBookingRequest(id, approved, null, null);
+    }
+
+    @Override
+    public BookingResponse reviewBookingRequest(UUID id, boolean approved, UUID assignedStaffId, String notes) {
         Booking booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
         if (booking.getStatus() != BookingStatus.PENDING_APPROVAL) {
@@ -259,8 +266,31 @@ public class BookingServiceImpl implements BookingService {
         }
 
         if (approved) {
-            booking.setStatus(BookingStatus.PENDING_PAYMENT);
-            booking.setPaymentExpiresAt(Instant.now().plusSeconds(paymentTimeoutMinutes * 60L));
+            if (assignedStaffId != null) {
+                booking.setHandedOverByStaffId(assignedStaffId);
+            }
+            if (notes != null && !notes.isBlank()) {
+                booking.setStaffAssignmentNotes(notes);
+            }
+
+            boolean isInPerson = "IN_PERSON".equalsIgnoreCase(booking.getSigningMethod());
+            if (isInPerson) {
+                // Khách chọn ký trực tiếp tại quầy khi tới xem kho
+                booking.setStatus(BookingStatus.CONFIRMED);
+                booking.setPaymentExpiresAt(null);
+                try {
+                    var contractService = contractSigningServiceProvider.getIfAvailable();
+                    if (contractService != null) {
+                        contractService.ensureContractForBooking(booking);
+                    }
+                } catch (Exception ex) {
+                    log.warn("Notice: could not ensure contract for in-person booking {}: {}", booking.getBookingCode(), ex.getMessage());
+                }
+            } else {
+                // Khách chọn ký online: chuyển sang chờ thanh toán trước tại sandbox VNPay
+                booking.setStatus(BookingStatus.PENDING_PAYMENT);
+                booking.setPaymentExpiresAt(Instant.now().plusSeconds(paymentTimeoutMinutes * 60L));
+            }
         } else {
             booking.setStatus(BookingStatus.CANCELLED);
             booking.setPaymentExpiresAt(null);
@@ -278,7 +308,9 @@ public class BookingServiceImpl implements BookingService {
                 "Booking",
                 booking.getId(),
                 approved
-                        ? String.format("Yêu cầu thuê kho %s đã được duyệt; khách hàng có %d phút để thanh toán.", booking.getBookingCode(), paymentTimeoutMinutes)
+                        ? String.format("Yêu cầu thuê kho %s đã được duyệt (%s); phân công nhân sự chuẩn bị tiếp đón.",
+                                booking.getBookingCode(),
+                                "IN_PERSON".equalsIgnoreCase(booking.getSigningMethod()) ? "Ký trực tiếp tại quầy" : "Ký online qua DocuSeal")
                         : String.format("Yêu cầu thuê kho %s đã bị từ chối; kho đã được giải phóng.", booking.getBookingCode()),
                 null,
                 booking.getStatus()
@@ -581,6 +613,13 @@ public class BookingServiceImpl implements BookingService {
                 ? b.getTotalRentalFee().divide(BigDecimal.valueOf(b.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP).add(
                         b.getDepositAmount() != null ? b.getDepositAmount() : BigDecimal.ZERO)
                 : BigDecimal.ZERO;
+        String assignedStaffName = null;
+        if (b.getHandedOverByStaffId() != null) {
+            assignedStaffName = userRepository.findById(b.getHandedOverByStaffId())
+                    .map(u -> u.getFullName() != null ? u.getFullName() : u.getUsername())
+                    .orElse(null);
+        }
+
         return BookingResponse.builder()
                 .id(b.getId())
                 .bookingCode(b.getBookingCode())
@@ -603,6 +642,10 @@ public class BookingServiceImpl implements BookingService {
                 .initialPaymentAmount(initialPaymentAmount)
                 .paymentExpiresAt(b.getPaymentExpiresAt())
                 .status(b.getStatus() != null ? b.getStatus() : BookingStatus.PENDING_PAYMENT)
+                .signingMethod(b.getSigningMethod() != null ? b.getSigningMethod() : "ONLINE")
+                .assignedStaffId(b.getHandedOverByStaffId())
+                .assignedStaffName(assignedStaffName)
+                .staffAssignmentNotes(b.getStaffAssignmentNotes())
                 .accessPin(b.getAccessPin())
                 .qrAccessToken(b.getQrAccessToken())
                 .handoverTime(b.getHandoverTime())

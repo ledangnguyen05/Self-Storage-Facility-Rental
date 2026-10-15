@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { useOutletContext, Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { bookingService } from '../../services/bookingService'
 import { handoverService } from '../../services/handoverService'
@@ -658,8 +658,8 @@ export const StaffDashboard: React.FC = () => {
                     }
                     if (u.status === 'MAINTENANCE' || u.status === 'UNDER_MAINTENANCE') {
                       return (
-                        <div key={u.id} className="p-2 rounded bg-amber-50 border border-amber-200 text-amber-800 text-xs">
-                          #{u.unitCode}<br/><span className="text-[10px] text-amber-600 font-normal">Bảo trì</span>
+                        <div key={u.id} className="p-2 rounded bg-purple-50 border border-purple-200 text-purple-800 text-xs">
+                          #{u.unitCode}<br/><span className="text-[10px] text-purple-700 font-bold">BẢO TRÌ</span>
                         </div>
                       )
                     }
@@ -867,323 +867,106 @@ export const StaffDashboard: React.FC = () => {
 
       </div>
 
-      {/* LIVE SHIFT REVENUE & CASHIER JOURNAL (REAL DB DATA) */}
-      <div className="w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col gap-5">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
-              <span className="material-symbols-outlined text-[20px]">point_of_sale</span>
+      {/* QUICK WORKSPACE ACCESS: BÁO CÁO THU NGÂN & XỬ LÝ SỰ CỐ (ĐÃ CHUYỂN THÀNH 2 PHẦN RIÊNG CÓ PHÂN TRANG) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Card 1: Báo Cáo Thu Ngân */}
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col justify-between hover:border-emerald-300 transition-all group">
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center group-hover:scale-105 transition-transform">
+                  <span className="material-symbols-outlined text-[22px]">point_of_sale</span>
+                </div>
+                <div>
+                  <h3 className="font-headline text-base font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">
+                    Báo Cáo Thu Ngân & Dòng Tiền Ca Trực
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Đối soát giao dịch, tiền mặt, VNPay và phân trang chuyên sâu
+                  </p>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                {shiftPayments.length} giao dịch
+              </span>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="font-headline text-base font-bold text-slate-900">
-                  Báo Cáo Thu Ngân &amp; Dòng Tiền Ca Trực
-                </h2>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  {selectedFacility && selectedFacility !== 'ALL'
-                    ? facilities.find(f => f.id === selectedFacility)?.name || 'Cơ sở hiện tại'
-                    : 'Toàn hệ thống'}
+
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[11px] text-slate-500 font-medium block">Tổng thực thu</span>
+                <span className="text-lg font-bold text-slate-900 font-mono">
+                  {shiftTotalCollected.toLocaleString('vi-VN')} ₫
                 </span>
               </div>
-              <span className="text-xs text-slate-500">
-                Sổ cái đối soát giao dịch thực thu tại quầy và cổng trực tuyến VNPay kết nối trực tiếp database
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleExportShiftLedgerCsv}
-              className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-colors border border-slate-200 cursor-pointer shadow-2xs"
-            >
-              <span className="material-symbols-outlined text-[16px]">download</span>
-              <span>Xuất Sổ Thu Ngân (CSV)</span>
-            </button>
-          </div>
-        </div>
-
-        {/* 4 Shift Financial Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
-            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-              <span>Tổng thu ngân thực nhận</span>
-              <span className="material-symbols-outlined text-[18px] text-emerald-600">payments</span>
-            </div>
-            <div className="mt-3">
-              <div className="text-xl font-bold text-slate-900 font-mono">
-                {isShiftPaymentsLoading ? (
-                  <span className="inline-block w-20 h-6 bg-slate-200 animate-pulse rounded"></span>
-                ) : (
-                  `${shiftTotalCollected.toLocaleString('vi-VN')} ₫`
-                )}
-              </div>
-              <div className="text-[11px] text-slate-500 mt-1">
-                <span className="font-semibold text-emerald-600">
-                  {shiftPayments.filter(p => p.status === 'SUCCESS').length}
-                </span> giao dịch hợp lệ
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[11px] text-slate-500 font-medium block">Tiền cọc giữ chỗ</span>
+                <span className="text-lg font-bold text-emerald-700 font-mono">
+                  {shiftDepositRevenue.toLocaleString('vi-VN')} ₫
+                </span>
               </div>
             </div>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
-            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-              <span>Thu tiền thuê kho &amp; gia hạn</span>
-              <span className="material-symbols-outlined text-[18px] text-blue-600">receipt</span>
-            </div>
-            <div className="mt-3">
-              <div className="text-xl font-bold text-blue-900 font-mono">
-                {isShiftPaymentsLoading ? (
-                  <span className="inline-block w-20 h-6 bg-slate-200 animate-pulse rounded"></span>
-                ) : (
-                  `${shiftRentalRevenue.toLocaleString('vi-VN')} ₫`
-                )}
-              </div>
-              <div className="text-[11px] text-slate-500 mt-1">
-                Phí dịch vụ lưu trữ định kỳ
-              </div>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
-            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-              <span>Thu tiền cọc nhận kho (Ký quỹ)</span>
-              <span className="material-symbols-outlined text-[18px] text-amber-600">savings</span>
-            </div>
-            <div className="mt-3">
-              <div className="text-xl font-bold text-amber-900 font-mono">
-                {isShiftPaymentsLoading ? (
-                  <span className="inline-block w-20 h-6 bg-slate-200 animate-pulse rounded"></span>
-                ) : (
-                  `${shiftDepositRevenue.toLocaleString('vi-VN')} ₫`
-                )}
-              </div>
-              <div className="text-[11px] text-slate-500 mt-1">
-                Cọc giữ kho &amp; bảo chứng tài sản
-              </div>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
-            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-              <span>Tỷ lệ khớp lệnh ca trực</span>
-              <span className="material-symbols-outlined text-[18px] text-slate-600">check_circle</span>
-            </div>
-            <div className="mt-3">
-              <div className="text-xl font-bold text-slate-900 font-mono">
-                {shiftPayments.length > 0
-                  ? `${Math.round((shiftPayments.filter(p => p.status === 'SUCCESS').length / shiftPayments.length) * 100)}%`
-                  : '100%'}
-              </div>
-              <div className="text-[11px] text-slate-500 mt-1">
-                Khớp lệnh thanh toán thành công
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Real Payments Shift Ledger Table */}
-        <div className="overflow-x-auto rounded-xl border border-slate-200">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                <th className="py-2.5 px-3">Mã GD / Giờ nhận</th>
-                <th className="py-2.5 px-3">Khách hàng</th>
-                <th className="py-2.5 px-3">Mã Kho</th>
-                <th className="py-2.5 px-3">Loại thanh toán</th>
-                <th className="py-2.5 px-3">Phương thức</th>
-                <th className="py-2.5 px-3 text-right">Số tiền</th>
-                <th className="py-2.5 px-3 text-center">Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {isShiftPaymentsLoading ? (
-                <tr>
-                  <td colSpan={7} className="py-6 text-center text-slate-400">
-                    <div className="flex items-center justify-center gap-2">
-                      <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
-                      <span>Đang nạp dữ liệu thu ngân trực tiếp từ database...</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : shiftPayments.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-6 text-center text-slate-400">
-                    Chưa ghi nhận giao dịch thu ngân nào phát sinh tại cơ sở trong ca trực này.
-                  </td>
-                </tr>
-              ) : (
-                shiftPayments.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3 px-3">
-                      <div className="font-mono font-medium text-slate-900">{p.id.slice(0, 8)}...</div>
-                      <div className="text-[11px] text-slate-400">
-                        {p.paymentTime ? new Date(p.paymentTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 font-medium text-slate-800">
-                      {p.customerName || 'Khách hàng Boxora'}
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="font-mono font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
-                        {p.unitCode || 'N/A'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className={`px-2 py-0.5 rounded text-[11px] font-medium border ${
-                        p.paymentType === 'DEPOSIT'
-                          ? 'bg-amber-50 text-amber-800 border-amber-200'
-                          : 'bg-blue-50 text-blue-700 border-blue-200'
-                      }`}>
-                        {p.paymentType === 'DEPOSIT' ? 'Tiền ký quỹ (Cọc)' : 'Tiền thuê kho'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-slate-600">
-                      {p.paymentMethod || 'VNPay'}
-                    </td>
-                    <td className="py-3 px-3 text-right font-bold text-slate-900 font-mono">
-                      {p.amount.toLocaleString('vi-VN')} ₫
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                        p.status === 'SUCCESS'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : p.status === 'PENDING'
-                          ? 'bg-amber-50 text-amber-700 border-amber-200'
-                          : 'bg-rose-50 text-rose-700 border-rose-200'
-                      }`}>
-                        {p.status === 'SUCCESS' ? 'Thành công' : p.status === 'PENDING' ? 'Chờ xử lý' : 'Thất bại'}
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Bottom Workspace: On-Site Incident & Ticket Handling Queue */}
-      <div className="w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 mb-4 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center">
-              <span className="material-symbols-outlined text-[20px]">build_circle</span>
-            </div>
-            <div>
-              <h2 className="font-headline text-base font-bold text-slate-900">
-                Danh Sách Ticket Xử Lý Sự Cố Tại Chỗ (On-site Issue Queue)
-              </h2>
-              <span className="text-xs text-slate-500">
-                Điều phối nhân sự kỹ thuật, an ninh và xử lý tức thời các vấn đề phần cứng
-              </span>
-            </div>
-          </div>
-          <button
-            onClick={async () => {
-              const code = `#TK-${Math.floor(400 + Math.random() * 100)}`
-              const newTk = {
-                id: code,
-                title: 'Khách hàng báo cấn cửa cuốn khi đóng',
-                detail: 'Khu vực Tầng 1 - Cửa kho trượt nặng cần bảo dưỡng dầu bôi trơn.',
-                location: 'Kho #A-110 (Tầng 1)',
-                priority: 'MEDIUM',
-                staff: 'Nguyễn Quỳnh Anh (Trực ca)',
-                time: 'Vừa xong',
-                status: 'IN_PROGRESS'
-              }
-              setTickets([newTk, ...tickets])
-              try {
-                await supportTicketService.createTicket({
-                  category: 'HARDWARE_DOOR',
-                  title: newTk.title,
-                  description: newTk.detail,
-                  priority: 'MEDIUM'
-                })
-              } catch {
-                // Fallback
-              }
-            }}
-            className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-colors border border-slate-200 cursor-pointer"
+          <Link
+            to="/portal/cashier"
+            className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[18px]">add_alert</span>
-            <span>Tạo Báo Cáo Mới</span>
-          </button>
+            <span>Mở Trang Báo Cáo Thu Ngân (Có Phân Trang)</span>
+            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+          </Link>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider text-[11px]">
-                <th className="py-2.5 px-3 rounded-l-lg font-semibold">Mã Ticket</th>
-                <th className="py-2.5 px-3 font-semibold">Mô Tả Chi Tiết Sự Cố</th>
-                <th className="py-2.5 px-3 font-semibold">Vị Trí &amp; Kho</th>
-                <th className="py-2.5 px-3 font-semibold">Mức Độ</th>
-                <th className="py-2.5 px-3 font-semibold">Nhân Viên Phụ Trách</th>
-                <th className="py-2.5 px-3 font-semibold">Thời Gian</th>
-                <th className="py-2.5 px-3 rounded-r-lg text-right font-semibold">Thao tác xử lý</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {tickets.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-400 text-xs">
-                    Hiện không có phiếu sự cố nào cần xử lý trong ca trực.
-                  </td>
-                </tr>
-              ) : (
-                tickets.map((tk) => (
-                  <tr 
-                    key={tk.id} 
-                    className={`hover:bg-slate-50/70 transition-colors ${
-                      tk.priority === 'HIGH' ? 'bg-rose-50/40' : ''
-                    }`}
-                  >
-                    <td className="py-3 px-3 font-mono text-xs font-bold text-slate-900">
-                      {tk.id}
-                    </td>
-                    <td className="py-3 px-3 max-w-xs">
-                      <span className="font-bold text-slate-900 block text-xs">{tk.title}</span>
-                      <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">{tk.detail}</span>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="font-mono font-bold text-slate-800">{tk.location}</span>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase inline-flex items-center gap-1 ${
-                        tk.priority === 'HIGH'
-                          ? 'bg-rose-100 text-rose-700 border border-rose-200'
-                          : tk.priority === 'MEDIUM'
-                          ? 'bg-amber-100 text-amber-700 border border-amber-200'
-                          : 'bg-slate-100 text-slate-600'
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${
-                          tk.priority === 'HIGH' ? 'bg-rose-600' : tk.priority === 'MEDIUM' ? 'bg-amber-600' : 'bg-slate-400'
-                        }`}></span>
-                        {tk.priority === 'HIGH' ? 'Ưu tiên Cao' : tk.priority === 'MEDIUM' ? 'Bình thường' : 'Thấp'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-slate-700 font-medium">{tk.staff}</td>
-                    <td className="py-3 px-3 text-slate-500 font-mono text-[11px] tabular-nums">{tk.time}</td>
-                    <td className="py-3 px-3 text-right">
-                      {tk.status === 'RESOLVED' ? (
-                        <span className="text-emerald-600 font-mono font-bold text-[11px]">✓ Đã giải quyết</span>
-                      ) : (
-                        <button
-                          onClick={() => handleResolveTicket(tk.id, tk.backendId)}
-                          className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-[11px] transition-colors cursor-pointer"
-                        >
-                          Xong tại chỗ
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        {/* Card 2: Danh Sách Ticket */}
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col justify-between hover:border-rose-300 transition-all group">
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+                  <span className="material-symbols-outlined text-[22px]">build_circle</span>
+                </div>
+                <div>
+                  <h3 className="font-headline text-base font-bold text-slate-900 group-hover:text-rose-700 transition-colors">
+                    Xử Lý Sự Cố Tại Chỗ & Ticket
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Theo dõi phiếu kỹ thuật, xử lý cửa cuốn, khóa điện tử và phân trang
+                  </p>
+                </div>
+              </div>
+              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                tickets.filter(t => t.status !== 'RESOLVED').length > 0
+                  ? 'bg-rose-50 text-rose-700 border border-rose-200 animate-pulse'
+                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              }`}
+              >
+                {tickets.filter(t => t.status !== 'RESOLVED').length} đang mở
+              </span>
+            </div>
 
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[11px] text-slate-500 font-medium block">Tổng phiếu ca trực</span>
+                <span className="text-lg font-bold text-slate-900 font-mono">
+                  {tickets.length} ticket
+                </span>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[11px] text-slate-500 font-medium block">Ưu tiên khẩn cấp</span>
+                <span className="text-lg font-bold text-rose-600 font-mono">
+                  {tickets.filter(t => t.priority === 'HIGH' && t.status !== 'RESOLVED').length} phiếu
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <Link
+            to="/portal/tickets"
+            className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
+          >
+            <span>Mở Trang Xử Lý Sự Cố (Có Phân Trang)</span>
+            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+          </Link>
+        </div>
       </div>
 
       {/* Walkin Modal */}
@@ -1345,7 +1128,7 @@ export const StaffDashboard: React.FC = () => {
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2.5 text-rose-600 font-headline font-bold text-base">
                 <span className="material-symbols-outlined text-[24px]">crisis_alert</span>
-                <h3>Lệnh Khẩn Cấp Mở Cửa (Master Key - BR-RULE-009)</h3>
+                <h3>Lệnh Khẩn Cấp Mở Cửa</h3>
               </div>
               <button
                 type="button"

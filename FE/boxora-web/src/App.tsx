@@ -20,6 +20,10 @@ import { StaffDashboard } from './pages/staff/StaffDashboard'
 import { ManagerDashboard } from './pages/manager/ManagerDashboard'
 import { OperationsDashboard } from './pages/operations/OperationsDashboard'
 import { AdminDashboard } from './pages/admin/AdminDashboard'
+import { CashierJournalPage } from './pages/staff/CashierJournalPage'
+import { IncidentTicketsPage } from './pages/staff/IncidentTicketsPage'
+import { OverdueManagementPage } from './pages/manager/OverdueManagementPage'
+import { ShiftRosterPage } from './pages/manager/ShiftRosterPage'
 import { checkCustomerPortalAccess } from './utils/rentalAccess'
 import { BoxoraChatWidget } from './components/chat/BoxoraChatWidget'
 
@@ -142,6 +146,45 @@ function MainContent() {
                 </ProtectedRoute>
               }
             />
+            {/* 6. Cashier Journal Portal: Staff, Facility Manager, Business Manager, Admin */}
+            <Route
+              path="cashier"
+              element={
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
+                  <CashierJournalPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* 7. Incident Tickets Portal: Staff, Facility Manager, Business Manager, Admin */}
+            <Route
+              path="tickets"
+              element={
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
+                  <IncidentTicketsPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* 8. Overdue Delinquency Management: Facility Manager, Business Manager, Admin */}
+            <Route
+              path="overdue"
+              element={
+                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
+                  <OverdueManagementPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* 9. Shift Roster & Workforce: Facility Manager, Business Manager, Admin */}
+            <Route
+              path="shifts"
+              element={
+                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
+                  <ShiftRosterPage />
+                </ProtectedRoute>
+              }
+            />
           </Route>
 
           {/* Direct Friendly URLs with Automatic Route Guards */}
@@ -149,6 +192,10 @@ function MainContent() {
           <Route path="/staff" element={<Navigate to="/portal/staff" replace />} />
           <Route path="/facility-manager" element={<Navigate to="/portal/facility-manager" replace />} />
           <Route path="/manager" element={<Navigate to="/portal/facility-manager" replace />} />
+          <Route path="/cashier" element={<Navigate to="/portal/cashier" replace />} />
+          <Route path="/tickets" element={<Navigate to="/portal/tickets" replace />} />
+          <Route path="/overdue" element={<Navigate to="/portal/overdue" replace />} />
+          <Route path="/shifts" element={<Navigate to="/portal/shifts" replace />} />
           <Route path="/operations" element={<Navigate to="/portal/business-manager" replace />} />
           <Route path="/business" element={<Navigate to="/portal/business-manager" replace />} />
           <Route path="/admin" element={<Navigate to="/portal/admin" replace />} />

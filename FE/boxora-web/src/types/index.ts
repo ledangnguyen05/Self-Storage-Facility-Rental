@@ -117,6 +117,7 @@ export interface StorageUnit {
   contractCode?: string
   contractId?: string
   bookingId?: string
+  startDate?: string
   dueDate?: string
 }
 
@@ -148,6 +149,10 @@ export interface Booking {
   qrAccessToken?: string | null
   handoverTime?: string
   returnTime?: string
+  signingMethod?: 'ONLINE' | 'IN_PERSON'
+  assignedStaffId?: string | null
+  assignedStaffName?: string | null
+  staffAssignmentNotes?: string | null
 }
 
 export type RentalContractStatus =
@@ -177,6 +182,12 @@ export interface RentalContract {
   depositHeld: number
   status: RentalContractStatus
   signedDocumentUrl?: string | null
+  docusealSubmissionId?: string | null
+  docusealSubmitterSlug?: string | null
+  signedAt?: string | null
+  signingMethod?: 'ONLINE' | 'IN_PERSON'
+  unitTypeName?: string | null
+  unitPricePerMonth?: number | null
 }
 
 export interface SupportTicket {

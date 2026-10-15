@@ -7,4 +7,8 @@ import lombok.Data;
 public class BookingDecisionRequest {
     @NotNull
     private Boolean approved;
+
+    private java.util.UUID assignedStaffId;
+
+    private String notes;
 }

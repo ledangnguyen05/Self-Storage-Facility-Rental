@@ -21,6 +21,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
 
     List<Booking> findByCustomer_Id(UUID customerId);
 
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "storageUnit", "storageUnit.facility"})
     List<Booking> findByStatusOrderByCreatedAtAsc(BookingStatus status);
 
     List<Booking> findByStatusIn(Collection<BookingStatus> statuses);

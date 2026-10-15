@@ -33,7 +33,7 @@ export function DocuSealSimulationModal({
   const customerDisplayName = contract.customerName || user?.fullName || 'Khách hàng'
   const customerDisplayPhone = contract.customerPhone || user?.phone || 'Theo hồ sơ'
   const [agreed, setAgreed] = useState(false)
-  const [signatureMode, setSignatureMode] = useState<'type' | 'draw'>('type')
+  const [signatureMode, setSignatureMode] = useState<'type' | 'draw'>('draw')
   const [signerName, setSignerName] = useState(customerDisplayName)
   const [isSigning, setIsSigning] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -66,8 +66,9 @@ export function DocuSealSimulationModal({
     const rect = canvas.getBoundingClientRect()
     const x = 'touches' in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left
     const y = 'touches' in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top
-    ctx.lineWidth = 2.5
+    ctx.lineWidth = 2.8
     ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
     ctx.strokeStyle = '#0284c7'
     ctx.lineTo(x, y)
     ctx.stroke()
@@ -267,11 +268,15 @@ export function DocuSealSimulationModal({
               </div>
             ) : (
               <div className="space-y-2">
-                <div className="relative">
+                <div className="relative rounded-xl border-2 border-cyan-300 bg-white shadow-inner overflow-hidden">
+                  <div className="absolute top-2 left-3 flex items-center gap-1.5 text-[10px] font-semibold text-slate-400 select-none pointer-events-none">
+                    <span className="material-symbols-outlined text-xs text-cyan-600">edit</span>
+                    <span>Khung ký điện tử trực tiếp bằng chuột</span>
+                  </div>
                   <canvas
                     ref={canvasRef}
-                    width={560}
-                    height={100}
+                    width={640}
+                    height={130}
                     onMouseDown={startDrawing}
                     onMouseMove={draw}
                     onMouseUp={stopDrawing}
@@ -279,19 +284,24 @@ export function DocuSealSimulationModal({
                     onTouchStart={startDrawing}
                     onTouchMove={draw}
                     onTouchEnd={stopDrawing}
-                    className="w-full h-24 rounded-lg border border-cyan-200 bg-white shadow-inner cursor-crosshair touch-none"
+                    className="w-full h-32 bg-white cursor-crosshair touch-none"
                   />
                   {!hasDrawn && (
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-slate-400 italic">
-                      Dùng chuột hoặc ngón tay để vẽ chữ ký của bạn tại đây...
+                    <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-xs text-slate-400 gap-1">
+                      <span className="material-symbols-outlined text-2xl text-cyan-500/60 animate-bounce">draw</span>
+                      <span className="font-medium text-slate-500">Nhấn giữ chuột trái và vẽ trực tiếp chữ ký của bạn vào đây</span>
                     </div>
                   )}
+                  <div className="absolute bottom-3 left-6 right-6 border-b border-dashed border-slate-200 pointer-events-none"></div>
                 </div>
-                <div className="flex justify-end">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">
+                    {hasDrawn ? '✓ Đã ghi nhận nét ký của bạn' : 'Chưa vẽ chữ ký'}
+                  </span>
                   <button
                     type="button"
                     onClick={clearCanvas}
-                    className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1"
+                    className="font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1 cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-sm">refresh</span> Xóa vẽ lại
                   </button>

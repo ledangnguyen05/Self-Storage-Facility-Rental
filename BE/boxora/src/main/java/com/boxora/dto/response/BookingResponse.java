@@ -40,4 +40,8 @@ public class BookingResponse {
     private String qrAccessToken;
     private LocalDateTime handoverTime;
     private LocalDateTime returnTime;
+    private String signingMethod;
+    private UUID assignedStaffId;
+    private String assignedStaffName;
+    private String staffAssignmentNotes;
 }

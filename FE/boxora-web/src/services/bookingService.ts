@@ -9,6 +9,7 @@ export interface BookingCreatePayload {
   rentalMonths: number
   totalRentalFee?: number
   depositPaid?: number
+  signingMethod?: 'ONLINE' | 'IN_PERSON'
 }
 
 export interface BookingPinData {
@@ -56,8 +57,12 @@ export const bookingService = {
     return (response.data?.data || []) as Booking[]
   },
 
-  async decideRequest(id: string, approved: boolean) {
-    const response = await api.post(`/api/v1/bookings/${id}/decision`, { approved })
+  async decideRequest(id: string, approved: boolean, assignedStaffId?: string, notes?: string) {
+    const response = await api.post(`/api/v1/bookings/${id}/decision`, {
+      approved,
+      assignedStaffId,
+      notes,
+    })
     return response.data?.data as Booking
   },
 
