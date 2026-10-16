@@ -55,14 +55,6 @@ public class RefundServiceImpl implements RefundService {
             throw new AppException(ErrorCode.REFUND_TARGET_REQUIRED);
         }
 
-        BigDecimal requestedAmount = request.getRequestedAmount();
-        BigDecimal deductionAmount = request.getDeductionAmount() != null ? request.getDeductionAmount() : BigDecimal.ZERO;
-        BigDecimal finalRefundAmount = requestedAmount.subtract(deductionAmount);
-
-        if (finalRefundAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new AppException(ErrorCode.INVALID_REFUND_AMOUNT);
-        }
-
         Booking booking = null;
         RentalContract contract = null;
         Facility facility = null;
@@ -85,11 +77,33 @@ public class RefundServiceImpl implements RefundService {
             }
         }
 
+        UUID currentUserId = requestContext.currentUserId();
+        String currentRole = requestContext.currentUserRole();
+        if ("CUSTOMER".equalsIgnoreCase(currentRole)
+                && (customer == null || !customer.getId().equals(currentUserId))) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        if (booking != null && refundRequestRepository.existsByBooking_IdAndStatusIn(
+                booking.getId(), List.of(RefundStatus.PENDING_REVIEW, RefundStatus.APPROVED))) {
+            throw new AppException(ErrorCode.INVALID_REFUND_AMOUNT, "Đơn này đã có yêu cầu hoàn tiền đang được xử lý");
+        }
+
+        // A customer may request a refund, but never chooses its financial result.
+        // The recorded deposit is the upper bound until an authorized reviewer applies deductions.
+        BigDecimal paidDeposit = booking != null && booking.getDepositPaid() != null
+                ? booking.getDepositPaid() : BigDecimal.ZERO;
+        if (paidDeposit.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new AppException(ErrorCode.INVALID_REFUND_AMOUNT, "Chưa có tiền cọc đã xác nhận để hoàn");
+        }
+        BigDecimal requestedAmount = paidDeposit;
+        BigDecimal deductionAmount = BigDecimal.ZERO;
+        BigDecimal finalRefundAmount = requestedAmount;
+
         if (facility != null && facilityAccessGuard.isFacilityScoped()) {
             facilityAccessGuard.checkFacilityAccess(facility.getId());
         }
 
-        UUID currentUserId = requestContext.currentUserId();
         User requestedByUser = currentUserId != null
                 ? userRepository.findById(currentUserId).orElse(null)
                 : customer;
@@ -178,7 +192,7 @@ public class RefundServiceImpl implements RefundService {
                         nextStatus.name(),
                         refund.getFinalRefundAmount(),
                         refund.getBankName(),
-                        refund.getBankAccountNumber(),
+                        maskAccountNumber(refund.getBankAccountNumber()),
                         null,
                         isApprove ? refund.getReviewNote() : refund.getRejectionReason()
                 );
@@ -259,7 +273,7 @@ public class RefundServiceImpl implements RefundService {
                         RefundStatus.PROCESSED.name(),
                         refund.getFinalRefundAmount(),
                         refund.getBankName(),
-                        refund.getBankAccountNumber(),
+                        maskAccountNumber(refund.getBankAccountNumber()),
                         refund.getTransactionReference(),
                         refund.getProcessNotes()
                 );
@@ -367,7 +381,7 @@ public class RefundServiceImpl implements RefundService {
                 .deductionAmount(r.getDeductionAmount())
                 .finalRefundAmount(r.getFinalRefundAmount())
                 .bankName(r.getBankName())
-                .bankAccountNumber(r.getBankAccountNumber())
+                .bankAccountNumber(maskAccountNumber(r.getBankAccountNumber()))
                 .bankAccountName(r.getBankAccountName())
                 .reason(r.getReason())
                 .status(r.getStatus())
@@ -385,5 +399,10 @@ public class RefundServiceImpl implements RefundService {
                 .transactionReference(r.getTransactionReference())
                 .processNotes(r.getProcessNotes())
                 .build();
+    }
+
+    private String maskAccountNumber(String accountNumber) {
+        if (accountNumber == null || accountNumber.length() <= 4) return "****";
+        return "****" + accountNumber.substring(accountNumber.length() - 4);
     }
 }
