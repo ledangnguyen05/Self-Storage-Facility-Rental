@@ -3,9 +3,13 @@ package com.boxora.controller;
 import com.boxora.common.response.ApiResponse;
 import com.boxora.dto.request.BookingCreateRequest;
 import com.boxora.dto.request.BookingDecisionRequest;
+import com.boxora.dto.request.BookingRescheduleRequest;
 import com.boxora.dto.request.UpdatePinRequest;
 import com.boxora.dto.response.BookingAccessCredentialsResponse;
 import com.boxora.dto.response.BookingPinResponse;
+import com.boxora.dto.response.BookingRescheduleEligibilityResponse;
+import com.boxora.dto.response.BookingRescheduleHistoryResponse;
+import com.boxora.dto.response.BookingRescheduleResponse;
 import com.boxora.dto.response.BookingResponse;
 import com.boxora.service.BookingService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -185,5 +189,45 @@ public class BookingController {
     @Operation(summary = "Mở khóa từ xa qua IoT SmartLock")
     public ResponseEntity<ApiResponse<BookingResponse>> remoteUnlock(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success("Remote unlock signal dispatched to SmartLock IoT", bookingService.remoteUnlock(id)));
+    }
+
+    @GetMapping("/{id}/reschedule-eligibility")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Kiểm tra điều kiện đổi lịch hẹn nhận kho của khách hàng")
+    public ResponseEntity<ApiResponse<BookingRescheduleEligibilityResponse>> getRescheduleEligibility(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getRescheduleEligibility(id)));
+    }
+
+    @PostMapping("/{id}/reschedule")
+    @PreAuthorize("hasAuthority('BOOKING_UPDATE') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Đổi lịch hẹn nhận kho (kèm phản hồi chi tiết và lịch sử kiểm toán)")
+    public ResponseEntity<ApiResponse<BookingRescheduleResponse>> rescheduleDetailed(
+            @PathVariable UUID id,
+            @Valid @RequestBody BookingRescheduleRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Đổi lịch hẹn nhận kho thành công. Hạn giữ chỗ mới đã được cập nhật.",
+                bookingService.rescheduleBookingDetailed(id, request)
+        ));
+    }
+
+    @PutMapping("/{id}/reschedule")
+    @PreAuthorize("hasAuthority('BOOKING_UPDATE') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Đổi lịch hẹn nhận kho và tính lại thời hạn giữ chỗ theo chính sách (Legacy)")
+    public ResponseEntity<ApiResponse<BookingResponse>> reschedule(
+            @PathVariable UUID id,
+            @Valid @RequestBody BookingRescheduleRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Đổi lịch hẹn nhận kho thành công. Hạn giữ chỗ mới đã được cập nhật.",
+                bookingService.rescheduleBooking(id, request)
+        ));
+    }
+
+    @GetMapping("/{id}/reschedule-history")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Lấy lịch sử các lần đổi lịch hẹn nhận kho (Append-only)")
+    public ResponseEntity<ApiResponse<List<BookingRescheduleHistoryResponse>>> getRescheduleHistory(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getRescheduleHistory(id)));
     }
 }

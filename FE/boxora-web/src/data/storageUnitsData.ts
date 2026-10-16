@@ -1,6 +1,7 @@
 export interface StorageUnitType {
   id: string
   backendId?: string
+  unitCode: string
   name: string
   unitTypeName?: string
   category: 'mini' | 'personal' | 'business' | 'special'
@@ -9,12 +10,14 @@ export interface StorageUnitType {
   monthlyPriceNumeric: number
   depositAmountNumeric?: number
   status: 'Sẵn sàng' | 'Đang thuê' | 'Bảo trì' | 'Chờ duyệt'
+  isAvailable: boolean
   facilityId: string
   facilityName: string
   facilityAddress: string
   floorLocation: string
   coords?: { lat: number; lng: number } | null
   distanceKm?: number
+  imageUrl?: string
 }
 
 export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {

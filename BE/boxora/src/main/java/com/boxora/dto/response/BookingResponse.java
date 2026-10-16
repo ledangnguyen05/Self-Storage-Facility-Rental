@@ -35,6 +35,11 @@ public class BookingResponse {
     private BigDecimal depositAmount;
     private BigDecimal initialPaymentAmount;
     private Instant paymentExpiresAt;
+    private Instant holdStartedAt;
+    private Instant holdExpiresAt;
+    private LocalDateTime expectedCheckInAt;
+    private String paymentStatus;
+    private Integer holdGraceHours;
     private BookingStatus status;
     private String accessPin;
     private String qrAccessToken;

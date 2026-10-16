@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useOutletContext, useSearchParams } from 'react-router-dom'
+import { useOutletContext, useSearchParams, Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { userService } from '../../services/userService'
 import { roleService } from '../../services/roleService'
@@ -42,13 +42,19 @@ export const AdminDashboard: React.FC = () => {
   }
 
   useEffect(() => {
-    if (role === 'BUSINESS_MANAGER' && activeTab !== 'facilities') {
-      setActiveTabState('facilities')
-      setSearchParams({ tab: 'facilities' }, { replace: true })
-    } else if (isDashboardTab(requestedTab)) {
-      setActiveTabState(requestedTab)
+    if (role === 'BUSINESS_MANAGER') {
+      if (activeTab !== 'facilities') {
+        setActiveTabState('facilities')
+        setSearchParams({ tab: 'facilities' }, { replace: true })
+      }
+    } else {
+      if (isDashboardTab(requestedTab)) {
+        setActiveTabState(requestedTab)
+      } else {
+        setActiveTabState('users')
+      }
     }
-  }, [role, requestedTab, activeTab, setSearchParams])
+  }, [role, requestedTab, setSearchParams])
 
   // Facility state
   const [facilities, setFacilities] = useState<Facility[]>(outletContext?.facilities || [])
@@ -283,7 +289,7 @@ export const AdminDashboard: React.FC = () => {
                         (l.userRole?.toLowerCase() || '').includes(logSearch.toLowerCase()) ||
                         (l.action?.toLowerCase() || '').includes(logSearch.toLowerCase()) ||
                         (l.ipAddress?.toLowerCase() || '').includes(logSearch.toLowerCase())
-    const matchType = logTypeFilter === 'ALL' || l.logType === logTypeFilter
+    const matchType = logTypeFilter === 'ALL' || l.logType === logTypeFilter || (logTypeFilter === 'SUPPORT_TICKET' && ((l.action && l.action.startsWith('SUPPORT_TICKET_')) || l.logType === 'SUPPORT_TICKET'))
     return matchSearch && matchType
   })
 
@@ -392,13 +398,10 @@ export const AdminDashboard: React.FC = () => {
           <div className="relative w-full overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-sm border border-slate-200">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-800 text-xs font-mono font-semibold uppercase tracking-wider mb-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span>
-                  Hạ Tầng Cơ Sở &amp; Sơ Đồ Kho
-                </div>
+               
                 <h1 className="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight font-headline">
                   {role === 'ADMIN'
-                    ? t('Chi nhánh & cơ sở lưu trữ (Chế độ xem)', 'Branches & Facilities (View Only)')
+                    ? t('Chi nhánh & cơ sở lưu trữ', 'Branches & Facilities')
                     : t('Cấu hình chi nhánh & cơ sở', 'Branch & Facility Configuration')}
                 </h1>
                 <p className="text-sm text-slate-600 mt-1 max-w-3xl">
@@ -562,6 +565,14 @@ export const AdminDashboard: React.FC = () => {
                 <span className="material-symbols-outlined text-[16px]">history</span>
                 <span>Nhật Ký Kiểm Toán (Audit Logs)</span>
               </button>
+              <Link
+                to="/tickets"
+                className="px-4 py-2 rounded-lg text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 flex items-center gap-2 transition-all cursor-pointer"
+                title="Xem danh sách và chi tiết báo cáo sự cố toàn hệ thống (Chỉ đọc)"
+              >
+                <span className="material-symbols-outlined text-[16px] text-rose-600">support_agent</span>
+                <span>Báo Cáo Sự Cố (Chỉ đọc)</span>
+              </Link>
             </div>
           </div>
 
@@ -991,6 +1002,7 @@ export const AdminDashboard: React.FC = () => {
                 className="px-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50 font-medium focus:outline-none"
               >
                 <option value="ALL">Tất cả loại log</option>
+                <option value="SUPPORT_TICKET">SUPPORT_TICKET (Sự cố &amp; Hỗ trợ)</option>
                 <option value="AUTH">AUTH (Đăng nhập / Token)</option>
                 <option value="SECURITY">SECURITY (Phân quyền RBAC)</option>
                 <option value="HANDOVER">HANDOVER (Bàn giao)</option>

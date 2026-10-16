@@ -76,6 +76,8 @@ public enum ErrorCode {
     RETURN_PHOTO_EVIDENCE_REQUIRED(726, "Cần tối thiểu 2 ảnh chụp hiện trường để xác nhận nghiệm thu trả kho theo BR-RULE-013", HttpStatus.BAD_REQUEST),
     BOOKING_PAYMENT_EXPIRED(727, "The 24-hour booking payment window has expired", HttpStatus.CONFLICT),
     BOOKING_REQUEST_NOT_PENDING_APPROVAL(728, "Booking request is no longer waiting for approval", HttpStatus.CONFLICT),
+    BOOKING_ALREADY_ACTIVE(729, "Đơn đặt kho đã kích hoạt và đang sử dụng, không thể đổi lịch", HttpStatus.BAD_REQUEST),
+    BOOKING_ALREADY_HANDED_OVER(730, "Kho đã được bàn giao thực tế, không thể đổi lịch nhận kho", HttpStatus.BAD_REQUEST),
 
     // ========================= PAYMENT (750 - 799) =========================
     PAYMENT_NOT_FOUND(750, "Payment transaction not found", HttpStatus.NOT_FOUND),
@@ -83,6 +85,7 @@ public enum ErrorCode {
     INVALID_PAYMENT_SIGNATURE(752, "Invalid VNPay payment signature", HttpStatus.BAD_REQUEST),
     PAYMENT_AMOUNT_MISMATCH(753, "Payment amount does not match booking requirement", HttpStatus.BAD_REQUEST),
     PAYMENT_FAILED(754, "Payment transaction failed or was cancelled", HttpStatus.BAD_REQUEST),
+    PAYMENT_AMOUNT_INVALID(755, "Số tiền thanh toán không hợp lệ (phải lớn hơn 0đ)", HttpStatus.BAD_REQUEST),
 
     // ========================= ROLE_PERMISSION (800 - 899) =========================
     ROLE_PERMISSION_NOT_FOUND(800, "Role-permission mapping not found", HttpStatus.NOT_FOUND),
@@ -112,6 +115,10 @@ public enum ErrorCode {
     TICKET_IMAGE_UPLOAD_FAILED(1201, "Tải tệp tin ảnh bằng chứng thất bại", HttpStatus.INTERNAL_SERVER_ERROR),
     TICKET_INVALID_IMAGE_FORMAT(1202, "Định dạng tệp không hợp lệ. Chỉ chấp nhận ảnh JPG, PNG, WEBP, GIF", HttpStatus.BAD_REQUEST),
     TICKET_IMAGE_SIZE_EXCEEDED(1203, "Kích thước tệp ảnh vượt quá giới hạn cho phép (10MB)", HttpStatus.BAD_REQUEST),
+    TICKET_INVALID_STATUS_TRANSITION(1204, "Chuyển trạng thái sự cố không hợp lệ theo quy trình", HttpStatus.BAD_REQUEST),
+    TICKET_FACILITY_MISMATCH(1205, "Không có quyền thao tác trên sự cố ngoài phạm vi cơ sở được phân công", HttpStatus.FORBIDDEN),
+    TICKET_STAFF_NOT_IN_FACILITY(1206, "Nhân viên được phân công không thuộc cơ sở này", HttpStatus.BAD_REQUEST),
+    TICKET_ALREADY_CLOSED(1207, "Phiếu sự cố đã được đóng hoàn tất", HttpStatus.BAD_REQUEST),
 
     // ========================= ACTIVITY_LOG (1300 - 1399) =========================
     ACTIVITY_LOG_NOT_FOUND(1300, "Activity log entry not found", HttpStatus.NOT_FOUND),
@@ -191,7 +198,11 @@ public enum ErrorCode {
     REFUND_NOT_APPROVED(2003, "Yêu cầu hoàn tiền phải được phê duyệt trước khi xử lý chi trả", HttpStatus.BAD_REQUEST),
     INVALID_REFUND_AMOUNT(2004, "Số tiền hoàn không hợp lệ", HttpStatus.BAD_REQUEST),
     REFUND_TARGET_REQUIRED(2005, "Vui lòng cung cấp bookingId hoặc contractId hợp lệ cho yêu cầu hoàn tiền", HttpStatus.BAD_REQUEST),
-    NOTIFICATION_NOT_FOUND(2100, "Bản ghi thông báo không tồn tại", HttpStatus.NOT_FOUND);
+    NOTIFICATION_NOT_FOUND(2100, "Bản ghi thông báo không tồn tại", HttpStatus.NOT_FOUND),
+    CONTRACT_NOT_SIGNED(1516, "Hợp đồng chưa được ký hoặc chưa có hồ sơ scan giấy", HttpStatus.BAD_REQUEST),
+    INVALID_PAYMENT_METHOD(756, "Phương thức thanh toán không hợp lệ (chỉ chấp nhận CASH hoặc BANK_TRANSFER)", HttpStatus.BAD_REQUEST),
+    CHECKIN_STEP_NOT_SATISFIED(729, "Chưa thỏa mãn đầy đủ 4 điều kiện đối soát để chuyển bước", HttpStatus.BAD_REQUEST);
+
 
 
 

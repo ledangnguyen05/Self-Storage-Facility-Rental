@@ -1,16 +1,26 @@
 package com.boxora.service.impl;
 
+import com.boxora.dto.request.CheckInInspectionRequest;
 import com.boxora.dto.request.HandoverRequest;
+import com.boxora.dto.request.IdentityVerifyRequest;
+import com.boxora.dto.request.ManualPaymentRecordRequest;
+import com.boxora.dto.request.PaperContractCreateRequest;
 import com.boxora.dto.response.HandoverPrerequisitesResponse;
 import com.boxora.dto.response.HandoverResponse;
+import com.boxora.dto.response.NotificationLogResponse;
+import com.boxora.dto.response.PaymentResponse;
+import com.boxora.dto.response.RentalContractResponse;
 import com.boxora.dto.response.ReturnSettlementPreviewResponse;
 import com.boxora.dto.response.ReturnSettlementResponse;
 import com.boxora.entity.*;
 import com.boxora.enums.*;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
+import com.boxora.mapper.PaymentMapper;
+import com.boxora.mapper.RentalContractMapper;
 import com.boxora.repository.*;
 import com.boxora.service.ActivityLogService;
+import com.boxora.service.EmailService;
 import com.boxora.service.EncryptionService;
 import com.boxora.service.HandoverService;
 import lombok.RequiredArgsConstructor;
@@ -45,8 +55,13 @@ public class HandoverServiceImpl implements HandoverService {
     private final ActivityLogService activityLogService;
     private final EncryptionService encryptionService;
     private final RefundRequestRepository refundRequestRepository;
+    private final NotificationLogRepository notificationLogRepository;
+    private final EmailService emailService;
     private final com.boxora.security.FacilityAccessGuard facilityAccessGuard;
     private final com.boxora.security.RequestContext requestContext;
+    private final PaymentMapper paymentMapper;
+    private final RentalContractMapper rentalContractMapper;
+
 
     /**
      * Đối soát 4 điều kiện tiên quyết trước khi check-in bàn giao (BR-RULE-005):
@@ -71,67 +86,158 @@ public class HandoverServiceImpl implements HandoverService {
         // 1. Tính toán Điều kiện 1: Đủ tiền cọc (Full deposit)
         BigDecimal requiredDeposit = getRequiredDeposit(booking, unit);
         BigDecimal depositPaid = calculateTotalDepositPaid(booking);
+        BigDecimal depositRemaining = requiredDeposit.subtract(depositPaid).max(BigDecimal.ZERO);
         boolean depositSatisfied = depositPaid.compareTo(BigDecimal.ZERO) > 0
                 && depositPaid.compareTo(requiredDeposit) >= 0;
 
         // 2. Tính toán Điều kiện 2: Đủ tiền thuê tháng đầu (First month rental fee)
         BigDecimal requiredFirstMonthRent = getRequiredFirstMonthRent(booking, unit);
         BigDecimal firstMonthRentPaid = calculateTotalFirstMonthRentPaid(booking);
+        BigDecimal firstMonthRentRemaining = requiredFirstMonthRent.subtract(firstMonthRentPaid).max(BigDecimal.ZERO);
         boolean firstMonthRentSatisfied = firstMonthRentPaid.compareTo(BigDecimal.ZERO) > 0
                 && firstMonthRentPaid.compareTo(requiredFirstMonthRent) >= 0;
 
-        // 3. Tính toán Điều kiện 3: Hợp đồng điện tử đã ký (Signed e-contract)
+        // 3. Tính toán Điều kiện 3: Hợp đồng thuê kho (Electronic OTP/DocuSeal or Paper at Facility)
         Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
-        boolean contractSigned = contractOpt.isPresent() && (
-                contractOpt.get().getStatus() == RentalContractStatus.ACTIVE
-                        && contractOpt.get().getSignedAt() != null
-        );
-        String contractCode = contractOpt.map(RentalContract::getContractCode).orElse(null);
-        String contractStatus = contractOpt.map(c -> c.getStatus().name()).orElse("CHƯA_TẠO");
+        boolean contractSigned = false;
+        String contractCode = null;
+        String contractStatus = "CHƯA_TẠO";
+        String contractSigningMethod = booking.getSigningMethod() != null ? booking.getSigningMethod() : "ONLINE";
+        String contractVerificationStatus = null;
+        String paperContractUrl = null;
+        String paperOriginalLocation = null;
+        String paperVerifiedByName = null;
+        LocalDateTime paperVerifiedAt = null;
+
+        if (contractOpt.isPresent()) {
+            RentalContract contract = contractOpt.get();
+            contractCode = contract.getContractCode();
+            if (contract.getSigningMethod() != null) {
+                contractSigningMethod = contract.getSigningMethod();
+            }
+            paperContractUrl = contract.getPaperContractUrl();
+            paperOriginalLocation = contract.getPaperOriginalLocation();
+            if (contract.getPaperVerifiedBy() != null) {
+                paperVerifiedByName = contract.getPaperVerifiedBy().getFullName();
+            }
+            paperVerifiedAt = contract.getPaperVerifiedAt();
+
+            boolean isPaper = "PAPER".equalsIgnoreCase(contractSigningMethod)
+                    || "IN_PERSON".equalsIgnoreCase(contractSigningMethod)
+                    || "IN_PERSON".equalsIgnoreCase(booking.getSigningMethod());
+
+            boolean isContractSignedOrActive = contract.getStatus() == RentalContractStatus.ACTIVE
+                    || contract.getStatus() == RentalContractStatus.PENDING_ACTIVATION;
+
+            if (isPaper) {
+                if (isContractSignedOrActive && contract.getPaperVerifiedAt() != null) {
+                    contractSigned = true;
+                    contractStatus = "ĐÃ_KÝ_VÀ_XÁC_MINH";
+                    contractVerificationStatus = "VERIFIED";
+                } else if (contract.getStatus() == RentalContractStatus.PENDING_VERIFICATION
+                        || (contract.getPaperContractUrl() != null && contract.getPaperVerifiedAt() == null)) {
+                    contractSigned = false;
+                    contractStatus = "CHỜ_XÁC_MINH_HỢP_ĐỒNG_GIẤY";
+                    contractVerificationStatus = "PENDING_VERIFICATION";
+                } else {
+                    contractSigned = false;
+                    contractStatus = "CHỜ_TẢI_HỢP_ĐỒNG_GIẤY";
+                    contractVerificationStatus = "PENDING_UPLOAD";
+                }
+            } else {
+                // ELECTRONIC / ONLINE
+                if (isContractSignedOrActive && contract.getSignedAt() != null) {
+                    contractSigned = true;
+                    contractStatus = "ĐÃ_KÝ_ĐIỆN_TỬ";
+                    contractVerificationStatus = "VERIFIED";
+                } else {
+                    contractSigned = false;
+                    contractStatus = contract.getStatus() != null ? contract.getStatus().name() : "CHỜ_KÝ_ONLINE";
+                    contractVerificationStatus = "PENDING_SIGNATURE";
+                }
+            }
+        }
 
         // 4. Tính toán Điều kiện 4: Đối soát CCCD gốc (Original identity verification)
-        boolean identityVerified = customer != null && Boolean.TRUE.equals(customer.getIsActive()) && customer.getPhone() != null && !customer.getPhone().isBlank();
-        String idCardNumber = customer != null ? customer.getPhone() : null;
+        boolean identityVerified = booking.getIdentityVerifiedAt() != null || booking.getIdentityVerifiedByStaff() != null;
+        String idCardType = booking.getIdentityCardType() != null ? booking.getIdentityCardType() : "CCCD";
+        String idCardNumber = booking.getIdentityCardNumber() != null ? booking.getIdentityCardNumber() : (customer != null ? customer.getPhone() : null);
+        String identityVerifiedByName = booking.getIdentityVerifiedByStaff() != null ? booking.getIdentityVerifiedByStaff().getFullName() : null;
+        LocalDateTime identityVerifiedAt = booking.getIdentityVerifiedAt();
 
         List<String> missing = new ArrayList<>();
+        if (!contractSigned) {
+            if (contractOpt.isEmpty()) {
+                missing.add("Hợp đồng thuê kho chưa được khởi tạo");
+            } else if ("CHỜ_XÁC_MINH_HỢP_ĐỒNG_GIẤY".equals(contractStatus)) {
+                missing.add("Hợp đồng giấy đã tải lên nhưng đang chờ nhân viên kiểm tra chữ ký và xác minh hồ sơ");
+            } else if ("CHỜ_TẢI_HỢP_ĐỒNG_GIẤY".equals(contractStatus)) {
+                missing.add("Hợp đồng giấy chưa được tải lên bản scan/ảnh có chữ ký tại kho");
+            } else {
+                missing.add(String.format("Hợp đồng điện tử chưa được ký hoàn tất qua DocuSeal/OTP (Trạng thái: %s)", contractStatus));
+            }
+        }
         if (!depositSatisfied) {
-            missing.add(String.format("Chưa thanh toán đủ tiền đặt cọc quy định (Đã nộp: %s VNĐ / Yêu cầu: %s VNĐ)",
-                    depositPaid, requiredDeposit));
+            missing.add(String.format("Tiền cọc còn thiếu %s VNĐ (Đã xác nhận: %s VNĐ / Yêu cầu: %s VNĐ)",
+                    String.format("%,d", depositRemaining.longValue()),
+                    String.format("%,d", depositPaid.longValue()),
+                    String.format("%,d", requiredDeposit.longValue())));
         }
         if (!firstMonthRentSatisfied) {
-            missing.add(String.format("Chưa thanh toán tiền thuê tháng đầu tiên (Đã nộp: %s VNĐ / Yêu cầu: %s VNĐ)",
-                    firstMonthRentPaid, requiredFirstMonthRent));
-        }
-        if (!contractSigned) {
-            missing.add(String.format("Hợp đồng điện tử chưa được ký xác nhận qua mã OTP/DocuSeal (Trạng thái: %s)",
-                    contractStatus));
+            missing.add(String.format("Tiền thuê tháng đầu còn thiếu %s VNĐ (Đã xác nhận: %s VNĐ / Yêu cầu: %s VNĐ)",
+                    String.format("%,d", firstMonthRentRemaining.longValue()),
+                    String.format("%,d", firstMonthRentPaid.longValue()),
+                    String.format("%,d", requiredFirstMonthRent.longValue())));
         }
         if (!identityVerified) {
-            missing.add("Chưa đối soát giấy tờ tùy thân / CCCD gốc của khách hàng tại quầy");
+            missing.add("Chưa xác nhận đã đối chiếu giấy tờ tùy thân / CCCD / Passport gốc của khách hàng tại quầy");
         }
 
         boolean eligible = missing.isEmpty();
+
+        List<PaymentResponse> paymentHistory = paymentRepository.findAllByBooking_Id(booking.getId()).stream()
+                .sorted((a, b) -> {
+                    LocalDateTime t1 = a.getPaymentTime() != null ? a.getPaymentTime() : LocalDateTime.MIN;
+                    LocalDateTime t2 = b.getPaymentTime() != null ? b.getPaymentTime() : LocalDateTime.MIN;
+                    return t2.compareTo(t1);
+                })
+                .map(paymentMapper::toResponse)
+                .collect(Collectors.toList());
 
         return HandoverPrerequisitesResponse.builder()
                 .bookingId(booking.getId())
                 .bookingCode(booking.getBookingCode())
                 .customerName(customer != null ? customer.getFullName() : "N/A")
                 .customerPhone(customer != null ? customer.getPhone() : "N/A")
+                .customerEmail(customer != null ? customer.getEmail() : "N/A")
                 .unitCode(unit != null ? unit.getUnitCode() : "N/A")
                 .facilityName((unit != null && unit.getFacility() != null) ? unit.getFacility().getName() : "N/A")
                 .depositSatisfied(depositSatisfied)
                 .depositPaid(depositPaid)
                 .requiredDeposit(requiredDeposit)
+                .depositRemaining(depositRemaining)
                 .firstMonthRentSatisfied(firstMonthRentSatisfied)
                 .firstMonthRentPaid(firstMonthRentPaid)
                 .requiredFirstMonthRent(requiredFirstMonthRent)
+                .firstMonthRentRemaining(firstMonthRentRemaining)
                 .contractSigned(contractSigned)
                 .contractCode(contractCode)
                 .contractStatus(contractStatus)
+                .contractSigningMethod(contractSigningMethod)
+                .contractVerificationStatus(contractVerificationStatus)
+                .paperContractUrl(paperContractUrl)
+                .paperOriginalLocation(paperOriginalLocation)
+                .paperVerifiedByName(paperVerifiedByName)
+                .paperVerifiedAt(paperVerifiedAt)
                 .identityVerified(identityVerified)
+                .idCardType(idCardType)
                 .idCardNumber(idCardNumber)
+                .identityVerifiedByName(identityVerifiedByName)
+                .identityVerifiedAt(identityVerifiedAt)
+                .eligibleForInspection(eligible)
                 .eligibleForCheckIn(eligible)
                 .missingPrerequisites(missing)
+                .paymentHistory(paymentHistory)
                 .build();
     }
 
@@ -199,14 +305,24 @@ public class HandoverServiceImpl implements HandoverService {
                     firstMonthRentPaid, requiredFirstMonthRent));
         }
 
-        // Điều kiện 3: Hợp đồng điện tử đã ký hợp lệ qua OTP / DocuSeal
+        // Điều kiện 3: Hợp đồng thuê kho (Electronic or Paper at Facility)
         Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
-        boolean contractSigned = contractOpt.isPresent() && (
-                contractOpt.get().getStatus() == RentalContractStatus.ACTIVE
-                        && contractOpt.get().getSignedAt() != null
-        );
+        boolean contractSigned = false;
+        if (contractOpt.isPresent()) {
+            RentalContract contract = contractOpt.get();
+            boolean isPaper = "PAPER".equalsIgnoreCase(contract.getSigningMethod())
+                    || "IN_PERSON".equalsIgnoreCase(contract.getSigningMethod())
+                    || "IN_PERSON".equalsIgnoreCase(booking.getSigningMethod());
+            boolean isContractSignedOrActive = contract.getStatus() == RentalContractStatus.ACTIVE
+                    || contract.getStatus() == RentalContractStatus.PENDING_ACTIVATION;
+            if (isPaper) {
+                contractSigned = (isContractSignedOrActive && contract.getPaperVerifiedAt() != null);
+            } else {
+                contractSigned = (isContractSignedOrActive && contract.getSignedAt() != null);
+            }
+        }
         if (!contractSigned) {
-            missingPrerequisites.add("Hợp đồng thuê điện tử chưa được ký kết hợp lệ qua OTP/DocuSeal");
+            missingPrerequisites.add("Hợp đồng thuê chưa được ký kết hoặc chưa được nhân viên xác minh hợp lệ");
         }
 
         // Operator authorization check: Handover check-in MUST be performed by authorized staff/manager/admin
@@ -221,17 +337,25 @@ public class HandoverServiceImpl implements HandoverService {
         }
 
         // Điều kiện 4: Nhân viên tại quầy đối soát CCCD / giấy tờ tùy thân gốc
-        // 4a. Input validation: Định dạng chuỗi số 9-12 chữ số
         String idCard = request.getIdCardNumber() != null ? request.getIdCardNumber().trim() : "";
-        boolean validIdFormat = idCard.matches("^[0-9]{9,12}$");
-        if (!validIdFormat) {
-            missingPrerequisites.add("Định dạng số CCCD/giấy tờ tùy thân không hợp lệ (yêu cầu chuỗi số 9-12 chữ số)");
-        }
+        boolean staffAttestedValidly = Boolean.TRUE.equals(request.getIdentityVerified())
+                && idCard.matches("^[0-9]{9,12}$");
 
-        // 4b. Proof of identity: Yêu cầu hành động đối soát thực tế từ nhân viên có thẩm quyền
-        boolean staffAttested = Boolean.TRUE.equals(request.getIdentityVerified());
-        if (!staffAttested) {
+        boolean idAlreadyVerified = booking.getIdentityVerifiedAt() != null
+                && booking.getIdentityVerifiedByStaff() != null
+                && booking.getIdentityCardNumber() != null
+                && booking.getIdentityCardNumber().matches("^[0-9]{9,12}$");
+
+        if (Boolean.FALSE.equals(request.getIdentityVerified())) {
             missingPrerequisites.add("Nhân viên tại quầy chưa xác nhận hoàn tất đối soát giấy tờ tùy thân / CCCD gốc của khách hàng");
+        } else if (request.getIdCardNumber() != null && !request.getIdCardNumber().isBlank() && !request.getIdCardNumber().matches("^[0-9]{9,12}$")) {
+            missingPrerequisites.add("Số CCCD / Hộ chiếu không đúng định dạng hợp lệ (9 - 12 chữ số)");
+        } else if (!staffAttestedValidly && !idAlreadyVerified) {
+            missingPrerequisites.add("Nhân viên tại quầy chưa xác nhận hoàn tất đối soát giấy tờ tùy thân / CCCD gốc của khách hàng");
+        } else if (staffAttestedValidly && !idAlreadyVerified) {
+            booking.setIdentityCardNumber(idCard);
+            booking.setIdentityVerifiedByStaff(staff);
+            booking.setIdentityVerifiedAt(LocalDateTime.now());
         }
 
         if (!missingPrerequisites.isEmpty()) {
@@ -240,12 +364,25 @@ public class HandoverServiceImpl implements HandoverService {
             throw new AppException(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
         }
 
+
         // =========================================================================
         // THỰC HIỆN BÀN GIAO THỰC ĐỊA & CẤP QUYỀN TRUY CẬP (P0-03)
+        // Hiệu lực thuê chính thức tính từ ngày check-in và kích hoạt mã PIN
         // =========================================================================
+        LocalDate checkInDate = LocalDate.now();
+        int rentalMonths = (booking.getRentalMonths() != null && booking.getRentalMonths() > 0)
+                ? booking.getRentalMonths()
+                : 1;
+        LocalDate effectiveEndDate = checkInDate.plusMonths(rentalMonths);
+
+        booking.setStartDate(checkInDate);
+        booking.setEndDate(effectiveEndDate);
         booking.setStatus(BookingStatus.ACTIVE);
         booking.setHandoverTime(LocalDateTime.now());
         booking.setHandedOverByStaffId(staff.getId());
+        booking.setPaymentStatus("PAID");
+        booking.setHoldExpiresAt(null);
+        booking.setPaymentExpiresAt(null);
 
         // P0-03: Sinh mã PIN an toàn ở Backend bằng SecureRandom và mã hóa AES-256-GCM
         java.security.SecureRandom secureRandom = new java.security.SecureRandom();
@@ -264,12 +401,12 @@ public class HandoverServiceImpl implements HandoverService {
         unit.setStatus(UnitStatus.OCCUPIED);
         storageUnitRepository.save(unit);
 
-        // Kích hoạt trạng thái hợp đồng thuê sang ACTIVE nếu có
+        // Kích hoạt trạng thái hợp đồng thuê sang ACTIVE và đồng bộ ngày hiệu lực thực tế
         contractOpt.ifPresent(contract -> {
-            if (contract.getStatus() != RentalContractStatus.ACTIVE) {
-                contract.setStatus(RentalContractStatus.ACTIVE);
-                rentalContractRepository.save(contract);
-            }
+            contract.setStartDate(checkInDate);
+            contract.setEndDate(effectiveEndDate);
+            contract.setStatus(RentalContractStatus.ACTIVE);
+            rentalContractRepository.save(contract);
         });
 
         // Ghi biên bản bàn giao HandoverRecord
@@ -312,6 +449,41 @@ public class HandoverServiceImpl implements HandoverService {
                 UnitStatus.RESERVED,
                 UnitStatus.OCCUPIED
         );
+
+        // Tự động gửi Email và lưu thông báo Web cho khách hàng khi bàn giao thành công
+        try {
+            if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
+                String toEmail = booking.getCustomer().getEmail();
+                String custName = booking.getCustomer().getFullName();
+                String facilityName = (unit.getFacility() != null) ? unit.getFacility().getName() : "Boxora Facility";
+                emailService.sendHandoverPinEmail(toEmail, custName, unit.getUnitCode(), booking.getBookingCode(), plainPin, facilityName);
+            }
+        } catch (Exception e) {
+            log.warn("[CHECK_IN] Could not send handover PIN email: {}", e.getMessage());
+        }
+
+        try {
+            if (booking.getCustomer() != null) {
+                String facilityName = (unit.getFacility() != null) ? unit.getFacility().getName() : "Boxora Facility";
+                NotificationLog notifLog = NotificationLog.builder()
+                        .recipient(booking.getCustomer())
+                        .recipientEmail(booking.getCustomer().getEmail() != null ? booking.getCustomer().getEmail() : "customer@boxora.com")
+                        .recipientName(booking.getCustomer().getFullName())
+                        .facility(unit.getFacility())
+                        .channel(NotificationChannel.IN_APP)
+                        .notificationType(NotificationType.HANDOVER_PIN)
+                        .referenceType("BOOKING")
+                        .referenceId(booking.getId())
+                        .title(String.format("Bàn giao kho & Cấp mã PIN [%s]", unit.getUnitCode()))
+                        .content(String.format("Kính gửi quý khách, quy trình bàn giao kho %s tại cơ sở %s đã hoàn tất. Mã PIN bảo mật mở khóa SmartLock của bạn là: %s. Chúc mừng bạn đã nhận kho thành công!",
+                                unit.getUnitCode(), facilityName, plainPin))
+                        .status("SENT")
+                        .build();
+                notificationLogRepository.save(notifLog);
+            }
+        } catch (Exception e) {
+            log.warn("[CHECK_IN] Could not save in-app notification log: {}", e.getMessage());
+        }
 
         HandoverResponse response = mapToResponse(record);
         response.setAccessPin(plainPin); // Trả về PIN nguyên bản một lần duy nhất trên màn hình bàn giao
@@ -850,6 +1022,9 @@ public class HandoverServiceImpl implements HandoverService {
     }
 
     private BigDecimal getRequiredDeposit(Booking booking, StorageUnit unit) {
+        if (booking.getDepositAmount() != null && booking.getDepositAmount().compareTo(BigDecimal.ZERO) > 0) {
+            return booking.getDepositAmount();
+        }
         if (unit != null && unit.getUnitType() != null && unit.getUnitType().getDepositAmount() != null) {
             return unit.getUnitType().getDepositAmount();
         }
@@ -859,45 +1034,54 @@ public class HandoverServiceImpl implements HandoverService {
         if (unit != null && unit.getEffectiveBasePrice() != null) {
             return unit.getEffectiveBasePrice();
         }
-        return new BigDecimal("1000000.00");
+        return new BigDecimal("450000.00");
     }
 
     private BigDecimal calculateTotalDepositPaid(Booking booking) {
-        if (booking.getDepositPaid() != null && booking.getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
-            return booking.getDepositPaid();
-        }
         List<Payment> payments = paymentRepository.findAllByBooking_Id(booking.getId());
-        return payments.stream()
+        BigDecimal fromPayments = payments.stream()
                 .filter(p -> p.getPaymentType() == PaymentType.DEPOSIT && p.getStatus() == PaymentStatus.PAID)
                 .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (fromPayments.compareTo(BigDecimal.ZERO) > 0) {
+            return fromPayments;
+        }
+        boolean hasBookingPayment = payments.stream()
+                .anyMatch(p -> p.getPaymentType() == PaymentType.BOOKING_PAYMENT && p.getStatus() == PaymentStatus.PAID);
+        if (hasBookingPayment) {
+            return getRequiredDeposit(booking, booking.getStorageUnit());
+        }
+        if (booking.getDepositPaid() != null && booking.getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
+            return booking.getDepositPaid();
+        }
+        return BigDecimal.ZERO;
     }
 
     private BigDecimal getRequiredFirstMonthRent(Booking booking, StorageUnit unit) {
-        if (unit != null && unit.getEffectiveBasePrice() != null) {
-            return unit.getEffectiveBasePrice();
-        }
         if (booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0) {
             return booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP);
         }
-        return new BigDecimal("1500000.00");
+        if (unit != null && unit.getEffectiveBasePrice() != null) {
+            return unit.getEffectiveBasePrice();
+        }
+        return new BigDecimal("450000.00");
     }
 
     private BigDecimal calculateTotalFirstMonthRentPaid(Booking booking) {
         List<Payment> payments = paymentRepository.findAllByBooking_Id(booking.getId());
-        boolean hasBookingPayment = payments.stream()
-                .anyMatch(p -> p.getPaymentType() == PaymentType.BOOKING_PAYMENT && p.getStatus() == PaymentStatus.PAID);
-        if (hasBookingPayment) {
-            BigDecimal firstMonthRent = (booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0)
-                    ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP)
-                    : ((booking.getStorageUnit() != null && booking.getStorageUnit().getEffectiveBasePrice() != null)
-                    ? booking.getStorageUnit().getEffectiveBasePrice() : BigDecimal.ZERO);
-            return firstMonthRent != null ? firstMonthRent : BigDecimal.ZERO;
-        }
-        return payments.stream()
+        BigDecimal fromRentPayments = payments.stream()
                 .filter(p -> p.getPaymentType() == PaymentType.RENTAL_FEE && p.getStatus() == PaymentStatus.PAID)
                 .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (fromRentPayments.compareTo(BigDecimal.ZERO) > 0) {
+            return fromRentPayments;
+        }
+        boolean hasBookingPayment = payments.stream()
+                .anyMatch(p -> p.getPaymentType() == PaymentType.BOOKING_PAYMENT && p.getStatus() == PaymentStatus.PAID);
+        if (hasBookingPayment) {
+            return getRequiredFirstMonthRent(booking, booking.getStorageUnit());
+        }
+        return BigDecimal.ZERO;
     }
 
     private HandoverResponse mapToResponse(HandoverRecord r) {
@@ -969,4 +1153,417 @@ public class HandoverServiceImpl implements HandoverService {
         }
         return null;
     }
+
+    @Override
+    public void sendHandoverPinEmail(UUID bookingId, String customEmail) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        StorageUnit unit = booking.getStorageUnit();
+        String unitCode = unit != null ? unit.getUnitCode() : "N/A";
+        String facilityName = (unit != null && unit.getFacility() != null) ? unit.getFacility().getName() : "Boxora Facility";
+
+        String toEmail = (customEmail != null && !customEmail.isBlank())
+                ? customEmail.trim()
+                : (booking.getCustomer() != null ? booking.getCustomer().getEmail() : null);
+
+        if (toEmail == null || toEmail.isBlank()) {
+            throw new AppException(ErrorCode.USER_NOT_FOUND);
+        }
+
+        String plainPin = "------";
+        if (booking.getAccessPin() != null && !booking.getAccessPin().isBlank()) {
+            try {
+                plainPin = encryptionService.decrypt(booking.getAccessPin());
+            } catch (Exception e) {
+                plainPin = booking.getAccessPin();
+            }
+        }
+
+        String fullName = booking.getCustomer() != null ? booking.getCustomer().getFullName() : "Khách hàng Boxora";
+        emailService.sendHandoverPinEmail(toEmail, fullName, unitCode, booking.getBookingCode(), plainPin, facilityName);
+    }
+
+    @Override
+    public NotificationLogResponse sendHandoverWebNotification(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        StorageUnit unit = booking.getStorageUnit();
+        String unitCode = unit != null ? unit.getUnitCode() : "N/A";
+        String facilityName = (unit != null && unit.getFacility() != null) ? unit.getFacility().getName() : "Boxora Facility";
+
+        String plainPin = "------";
+        if (booking.getAccessPin() != null && !booking.getAccessPin().isBlank()) {
+            try {
+                plainPin = encryptionService.decrypt(booking.getAccessPin());
+            } catch (Exception e) {
+                plainPin = booking.getAccessPin();
+            }
+        }
+
+        String custName = booking.getCustomer() != null ? booking.getCustomer().getFullName() : "Khách hàng";
+        String custEmail = (booking.getCustomer() != null && booking.getCustomer().getEmail() != null)
+                ? booking.getCustomer().getEmail()
+                : "customer@boxora.com";
+
+        NotificationLog logEntity = NotificationLog.builder()
+                .recipient(booking.getCustomer())
+                .recipientEmail(custEmail)
+                .recipientName(custName)
+                .facility(unit != null ? unit.getFacility() : null)
+                .channel(NotificationChannel.IN_APP)
+                .notificationType(NotificationType.HANDOVER_PIN)
+                .referenceType("BOOKING")
+                .referenceId(booking.getId())
+                .title(String.format("Bàn giao kho & Cấp mã PIN [%s]", unitCode))
+                .content(String.format("Kính gửi %s, quy trình bàn giao kho %s tại cơ sở %s đã hoàn tất. Mã PIN SmartLock mở kho bảo mật của bạn là: %s. Chúc mừng bạn đã nhận kho thành công!",
+                        custName, unitCode, facilityName, plainPin))
+                .status("SENT")
+                .build();
+
+        logEntity = notificationLogRepository.save(logEntity);
+
+        return NotificationLogResponse.builder()
+                .id(logEntity.getId())
+                .recipientId(booking.getCustomer() != null ? booking.getCustomer().getId() : null)
+                .recipientEmail(custEmail)
+                .recipientName(custName)
+                .facilityId(unit != null && unit.getFacility() != null ? unit.getFacility().getId() : null)
+                .facilityName(facilityName)
+                .channel(NotificationChannel.IN_APP)
+                .notificationType(NotificationType.HANDOVER_PIN)
+                .referenceType("BOOKING")
+                .referenceId(booking.getId())
+                .title(logEntity.getTitle())
+                .content(logEntity.getContent())
+                .status(logEntity.getStatus())
+                .createdAt(logEntity.getCreatedAt() != null ? logEntity.getCreatedAt() : LocalDateTime.now())
+                .build();
+    }
+
+    // =========================================================================
+    // QUY TRÌNH CHECK-IN ĐỐI SOÁT 4 ĐIỀU KIỆN & NGHIỆM THU HIỆN TRƯỜNG
+    // =========================================================================
+
+    @Override
+    public RentalContractResponse createOrUploadPaperContract(PaperContractCreateRequest request) {
+        Booking booking = bookingRepository.findById(request.getBookingId())
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        StorageUnit unit = booking.getStorageUnit();
+        if (unit != null && unit.getFacility() != null) {
+            facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
+        }
+        RentalContract contract = rentalContractRepository.findByBookingId(booking.getId())
+                .orElseGet(() -> RentalContract.builder()
+                        .booking(booking)
+                        .customer(booking.getCustomer())
+                        .unit(unit)
+                        .facility(unit != null ? unit.getFacility() : null)
+                        .startDate(booking.getStartDate())
+                        .endDate(booking.getEndDate())
+                        .monthlyFee(getRequiredFirstMonthRent(booking, unit))
+                        .depositHeld(getRequiredDeposit(booking, unit))
+                        .status(RentalContractStatus.PENDING_SIGNATURE)
+                        .build());
+
+        String code = (request.getContractCode() != null && !request.getContractCode().isBlank())
+                ? request.getContractCode().trim()
+                : (contract.getContractCode() != null ? contract.getContractCode() : "HĐ-GIAY-" + booking.getBookingCode());
+        contract.setContractCode(code);
+        contract.setSigningMethod("PAPER");
+        if (request.getPaperOriginalLocation() != null) {
+            contract.setPaperOriginalLocation(request.getPaperOriginalLocation().trim());
+        }
+        if (request.getNotes() != null) {
+            contract.setPaperNotes(request.getNotes().trim());
+        }
+        if (request.getPaperContractUrl() != null && !request.getPaperContractUrl().isBlank()) {
+            contract.setPaperContractUrl(request.getPaperContractUrl().trim());
+            contract.setStatus(RentalContractStatus.PENDING_VERIFICATION);
+        }
+        booking.setSigningMethod("IN_PERSON");
+        bookingRepository.save(booking);
+
+        contract = rentalContractRepository.save(contract);
+
+        UUID facilityId = (unit != null && unit.getFacility() != null) ? unit.getFacility().getId() : null;
+        activityLogService.record(
+                facilityId,
+                ActivityAction.CONTRACT_CREATE,
+                "RentalContract",
+                contract.getId(),
+                String.format("Khởi tạo / Tải lên hợp đồng giấy %s cho đơn %s (Chờ xác minh hồ sơ)",
+                        contract.getContractCode(), booking.getBookingCode()),
+                null,
+                contract.getStatus()
+        );
+        return rentalContractMapper.toResponse(contract);
+    }
+
+    @Override
+    public RentalContractResponse verifyPaperContract(UUID bookingId, String notes) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        StorageUnit unit = booking.getStorageUnit();
+        if (unit != null && unit.getFacility() != null) {
+            facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
+        }
+        RentalContract contract = rentalContractRepository.findByBookingId(booking.getId())
+                .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
+
+        if (contract.getPaperContractUrl() == null || contract.getPaperContractUrl().isBlank()) {
+            throw new AppException(ErrorCode.CONTRACT_NOT_SIGNED);
+        }
+
+        User staff = resolveStaff(null);
+        boolean isBookingActive = booking.getStatus() == BookingStatus.ACTIVE;
+        contract.setStatus(isBookingActive ? RentalContractStatus.ACTIVE : RentalContractStatus.PENDING_ACTIVATION);
+        contract.setPaperVerifiedBy(staff);
+        contract.setPaperVerifiedAt(LocalDateTime.now());
+        contract.setSignedAt(LocalDateTime.now());
+        if (notes != null && !notes.isBlank()) {
+            contract.setPaperNotes((contract.getPaperNotes() != null ? contract.getPaperNotes() + "; " : "") + notes);
+        }
+        contract = rentalContractRepository.save(contract);
+
+        UUID facilityId = (unit != null && unit.getFacility() != null) ? unit.getFacility().getId() : null;
+        activityLogService.record(
+                facilityId,
+                ActivityAction.CONTRACT_SIGNED,
+                "RentalContract",
+                contract.getId(),
+                String.format("Nhân viên %s đã đối chiếu chữ ký và xác minh hợp đồng giấy %s cho đơn %s",
+                        staff != null ? staff.getFullName() : "Quầy", contract.getContractCode(), booking.getBookingCode()),
+                RentalContractStatus.PENDING_VERIFICATION,
+                RentalContractStatus.ACTIVE
+        );
+        return rentalContractMapper.toResponse(contract);
+    }
+
+    @Override
+    public PaymentResponse recordManualPayment(ManualPaymentRecordRequest request) {
+        Booking booking = bookingRepository.findById(request.getBookingId())
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        StorageUnit unit = booking.getStorageUnit();
+        if (unit != null && unit.getFacility() != null) {
+            facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
+        }
+        User staff = resolveStaff(null);
+
+        String method = request.getPaymentMethod().toUpperCase();
+        boolean isCash = "CASH".equals(method);
+        boolean isBank = "BANK_TRANSFER".equals(method);
+
+        if (!isCash && !isBank) {
+            throw new AppException(ErrorCode.INVALID_PAYMENT_METHOD);
+        }
+
+        String txnId = (isCash ? "CASH-" : "BANK-") + booking.getBookingCode() + "-" + System.currentTimeMillis();
+
+        Payment payment = Payment.builder()
+                .transactionId(txnId)
+                .booking(booking)
+                .amount(request.getAmount())
+                .paymentType(request.getPaymentType())
+                .paymentMethod(method)
+                .paymentTime(LocalDateTime.now())
+                .collectedByStaff(staff)
+                .receiptVoucherCode(isCash ? request.getReceiptVoucherCode() : null)
+                .referenceCode(isBank ? request.getReferenceCode() : null)
+                .proofDocumentUrl(request.getProofDocumentUrl())
+                .paymentNotes(request.getNotes())
+                .status(isCash ? PaymentStatus.PAID : PaymentStatus.PENDING)
+                .confirmedByStaff(isCash ? staff : null)
+                .confirmedAt(isCash ? LocalDateTime.now() : null)
+                .build();
+
+        payment = paymentRepository.save(payment);
+
+        if (isCash) {
+            if (request.getPaymentType() == PaymentType.DEPOSIT) {
+                BigDecimal cur = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
+                booking.setDepositPaid(cur.add(request.getAmount()));
+            }
+            BigDecimal dep = calculateTotalDepositPaid(booking);
+            BigDecimal reqDep = getRequiredDeposit(booking, unit);
+            BigDecimal rent = calculateTotalFirstMonthRentPaid(booking);
+            BigDecimal reqRent = getRequiredFirstMonthRent(booking, unit);
+            boolean fullyPaid = dep.compareTo(reqDep) >= 0 && rent.compareTo(reqRent) >= 0;
+            booking.setPaymentStatus(fullyPaid ? "PAID" : "PARTIALLY_PAID");
+            booking.setHoldExpiresAt(null);
+            bookingRepository.save(booking);
+        }
+
+        UUID facilityId = (unit != null && unit.getFacility() != null) ? unit.getFacility().getId() : null;
+        activityLogService.record(
+                facilityId,
+                isCash ? ActivityAction.PAYMENT_CONFIRMED : ActivityAction.PAYMENT_INITIATED,
+                "Payment",
+                payment.getId(),
+                String.format("Ghi nhận khoản thu %s %s VNĐ (%s) cho đơn %s do nhân viên %s thực hiện (Mã chứng từ: %s)",
+                        request.getPaymentType(), request.getAmount(), method, booking.getBookingCode(),
+                        staff != null ? staff.getFullName() : "Quầy",
+                        isCash ? request.getReceiptVoucherCode() : request.getReferenceCode()),
+                null,
+                payment.getStatus()
+        );
+        return paymentMapper.toResponse(payment);
+    }
+
+    @Override
+    public PaymentResponse confirmBankTransferPayment(UUID paymentId, String notes) {
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND));
+        if (payment.getBooking() != null && payment.getBooking().getStorageUnit() != null
+                && payment.getBooking().getStorageUnit().getFacility() != null) {
+            facilityAccessGuard.checkFacilityAccess(payment.getBooking().getStorageUnit().getFacility().getId());
+        }
+        if (payment.getStatus() == PaymentStatus.PAID) {
+            return paymentMapper.toResponse(payment);
+        }
+        User staff = resolveStaff(null);
+        payment.setStatus(PaymentStatus.PAID);
+        payment.setConfirmedByStaff(staff);
+        payment.setConfirmedAt(LocalDateTime.now());
+        if (notes != null && !notes.isBlank()) {
+            payment.setPaymentNotes((payment.getPaymentNotes() != null ? payment.getPaymentNotes() + "; " : "") + notes);
+        }
+        payment = paymentRepository.save(payment);
+
+        if (payment.getBooking() != null) {
+            Booking b = payment.getBooking();
+            if (payment.getPaymentType() == PaymentType.DEPOSIT) {
+                BigDecimal cur = b.getDepositPaid() != null ? b.getDepositPaid() : BigDecimal.ZERO;
+                b.setDepositPaid(cur.add(payment.getAmount()));
+            }
+            StorageUnit unit = b.getStorageUnit();
+            BigDecimal dep = calculateTotalDepositPaid(b);
+            BigDecimal reqDep = getRequiredDeposit(b, unit);
+            BigDecimal rent = calculateTotalFirstMonthRentPaid(b);
+            BigDecimal reqRent = getRequiredFirstMonthRent(b, unit);
+            boolean fullyPaid = dep.compareTo(reqDep) >= 0 && rent.compareTo(reqRent) >= 0;
+            b.setPaymentStatus(fullyPaid ? "PAID" : "PARTIALLY_PAID");
+            b.setHoldExpiresAt(null);
+            bookingRepository.save(b);
+        }
+
+        UUID facilityId = (payment.getBooking() != null && payment.getBooking().getStorageUnit() != null
+                && payment.getBooking().getStorageUnit().getFacility() != null)
+                ? payment.getBooking().getStorageUnit().getFacility().getId() : null;
+        activityLogService.record(
+                facilityId,
+                ActivityAction.PAYMENT_CONFIRMED,
+                "Payment",
+                payment.getId(),
+                String.format("Nhân viên %s đối soát và xác nhận tiền chuyển khoản %s VNĐ (%s) đã vào tài khoản",
+                        staff != null ? staff.getFullName() : "Kế toán", payment.getAmount(), payment.getReferenceCode()),
+                PaymentStatus.PENDING,
+                PaymentStatus.PAID
+        );
+        return paymentMapper.toResponse(payment);
+    }
+
+    @Override
+    public HandoverPrerequisitesResponse verifyIdentity(IdentityVerifyRequest request) {
+        Booking booking = bookingRepository.findById(request.getBookingId())
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        if (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null) {
+            facilityAccessGuard.checkFacilityAccess(booking.getStorageUnit().getFacility().getId());
+        }
+        User staff = resolveStaff(null);
+        booking.setIdentityCardType(request.getIdCardType() != null ? request.getIdCardType() : "CCCD");
+        booking.setIdentityCardNumber(request.getIdCardNumber().trim());
+        booking.setIdentityVerifiedByStaff(staff);
+        booking.setIdentityVerifiedAt(LocalDateTime.now());
+        booking.setIdentityVerificationNotes(request.getNotes());
+        booking = bookingRepository.save(booking);
+
+        UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                ? booking.getStorageUnit().getFacility().getId() : null;
+        activityLogService.record(
+                facilityId,
+                ActivityAction.CHECKIN_VERIFIED,
+                "Booking",
+                booking.getId(),
+                String.format("Nhân viên %s đã đối chiếu giấy tờ gốc %s số %s của khách hàng %s",
+                        staff != null ? staff.getFullName() : "Quầy",
+                        booking.getIdentityCardType(), booking.getIdentityCardNumber(),
+                        booking.getCustomer() != null ? booking.getCustomer().getFullName() : "Khách"),
+                null,
+                null
+        );
+        return getCheckInPrerequisites(booking.getId());
+    }
+
+    @Override
+    public void completeCheckInStep1(UUID bookingId) {
+        HandoverPrerequisitesResponse prereq = getCheckInPrerequisites(bookingId);
+        if (!prereq.isEligibleForInspection()) {
+            throw new AppException(ErrorCode.CHECKIN_STEP_NOT_SATISFIED);
+        }
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        User staff = resolveStaff(null);
+        String stepLog = String.format("[%s] Hoàn tất đối soát 4 điều kiện bởi nhân viên %s. Chuyển sang bước Nghiệm thu hiện trường.\n",
+                LocalDateTime.now(), staff != null ? staff.getFullName() : "Quầy");
+        booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + stepLog);
+        bookingRepository.save(booking);
+    }
+
+    @Override
+    public HandoverResponse recordCheckInInspection(CheckInInspectionRequest request) {
+        HandoverPrerequisitesResponse prereq = getCheckInPrerequisites(request.getBookingId());
+        if (!prereq.isEligibleForInspection()) {
+            throw new AppException(ErrorCode.CHECKIN_STEP_NOT_SATISFIED);
+        }
+        Booking booking = bookingRepository.findById(request.getBookingId())
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        StorageUnit unit = booking.getStorageUnit();
+        User staff = resolveStaff(null);
+
+        boolean doorPassed = Boolean.TRUE.equals(request.getDoorConditionPassed());
+        boolean cleanlinessPassed = Boolean.TRUE.equals(request.getCleanlinessPassed());
+        boolean smartLockPassed = Boolean.TRUE.equals(request.getSmartLockPassed());
+        boolean sensorPassed = Boolean.TRUE.equals(request.getSensorPassed());
+        boolean wallPassed = Boolean.TRUE.equals(request.getWallStructurePassed());
+
+        String checklistSummary = String.format(
+                "Cửa cuốn: %s | Vệ sinh: %s | SmartLock: %s | Cảm biến IoT: %s | Tường vách: %s",
+                doorPassed ? "Đạt" : "Không đạt",
+                cleanlinessPassed ? "Sạch sẽ" : "Chưa dọn",
+                smartLockPassed ? "Tốt" : "Lỗi",
+                sensorPassed ? "Chuẩn" : "Lỗi",
+                wallPassed ? "Nguyên vẹn" : "Hư hại"
+        );
+
+        List<String> photos = request.getEvidencePhotos() != null ? request.getEvidencePhotos() : List.of();
+        String photosStr = String.join(";", photos);
+
+        HandoverRecord record = HandoverRecord.builder()
+                .booking(booking)
+                .staff(staff)
+                .recordType("CHECK_IN_INSPECTION")
+                .unitCondition(request.getUnitCondition() != null ? request.getUnitCondition() : "Đạt chuẩn 5/5 kiểm định hiện trường")
+                .checklistSummary(checklistSummary)
+                .evidencePhotos(photosStr)
+                .notes(request.getNotes())
+                .recordedAt(LocalDateTime.now())
+                .build();
+        record = handoverRecordRepository.save(record);
+
+        UUID facilityId = (unit != null && unit.getFacility() != null) ? unit.getFacility().getId() : null;
+        activityLogService.record(
+                facilityId,
+                ActivityAction.CHECKOUT_INSPECTION_COMPLETE,
+                "HandoverRecord",
+                record.getId(),
+                String.format("Nghiệm thu hiện trường buồng kho %s đạt chuẩn kiểm định: %s",
+                        unit != null ? unit.getUnitCode() : "N/A", checklistSummary),
+                null,
+                null
+        );
+        return mapToResponse(record);
+    }
 }
+

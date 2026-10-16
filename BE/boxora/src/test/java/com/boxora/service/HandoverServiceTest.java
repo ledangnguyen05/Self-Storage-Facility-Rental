@@ -72,6 +72,18 @@ class HandoverServiceTest {
     @Mock
     private com.boxora.security.RequestContext requestContext;
 
+    @Mock
+    private NotificationLogRepository notificationLogRepository;
+
+    @Mock
+    private EmailService emailService;
+
+    @Mock
+    private com.boxora.mapper.PaymentMapper paymentMapper;
+
+    @Mock
+    private com.boxora.mapper.RentalContractMapper rentalContractMapper;
+
     @InjectMocks
     private HandoverServiceImpl handoverService;
 
@@ -126,6 +138,9 @@ class HandoverServiceTest {
                 .totalRentalFee(new BigDecimal("18000000.00"))
                 .depositPaid(new BigDecimal("1500000.00"))
                 .status(BookingStatus.CONFIRMED)
+                .identityVerifiedByStaff(testStaff)
+                .identityVerifiedAt(LocalDateTime.now())
+                .identityCardNumber("001092003891")
                 .build();
         testBooking.setId(bookingId);
 
@@ -138,7 +153,7 @@ class HandoverServiceTest {
                 .startDate(LocalDate.now())
                 .endDate(LocalDate.now().plusMonths(12))
                 .monthlyFee(new BigDecimal("1500000.00"))
-                .status(RentalContractStatus.ACTIVE)
+                .status(RentalContractStatus.PENDING_ACTIVATION)
                 .signedAt(LocalDateTime.now())
                 .docusealSubmissionId(998822L)
                 .build();
@@ -154,6 +169,8 @@ class HandoverServiceTest {
                 .amount(new BigDecimal("1500000.00"))
                 .build();
         lenient().when(paymentRepository.findAllByBooking_Id(any())).thenReturn(List.of(rentPayment));
+        lenient().when(paymentMapper.toResponse(any())).thenReturn(new com.boxora.dto.response.PaymentResponse());
+        lenient().when(rentalContractMapper.toResponse(any())).thenReturn(new com.boxora.dto.response.RentalContractResponse());
 
         lenient().when(requestContext.currentUserId()).thenReturn(staffId);
         lenient().when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
@@ -241,8 +258,13 @@ class HandoverServiceTest {
             // Verify entity state updates
             assertThat(testBooking.getStatus()).isEqualTo(BookingStatus.ACTIVE);
             assertThat(testBooking.getHandoverTime()).isNotNull();
+            assertThat(testBooking.getStartDate()).isEqualTo(LocalDate.now());
+            assertThat(testBooking.getEndDate()).isEqualTo(LocalDate.now().plusMonths(12));
             assertThat(testBooking.getAccessPin()).isEqualTo("739215");
             assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.OCCUPIED);
+            assertThat(testContract.getStatus()).isEqualTo(RentalContractStatus.ACTIVE);
+            assertThat(testContract.getStartDate()).isEqualTo(LocalDate.now());
+            assertThat(testContract.getEndDate()).isEqualTo(LocalDate.now().plusMonths(12));
 
             // Verify Activity Logs
             verify(activityLogService).record(
@@ -695,6 +717,198 @@ class HandoverServiceTest {
             assertThat(response.getNotes()).contains("CẢNH BÁO: Khấu trừ vượt quá tiền cọc!");
             assertThat(response.getNotes()).contains("500000.00");
             verify(paymentRepository, never()).save(any(Payment.class));
+        }
+    }
+
+    @Nested
+    @DisplayName("Tách biệt dữ liệu đa đơn đặt chỗ và bảo vệ điều kiện nghiệp vụ (Data Isolation & Security Guards)")
+    class BookingSeparationAndSecurityTests {
+
+        @Test
+        @DisplayName("F.1-5: Gọi đối soát cho nhiều booking độc lập không bị trộn lẫn thông tin hoặc điều kiện tiên quyết")
+        void getCheckInPrerequisites_IndependentMultipleBookings() {
+            // Booking 1: Pham Mai Phuong - BX-2026-1013 - Kho TB-C204 (Đã cọc + đã thuê + đã ký HĐ)
+            UUID booking1Id = UUID.randomUUID();
+            StorageUnit unit1 = StorageUnit.builder()
+                    .unitCode("TB-C204")
+                    .facility(testFacility)
+                    .status(UnitStatus.RESERVED)
+                    .build();
+            unit1.setId(UUID.randomUUID());
+
+            User customer1 = User.builder()
+                    .fullName("Phạm Mai Phương")
+                    .email("phuong.pham@gmail.com")
+                    .phone("0987.654.321")
+                    .isActive(true)
+                    .role(Role.builder().name("CUSTOMER").build())
+                    .build();
+            customer1.setId(UUID.randomUUID());
+
+            Booking booking1 = Booking.builder()
+                    .bookingCode("BX-2026-1013")
+                    .customer(customer1)
+                    .storageUnit(unit1)
+                    .depositPaid(new BigDecimal("4800000.00"))
+                    .rentalMonths(12)
+                    .totalRentalFee(new BigDecimal("57600000.00"))
+                    .status(BookingStatus.CONFIRMED)
+                    .identityVerifiedByStaff(testStaff)
+                    .identityVerifiedAt(LocalDateTime.now())
+                    .identityCardNumber("079090123456")
+                    .build();
+            booking1.setId(booking1Id);
+
+            RentalContract contract1 = RentalContract.builder()
+                    .contractCode("CTR-2026-1013")
+                    .booking(booking1)
+                    .customer(customer1)
+                    .unit(unit1)
+                    .facility(testFacility)
+                    .status(RentalContractStatus.ACTIVE)
+                    .signedAt(LocalDateTime.now())
+                    .build();
+
+            Payment rentPayment1 = Payment.builder()
+                    .paymentType(PaymentType.RENTAL_FEE)
+                    .status(PaymentStatus.PAID)
+                    .amount(new BigDecimal("4800000.00"))
+                    .build();
+
+            // Booking 2: Le Thi Hoang Yen - BX-RES-TBC210 - Kho TB-C210 (Chưa nộp tiền + chưa ký HĐ)
+            UUID booking2Id = UUID.randomUUID();
+            StorageUnit unit2 = StorageUnit.builder()
+                    .unitCode("TB-C210")
+                    .facility(testFacility)
+                    .status(UnitStatus.RESERVED)
+                    .build();
+            unit2.setId(UUID.randomUUID());
+
+            User customer2 = User.builder()
+                    .fullName("Lê Thị Hoàng Yến")
+                    .email("yen.le@gmail.com")
+                    .phone("0912.888.999")
+                    .isActive(true)
+                    .role(Role.builder().name("CUSTOMER").build())
+                    .build();
+            customer2.setId(UUID.randomUUID());
+
+            Booking booking2 = Booking.builder()
+                    .bookingCode("BX-RES-TBC210")
+                    .customer(customer2)
+                    .storageUnit(unit2)
+                    .depositPaid(BigDecimal.ZERO)
+                    .rentalMonths(6)
+                    .totalRentalFee(new BigDecimal("7500000.00"))
+                    .status(BookingStatus.PENDING_PAYMENT)
+                    .build();
+            booking2.setId(booking2Id);
+
+            when(bookingRepository.findById(booking1Id)).thenReturn(Optional.of(booking1));
+            when(bookingRepository.findById(booking2Id)).thenReturn(Optional.of(booking2));
+
+            when(paymentRepository.findAllByBooking_Id(booking1Id)).thenReturn(List.of(rentPayment1));
+            when(paymentRepository.findAllByBooking_Id(booking2Id)).thenReturn(List.of());
+
+            when(rentalContractRepository.findByBookingId(booking1Id)).thenReturn(Optional.of(contract1));
+            when(rentalContractRepository.findByBookingId(booking2Id)).thenReturn(Optional.empty());
+
+            // 1. Kiểm tra đối soát của Booking 1 (Phương)
+            HandoverPrerequisitesResponse resp1 = handoverService.getCheckInPrerequisites(booking1Id);
+            assertThat(resp1.getBookingCode()).isEqualTo("BX-2026-1013");
+            assertThat(resp1.getCustomerName()).isEqualTo("Phạm Mai Phương");
+            assertThat(resp1.getUnitCode()).isEqualTo("TB-C204");
+            assertThat(resp1.isDepositSatisfied()).isTrue();
+            assertThat(resp1.isFirstMonthRentSatisfied()).isTrue();
+            assertThat(resp1.isContractSigned()).isTrue();
+            assertThat(resp1.isEligibleForCheckIn()).isTrue();
+            assertThat(resp1.getContractCode()).isEqualTo("CTR-2026-1013");
+
+            // 2. Kiểm tra đối soát của Booking 2 (Yến)
+            HandoverPrerequisitesResponse resp2 = handoverService.getCheckInPrerequisites(booking2Id);
+            assertThat(resp2.getBookingCode()).isEqualTo("BX-RES-TBC210");
+            assertThat(resp2.getCustomerName()).isEqualTo("Lê Thị Hoàng Yến");
+            assertThat(resp2.getUnitCode()).isEqualTo("TB-C210");
+            assertThat(resp2.isDepositSatisfied()).isFalse();
+            assertThat(resp2.isFirstMonthRentSatisfied()).isFalse();
+            assertThat(resp2.isContractSigned()).isFalse();
+            assertThat(resp2.isEligibleForCheckIn()).isFalse();
+            assertThat(resp2.getContractCode()).isNull();
+
+            // 3. Gọi lại Booking 1 để xác nhận không bị lưu vết hay ghi đè từ Booking 2
+            HandoverPrerequisitesResponse resp1Again = handoverService.getCheckInPrerequisites(booking1Id);
+            assertThat(resp1Again.getBookingCode()).isEqualTo("BX-2026-1013");
+            assertThat(resp1Again.getCustomerName()).isEqualTo("Phạm Mai Phương");
+            assertThat(resp1Again.getUnitCode()).isEqualTo("TB-C204");
+            assertThat(resp1Again.isEligibleForCheckIn()).isTrue();
+        }
+
+        @Test
+        @DisplayName("F.8: Đơn đang 'Chờ cọc' (PENDING_PAYMENT / thiếu cọc) không thể bàn giao bằng cách gọi API trực tiếp")
+        void checkIn_PendingPaymentBooking_ChờCọc_ThrowsPrerequisitesNotMet() {
+            testBooking.setStatus(BookingStatus.PENDING_PAYMENT);
+            testBooking.setDepositPaid(BigDecimal.ZERO);
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+
+            HandoverRequest request = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .staffId(staffId)
+                    .idCardNumber("001092003891")
+                    .identityVerified(true)
+                    .firstMonthRentConfirmed(true)
+                    .contractConfirmed(true)
+                    .build();
+
+            AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
+
+            // Unit remains RESERVED and no PIN is assigned
+            assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.RESERVED);
+            assertThat(testBooking.getAccessPin()).isNull();
+        }
+
+        @Test
+        @DisplayName("F.10: Kiểm thử quyền truy cập theo cơ sở (Facility Access Guard)")
+        void checkIn_FacilityMismatch_AccessGuardThrowsForbidden() {
+            doThrow(new AppException(ErrorCode.FORBIDDEN))
+                    .when(facilityAccessGuard).checkFacilityAccess(testFacility.getId());
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+
+            HandoverRequest request = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .staffId(staffId)
+                    .idCardNumber("001092003891")
+                    .identityVerified(true)
+                    .build();
+
+            AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("E: Backend kiểm tra DB, từ chối bàn giao nếu frontend tự gửi cờ confirmed mà DB chưa thanh toán")
+        void checkIn_TamperedFrontendFlagsWithoutDbPayments_ThrowsPrerequisitesNotMet() {
+            testBooking.setDepositPaid(BigDecimal.ZERO);
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.empty());
+
+            // Frontend sends both flags as true, but DB has no payments and no signed contract
+            HandoverRequest tamperedRequest = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .staffId(staffId)
+                    .idCardNumber("001092003891")
+                    .identityVerified(true)
+                    .firstMonthRentConfirmed(true)
+                    .contractConfirmed(true)
+                    .build();
+
+            AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(tamperedRequest));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
         }
     }
 }

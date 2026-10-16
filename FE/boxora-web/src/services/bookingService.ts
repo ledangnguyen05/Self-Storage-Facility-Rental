@@ -1,5 +1,12 @@
 import { api } from '../lib/axios'
-import { Booking } from '../types'
+import {
+  Booking,
+  BookingCancellationPreview,
+  BookingCancelResponse,
+  BookingRescheduleEligibility,
+  BookingRescheduleHistory,
+  BookingRescheduleResponse,
+} from '../types'
 import { PageResult } from './userService'
 
 export interface BookingCreatePayload {
@@ -10,6 +17,15 @@ export interface BookingCreatePayload {
   totalRentalFee?: number
   depositPaid?: number
   signingMethod?: 'ONLINE' | 'IN_PERSON'
+  expectedCheckInAt?: string
+  checkInTime?: string
+}
+
+export interface BookingReschedulePayload {
+  newStartDate: string
+  newExpectedCheckInAt?: string
+  newCheckInTime?: string
+  reason?: string
 }
 
 export interface BookingPinData {
@@ -145,5 +161,37 @@ export const bookingService = {
   async remoteUnlock(id: string) {
     const response = await api.post(`/api/v1/bookings/${id}/remote-unlock`)
     return response.data?.data as Booking
+  },
+
+  async rescheduleBooking(id: string, payload: BookingReschedulePayload) {
+    const response = await api.put(`/api/v1/bookings/${id}/reschedule`, payload)
+    return response.data?.data as Booking
+  },
+
+  async getRescheduleEligibility(id: string) {
+    const response = await api.get(`/api/v1/bookings/${id}/reschedule-eligibility`)
+    return response.data?.data as BookingRescheduleEligibility
+  },
+
+  async rescheduleBookingDetailed(id: string, payload: BookingReschedulePayload) {
+    const response = await api.post(`/api/v1/bookings/${id}/reschedule`, payload)
+    return response.data?.data as BookingRescheduleResponse
+  },
+
+  async getRescheduleHistory(id: string) {
+    const response = await api.get(`/api/v1/bookings/${id}/reschedule-history`)
+    return (response.data?.data || []) as BookingRescheduleHistory[]
+  },
+
+  async getCancellationPreview(id: string) {
+    const response = await api.get(`/api/v1/bookings/${id}/cancellation-preview`)
+    return response.data?.data as BookingCancellationPreview
+  },
+
+  async cancelBooking(id: string, cancellationReason?: string) {
+    const response = await api.post(`/api/v1/bookings/${id}/cancel`, {
+      cancellationReason: cancellationReason?.trim() || undefined,
+    })
+    return response.data?.data as BookingCancelResponse
   },
 }

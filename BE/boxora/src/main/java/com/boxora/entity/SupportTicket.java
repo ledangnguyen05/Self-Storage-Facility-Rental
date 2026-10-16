@@ -48,9 +48,22 @@ public class SupportTicket extends BaseEntity {
     @JoinColumn(name = "assigned_staff_id")
     private User assignedStaff;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "facility_id")
+    private Facility facility;
+
     @Column(name = "image_evidence", columnDefinition = "TEXT")
     private String imageEvidence;
 
     @Column(name = "resolution_note", columnDefinition = "TEXT")
     private String resolutionNote;
+
+    @Column(name = "sla_due_at")
+    private java.time.LocalDateTime slaDueAt;
+
+    @Column(name = "resolved_at")
+    private java.time.LocalDateTime resolvedAt;
+
+    @Column(name = "closed_at")
+    private java.time.LocalDateTime closedAt;
 }

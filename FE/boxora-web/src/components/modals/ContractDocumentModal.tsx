@@ -131,7 +131,9 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
   if (!contract) return null
 
   const isPendingSignature = contract.status === 'PENDING_SIGNATURE'
+  const isPendingActivation = contract.status === 'PENDING_ACTIVATION'
   const isActive = contract.status === 'ACTIVE'
+  const isSigned = isActive || isPendingActivation || Boolean(contract.signedAt)
 
   const handlePrint = () => {
     window.print()
@@ -153,11 +155,19 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                   isActive
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : isPendingActivation
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
                     : isPendingSignature
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'
                     : 'bg-slate-700 text-slate-300'
                 }`}>
-                  {isActive ? 'ĐANG HIỆU LỰC (ACTIVE)' : isPendingSignature ? 'CHỜ KÝ SỐ (PENDING)' : contract.status}
+                  {isActive
+                    ? 'ĐANG HIỆU LỰC (ACTIVE)'
+                    : isPendingActivation
+                    ? 'ĐÃ KÝ • CHỜ KÍCH HOẠT NHẬN KHO'
+                    : isPendingSignature
+                    ? 'CHỜ KÝ SỐ (PENDING)'
+                    : contract.status}
                 </span>
               </div>
               <h2 className="text-sm font-bold text-slate-100">
@@ -281,7 +291,7 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
                 Điều 2: THỜI HẠN THUÊ KHO
               </h4>
               <p className="text-justify leading-relaxed pl-7">
-                2.1. Thời hạn thuê tính từ ngày <strong>{contract.startDate}</strong> đến hết ngày <strong>{contract.endDate}</strong>.
+                2.1. Thời hạn thuê dự kiến từ ngày <strong>{contract.startDate}</strong> đến hết ngày <strong>{contract.endDate}</strong>. Ngày bắt đầu có hiệu lực chính thức của hợp đồng thuê và quyền truy cập kho được tính từ ngày Bên B đến cơ sở hoàn tất thủ tục bàn giao (check-in) và kích hoạt mã PIN bảo mật cá nhân.
               </p>
               <p className="text-justify leading-relaxed pl-7 mt-1">
                 2.2. Hợp đồng có thể được gia hạn tự động hoặc gia hạn chủ động theo chu kỳ trên Boxora Portal khi Bên B hoàn thành việc đóng phí thuê kỳ mới.
@@ -374,7 +384,7 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
                 <span className="font-bold uppercase text-slate-900">ĐẠI DIỆN BÊN THUÊ KHO (BÊN B)</span>
                 <span className="text-[11px] text-slate-500 italic mt-0.5">Khách hàng xác thực chữ ký</span>
 
-                {isActive ? (
+                {isSigned ? (
                   (() => {
                     const actualSignature =
                       contract.signatureData ||

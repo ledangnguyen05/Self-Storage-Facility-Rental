@@ -33,4 +33,10 @@ public class BookingCreateRequest {
     private String signingMethod;
 
     private String discountCode;
+
+    /** Ngày và giờ dự kiến đến cơ sở nhận kho */
+    private java.time.LocalDateTime expectedCheckInAt;
+
+    /** Giờ dự kiến đến cơ sở nhận kho (ví dụ: "14:00") */
+    private String checkInTime;
 }

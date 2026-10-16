@@ -143,6 +143,12 @@ export interface Booking {
   depositAmount?: number
   initialPaymentAmount?: number
   paymentExpiresAt?: string | null
+  holdStartedAt?: string | null
+  holdExpiresAt?: string | null
+  expectedCheckInAt?: string | null
+  checkInTime?: string | null
+  paymentStatus?: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | string
+  holdGraceHours?: number
   status: BookingStatusType
   accessCode: string // e.g. "BX-88219"
   accessPin?: string | null
@@ -155,9 +161,104 @@ export interface Booking {
   staffAssignmentNotes?: string | null
 }
 
+export interface BookingCancellationPreview {
+  bookingId: string
+  bookingCode: string
+  unitCode?: string
+  startDate: string
+  depositPaid: number
+  totalRentalFee: number
+  hoursUntilCheckin: number
+  milestoneStage: 'STAGE_1_FULL_REFUND' | 'STAGE_2_PARTIAL_REFUND' | 'STAGE_3_NO_REFUND' | 'STAGE_PENDING_NO_PAYMENT' | string
+  refundPercentage: number
+  refundAmount: number
+  penaltyAmount: number
+  policyDescription: string
+  refundable: boolean
+}
+
+export interface BookingCancelResponse {
+  bookingId: string
+  bookingCode: string
+  status: BookingStatusType
+  milestoneStage: string
+  refundPercentage: number
+  refundAmount: number
+  penaltyAmount: number
+  refundTransactionId?: string
+  unitReleased: boolean
+  cancelledAt: string
+  cancellationReason?: string
+  message: string
+}
+
+export interface BookingRescheduleEligibility {
+  bookingId: string
+  bookingCode: string
+  unitCode: string | null
+  facilityName: string | null
+  eligible: boolean
+  reasonIfNotEligible: string | null
+  restrictions: string[]
+  currentAppointmentAt: string
+  expectedStartDate: string
+  expectedEndDate: string
+  rentalMonths: number
+  monthlyFee: number
+  depositAmount: number
+  paymentStatus: string
+  contractStatus: string
+  contractSigned: boolean
+  holdExpiresAt: string | null
+  allowedMinDate: string
+  allowedMaxDate: string
+  facilityOpenTime: string
+  facilityCloseTime: string
+}
+
+export interface BookingRescheduleHistory {
+  id: string
+  bookingId: string
+  bookingCode: string
+  changeType: string
+  previousAppointmentAt: string
+  requestedAppointmentAt: string
+  acceptedAppointmentAt: string
+  previousExpectedStartDate: string
+  previousExpectedEndDate: string
+  newExpectedStartDate: string
+  newExpectedEndDate: string
+  previousHoldExpiresAt: string | null
+  newHoldExpiresAt: string | null
+  requesterId: string | null
+  requesterName: string
+  requesterRole: string
+  requestTimestamp: string
+  reason: string | null
+  processorId: string | null
+  processorName: string
+  processorRole: string
+  processedAt: string
+  outcome: string
+  rejectionReason: string | null
+  previousBookingStatus: string
+  resultingBookingStatus: string
+  contractAmendmentRequired: boolean
+  contractAmendmentNotes: string | null
+  createdAt: string
+}
+
+export interface BookingRescheduleResponse {
+  booking: Booking
+  historyRecord: BookingRescheduleHistory
+  message: string
+}
+
 export type RentalContractStatus =
   | 'DRAFT'
   | 'PENDING_SIGNATURE'
+  | 'PENDING_VERIFICATION'
+  | 'PENDING_ACTIVATION'
   | 'ACTIVE'
   | 'EXPIRED'
   | 'TERMINATED'

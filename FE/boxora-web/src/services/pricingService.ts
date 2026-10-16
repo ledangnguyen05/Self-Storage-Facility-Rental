@@ -27,6 +27,8 @@ export interface PricingQuoteResponse {
   totalContractValue: number;
   refundSlaDays: number;
   cancellationPolicy: string;
+  holdGraceHours?: number;
+  maxHoldDays?: number;
 }
 
 export const pricingService = {

@@ -39,6 +39,17 @@ public class FacilityPolicy extends BaseEntity {
     @Builder.Default
     private Integer minimumRentalMonths = 1;
 
+    // --- Booking Hold & Reservation Policy ---
+    // Số giờ gia hạn sau giờ hẹn nhận kho trước khi booking tự hết hạn giải phóng kho
+    @Column(name = "hold_grace_hours", nullable = false)
+    @Builder.Default
+    private Integer holdGraceHours = 24;
+
+    // Số ngày tối đa cho phép đặt giữ chỗ trước lịch hẹn
+    @Column(name = "max_hold_days", nullable = false)
+    @Builder.Default
+    private Integer maxHoldDays = 14;
+
     // --- Cancellation ---
     @Column(name = "cancellation_full_refund_hours", nullable = false)
     @Builder.Default

@@ -36,7 +36,7 @@ public class HandoverController {
     }
 
     @PostMapping("/check-in")
-    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @Operation(summary = "Thực hiện check-in bàn giao kho vật lý (BR-RULE-005/006: yêu cầu đủ 4 điều kiện, cấp PIN SmartLock và chuyển trạng thái kho sang OCCUPIED)")
     public ResponseEntity<ApiResponse<HandoverResponse>> checkIn(@Valid @RequestBody HandoverRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -62,7 +62,7 @@ public class HandoverController {
     }
 
     @PostMapping("/inspection")
-    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @Operation(summary = "Hành động 2 Trả kho: Nhân viên kiểm tra hiện trường, lưu ảnh & ghi nhận hư hỏng")
     public ResponseEntity<ApiResponse<HandoverResponse>> performInspection(@Valid @RequestBody HandoverRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Biên bản kiểm tra hiện trường đã được ghi nhận thành công",
@@ -70,14 +70,14 @@ public class HandoverController {
     }
 
     @PostMapping("/return")
-    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @Operation(summary = "Xử lý trả kho và hoàn cọc (BR-RULE-013/014/015)")
     public ResponseEntity<ApiResponse<HandoverResponse>> processReturn(@Valid @RequestBody HandoverRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Nghiệm thu hoàn trả kho và quyết toán cọc thành công", handoverService.processReturn(request)));
     }
 
     @PostMapping("/return-settlement")
-    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @Operation(summary = "Nghiệm thu hiện trường trả kho và quyết toán hoàn cọc chi tiết theo BR-RULE-013/014/015")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> processReturnSettlement(@Valid @RequestBody HandoverRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Nghiệm thu hiện trường và quyết toán cọc chi tiết thành công", handoverService.processReturnSettlement(request)));
@@ -89,4 +89,96 @@ public class HandoverController {
     public ResponseEntity<ApiResponse<List<HandoverResponse>>> getByBookingId(@PathVariable UUID bookingId) {
         return ResponseEntity.ok(ApiResponse.success(handoverService.getByBookingId(bookingId)));
     }
+
+    @PostMapping("/booking/{bookingId}/send-pin-email")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Gửi mã PIN và thông tin bàn giao đến email khách hàng")
+    public ResponseEntity<ApiResponse<Void>> sendPinEmail(
+            @PathVariable UUID bookingId,
+            @RequestParam(required = false) String customEmail) {
+        handoverService.sendHandoverPinEmail(bookingId, customEmail);
+        return ResponseEntity.ok(ApiResponse.success("Đã gửi mã PIN và thông tin bàn giao đến email khách hàng thành công", null));
+    }
+
+    @PostMapping("/booking/{bookingId}/send-web-notification")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Bắn thông báo web đến tài khoản khách hàng")
+    public ResponseEntity<ApiResponse<com.boxora.dto.response.NotificationLogResponse>> sendWebNotification(
+            @PathVariable UUID bookingId) {
+        return ResponseEntity.ok(ApiResponse.success("Đã bắn thông báo web thành công",
+                handoverService.sendHandoverWebNotification(bookingId)));
+    }
+
+    // =========================================================================
+    // QUY TRÌNH CHECK-IN ĐỐI SOÁT 4 ĐIỀU KIỆN & NGHIỆM THU HIỆN TRƯỜNG
+    // =========================================================================
+
+    @PostMapping("/contracts/paper")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Điều kiện 1: Khởi tạo hoặc tải lên hồ sơ scan hợp đồng giấy tại kho")
+    public ResponseEntity<ApiResponse<com.boxora.dto.response.RentalContractResponse>> createOrUploadPaperContract(
+            @Valid @RequestBody com.boxora.dto.request.PaperContractCreateRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Khởi tạo / Tải lên hợp đồng giấy thành công",
+                        handoverService.createOrUploadPaperContract(request)));
+    }
+
+    @PostMapping("/contracts/paper/verify")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Điều kiện 1: Nhân viên đối chiếu chữ ký và xác nhận hợp đồng giấy")
+    public ResponseEntity<ApiResponse<com.boxora.dto.response.RentalContractResponse>> verifyPaperContract(
+            @RequestParam UUID bookingId,
+            @RequestParam(required = false) String notes) {
+        return ResponseEntity.ok(ApiResponse.success("Xác minh hợp đồng giấy thành công",
+                handoverService.verifyPaperContract(bookingId, notes)));
+    }
+
+    @PostMapping("/payments/manual")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Điều kiện 2 & 3: Ghi nhận thu tiền mặt (phiếu thu) hoặc thông tin chuyển khoản ngân hàng")
+    public ResponseEntity<ApiResponse<com.boxora.dto.response.PaymentResponse>> recordManualPayment(
+            @Valid @RequestBody com.boxora.dto.request.ManualPaymentRecordRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Ghi nhận giao dịch thanh toán thành công",
+                        handoverService.recordManualPayment(request)));
+    }
+
+    @PostMapping("/payments/{paymentId}/confirm-bank-transfer")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Điều kiện 2 & 3: Nhân viên có thẩm quyền xác nhận tiền chuyển khoản đã vào tài khoản")
+    public ResponseEntity<ApiResponse<com.boxora.dto.response.PaymentResponse>> confirmBankTransferPayment(
+            @PathVariable UUID paymentId,
+            @RequestParam(required = false) String notes) {
+        return ResponseEntity.ok(ApiResponse.success("Xác nhận tiền chuyển khoản đã vào tài khoản thành công",
+                handoverService.confirmBankTransferPayment(paymentId, notes)));
+    }
+
+    @PostMapping("/booking/{bookingId}/verify-identity")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Điều kiện 4: Nhân viên tại quầy xác nhận đã đối chiếu giấy tờ tùy thân CCCD/Passport gốc")
+    public ResponseEntity<ApiResponse<HandoverPrerequisitesResponse>> verifyIdentity(
+            @PathVariable UUID bookingId,
+            @Valid @RequestBody com.boxora.dto.request.IdentityVerifyRequest request) {
+        request.setBookingId(bookingId);
+        return ResponseEntity.ok(ApiResponse.success("Xác minh giấy tờ tùy thân gốc thành công",
+                handoverService.verifyIdentity(request)));
+    }
+
+    @PostMapping("/booking/{bookingId}/complete-step-1")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Hoàn tất Bước 1: Kiểm tra đủ 4 điều kiện đối soát và chuyển sang Bước 2 Nghiệm thu hiện trường")
+    public ResponseEntity<ApiResponse<Void>> completeCheckInStep1(@PathVariable UUID bookingId) {
+        handoverService.completeCheckInStep1(bookingId);
+        return ResponseEntity.ok(ApiResponse.success("Đã hoàn tất Bước 1 đối soát, chuyển sang Nghiệm thu hiện trường thành công", null));
+    }
+
+    @PostMapping("/check-in-inspection")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Bước 2: Lưu biên bản nghiệm thu 5 tiêu chuẩn hiện trường và ảnh kiểm định")
+    public ResponseEntity<ApiResponse<HandoverResponse>> recordCheckInInspection(
+            @Valid @RequestBody com.boxora.dto.request.CheckInInspectionRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Ghi nhận biên bản nghiệm thu hiện trường thành công",
+                handoverService.recordCheckInInspection(request)));
+    }
 }
+
