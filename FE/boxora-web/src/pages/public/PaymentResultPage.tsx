@@ -285,7 +285,7 @@ export const PaymentResultPage: React.FC = () => {
                     className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-lg">draw</span>
-                    <span>Ký Hợp Đồng DocuSeal Ngay (Ký Chuột)</span>
+                    <span>Ký Hợp Đồng DocuSeal Ngay </span>
                   </button>
                   <Link
                     to="/portal/customer?tab=contracts"

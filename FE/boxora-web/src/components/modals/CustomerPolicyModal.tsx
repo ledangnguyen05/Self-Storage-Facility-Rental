@@ -179,7 +179,7 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
                 </h4>
                 <ul className="text-xs space-y-2 list-disc pl-5 leading-relaxed">
                   <li>
-                    Hợp đồng thuê kho được khởi tạo và ký kết hoàn toàn trực tuyến bằng chữ ký điện tử / chuột vẽ theo đúng quy định pháp lý.
+                    Hợp đồng thuê kho được khởi tạo và ký kết hoàn toàn trực tuyến bằng chữ ký điện tử vẽ theo đúng quy định pháp lý.
                   </li>
                   <li>
                     Thời hạn thuê tối thiểu là <strong>{minMonths} tháng</strong>. Hết thời hạn thuê, quý khách có thể gia hạn linh hoạt.

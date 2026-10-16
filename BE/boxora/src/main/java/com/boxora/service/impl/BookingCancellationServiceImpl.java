@@ -13,12 +13,14 @@ import com.boxora.enums.ActivityAction;
 import com.boxora.enums.BookingStatus;
 import com.boxora.enums.PaymentStatus;
 import com.boxora.enums.PaymentType;
+import com.boxora.enums.RentalContractStatus;
 import com.boxora.enums.UnitStatus;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.repository.BookingRepository;
 import com.boxora.repository.FacilityPolicyRepository;
 import com.boxora.repository.PaymentRepository;
+import com.boxora.repository.RentalContractRepository;
 import com.boxora.repository.StorageUnitRepository;
 import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
@@ -48,6 +50,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
     private final StorageUnitRepository storageUnitRepository;
     private final FacilityPolicyRepository facilityPolicyRepository;
     private final PaymentRepository paymentRepository;
+    private final RentalContractRepository rentalContractRepository;
     private final ActivityLogService activityLogService;
     private final RequestContext requestContext;
     private final com.boxora.service.StorageUnitLockService storageUnitLockService;
@@ -234,6 +237,15 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
 
         bookingRepository.save(booking);
 
+        // Hủy hợp đồng thuê liên kết nếu đang ở trạng thái chờ ký hoặc chờ kích hoạt nhận kho
+        rentalContractRepository.findByBookingId(booking.getId()).ifPresent(contract -> {
+            if (contract.getStatus() == RentalContractStatus.PENDING_SIGNATURE
+                    || contract.getStatus() == RentalContractStatus.PENDING_ACTIVATION) {
+                contract.setStatus(RentalContractStatus.CANCELLED);
+                rentalContractRepository.save(contract);
+            }
+        });
+
         // Ghi Audit Trail ActivityLog
         UUID facilityId = (unit != null && unit.getFacility() != null) ? unit.getFacility().getId() : null;
         String reason = (request != null && request.getCancellationReason() != null && !request.getCancellationReason().isBlank())
@@ -355,6 +367,8 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
 
             booking.setStatus(BookingStatus.CANCELLED);
             booking.setPaymentExpiresAt(null);
+            booking.setHoldExpiresAt(null);
+            booking.setPaymentStatus("UNPAID");
             booking.setAccessPin(null);
             booking.setQrAccessToken("REVOKED_AUTO_CANCEL");
 

@@ -15,4 +15,7 @@ public interface SupportTicketRepository extends JpaRepository<SupportTicket, UU
     Optional<SupportTicket> findByTicketCode(String ticketCode);
     List<SupportTicket> findByCustomer_Id(UUID customerId);
     List<SupportTicket> findByStatus(TicketStatus status);
+    List<SupportTicket> findByFacility_Id(UUID facilityId);
+    List<SupportTicket> findByAssignedStaff_Id(UUID staffId);
+    List<SupportTicket> findByFacility_IdOrAssignedStaff_Id(UUID facilityId, UUID staffId);
 }

@@ -1,11 +1,12 @@
 import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { facilityService } from '../../services/facilityService'
 import { getNominatimErrorMessage, geocodeAddressWithNominatim } from '../../services/nominatimGeocodingService'
-import { Facility, FacilityLayoutConfig } from '../../types'
+import { Facility, FacilityLayoutConfig, FacilityPolicy } from '../../types'
 import { DEFAULT_FACILITY_LAYOUT_CONFIG, parseFacilityLayoutConfig } from '../../utils/facilityLayout'
+import { createDefaultFacilityPolicy } from '../../utils/facilityPolicyDefaults'
+import { FacilityPolicyViewModal } from '../manager/modals/FacilityPolicyViewModal'
 
 interface FacilityConfigurationPanelProps {
   facilities: Facility[]
@@ -105,7 +106,6 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   const { role } = useAuth()
   const canManage = role === 'BUSINESS_MANAGER'
   const { t } = useLanguage()
-  const navigate = useNavigate()
   const [editingFacility, setEditingFacility] = useState<Facility | null>(null)
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [draft, setDraft] = useState<FacilityDraft>(blankDraft)
@@ -113,6 +113,35 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   const [isGeocoding, setIsGeocoding] = useState(false)
   const [formError, setFormError] = useState('')
   const [notice, setNotice] = useState('')
+
+  // Policy view state for branch cards
+  const [expandedPolicyFacilityId, setExpandedPolicyFacilityId] = useState<string | null>(null)
+  const [facilityPoliciesMap, setFacilityPoliciesMap] = useState<Record<string, FacilityPolicy>>({})
+  const [loadingPolicyFacilityId, setLoadingPolicyFacilityId] = useState<string | null>(null)
+  const [modalPolicyFacility, setModalPolicyFacility] = useState<Facility | null>(null)
+
+  const togglePolicy = async (facility: Facility) => {
+    if (expandedPolicyFacilityId === facility.id) {
+      setExpandedPolicyFacilityId(null)
+      return
+    }
+    setExpandedPolicyFacilityId(facility.id)
+    if (!facilityPoliciesMap[facility.id]) {
+      setLoadingPolicyFacilityId(facility.id)
+      try {
+        const pol = await facilityService.getPolicyByFacilityId(facility.id)
+        if (pol) {
+          setFacilityPoliciesMap(prev => ({ ...prev, [facility.id]: pol }))
+        } else {
+          setFacilityPoliciesMap(prev => ({ ...prev, [facility.id]: createDefaultFacilityPolicy(facility.id) }))
+        }
+      } catch {
+        setFacilityPoliciesMap(prev => ({ ...prev, [facility.id]: createDefaultFacilityPolicy(facility.id) }))
+      } finally {
+        setLoadingPolicyFacilityId(null)
+      }
+    }
+  }
 
   const refreshFacilities = async () => {
     const result = await facilityService.getFacilities({ size: 100 })
@@ -221,20 +250,11 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{t('Quản lý thông tin, vị trí GPS và sơ đồ mặt bằng của từng cơ sở.', 'Manage branch details, GPS location, and floor layout.')}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => navigate('/portal/business-manager')} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800 cursor-pointer">
-            <span className="material-symbols-outlined text-[18px]">tune</span>
-            {t('Chính sách & bảng giá', 'Policies & pricing')}
-          </button>
-          {canManage ? (
+          {canManage && (
             <button type="button" onClick={startCreate} className="inline-flex items-center gap-2 rounded-lg bg-cyan-700 px-3.5 py-2.5 text-xs font-bold text-white hover:bg-cyan-800 cursor-pointer">
               <span className="material-symbols-outlined text-[18px]">add_business</span>
               {t('Thêm chi nhánh', 'Add branch')}
             </button>
-          ) : (
-            <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-              <span className="material-symbols-outlined text-[16px] text-slate-500">lock</span>
-              <span>{t('Chỉ xem (Chỉ Business Operations Manager được phép thêm chi nhánh)', 'Read-only (Only Business Operations Manager can add branches)')}</span>
-            </div>
           )}
         </div>
       </section>
@@ -356,35 +376,141 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
             const layout = parseFacilityLayoutConfig(facility.layoutConfig)
             const hasCoordinates = facility.latitude != null && facility.longitude != null
             return (
-              <article key={facility.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{facility.name}</h3>
-                    <span className="mt-1 inline-flex rounded bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{facility.code}</span>
+              <article key={facility.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{facility.name}</h3>
+                      <span className="mt-1 inline-flex rounded bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{facility.code}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => togglePolicy(facility)}
+                        className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
+                          expandedPolicyFacilityId === facility.id
+                            ? 'border-cyan-600 bg-cyan-50 text-cyan-800 dark:border-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300'
+                            : 'border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800'
+                        }`}
+                        title={t('Xem chính sách vận hành của chi nhánh', 'View branch operating policy')}
+                      >
+                        <span className="material-symbols-outlined text-[15px] text-cyan-600 dark:text-cyan-400">policy</span>
+                        <span>{expandedPolicyFacilityId === facility.id ? t('Đóng chính sách', 'Close') : t('Xem chính sách', 'Xem chính sách')}</span>
+                      </button>
+                      {canManage && (
+                        <button type="button" onClick={() => startEdit(facility)} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800 cursor-pointer">
+                          <span className="material-symbols-outlined text-[15px]">edit</span>
+                          {t('Chỉnh sửa', 'Edit')}
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  {canManage && (
-                    <button type="button" onClick={() => startEdit(facility)} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800 cursor-pointer">
-                      <span className="material-symbols-outlined text-[15px]">edit</span>
-                      {t('Chỉnh sửa', 'Edit')}
-                    </button>
+                  <p className="mt-3 text-xs text-slate-600 dark:text-slate-400">{facility.address}{facility.city ? `, ${facility.city}` : ''}</p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                    <span className={`rounded-full px-2.5 py-1 font-semibold ${hasCoordinates ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'}`}>
+                      {hasCoordinates ? `${Number(facility.latitude).toFixed(5)}, ${Number(facility.longitude).toFixed(5)}` : t('Chưa có tọa độ GPS', 'GPS not set')}
+                    </span>
+                    <span className="rounded-full bg-cyan-50 px-2.5 py-1 font-semibold text-cyan-800 dark:bg-cyan-950/50 dark:text-cyan-200">{layout.floor1Name} · {layout.floor2Name}</span>
+                  </div>
+                  {hasCoordinates && (
+                    <a className="mt-2.5 inline-flex text-xs font-semibold text-cyan-700 hover:underline dark:text-cyan-300" target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${facility.latitude}&mlon=${facility.longitude}#map=17/${facility.latitude}/${facility.longitude}`}>
+                      {t('Xem vị trí trên bản đồ', 'View location on map')}
+                    </a>
+                  )}
+
+                  {/* DISPLAY CHÍNH SÁCH NGAY TRONG KHUNG CỦA CHI NHÁNH */}
+                  {expandedPolicyFacilityId === facility.id && (
+                    <div className="mt-3.5 space-y-2.5 rounded-xl border border-cyan-200/80 bg-gradient-to-br from-cyan-50/40 via-white to-slate-50/60 p-3 shadow-2xs dark:border-cyan-900/50 dark:from-cyan-950/20 dark:via-slate-900 dark:to-slate-900">
+                      <div className="flex items-center justify-between border-b border-cyan-100 pb-2 dark:border-cyan-900/50">
+                        <div className="flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[17px] text-cyan-700 dark:text-cyan-400">verified</span>
+                          <span className="text-xs font-bold text-slate-900 dark:text-slate-100">{t('Chính sách vận hành chi nhánh', 'Branch Operating Policy')}</span>
+                        </div>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${
+                          facilityPoliciesMap[facility.id]?.isActive === false
+                            ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900'
+                            : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900'
+                        }`}>
+                          {facilityPoliciesMap[facility.id]?.isActive === false ? t('Ngừng áp dụng', 'Inactive') : t('Đang áp dụng', 'Active')}
+                        </span>
+                      </div>
+
+                      {loadingPolicyFacilityId === facility.id ? (
+                        <div className="flex items-center justify-center py-4 text-xs text-slate-500 dark:text-slate-400">
+                          <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-cyan-600 border-t-transparent" />
+                          {t('Đang tải chính sách...', 'Loading policy...')}
+                        </div>
+                      ) : (
+                        (() => {
+                          const pol = facilityPoliciesMap[facility.id] || createDefaultFacilityPolicy(facility.id)
+                          const depositPct = pol.depositPercentage ?? pol.depositPercent ?? 100
+                          const minMonths = pol.minimumRentalMonths ?? 1
+                          const renewalDays = pol.renewalWindowDays ?? 3
+                          const cancelFullHours = pol.cancellationFullRefundHours ?? 48
+                          const cancelPartHours = pol.cancellationPartialRefundHours ?? 24
+                          const cancelPartPct = pol.cancellationPartialRefundPercent ?? 50
+                          const noticeDays = pol.returnNoticeDays ?? 0
+                          const slaDays = pol.depositRefundSlaDays ?? 5
+                          const lateFee = Number(pol.dailyLateFee ?? pol.lateFeePerDay ?? 50000)
+                          const graceDays = pol.overdueGraceDays ?? pol.gracePeriodDays ?? 1
+                          const lockDays = pol.overdueAccessDisableDays ?? 3
+                          const sealDays = pol.overdueSealingDays ?? 7
+
+                          return (
+                            <div className="space-y-2 text-xs">
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="rounded-lg border border-slate-200/80 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-800/80">
+                                  <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{t('Tiền cọc & Thuê min', 'Deposit & Min Term')}</div>
+                                  <div className="mt-0.5 font-bold text-slate-900 dark:text-slate-100">{depositPct}% · {minMonths} {t('tháng', 'mo')}</div>
+                                </div>
+                                <div className="rounded-lg border border-slate-200/80 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-800/80">
+                                  <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{t('Hủy trước check-in', 'Cancellation')}</div>
+                                  <div className="mt-0.5 font-bold text-emerald-700 dark:text-emerald-400">100% (&ge;{cancelFullHours}h) · {cancelPartPct}% (&ge;{cancelPartHours}h)</div>
+                                </div>
+                                <div className="rounded-lg border border-slate-200/80 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-800/80">
+                                  <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{t('Gia hạn & Hoàn cọc', 'Renewal & SLA')}</div>
+                                  <div className="mt-0.5 font-bold text-cyan-800 dark:text-cyan-300">Trước {renewalDays}d · SLA {slaDays}d</div>
+                                </div>
+                                <div className="rounded-lg border border-slate-200/80 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-800/80">
+                                  <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{t('Quá hạn & Khóa kho', 'Overdue & Lockout')}</div>
+                                  <div className="mt-0.5 font-bold text-rose-700 dark:text-rose-400">{lateFee.toLocaleString('vi-VN')} đ/d · Khóa D+{lockDays}</div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between pt-1 text-[11px]">
+                                <span className="text-slate-500 dark:text-slate-400">
+                                  {t('Ân hạn', 'Grace')}: {graceDays}d · {t('Niêm phong', 'Seal')}: D+{sealDays}{noticeDays > 0 ? ` · Báo trước: ${noticeDays}d` : ''}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setModalPolicyFacility(facility)}
+                                  className="inline-flex items-center gap-1 font-bold text-cyan-700 hover:text-cyan-800 hover:underline dark:text-cyan-400 cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                                  <span>{t('Xem chi tiết quy chuẩn', 'Full details')}</span>
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })()
+                      )}
+                    </div>
                   )}
                 </div>
-                <p className="mt-3 text-xs text-slate-600 dark:text-slate-400">{facility.address}{facility.city ? `, ${facility.city}` : ''}</p>
-                <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-                  <span className={`rounded-full px-2.5 py-1 font-semibold ${hasCoordinates ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'}`}>
-                    {hasCoordinates ? `${Number(facility.latitude).toFixed(5)}, ${Number(facility.longitude).toFixed(5)}` : t('Chưa có tọa độ GPS', 'GPS not set')}
-                  </span>
-                  <span className="rounded-full bg-cyan-50 px-2.5 py-1 font-semibold text-cyan-800 dark:bg-cyan-950/50 dark:text-cyan-200">{layout.floor1Name} · {layout.floor2Name}</span>
-                </div>
-                {hasCoordinates && (
-                  <a className="mt-3 inline-flex text-xs font-semibold text-cyan-700 hover:underline dark:text-cyan-300" target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${facility.latitude}&mlon=${facility.longitude}#map=17/${facility.latitude}/${facility.longitude}`}>
-                    {t('Xem vị trí trên bản đồ', 'View location on map')}
-                  </a>
-                )}
               </article>
             )
           })}
         </div>
+      )}
+
+      {modalPolicyFacility && (
+        <FacilityPolicyViewModal
+          isOpen={Boolean(modalPolicyFacility)}
+          onClose={() => setModalPolicyFacility(null)}
+          facilityId={modalPolicyFacility.id}
+          facilityName={modalPolicyFacility.name}
+          canEdit={canManage}
+        />
       )}
     </div>
   )

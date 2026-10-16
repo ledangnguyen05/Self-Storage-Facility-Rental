@@ -8,10 +8,22 @@ import lombok.*;
 @Table(name = "storage_units")
 @Getter
 @Setter
-@NoArgsConstructor
-@AllArgsConstructor
 @Builder
 public class StorageUnit extends BaseEntity {
+
+    public StorageUnit() {
+        super();
+    }
+
+    public StorageUnit(String unitCode, String floorLevel, UnitStatus status, Facility facility, UnitType unitType, java.math.BigDecimal pricePerMonth) {
+        super();
+        this.unitCode = unitCode;
+        this.floorLevel = floorLevel;
+        this.status = status;
+        this.facility = facility;
+        this.unitType = unitType;
+        this.pricePerMonth = pricePerMonth;
+    }
 
     @Column(name = "unit_code", nullable = false, length = 30)
     private String unitCode;

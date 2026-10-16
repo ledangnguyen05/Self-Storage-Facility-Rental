@@ -374,18 +374,6 @@ export const DashboardLayout: React.FC = () => {
               </div>
               <nav className="flex flex-col gap-1 text-left">
                 <Link
-                  to="/portal/facility-manager"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
-                    isCurrentPath('/portal/facility-manager')
-                      ? 'bg-slate-100 text-slate-900'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">grid_view</span>
-                  <span>{t('SƠ ĐỒ CƠ SỞ KHO')}</span>
-                </Link>
-
-                <Link
                   to="/portal/staff"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/staff')
@@ -394,7 +382,7 @@ export const DashboardLayout: React.FC = () => {
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">badge</span>
-                  <span>{t('VẬN HÀNH QUẦY BÀN GIAO')}</span>
+                  <span>{t('BÀN VẬN HÀNH QUẦY & TIẾP ĐÓN')}</span>
                 </Link>
 
                 <Link
@@ -441,8 +429,8 @@ export const DashboardLayout: React.FC = () => {
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
-                  <span className="material-symbols-outlined text-[18px]">grid_view</span>
-                  <span>{t('SƠ ĐỒ CƠ SỞ KHO')}</span>
+                  <span className="material-symbols-outlined text-[18px]">analytics</span>
+                  <span>{t('TỔNG QUAN QUẢN LÝ CƠ SỞ')}</span>
                 </Link>
 
                 <Link
@@ -467,18 +455,6 @@ export const DashboardLayout: React.FC = () => {
                 >
                   <span className="material-symbols-outlined text-[18px]">schedule</span>
                   <span>{t('XỬ LÝ TRỰC CA')}</span>
-                </Link>
-
-                <Link
-                  to="/portal/staff"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
-                    isCurrentPath('/portal/staff')
-                      ? 'bg-slate-100 text-slate-900'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">badge</span>
-                  <span>{t('VẬN HÀNH QUẦY BÀN GIAO')}</span>
                 </Link>
 
                 <Link
@@ -578,7 +554,7 @@ export const DashboardLayout: React.FC = () => {
                     <span>{t('CẤU HÌNH CHI NHÁNH', 'BRANCH CONFIGURATION')}</span>
                   </Link>
                   <Link
-                    to="/portal/admin"
+                    to="/portal/admin?tab=users"
                     className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                       isCurrentPath('/portal/admin') && new URLSearchParams(location.search).get('tab') !== 'facilities'
                         ? 'bg-slate-100 text-slate-900'

@@ -94,21 +94,43 @@ public class PaymentServiceImpl implements PaymentService {
             BigDecimal totalExpected = (booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO)
                     .add(booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO);
             BigDecimal depositOnly = booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO;
+            BigDecimal rentalFeeOnly = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO;
 
-            if (request.getAmount() != null
-                    && request.getAmount().compareTo(expectedInitialAmount) != 0
-                    && request.getAmount().compareTo(totalExpected) != 0
-                    && request.getAmount().compareTo(depositOnly) != 0) {
-                log.warn("VNPay payment amount mismatch. Received={}, ExpectedInitial={}, TotalExpected={}, DepositOnly={}",
-                        request.getAmount(), expectedInitialAmount, totalExpected, depositOnly);
-                throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
+            if (request.getAmount() != null && request.getAmount().compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal reqAmt = request.getAmount();
+                boolean matchesInitial = reqAmt.compareTo(expectedInitialAmount) == 0 || reqAmt.subtract(expectedInitialAmount).abs().compareTo(BigDecimal.valueOf(1000)) <= 0;
+                boolean matchesTotal = reqAmt.compareTo(totalExpected) == 0 || reqAmt.subtract(totalExpected).abs().compareTo(BigDecimal.valueOf(1000)) <= 0;
+                boolean matchesDeposit = reqAmt.compareTo(depositOnly) == 0 || reqAmt.subtract(depositOnly).abs().compareTo(BigDecimal.valueOf(1000)) <= 0;
+                boolean matchesRental = reqAmt.compareTo(rentalFeeOnly) == 0 || reqAmt.subtract(rentalFeeOnly).abs().compareTo(BigDecimal.valueOf(1000)) <= 0;
+
+                if (!matchesInitial && !matchesTotal && !matchesDeposit && !matchesRental) {
+                    log.warn("VNPay payment amount mismatch. Received={}, ExpectedInitial={}, TotalExpected={}, DepositOnly={}",
+                            request.getAmount(), expectedInitialAmount, totalExpected, depositOnly);
+                    throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
+                }
+
+                if (matchesTotal) {
+                    authoritativeAmount = totalExpected;
+                } else if (matchesInitial) {
+                    authoritativeAmount = expectedInitialAmount;
+                } else if (matchesDeposit) {
+                    authoritativeAmount = depositOnly;
+                } else {
+                    authoritativeAmount = rentalFeeOnly;
+                }
+            } else {
+                authoritativeAmount = totalExpected.compareTo(BigDecimal.ZERO) > 0 ? totalExpected : expectedInitialAmount;
             }
-            authoritativeAmount = (request.getAmount() != null) ? request.getAmount() : expectedInitialAmount;
         } else {
             if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
                 throw new AppException(ErrorCode.INVALID_REQUEST);
             }
             authoritativeAmount = request.getAmount();
+        }
+
+        if (authoritativeAmount == null || authoritativeAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            log.warn("Payment amount is 0 or negative for booking {}", booking.getBookingCode());
+            throw new AppException(ErrorCode.PAYMENT_AMOUNT_INVALID);
         }
 
         // Generate unique transaction reference (e.g. BOX + timestamp + 6 random chars)
@@ -235,11 +257,14 @@ public class PaymentServiceImpl implements PaymentService {
                 if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
                     booking.setStatus(BookingStatus.CONFIRMED);
                     booking.setPaymentExpiresAt(null);
+                    booking.setHoldExpiresAt(null);
                     if (payment.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
                         booking.setDepositPaid(booking.getDepositAmount() != null ? booking.getDepositAmount() : payment.getAmount());
+                        booking.setPaymentStatus("PAID");
                     } else if (payment.getPaymentType() == PaymentType.DEPOSIT) {
                         BigDecimal cur = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
                         booking.setDepositPaid(cur.add(payment.getAmount()));
+                        booking.setPaymentStatus("PARTIALLY_PAID");
                     }
                     if (booking.getStorageUnit() != null) {
                         storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
@@ -247,6 +272,8 @@ public class PaymentServiceImpl implements PaymentService {
                 } else if (payment.getPaymentType() == PaymentType.DEPOSIT) {
                     BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
                     booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
+                    booking.setHoldExpiresAt(null);
+                    booking.setPaymentStatus("PARTIALLY_PAID");
                 }
 
                 // Lưu ý (P0-03 & BR-RULE-005): Không cấp mã PIN/QR ở bước thanh toán.

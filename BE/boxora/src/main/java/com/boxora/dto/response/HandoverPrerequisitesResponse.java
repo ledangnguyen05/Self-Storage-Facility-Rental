@@ -17,6 +17,7 @@ public class HandoverPrerequisitesResponse {
     private String bookingCode;
     private String customerName;
     private String customerPhone;
+    private String customerEmail;
     private String unitCode;
     private String facilityName;
 
@@ -28,29 +29,47 @@ public class HandoverPrerequisitesResponse {
     private boolean depositSatisfied;
     private BigDecimal depositPaid;
     private BigDecimal requiredDeposit;
+    private BigDecimal depositRemaining;
 
     /** Điều kiện 2: Đủ tiền thuê tháng đầu (First rental payment) */
     private boolean firstMonthRentSatisfied;
     private BigDecimal firstMonthRentPaid;
     private BigDecimal requiredFirstMonthRent;
+    private BigDecimal firstMonthRentRemaining;
 
-    /** Điều kiện 3: Hợp đồng điện tử đã ký qua OTP / DocuSeal (Signed e-contract) */
+    /** Điều kiện 3: Hợp đồng thuê kho (Electronic OTP/DocuSeal or Paper at Facility) */
     private boolean contractSigned;
     private String contractCode;
     private String contractStatus;
+    private String contractSigningMethod;
+    private String contractVerificationStatus;
+    private String paperContractUrl;
+    private String paperOriginalLocation;
+    private String paperVerifiedByName;
+    private java.time.LocalDateTime paperVerifiedAt;
 
     /** Điều kiện 4: Đã xác minh CCCD / giấy tờ tùy thân gốc (Original identity verification) */
     private boolean identityVerified;
+    private String idCardType;
     private String idCardNumber;
+    private String identityVerifiedByName;
+    private java.time.LocalDateTime identityVerifiedAt;
 
     // ==========================================
-    // TỔNG KẾT
+    // TỔNG KẾT & TIẾN TRÌNH
     // ==========================================
 
-    /** Đủ điều kiện để thực hiện bàn giao kho hay không (Phải thỏa mãn đồng thời cả 4 điều kiện) */
+    /** Cho phép chuyển sang bước Nghiệm thu hiện trường khi thỏa mãn cả 4 điều kiện đối soát */
+    private boolean eligibleForInspection;
+
+    /** Đủ điều kiện để thực hiện bàn giao kho hay không (tương thích ngược) */
     private boolean eligibleForCheckIn;
 
-    /** Danh sách các điều kiện còn thiếu (để hiển thị cảnh báo cho nhân viên quầy) */
+    /** Danh sách các điều kiện còn thiếu chi tiết */
     private List<String> missingPrerequisites;
+
+    /** Danh sách các khoản thanh toán của booking này để quầy kiểm tra */
+    private List<PaymentResponse> paymentHistory;
 }
+
 

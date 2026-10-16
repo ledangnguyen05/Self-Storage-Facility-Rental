@@ -22,12 +22,26 @@ const formatDate = (value?: string) => {
 
 const getTypeLabel = (type?: string) => {
   switch (type) {
+    case 'HANDOVER_PIN':
+    case 'HANDOVER_CHECKIN': return 'Mã PIN & Bàn giao'
     case 'RENEWAL_REMINDER_3D': return 'Sắp hết hạn'
     case 'RENEWAL_REMINDER_7D': return 'Gia hạn'
     case 'REFUND_STATUS': return 'Hoàn tiền'
     case 'SEALING_NOTICE': return 'Niêm phong'
     case 'UNSEALING_NOTICE': return 'Mở niêm phong'
     default: return type?.replaceAll('_', ' ') || 'Thông báo'
+  }
+}
+
+const getLocalNotifications = (userId?: string): NotificationLog[] => {
+  try {
+    const raw = localStorage.getItem('boxora_in_app_notifications')
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((n: NotificationLog) => !n.recipientId || !userId || n.recipientId === userId)
+  } catch {
+    return []
   }
 }
 
@@ -40,19 +54,17 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
   const panelRef = useRef<HTMLDivElement>(null)
   const requestIdRef = useRef(0)
 
-  useEffect(() => {
-    requestIdRef.current += 1
-    setItems([])
-    setError('')
-    setExpandedId(null)
-    setIsLoading(false)
-  }, [userId])
-
   const loadNotifications = useCallback(async () => {
+    const localItems = getLocalNotifications(userId)
+
     if (!userId || !UUID_PATTERN.test(userId)) {
       requestIdRef.current += 1
-      setItems([])
-      setError('Thông báo sẽ xuất hiện khi tài khoản có lịch sử được ghi nhận.')
+      setItems(localItems)
+      if (localItems.length === 0) {
+        setError('Thông báo sẽ xuất hiện khi tài khoản có lịch sử được ghi nhận.')
+      } else {
+        setError('')
+      }
       return
     }
 
@@ -60,14 +72,66 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
     setIsLoading(true)
     setError('')
     try {
-      const page = await notificationService.getRecent({ recipientId: userId, page: 0, size: 6 })
-      if (requestId === requestIdRef.current) setItems(page?.content ?? [])
+      const page = await notificationService.getRecent({ recipientId: userId, page: 0, size: 10 })
+      if (requestId === requestIdRef.current) {
+        const remoteItems = page?.content ?? []
+        const merged = [...localItems]
+        for (const r of remoteItems) {
+          if (!merged.some((m) => m.id === r.id)) {
+            merged.push(r)
+          }
+        }
+        setItems(merged)
+      }
     } catch {
-      if (requestId === requestIdRef.current) setError('Không tải được thông báo. Vui lòng thử lại.')
+      if (requestId === requestIdRef.current) {
+        if (localItems.length > 0) {
+          setItems(localItems)
+          setError('')
+        } else {
+          setError('Không tải được thông báo. Vui lòng thử lại.')
+        }
+      }
     } finally {
       if (requestId === requestIdRef.current) setIsLoading(false)
     }
   }, [userId])
+
+  // Load on mount or when userId changes
+  useEffect(() => {
+    requestIdRef.current += 1
+    setError('')
+    setExpandedId(null)
+    void loadNotifications()
+  }, [userId, loadNotifications])
+
+  // Listen to real-time in-app pushes
+  useEffect(() => {
+    const handleNewNotification = (event: Event) => {
+      const customEvent = event as CustomEvent<NotificationLog>
+      const newNotif = customEvent.detail
+      if (!newNotif) return
+
+      setItems((prev) => {
+        if (prev.some((p) => p.id === newNotif.id)) return prev
+        return [newNotif, ...prev]
+      })
+      setError('')
+    }
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'boxora_in_app_notifications') {
+        void loadNotifications()
+      }
+    }
+
+    window.addEventListener('boxora_notification_pushed', handleNewNotification)
+    window.addEventListener('storage', handleStorageChange)
+    return () => {
+      window.removeEventListener('boxora_notification_pushed', handleNewNotification)
+      window.removeEventListener('storage', handleStorageChange)
+    }
+  }, [loadNotifications])
 
   useEffect(() => {
     if (!isOpen) return
@@ -127,16 +191,31 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
               <h2 className="text-sm font-bold text-slate-900">Thông báo</h2>
               <p className="mt-0.5 text-[11px] text-slate-500">Lịch sử mới nhất của tài khoản</p>
             </div>
-            <button
-              type="button"
-              onClick={() => void loadNotifications()}
-              disabled={isLoading}
-              aria-label="Làm mới thông báo"
-              title="Làm mới"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
-            >
-              <span className={`material-symbols-outlined text-[19px] ${isLoading ? 'animate-spin' : ''}`}>refresh</span>
-            </button>
+            <div className="flex items-center gap-1">
+              {items.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.removeItem('boxora_in_app_notifications')
+                    setItems([])
+                  }}
+                  className="px-2 py-1 text-[11px] font-semibold text-slate-500 hover:text-cyan-700 hover:bg-slate-100 rounded-lg transition-colors"
+                  title="Đánh dấu tất cả là đã đọc"
+                >
+                  Đã đọc tất cả
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void loadNotifications()}
+                disabled={isLoading}
+                aria-label="Làm mới thông báo"
+                title="Làm mới"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+              >
+                <span className={`material-symbols-outlined text-[19px] ${isLoading ? 'animate-spin' : ''}`}>refresh</span>
+              </button>
+            </div>
           </header>
 
           <div className="max-h-[min(65vh,28rem)] overflow-y-auto p-2.5">
@@ -174,26 +253,46 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
               <ul className="space-y-1.5">
                 {items.map((item) => {
                   const expanded = expandedId === item.id
+                  const isPinNotif = item.notificationType === 'HANDOVER_PIN' || item.notificationType === 'HANDOVER_CHECKIN'
                   return (
                     <li key={item.id}>
                       <button
                         type="button"
                         onClick={() => setExpandedId(expanded ? null : item.id)}
                         aria-expanded={expanded}
-                        className="w-full rounded-xl border border-transparent px-3 py-3 text-left transition-colors hover:border-slate-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-600"
+                        className={`w-full rounded-xl border px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-600 ${
+                          isPinNotif
+                            ? 'border-cyan-100 bg-cyan-50/40 hover:border-cyan-300 hover:bg-cyan-50/70'
+                            : 'border-transparent hover:border-slate-200 hover:bg-slate-50'
+                        }`}
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <span className="text-xs font-bold leading-5 text-slate-900">{item.title || 'Thông báo Boxora'}</span>
-                          <span className="shrink-0 rounded-full bg-cyan-50 px-2 py-1 text-[9px] font-bold text-cyan-800">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {isPinNotif && (
+                              <span className="material-symbols-outlined text-[17px] text-cyan-700 shrink-0">key</span>
+                            )}
+                            <span className="text-xs font-bold leading-5 text-slate-900 truncate">
+                              {item.title || 'Thông báo Boxora'}
+                            </span>
+                          </div>
+                          <span
+                            className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold ${
+                              isPinNotif
+                                ? 'bg-cyan-100 text-cyan-800 border border-cyan-200'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
                             {getTypeLabel(item.notificationType)}
                           </span>
                         </div>
-                        <p className={`mt-1.5 text-[11px] leading-[1.45rem] text-slate-600 ${expanded ? 'whitespace-pre-wrap' : 'line-clamp-2'}`}>
+                        <p className={`mt-1.5 text-[11px] leading-[1.45rem] ${isPinNotif ? 'text-slate-700 font-medium' : 'text-slate-600'} ${expanded ? 'whitespace-pre-wrap' : 'line-clamp-2'}`}>
                           {item.content || 'Không có nội dung chi tiết.'}
                         </p>
                         <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[10px] text-slate-400">
                           <span>{formatDate(item.createdAt)}</span>
-                          <span>{item.status === 'SENT' ? 'Đã gửi' : item.status || item.channel || 'Thông báo'}</span>
+                          <span className={isPinNotif ? 'text-cyan-700 font-semibold' : ''}>
+                            {item.status === 'SENT' ? 'Đã gửi' : item.status || item.channel || 'Thông báo'}
+                          </span>
                         </div>
                       </button>
                     </li>

@@ -15,6 +15,7 @@ import com.boxora.exception.ErrorCode;
 import com.boxora.repository.BookingRepository;
 import com.boxora.repository.FacilityPolicyRepository;
 import com.boxora.repository.PaymentRepository;
+import com.boxora.repository.RentalContractRepository;
 import com.boxora.repository.StorageUnitRepository;
 import com.boxora.security.RequestContext;
 import com.boxora.service.impl.BookingCancellationServiceImpl;
@@ -55,6 +56,9 @@ class BookingCancellationServiceTest {
 
     @Mock
     private PaymentRepository paymentRepository;
+
+    @Mock
+    private RentalContractRepository rentalContractRepository;
 
     @Mock
     private ActivityLogService activityLogService;

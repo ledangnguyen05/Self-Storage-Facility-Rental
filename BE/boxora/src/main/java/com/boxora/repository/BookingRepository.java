@@ -53,4 +53,22 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
             @Param("threshold") LocalDateTime threshold,
             @Param("today") LocalDate today
     );
+
+    @Query("SELECT b FROM Booking b WHERE b.status IN :statuses AND b.handoverTime IS NULL AND ("
+            + "(b.holdExpiresAt IS NOT NULL AND b.holdExpiresAt < :now) OR "
+            + "(b.paymentExpiresAt IS NOT NULL AND b.paymentExpiresAt < :now) OR "
+            + "(b.holdExpiresAt IS NULL AND b.expectedCheckInAt IS NOT NULL AND b.expectedCheckInAt < :checkInThreshold) OR "
+            + "(b.holdExpiresAt IS NULL AND b.expectedCheckInAt IS NULL AND b.startDate < :todayThreshold))")
+    List<Booking> findExpiredHoldCandidates(
+            @Param("statuses") Collection<BookingStatus> statuses,
+            @Param("now") Instant now,
+            @Param("checkInThreshold") LocalDateTime checkInThreshold,
+            @Param("todayThreshold") LocalDate todayThreshold
+    );
+
+    default List<Booking> findExpiredHoldCandidates(Collection<BookingStatus> statuses, Instant now) {
+        LocalDateTime checkInThreshold = LocalDateTime.now();
+        LocalDate todayThreshold = LocalDate.now();
+        return findExpiredHoldCandidates(statuses, now, checkInThreshold, todayThreshold);
+    }
 }

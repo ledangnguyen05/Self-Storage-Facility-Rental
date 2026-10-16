@@ -79,10 +79,7 @@ export const LogoutConfirmModal: React.FC<LogoutConfirmModalProps> = ({
           </div>
         )}
 
-        {/* Informative notice */}
-        <p className="text-xs text-slate-600 leading-relaxed">
-          {t('Bạn có chắc chắn muốn đăng xuất không? Phiên đăng nhập sẽ được thu hồi an toàn. Bạn sẽ cần nhập lại thông tin để tiếp tục sử dụng hệ thống.')}
-        </p>
+        
 
         {/* Actions */}
         <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-100">
