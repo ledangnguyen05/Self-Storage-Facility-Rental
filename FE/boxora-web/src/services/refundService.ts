@@ -22,6 +22,29 @@ export interface RefundProcessPayload {
   processNotes?: string
 }
 
+export type RefundStatusType =
+  | 'PENDING_REVIEW'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'PROCESSING_TRANSFER'
+  | 'AWAITING_CUSTOMER_CONFIRMATION'
+  | 'RECONCILED'
+  | 'COMPLETED'
+  | 'PROCESSED'
+
+export interface RefundTransferPayload {
+  transferTxRef?: string
+  transferEvidenceUrl?: string
+}
+
+export interface RefundCustomerConfirmPayload {
+  confirmationNotes?: string
+}
+
+export interface RefundReconcilePayload {
+  reconciliationNotes?: string
+}
+
 export interface RefundRequestItem {
   id: string
   requestCode: string
@@ -36,11 +59,19 @@ export interface RefundRequestItem {
   bankAccountNumber: string
   bankAccountName: string
   reason: string
-  status: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'PROCESSED'
+  status: RefundStatusType
   reviewNotes?: string
   reviewedByName?: string
   reviewedAt?: string
   transactionReference?: string
+  transferTxRef?: string
+  transferEvidenceUrl?: string
+  customerConfirmedAt?: string
+  customerConfirmationNotes?: string
+  reconciledById?: string
+  reconciledByName?: string
+  reconciledAt?: string
+  reconciliationNotes?: string
   processedByName?: string
   processedAt?: string
   createdAt: string
@@ -74,8 +105,23 @@ export const refundService = {
     return response.data?.data as RefundRequestItem
   },
 
+  async startTransfer(id: string, data: RefundTransferPayload): Promise<RefundRequestItem> {
+    const response = await api.put(`/api/v1/refunds/${id}/start-transfer`, data)
+    return response.data?.data as RefundRequestItem
+  },
+
   async processRefund(id: string, data: RefundProcessPayload): Promise<RefundRequestItem> {
     const response = await api.put(`/api/v1/refunds/${id}/process`, data)
+    return response.data?.data as RefundRequestItem
+  },
+
+  async confirmCustomerReceived(id: string, data?: RefundCustomerConfirmPayload): Promise<RefundRequestItem> {
+    const response = await api.put(`/api/v1/refunds/${id}/confirm-received`, data || {})
+    return response.data?.data as RefundRequestItem
+  },
+
+  async reconcileRefund(id: string, data?: RefundReconcilePayload): Promise<RefundRequestItem> {
+    const response = await api.put(`/api/v1/refunds/${id}/reconcile`, data || {})
     return response.data?.data as RefundRequestItem
   },
 }

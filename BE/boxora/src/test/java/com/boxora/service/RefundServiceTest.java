@@ -305,4 +305,46 @@ class RefundServiceTest {
         AppException ex = assertThrows(AppException.class, () -> refundService.processRefund(refundId, processRequest));
         assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.REFUND_NOT_APPROVED);
     }
+
+    @Test
+    @DisplayName("processRefund should throw REFUND_ALREADY_PROCESSED when request is already COMPLETED or PROCESSED")
+    void testProcessRefundThrowsIfAlreadyCompleted() {
+        UUID refundId = UUID.randomUUID();
+        RefundRequest refund = RefundRequest.builder()
+                .status(RefundStatus.COMPLETED)
+                .build();
+        refund.setId(refundId);
+
+        when(refundRequestRepository.findById(refundId)).thenReturn(Optional.of(refund));
+
+        RefundProcessRequest processRequest = RefundProcessRequest.builder()
+                .transactionReference("FT123456")
+                .build();
+
+        AppException ex = assertThrows(AppException.class, () -> refundService.processRefund(refundId, processRequest));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.REFUND_ALREADY_PROCESSED);
+    }
+
+    @Test
+    @DisplayName("confirmCustomerReceived should throw FORBIDDEN if customer is not the request owner")
+    void testConfirmCustomerReceivedThrowsIfUnauthorizedCustomer() {
+        UUID refundId = UUID.randomUUID();
+        RefundRequest refund = RefundRequest.builder()
+                .customer(mockCustomer)
+                .status(RefundStatus.AWAITING_CUSTOMER_CONFIRMATION)
+                .build();
+        refund.setId(refundId);
+
+        UUID attackerId = UUID.randomUUID();
+        when(refundRequestRepository.findById(refundId)).thenReturn(Optional.of(refund));
+        when(requestContext.currentUserId()).thenReturn(attackerId);
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+
+        RefundCustomerConfirmRequest confirmRequest = RefundCustomerConfirmRequest.builder()
+                .confirmationNotes("Attacker trying to confirm")
+                .build();
+
+        AppException ex = assertThrows(AppException.class, () -> refundService.confirmCustomerReceived(refundId, confirmRequest));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+    }
 }
