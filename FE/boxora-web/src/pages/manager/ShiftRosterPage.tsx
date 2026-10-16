@@ -177,7 +177,7 @@ export const ShiftRosterPage: React.FC = () => {
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
+            <div className="text-2xl font-bold text-slate-900 tracking-tight">
               {staffList.length}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
@@ -188,13 +188,13 @@ export const ShiftRosterPage: React.FC = () => {
 
         <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Đang trực ca (Active)</span>
+            <span>Đang trực ca</span>
             <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
               <span className="material-symbols-outlined text-[18px]">check_circle</span>
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-black text-emerald-700 font-mono tracking-tight">
+            <div className="text-2xl font-bold text-emerald-700 tracking-tight">
               {onlineCount}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
@@ -205,13 +205,13 @@ export const ShiftRosterPage: React.FC = () => {
 
         <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Ngoại tuyến (Offline)</span>
-            <div className="p-1.5 rounded-lg bg-amber-50 text-amber-600">
+            <span>Ngoại tuyến</span>
+            <div className="p-1.5 rounded-lg bg-slate-50 text-slate-600">
               <span className="material-symbols-outlined text-[18px]">timer_off</span>
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-black text-slate-700 font-mono tracking-tight">
+            <div className="text-2xl font-bold text-slate-700 tracking-tight">
               {offlineCount}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
@@ -228,8 +228,8 @@ export const ShiftRosterPage: React.FC = () => {
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-black text-blue-700 font-mono tracking-tight">
-              3 Ca (Sáng / Chiều / Tối)
+            <div className="text-2xl font-bold text-blue-700 tracking-tight">
+              3 ca trực
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
               Trực ban bảo đảm an ninh 24/7
@@ -320,22 +320,22 @@ export const ShiftRosterPage: React.FC = () => {
                             }`} />
                           </div>
                           <div>
-                            <div className="font-bold text-slate-900 text-xs">{staff.fullName || staff.username}</div>
-                            <div className="font-mono text-[10px] text-slate-400">ID: {staff.id?.slice(0, 8)}</div>
+                            <div className="font-semibold text-slate-900 text-xs">{staff.fullName || staff.username}</div>
+                            <div className="text-[10px] text-slate-400">ID: {staff.id?.slice(0, 8)}</div>
                           </div>
                         </div>
                       </td>
                       <td className="py-3 px-4">
-                        <div className="text-slate-700">{staff.email}</div>
-                        <div className="font-mono text-slate-500 text-[11px]">{staff.phone || 'Chưa có SĐT'}</div>
+                        <div className="text-slate-700 text-xs">{staff.email}</div>
+                        <div className="text-slate-500 text-[11px]">{staff.phone || 'Chưa có SĐT'}</div>
                       </td>
                       <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-semibold text-[11px]">
+                        <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-medium text-[11px]">
                           {staff.roleName || 'Nhân viên vận hành quầy'}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <span className={`inline-block px-2.5 py-0.5 rounded-full font-bold text-[10px] border ${
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full font-medium text-[11px] border ${
                           isOnline
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                             : 'bg-slate-100 text-slate-600 border border-slate-200'

@@ -179,7 +179,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
       <section role="dialog" aria-modal="true" aria-labelledby="booking-checkout-title" className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <header className="flex items-center justify-between bg-slate-900 px-6 py-5 text-white">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300">Boxora · Yêu cầu thuê kho</p>
+            <p className="text-[11px] font-semibold text-blue-400">Đặt giữ chỗ kho</p>
             <h2 id="booking-checkout-title" className="mt-1 text-lg font-bold">
               {step === 3 ? (signingMethod === 'ONLINE' ? 'Thanh toán & nhận kho' : 'Đặt kho thành công') : 'Đăng ký thuê kho'}
             </h2>
@@ -193,8 +193,8 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
           {steps.map((label, index) => {
             const itemStep = index + 1
             return (
-              <div key={label} className={`flex items-center justify-center gap-1.5 text-[10px] font-semibold ${step >= itemStep ? 'text-cyan-800' : 'text-slate-400'}`}>
-                <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] ${step >= itemStep ? 'bg-cyan-700 text-white' : 'bg-slate-200 text-slate-500'}`}>{itemStep}</span>
+              <div key={label} className={`flex items-center justify-center gap-1.5 text-xs font-semibold ${step >= itemStep ? 'text-blue-600' : 'text-slate-400'}`}>
+                <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] ${step >= itemStep ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500'}`}>{itemStep}</span>
                 <span className="hidden sm:inline">{label}</span>
               </div>
             )
@@ -204,7 +204,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
         <div className="max-h-[72vh] space-y-5 overflow-y-auto p-6">
           <div className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <div>
-              <p className="font-mono text-xs font-bold text-cyan-800">#{unit.code}</p>
+              <p className="font-mono text-xs font-bold text-blue-600">#{unit.code}</p>
               <h3 className="mt-1 text-sm font-bold text-slate-900">{unit.name}</h3>
               <p className="mt-1 text-xs text-slate-500">{unit.facilityName || 'Boxora'}{unit.size ? ` · ${unit.size}` : ''}</p>
               {unit.address && <p className="mt-1 text-xs text-slate-500">{unit.address}</p>}
@@ -314,7 +314,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Chiết khấu kỳ hạn</span><strong className="text-emerald-700">-{formatVnd(serverQuote?.discountAmount ?? 0)}{serverQuote?.discountPercentage ? ` (${serverQuote.discountPercentage}%)` : ''}</strong></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Tiền thuê sau ưu đãi</span><strong>{formatVnd(serverQuote?.totalRentalFee ?? monthlyPrice * rentalMonths)}</strong></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Tiền cọc an ninh</span><strong>{formatVnd(depositAmount)}</strong></div>
-                <div className="flex justify-between gap-3 border-t border-slate-200 pt-2"><span className="font-bold text-slate-800">Tổng chi phí dự kiến</span><strong className="text-cyan-800">{formatVnd(serverQuote?.totalContractValue ?? amountDue)}</strong></div>
+                <div className="flex justify-between gap-3 border-t border-slate-200 pt-2"><span className="font-bold text-slate-800">Tổng chi phí dự kiến</span><strong className="text-blue-600">{formatVnd(serverQuote?.totalContractValue ?? amountDue)}</strong></div>
                 <div className="flex justify-between items-center gap-3 pt-1 border-t border-slate-100">
                   <span className="text-slate-500">Phương thức tiếp nhận &amp; ký</span>
                   <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${
@@ -324,7 +324,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                   </span>
                 </div>
               </div>
-              <p className="rounded-lg bg-cyan-50 p-3 text-xs leading-relaxed text-cyan-900">
+              <p className="rounded-lg bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">
                 {signingMethod === 'ONLINE'
                   ? 'Tạo yêu cầu thuê kho và tiến hành thanh toán trực tuyến. Hệ thống chỉ xác nhận thanh toán và chữ ký sau khi nhận kết quả từ máy chủ.'
                   : 'Tạo yêu cầu giữ chỗ thành công ngay. Kho được bảo lưu đến sau lịch hẹn của bạn kèm thời gian gia hạn theo chính sách. Quý khách thanh toán tại quầy cơ sở khi đến nhận kho.'}
@@ -424,8 +424,8 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
             {step === 1 && <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2.5 text-xs font-semibold text-slate-700">Đóng</button>}
             {step === 2 && <button type="button" disabled={isSubmitting} onClick={() => setStep(1)} className="rounded-lg border border-slate-300 px-4 py-2.5 text-xs font-semibold text-slate-700 disabled:opacity-50">Quay lại</button>}
             {step === 3 && signingMethod === 'ONLINE' && <button type="button" onClick={onClose} className="ml-auto rounded-lg border border-slate-300 px-4 py-2.5 text-xs font-semibold text-slate-700">Đóng, yêu cầu vẫn được lưu</button>}
-            {step === 1 && <button type="button" disabled={!isContactValid || !isDateValid} onClick={() => setStep(2)} className="rounded-lg bg-cyan-700 px-5 py-2.5 text-xs font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">Tiếp tục</button>}
-             {step === 2 && <button type="button" disabled={isSubmitting || !termsAccepted} onClick={handleSubmitRequest} className="rounded-lg bg-cyan-700 px-5 py-2.5 text-xs font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? 'Đang khởi tạo...' : 'Xác nhận đặt kho'}</button>}
+            {step === 1 && <button type="button" disabled={!isContactValid || !isDateValid} onClick={() => setStep(2)} className="rounded-lg bg-blue-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">Tiếp tục</button>}
+             {step === 2 && <button type="button" disabled={isSubmitting || !termsAccepted} onClick={handleSubmitRequest} className="rounded-lg bg-blue-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? 'Đang khởi tạo...' : 'Xác nhận đặt kho'}</button>}
           </div>
         </div>
       </section>

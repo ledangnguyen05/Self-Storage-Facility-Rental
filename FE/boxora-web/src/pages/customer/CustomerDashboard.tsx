@@ -1073,13 +1073,13 @@ export const CustomerDashboard: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex flex-col">
             <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 mb-1">
-              <span className="font-mono uppercase tracking-wider text-[11px] font-bold">Boxora Smart Storage Portal</span>
+              <span className="text-[11px] font-semibold text-slate-500">Hệ thống quản lý kho tự quản Boxora</span>
             </div>
-            <h1 className="font-headline text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
-              Xin chào, {user?.fullName || user?.username || 'Quý khách'} 👋
+            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
+              Xin chào, {user?.fullName || user?.username || 'Quý khách'}
             </h1>
             <p className="text-xs md:text-sm text-slate-600 mt-1">
-              Quản lý kho đang thuê, mở khóa Smart Lock từ xa và theo dõi trạng thái bảo mật thời gian thực.
+              Quản lý kho đang thuê, kiểm tra mã PIN và theo dõi trạng thái khóa bảo mật.
             </p>
           </div>
 
@@ -1094,7 +1094,7 @@ export const CustomerDashboard: React.FC = () => {
               onClick={() => handleTabChange('support')}
               className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
             >
-              <span>Hỗ trợ kỹ thuật</span>
+              <span>Hỗ trợ và sự cố</span>
             </button>
           </div>
         </div>
@@ -1106,8 +1106,8 @@ export const CustomerDashboard: React.FC = () => {
               <span className="material-symbols-outlined text-[24px]">garage_door</span>
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Kho đang thuê</span>
-              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{activeContracts.length} Kho Hoạt Động</span>
+              <span className="text-[11px] font-semibold text-slate-500">Kho đang thuê</span>
+              <span className="text-xl font-bold text-slate-900 mt-0.5">{activeContracts.length} kho đang hoạt động</span>
             </div>
           </div>
 
@@ -1115,16 +1115,16 @@ export const CustomerDashboard: React.FC = () => {
             onClick={() => handleTabChange('bookings')}
             className="stitch-card p-5 flex items-center gap-4 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all group"
           >
-            <div className="w-12 h-12 rounded-xl bg-cyan-50 text-cyan-700 flex items-center justify-center shrink-0 border border-cyan-100 group-hover:scale-105 transition-transform">
+            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0 border border-blue-100 group-hover:scale-105 transition-transform">
               <span className="material-symbols-outlined text-[24px]">pending_actions</span>
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                Đơn đặt giữ chỗ
+              <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
+                Đơn đặt chỗ
                 {pendingReservations.length > 0 && <span className="pulsing-dot bg-amber-500"></span>}
               </span>
-              <span className="font-mono text-xl font-bold text-cyan-800 mt-0.5">
-                {pendingReservations.length} Chờ Nhận Kho
+              <span className="text-xl font-bold text-slate-900 mt-0.5">
+                {pendingReservations.length} chờ nhận kho
               </span>
               <span className="text-xs text-slate-500 truncate">
                 {customerBookings.length > 0 ? `${customerBookings.length} đơn trong lịch sử` : 'Chưa có đơn đặt chỗ'}
@@ -1137,12 +1137,12 @@ export const CustomerDashboard: React.FC = () => {
               <span className="material-symbols-outlined text-[24px]">lock</span>
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                Bảo mật cửa kho
+              <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
+                Trạng thái khóa
                 <span className="pulsing-dot bg-emerald-500"></span>
               </span>
-              <span className="font-mono text-xl font-bold text-emerald-700 mt-0.5">Đã Khóa An Toàn</span>
-              <span className="text-xs text-slate-500 truncate">Mã PIN điện tử &amp; Mở từ xa</span>
+              <span className="text-xl font-bold text-emerald-700 mt-0.5">Đã khóa</span>
+              <span className="text-xs text-slate-500 truncate">Bảo mật mã PIN điện tử</span>
             </div>
           </div>
 
@@ -1151,10 +1151,10 @@ export const CustomerDashboard: React.FC = () => {
               <span className="material-symbols-outlined text-[24px]">event_available</span>
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Hạn hợp đồng gần nhất</span>
-              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{nearestEndDate}</span>
+              <span className="text-[11px] font-semibold text-slate-500">Hợp đồng gần nhất hết hạn</span>
+              <span className="text-xl font-bold text-slate-900 mt-0.5">{nearestEndDate}</span>
               <span className="text-xs text-amber-700 font-semibold truncate">
-                {nearestEndDate !== '--' ? `Hạn kết thúc: ${nearestEndDate}` : 'Không có hạn kết thúc'}
+                {nearestEndDate !== '--' ? `Ngày hết hạn: ${nearestEndDate}` : 'Không có hợp đồng'}
               </span>
             </div>
           </div>
@@ -1165,13 +1165,13 @@ export const CustomerDashboard: React.FC = () => {
       <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl w-fit border border-slate-200 shadow-sm overflow-x-auto max-w-full">
         <button
           onClick={() => handleTabChange('my-units')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'my-units'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span>Kho Của Tôi</span>
+          <span>Kho của tôi</span>
           <span className="px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold">
             {activeContracts.length}
           </span>
@@ -1179,13 +1179,13 @@ export const CustomerDashboard: React.FC = () => {
 
         <button
           onClick={() => handleTabChange('bookings')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'bookings'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span>Lịch Sử Đặt Chỗ</span>
+          <span>Đơn đặt chỗ</span>
           <div className="flex items-center gap-1">
             <span className={`px-1.5 py-0.5 rounded-full text-white text-[10px] font-bold ${
               pendingReservations.length > 0 ? 'bg-amber-600' : 'bg-slate-700'
@@ -1200,24 +1200,24 @@ export const CustomerDashboard: React.FC = () => {
 
         <button
           onClick={() => handleTabChange('explore')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'explore'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span>Tìm &amp; Thuê Thêm Kho</span>
+          <span>Tìm &amp; thuê kho mới</span>
         </button>
 
         <button
           onClick={() => handleTabChange('contracts')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'contracts'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span>Hợp Đồng &amp; Hóa Đơn</span>
+          <span>Hợp đồng &amp; hóa đơn</span>
           <span className="px-1.5 py-0.5 rounded-full bg-slate-700 text-white text-[10px] font-bold">
             {contracts.length}
           </span>
@@ -1225,13 +1225,13 @@ export const CustomerDashboard: React.FC = () => {
 
         <button
           onClick={() => handleTabChange('support')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'support'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span>Hỗ Trợ &amp; Báo Sự Cố</span>
+          <span>Hỗ trợ &amp; sự cố</span>
           {customerTickets.length > 0 && (
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
               activeTab === 'support' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-700'
@@ -1414,35 +1414,35 @@ export const CustomerDashboard: React.FC = () => {
                       {/* Thời Gian Bắt Đầu & Kết Thúc Thuê Kho */}
                       <div className="grid grid-cols-2 gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
                         <div className="flex flex-col">
-                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1">
+                          <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
                             <span className="material-symbols-outlined text-[15px] text-blue-600">play_circle</span>
-                            Thời gian bắt đầu
+                            Ngày bắt đầu
                           </span>
-                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-900 mt-1">
+                          <span className="text-xs sm:text-sm font-semibold text-slate-900 mt-1">
                             {formatDisplayDate(c.startDate)}
                           </span>
                         </div>
                         <div className="flex flex-col">
-                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1">
+                          <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
                             <span className="material-symbols-outlined text-[15px] text-amber-600">event_available</span>
-                            Thời gian kết thúc
+                            Ngày kết thúc
                           </span>
-                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-900 mt-1">
+                          <span className="text-xs sm:text-sm font-semibold text-slate-900 mt-1">
                             {formatDisplayDate(c.endDate)}
                           </span>
                         </div>
                       </div>
 
                       {/* Security PIN Box */}
-                      <div className="p-4 rounded-xl bg-blue-50/40 border border-blue-200 shadow-xs flex flex-col gap-3 relative overflow-hidden">
+                      <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200 flex flex-col gap-3 relative overflow-hidden">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs sm:text-sm font-bold text-slate-900">
-                              Mã PIN truy cập cửa kho
+                            <span className="text-xs sm:text-sm font-semibold text-slate-900">
+                              Mã PIN mở khóa cửa
                             </span>
                           </div>
-                          <span className="px-2 py-0.5 rounded bg-white border border-blue-200 text-[10px] font-mono text-blue-700 font-semibold">
-                            Bảo mật AES-256
+                          <span className="px-2 py-0.5 rounded bg-white border border-slate-200 text-[10px] text-slate-600 font-medium">
+                            Bảo mật thiết bị
                           </span>
                         </div>
 
@@ -1452,8 +1452,8 @@ export const CustomerDashboard: React.FC = () => {
                               <div className="flex items-center gap-2 font-mono text-[16px] text-slate-400 tracking-widest select-none">
                                 <span>●</span><span>●</span><span>●</span><span>●</span><span>●</span><span>●</span>
                               </div>
-                              <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">
-                                {isLoadingPin ? 'Đang giải mã AES-256...' : '(Nhấn để hiển thị)'}
+                              <span className="text-[11px] text-slate-400 hidden sm:inline">
+                                {isLoadingPin ? 'Đang tải...' : '(Nhấn để xem)'}
                               </span>
                             </div>
                             <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -1463,7 +1463,7 @@ export const CustomerDashboard: React.FC = () => {
                                 disabled={isLoadingPin}
                                 className="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
                               >
-                                <span>{isLoadingPin ? 'Đang giải mã...' : 'Xem mã PIN'}</span>
+                                <span>{isLoadingPin ? 'Đang tải...' : 'Xem mã PIN'}</span>
                               </button>
                               <button
                                 type="button"
@@ -1476,13 +1476,13 @@ export const CustomerDashboard: React.FC = () => {
                             </div>
                           </div>
                         ) : (
-                          <div className="flex flex-col gap-2.5 py-2.5 px-4 rounded-lg bg-white border border-blue-200">
+                          <div className="flex flex-col gap-2.5 py-2.5 px-4 rounded-lg bg-white border border-slate-200">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <div className="flex items-center gap-2">
-                                <span className="text-[11px] font-mono text-slate-600 font-semibold">Mã số PIN:</span>
-                                <div className="flex items-center gap-1 font-mono text-base font-bold text-blue-900 tracking-wider">
+                                <span className="text-[11px] text-slate-600 font-medium">Mã PIN:</span>
+                                <div className="flex items-center gap-1 font-mono text-base font-bold text-slate-900 tracking-wider">
                                   {(pin || '------').split('').map((digit: string, idx: number) => (
-                                    <span key={idx} className="px-2 py-1 rounded bg-blue-50 border border-blue-200 text-blue-900">
+                                    <span key={idx} className="px-2 py-1 rounded bg-slate-100 border border-slate-200 text-slate-900">
                                       {digit}
                                     </span>
                                   ))}
@@ -1492,7 +1492,7 @@ export const CustomerDashboard: React.FC = () => {
                                 type="button"
                                 disabled={!pin}
                                 onClick={() => handleCopy(c.unitCode, pin)}
-                                className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                                className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
                               >
                                 <span className="material-symbols-outlined text-[14px]">content_copy</span>
                                 <span>{copiedPin === c.unitCode ? 'Đã sao chép' : 'Sao chép'}</span>
@@ -1502,10 +1502,10 @@ export const CustomerDashboard: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => togglePinReveal(c.unitCode, targetId)}
-                              className="w-full mt-1 py-2 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                              className="w-full mt-1 py-1.5 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                             >
                               <span className="material-symbols-outlined text-[16px]">visibility_off</span>
-                              <span>Ẩn xem</span>
+                              <span>Ẩn mã PIN</span>
                             </button>
                           </div>
                         )}
@@ -1514,14 +1514,14 @@ export const CustomerDashboard: React.FC = () => {
                       {/* Metrics: Giá thuê & Tiền cọc */}
                       <div className="grid grid-cols-2 gap-2 text-center">
                         <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                          <span className="text-[10px] text-slate-400 block uppercase font-medium">Giá thuê hàng tháng</span>
-                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-800">
+                          <span className="text-[11px] text-slate-500 block font-normal">Giá thuê hàng tháng</span>
+                          <span className="text-sm font-semibold text-slate-900">
                             {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫
                           </span>
                         </div>
                         <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                          <span className="text-[10px] text-slate-400 block uppercase font-medium">Tiền cọc lưu ký</span>
-                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-800">
+                          <span className="text-[11px] text-slate-500 block font-normal">Tiền cọc lưu ký</span>
+                          <span className="text-sm font-semibold text-slate-900">
                             {Number(c.depositHeld || 0).toLocaleString('vi-VN')} ₫
                           </span>
                         </div>
@@ -1534,7 +1534,7 @@ export const CustomerDashboard: React.FC = () => {
                         className="stitch-btn-secondary flex-1 text-xs py-2.5 flex items-center justify-center gap-1.5"
                       >
                         <span className="material-symbols-outlined text-[18px]">autorenew</span>
-                        <span>Yêu Cầu Gia Hạn</span>
+                        <span>Yêu cầu gia hạn</span>
                       </button>
                       <button
                         onClick={() => {
