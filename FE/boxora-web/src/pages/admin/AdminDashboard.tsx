@@ -473,12 +473,11 @@ export const AdminDashboard: React.FC = () => {
           <div className="relative w-full overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-sm border border-slate-200">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-800 text-xs font-mono font-semibold uppercase tracking-wider mb-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span>
-                  Hệ thống phân quyền &amp; Quản trị vai trò
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mb-2">
+                  <span>Hệ thống phân quyền &amp; quản trị vai trò</span>
                 </div>
-                <h1 className="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight font-headline">
-                  Phân quyền RBAC &amp; Quản lý người dùng
+                <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
+                  Phân quyền RBAC &amp; quản lý người dùng
                 </h1>
                 <p className="text-sm text-slate-600 mt-1 max-w-3xl">
                   Quản lý danh sách tài khoản người dùng, ma trận phân quyền vai trò (Role-Based Access Control) và tra cứu nhật ký kiểm toán hệ thống.
@@ -490,7 +489,7 @@ export const AdminDashboard: React.FC = () => {
                   type="button" 
                   onClick={() => fetchUsers(facilityFilter)}
                   disabled={isLoadingUsers}
-                  className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
                   title="Tải lại dữ liệu từ cơ sở dữ liệu"
                 >
                   <span className={`material-symbols-outlined text-[16px] text-blue-600 ${isLoadingUsers ? 'animate-spin' : ''}`}>
@@ -504,7 +503,7 @@ export const AdminDashboard: React.FC = () => {
                   className="stitch-btn-primary text-xs"
                 >
                   <span className="material-symbols-outlined text-[18px]">person_add</span>
-                  <span>Cấp Tài Khoản Mới</span>
+                  <span>Cấp tài khoản mới</span>
                 </button>
               </div>
             </div>
@@ -519,7 +518,7 @@ export const AdminDashboard: React.FC = () => {
                   <div className="min-w-0">
                     <div className="truncate text-xs font-semibold text-slate-500" title={card.label}>{card.label}</div>
                     <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                      <span className="font-mono text-2xl font-extrabold tabular-nums text-slate-900">{card.value}</span>
+                      <span className="text-2xl font-bold text-slate-900">{card.value}</span>
                       <span className="text-[11px] text-slate-500">{card.helper}</span>
                     </div>
                   </div>
@@ -532,46 +531,46 @@ export const AdminDashboard: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setActiveTab('users')}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
                   activeTab === 'users'
-                    ? 'bg-cyan-50 text-cyan-800 border border-cyan-200 shadow-xs'
+                    ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-xs'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
                 <span className="material-symbols-outlined text-[16px]">group</span>
-                <span>Danh Sách Người Dùng ({filteredUsers.length})</span>
+                <span>Danh sách người dùng ({filteredUsers.length})</span>
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('roles')}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
                   activeTab === 'roles'
-                    ? 'bg-cyan-50 text-cyan-800 border border-cyan-200 shadow-xs'
+                    ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-xs'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
                 <span className="material-symbols-outlined text-[16px]">security</span>
-                <span>Ma Trận Phân Quyền (RBAC)</span>
+                <span>Ma trận phân quyền (RBAC)</span>
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('logs')}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
                   activeTab === 'logs'
-                    ? 'bg-cyan-50 text-cyan-800 border border-cyan-200 shadow-xs'
+                    ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-xs'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
                 <span className="material-symbols-outlined text-[16px]">history</span>
-                <span>Nhật Ký Kiểm Toán (Audit Logs)</span>
+                <span>Nhật ký kiểm toán (Audit logs)</span>
               </button>
               <Link
                 to="/tickets"
-                className="px-4 py-2 rounded-lg text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 flex items-center gap-2 transition-all cursor-pointer"
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 flex items-center gap-2 transition-all cursor-pointer"
                 title="Xem danh sách và chi tiết báo cáo sự cố toàn hệ thống (Chỉ đọc)"
               >
-                <span className="material-symbols-outlined text-[16px] text-rose-600">support_agent</span>
-                <span>Báo Cáo Sự Cố (Chỉ đọc)</span>
+                <span className="material-symbols-outlined text-[16px] text-slate-600">support_agent</span>
+                <span>Báo cáo sự cố (Chỉ đọc)</span>
               </Link>
             </div>
           </div>
@@ -619,13 +618,13 @@ export const AdminDashboard: React.FC = () => {
 
               {/* Role Filter */}
               <div className="flex items-center gap-1.5">
-                <span className="text-xs text-slate-500 font-mono uppercase font-semibold">Vai trò:</span>
+                <span className="text-xs text-slate-500 font-semibold">Vai trò:</span>
                 <select
                   value={roleFilter}
                   onChange={(e) => setRoleFilter(e.target.value)}
                   className="px-3 py-2 text-xs rounded-lg border border-slate-200 bg-slate-50 font-medium focus:outline-none cursor-pointer"
                 >
-                  <option value="ALL">Tất cả (5 vai trò)</option>
+                  <option value="ALL">Tất cả vai trò</option>
                   <option value="ADMIN">ADMIN</option>
                   <option value="BUSINESS_MANAGER">BUSINESS_MANAGER</option>
                   <option value="FACILITY_MANAGER">FACILITY_MANAGER</option>
@@ -639,14 +638,14 @@ export const AdminDashboard: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-slate-200 text-slate-500 font-mono uppercase tracking-wider bg-slate-50">
-                  <th className="py-3 px-4 font-semibold">Người Dùng</th>
-                  <th className="py-3 px-4 font-semibold">Tên Đăng Nhập</th>
-                  <th className="py-3 px-4 font-semibold">Vai Trò (Role)</th>
-                  <th className="py-3 px-4 font-semibold">Cơ Sở Trực Thuộc</th>
-                  <th className="py-3 px-4 font-semibold">Trạng Thái</th>
-                  <th className="py-3 px-4 font-semibold">Ngày Tạo</th>
-                  <th className="py-3 px-4 font-semibold text-right">Thao Tác</th>
+                <tr className="border-b border-slate-200 text-slate-600 bg-slate-50/80">
+                  <th className="py-3 px-4 font-semibold">Người dùng</th>
+                  <th className="py-3 px-4 font-semibold">Tên đăng nhập</th>
+                  <th className="py-3 px-4 font-semibold">Vai trò</th>
+                  <th className="py-3 px-4 font-semibold">Cơ sở trực thuộc</th>
+                  <th className="py-3 px-4 font-semibold">Trạng thái</th>
+                  <th className="py-3 px-4 font-semibold">Ngày tạo</th>
+                  <th className="py-3 px-4 font-semibold text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -659,45 +658,45 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                         <div>
                           <div className="font-semibold text-slate-900">{user.fullName || 'Chưa cập nhật tên'}</div>
-                          <div className="text-slate-500 text-[11px] font-mono">{user.email}</div>
+                          <div className="text-slate-500 text-[11px]">{user.email}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 px-4 font-mono text-slate-700 font-medium">{user.username}</td>
+                    <td className="py-3 px-4 text-slate-700 font-medium">{user.username}</td>
                     <td className="py-3 px-4">
-                      <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${getRoleBadge(user.role?.name || (user.roleName as string))}`}>
+                      <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-semibold border ${getRoleBadge(user.role?.name || (user.roleName as string))}`}>
                         {user.role?.name || user.roleName || 'CUSTOMER'}
                       </span>
                     </td>
                     <td className="py-3 px-4">
                       {user.facilityName ? (
                         <div className="flex flex-col">
-                          <span className="font-semibold text-slate-800 text-[11px] flex items-center gap-1">
+                          <span className="font-medium text-slate-800 text-xs flex items-center gap-1">
                             <span className="material-symbols-outlined text-[14px] text-blue-600">location_on</span>
                             {user.facilityName}
                           </span>
                           {user.facilityCode && (
-                            <span className="text-[10px] font-mono text-slate-500 font-bold ml-4">
-                              Mã: {user.facilityCode}
+                            <span className="text-[10px] text-slate-500 font-mono ml-4">
+                              #{user.facilityCode}
                             </span>
                           )}
                         </div>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-600">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-slate-100 text-slate-600">
                           <span className="material-symbols-outlined text-[12px]">public</span>
                           {user.role?.name === 'CUSTOMER' ? 'Khách hàng' : 'Toàn hệ thống'}
                         </span>
                       )}
                     </td>
                     <td className="py-3 px-4">
-                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${
                         user.isActive !== false ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
                       }`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${user.isActive !== false ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
                         {user.isActive !== false ? 'Đang hoạt động' : 'Tạm khóa'}
                       </span>
                     </td>
-                    <td className="py-3 px-4 font-mono text-slate-500 text-[11px]">{user.createdAt ? new Date(user.createdAt).toLocaleDateString('vi-VN') : '—'}</td>
+                    <td className="py-3 px-4 text-slate-500 text-xs">{user.createdAt ? new Date(user.createdAt).toLocaleDateString('vi-VN') : '—'}</td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
@@ -707,7 +706,7 @@ export const AdminDashboard: React.FC = () => {
                             setIsScopingModalOpen(true)
                           }}
                           title="Gán cơ sở trực thuộc cho tài khoản"
-                          className="text-cyan-700 hover:text-cyan-900 font-semibold px-2 py-1 rounded hover:bg-cyan-50 transition-colors flex items-center gap-1 cursor-pointer"
+                          className="text-blue-700 hover:text-blue-900 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors flex items-center gap-1 cursor-pointer"
                         >
                           <span className="material-symbols-outlined text-[15px]">domain_verification</span>
                           <span>Phân công</span>

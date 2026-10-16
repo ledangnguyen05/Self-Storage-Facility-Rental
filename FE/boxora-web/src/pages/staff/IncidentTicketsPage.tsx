@@ -531,11 +531,11 @@ export const IncidentTicketsPage: React.FC = () => {
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
+            <div className="text-2xl font-bold text-slate-900 tracking-tight">
               {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : (stats?.totalTickets ?? tickets.length)}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Toàn bộ ticket được phân quyền
+              Toàn bộ sự cố được phân quyền
             </div>
           </div>
         </div>
@@ -543,13 +543,13 @@ export const IncidentTicketsPage: React.FC = () => {
         {/* Card 2: Đang xử lý */}
         <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Đang xử lý (Cần trực ban)</span>
+            <span>Đang xử lý</span>
             <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600">
               <span className="material-symbols-outlined text-[18px]">pending_actions</span>
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-black text-blue-700 font-mono tracking-tight">
+            <div className="text-2xl font-bold text-blue-700 tracking-tight">
               {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : (stats?.inProgressTickets ?? tickets.filter(t => t.status === 'IN_PROGRESS' || t.status === 'OPEN').length)}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
@@ -567,11 +567,11 @@ export const IncidentTicketsPage: React.FC = () => {
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-black text-rose-700 font-mono tracking-tight">
+            <div className="text-2xl font-bold text-rose-700 tracking-tight">
               {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : ((stats?.overdueTickets ?? stats?.overdueSlaTickets) ?? tickets.filter(t => t.isOverdue || t.isOverdueSla).length)}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Cần ưu tiên hoặc báo Ban Quản Lý (BOM)
+              Cần ưu tiên xử lý khẩn cấp
             </div>
           </div>
         </div>
@@ -579,13 +579,13 @@ export const IncidentTicketsPage: React.FC = () => {
         {/* Card 4: Đã hoàn tất */}
         <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Đã xử lý &amp; Đóng ticket</span>
+            <span>Đã xử lý &amp; hoàn tất</span>
             <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
               <span className="material-symbols-outlined text-[18px]">check_circle</span>
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-black text-emerald-700 font-mono tracking-tight">
+            <div className="text-2xl font-bold text-emerald-700 tracking-tight">
               {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : (stats?.resolvedTickets ?? tickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED').length)}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
@@ -708,15 +708,15 @@ export const IncidentTicketsPage: React.FC = () => {
         <div className="overflow-x-auto rounded-xl border border-slate-200">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 font-mono uppercase tracking-wider text-[11px]">
-                <th className="py-3 px-3.5">Mã Ticket</th>
-                <th className="py-3 px-3.5">Sự Cố &amp; Danh Mục</th>
-                <th className="py-3 px-3.5">Cơ Sở &amp; Kho</th>
-                <th className="py-3 px-3.5 text-center">Độ Ưu Tiên</th>
-                <th className="py-3 px-3.5">Phụ Trách</th>
-                <th className="py-3 px-3.5">Thời Gian &amp; SLA</th>
-                <th className="py-3 px-3.5 text-center">Trạng Thái</th>
-                <th className="py-3 px-3.5 text-right">Thao Tác</th>
+              <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 text-xs">
+                <th className="py-3 px-3.5">Mã ticket</th>
+                <th className="py-3 px-3.5">Sự cố &amp; danh mục</th>
+                <th className="py-3 px-3.5">Cơ sở &amp; kho</th>
+                <th className="py-3 px-3.5 text-center">Độ ưu tiên</th>
+                <th className="py-3 px-3.5">Phụ trách</th>
+                <th className="py-3 px-3.5">Thời gian &amp; SLA</th>
+                <th className="py-3 px-3.5 text-center">Trạng thái</th>
+                <th className="py-3 px-3.5 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -772,7 +772,7 @@ export const IncidentTicketsPage: React.FC = () => {
                       </td>
                       <td className="py-3 px-3.5">
                         <div className="text-slate-800 font-medium text-xs">{t.facilityName || 'Boxora Facility'}</div>
-                        <div className="font-mono text-slate-500 text-[11px] mt-0.5">
+                        <div className="text-slate-500 text-[11px] mt-0.5">
                           {t.unitCode ? `Kho #${t.unitCode}` : 'Khu vực chung'}
                         </div>
                       </td>
@@ -796,7 +796,7 @@ export const IncidentTicketsPage: React.FC = () => {
                           </div>
                         )}
                       </td>
-                      <td className="py-3 px-3.5 text-slate-500 font-mono text-[11px] whitespace-nowrap">
+                      <td className="py-3 px-3.5 text-slate-500 text-[11px] whitespace-nowrap">
                         <div>{t.createdAt ? new Date(t.createdAt).toLocaleDateString('vi-VN') : 'Hôm nay'}</div>
                         {t.isOverdue || t.isOverdueSla ? (
                           <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 bg-rose-100 text-rose-700 border border-rose-300 rounded text-[9px] font-bold mt-0.5">
