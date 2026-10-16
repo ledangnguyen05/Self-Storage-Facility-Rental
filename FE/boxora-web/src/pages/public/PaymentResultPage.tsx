@@ -246,21 +246,87 @@ export const PaymentResultPage: React.FC = () => {
 
             {/* Signature Status or Contract Signed Box */}
             {signedContractSuccess ? (
-              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-left space-y-2">
-                <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
-                  <span className="material-symbols-outlined text-lg text-emerald-600">verified</span>
-                  Ký hợp đồng thành công
+              <div className="rounded-2xl border border-emerald-200 bg-white p-6 text-left shadow-sm space-y-5">
+                <div className="text-center space-y-2 pb-3 border-b border-slate-100">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                    <span className="material-symbols-outlined text-3xl">verified</span>
+                  </div>
+                  <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">Ký hợp đồng thành công!</h2>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Hợp đồng điện tử của bạn đã được xác nhận ký thành công.
+                  </p>
                 </div>
-                <p className="text-[11px] text-emerald-700 leading-relaxed">
-                  Hợp đồng điện tử của bạn đã được xác nhận ký thành công. Mã PIN chỉ sử dụng được sau khi đáp ứng đầy đủ điều kiện kích hoạt và bàn giao.
-                </p>
-                <div className="pt-2">
+
+                <div className="space-y-3">
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Thông tin đặt thuê</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[11px] text-slate-500 block">Mã đặt chỗ</span>
+                      <strong className="font-mono text-slate-900 text-sm">{booking?.bookingCode || bookingId || 'Chưa có'}</strong>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[11px] text-slate-500 block">Kho đã chọn</span>
+                      <strong className="text-blue-700 text-sm">#{booking?.unitCode || 'Chưa xác định'} · {booking?.facilityName || 'Boxora'}</strong>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[11px] text-slate-500 block">Trạng thái hợp đồng</span>
+                      <strong className="text-emerald-700 text-sm">Đã ký điện tử</strong>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[11px] text-slate-500 block">Trạng thái thanh toán</span>
+                      <strong className="text-emerald-700 text-sm">Đã xác nhận</strong>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[11px] text-slate-500 block">Mã giao dịch</span>
+                      <strong className="font-mono text-slate-800 text-xs break-all">{txnRef || 'BOX' + (booking?.id?.slice(0, 14) || 'VERIFIED')}</strong>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[11px] text-slate-500 block">Số tiền đã thanh toán</span>
+                      <strong className="font-mono text-emerald-700 text-sm">
+                        {displayPaidAmount ? `${displayPaidAmount.toLocaleString('vi-VN')} ₫` : 'Đã thanh toán'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 text-xs space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-blue-900">Trạng thái nhận kho:</span>
+                      <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-bold text-[11px]">Chờ hoàn tất bàn giao</span>
+                    </div>
+                    <p className="text-[11px] text-blue-800 leading-relaxed">
+                      Ngày check-in và ngày bắt đầu thuê chính thức được xác nhận theo lịch bàn giao thực tế và điều khoản hợp đồng.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-100/80 border border-slate-200 text-xs space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-800">Mã PIN:</span>
+                      <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold text-[11px]">Chưa kích hoạt</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Mã PIN chỉ sử dụng được khi đáp ứng đầy đủ điều kiện kích hoạt và bàn giao của Boxora.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2.5 pt-2 border-t border-slate-100">
+                  <Link
+                    to={`/portal/customer?tab=contracts&bookingId=${booking?.id || ''}`}
+                    className="flex-1 py-2.5 px-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 text-xs font-bold rounded-xl text-center transition-colors"
+                  >
+                    Xem hợp đồng đã ký
+                  </Link>
+                  <Link
+                    to={`/portal/customer?tab=bookings&bookingId=${booking?.id || ''}`}
+                    className="flex-1 py-2.5 px-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 text-xs font-bold rounded-xl text-center transition-colors"
+                  >
+                    Xem lịch nhận kho
+                  </Link>
                   <Link
                     to="/portal/customer?tab=my-units"
-                    className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    className="flex-1 py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl text-center transition-colors shadow-xs"
                   >
-                    <span>Vào trang chủ tổng quan</span>
-                    <span className="material-symbols-outlined text-sm">arrow_forward</span>
+                    Vào trang chủ tổng quan
                   </Link>
                 </div>
               </div>

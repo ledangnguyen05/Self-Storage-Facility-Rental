@@ -250,7 +250,7 @@ export function DocuSealSimulationModal({
                   <span className="material-symbols-outlined text-sm text-cyan-700">draw</span>
                   Chữ ký điện tử của Bên Thuê (E-Signature)
                 </h4>
-                <p className="text-[11px] text-slate-500">Được chứng thực điện tử theo chuẩn DocuSeal e-Signature</p>
+                <p className="text-[11px] text-slate-500">Được chứng thực điện tử theo quy chuẩn an toàn Boxora e-Signature</p>
               </div>
 
               {/* Toggle chế độ ký */}
@@ -373,7 +373,7 @@ export function DocuSealSimulationModal({
             {isSigning ? (
               <>
                 <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Đang xác thực chữ ký DocuSeal...</span>
+                <span>Đang xác thực chữ ký điện tử...</span>
               </>
             ) : (
               <>

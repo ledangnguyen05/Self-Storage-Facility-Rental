@@ -25,7 +25,7 @@ interface BookingCheckoutModalProps {
   existingBooking?: Booking
 }
 
-type CheckoutStep = 1 | 2 | 3 | 4
+type CheckoutStep = 1 | 2 | 3
 
 const formatVnd = (amount: number) => `${Math.round(amount).toLocaleString('vi-VN')} ₫`
 
@@ -42,7 +42,7 @@ const getToday = () => {
 
 export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit, user, onClose, existingBooking }) => {
   const { updateProfile } = useAuth()
-  const [step, setStep] = useState<CheckoutStep>(() => existingBooking?.status === 'PENDING_PAYMENT' ? 4 : 1)
+  const [step, setStep] = useState<CheckoutStep>(() => existingBooking?.status === 'PENDING_PAYMENT' ? 3 : 1)
   const [rentalMonths, setRentalMonths] = useState(existingBooking?.rentalMonths || 1)
   const [startDate, setStartDate] = useState(existingBooking?.startDate || getToday)
   const [checkInTime, setCheckInTime] = useState(existingBooking?.checkInTime || '09:00')

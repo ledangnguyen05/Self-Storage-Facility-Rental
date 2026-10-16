@@ -19,6 +19,7 @@ export const IncidentTicketsPage: React.FC = () => {
   const isBusinessManager = effectiveRole === 'BUSINESS_MANAGER'
   const isAdmin = effectiveRole === 'ADMIN'
   const isReadOnly = isBusinessManager || isAdmin
+  const canSelectAllFacilities = isAdmin || isBusinessManager || isFacilityManager
 
   // Tickets & data
   const [tickets, setTickets] = useState<SupportTicketRecord[]>([])
@@ -28,7 +29,10 @@ export const IncidentTicketsPage: React.FC = () => {
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedFacilityFilter, setSelectedFacilityFilter] = useState<string>('ALL')
+  const [selectedFacilityFilter, setSelectedFacilityFilter] = useState<string>(() => {
+    if (isStaff && user?.facilityId) return user.facilityId
+    return 'ALL'
+  })
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL')
   const [priorityFilter, setPriorityFilter] = useState<'ALL' | 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'>('ALL')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
@@ -83,6 +87,12 @@ export const IncidentTicketsPage: React.FC = () => {
   const [fmReopenReason, setFmReopenReason] = useState('')
   const [isSubmittingReopen, setIsSubmittingReopen] = useState(false)
 
+  // Close Ticket Modal (FM only - Task 2 confirmation modal)
+  const [closingTicketTarget, setClosingTicketTarget] = useState<SupportTicketRecord | null>(null)
+  const [closeTicketNote, setCloseTicketNote] = useState('')
+  const [isSubmittingClose, setIsSubmittingClose] = useState(false)
+  const [closeTicketError, setCloseTicketError] = useState<string | null>(null)
+
   const fetchTicketsAndData = async () => {
     setIsLoading(true)
     try {
@@ -121,6 +131,13 @@ export const IncidentTicketsPage: React.FC = () => {
     setCurrentPage(1)
   }, [searchQuery, selectedFacilityFilter, categoryFilter, priorityFilter, statusFilter, overdueOnly, pageSize])
 
+  // Enforce staff facility scope
+  useEffect(() => {
+    if (isStaff && user?.facilityId && selectedFacilityFilter !== user.facilityId) {
+      setSelectedFacilityFilter(user.facilityId)
+    }
+  }, [isStaff, user?.facilityId, selectedFacilityFilter])
+
   // Handle Take Ticket (Staff / FM)
   const handleTakeTicket = async (ticket: SupportTicketRecord) => {
     if (isReadOnly) return
@@ -149,15 +166,27 @@ export const IncidentTicketsPage: React.FC = () => {
     }
   }
 
-  // Handle Close Ticket (FM only)
-  const handleCloseTicket = async (ticket: SupportTicketRecord) => {
+  // Handle Open Close Ticket Confirmation Modal (FM only - Task 2)
+  const handleOpenCloseModal = (ticket: SupportTicketRecord) => {
     if (!isFacilityManager) return
-    if (!window.confirm(`Xác nhận nghiệm thu và đóng hoàn tất ticket #${ticket.ticketCode || ticket.id.substring(0, 8)}?`)) return
+    setClosingTicketTarget(ticket)
+    setCloseTicketNote('Quản lý cơ sở đã nghiệm thu hiện trường và xác nhận đóng ticket.')
+    setCloseTicketError(null)
+  }
+
+  // Handle Submit Close Ticket (FM only)
+  const handleSubmitCloseTicket = async () => {
+    if (!closingTicketTarget || !isFacilityManager || isSubmittingClose) return
+    setIsSubmittingClose(true)
+    setCloseTicketError(null)
     try {
-      await supportTicketService.closeTicket(ticket.id, 'Quản lý cơ sở đã nghiệm thu và xác nhận đóng ticket')
+      await supportTicketService.closeTicket(closingTicketTarget.id, closeTicketNote.trim() || 'Quản lý cơ sở đã nghiệm thu và xác nhận đóng ticket')
+      setClosingTicketTarget(null)
       await fetchTicketsAndData()
     } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'Không thể đóng ticket')
+      setCloseTicketError(err?.response?.data?.message || err?.message || 'Không thể đóng ticket. Trạng thái phiếu vẫn được giữ nguyên.')
+    } finally {
+      setIsSubmittingClose(false)
     }
   }
 
@@ -318,6 +347,9 @@ export const IncidentTicketsPage: React.FC = () => {
   // Filtered Tickets
   const filteredTickets = useMemo(() => {
     return tickets.filter((t) => {
+      // Facility scope enforcement (Staff can strictly only access assigned facility)
+      if (isStaff && user?.facilityId && t.facilityId !== user.facilityId) return false
+
       // Facility filter
       if (selectedFacilityFilter !== 'ALL' && t.facilityId !== selectedFacilityFilter) return false
 
@@ -582,16 +614,21 @@ export const IncidentTicketsPage: React.FC = () => {
               />
             </div>
 
-            {/* Facility filter (accessible for all, especially BOM & Admin) */}
+            {/* Facility filter (Task 3: 'Tất cả cơ sở' is restricted to Admin & Manager, Staff only sees their facility) */}
             <select
               value={selectedFacilityFilter}
               onChange={(e) => setSelectedFacilityFilter(e.target.value)}
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none cursor-pointer"
+              disabled={isStaff}
+              className={`px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none ${
+                isStaff ? 'opacity-80 cursor-not-allowed bg-slate-100' : 'cursor-pointer'
+              }`}
             >
-              <option value="ALL">Tất cả cơ sở</option>
-              {facilities.map(f => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
+              {canSelectAllFacilities && <option value="ALL">Tất cả cơ sở</option>}
+              {facilities
+                .filter(f => !isStaff || f.id === user?.facilityId)
+                .map(f => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
             </select>
 
             {/* Category filter */}
@@ -823,7 +860,7 @@ export const IncidentTicketsPage: React.FC = () => {
                           {isFacilityManager && isResolved && (
                             <button
                               type="button"
-                              onClick={() => handleCloseTicket(t)}
+                              onClick={() => handleOpenCloseModal(t)}
                               className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-neutral-800 text-white font-semibold text-[11px] transition-all cursor-pointer flex items-center gap-0.5"
                               title="Nghiệm thu đóng ticket hoàn tất"
                             >
@@ -1621,6 +1658,76 @@ export const IncidentTicketsPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Task 2: Confirm Close Ticket Modal (FM only) */}
+      {closingTicketTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-800 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-2xl">lock</span>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Xác nhận nghiệm thu &amp; đóng phiếu</h3>
+                <p className="mt-1 text-xs text-slate-500 leading-relaxed">
+                  Bạn có chắc chắn muốn đóng phiếu sự cố #{closingTicketTarget.ticketCode || closingTicketTarget.id.slice(0, 8)}? Hành động này xác nhận hiện trường đã được khắc phục hoàn tất.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Ghi chú nghiệm thu hoàn tất
+              </label>
+              <textarea
+                rows={3}
+                value={closeTicketNote}
+                onChange={(e) => setCloseTicketNote(e.target.value)}
+                placeholder="Nhập ghi chú nghiệm thu hoàn tất sự cố..."
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-slate-400 focus:bg-white resize-none"
+              />
+            </div>
+
+            {closeTicketError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">
+                {closeTicketError}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isSubmittingClose}
+                onClick={() => {
+                  setClosingTicketTarget(null)
+                  setCloseTicketError(null)
+                }}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingClose}
+                onClick={handleSubmitCloseTicket}
+                className="px-4 py-2 bg-slate-900 hover:bg-neutral-800 text-white text-xs font-bold rounded-lg transition-colors shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isSubmittingClose ? (
+                  <>
+                    <span className="material-symbols-outlined text-[16px] animate-spin">sync</span>
+                    <span>Đang đóng...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                    <span>Xác nhận</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

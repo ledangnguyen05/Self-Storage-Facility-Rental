@@ -404,7 +404,17 @@ export const CustomerDashboard: React.FC = () => {
 
   // Filter explore state
   const [filterFacility, setFilterFacility] = useState('all')
+  const [filterFloor, setFilterFloor] = useState('all')
   const [filterSize, setFilterSize] = useState('all')
+
+  const availableFloors = useMemo(() => {
+    const floors = new Set<string>()
+    availableUnits.forEach(u => {
+      if (filterFacility !== 'all' && u.facilityId !== filterFacility) return
+      if (u.floorLevel) floors.add(u.floorLevel)
+    })
+    return Array.from(floors).sort()
+  }, [availableUnits, filterFacility])
 
   const handleCopy = (id: string, pin: string) => {
     if (navigator.clipboard) {
@@ -1272,7 +1282,7 @@ export const CustomerDashboard: React.FC = () => {
                             onClick={() => setRequestToPay(request)}
                             className="rounded-lg bg-cyan-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-cyan-800"
                           >
-                            Tiếp tục thanh toán
+                            Thanh toán và ký hợp đồng trực tuyến ngay -&gt;
                           </button>
                         )}
                       </div>
@@ -1935,7 +1945,7 @@ export const CustomerDashboard: React.FC = () => {
                                     title="Thanh toán trước để hoàn tất nhanh thủ tục"
                                   >
                                     <span className="material-symbols-outlined text-sm">credit_card</span>
-                                    <span>Thanh toán và ký hợp đồng trực tuyến ngay</span>
+                                    <span>Thanh toán và ký hợp đồng trực tuyến ngay -&gt;</span>
                                   </button>
                                 </div>
                               </div>
@@ -2043,6 +2053,19 @@ export const CustomerDashboard: React.FC = () => {
               </select>
 
               <select
+                value={filterFloor}
+                onChange={(e) => setFilterFloor(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
+              >
+                <option value="all">Tất cả tầng</option>
+                {availableFloors.map(floor => (
+                  <option key={floor} value={floor}>
+                    {floor.startsWith('Floor ') ? `Tầng ${floor.replace('Floor ', '')}` : floor}
+                  </option>
+                ))}
+              </select>
+
+              <select
                 value={filterSize}
                 onChange={(e) => setFilterSize(e.target.value)}
                 className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
@@ -2063,6 +2086,7 @@ export const CustomerDashboard: React.FC = () => {
               </div>
             ) : availableUnits.filter(u => {
                 if (filterFacility !== 'all' && u.facilityId !== filterFacility) return false
+                if (filterFloor !== 'all' && u.floorLevel !== filterFloor) return false
                 const area = u.areaSqMeters || 6
                 if (filterSize === 'mini' && area > 5) return false
                 if (filterSize === 'family' && (area <= 5 || area > 10)) return false
@@ -2075,6 +2099,7 @@ export const CustomerDashboard: React.FC = () => {
             ) : (
               availableUnits.filter(u => {
                 if (filterFacility !== 'all' && u.facilityId !== filterFacility) return false
+                if (filterFloor !== 'all' && u.floorLevel !== filterFloor) return false
                 const area = u.areaSqMeters || 6
                 if (filterSize === 'mini' && area > 5) return false
                 if (filterSize === 'family' && (area <= 5 || area > 10)) return false
@@ -2379,7 +2404,7 @@ export const CustomerDashboard: React.FC = () => {
                                 type="button"
                                 onClick={() => handleSignContractNow(c)}
                                 className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-md font-bold text-xs shadow-sm flex items-center gap-1 transition-all cursor-pointer animate-pulse"
-                                title="Ký hợp đồng DocuSeal ngay"
+                                title="Ký hợp đồng trực tuyến ngay"
                               >
                                 <span className="material-symbols-outlined text-[15px]">edit_document</span>
                                 <span>Ký ngay</span>
@@ -3128,7 +3153,8 @@ export const CustomerDashboard: React.FC = () => {
                     <span className="font-mono font-bold text-blue-600 text-sm block">
                       {(selectedBookingUnit.priceNumber || 2400000).toLocaleString('vi-VN')} ₫
                     </span>
-                    <span className="text-[11px] text-slate-500">/tháng · Giá niêm yết</span>
+                    <span className="text-[11px] text-slate-500 block">/tháng</span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Giá niêm yết, chưa áp dụng ưu đãi kỳ hạn</span>
                   </div>
                 </div>
 
@@ -3233,7 +3259,7 @@ export const CustomerDashboard: React.FC = () => {
                         className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
                       />
                       <p className="text-[10px] text-slate-500 leading-normal">
-                        Là ngày bắt đầu tính thời hạn và tiền thuê theo hợp đồng đã xác nhận.
+                        Ngày bắt đầu thuê chính thức được xác định khi bàn giao kho thực tế thành công theo hợp đồng.
                       </p>
                     </div>
 
@@ -3249,17 +3275,31 @@ export const CustomerDashboard: React.FC = () => {
                           onChange={(e) => setBookingCheckInDate(e.target.value)}
                           className="col-span-3 h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
                         />
-                        <input
-                          type="time"
+                        <select
                           value={bookingCheckInTime}
                           onChange={(e) => setBookingCheckInTime(e.target.value)}
-                          className="col-span-2 h-9 px-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
-                        />
+                          className="col-span-2 h-9 px-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500 cursor-pointer"
+                        >
+                          <option value="09:00">09:00</option>
+                          <option value="13:00">13:00</option>
+                          <option value="15:00">15:00</option>
+                        </select>
                       </div>
                       <p className="text-[10px] text-slate-500 leading-normal">
-                        Ngày &amp; giờ bạn đến cơ sở để xem kho thực tế, ký biên bản và thanh toán nhận kho.
+                        Ngày hẹn nhận kho không mặc định là ngày bắt đầu thuê chính thức.
                       </p>
                     </div>
+                  </div>
+
+                  {/* Ngày kết thúc thuê dự kiến */}
+                  <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-bold text-slate-800 block text-[11px]">Ngày kết thúc thuê dự kiến:</span>
+                      <span className="text-[10px] text-slate-500">Được tính theo kỳ hạn và quy tắc tính thời hạn trong hợp đồng</span>
+                    </div>
+                    <span className="font-mono font-bold text-slate-900 bg-white px-2.5 py-1 rounded-md border border-slate-200">
+                      {bookingEstimate.endDate || '—'}
+                    </span>
                   </div>
 
                   {/* Warning: Ngày check-in sau ngày bắt đầu thuê */}
@@ -3409,7 +3449,7 @@ export const CustomerDashboard: React.FC = () => {
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500 leading-normal">
-                          Ký hợp đồng DocuSeal trực tuyến và thanh toán cọc + tiền thuê tháng đầu qua cổng VNPay Sandbox.
+                          Ký hợp đồng điện tử trực tuyến và thanh toán cọc + tiền thuê tháng đầu qua cổng thanh toán bảo mật.
                         </p>
                       </div>
                       <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
@@ -4361,8 +4401,8 @@ export const CustomerDashboard: React.FC = () => {
             </div>
             {ticketActionError && <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{ticketActionError}</p>}
             <div className="mt-6 flex justify-end gap-2">
-              <button type="button" disabled={isProcessingTicketAction} onClick={() => setCloseTicketTarget(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Cancel</button>
-              <button type="button" disabled={isProcessingTicketAction} onClick={handleCloseCustomerTicket} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50">{isProcessingTicketAction ? 'Đang đóng...' : 'Confirm'}</button>
+              <button type="button" disabled={isProcessingTicketAction} onClick={() => setCloseTicketTarget(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Hủy</button>
+              <button type="button" disabled={isProcessingTicketAction} onClick={handleCloseCustomerTicket} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50">{isProcessingTicketAction ? 'Đang xử lý...' : 'Xác nhận'}</button>
             </div>
           </section>
         </div>
