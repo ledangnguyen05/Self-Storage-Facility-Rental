@@ -544,6 +544,14 @@ public class BookingServiceImpl implements BookingService {
     public BookingResponse getById(UUID id) {
         Booking booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        User currentUser = (requestContext != null && requestContext.currentUserId() != null)
+                ? userRepository.findById(requestContext.currentUserId()).orElse(null)
+                : null;
+        if (currentUser != null) {
+            validateBookingAccess(booking, currentUser);
+        }
+
         return mapToResponse(booking);
     }
 
