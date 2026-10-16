@@ -60,6 +60,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
   const [approvalRejected, setApprovalRejected] = useState(false)
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null)
   const [serverQuote, setServerQuote] = useState<PricingQuoteResponse | null>(null)
+  const [termsAccepted, setTermsAccepted] = useState(false)
 
   useEffect(() => {
     if (!unit.backendId) return
@@ -171,7 +172,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
     if (paymentUrl && !isExpired) window.open(paymentUrl, '_blank', 'noopener,noreferrer')
   }
 
-  const steps = ['Thông tin', 'Xác nhận', signingMethod === 'ONLINE' ? 'Thanh toán VNPay' : 'Hoàn tất đặt chỗ']
+  const steps = ['Thông tin', 'Xác nhận', signingMethod === 'ONLINE' ? 'Thanh toán trực tuyến' : 'Hoàn tất đặt chỗ']
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
@@ -223,19 +224,28 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
               <label className="block space-y-1.5 text-xs font-semibold text-slate-700">Số điện thoại
                 <input type="tel" autoComplete="tel" value={customerPhone} onChange={event => setCustomerPhone(event.target.value)} placeholder="0901234567" className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" required />
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className="block space-y-1.5 text-xs font-semibold text-slate-700">Ngày bắt đầu thuê
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                 <label className="block space-y-1.5 text-xs font-semibold text-slate-700">Ngày check-in dự kiến
                   <input type="date" min={getToday()} value={startDate} onChange={event => setStartDate(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" required />
                 </label>
-                <label className="block space-y-1.5 text-xs font-semibold text-slate-700">Giờ hẹn nhận kho dự kiến
-                  <input type="time" value={checkInTime} onChange={event => setCheckInTime(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" required />
+                 <label className="block space-y-1.5 text-xs font-semibold text-slate-700">Giờ hẹn nhận kho dự kiến
+                   <select value={checkInTime} onChange={event => setCheckInTime(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" required>
+                     <option value="09:00">09:00</option>
+                     <option value="13:00">13:00</option>
+                     <option value="15:00">15:00</option>
+                   </select>
                 </label>
               </div>
               <label className="block space-y-1.5 text-xs font-semibold text-slate-700">Kỳ hạn thuê
-                <select value={rentalMonths} onChange={event => setRentalMonths(Number(event.target.value))} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100">
-                  {[1, 3, 6, 12].map(months => <option key={months} value={months}>{months} tháng</option>)}
-                </select>
-              </label>
+                 <select value={rentalMonths} onChange={event => setRentalMonths(Number(event.target.value))} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100">
+                   <option value={1}>1 tháng - Linh hoạt</option>
+                   <option value={3}>3 tháng - Ưu đãi theo báo giá</option>
+                   <option value={6}>6 tháng - Ưu đãi theo báo giá</option>
+                   <option value={12}>12 tháng - Ưu đãi theo báo giá</option>
+                   <option value={24}>24 tháng - Ưu đãi theo báo giá</option>
+                 </select>
+               </label>
+               <p className="rounded-lg bg-slate-50 p-3 text-[11px] leading-relaxed text-slate-600">Kỳ hạn 15 ngày và kỳ hạn tùy chỉnh chưa được chính sách hiện hành hỗ trợ trực tuyến. Ngày bắt đầu thuê chính thức chỉ được xác lập khi bàn giao thực tế và theo điều khoản hợp đồng.</p>
 
               {/* Lựa chọn hình thức ký hợp đồng */}
               <div className="space-y-2 pt-2 border-t border-slate-200">
@@ -257,10 +267,10 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                       }`}>
                         <span className="material-symbols-outlined text-[16px]">draw</span>
                       </div>
-                      <span className="text-xs font-bold text-slate-900">Ký Online DocuSeal</span>
+                      <span className="text-xs font-bold text-slate-900">Ký hợp đồng trực tuyến</span>
                     </div>
                     <p className="text-[11px] text-slate-600 leading-relaxed">
-                      Thanh toán ngay qua Sandbox VNPay &rarr; Nhận link ký số DocuSeal trực tuyến &rarr; Kích hoạt mã mở kho ngay.
+                      Thanh toán trực tuyến, sau đó ký hợp đồng điện tử. Mã PIN chỉ được kích hoạt sau khi hệ thống xác nhận đủ điều kiện bàn giao.
                     </p>
                   </div>
 
@@ -300,22 +310,29 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Lịch hẹn nhận kho</span><strong>{new Date(`${startDate}T${checkInTime || '09:00'}:00`).toLocaleString('vi-VN')}</strong></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Hạn giữ chỗ dự kiến</span><strong className="text-amber-800">Đến giờ hẹn + {serverQuote?.holdGraceHours || 24}h gia hạn</strong></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Kỳ hạn thuê</span><strong>{rentalMonths} tháng</strong></div>
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Tiền thuê theo kỳ hạn</span><strong>{formatVnd(unit.monthlyPrice * rentalMonths)}</strong></div>
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Tiền cọc dự kiến</span><strong>{formatVnd(unit.depositAmount ?? unit.monthlyPrice)}</strong></div>
+                <div className="flex justify-between gap-3"><span className="text-slate-500">Tiền thuê trước ưu đãi</span><strong>{formatVnd(serverQuote?.subtotalRentalFee ?? monthlyPrice * rentalMonths)}</strong></div>
+                <div className="flex justify-between gap-3"><span className="text-slate-500">Chiết khấu kỳ hạn</span><strong className="text-emerald-700">-{formatVnd(serverQuote?.discountAmount ?? 0)}{serverQuote?.discountPercentage ? ` (${serverQuote.discountPercentage}%)` : ''}</strong></div>
+                <div className="flex justify-between gap-3"><span className="text-slate-500">Tiền thuê sau ưu đãi</span><strong>{formatVnd(serverQuote?.totalRentalFee ?? monthlyPrice * rentalMonths)}</strong></div>
+                <div className="flex justify-between gap-3"><span className="text-slate-500">Tiền cọc an ninh</span><strong>{formatVnd(depositAmount)}</strong></div>
+                <div className="flex justify-between gap-3 border-t border-slate-200 pt-2"><span className="font-bold text-slate-800">Tổng chi phí dự kiến</span><strong className="text-cyan-800">{formatVnd(serverQuote?.totalContractValue ?? amountDue)}</strong></div>
                 <div className="flex justify-between items-center gap-3 pt-1 border-t border-slate-100">
                   <span className="text-slate-500">Phương thức tiếp nhận &amp; ký</span>
                   <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${
                     signingMethod === 'ONLINE' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-900'
                   }`}>
-                    {signingMethod === 'ONLINE' ? '✍️ Ký Online DocuSeal (VNPay)' : '🏢 Giữ chỗ miễn phí theo lịch hẹn (Thanh toán tại quầy)'}
+                    {signingMethod === 'ONLINE' ? 'Ký hợp đồng và thanh toán trực tuyến' : 'Giữ chỗ theo lịch hẹn (Thanh toán tại quầy)'}
                   </span>
                 </div>
               </div>
               <p className="rounded-lg bg-cyan-50 p-3 text-xs leading-relaxed text-cyan-900">
                 {signingMethod === 'ONLINE'
-                  ? 'Tạo yêu cầu thuê kho và tiến hành thanh toán trực tuyến qua Sandbox VNPay để nhận hợp đồng DocuSeal.'
+                  ? 'Tạo yêu cầu thuê kho và tiến hành thanh toán trực tuyến. Hệ thống chỉ xác nhận thanh toán và chữ ký sau khi nhận kết quả từ máy chủ.'
                   : 'Tạo yêu cầu giữ chỗ thành công ngay. Kho được bảo lưu đến sau lịch hẹn của bạn kèm thời gian gia hạn theo chính sách. Quý khách thanh toán tại quầy cơ sở khi đến nhận kho.'}
               </p>
+              <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-700">
+                <input type="checkbox" checked={termsAccepted} onChange={event => setTermsAccepted(event.target.checked)} className="mt-0.5" />
+                <span>Tôi đã đọc kỳ hạn thuê, lịch nhận kho, cách xác lập ngày bắt đầu thuê, chi phí dự kiến và chính sách hủy/hoàn tiền áp dụng.</span>
+              </label>
             </div>
           )}
 
@@ -366,10 +383,10 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                   <div className="space-y-4 text-center">
                     <span className="material-symbols-outlined text-5xl text-emerald-600">task_alt</span>
                     <h3 className="text-base font-bold text-slate-900">Đơn thuê đã được khởi tạo: #{booking?.bookingCode}</h3>
-                    <p className="text-sm text-slate-600">Bạn có thể tạo liên kết VNPay để thanh toán cọc và tiền thuê tháng đầu.</p>
+                    <p className="text-sm text-slate-600">Bạn có thể tạo liên kết thanh toán cho tiền cọc và tiền thuê đợt đầu.</p>
                     {secondsRemaining !== null && <p className={`rounded-lg p-3 text-xs font-semibold ${isExpired ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-800'}`}>{isExpired ? 'Thời hạn thanh toán đã hết.' : `Thời hạn giữ kho còn ${formattedCountdown}.`}</p>}
                     <div className="text-lg font-bold text-cyan-800">Thanh toán ban đầu: {formatVnd(amountDue)}</div>
-                    <button type="button" disabled={isSubmitting || isExpired} onClick={handleCreatePayment} className="w-full rounded-lg bg-cyan-700 py-3 text-sm font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? 'Đang tạo liên kết...' : 'Tạo liên kết VNPay'}</button>
+                    <button type="button" disabled={isSubmitting || isExpired} onClick={handleCreatePayment} className="w-full rounded-lg bg-cyan-700 py-3 text-sm font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? 'Đang tạo liên kết...' : 'Thanh toán và ký hợp đồng trực tuyến ngay →'}</button>
                   </div>
                 ) : (
                   <>
@@ -378,23 +395,23 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                     </div>
                     <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1">
                       <button type="button" onClick={() => setPaymentMethod('qr')} className={`rounded-md py-2 text-xs font-bold ${paymentMethod === 'qr' ? 'bg-white text-cyan-800 shadow-sm' : 'text-slate-500'}`}>Quét mã QR</button>
-                      <button type="button" onClick={() => setPaymentMethod('vnpay')} className={`rounded-md py-2 text-xs font-bold ${paymentMethod === 'vnpay' ? 'bg-white text-cyan-800 shadow-sm' : 'text-slate-500'}`}>VNPay</button>
+                      <button type="button" onClick={() => setPaymentMethod('vnpay')} className={`rounded-md py-2 text-xs font-bold ${paymentMethod === 'vnpay' ? 'bg-white text-cyan-800 shadow-sm' : 'text-slate-500'}`}>Mở trang thanh toán</button>
                     </div>
                     {paymentMethod === 'qr' ? (
                       <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 p-5 text-center">
-                        {qrCode ? <img src={qrCode} alt="Mã QR mở trang thanh toán VNPay" className="h-56 w-56" /> : <div className="flex h-56 w-56 items-center justify-center text-xs text-slate-500">Đang tạo mã QR...</div>}
-                        <p className="max-w-sm text-xs leading-relaxed text-slate-500">Quét mã hoặc tự mở trang VNPay. Boxora không tự mở ứng dụng khác.</p>
-                        <button type="button" onClick={launchVNPay} disabled={isExpired} className="text-xs font-bold text-cyan-800 underline disabled:opacity-50">Mở VNPay trên thiết bị này</button>
+                        {qrCode ? <img src={qrCode} alt="Mã QR mở trang thanh toán" className="h-56 w-56" /> : <div className="flex h-56 w-56 items-center justify-center text-xs text-slate-500">Đang tạo mã QR...</div>}
+                        <p className="max-w-sm text-xs leading-relaxed text-slate-500">Quét mã hoặc mở trang thanh toán trên thiết bị này.</p>
+                        <button type="button" onClick={launchVNPay} disabled={isExpired} className="text-xs font-bold text-cyan-800 underline disabled:opacity-50">Mở trang thanh toán</button>
                       </div>
                     ) : (
                       <div className="rounded-xl border border-slate-200 p-5 text-center">
                         <span className="material-symbols-outlined text-4xl text-cyan-700">account_balance</span>
-                        <p className="mt-2 text-sm font-bold text-slate-900">Thanh toán an toàn qua VNPay</p>
-                        <p className="mt-1 text-xs text-slate-500">VNPay chỉ mở khi bạn nhấn nút bên dưới.</p>
-                        <button type="button" disabled={isExpired} onClick={launchVNPay} className="mt-4 w-full rounded-lg bg-cyan-700 py-3 text-xs font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">Tiếp tục đến VNPay</button>
+                        <p className="mt-2 text-sm font-bold text-slate-900">Thanh toán an toàn</p>
+                        <p className="mt-1 text-xs text-slate-500">Trang thanh toán chỉ mở khi bạn nhấn nút bên dưới.</p>
+                        <button type="button" disabled={isExpired} onClick={launchVNPay} className="mt-4 w-full rounded-lg bg-cyan-700 py-3 text-xs font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">Tiếp tục thanh toán</button>
                       </div>
                     )}
-                    <button type="button" disabled={isSubmitting || isExpired} onClick={handleCreatePayment} className="w-full rounded-lg border border-slate-300 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">{isSubmitting ? 'Đang tạo liên kết...' : 'Tạo liên kết VNPay mới'}</button>
+                    <button type="button" disabled={isSubmitting || isExpired} onClick={handleCreatePayment} className="w-full rounded-lg border border-slate-300 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">{isSubmitting ? 'Đang tạo liên kết...' : 'Tạo liên kết thanh toán mới'}</button>
                   </>
                 )}
               </div>
@@ -408,7 +425,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
             {step === 2 && <button type="button" disabled={isSubmitting} onClick={() => setStep(1)} className="rounded-lg border border-slate-300 px-4 py-2.5 text-xs font-semibold text-slate-700 disabled:opacity-50">Quay lại</button>}
             {step === 3 && signingMethod === 'ONLINE' && <button type="button" onClick={onClose} className="ml-auto rounded-lg border border-slate-300 px-4 py-2.5 text-xs font-semibold text-slate-700">Đóng, yêu cầu vẫn được lưu</button>}
             {step === 1 && <button type="button" disabled={!isContactValid || !isDateValid} onClick={() => setStep(2)} className="rounded-lg bg-cyan-700 px-5 py-2.5 text-xs font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">Tiếp tục</button>}
-            {step === 2 && <button type="button" disabled={isSubmitting} onClick={handleSubmitRequest} className="rounded-lg bg-cyan-700 px-5 py-2.5 text-xs font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? 'Đang khởi tạo...' : 'Xác nhận đặt kho'}</button>}
+             {step === 2 && <button type="button" disabled={isSubmitting || !termsAccepted} onClick={handleSubmitRequest} className="rounded-lg bg-cyan-700 px-5 py-2.5 text-xs font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? 'Đang khởi tạo...' : 'Xác nhận đặt kho'}</button>}
           </div>
         </div>
       </section>
