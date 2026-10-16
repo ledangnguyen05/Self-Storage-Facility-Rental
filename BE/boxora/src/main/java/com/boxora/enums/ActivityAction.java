@@ -46,7 +46,8 @@ public enum ActivityAction {
 
     // Checkout & Refund
     CHECKOUT_REQUEST(false), CHECKOUT_INSPECTION_COMPLETE(false), DAMAGE_FEE_RECORDED(true),
-    REFUND_REQUEST_CREATE(false), REFUND_APPROVE(true), REFUND_PROCESSED(true),
+    REFUND_REQUEST_CREATE(false), REFUND_APPROVE(true), REFUND_PROCESS(true), REFUND_PROCESSED(true),
+    REFUND_CONFIRM(false), REFUND_RECONCILE(true),
 
     // Support & Staff
     SUPPORT_TICKET_CREATE(false), SUPPORT_TICKET_UPDATE(false), SUPPORT_TICKET_ASSIGN(false),

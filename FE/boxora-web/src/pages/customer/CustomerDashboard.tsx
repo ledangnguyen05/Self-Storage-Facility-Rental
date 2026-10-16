@@ -820,25 +820,8 @@ export const CustomerDashboard: React.FC = () => {
     }
   }, [selectedBookingUnit, bookingPackage, bookingCustomDays, bookingStartDate])
 
-  const handlePayBookingVNPay = async (b: Booking) => {
-    try {
-      const amount = b.initialPaymentAmount || (
-        (b.totalRentalFee && b.rentalMonths ? b.totalRentalFee / b.rentalMonths : 0) + (b.depositAmount || 0)
-      ) || 1000000
-      const payment = await paymentService.createVNPayPayment({
-        bookingId: b.id,
-        paymentType: 'BOOKING_PAYMENT',
-        amount: Math.round(amount),
-        orderInfo: `Thanh toan don dat cho ${b.bookingCode}`
-      })
-      if (payment?.paymentUrl) {
-        window.location.href = payment.paymentUrl
-        return
-      }
-      alert('Không nhận được liên kết thanh toán từ cổng VNPay.')
-    } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'Không thể tạo liên kết thanh toán VNPay.')
-    }
+  const handlePayBookingVNPay = (b: Booking) => {
+    setRequestToPay(b)
   }
 
   const handleConfirmBooking = async () => {
@@ -4340,6 +4323,30 @@ export const CustomerDashboard: React.FC = () => {
           ])
         }}
       />
+
+      {/* Booking Checkout & Payment Continuation Modal */}
+      {requestToPay && user && (
+        <BookingCheckoutModal
+          unit={{
+            backendId: requestToPay.storageUnitId || requestToPay.id,
+            code: requestToPay.unitCode || 'N/A',
+            name: requestToPay.unitCode ? `Kho #${requestToPay.unitCode}` : 'Kho Boxora',
+            facilityName: requestToPay.facilityName || 'Boxora Facility',
+            monthlyPrice: (requestToPay.totalRentalFee && requestToPay.rentalMonths ? requestToPay.totalRentalFee / requestToPay.rentalMonths : 0) || 1000000,
+            depositAmount: requestToPay.depositPaid || requestToPay.depositAmount || 0,
+            size: undefined,
+            address: ''
+          }}
+          user={user}
+          existingBooking={requestToPay}
+          onClose={() => {
+            setRequestToPay(null)
+            fetchCustomerBookings()
+            fetchContracts()
+            fetchCustomerPayments()
+          }}
+        />
+      )}
 
       {/* Ticket closure confirmation: no state changes until the backend confirms. */}
       {closeTicketTarget && (

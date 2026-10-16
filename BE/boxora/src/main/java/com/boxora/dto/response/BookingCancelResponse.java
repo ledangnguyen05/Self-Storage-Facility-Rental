@@ -22,6 +22,8 @@ public class BookingCancelResponse {
     private BigDecimal refundAmount;
     private BigDecimal penaltyAmount;
     private String refundTransactionId;
+    private UUID refundRequestId;
+    private String refundRequestCode;
     private boolean unitReleased;
     private LocalDateTime cancelledAt;
     private String cancellationReason;

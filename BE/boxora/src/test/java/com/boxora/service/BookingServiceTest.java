@@ -401,7 +401,7 @@ class BookingServiceTest {
                     .bookingCode("BX-2025-6291")
                     .status(BookingStatus.CONFIRMED)
                     .paymentStatus("UNPAID")
-                    .expectedCheckInAt(LocalDateTime.now().minusDays(1))
+                    .expectedCheckInAt(LocalDateTime.now().minusDays(3))
                     .storageUnit(testUnit)
                     .build();
             booking.setId(UUID.randomUUID());
