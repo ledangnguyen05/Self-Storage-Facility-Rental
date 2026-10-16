@@ -617,4 +617,98 @@ class BookingServiceTest {
             assertThat(res.getAllowedMinDate()).isEqualTo(LocalDate.now());
         }
     }
+
+    @Nested
+    @DisplayName("Get Booking By Id Authorization Tests")
+    class GetByIdAuthorizationTests {
+
+        @Test
+        @DisplayName("getById: Chủ sở hữu booking được phép truy cập thành công")
+        void getById_AuthorizedOwner_ReturnsBooking() {
+            UUID id = UUID.randomUUID();
+            com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                    .bookingCode("BX-OWNER-01")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(LocalDate.now())
+                    .endDate(LocalDate.now().plusMonths(1))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            booking.setId(id);
+
+            when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
+            when(requestContext.currentUserId()).thenReturn(testCustomer.getId());
+            when(userRepository.findById(testCustomer.getId())).thenReturn(Optional.of(testCustomer));
+
+            com.boxora.dto.response.BookingResponse response = bookingService.getById(id);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getBookingCode()).isEqualTo("BX-OWNER-01");
+        }
+
+        @Test
+        @DisplayName("getById: Khách hàng khác truy cập booking của người khác -> Bị từ chối FORBIDDEN (403)")
+        void getById_UnauthorizedCustomer_ThrowsForbidden() {
+            UUID id = UUID.randomUUID();
+            com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                    .bookingCode("BX-OTHER-01")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(LocalDate.now())
+                    .endDate(LocalDate.now().plusMonths(1))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            booking.setId(id);
+
+            UUID attackerId = UUID.randomUUID();
+            com.boxora.entity.User attacker = com.boxora.entity.User.builder()
+                    .email("attacker@gmail.com")
+                    .role(com.boxora.entity.Role.builder().name("CUSTOMER").build())
+                    .build();
+            attacker.setId(attackerId);
+
+            when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
+            when(requestContext.currentUserId()).thenReturn(attackerId);
+            when(userRepository.findById(attackerId)).thenReturn(Optional.of(attacker));
+
+            org.junit.jupiter.api.Assertions.assertThrows(
+                    com.boxora.exception.AppException.class,
+                    () -> bookingService.getById(id)
+            );
+        }
+
+        @Test
+        @DisplayName("getById: Nhân viên cơ sở khác cố truy cập booking cơ sở ngoài phạm vi -> Ném lỗi FACILITY_ACCESS_DENIED")
+        void getById_OutOfScopeStaff_ThrowsFacilityAccessDenied() {
+            UUID id = UUID.randomUUID();
+            com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                    .bookingCode("BX-FACILITY-01")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(LocalDate.now())
+                    .endDate(LocalDate.now().plusMonths(1))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            booking.setId(id);
+
+            UUID staffId = UUID.randomUUID();
+            com.boxora.entity.User otherStaff = com.boxora.entity.User.builder()
+                    .email("staff.d7@boxora.com")
+                    .role(com.boxora.entity.Role.builder().name("STAFF").build())
+                    .build();
+            otherStaff.setId(staffId);
+
+            when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(otherStaff));
+            when(facilityAccessGuard.isFacilityScoped()).thenReturn(true);
+            org.mockito.Mockito.doThrow(new com.boxora.exception.AppException(com.boxora.exception.ErrorCode.FACILITY_ACCESS_DENIED))
+                    .when(facilityAccessGuard).checkFacilityAccess(testFacility.getId());
+
+            org.junit.jupiter.api.Assertions.assertThrows(
+                    com.boxora.exception.AppException.class,
+                    () -> bookingService.getById(id)
+            );
+        }
+    }
 }
