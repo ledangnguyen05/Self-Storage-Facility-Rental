@@ -98,6 +98,7 @@ export const UnitsExplorerPage: React.FC = () => {
   // 1. Vị trí: customerLocation & manualAddress
   // 2. Cơ sở: selectedFacilityFilter
   const [selectedFacilityFilter, setSelectedFacilityFilter] = useState<string>('all')
+  const [selectedFloorFilter, setSelectedFloorFilter] = useState<string>('all')
   // 3. Loại kho: categoryFilter ('all' | 'personal' | 'standard' | 'business' | 'climate')
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'personal' | 'business' | 'special'>('all')
   // 4. Diện tích: sizeFilter
@@ -147,6 +148,12 @@ export const UnitsExplorerPage: React.FC = () => {
     }
     void fetchRealData()
   }, [])
+
+  const availableFloors = useMemo(() => Array.from(new Set(
+    rawUnits
+      .map(unit => unit.floorLevel?.replace(/^Floor\s*/i, 'Tầng ').trim())
+      .filter((floor): floor is string => Boolean(floor))
+  )).sort((left, right) => left.localeCompare(right, 'vi')), [rawUnits])
 
   // Process facilities
   const effectiveFacilities = useMemo(() => {
@@ -393,6 +400,8 @@ export const UnitsExplorerPage: React.FC = () => {
       const matchFacility =
         selectedFacilityFilter === 'all' || unit.facilityId === selectedFacilityFilter
 
+      const matchFloor = selectedFloorFilter === 'all' || unit.floorLocation === selectedFloorFilter
+
       // 2. Loại kho
       const matchCategory =
         categoryFilter === 'all' || unit.category === categoryFilter
@@ -434,6 +443,7 @@ export const UnitsExplorerPage: React.FC = () => {
 
       return (
         matchFacility &&
+        matchFloor &&
         matchCategory &&
         matchSize &&
         matchPrice &&
@@ -463,6 +473,7 @@ export const UnitsExplorerPage: React.FC = () => {
   }, [
     unitsWithProximity,
     selectedFacilityFilter,
+    selectedFloorFilter,
     categoryFilter,
     sizeFilter,
     priceFilter,
@@ -710,7 +721,7 @@ export const UnitsExplorerPage: React.FC = () => {
           </div>
 
           {/* 4 CLEAR GROUPS GRID */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-start">
             {/* NHÓM 1: VỊ TRÍ TÌM KIẾM */}
             <div className="space-y-2">
               <label htmlFor="customer-address" className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
@@ -801,11 +812,29 @@ export const UnitsExplorerPage: React.FC = () => {
               </p>
             </div>
 
-            {/* NHÓM 3: LOẠI KHO */}
+            {/* NHÓM 3: TẦNG KHO */}
+            <div className="space-y-2">
+              <label htmlFor="floor-filter" className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[17px] text-violet-600">layers</span>
+                <span>3. Tầng kho</span>
+              </label>
+              <select
+                id="floor-filter"
+                value={selectedFloorFilter}
+                onChange={(e) => setSelectedFloorFilter(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500 shadow-2xs"
+              >
+                <option value="all">Tất cả tầng ({availableFloors.length})</option>
+                {availableFloors.map((floor) => <option key={floor} value={floor}>{floor}</option>)}
+              </select>
+              <p className="text-[10px] text-slate-500">Danh sách tầng lấy từ các kho hiện có.</p>
+            </div>
+
+            {/* NHÓM 4: LOẠI KHO */}
             <div className="space-y-2">
               <label htmlFor="category-filter" className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[17px] text-indigo-600">category</span>
-                <span>3. Loại kho lưu trữ</span>
+                <span>4. Loại kho lưu trữ</span>
               </label>
 
               <select

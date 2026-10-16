@@ -397,6 +397,8 @@ export const CustomerDashboard: React.FC = () => {
   const [ticketError, setTicketError] = useState<string | null>(null)
   const [isSubmittingTicket, setIsSubmittingTicket] = useState(false)
   const [reopenModalTicket, setReopenModalTicket] = useState<SupportTicketRecord | null>(null)
+  const [closeTicketTarget, setCloseTicketTarget] = useState<SupportTicketRecord | null>(null)
+  const [ticketActionError, setTicketActionError] = useState<string | null>(null)
   const [reopenReasonText, setReopenReasonText] = useState('')
   const [isProcessingTicketAction, setIsProcessingTicketAction] = useState(false)
 
@@ -429,15 +431,17 @@ export const CustomerDashboard: React.FC = () => {
     }
   }
 
-  const handleCloseCustomerTicket = async (ticketId: string) => {
-    if (!window.confirm('Bạn có chắc chắn xác nhận sự cố đã được xử lý xong và muốn đóng phiếu này?')) return
+  const handleCloseCustomerTicket = async () => {
+    if (!closeTicketTarget) return
     setIsProcessingTicketAction(true)
+    setTicketActionError(null)
     try {
-      await supportTicketService.closeTicket(ticketId, 'Khách hàng xác nhận sự cố đã được xử lý hoàn tất')
+      await supportTicketService.closeTicket(closeTicketTarget.id, 'Khách hàng xác nhận sự cố đã được xử lý hoàn tất')
       await fetchCustomerTickets()
+      setCloseTicketTarget(null)
     } catch (err: any) {
       console.error('Failed to close ticket:', err)
-      alert(err?.response?.data?.message || err?.message || 'Không thể đóng ticket')
+      setTicketActionError(err?.response?.data?.message || err?.message || 'Không thể đóng phiếu. Phiếu vẫn giữ nguyên trạng thái.')
     } finally {
       setIsProcessingTicketAction(false)
     }
@@ -2919,7 +2923,10 @@ export const CustomerDashboard: React.FC = () => {
                                 <button
                                   type="button"
                                   disabled={isProcessingTicketAction}
-                                  onClick={() => handleCloseCustomerTicket(t.id)}
+                                  onClick={() => {
+                                    setCloseTicketTarget(t)
+                                    setTicketActionError(null)
+                                  }}
                                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
                                 >
                                   <span className="material-symbols-outlined text-[16px]">check_circle</span>
@@ -4333,6 +4340,26 @@ export const CustomerDashboard: React.FC = () => {
           ])
         }}
       />
+
+      {/* Ticket closure confirmation: no state changes until the backend confirms. */}
+      {closeTicketTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <section role="dialog" aria-modal="true" aria-labelledby="close-ticket-title" className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700"><span className="material-symbols-outlined">verified</span></div>
+              <div>
+                <h3 id="close-ticket-title" className="text-base font-bold text-slate-900">Xác nhận hài lòng và đóng phiếu</h3>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600">Xác nhận này sẽ đóng phiếu sự cố #{closeTicketTarget.ticketCode || closeTicketTarget.id.slice(0, 8)}. Bạn chỉ nên tiếp tục khi sự cố đã được xử lý hoàn toàn.</p>
+              </div>
+            </div>
+            {ticketActionError && <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{ticketActionError}</p>}
+            <div className="mt-6 flex justify-end gap-2">
+              <button type="button" disabled={isProcessingTicketAction} onClick={() => setCloseTicketTarget(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Cancel</button>
+              <button type="button" disabled={isProcessingTicketAction} onClick={handleCloseCustomerTicket} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50">{isProcessingTicketAction ? 'Đang đóng...' : 'Confirm'}</button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {/* Reopen Ticket Modal (Customer Request Re-handling) */}
       {reopenModalTicket && (
