@@ -278,7 +278,7 @@ class BookingServiceTest {
             when(storageUnitLockService.isUnitLocked(unitId)).thenThrow(new RuntimeException("Redis connection refused"));
             when(storageUnitLockService.tryLockUnit(eq(unitId), any(), eq(24L))).thenThrow(new RuntimeException("Redis connection timeout"));
             when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
-            when(facilityPolicyRepository.findByFacility_Id(testFacility.getId())).thenReturn(Optional.of(testPolicy));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(testPolicy));
             when(bookingRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
             BookingResponse response = bookingService.createBooking(request);
