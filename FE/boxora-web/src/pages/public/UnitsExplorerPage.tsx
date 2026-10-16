@@ -151,9 +151,16 @@ export const UnitsExplorerPage: React.FC = () => {
 
   const availableFloors = useMemo(() => Array.from(new Set(
     rawUnits
+      .filter(unit => selectedFacilityFilter === 'all' || unit.facilityId === selectedFacilityFilter)
       .map(unit => unit.floorLevel?.replace(/^Floor\s*/i, 'Tầng ').trim())
       .filter((floor): floor is string => Boolean(floor))
-  )).sort((left, right) => left.localeCompare(right, 'vi')), [rawUnits])
+  )).sort((left, right) => left.localeCompare(right, 'vi')), [rawUnits, selectedFacilityFilter])
+
+  useEffect(() => {
+    if (selectedFloorFilter !== 'all' && !availableFloors.includes(selectedFloorFilter)) {
+      setSelectedFloorFilter('all')
+    }
+  }, [selectedFloorFilter, availableFloors])
 
   // Process facilities
   const effectiveFacilities = useMemo(() => {

@@ -116,4 +116,14 @@ public class Booking extends BaseEntity {
 
     @Column(name = "step_transition_history", columnDefinition = "TEXT")
     private String stepTransitionHistory;
+
+    @Column(name = "cancellation_reason", length = 500)
+    private String cancellationReason;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cancelled_by_id")
+    private User cancelledBy;
+
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
 }
