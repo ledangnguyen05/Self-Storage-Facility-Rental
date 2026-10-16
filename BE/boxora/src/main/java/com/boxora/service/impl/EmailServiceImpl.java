@@ -298,7 +298,10 @@ public class EmailServiceImpl implements EmailService {
         String statusTitle = switch (status) {
             case "APPROVED" -> "Đã được phê duyệt";
             case "REJECTED" -> "Bị từ chối";
-            case "PROCESSED" -> "Chi trả hoàn tất";
+            case "PROCESSING_TRANSFER" -> "Đang thực hiện lệnh chuyển khoản";
+            case "AWAITING_CUSTOMER_CONFIRMATION" -> "Đã chuyển tiền - Chờ quý khách xác nhận";
+            case "RECONCILED" -> "Đã nhận tiền - Đang đối soát sổ phụ";
+            case "COMPLETED", "PROCESSED" -> "Chi trả và đối soát hoàn tất";
             default -> "Cập nhật trạng thái";
         };
         String subject = "[Boxora] Yêu cầu hoàn tiền " + requestCode + " - " + statusTitle;
