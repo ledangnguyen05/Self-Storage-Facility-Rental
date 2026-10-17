@@ -22,11 +22,14 @@ import java.util.UUID;
 @RestController
 @RequestMapping("api/v1/facilities")
 @Tag(name = "Facility", description = "API quản lý các cơ sở lưu trữ")
-@RequiredArgsConstructor
 @Slf4j
 public class FacilityController {
 
     private final FacilityService facilityService;
+
+    public FacilityController(FacilityService facilityService) {
+        this.facilityService = facilityService;
+    }
 
     @GetMapping("{id}")
     @Operation(summary = "Lấy cơ sở theo ID")

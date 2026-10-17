@@ -6,5 +6,6 @@ public enum NotificationType {
     OVERDUE_NOTICE,
     SEALING_NOTICE,
     UNSEALING_NOTICE,
-    REFUND_STATUS
+    REFUND_STATUS,
+    HANDOVER_PIN
 }

@@ -232,7 +232,9 @@ public class ContractSigningServiceImpl implements ContractSigningService {
     @Override
     @Transactional
     public String createSigningRequest(RentalContract contract) {
-        if (contract.getSignedAt() != null || contract.getStatus() == RentalContractStatus.ACTIVE) {
+        if (contract.getSignedAt() != null
+                || contract.getStatus() == RentalContractStatus.ACTIVE
+                || contract.getStatus() == RentalContractStatus.PENDING_ACTIVATION) {
             if (contract.getSignedDocumentUrl() != null) {
                 return contract.getSignedDocumentUrl();
             }
@@ -388,7 +390,9 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         }
 
         // Idempotency: không xử lý lại nếu đã được đánh dấu ký
-        if (contract.getSignedAt() != null && contract.getStatus() == RentalContractStatus.ACTIVE) {
+        if (contract.getSignedAt() != null
+                || contract.getStatus() == RentalContractStatus.ACTIVE
+                || contract.getStatus() == RentalContractStatus.PENDING_ACTIVATION) {
             log.info("Contract {} already marked as signed - ignoring duplicate webhook", contract.getId());
             return;
         }
@@ -422,7 +426,9 @@ public class ContractSigningServiceImpl implements ContractSigningService {
             contract.setSignatureData(signatureData);
         }
 
-        if (contract.getSignedAt() != null && contract.getStatus() == RentalContractStatus.ACTIVE) {
+        if (contract.getSignedAt() != null
+                || contract.getStatus() == RentalContractStatus.ACTIVE
+                || contract.getStatus() == RentalContractStatus.PENDING_ACTIVATION) {
             if (signatureData != null && !signatureData.isBlank()) {
                 rentalContractRepository.save(contract);
             }
@@ -437,7 +443,8 @@ public class ContractSigningServiceImpl implements ContractSigningService {
     private void completeContractSigning(RentalContract contract, String documentUrl) {
         contract.setSignedDocumentUrl(documentUrl != null ? documentUrl : "https://docuseal.com/documents/contract-" + contract.getContractCode() + "-signed.pdf");
         contract.setSignedAt(LocalDateTime.now());
-        contract.setStatus(RentalContractStatus.ACTIVE);
+        boolean isBookingPendingCheckIn = contract.getBooking() != null && contract.getBooking().getStatus() != BookingStatus.ACTIVE;
+        contract.setStatus(isBookingPendingCheckIn ? RentalContractStatus.PENDING_ACTIVATION : RentalContractStatus.ACTIVE);
         rentalContractRepository.save(contract);
 
         // 1. Maintain booking in CONFIRMED state awaiting physical staff handover

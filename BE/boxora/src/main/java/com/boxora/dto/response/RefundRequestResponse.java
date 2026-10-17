@@ -57,4 +57,17 @@ public class RefundRequestResponse {
     private LocalDateTime processedAt;
     private String transactionReference;
     private String processNotes;
+
+    private UUID transferInitiatedById;
+    private String transferInitiatedByName;
+    private LocalDateTime transferInitiatedAt;
+    private String transferReference;
+
+    private LocalDateTime customerConfirmedAt;
+    private String customerConfirmationNotes;
+
+    private UUID reconciledById;
+    private String reconciledByName;
+    private LocalDateTime reconciledAt;
+    private String reconciliationNotes;
 }

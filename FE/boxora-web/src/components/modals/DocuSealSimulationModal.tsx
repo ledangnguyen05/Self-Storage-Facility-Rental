@@ -250,7 +250,7 @@ export function DocuSealSimulationModal({
                   <span className="material-symbols-outlined text-sm text-cyan-700">draw</span>
                   Chữ ký điện tử của Bên Thuê (E-Signature)
                 </h4>
-                <p className="text-[11px] text-slate-500">Được chứng thực điện tử theo chuẩn DocuSeal e-Signature</p>
+                <p className="text-[11px] text-slate-500">Được chứng thực điện tử theo quy chuẩn an toàn Boxora e-Signature</p>
               </div>
 
               {/* Toggle chế độ ký */}
@@ -314,7 +314,7 @@ export function DocuSealSimulationModal({
                   {!hasDrawn && (
                     <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-xs text-slate-400 gap-1">
                       <span className="material-symbols-outlined text-2xl text-cyan-500/60 animate-bounce">draw</span>
-                      <span className="font-medium text-slate-500">Nhấn giữ chuột trái và vẽ trực tiếp chữ ký của bạn vào đây</span>
+                      <span className="font-medium text-slate-500">Vẽ chữ ký của bạn vào đây</span>
                     </div>
                   )}
                   <div className="absolute bottom-3 left-6 right-6 border-b border-dashed border-slate-200 pointer-events-none"></div>
@@ -343,7 +343,7 @@ export function DocuSealSimulationModal({
                 className="mt-0.5 h-4 w-4 rounded border-slate-300 text-cyan-700 focus:ring-cyan-500"
               />
               <span className="text-xs text-slate-700">
-                Tôi xác nhận rằng tôi đã đọc, hiểu và đồng ý toàn bộ điều khoản của Hợp đồng thuê kho tự quản Boxora. Chữ ký điện tử này có giá trị pháp lý đầy đủ.
+                Tôi xác nhận rằng tôi đã đọc, hiểu và đồng ý toàn bộ điều khoản của Hợp đồng thuê kho tự quản Boxora. Chữ ký điện tử này có giá trị pháp lý đầy đủ. Thời hạn thuê và hiệu lực hợp đồng sẽ chính thức kích hoạt vào ngày tôi đến cơ sở hoàn tất check-in và nhận mã PIN.
               </span>
             </label>
           </div>
@@ -373,7 +373,7 @@ export function DocuSealSimulationModal({
             {isSigning ? (
               <>
                 <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Đang xác thực chữ ký DocuSeal...</span>
+                <span>Đang xác thực chữ ký điện tử...</span>
               </>
             ) : (
               <>

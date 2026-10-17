@@ -52,6 +52,19 @@ public class Booking extends BaseEntity {
     @Column(name = "payment_expires_at")
     private Instant paymentExpiresAt;
 
+    @Column(name = "hold_started_at")
+    private Instant holdStartedAt;
+
+    @Column(name = "hold_expires_at")
+    private Instant holdExpiresAt;
+
+    @Column(name = "expected_check_in_at")
+    private LocalDateTime expectedCheckInAt;
+
+    @Column(name = "payment_status", length = 30)
+    @Builder.Default
+    private String paymentStatus = "UNPAID";
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)
     private BookingStatus status;
@@ -83,4 +96,34 @@ public class Booking extends BaseEntity {
 
     @Column(name = "staff_assignment_notes", columnDefinition = "TEXT")
     private String staffAssignmentNotes;
-}
+
+    @Column(name = "identity_card_type", length = 30)
+    @Builder.Default
+    private String identityCardType = "CCCD";
+
+    @Column(name = "identity_card_number", length = 50)
+    private String identityCardNumber;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "identity_verified_by_staff_id")
+    private User identityVerifiedByStaff;
+
+    @Column(name = "identity_verified_at")
+    private LocalDateTime identityVerifiedAt;
+
+    @Column(name = "identity_verification_notes", columnDefinition = "TEXT")
+    private String identityVerificationNotes;
+
+    @Column(name = "step_transition_history", columnDefinition = "TEXT")
+    private String stepTransitionHistory;
+
+    @Column(name = "cancellation_reason", length = 500)
+    private String cancellationReason;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cancelled_by_id")
+    private User cancelledBy;
+
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
+}

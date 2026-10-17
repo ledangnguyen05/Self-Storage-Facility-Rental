@@ -27,7 +27,7 @@ public class GlobalExceptionHandler {
         response.put("status", errorCode.getHttpStatus().value());
         response.put("code", errorCode.getCode());
         response.put("error", errorCode.getHttpStatus().getReasonPhrase());
-        response.put("message", errorCode.getMessage());
+        response.put("message", ex.getMessage() != null && !ex.getMessage().isBlank() ? ex.getMessage() : errorCode.getMessage());
 
         return ResponseEntity
                 .status(errorCode.getHttpStatus())
@@ -114,6 +114,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleException(Exception ex) {
+        ex.printStackTrace();
 
         ErrorCode errorCode = ErrorCode.INTERNAL_SERVER_ERROR;
 
@@ -123,7 +124,7 @@ public class GlobalExceptionHandler {
         response.put("status", errorCode.getHttpStatus().value());
         response.put("code", errorCode.getCode());
         response.put("error", errorCode.getHttpStatus().getReasonPhrase());
-        response.put("message", errorCode.getMessage());
+        response.put("message", ex.getMessage() != null ? ex.getMessage() : errorCode.getMessage());
 
         return ResponseEntity
                 .status(errorCode.getHttpStatus())

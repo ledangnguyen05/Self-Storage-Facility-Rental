@@ -16,6 +16,7 @@ import java.util.UUID;
 public class SupportTicketRequest {
     private UUID customerId;
     private UUID bookingId;
+    private UUID facilityId;
 
     @NotBlank(message = "Category is required")
     private String category;

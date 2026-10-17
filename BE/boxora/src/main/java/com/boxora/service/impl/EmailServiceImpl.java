@@ -298,7 +298,10 @@ public class EmailServiceImpl implements EmailService {
         String statusTitle = switch (status) {
             case "APPROVED" -> "Đã được phê duyệt";
             case "REJECTED" -> "Bị từ chối";
-            case "PROCESSED" -> "Chi trả hoàn tất";
+            case "PROCESSING_TRANSFER" -> "Đang thực hiện lệnh chuyển khoản";
+            case "AWAITING_CUSTOMER_CONFIRMATION" -> "Đã chuyển tiền - Chờ quý khách xác nhận";
+            case "RECONCILED" -> "Đã nhận tiền - Đang đối soát sổ phụ";
+            case "COMPLETED", "PROCESSED" -> "Chi trả và đối soát hoàn tất";
             default -> "Cập nhật trạng thái";
         };
         String subject = "[Boxora] Yêu cầu hoàn tiền " + requestCode + " - " + statusTitle;
@@ -350,6 +353,28 @@ public class EmailServiceImpl implements EmailService {
                 endDate.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")),
                 formattedFee
         );
+        sendHtmlEmail(toEmail, subject, content);
+    }
+
+    @Override
+    @Async
+    public void sendHandoverPinEmail(String toEmail, String fullName, String unitCode, String bookingCode, String accessPin, String facilityName) {
+        String subject = "[Boxora] Thông tin bàn giao kho và mã PIN mở kho " + unitCode;
+        String content = """
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                    <h2 style="color: #0284c7; margin-top: 0;">🎉 Bàn Giao Kho Thành Công</h2>
+                    <p>Kính gửi <strong>%s</strong>,</p>
+                    <p>Quá trình nghiệm thu và bàn giao kho cho đơn đặt chỗ <strong>%s</strong> tại cơ sở <strong>%s</strong> đã hoàn tất.</p>
+                    <div style="background-color: #F8FAFC; border-left: 4px solid #0284c7; padding: 14px; margin: 18px 0; border-radius: 4px;">
+                        <h4 style="margin: 0 0 8px 0; color: #1E293B;">Thông tin truy cập ngăn kho:</h4>
+                        <p style="margin: 4px 0;">Vị trí kho: <strong style="font-size: 16px; color: #0f172a;">%s</strong></p>
+                        <p style="margin: 4px 0;">Mã PIN bảo mật SmartLock: <strong style="font-size: 22px; color: #0284c7; letter-spacing: 3px;">%s</strong></p>
+                    </div>
+                    <p style="color: #64748B; font-size: 13px;">Quý khách vui lòng bảo mật mã PIN này. Quý khách có thể xem và quản lý mã PIN trên cổng thông tin Boxora bất cứ lúc nào.</p>
+                    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;"/>
+                    <p style="color: #94A3B8; font-size: 12px;">Trân trọng, Đội ngũ Boxora Self-Storage</p>
+                </div>
+                """.formatted(fullName, bookingCode, facilityName != null ? facilityName : "Boxora Facility", unitCode, accessPin);
         sendHtmlEmail(toEmail, subject, content);
     }
 }

@@ -27,6 +27,10 @@ public interface RefundRequestRepository extends JpaRepository<RefundRequest, UU
 
     List<RefundRequest> findByBookingId(UUID bookingId);
 
+    Optional<RefundRequest> findFirstByBooking_IdOrderByCreatedAtDesc(UUID bookingId);
+
+    boolean existsByBooking_IdAndStatusIn(UUID bookingId, List<RefundStatus> statuses);
+
     List<RefundRequest> findByContractId(UUID contractId);
 
     List<RefundRequest> findByStatus(RefundStatus status);

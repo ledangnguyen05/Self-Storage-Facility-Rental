@@ -411,7 +411,7 @@ export const StaffDashboard: React.FC = () => {
           </div>
           <div className="mt-4 flex items-baseline gap-1.5">
             <span className="font-headline text-3xl font-extrabold text-cyan-700 tabular-nums">
-              {arrivals.filter(a => a.status === 'CONFIRMED' || a.status === 'PENDING_APPROVAL' || a.status === 'PENDING_PAYMENT').length}
+              {arrivals.filter(a => a.status === 'CONFIRMED' || a.status === 'PENDING_PAYMENT').length}
             </span>
             <span className="text-xs text-slate-500">đơn sẵn sàng</span>
           </div>
@@ -523,6 +523,7 @@ export const StaffDashboard: React.FC = () => {
             arrivals={arrivals}
             onOpenQrScanner={() => setIsQrScannerOpen(true)}
             activeBookingId={activeBookingId}
+            onSelectBooking={setActiveBookingId}
             onHandoverComplete={(bookingId) => {
               setCheckInSuccessMsg(`Hoàn tất quy trình check-in bàn giao buồng kho cho đơn #${bookingId}`)
               fetchArrivals()
@@ -566,44 +567,66 @@ export const StaffDashboard: React.FC = () => {
                       </td>
                     </tr>
                   ) : (
-                    filteredArrivals.map((b) => (
-                      <tr key={b.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-3.5 px-3">
-                          <div className="font-bold text-slate-900 text-xs">{b.customerName || 'Khách vãng lai'}</div>
-                          <div className="text-slate-500 font-mono text-[11px] tabular-nums mt-0.5">{b.customerPhone || 'N/A'}</div>
-                        </td>
-                        <td className="py-3.5 px-3 font-mono font-bold text-slate-900">{b.bookingCode}</td>
-                        <td className="py-3.5 px-3">
-                          <span className="font-mono font-bold text-cyan-700">Kho #{b.unitCode}</span>
-                          <span className="text-slate-500 block text-[10px]">{b.facilityName || assignedFacilityName}</span>
-                        </td>
-                        <td className="py-3.5 px-3 font-mono tabular-nums text-slate-700">{b.startDate}</td>
-                        <td className="py-3.5 px-3">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            b.status === 'CONFIRMED'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-amber-50 text-amber-700 border border-amber-200'
-                          }`}>
-                            {b.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Chờ cọc'}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-3 font-mono font-bold text-slate-900 tabular-nums">
-                          {(b.depositPaid || b.depositAmount || 0).toLocaleString('vi-VN')}đ
-                        </td>
-                        <td className="py-3.5 px-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveBookingId(b.id)
-                              document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-                            }}
-                            className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg font-bold text-[11px] transition-colors cursor-pointer"
-                          >
-                            Tiếp đón &amp; Đối soát
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                    filteredArrivals.map((b) => {
+                      const isCurrentActive = b.id === activeBookingId || b.bookingCode === activeBookingId
+                      return (
+                        <tr
+                          key={b.id}
+                          className={`transition-colors ${
+                            isCurrentActive
+                              ? 'bg-cyan-50/80 ring-1 ring-cyan-200'
+                              : 'hover:bg-slate-50/70'
+                          }`}
+                        >
+                          <td className="py-3.5 px-3">
+                            <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                              {isCurrentActive && (
+                                <span className="w-2 h-2 rounded-full bg-cyan-600 animate-pulse"></span>
+                              )}
+                              <span>{b.customerName || 'Khách vãng lai'}</span>
+                            </div>
+                            <div className="text-slate-500 font-mono text-[11px] tabular-nums mt-0.5">{b.customerPhone || 'N/A'}</div>
+                          </td>
+                          <td className="py-3.5 px-3 font-mono font-bold text-slate-900">{b.bookingCode}</td>
+                          <td className="py-3.5 px-3">
+                            <span className="font-mono font-bold text-cyan-700">Kho #{b.unitCode}</span>
+                            <span className="text-slate-500 block text-[10px]">{b.facilityName || assignedFacilityName}</span>
+                          </td>
+                          <td className="py-3.5 px-3 font-mono tabular-nums text-slate-700">{b.startDate}</td>
+                          <td className="py-3.5 px-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                              b.status === 'CONFIRMED'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                            }`}>
+                              {b.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Chờ cọc'}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-3 font-mono font-bold text-slate-900 tabular-nums">
+                            {(b.depositPaid || b.depositAmount || 0).toLocaleString('vi-VN')}đ
+                          </td>
+                          <td className="py-3.5 px-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveBookingId(b.id)
+                                document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                              }}
+                              className={`px-3 py-1.5 rounded-lg font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 ml-auto ${
+                                isCurrentActive
+                                  ? 'bg-cyan-600 text-white shadow-xs'
+                                  : 'bg-blue-50 hover:bg-blue-100 text-blue-700'
+                              }`}
+                            >
+                              <span className="material-symbols-outlined text-[14px]">
+                                {isCurrentActive ? 'task_alt' : 'touch_app'}
+                              </span>
+                              <span>{isCurrentActive ? 'Đang Xử Lý' : 'Tiếp đón & Đối soát'}</span>
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })
                   )}
                 </tbody>
               </table>

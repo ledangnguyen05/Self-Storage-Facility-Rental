@@ -68,4 +68,24 @@ public class RentalContract extends BaseEntity {
 
     @Column(name = "signature_data", columnDefinition = "TEXT")
     private String signatureData;
-}
+
+    @Column(name = "signing_method", length = 30)
+    @Builder.Default
+    private String signingMethod = "ELECTRONIC";
+
+    @Column(name = "paper_contract_url", length = 500)
+    private String paperContractUrl;
+
+    @Column(name = "paper_original_location", length = 255)
+    private String paperOriginalLocation;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "paper_verified_by_staff_id")
+    private User paperVerifiedBy;
+
+    @Column(name = "paper_verified_at")
+    private LocalDateTime paperVerifiedAt;
+
+    @Column(name = "paper_notes", columnDefinition = "TEXT")
+    private String paperNotes;
+}

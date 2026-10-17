@@ -26,8 +26,19 @@ public class SupportTicketResponse {
     private String description;
     private String status;
     private String priority;
+    private UUID facilityId;
+    private String facilityName;
+    private String facilityCode;
+    private UUID assignedStaffId;
+    private String assignedStaffName;
+    private String assignedStaffPhone;
     private String imageEvidence;
     private List<String> evidenceUrls;
     private String resolutionNote;
+    private LocalDateTime slaDueAt;
+    private Boolean isOverdue;
+    private LocalDateTime resolvedAt;
+    private LocalDateTime closedAt;
+    private Integer contactLogCount;
     private LocalDateTime createdAt;
 }

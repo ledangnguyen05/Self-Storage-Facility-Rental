@@ -49,4 +49,34 @@ public interface HandoverService {
     ReturnSettlementResponse processReturnSettlement(HandoverRequest request);
 
     List<HandoverResponse> getByBookingId(UUID bookingId);
+
+    void sendHandoverPinEmail(UUID bookingId, String customEmail);
+
+    com.boxora.dto.response.NotificationLogResponse sendHandoverWebNotification(UUID bookingId);
+
+    // =========================================================================
+    // QUY TRÌNH CHECK-IN ĐỐI SOÁT 4 ĐIỀU KIỆN & NGHIỆM THU HIỆN TRƯỜNG
+    // =========================================================================
+
+    /** Điều kiện 1: Khởi tạo hoặc tải lên bản scan hợp đồng giấy tại kho */
+    com.boxora.dto.response.RentalContractResponse createOrUploadPaperContract(com.boxora.dto.request.PaperContractCreateRequest request);
+
+    /** Điều kiện 1: Nhân viên xác minh tính hợp lệ của hợp đồng giấy */
+    com.boxora.dto.response.RentalContractResponse verifyPaperContract(UUID bookingId, String notes);
+
+    /** Điều kiện 2 & 3: Ghi nhận giao dịch tiền mặt hoặc thông tin chuyển khoản ngân hàng */
+    com.boxora.dto.response.PaymentResponse recordManualPayment(com.boxora.dto.request.ManualPaymentRecordRequest request);
+
+    /** Điều kiện 2 & 3: Nhân viên có thẩm quyền xác nhận tiền chuyển khoản đã vào tài khoản */
+    com.boxora.dto.response.PaymentResponse confirmBankTransferPayment(UUID paymentId, String notes);
+
+    /** Điều kiện 4: Nhân viên tại quầy xác nhận đã đối chiếu giấy tờ tùy thân CCCD/Passport gốc */
+    HandoverPrerequisitesResponse verifyIdentity(com.boxora.dto.request.IdentityVerifyRequest request);
+
+    /** Hoàn tất Bước 1: Đối soát 4 điều kiện và ghi log chuyển sang Bước 2 */
+    void completeCheckInStep1(UUID bookingId);
+
+    /** Bước 2: Lưu biên bản nghiệm thu 5 tiêu chuẩn hiện trường và ảnh kiểm định */
+    HandoverResponse recordCheckInInspection(com.boxora.dto.request.CheckInInspectionRequest request);
 }
+

@@ -47,4 +47,27 @@ public class Payment extends BaseEntity {
 
     @Column(name = "renewal_months")
     private Integer renewalMonths; // chỉ set khi paymentType = RENEWAL_FEE, dùng để tính newEndDate lúc webhook confirm
-}
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "collected_by_staff_id")
+    private User collectedByStaff;
+
+    @Column(name = "receipt_voucher_code", length = 100)
+    private String receiptVoucherCode;
+
+    @Column(name = "reference_code", length = 100)
+    private String referenceCode;
+
+    @Column(name = "proof_document_url", length = 500)
+    private String proofDocumentUrl;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "confirmed_by_staff_id")
+    private User confirmedByStaff;
+
+    @Column(name = "confirmed_at")
+    private LocalDateTime confirmedAt;
+
+    @Column(name = "payment_notes", columnDefinition = "TEXT")
+    private String paymentNotes;
+}
