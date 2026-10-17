@@ -197,8 +197,9 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                     Chính sách hoàn tiền cọc (3 Mốc quy định)
                   </span>
                   {preview && (
-                    <span className="font-mono text-[10px] text-slate-400">
-                      Còn {preview.hoursUntilCheckin}h trước lịch hẹn
+                    <span className="text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px] text-slate-400">schedule</span>
+                      <span>{preview.timeRemainingLabel || (preview.hoursUntilCheckin < 24 ? 'Lịch hẹn còn dưới 24 giờ' : `Còn khoảng ${Math.floor(preview.hoursUntilCheckin / 24)} ngày ${preview.hoursUntilCheckin % 24} giờ đến lịch hẹn nhận kho`)}</span>
                     </span>
                   )}
                 </div>

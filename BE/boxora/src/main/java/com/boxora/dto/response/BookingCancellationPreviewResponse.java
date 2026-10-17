@@ -21,10 +21,20 @@ public class BookingCancellationPreviewResponse {
     private BigDecimal totalRentalFee;
 
     /**
-     * Số giờ còn lại trước thời điểm nhận kho (startDate 00:00).
-     * Âm nếu đã qua thời điểm bắt đầu thuê.
+     * Thời điểm nhận kho làm căn cứ tính chính sách (từ expectedCheckInAt hoặc giờ mở cửa ngày bắt đầu thuê).
+     */
+    private java.time.LocalDateTime checkInDateTime;
+
+    /**
+     * Số giờ còn lại trước thời điểm nhận kho.
+     * Âm nếu đã qua thời điểm nhận kho.
      */
     private long hoursUntilCheckin;
+
+    /**
+     * Nhãn hiển thị thời gian còn lại nhẹ nhàng, trung tính cho giao diện người dùng.
+     */
+    private String timeRemainingLabel;
 
     /**
      * Mốc hoàn tiền áp dụng:

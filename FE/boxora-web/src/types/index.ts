@@ -166,9 +166,11 @@ export interface BookingCancellationPreview {
   bookingCode: string
   unitCode?: string
   startDate: string
+  checkInDateTime?: string
   depositPaid: number
   totalRentalFee: number
   hoursUntilCheckin: number
+  timeRemainingLabel?: string
   milestoneStage: 'STAGE_1_FULL_REFUND' | 'STAGE_2_PARTIAL_REFUND' | 'STAGE_3_NO_REFUND' | 'STAGE_PENDING_NO_PAYMENT' | string
   refundPercentage: number
   refundAmount: number
