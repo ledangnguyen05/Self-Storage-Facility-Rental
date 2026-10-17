@@ -10,8 +10,6 @@ import { useLanguage } from '../../context/LanguageContext'
 import { useAuth } from '../../context/AuthContext'
 import { Facility, FacilityPolicy, StorageUnit, OverdueDebtItem, Booking } from '../../types'
 import { parseFacilityLayoutConfig } from '../../utils/facilityLayout'
-import { IoTTelemetryModal } from './modals/IoTTelemetryModal'
-import { FacilitySurveyModal } from './modals/FacilitySurveyModal'
 import { BookingDetailReadOnlyModal } from './modals/BookingDetailReadOnlyModal'
 import { DoorAccessHistoryModal } from './modals/DoorAccessHistoryModal'
 import { NoticeDispatcherModal } from './modals/NoticeDispatcherModal'
@@ -39,7 +37,7 @@ interface InspectedUnit {
   facilityName?: string
 }
 
-type ManagerDashboardTab = 'overview' | 'handovers-returns' | 'tickets' | 'performance'
+type ManagerDashboardTab = 'overview' | 'handovers-returns' | 'tickets' | 'performance' | 'policy'
 
 export const ManagerDashboard: React.FC = () => {
   const { t } = useLanguage()
@@ -81,8 +79,6 @@ export const ManagerDashboard: React.FC = () => {
   const [tickets, setTickets] = useState<SupportTicketRecord[]>([])
 
   // Modals state
-  const [showIoTModal, setShowIoTModal] = useState(false)
-  const [showSurveyModal, setShowSurveyModal] = useState(false)
   const [showCreateUnitModal, setShowCreateUnitModal] = useState(false)
   const [showReadOnlyBookingModal, setShowReadOnlyBookingModal] = useState(false)
   const [readOnlyTargetBookingId, setReadOnlyTargetBookingId] = useState<string | undefined>(undefined)
@@ -808,6 +804,19 @@ export const ManagerDashboard: React.FC = () => {
           <span className="material-symbols-outlined text-[18px]">trending_up</span>
           <span>4. Hiệu Suất &amp; Ngoại Lệ</span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('policy')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'policy'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">policy</span>
+          <span>5. Chính Sách Vận Hành Cơ Sở</span>
+        </button>
       </div>
 
       {/* ============================================================== */}
@@ -1373,13 +1382,13 @@ export const ManagerDashboard: React.FC = () => {
       )}
 
       {/* ============================================================== */}
-      {/* TAB 6: HIỆU SUẤT & NGOẠI LỆ QUẢN LÝ (SUMMARIES 6 & 7) */}
+      {/* TAB 4: HIỆU SUẤT & NGOẠI LỆ QUẢN LÝ */}
       {/* ============================================================== */}
       {activeTab === 'performance' && (
         <section className="flex flex-col gap-6">
           
-          {/* Facility Performance Overview (Summary 6) */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Facility Performance Overview */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             
             <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs">
               <span className="text-[11px] uppercase font-bold text-slate-500 font-mono block">Tỷ Lệ Lấp Đầy Cơ Sở</span>
@@ -1401,33 +1410,9 @@ export const ManagerDashboard: React.FC = () => {
               <span className="text-xs text-emerald-700 font-semibold mt-2 block">Ping: 14ms • 0 khóa ngoại tuyến</span>
             </div>
 
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
-              <div>
-                <span className="text-[11px] uppercase font-bold text-slate-500 font-mono block">Kiểm Định An Toàn PCCC</span>
-                <p className="text-xs text-slate-700 font-bold mt-1">Đạt chứng nhận an toàn định kỳ</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Khảo sát gần nhất: Tháng này</p>
-              </div>
-              <div className="flex gap-2 mt-3">
-                <button
-                  type="button"
-                  onClick={() => setShowIoTModal(true)}
-                  className="flex-1 py-2 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold transition cursor-pointer"
-                >
-                  Trạm IoT
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowSurveyModal(true)}
-                  className="flex-1 py-2 px-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold transition cursor-pointer shadow-xs"
-                >
-                  Khảo sát
-                </button>
-              </div>
-            </div>
-
           </div>
 
-          {/* Exceptions Requiring Manager Review (Summary 7) */}
+          {/* Exceptions Requiring Manager Review */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col gap-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -1439,7 +1424,7 @@ export const ManagerDashboard: React.FC = () => {
               <span className="text-xs text-slate-500">Chỉ dành cho Quản lý cơ sở / BOM</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               
               {/* Exception 1: Asset Sealing & Delinquency */}
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
@@ -1451,7 +1436,7 @@ export const ManagerDashboard: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Áp dụng quy chế cưỡng chế khóa SmartLock và lập biên bản niêm phong tài sản đối với các hợp đồng quá hạn &gt; 7 ngày.
+                    Áp dụng quy chế cưỡng chế khóa SmartLock và lập biên bản niêm phong tài sản đối với các hợp đồng quá hạn &gt; 7 ngày ({overdueItems.length} hồ sơ cần theo dõi).
                   </p>
                 </div>
                 <Link
@@ -1462,30 +1447,6 @@ export const ManagerDashboard: React.FC = () => {
                 </Link>
               </div>
 
-              {/* Exception 2: Facility Operating Policy */}
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-slate-900 text-xs">Chính Sách Vận Hành Cơ Sở</span>
-                    <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
-                      hasPolicyException ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200 text-slate-700'
-                    }`}>
-                      {hasPolicyException ? 'Có quyền ngoại lệ' : 'Chỉ xem'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Xem các quy định về tỷ lệ cọc, ân hạn nợ, SLA hoàn cọc và áp dụng chính sách ngoại lệ chi nhánh.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsPolicyModalOpen(true)}
-                  className="mt-4 w-full py-2 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer"
-                >
-                  Xem Chi Tiết Chính Sách
-                </button>
-              </div>
-
             </div>
           </div>
 
@@ -1493,24 +1454,87 @@ export const ManagerDashboard: React.FC = () => {
       )}
 
       {/* ============================================================== */}
+      {/* TAB 5: CHÍNH SÁCH VẬN HÀNH CƠ SỞ */}
+      {/* ============================================================== */}
+      {activeTab === 'policy' && (
+        <section className="flex flex-col gap-6">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-blue-600 text-[22px]">policy</span>
+                <div>
+                  <h3 className="font-headline text-base font-bold text-slate-900">
+                    Chính Sách Vận Hành Cơ Sở — {currentFacilityName}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Xem các quy định về tỷ lệ cọc, ân hạn nợ, SLA hoàn cọc và áp dụng chính sách ngoại lệ chi nhánh.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`px-2.5 py-1 rounded-full font-mono text-[11px] font-bold ${
+                  hasPolicyException ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {hasPolicyException ? 'Có quyền ngoại lệ' : 'Chỉ xem'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsPolicyModalOpen(true)}
+                  className="py-2 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer"
+                >
+                  {hasPolicyException ? 'Xem & Chỉnh Sửa Chính Sách' : 'Xem Chi Tiết Chính Sách'}
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                <span className="text-[11px] uppercase font-bold text-slate-500 font-mono block">Tỷ Lệ Đặt Cọc</span>
+                <p className="text-2xl font-extrabold font-mono text-slate-900 mt-2">
+                  {facilityPolicy?.depositPercentage ?? facilityPolicy?.depositPercent ?? 100}%
+                </p>
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Kỳ hạn tối thiểu: {facilityPolicy?.minimumRentalMonths ?? 1} tháng
+                </span>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                <span className="text-[11px] uppercase font-bold text-slate-500 font-mono block">Gia Hạn &amp; Báo Trả</span>
+                <p className="text-2xl font-extrabold font-mono text-blue-600 mt-2">
+                  {facilityPolicy?.renewalWindowDays ?? 3} ngày
+                </p>
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Báo trước trả kho: {facilityPolicy?.returnNoticeDays ?? 0} ngày
+                </span>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                <span className="text-[11px] uppercase font-bold text-slate-500 font-mono block">Xử Lý Quá Hạn</span>
+                <p className="text-2xl font-extrabold font-mono text-rose-600 mt-2">
+                  {facilityPolicy?.overdueGraceDays ?? facilityPolicy?.gracePeriodDays ?? 1} ngày ân hạn
+                </p>
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Khóa PIN: {facilityPolicy?.overdueAccessDisableDays ?? 3} ngày • Niêm phong: {facilityPolicy?.overdueSealingDays ?? 7} ngày
+                </span>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                <span className="text-[11px] uppercase font-bold text-slate-500 font-mono block">SLA Hoàn Cọc</span>
+                <p className="text-2xl font-extrabold font-mono text-emerald-600 mt-2">
+                  {facilityPolicy?.depositRefundSlaDays ?? 5} ngày
+                </p>
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Hoàn 100% hủy trước &ge; {facilityPolicy?.cancellationFullRefundHours ?? 48}h
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ============================================================== */}
       {/* MODALS */}
       {/* ============================================================== */}
-      
-      {/* 1. IoT Telemetry Modal */}
-      <IoTTelemetryModal
-        isOpen={showIoTModal}
-        onClose={() => setShowIoTModal(false)}
-        facilityName={currentFacilityName}
-        totalUnits={totalUnitsCount}
-      />
-
-      {/* 2. Facility Survey Modal */}
-      <FacilitySurveyModal
-        isOpen={showSurveyModal}
-        onClose={() => setShowSurveyModal(false)}
-        facilityName={currentFacilityName}
-        onSubmitSurvey={(code) => triggerAction(`Đã tạo và ký phiếu khảo sát kiểm định ${code} thành công!`)}
-      />
 
       {/* 3. Create Storage Unit Modal */}
       <CreateStorageUnitModal

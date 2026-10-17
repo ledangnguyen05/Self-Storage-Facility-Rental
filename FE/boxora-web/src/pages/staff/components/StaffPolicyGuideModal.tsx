@@ -77,13 +77,13 @@ export const StaffPolicyGuideModal: React.FC<StaffPolicyGuideModalProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-slate-900">Quy Định Nghiệp Vụ Nhân Viên Trạm</h2>
+                <h2 className="text-lg font-bold text-slate-900">Hướng Dẫn Nghiệp Vụ Nhân Viên Trạm</h2>
                 <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-mono text-[11px] font-bold">
                   {facilityName}
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Cẩm nang tra cứu quy định phục vụ đón tiếp, bàn giao kho &amp; giải quyết sự cố
+                Hướng dẫn nghiệp vụ tra cứu quy định đón tiếp, bàn giao kho &amp; giải quyết sự cố
               </p>
             </div>
           </div>

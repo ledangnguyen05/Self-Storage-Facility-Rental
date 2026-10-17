@@ -71,13 +71,6 @@ export const StaffDashboard: React.FC = () => {
     status: string
   }>>([])
 
-  // Walk-in modal state
-  const [isWalkinOpen, setIsWalkinOpen] = useState(false)
-  const [walkinName, setWalkinName] = useState('')
-  const [walkinPhone, setWalkinPhone] = useState('')
-  const [walkinUnitType, setWalkinUnitType] = useState('mini')
-  const [walkinSuccess, setWalkinSuccess] = useState(false)
-
   // Assigned facility identification
   const assignedFacilityName = useMemo(() => {
     if (user?.facilityName) return user.facilityName
@@ -304,18 +297,6 @@ export const StaffDashboard: React.FC = () => {
     }
   }
 
-  // Quick Walk-in form submit
-  const handleWalkinSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    setWalkinSuccess(true)
-    setTimeout(() => {
-      setWalkinSuccess(false)
-      setIsWalkinOpen(false)
-      setWalkinName('')
-      setWalkinPhone('')
-    }, 1600)
-  }
-
   return (
     <div className="flex flex-col gap-6 text-left max-w-7xl mx-auto w-full">
 
@@ -357,20 +338,12 @@ export const StaffDashboard: React.FC = () => {
             </button>
             <button
               type="button"
-              onClick={() => setIsWalkinOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-colors border border-slate-200 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[18px]">person_add</span>
-              <span>Tiếp Nhận Khách Walk-in</span>
-            </button>
-            <button
-              type="button"
               onClick={() => setIsPolicyGuideOpen(true)}
               className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Tra cứu nhanh cẩm nang quy định & SLA cơ sở"
+              title="Tra cứu nhanh hướng dẫn nghiệp vụ & quy định cơ sở"
             >
               <span className="material-symbols-outlined text-[18px] text-cyan-700">menu_book</span>
-              <span>Cẩm nang SLA</span>
+              <span>Hướng dẫn nghiệp vụ</span>
             </button>
           </div>
         </div>
@@ -996,91 +969,6 @@ export const StaffDashboard: React.FC = () => {
 
       </div>
 
-      {/* MODAL TIẾP NHẬN KHÁCH VÃNG LAI (WALK-IN) */}
-      {isWalkinOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
-            {walkinSuccess ? (
-              <div className="py-8 text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-                  <span className="material-symbols-outlined text-[28px]">check_circle</span>
-                </div>
-                <h3 className="font-headline text-lg font-bold text-slate-900">
-                  Đã Tiếp Nhận Khách Vãng Lai!
-                </h3>
-                <p className="text-xs text-slate-600">
-                  Đã ghi nhận thông tin khách {walkinName} ({walkinPhone}) tại quầy cơ sở {assignedFacilityName}.
-                </p>
-              </div>
-            ) : (
-              <form onSubmit={handleWalkinSubmit} className="space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <h3 className="font-headline text-base font-bold text-slate-900">
-                    Tiếp Nhận Khách Vãng Lai (Walk-in)
-                  </h3>
-                  <button type="button" onClick={() => setIsWalkinOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                    <span className="material-symbols-outlined text-[20px]">close</span>
-                  </button>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-600 uppercase">Họ và tên khách *</label>
-                  <input
-                    type="text"
-                    required
-                    value={walkinName}
-                    onChange={(e) => setWalkinName(e.target.value)}
-                    placeholder="Nguyễn Văn A"
-                    className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-cyan-600"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-600 uppercase">Số điện thoại liên hệ *</label>
-                  <input
-                    type="tel"
-                    required
-                    value={walkinPhone}
-                    onChange={(e) => setWalkinPhone(e.target.value)}
-                    placeholder="0901234567"
-                    className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-cyan-600"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-600 uppercase">Nhu cầu loại kho</label>
-                  <select
-                    value={walkinUnitType}
-                    onChange={(e) => setWalkinUnitType(e.target.value)}
-                    className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer"
-                  >
-                    <option value="mini">Kho Mini Boxora (1-3 m³)</option>
-                    <option value="standard">Kho Tiêu Chuẩn (6-12 m³)</option>
-                    <option value="climate">Kho Mát Climate (8-20 m³)</option>
-                  </select>
-                </div>
-
-                <div className="pt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsWalkinOpen(false)}
-                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
-                  >
-                    Hủy bỏ
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
-                  >
-                    Ghi Nhận Tiếp Đón
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* MODAL QUÉT QR CHECK-IN QUA CAMERA */}
       <QrCameraCheckInModal
         isOpen={isQrScannerOpen}
@@ -1094,7 +982,7 @@ export const StaffDashboard: React.FC = () => {
         }}
       />
 
-      {/* MODAL CẨM NANG SLA DÀNH CHO NHÂN VIÊN (CHẾ ĐỘ XEM TẬP TRUNG) */}
+      {/* MODAL HƯỚNG DẪN NGHIỆP VỤ DÀNH CHO NHÂN VIÊN (CHẾ ĐỘ XEM TẬP TRUNG) */}
       <StaffPolicyGuideModal
         isOpen={isPolicyGuideOpen}
         onClose={() => setIsPolicyGuideOpen(false)}

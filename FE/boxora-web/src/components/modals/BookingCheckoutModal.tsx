@@ -42,14 +42,17 @@ const getToday = () => {
 
 export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit, user, onClose, existingBooking }) => {
   const { updateProfile } = useAuth()
-  const [step, setStep] = useState<CheckoutStep>(() => existingBooking?.status === 'PENDING_PAYMENT' ? 3 : 1)
+  const isExistingUnpaidBooking = Boolean(
+    existingBooking && (existingBooking.status === 'PENDING_PAYMENT' || (existingBooking.status === 'CONFIRMED' && existingBooking.paymentStatus !== 'PAID'))
+  )
+  const [step, setStep] = useState<CheckoutStep>(() => isExistingUnpaidBooking ? 3 : 1)
   const [rentalMonths, setRentalMonths] = useState(existingBooking?.rentalMonths || 1)
   const [startDate, setStartDate] = useState(existingBooking?.startDate || getToday)
   const [checkInTime, setCheckInTime] = useState(existingBooking?.checkInTime || '09:00')
   const [customerName, setCustomerName] = useState(user.fullName || '')
   const [customerPhone, setCustomerPhone] = useState(user.phone || '')
   const [signingMethod, setSigningMethod] = useState<'ONLINE' | 'IN_PERSON'>(
-    (existingBooking?.signingMethod as 'ONLINE' | 'IN_PERSON') || 'ONLINE'
+    isExistingUnpaidBooking ? 'ONLINE' : ((existingBooking?.signingMethod as 'ONLINE' | 'IN_PERSON') || 'ONLINE')
   )
   const [booking, setBooking] = useState<Booking | null>(existingBooking || null)
   const [paymentUrl, setPaymentUrl] = useState('')
@@ -150,7 +153,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
   }
 
   const handleCreatePayment = async () => {
-    if (!booking || booking.status !== 'PENDING_PAYMENT') return
+    if (!booking || (booking.status !== 'PENDING_PAYMENT' && !(booking.status === 'CONFIRMED' && booking.paymentStatus !== 'PAID'))) return
     setIsSubmitting(true)
     setErrorMessage('')
     try {
@@ -337,7 +340,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
           )}
 
           {step === 3 && (
-            signingMethod === 'IN_PERSON' || booking?.status === 'CONFIRMED' ? (
+            (signingMethod === 'IN_PERSON' || (booking?.status === 'CONFIRMED' && !isExistingUnpaidBooking)) ? (
               <div className="space-y-4 text-center py-2">
                 <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
                   <span className="material-symbols-outlined text-3xl">task_alt</span>
@@ -386,7 +389,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                     <p className="text-sm text-slate-600">Bạn có thể tạo liên kết thanh toán cho tiền cọc và tiền thuê đợt đầu.</p>
                     {secondsRemaining !== null && <p className={`rounded-lg p-3 text-xs font-semibold ${isExpired ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-800'}`}>{isExpired ? 'Thời hạn thanh toán đã hết.' : `Thời hạn giữ kho còn ${formattedCountdown}.`}</p>}
                     <div className="text-lg font-bold text-cyan-800">Thanh toán ban đầu: {formatVnd(amountDue)}</div>
-                    <button type="button" disabled={isSubmitting || isExpired} onClick={handleCreatePayment} className="w-full rounded-lg bg-cyan-700 py-3 text-sm font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? 'Đang tạo liên kết...' : 'Thanh toán và ký hợp đồng trực tuyến ngay →'}</button>
+                    <button type="button" disabled={isSubmitting || isExpired} onClick={handleCreatePayment} className="w-full rounded-lg bg-cyan-700 py-3 text-sm font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? 'Đang tạo liên kết...' : 'Thanh toán và ký hợp đồng trực tuyến ngay ->'}</button>
                   </div>
                 ) : (
                   <>
@@ -408,7 +411,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                         <span className="material-symbols-outlined text-4xl text-cyan-700">account_balance</span>
                         <p className="mt-2 text-sm font-bold text-slate-900">Thanh toán an toàn</p>
                         <p className="mt-1 text-xs text-slate-500">Trang thanh toán chỉ mở khi bạn nhấn nút bên dưới.</p>
-                        <button type="button" disabled={isExpired} onClick={launchVNPay} className="mt-4 w-full rounded-lg bg-cyan-700 py-3 text-xs font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">Tiếp tục thanh toán</button>
+                        <button type="button" disabled={isExpired} onClick={launchVNPay} className="mt-4 w-full rounded-lg bg-cyan-700 py-3 text-xs font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">Thanh toán và ký hợp đồng trực tuyến ngay -&gt;</button>
                       </div>
                     )}
                     <button type="button" disabled={isSubmitting || isExpired} onClick={handleCreatePayment} className="w-full rounded-lg border border-slate-300 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">{isSubmitting ? 'Đang tạo liên kết...' : 'Tạo liên kết thanh toán mới'}</button>

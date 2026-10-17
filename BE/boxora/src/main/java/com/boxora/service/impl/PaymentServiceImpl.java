@@ -81,10 +81,17 @@ public class PaymentServiceImpl implements PaymentService {
 
         BigDecimal authoritativeAmount;
         if (request.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
-            if (booking.getStatus() != BookingStatus.PENDING_PAYMENT && booking.getStatus() != BookingStatus.PENDING_APPROVAL) {
+            boolean isUnpaidConfirmed = booking.getStatus() == BookingStatus.CONFIRMED
+                    && !"PAID".equalsIgnoreCase(booking.getPaymentStatus());
+            if (booking.getStatus() != BookingStatus.PENDING_PAYMENT
+                    && booking.getStatus() != BookingStatus.PENDING_APPROVAL
+                    && !isUnpaidConfirmed) {
                 throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED);
             }
-            if (booking.getPaymentExpiresAt() == null || !booking.getPaymentExpiresAt().isAfter(java.time.Instant.now())) {
+            java.time.Instant effectiveExpiry = booking.getPaymentExpiresAt() != null
+                    ? booking.getPaymentExpiresAt()
+                    : booking.getHoldExpiresAt();
+            if (effectiveExpiry == null || !effectiveExpiry.isAfter(java.time.Instant.now())) {
                 throw new AppException(ErrorCode.BOOKING_PAYMENT_EXPIRED);
             }
             BigDecimal monthlyFee = booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0

@@ -227,6 +227,7 @@ export const CustomerDashboard: React.FC = () => {
   )
 
   const [highlightedUnitCode, setHighlightedUnitCode] = useState<string | null>(null)
+  const [highlightedBookingCode, setHighlightedBookingCode] = useState<string | null>(null)
 
   useEffect(() => {
     if (tabParam && ['my-units', 'bookings', 'explore', 'contracts', 'support'].includes(tabParam)) {
@@ -238,6 +239,19 @@ export const CustomerDashboard: React.FC = () => {
       setTimeout(() => {
         const clean = unitParam.toLowerCase().replace(/[^a-z0-9]/g, '')
         const el = document.getElementById(`unit-card-${clean}`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 250)
+    }
+    const bookingParam = searchParams.get('booking') || searchParams.get('bookingCode')
+    if (bookingParam) {
+      setHighlightedBookingCode(bookingParam)
+      setBookingStatusFilter('ALL')
+      setBookingSearchTerm('')
+      setTimeout(() => {
+        const clean = bookingParam.toLowerCase().replace(/[^a-z0-9]/g, '')
+        const el = document.getElementById(`booking-card-${clean}`)
         if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'center' })
         }
@@ -268,6 +282,22 @@ export const CustomerDashboard: React.FC = () => {
     } else {
       setSearchParams({ tab: 'my-units' })
     }
+  }
+
+  const handleGoToBooking = (booking: Booking) => {
+    const targetCode = booking.bookingCode || booking.id
+    setActiveTab('bookings')
+    setBookingStatusFilter('ALL')
+    setBookingSearchTerm('')
+    setSearchParams({ tab: 'bookings', booking: targetCode })
+    setHighlightedBookingCode(targetCode)
+    setTimeout(() => {
+      const clean = targetCode.toLowerCase().replace(/[^a-z0-9]/g, '')
+      const el = document.getElementById(`booking-card-${clean}`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 150)
   }
 
   // IoT Remote Unlock state
@@ -1256,18 +1286,15 @@ export const CustomerDashboard: React.FC = () => {
               </div>
               <div className="space-y-2">
                 {bookingRequests.slice(0, 5).map(request => {
+                  const isUnpaidPending = request.status === 'PENDING_PAYMENT' || (request.status === 'CONFIRMED' && request.paymentStatus !== 'PAID')
                   const statusLabel = request.status === 'CONFIRMED'
                     ? 'Đã xác nhận đặt chỗ'
-                    : request.status === 'PENDING_PAYMENT'
-                      ? 'Chờ thanh toán'
-                      : request.status === 'PENDING_APPROVAL'
-                        ? 'Chờ xử lý'
-                        : 'Yêu cầu đã đóng'
+                    : request.status === 'PENDING_APPROVAL'
+                      ? 'Chờ xử lý'
+                      : 'Yêu cầu đã đóng'
                   const statusClass = request.status === 'CONFIRMED'
                     ? 'bg-blue-50 text-blue-800 border-blue-200'
-                    : request.status === 'PENDING_PAYMENT'
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                    : 'bg-slate-100 text-slate-600 border-slate-200'
                   return (
                     <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3">
                       <div>
@@ -1275,15 +1302,19 @@ export const CustomerDashboard: React.FC = () => {
                         <p className="mt-1 text-[11px] text-slate-500">Mã yêu cầu {request.bookingCode} · {request.rentalMonths} tháng</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusClass}`}>{statusLabel}</span>
-                        {request.status === 'PENDING_PAYMENT' && (
-                          <button
-                            type="button"
-                            onClick={() => setRequestToPay(request)}
-                            className="rounded-lg bg-cyan-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-cyan-800"
+                        {isUnpaidPending ? (
+                          <a
+                            href={`/portal/customer?tab=bookings&booking=${encodeURIComponent(request.bookingCode || request.id)}`}
+                            onClick={(e) => {
+                              e.preventDefault()
+                              handleGoToBooking(request)
+                            }}
+                            className="rounded-lg bg-cyan-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-cyan-800 transition-colors cursor-pointer inline-flex items-center"
                           >
                             Thanh toán và ký hợp đồng trực tuyến ngay -&gt;
-                          </button>
+                          </a>
+                        ) : (
+                          <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusClass}`}>{statusLabel}</span>
                         )}
                       </div>
                     </div>
@@ -1711,14 +1742,39 @@ export const CustomerDashboard: React.FC = () => {
             return (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                 {filteredBookings.map((b) => {
-                  const isPendingCheckin = b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT'
-                  const isActive = b.status === 'ACTIVE'
+                  const cleanBookingCode = (b.bookingCode || b.id || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+                  const cleanHighlightBooking = (highlightedBookingCode || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+                  const isBookingHighlighted = Boolean(highlightedBookingCode && cleanBookingCode === cleanHighlightBooking)
 
                   return (
                     <div
                       key={b.id}
-                      className="stitch-card p-5 flex flex-col justify-between gap-4 hover:border-blue-300 transition-all hover:shadow-md"
+                      id={`booking-card-${cleanBookingCode}`}
+                      className={`stitch-card p-5 flex flex-col justify-between gap-4 transition-all ${
+                        isBookingHighlighted
+                          ? 'ring-4 ring-blue-500 shadow-[0_20px_50px_rgba(37,99,235,0.28)] !border-blue-500 bg-gradient-to-b from-blue-50/40 via-white to-white scale-[1.01] z-10'
+                          : 'hover:border-blue-300 hover:shadow-md'
+                      }`}
                     >
+                      {isBookingHighlighted && (
+                        <div className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 text-white text-xs font-bold flex items-center justify-between shadow-sm">
+                          <div className="flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[16px]">bookmark_added</span>
+                            <span>Đơn giữ kho: #{b.bookingCode}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setHighlightedBookingCode(null)
+                            }}
+                            className="text-white/80 hover:text-white cursor-pointer px-1.5 py-0.5 rounded hover:bg-white/20 transition-colors flex items-center gap-1 text-[11px]"
+                          >
+                            <span>Đóng</span>
+                            <span className="material-symbols-outlined text-[13px]">close</span>
+                          </button>
+                        </div>
+                      )}
                       <div className="flex flex-col gap-3.5">
                         {/* Top: Unit & Status */}
                         <div className="flex items-start justify-between gap-2">
