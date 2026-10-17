@@ -528,6 +528,18 @@ export const DashboardLayout: React.FC = () => {
                   <span className="material-symbols-outlined text-[18px]">apartment</span>
                   <span>{t('Sơ đồ cơ sở kho')}</span>
                 </Link>
+
+                <Link
+                  to="/portal/tickets"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    isCurrentPath('/portal/tickets')
+                      ? 'bg-slate-100 text-slate-900 font-semibold'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">troubleshoot</span>
+                  <span>{t('Giám sát sự cố & SLA')}</span>
+                </Link>
               </nav>
             </div>
           )}
@@ -681,7 +693,7 @@ export const DashboardLayout: React.FC = () => {
 
       {/* Main Canvas Area */}
       <div className="lg:pl-64 pt-20 flex-1 min-w-0">
-        <main className="min-h-[calc(100vh-5rem)] w-full bg-slate-50 p-4 sm:p-6 lg:p-8">
+        <main className="min-h-[calc(100vh-5rem)] w-full bg-slate-50 p-4 sm:p-6 lg:p-8 pb-24 sm:pb-28">
           <div className="mx-auto w-full max-w-[1600px]">
             <Outlet context={{
               selectedFacility: isFacilityScopedRole && assignedFacilityId ? assignedFacilityId : selectedFacility,

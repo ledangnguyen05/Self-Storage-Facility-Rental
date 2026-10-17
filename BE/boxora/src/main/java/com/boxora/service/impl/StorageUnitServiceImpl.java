@@ -34,7 +34,6 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 @Transactional
 public class StorageUnitServiceImpl implements StorageUnitService {
@@ -48,6 +47,28 @@ public class StorageUnitServiceImpl implements StorageUnitService {
     private final FacilityAccessGuard facilityAccessGuard;
     private final com.boxora.service.StorageUnitPriceHistoryService storageUnitPriceHistoryService;
     private final ActivityLogService activityLogService;
+
+    public StorageUnitServiceImpl(
+            StorageUnitRepository storageUnitRepository,
+            FacilityRepository facilityRepository,
+            FacilityPolicyRepository facilityPolicyRepository,
+            UnitTypeRepository unitTypeRepository,
+            BookingRepository bookingRepository,
+            RentalContractRepository rentalContractRepository,
+            FacilityAccessGuard facilityAccessGuard,
+            com.boxora.service.StorageUnitPriceHistoryService storageUnitPriceHistoryService,
+            ActivityLogService activityLogService
+    ) {
+        this.storageUnitRepository = storageUnitRepository;
+        this.facilityRepository = facilityRepository;
+        this.facilityPolicyRepository = facilityPolicyRepository;
+        this.unitTypeRepository = unitTypeRepository;
+        this.bookingRepository = bookingRepository;
+        this.rentalContractRepository = rentalContractRepository;
+        this.facilityAccessGuard = facilityAccessGuard;
+        this.storageUnitPriceHistoryService = storageUnitPriceHistoryService;
+        this.activityLogService = activityLogService;
+    }
 
     @Override
     @Transactional(readOnly = true)
@@ -167,6 +188,12 @@ public class StorageUnitServiceImpl implements StorageUnitService {
             throw new AppException(ErrorCode.STORAGE_UNIT_CODE_EXISTED);
         }
 
+        // Không cho phép đổi mã kho hoặc loại kho nếu kho đang trong hợp đồng thuê hoặc giữ chỗ
+        if ((unit.getStatus() == UnitStatus.OCCUPIED || unit.getStatus() == UnitStatus.RESERVED)
+                && (!unit.getUnitCode().equals(trimmedCode) || (request.getUnitTypeId() != null && !unit.getUnitType().getId().equals(request.getUnitTypeId())))) {
+            throw new AppException(ErrorCode.STORAGE_UNIT_IN_USE);
+        }
+
         UnitType unitType = unitTypeRepository.findById(request.getUnitTypeId())
                 .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND));
 
@@ -236,21 +263,54 @@ public class StorageUnitServiceImpl implements StorageUnitService {
 
     @Override
     public StorageUnitResponse toggleMaintenance(UUID id) {
-        StorageUnit unit = storageUnitRepository.findWithDetailsById(id)
+        StorageUnit unit = storageUnitRepository.findWithDetailsByIdForUpdate(id)
                 .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
 
         facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
 
-        // Quy tắc nghiệp vụ: Trước mắt chỉ duy nhất có thể chuyển từ trạng thái AVAILABLE sang UNDER_MAINTENANCE (hoặc từ UNDER_MAINTENANCE về AVAILABLE)
+        // Quy tắc nghiệp vụ: Chỉ có thể chuyển trạng thái khi kho đang AVAILABLE hoặc UNDER_MAINTENANCE
         if (unit.getStatus() != UnitStatus.AVAILABLE && unit.getStatus() != UnitStatus.UNDER_MAINTENANCE) {
             throw new AppException(ErrorCode.STORAGE_UNIT_CANNOT_MAINTAIN);
         }
 
         UnitStatus oldStatus = unit.getStatus();
         if (unit.getStatus() == UnitStatus.AVAILABLE) {
+            // Đảm bảo kho không có hợp đồng đang hiệu lực hoặc booking chờ bàn giao/xử lý
+            boolean hasActiveContract = rentalContractRepository.existsByUnit_IdAndStatusIn(
+                    unit.getId(), List.of(com.boxora.enums.RentalContractStatus.ACTIVE, com.boxora.enums.RentalContractStatus.PENDING_ACTIVATION)
+            );
+            boolean hasActiveBooking = bookingRepository.existsByStorageUnit_IdAndStatusIn(
+                    unit.getId(), List.of(
+                            com.boxora.enums.BookingStatus.CONFIRMED,
+                            com.boxora.enums.BookingStatus.ACTIVE,
+                            com.boxora.enums.BookingStatus.PENDING_PAYMENT,
+                            com.boxora.enums.BookingStatus.CHECKOUT_REQUESTED,
+                            com.boxora.enums.BookingStatus.INSPECTED
+                    )
+            );
+            if (hasActiveContract || hasActiveBooking) {
+                throw new AppException(ErrorCode.STORAGE_UNIT_IN_USE);
+            }
             unit.setStatus(UnitStatus.UNDER_MAINTENANCE);
         } else if (unit.getStatus() == UnitStatus.UNDER_MAINTENANCE) {
-            unit.setStatus(UnitStatus.AVAILABLE);
+            // Tắt bảo trì: Phục hồi trạng thái thực tế dựa trên hợp đồng/booking, KHÔNG đưa kho đang thuê về AVAILABLE
+            boolean hasActiveContract = rentalContractRepository.existsByUnit_IdAndStatusIn(
+                    unit.getId(), List.of(com.boxora.enums.RentalContractStatus.ACTIVE)
+            );
+            boolean hasPendingContract = rentalContractRepository.existsByUnit_IdAndStatusIn(
+                    unit.getId(), List.of(com.boxora.enums.RentalContractStatus.PENDING_ACTIVATION)
+            );
+            boolean hasReservedBooking = bookingRepository.existsByStorageUnit_IdAndStatusIn(
+                    unit.getId(), List.of(com.boxora.enums.BookingStatus.CONFIRMED)
+            );
+
+            if (hasActiveContract) {
+                unit.setStatus(UnitStatus.OCCUPIED);
+            } else if (hasPendingContract || hasReservedBooking) {
+                unit.setStatus(UnitStatus.RESERVED);
+            } else {
+                unit.setStatus(UnitStatus.AVAILABLE);
+            }
         }
 
         unit = storageUnitRepository.save(unit);
@@ -348,8 +408,8 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .pricePerMonth(price)
                 .depositAmount(u.getUnitType() != null ? u.getUnitType().getDepositAmount() : price)
                 .areaSqMeters(area)
-                .batteryLevel("98%")
-                .smartLockSerial("SL-" + (u.getUnitCode() != null ? u.getUnitCode().replace("-", "") : "8841"))
+                .batteryLevel(null)
+                .smartLockSerial(null)
                 .lastAccessTime(null)
                 .bookingId(bookingId)
                 .tenantName(tenantName)

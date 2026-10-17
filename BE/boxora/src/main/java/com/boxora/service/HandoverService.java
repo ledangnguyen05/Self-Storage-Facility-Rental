@@ -78,5 +78,15 @@ public interface HandoverService {
 
     /** Bước 2: Lưu biên bản nghiệm thu 5 tiêu chuẩn hiện trường và ảnh kiểm định */
     HandoverResponse recordCheckInInspection(com.boxora.dto.request.CheckInInspectionRequest request);
+
+    /** Tải lên tài liệu nghiệp vụ bàn giao (Hợp đồng giấy scan / Chứng từ chuyển khoản: PDF, JPG, JPEG, PNG, WEBP) */
+    com.boxora.dto.response.FileUploadResponse uploadHandoverDocument(
+            UUID bookingId,
+            org.springframework.web.multipart.MultipartFile file,
+            String documentType
+    );
+
+    /** Kiểm tra quyền truy cập và phân giải đường dẫn tệp tài liệu nhạy cảm (Hợp đồng giấy / Chứng từ thanh toán) */
+    java.nio.file.Path getAuthorizedHandoverDocumentPath(UUID bookingId, String fileUrl);
 }
 

@@ -8,7 +8,9 @@ import { facilityService } from '../../services/facilityService'
 import { facilityPolicyService } from '../../services/facilityPolicyService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { Booking, StorageUnit, Facility, FacilityPolicy } from '../../types'
+import { extractFloor, resolveBookingFloor, filterArrivals } from '../../utils/floorUtils'
 import { HandoverCheckInWorkbench } from './components/HandoverCheckInWorkbench'
+import { FacilityStaffStorageDiagram } from './components/FacilityStaffStorageDiagram'
 import { QrCameraCheckInModal } from './components/QrCameraCheckInModal'
 import { StaffPolicyGuideModal } from './components/StaffPolicyGuideModal'
 
@@ -69,8 +71,13 @@ export const StaffDashboard: React.FC = () => {
     title: string
     priority: string
     status: string
+    unitCode?: string
   }>>([])
 
+  // Resolved current facility ID
+  const currentTargetFacility = useMemo(() => {
+    return (!selectedFacility || selectedFacility === 'ALL') ? user?.facilityId : selectedFacility
+  }, [selectedFacility, user?.facilityId])
 
   // Assigned facility identification
   const assignedFacilityName = useMemo(() => {
@@ -99,14 +106,14 @@ export const StaffDashboard: React.FC = () => {
 
   // Initial data loading
   useEffect(() => {
-    const targetFacility = (!selectedFacility || selectedFacility === 'ALL') ? user?.facilityId : selectedFacility
+    const targetFacility = currentTargetFacility
     fetchArrivals(targetFacility)
     loadFacilities()
     loadTicketQueue()
     loadActiveRentals(targetFacility)
     loadRadarUnits(targetFacility)
     loadFacilityPolicy(targetFacility)
-  }, [selectedFacility, user?.facilityId])
+  }, [currentTargetFacility])
 
   const loadFacilities = async () => {
     try {
@@ -146,7 +153,16 @@ export const StaffDashboard: React.FC = () => {
       if (Array.isArray(data)) {
         let filtered = data
         if (facilityId) {
-          filtered = filtered.filter(b => b.facilityId === facilityId || !b.facilityId)
+          filtered = filtered.filter(b => {
+            if (b.facilityId) return b.facilityId === facilityId
+            if (b.storageUnitId) {
+              const matchedUnit = radarUnits.find(u => u.id === b.storageUnitId)
+              if (matchedUnit?.facilityId) {
+                return matchedUnit.facilityId === facilityId
+              }
+            }
+            return false // Deny by default: Không hiển thị booking thiếu cơ sở xác minh
+          })
         }
         setArrivals(filtered)
         if (filtered.length > 0 && !activeBookingId) {
@@ -166,7 +182,16 @@ export const StaffDashboard: React.FC = () => {
       if (res?.content && res.content.length > 0) {
         let filtered = res.content
         if (facilityId) {
-          filtered = filtered.filter(b => b.facilityId === facilityId || !b.facilityId)
+          filtered = filtered.filter(b => {
+            if (b.facilityId) return b.facilityId === facilityId
+            if (b.storageUnitId) {
+              const matchedUnit = radarUnits.find(u => u.id === b.storageUnitId)
+              if (matchedUnit?.facilityId) {
+                return matchedUnit.facilityId === facilityId
+              }
+            }
+            return false // Deny by default
+          })
         }
         setActiveRentals(filtered)
         if (!selectedReturnBookingId && filtered.length > 0) {
@@ -204,6 +229,7 @@ export const StaffDashboard: React.FC = () => {
           title: t.title || 'Sự cố tại chỗ',
           priority: t.priority || 'MEDIUM',
           status: t.status || 'OPEN',
+          unitCode: (t as any).unitCode || (t as any).storageUnitCode || (t as any).unit?.unitCode,
         })))
       }
     } catch {
@@ -211,30 +237,56 @@ export const StaffDashboard: React.FC = () => {
     }
   }
 
+  // Lookup maps for Storage Units (by ID and by Facility+UnitCode)
+  const unitMapById = useMemo(() => {
+    const map = new Map<string, StorageUnit>()
+    radarUnits.forEach((u) => {
+      if (u.id) map.set(u.id, u)
+    })
+    return map
+  }, [radarUnits])
+
+  const unitMapByCodeAndFacility = useMemo(() => {
+    const map = new Map<string, StorageUnit>()
+    radarUnits.forEach((u) => {
+      if (u.unitCode) {
+        const key = `${u.facilityId || ''}::${u.unitCode.trim().toUpperCase()}`
+        map.set(key, u)
+      }
+    })
+    return map
+  }, [radarUnits])
+
+  // Discover all distinct floors available in current facility
+  const availableFloors = useMemo(() => {
+    const floorSet = new Set<string>(['1', '2', '3'])
+    arrivals.forEach((b) => {
+      const f = resolveBookingFloor(b, unitMapById, unitMapByCodeAndFacility)
+      if (f) floorSet.add(f)
+    })
+    radarUnits.forEach((u) => {
+      const f = extractFloor(u.floorLevel)
+      if (f) floorSet.add(f)
+    })
+    return Array.from(floorSet).sort((a, b) => {
+      const numA = parseInt(a, 10)
+      const numB = parseInt(b, 10)
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB
+      return a.localeCompare(b)
+    })
+  }, [arrivals, radarUnits, unitMapById, unitMapByCodeAndFacility])
+
   // Filtered arrivals based on Search, Floor, Shift
   const filteredArrivals = useMemo(() => {
-    return arrivals.filter((b) => {
-      // Search
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim()
-        const matchName = (b.customerName || '').toLowerCase().includes(q)
-        const matchPhone = (b.customerPhone || '').toLowerCase().includes(q)
-        const matchBookingCode = (b.bookingCode || '').toLowerCase().includes(q)
-        const matchUnitCode = (b.unitCode || '').toLowerCase().includes(q)
-        if (!matchName && !matchPhone && !matchBookingCode && !matchUnitCode) return false
-      }
-
-      // Floor filter
-      if (selectedFloor !== 'all') {
-        const uCode = (b.unitCode || '').toUpperCase()
-        if (selectedFloor === '1' && !uCode.startsWith('1') && !uCode.startsWith('A') && !uCode.includes('T1')) return false
-        if (selectedFloor === '2' && !uCode.startsWith('2') && !uCode.startsWith('B') && !uCode.includes('T2')) return false
-        if (selectedFloor === '3' && !uCode.startsWith('3') && !uCode.startsWith('C') && !uCode.includes('T3')) return false
-      }
-
-      return true
-    })
-  }, [arrivals, searchQuery, selectedFloor])
+    return filterArrivals(
+      arrivals,
+      searchQuery,
+      selectedFloor,
+      selectedShiftFilter,
+      unitMapById,
+      unitMapByCodeAndFacility
+    )
+  }, [arrivals, searchQuery, selectedFloor, selectedShiftFilter, unitMapById, unitMapByCodeAndFacility])
 
   // Current return target
   const currentReturnBooking = useMemo(() => {
@@ -465,9 +517,11 @@ export const StaffDashboard: React.FC = () => {
               className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
             >
               <option value="all">Tất cả tầng</option>
-              <option value="1">Tầng 1</option>
-              <option value="2">Tầng 2</option>
-              <option value="3">Tầng 3</option>
+              {availableFloors.map((fl) => (
+                <option key={fl} value={fl}>
+                  Tầng {fl}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -486,13 +540,30 @@ export const StaffDashboard: React.FC = () => {
         </div>
       </section>
 
-      {/* Main Dual Workspace: Check-in & Handover Workbench + Return Inspection */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-        
-        {/* Left Side: Check-in Queue + Handover Workbench (Col 8) */}
-        <div className="xl:col-span-8 flex flex-col gap-6">
-          
-          {/* Handover & Check-in Operator Workbench */}
+      {/* KHU VỰC VẬN HÀNH THỰC ĐỊA: SƠ ĐỒ KHO CƠ SỞ & BÀN VẬN HÀNH QUẦY */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 mb-8">
+        {/* BÊN TRÁI: SƠ ĐỒ CƠ SỞ KHO & THIẾT BỊ (Col 7) */}
+        <div className="xl:col-span-7 flex flex-col">
+          <FacilityStaffStorageDiagram
+            units={radarUnits}
+            facilityName={assignedFacilityName}
+            facilityId={currentTargetFacility}
+            arrivals={arrivals}
+            activeRentals={activeRentals}
+            tickets={tickets}
+            userRole={user?.role?.name || 'STAFF'}
+            onSelectBookingForHandover={(bookingId) => {
+              setActiveBookingId(bookingId)
+              document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+            }}
+            onUnitMaintenanceToggled={(updatedUnit) => {
+              setRadarUnits(prev => prev.map(u => u.id === updatedUnit.id ? updatedUnit : u))
+            }}
+          />
+        </div>
+
+        {/* BÊN PHẢI: BÀN VẬN HÀNH QUẦY & TIẾP ĐÓN (Col 5) */}
+        <div className="xl:col-span-5 flex flex-col">
           <HandoverCheckInWorkbench
             arrivals={arrivals}
             onOpenQrScanner={() => setIsQrScannerOpen(true)}
@@ -500,10 +571,18 @@ export const StaffDashboard: React.FC = () => {
             onSelectBooking={setActiveBookingId}
             onHandoverComplete={(bookingId) => {
               setCheckInSuccessMsg(`Hoàn tất quy trình check-in bàn giao buồng kho cho đơn #${bookingId}`)
-              fetchArrivals()
-              loadActiveRentals()
+              fetchArrivals(currentTargetFacility)
+              loadActiveRentals(currentTargetFacility)
+              loadRadarUnits(currentTargetFacility)
             }}
           />
+        </div>
+      </div>
+
+      {/* KHU VỰC TIẾP ĐÓN KHÁCH HẸN & NGHIỆM THU TRẢ KHO */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+        {/* Left Side: Check-in Queue (Col 8) */}
+        <div className="xl:col-span-8 flex flex-col gap-6">
 
           {/* LỊCH HẸN NHẬN KHO TRONG CA */}
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
@@ -563,7 +642,21 @@ export const StaffDashboard: React.FC = () => {
                           </td>
                           <td className="py-3.5 px-3 font-mono font-bold text-slate-900">{b.bookingCode}</td>
                           <td className="py-3.5 px-3">
-                            <span className="font-mono font-bold text-cyan-700">Kho #{b.unitCode}</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono font-bold text-cyan-700">Kho #{b.unitCode}</span>
+                              {(() => {
+                                const fl = resolveBookingFloor(b, unitMapById, unitMapByCodeAndFacility)
+                                return fl ? (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200">
+                                    Tầng {fl}
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500">
+                                    Chưa rõ tầng
+                                  </span>
+                                )
+                              })()}
+                            </div>
                             <span className="text-slate-500 block text-[10px]">{b.facilityName || assignedFacilityName}</span>
                           </td>
                           <td className="py-3.5 px-3 font-mono tabular-nums text-slate-700">{b.startDate}</td>
@@ -604,70 +697,6 @@ export const StaffDashboard: React.FC = () => {
                   )}
                 </tbody>
               </table>
-            </div>
-
-            {/* SƠ ĐỒ KHO BÀN GIAO THỰC TẾ TẠI CƠ SỞ */}
-            <div className="mt-8 pt-5 border-t border-slate-100">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px] text-slate-700">map</span>
-                  <span className="font-headline text-xs font-bold text-slate-900">
-                    Sơ Đồ Kho Bàn Giao Thực Tế ({radarUnits.length} lô kho)
-                  </span>
-                </div>
-                <div className="flex items-center gap-3 text-[11px]">
-                  <span className="flex items-center gap-1 text-slate-600">
-                    <span className="w-2.5 h-2.5 rounded bg-white border border-slate-300"></span> Trống
-                  </span>
-                  <span className="flex items-center gap-1 text-blue-700 font-semibold">
-                    <span className="w-2.5 h-2.5 rounded bg-blue-600"></span> Chờ bàn giao
-                  </span>
-                  <span className="flex items-center gap-1 text-slate-600">
-                    <span className="w-2.5 h-2.5 rounded bg-slate-300"></span> Đang thuê
-                  </span>
-                  <span className="flex items-center gap-1 text-purple-700">
-                    <span className="w-2.5 h-2.5 rounded bg-purple-200 border border-purple-300"></span> Bảo trì
-                  </span>
-                </div>
-              </div>
-
-              {radarUnits.length === 0 ? (
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center text-slate-400 text-xs">
-                  Không có dữ liệu lô kho tại cơ sở {assignedFacilityName}.
-                </div>
-              ) : (
-                <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-center">
-                  {radarUnits.slice(0, 16).map((u) => {
-                    const isTargetHandover = arrivals.some(a => a.unitCode === u.unitCode)
-                    if (isTargetHandover) {
-                      return (
-                        <div key={u.id} className="p-2 rounded bg-blue-600 text-white font-bold text-xs shadow-xs" title="Kho đang có lịch hẹn chờ bàn giao">
-                          #{u.unitCode}<br/><span className="text-[9px] uppercase tracking-tight">BÀN GIAO</span>
-                        </div>
-                      )
-                    }
-                    if (u.status === 'AVAILABLE') {
-                      return (
-                        <div key={u.id} className="p-2 rounded bg-white border border-slate-200 text-slate-800 text-xs" title="Kho sẵn sàng cho thuê">
-                          #{u.unitCode}<br/><span className="text-[9px] text-emerald-600 font-bold">TRỐNG</span>
-                        </div>
-                      )
-                    }
-                    if (u.status === 'MAINTENANCE' || u.status === 'UNDER_MAINTENANCE') {
-                      return (
-                        <div key={u.id} className="p-2 rounded bg-purple-50 border border-purple-200 text-purple-800 text-xs" title="Kho đang bảo trì kỹ thuật">
-                          #{u.unitCode}<br/><span className="text-[9px] text-purple-700 font-bold">BẢO TRÌ</span>
-                        </div>
-                      )
-                    }
-                    return (
-                      <div key={u.id} className="p-2 rounded bg-slate-200 text-slate-600 text-xs" title="Kho đang trong hợp đồng thuê hiệu lực">
-                        #{u.unitCode}<br/><span className="text-[9px] text-slate-500">ĐANG THUÊ</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
             </div>
 
           </div>
@@ -970,6 +999,18 @@ export const StaffDashboard: React.FC = () => {
 
       </div>
 
+      {/* MODAL QUÉT QR CHECK-IN QUA CAMERA */}
+      <QrCameraCheckInModal
+        isOpen={isQrScannerOpen}
+        onClose={() => setIsQrScannerOpen(false)}
+        onCheckInSuccess={(bookingId, result) => {
+          setActiveBookingId(bookingId)
+          setCheckInSuccessMsg(`Check-in qua QR Camera thành công! PIN cấp: ${result.accessPin} (Thẻ: ${result.rfidCard})`)
+        }}
+        onSelectBookingForWorkbench={(bookingId) => {
+          setActiveBookingId(bookingId)
+        }}
+      />
       {/* MODAL HƯỚNG DẪN NGHIỆP VỤ DÀNH CHO NHÂN VIÊN (CHẾ ĐỘ XEM TẬP TRUNG) */}
       <StaffPolicyGuideModal
         isOpen={isPolicyGuideOpen}
