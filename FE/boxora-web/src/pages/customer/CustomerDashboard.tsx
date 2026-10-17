@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { contractService, RentalContract } from '../../services/contractService'
 import { bookingService } from '../../services/bookingService'
-import { supportTicketService } from '../../services/supportTicketService'
+import { supportTicketService, SupportTicketRecord } from '../../services/supportTicketService'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
@@ -13,6 +13,9 @@ import { ContractDocumentModal } from '../../components/modals/ContractDocumentM
 import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
 import { ContractOtpModal } from '../../components/modals/ContractOtpModal'
 import { CustomerPolicyModal } from '../../components/modals/CustomerPolicyModal'
+import { BookingCancelModal } from '../../components/modals/BookingCancelModal'
+import { BookingRescheduleModal } from '../../components/modals/BookingRescheduleModal'
+import { BookingRescheduleHistorySection } from '../../components/booking/BookingRescheduleHistorySection'
 
 const UNIT_CARD_IMAGES = [
   'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80',
@@ -35,6 +38,7 @@ export const CustomerDashboard: React.FC = () => {
   const [bookingStatusFilter, setBookingStatusFilter] = useState<string>('ALL')
   const [bookingSearchTerm, setBookingSearchTerm] = useState<string>('')
   const [selectedBookingForModal, setSelectedBookingForModal] = useState<Booking | null>(null)
+  const [cancellingBookingTarget, setCancellingBookingTarget] = useState<Booking | null>(null)
 
   // Real database customer payments state
   const [customerPayments, setCustomerPayments] = useState<PaymentItem[]>([])
@@ -130,12 +134,27 @@ export const CustomerDashboard: React.FC = () => {
     }
   }
 
+  const fetchCustomerTickets = async () => {
+    try {
+      setLoadingTickets(true)
+      const res = await supportTicketService.getMyTickets()
+      if (Array.isArray(res)) {
+        setCustomerTickets(res)
+      }
+    } catch (err) {
+      console.error('Failed to load customer support tickets:', err)
+    } finally {
+      setLoadingTickets(false)
+    }
+  }
+
   useEffect(() => {
     fetchContracts()
     fetchCustomerBookings()
     fetchCustomerPayments()
     fetchAvailableUnits()
     fetchFacilities()
+    fetchCustomerTickets()
   }, [user])
 
   useEffect(() => {
@@ -182,8 +201,12 @@ export const CustomerDashboard: React.FC = () => {
     return customerPayments.filter(p => p.status === 'PAID' || p.status === 'SUCCESS').length
   }, [customerPayments])
 
-  // Support Ticket Form State
+  // Support Ticket Form & History State
   const [ticketUnit, setTicketUnit] = useState('')
+  const [customerTickets, setCustomerTickets] = useState<SupportTicketRecord[]>([])
+  const [loadingTickets, setLoadingTickets] = useState<boolean>(false)
+  const [ticketStatusFilter, setTicketStatusFilter] = useState<string>('ALL')
+  const [ticketSearchTerm, setTicketSearchTerm] = useState<string>('')
 
   useEffect(() => {
     if (activeContracts.length > 0 && !ticketUnit) {
@@ -203,15 +226,48 @@ export const CustomerDashboard: React.FC = () => {
       : 'my-units'
   )
 
+  const [highlightedUnitCode, setHighlightedUnitCode] = useState<string | null>(null)
+
   useEffect(() => {
     if (tabParam && ['my-units', 'bookings', 'explore', 'contracts', 'support'].includes(tabParam)) {
       setActiveTab(tabParam)
     }
-  }, [tabParam])
+    const unitParam = searchParams.get('unit') || searchParams.get('unitCode')
+    if (unitParam) {
+      setHighlightedUnitCode(unitParam)
+      setTimeout(() => {
+        const clean = unitParam.toLowerCase().replace(/[^a-z0-9]/g, '')
+        const el = document.getElementById(`unit-card-${clean}`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 250)
+    }
+  }, [tabParam, searchParams])
 
   const handleTabChange = (tab: 'my-units' | 'bookings' | 'explore' | 'contracts' | 'support') => {
     setActiveTab(tab)
     setSearchParams({ tab })
+    if (tab === 'support') {
+      fetchCustomerTickets()
+    }
+  }
+
+  const handleGoToMyUnit = (unitCode?: string) => {
+    setActiveTab('my-units')
+    if (unitCode) {
+      setSearchParams({ tab: 'my-units', unit: unitCode })
+      setHighlightedUnitCode(unitCode)
+      setTimeout(() => {
+        const clean = unitCode.toLowerCase().replace(/[^a-z0-9]/g, '')
+        const el = document.getElementById(`unit-card-${clean}`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 150)
+    } else {
+      setSearchParams({ tab: 'my-units' })
+    }
   }
 
   // IoT Remote Unlock state
@@ -265,7 +321,14 @@ export const CustomerDashboard: React.FC = () => {
   }
   const [selectedBookingUnit, setSelectedBookingUnit] = useState<SelectedBookingUnitData | null>(null)
   const [bookingSuccess, setBookingSuccess] = useState(false)
-  const [createdBookingResult, setCreatedBookingResult] = useState<{ bookingCode: string; unitCode: string; facilityName: string } | null>(null)
+  const [createdBookingResult, setCreatedBookingResult] = useState<{
+    bookingCode: string
+    unitCode: string
+    facilityName: string
+    expectedCheckInAt?: string | null
+    holdExpiresAt?: string | null
+    paymentStatus?: string | null
+  } | null>(null)
   const [bookingPackage, setBookingPackage] = useState<'15d' | '1m' | '3m' | '6m' | '12m' | '24m' | 'custom'>('3m')
   const [bookingCustomDays, setBookingCustomDays] = useState<number>(45)
   const [bookingStartDate, setBookingStartDate] = useState<string>(() => new Date().toISOString().split('T')[0])
@@ -274,9 +337,19 @@ export const CustomerDashboard: React.FC = () => {
     d.setDate(d.getDate() + 3)
     return d.toISOString().split('T')[0]
   })
+  const [bookingCheckInTime, setBookingCheckInTime] = useState<string>('09:00')
   const [bookingPolicyAccepted, setBookingPolicyAccepted] = useState<boolean>(true)
   const [bookingWorkflow, setBookingWorkflow] = useState<'HOLD_ONLY' | 'ONLINE_NOW'>('HOLD_ONLY')
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false)
+
+  // Reschedule Modal state
+  const [rescheduleBookingTarget, setRescheduleBookingTarget] = useState<Booking | null>(null)
+  const [rescheduleNewDate, setRescheduleNewDate] = useState<string>(() => new Date().toISOString().split('T')[0])
+  const [rescheduleNewTime, setRescheduleNewTime] = useState<string>('09:00')
+  const [rescheduleReason, setRescheduleReason] = useState<string>('')
+  const [isSubmittingReschedule, setIsSubmittingReschedule] = useState<boolean>(false)
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null)
+  const [rescheduleSuccess, setRescheduleSuccess] = useState<boolean>(false)
 
   // Renewal Modal (Yêu cầu gia hạn hợp đồng)
   const [renewModalData, setRenewModalData] = useState<{
@@ -318,14 +391,30 @@ export const CustomerDashboard: React.FC = () => {
 
   // Support Ticket Form State
   const [ticketType, setTicketType] = useState('lock')
+  const [ticketPriority, setTicketPriority] = useState('MEDIUM')
   const [ticketContent, setTicketContent] = useState('')
   const [ticketSubmitted, setTicketSubmitted] = useState(false)
   const [ticketError, setTicketError] = useState<string | null>(null)
   const [isSubmittingTicket, setIsSubmittingTicket] = useState(false)
+  const [reopenModalTicket, setReopenModalTicket] = useState<SupportTicketRecord | null>(null)
+  const [closeTicketTarget, setCloseTicketTarget] = useState<SupportTicketRecord | null>(null)
+  const [ticketActionError, setTicketActionError] = useState<string | null>(null)
+  const [reopenReasonText, setReopenReasonText] = useState('')
+  const [isProcessingTicketAction, setIsProcessingTicketAction] = useState(false)
 
   // Filter explore state
   const [filterFacility, setFilterFacility] = useState('all')
+  const [filterFloor, setFilterFloor] = useState('all')
   const [filterSize, setFilterSize] = useState('all')
+
+  const availableFloors = useMemo(() => {
+    const floors = new Set<string>()
+    availableUnits.forEach(u => {
+      if (filterFacility !== 'all' && u.facilityId !== filterFacility) return
+      if (u.floorLevel) floors.add(u.floorLevel)
+    })
+    return Array.from(floors).sort()
+  }, [availableUnits, filterFacility])
 
   const handleCopy = (id: string, pin: string) => {
     if (navigator.clipboard) {
@@ -352,24 +441,94 @@ export const CustomerDashboard: React.FC = () => {
     }
   }
 
+  const handleCloseCustomerTicket = async () => {
+    if (!closeTicketTarget) return
+    setIsProcessingTicketAction(true)
+    setTicketActionError(null)
+    try {
+      await supportTicketService.closeTicket(closeTicketTarget.id, 'Khách hàng xác nhận sự cố đã được xử lý hoàn tất')
+      await fetchCustomerTickets()
+      setCloseTicketTarget(null)
+    } catch (err: any) {
+      console.error('Failed to close ticket:', err)
+      setTicketActionError(err?.response?.data?.message || err?.message || 'Không thể đóng phiếu. Phiếu vẫn giữ nguyên trạng thái.')
+    } finally {
+      setIsProcessingTicketAction(false)
+    }
+  }
+
+  const handleReopenCustomerTicket = async () => {
+    if (!reopenModalTicket || !reopenReasonText.trim()) return
+    setIsProcessingTicketAction(true)
+    try {
+      await supportTicketService.reopenTicket(reopenModalTicket.id, reopenReasonText.trim())
+      setReopenModalTicket(null)
+      setReopenReasonText('')
+      await fetchCustomerTickets()
+    } catch (err: any) {
+      console.error('Failed to reopen ticket:', err)
+      alert(err?.response?.data?.message || err?.message || 'Không thể yêu cầu xử lý lại')
+    } finally {
+      setIsProcessingTicketAction(false)
+    }
+  }
+
   const handleSupportSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (ticketType === 'other' && (!ticketContent || !ticketContent.trim())) {
+      setTicketError('Vui lòng ghi rõ mô tả chi tiết vấn đề bạn cần hỗ trợ.')
+      return
+    }
     setIsSubmittingTicket(true)
     setTicketError(null)
     try {
       const activeUnit = contracts.find(c => c.unitCode === ticketUnit)
+      const isGeneral = ticketUnit === 'general'
+      
+      let category = 'OTHER'
+      let typeLabel = 'Khác'
+      if (ticketType === 'lock') {
+        category = 'LOCK_ISSUE'
+        typeLabel = 'Khóa & Cửa'
+      } else if (ticketType === 'pin') {
+        category = 'PIN_CODE'
+        typeLabel = 'Mã PIN'
+      } else if (ticketType === 'access') {
+        category = 'ACCESS_ISSUE'
+        typeLabel = 'Truy cập kho'
+      } else if (ticketType === 'cleanliness') {
+        category = 'CLEANLINESS_PEST'
+        typeLabel = 'Vệ sinh'
+      } else if (ticketType === 'climate') {
+        category = 'CLIMATE_TEMP'
+        typeLabel = 'Nhiệt độ/Độ ẩm'
+      } else if (ticketType === 'facility_damage') {
+        category = 'FACILITY_DAMAGE'
+        typeLabel = 'Hư hỏng thiết bị'
+      } else if (ticketType === 'billing') {
+        category = 'PAYMENT_ISSUE'
+        typeLabel = 'Thanh toán'
+      }
+
+      const title = isGeneral 
+        ? `Yêu cầu hỗ trợ (${typeLabel})` 
+        : `Sự cố kho #${ticketUnit} (${typeLabel})`
+
       await supportTicketService.createTicket({
         customerId: user?.id,
         bookingId: activeUnit?.bookingId || (activeUnit?.id?.length === 36 ? activeUnit.id : undefined),
-        category: ticketType.toUpperCase(),
-        title: `Yêu cầu hỗ trợ kho #${ticketUnit} (${ticketType})`,
-        description: ticketContent,
-        priority: ticketType === 'lock' ? 'HIGH' : 'MEDIUM'
+        facilityId: activeUnit?.facilityId,
+        category: category,
+        title: title,
+        description: ticketContent.trim(),
+        priority: ticketPriority || 'MEDIUM'
       })
+      await fetchCustomerTickets()
       setTicketSubmitted(true)
       setTimeout(() => {
         setTicketSubmitted(false)
         setTicketContent('')
+        setTicketType('lock')
       }, 3500)
     } catch (err: any) {
       console.error('Support ticket creation failed:', err)
@@ -381,6 +540,81 @@ export const CustomerDashboard: React.FC = () => {
       }, 6000)
     } finally {
       setIsSubmittingTicket(false)
+    }
+  }
+
+  const formatDisplayDateTime = (d?: string) => {
+    if (!d) return '—'
+    try {
+      const date = new Date(d)
+      if (isNaN(date.getTime())) return d
+      return date.toLocaleString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      })
+    } catch {
+      return d
+    }
+  }
+
+  const getTicketCategoryMeta = (cat?: string) => {
+    switch (cat?.toUpperCase()) {
+      case 'LOCK_ISSUE':
+      case 'LOCK':
+        return { label: 'Sự cố khóa & cửa cuốn', icon: 'lock_reset', color: 'bg-rose-50 text-rose-700 border-rose-200' }
+      case 'PIN_CODE':
+      case 'PIN':
+        return { label: 'Cấp lại mã PIN', icon: 'pin', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' }
+      case 'ACCESS_ISSUE':
+        return { label: 'Truy cập kho / Barrier', icon: 'door_front', color: 'bg-blue-50 text-blue-700 border-blue-200' }
+      case 'CLEANLINESS_PEST':
+        return { label: 'Vệ sinh / Côn trùng', icon: 'pest_control', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+      case 'CLIMATE_TEMP':
+      case 'CLIMATE':
+        return { label: 'Nhiệt độ / Độ ẩm', icon: 'thermostat', color: 'bg-teal-50 text-teal-700 border-teal-200' }
+      case 'PAYMENT_ISSUE':
+      case 'BILLING':
+        return { label: 'Thanh toán & Hóa đơn', icon: 'receipt_long', color: 'bg-amber-50 text-amber-700 border-amber-200' }
+      case 'FACILITY_DAMAGE':
+        return { label: 'Cơ sở vật chất', icon: 'build', color: 'bg-orange-50 text-orange-700 border-orange-200' }
+      case 'DELEGATE':
+        return { label: 'Ủy quyền mở kho', icon: 'badge', color: 'bg-purple-50 text-purple-700 border-purple-200' }
+      default:
+        return { label: 'Khác', icon: 'help_center', color: 'bg-slate-100 text-slate-700 border-slate-200' }
+    }
+  }
+
+  const getTicketStatusMeta = (status?: string) => {
+    switch (status?.toUpperCase()) {
+      case 'CLOSED':
+        return { label: 'Đã đóng hoàn tất', badge: 'bg-slate-100 text-slate-700 border-slate-300', icon: 'task_alt' }
+      case 'RESOLVED':
+        return { label: 'Chờ khách xác nhận', badge: 'bg-emerald-100 text-emerald-800 border-emerald-300', icon: 'check_circle' }
+      case 'REOPENED':
+        return { label: 'Đang yêu cầu xử lý lại', badge: 'bg-rose-100 text-rose-800 border-rose-300', icon: 'replay' }
+      case 'IN_PROGRESS':
+        return { label: 'Đang xử lý', badge: 'bg-blue-100 text-blue-800 border-blue-200', icon: 'pending' }
+      case 'OPEN':
+      case 'PENDING':
+      default:
+        return { label: 'Chờ tiếp nhận', badge: 'bg-amber-100 text-amber-800 border-amber-200', icon: 'schedule' }
+    }
+  }
+
+  const getTicketPriorityMeta = (priority?: string) => {
+    switch (priority?.toUpperCase()) {
+      case 'URGENT':
+      case 'HIGH':
+        return { label: 'Khẩn cấp', badge: 'bg-rose-100 text-rose-800 border-rose-200' }
+      case 'MEDIUM':
+        return { label: 'Tiêu chuẩn', badge: 'bg-sky-50 text-sky-700 border-sky-200' }
+      case 'LOW':
+      default:
+        return { label: 'Thấp', badge: 'bg-slate-100 text-slate-600 border-slate-200' }
     }
   }
 
@@ -566,7 +800,11 @@ export const CustomerDashboard: React.FC = () => {
       }
     }
 
-    const rawRent = Math.round((monthlyPrice / 30) * days)
+    const rawRent = bookingPackage === 'custom'
+      ? Math.round((monthlyPrice / 30) * days)
+      : bookingPackage === '15d'
+      ? Math.round(monthlyPrice * 0.5)
+      : Math.round(monthlyPrice * months)
     const discountAmount = Math.round(rawRent * (discountPercent / 100))
     const rentAfterDiscount = rawRent - discountAmount
     const effectiveMonthly = Math.round((rentAfterDiscount / days) * 30)
@@ -592,25 +830,8 @@ export const CustomerDashboard: React.FC = () => {
     }
   }, [selectedBookingUnit, bookingPackage, bookingCustomDays, bookingStartDate])
 
-  const handlePayBookingVNPay = async (b: Booking) => {
-    try {
-      const amount = b.initialPaymentAmount || (
-        (b.totalRentalFee && b.rentalMonths ? b.totalRentalFee / b.rentalMonths : 0) + (b.depositAmount || 0)
-      ) || 1000000
-      const payment = await paymentService.createVNPayPayment({
-        bookingId: b.id,
-        paymentType: 'BOOKING_PAYMENT',
-        amount: Math.round(amount),
-        orderInfo: `Thanh toan don dat cho ${b.bookingCode}`
-      })
-      if (payment?.paymentUrl) {
-        window.location.href = payment.paymentUrl
-        return
-      }
-      alert('Không nhận được liên kết thanh toán từ cổng VNPay.')
-    } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'Không thể tạo liên kết thanh toán VNPay.')
-    }
+  const handlePayBookingVNPay = (b: Booking) => {
+    setRequestToPay(b)
   }
 
   const handleConfirmBooking = async () => {
@@ -618,9 +839,12 @@ export const CustomerDashboard: React.FC = () => {
     setIsSubmittingBooking(true)
     try {
       const months = Math.max(1, Math.round(bookingEstimate.months || 1))
+      const expectedCheckInAt = `${bookingCheckInDate}T${bookingCheckInTime || '09:00'}:00`
+
       if (bookingWorkflow === 'ONLINE_NOW') {
         // Option "Ký online & thanh toán": Tạo booking và chuyển tiếp ngay sang cổng VNPay Sandbox thực
         let bookingId = ''
+        let createdBooking: any = null
         try {
           const res = await bookingService.createBooking({
             storageUnitId: selectedBookingUnit.id,
@@ -628,12 +852,15 @@ export const CustomerDashboard: React.FC = () => {
             rentalMonths: months,
             totalRentalFee: bookingEstimate.rentAfterDiscount,
             depositPaid: bookingEstimate.deposit,
-            signingMethod: 'ONLINE'
+            signingMethod: 'ONLINE',
+            checkInTime: bookingCheckInTime || '09:00',
+            expectedCheckInAt,
           })
           if (!res?.id) {
             throw new Error('Hệ thống không trả về mã đơn đặt kho hợp lệ.')
           }
           bookingId = res.id
+          createdBooking = res
         } catch (bErr: any) {
           console.error('Booking creation error:', bErr)
           const errorMsg = bErr?.response?.data?.message || bErr?.message || 'Không thể tạo đơn đặt kho. Ngăn kho này có thể vừa được đặt hoặc đang có người giữ chỗ.'
@@ -642,7 +869,10 @@ export const CustomerDashboard: React.FC = () => {
         }
 
         // Tạo giao dịch thanh toán VNPay Sandbox và lấy URL chính thức
-        const paymentAmount = bookingEstimate.totalPayment
+        const paymentAmount = (createdBooking?.totalRentalFee != null && createdBooking?.depositAmount != null)
+          ? Math.round(Number(createdBooking.totalRentalFee) + Number(createdBooking.depositAmount))
+          : Math.round(bookingEstimate.totalPayment)
+
         try {
           const payment = await paymentService.createVNPayPayment({
             bookingId: bookingId,
@@ -659,12 +889,18 @@ export const CustomerDashboard: React.FC = () => {
         } catch (payErr: any) {
           console.error('VNPay create payment error:', payErr)
           const errorMsg = payErr?.response?.data?.message || payErr?.message || 'Không thể khởi tạo giao dịch VNPay. Vui lòng thử lại.'
-          alert(errorMsg)
-          return
+          alert(`Đơn đặt kho đã được tạo (Mã: ${createdBooking?.bookingCode || bookingId}) nhưng chưa thể mở cổng thanh toán: ${errorMsg}\nBạn có thể vào tab "Đơn đặt chỗ" để thanh toán lại bất cứ lúc nào.`)
+          handleTabChange('bookings')
+          setSelectedBookingUnit(null)
+          setBookingSuccess(false)
+          await fetchCustomerBookings()
+          await fetchContracts()
+          await fetchCustomerPayments()
         }
+        return
       }
 
-      // Option "Đặt giữ chỗ kho" (Miễn phí 24h): Giữ chỗ và hiển thị màn hình hoàn tất
+      // Option "Giữ chỗ miễn phí theo lịch hẹn": Giữ chỗ theo lịch hẹn và hạn chính sách
       try {
         const res = await bookingService.createBooking({
           storageUnitId: selectedBookingUnit.id,
@@ -672,7 +908,9 @@ export const CustomerDashboard: React.FC = () => {
           rentalMonths: months,
           totalRentalFee: bookingEstimate.rentAfterDiscount,
           depositPaid: 0,
-          signingMethod: 'IN_PERSON'
+          signingMethod: 'IN_PERSON',
+          checkInTime: bookingCheckInTime || '09:00',
+          expectedCheckInAt,
         })
         if (!res?.id) {
           throw new Error('Hệ thống không trả về thông tin xác nhận.')
@@ -680,7 +918,10 @@ export const CustomerDashboard: React.FC = () => {
         setCreatedBookingResult({
           bookingCode: res.bookingCode,
           unitCode: selectedBookingUnit.unitCode,
-          facilityName: selectedBookingUnit.facilityName
+          facilityName: selectedBookingUnit.facilityName,
+          expectedCheckInAt: res.expectedCheckInAt,
+          holdExpiresAt: res.holdExpiresAt,
+          paymentStatus: res.paymentStatus,
         })
         setBookingSuccess(true)
         await fetchCustomerBookings()
@@ -694,6 +935,40 @@ export const CustomerDashboard: React.FC = () => {
       }
     } finally {
       setIsSubmittingBooking(false)
+    }
+  }
+
+  const handleOpenRescheduleModal = (booking: Booking) => {
+    setRescheduleBookingTarget(booking)
+    const baseDate = booking.expectedCheckInAt ? booking.expectedCheckInAt.slice(0, 10) : booking.startDate
+    setRescheduleNewDate(baseDate || new Date().toISOString().split('T')[0])
+    const baseTime = booking.expectedCheckInAt ? booking.expectedCheckInAt.slice(11, 16) : (booking.checkInTime || '09:00')
+    setRescheduleNewTime(baseTime)
+    setRescheduleReason('')
+    setRescheduleError(null)
+    setRescheduleSuccess(false)
+  }
+
+  const handleRescheduleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!rescheduleBookingTarget) return
+    setIsSubmittingReschedule(true)
+    setRescheduleError(null)
+    try {
+      const newExpectedCheckInAt = `${rescheduleNewDate}T${rescheduleNewTime || '09:00'}:00`
+      await bookingService.rescheduleBooking(rescheduleBookingTarget.id, {
+        newStartDate: rescheduleNewDate,
+        newCheckInTime: rescheduleNewTime || '09:00',
+        newExpectedCheckInAt,
+        reason: rescheduleReason.trim() || undefined,
+      })
+      setRescheduleSuccess(true)
+      await fetchCustomerBookings()
+    } catch (err: any) {
+      console.error('Reschedule booking error:', err)
+      setRescheduleError(err?.response?.data?.message || err?.message || 'Không thể đổi lịch hẹn. Kho có thể không khả dụng trong thời gian mới.')
+    } finally {
+      setIsSubmittingReschedule(false)
     }
   }
 
@@ -750,6 +1025,46 @@ export const CustomerDashboard: React.FC = () => {
     }, 2000)
   }
 
+  const getBookingNoticeInfo = (b: Booking) => {
+    const matchingContract = contracts.find(c =>
+      (c.bookingId && (c.bookingId === b.id || c.bookingId === b.bookingCode)) ||
+      (c.unitCode && c.unitCode === b.unitCode)
+    )
+    const isPaid = b.paymentStatus === 'PAID'
+    const isContractSigned = Boolean(
+      b.status === 'ACTIVE' ||
+      (matchingContract && (
+        matchingContract.status === 'ACTIVE' ||
+        matchingContract.status === 'PENDING_ACTIVATION' ||
+        Boolean(matchingContract.signedAt) ||
+        Boolean(matchingContract.signedDocumentUrl) ||
+        Boolean((matchingContract as any).paperVerifiedAt) ||
+        Boolean(matchingContract.signatureData)
+      ))
+    )
+
+    let scenario: 'CANCELLED_OR_OVERDUE' | 'ACTIVE' | 'PAID_SIGNED' | 'PAID_UNSIGNED' | 'UNPAID_IN_PERSON' = 'UNPAID_IN_PERSON'
+
+    if (b.status === 'CANCELLED' || b.status === 'OVERDUE') {
+      scenario = 'CANCELLED_OR_OVERDUE'
+    } else if (b.status === 'ACTIVE') {
+      scenario = 'ACTIVE'
+    } else if (isPaid && isContractSigned) {
+      scenario = 'PAID_SIGNED'
+    } else if (isPaid && !isContractSigned) {
+      scenario = 'PAID_UNSIGNED'
+    } else {
+      scenario = 'UNPAID_IN_PERSON'
+    }
+
+    return {
+      matchingContract,
+      isPaid,
+      isContractSigned,
+      scenario,
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6 text-left max-w-7xl mx-auto pb-12">
       
@@ -758,13 +1073,13 @@ export const CustomerDashboard: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex flex-col">
             <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 mb-1">
-              <span className="font-mono uppercase tracking-wider text-[11px] font-bold">Boxora Smart Storage Portal</span>
+              <span className="text-[11px] font-semibold text-slate-500">Hệ thống quản lý kho tự quản Boxora</span>
             </div>
-            <h1 className="font-headline text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
-              Xin chào, {user?.fullName || user?.username || 'Quý khách'} 👋
+            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
+              Xin chào, {user?.fullName || user?.username || 'Quý khách'}
             </h1>
             <p className="text-xs md:text-sm text-slate-600 mt-1">
-              Quản lý kho đang thuê, mở khóa Smart Lock từ xa và theo dõi trạng thái bảo mật thời gian thực.
+              Quản lý kho đang thuê, kiểm tra mã PIN và theo dõi trạng thái khóa bảo mật.
             </p>
           </div>
 
@@ -779,7 +1094,7 @@ export const CustomerDashboard: React.FC = () => {
               onClick={() => handleTabChange('support')}
               className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
             >
-              <span>Hỗ trợ kỹ thuật</span>
+              <span>Hỗ trợ và sự cố</span>
             </button>
           </div>
         </div>
@@ -791,11 +1106,8 @@ export const CustomerDashboard: React.FC = () => {
               <span className="material-symbols-outlined text-[24px]">garage_door</span>
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Kho đang thuê</span>
-              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{activeContracts.length} Kho Hoạt Động</span>
-              <span className="text-xs text-slate-500 truncate">
-                {activeContracts.length > 0 ? activeContracts.map(c => `#${c.unitCode}`).join(' & ') : 'Chưa có kho hoạt động'}
-              </span>
+              <span className="text-[11px] font-semibold text-slate-500">Kho đang thuê</span>
+              <span className="text-xl font-bold text-slate-900 mt-0.5">{activeContracts.length} kho đang hoạt động</span>
             </div>
           </div>
 
@@ -803,16 +1115,16 @@ export const CustomerDashboard: React.FC = () => {
             onClick={() => handleTabChange('bookings')}
             className="stitch-card p-5 flex items-center gap-4 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all group"
           >
-            <div className="w-12 h-12 rounded-xl bg-cyan-50 text-cyan-700 flex items-center justify-center shrink-0 border border-cyan-100 group-hover:scale-105 transition-transform">
+            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0 border border-blue-100 group-hover:scale-105 transition-transform">
               <span className="material-symbols-outlined text-[24px]">pending_actions</span>
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                Đơn đặt giữ chỗ
+              <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
+                Đơn đặt chỗ
                 {pendingReservations.length > 0 && <span className="pulsing-dot bg-amber-500"></span>}
               </span>
-              <span className="font-mono text-xl font-bold text-cyan-800 mt-0.5">
-                {pendingReservations.length} Chờ Nhận Kho
+              <span className="text-xl font-bold text-slate-900 mt-0.5">
+                {pendingReservations.length} chờ nhận kho
               </span>
               <span className="text-xs text-slate-500 truncate">
                 {customerBookings.length > 0 ? `${customerBookings.length} đơn trong lịch sử` : 'Chưa có đơn đặt chỗ'}
@@ -825,12 +1137,12 @@ export const CustomerDashboard: React.FC = () => {
               <span className="material-symbols-outlined text-[24px]">lock</span>
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                Bảo mật cửa kho
+              <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
+                Trạng thái khóa
                 <span className="pulsing-dot bg-emerald-500"></span>
               </span>
-              <span className="font-mono text-xl font-bold text-emerald-700 mt-0.5">Đã Khóa An Toàn</span>
-              <span className="text-xs text-slate-500 truncate">Mã PIN điện tử &amp; Mở từ xa</span>
+              <span className="text-xl font-bold text-emerald-700 mt-0.5">Đã khóa</span>
+              <span className="text-xs text-slate-500 truncate">Bảo mật mã PIN điện tử</span>
             </div>
           </div>
 
@@ -839,10 +1151,10 @@ export const CustomerDashboard: React.FC = () => {
               <span className="material-symbols-outlined text-[24px]">event_available</span>
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Hạn hợp đồng gần nhất</span>
-              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{nearestEndDate}</span>
+              <span className="text-[11px] font-semibold text-slate-500">Hợp đồng gần nhất hết hạn</span>
+              <span className="text-xl font-bold text-slate-900 mt-0.5">{nearestEndDate}</span>
               <span className="text-xs text-amber-700 font-semibold truncate">
-                {nearestEndDate !== '--' ? `Hạn kết thúc: ${nearestEndDate}` : 'Không có hạn kết thúc'}
+                {nearestEndDate !== '--' ? `Ngày hết hạn: ${nearestEndDate}` : 'Không có hợp đồng'}
               </span>
             </div>
           </div>
@@ -853,13 +1165,13 @@ export const CustomerDashboard: React.FC = () => {
       <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl w-fit border border-slate-200 shadow-sm overflow-x-auto max-w-full">
         <button
           onClick={() => handleTabChange('my-units')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'my-units'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span>Kho Của Tôi</span>
+          <span>Kho của tôi</span>
           <span className="px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold">
             {activeContracts.length}
           </span>
@@ -867,13 +1179,13 @@ export const CustomerDashboard: React.FC = () => {
 
         <button
           onClick={() => handleTabChange('bookings')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'bookings'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span>Lịch Sử Đặt Chỗ</span>
+          <span>Đơn đặt chỗ</span>
           <div className="flex items-center gap-1">
             <span className={`px-1.5 py-0.5 rounded-full text-white text-[10px] font-bold ${
               pendingReservations.length > 0 ? 'bg-amber-600' : 'bg-slate-700'
@@ -888,24 +1200,24 @@ export const CustomerDashboard: React.FC = () => {
 
         <button
           onClick={() => handleTabChange('explore')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'explore'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span>Tìm &amp; Thuê Thêm Kho</span>
+          <span>Tìm &amp; thuê kho mới</span>
         </button>
 
         <button
           onClick={() => handleTabChange('contracts')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'contracts'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span>Hợp Đồng &amp; Hóa Đơn</span>
+          <span>Hợp đồng &amp; hóa đơn</span>
           <span className="px-1.5 py-0.5 rounded-full bg-slate-700 text-white text-[10px] font-bold">
             {contracts.length}
           </span>
@@ -913,13 +1225,20 @@ export const CustomerDashboard: React.FC = () => {
 
         <button
           onClick={() => handleTabChange('support')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'support'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <span>Hỗ Trợ &amp; Báo Sự Cố</span>
+          <span>Hỗ trợ &amp; sự cố</span>
+          {customerTickets.length > 0 && (
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+              activeTab === 'support' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-700'
+            }`}>
+              {customerTickets.length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -937,13 +1256,15 @@ export const CustomerDashboard: React.FC = () => {
               </div>
               <div className="space-y-2">
                 {bookingRequests.slice(0, 5).map(request => {
-                  const statusLabel = request.status === 'PENDING_APPROVAL'
-                    ? 'Đang chờ quản lý duyệt'
+                  const statusLabel = request.status === 'CONFIRMED'
+                    ? 'Đã xác nhận đặt chỗ'
                     : request.status === 'PENDING_PAYMENT'
-                      ? 'Đã duyệt · chờ thanh toán'
-                      : 'Yêu cầu đã đóng'
-                  const statusClass = request.status === 'PENDING_APPROVAL'
-                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                      ? 'Chờ thanh toán'
+                      : request.status === 'PENDING_APPROVAL'
+                        ? 'Chờ xử lý'
+                        : 'Yêu cầu đã đóng'
+                  const statusClass = request.status === 'CONFIRMED'
+                    ? 'bg-blue-50 text-blue-800 border-blue-200'
                     : request.status === 'PENDING_PAYMENT'
                       ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                       : 'bg-slate-100 text-slate-600 border-slate-200'
@@ -961,7 +1282,7 @@ export const CustomerDashboard: React.FC = () => {
                             onClick={() => setRequestToPay(request)}
                             className="rounded-lg bg-cyan-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-cyan-800"
                           >
-                            Tiếp tục thanh toán
+                            Thanh toán và ký hợp đồng trực tuyến ngay -&gt;
                           </button>
                         )}
                       </div>
@@ -1016,9 +1337,40 @@ export const CustomerDashboard: React.FC = () => {
                 const isLoadingPin = loadingPins[c.unitCode]
                 const isUnlocking = unlockingUnit === c.unitCode
                 const isUnlocked = unlockedSuccess === c.unitCode
+                const cleanCardCode = (c.unitCode || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+                const cleanHighlightCode = (highlightedUnitCode || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+                const isHighlighted = Boolean(highlightedUnitCode && cleanCardCode === cleanHighlightCode)
 
                 return (
-                  <div key={c.id} className="stitch-card p-6 flex flex-col justify-between">
+                  <div 
+                    key={c.id} 
+                    id={`unit-card-${cleanCardCode}`}
+                    className={`stitch-card p-6 flex flex-col justify-between transition-all duration-500 relative ${
+                      isHighlighted
+                        ? 'ring-4 ring-blue-500 shadow-[0_20px_50px_rgba(37,99,235,0.35),0_0_25px_rgba(59,130,246,0.3)] !border-blue-500 bg-gradient-to-b from-blue-50/50 via-white to-white scale-[1.02] z-10'
+                        : 'hover:shadow-md'
+                    }`}
+                  >
+                    {isHighlighted && (
+                      <div className="mb-4 -mt-1 px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold flex items-center justify-between shadow-md animate-in fade-in zoom-in-95 duration-200">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[18px]">verified</span>
+                          <span>Kho đang xem: #{c.unitCode}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setHighlightedUnitCode(null)
+                          }}
+                          className="text-white/80 hover:text-white cursor-pointer px-1.5 py-0.5 rounded hover:bg-white/20 transition-colors flex items-center gap-1 text-[11px]"
+                          title="Tắt làm nổi bật"
+                        >
+                          <span>Đóng</span>
+                          <span className="material-symbols-outlined text-[14px]">close</span>
+                        </button>
+                      </div>
+                    )}
                     <div className="flex flex-col gap-4">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
@@ -1062,35 +1414,35 @@ export const CustomerDashboard: React.FC = () => {
                       {/* Thời Gian Bắt Đầu & Kết Thúc Thuê Kho */}
                       <div className="grid grid-cols-2 gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
                         <div className="flex flex-col">
-                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1">
+                          <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
                             <span className="material-symbols-outlined text-[15px] text-blue-600">play_circle</span>
-                            Thời gian bắt đầu
+                            Ngày bắt đầu
                           </span>
-                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-900 mt-1">
+                          <span className="text-xs sm:text-sm font-semibold text-slate-900 mt-1">
                             {formatDisplayDate(c.startDate)}
                           </span>
                         </div>
                         <div className="flex flex-col">
-                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1">
+                          <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
                             <span className="material-symbols-outlined text-[15px] text-amber-600">event_available</span>
-                            Thời gian kết thúc
+                            Ngày kết thúc
                           </span>
-                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-900 mt-1">
+                          <span className="text-xs sm:text-sm font-semibold text-slate-900 mt-1">
                             {formatDisplayDate(c.endDate)}
                           </span>
                         </div>
                       </div>
 
                       {/* Security PIN Box */}
-                      <div className="p-4 rounded-xl bg-blue-50/40 border border-blue-200 shadow-xs flex flex-col gap-3 relative overflow-hidden">
+                      <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200 flex flex-col gap-3 relative overflow-hidden">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs sm:text-sm font-bold text-slate-900">
-                              Mã PIN truy cập cửa kho
+                            <span className="text-xs sm:text-sm font-semibold text-slate-900">
+                              Mã PIN mở khóa cửa
                             </span>
                           </div>
-                          <span className="px-2 py-0.5 rounded bg-white border border-blue-200 text-[10px] font-mono text-blue-700 font-semibold">
-                            Bảo mật AES-256
+                          <span className="px-2 py-0.5 rounded bg-white border border-slate-200 text-[10px] text-slate-600 font-medium">
+                            Bảo mật thiết bị
                           </span>
                         </div>
 
@@ -1100,8 +1452,8 @@ export const CustomerDashboard: React.FC = () => {
                               <div className="flex items-center gap-2 font-mono text-[16px] text-slate-400 tracking-widest select-none">
                                 <span>●</span><span>●</span><span>●</span><span>●</span><span>●</span><span>●</span>
                               </div>
-                              <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">
-                                {isLoadingPin ? 'Đang giải mã AES-256...' : '(Nhấn để hiển thị)'}
+                              <span className="text-[11px] text-slate-400 hidden sm:inline">
+                                {isLoadingPin ? 'Đang tải...' : '(Nhấn để xem)'}
                               </span>
                             </div>
                             <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -1111,7 +1463,7 @@ export const CustomerDashboard: React.FC = () => {
                                 disabled={isLoadingPin}
                                 className="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
                               >
-                                <span>{isLoadingPin ? 'Đang giải mã...' : 'Xem mã PIN'}</span>
+                                <span>{isLoadingPin ? 'Đang tải...' : 'Xem mã PIN'}</span>
                               </button>
                               <button
                                 type="button"
@@ -1124,13 +1476,13 @@ export const CustomerDashboard: React.FC = () => {
                             </div>
                           </div>
                         ) : (
-                          <div className="flex flex-col gap-2.5 py-2.5 px-4 rounded-lg bg-white border border-blue-200">
+                          <div className="flex flex-col gap-2.5 py-2.5 px-4 rounded-lg bg-white border border-slate-200">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <div className="flex items-center gap-2">
-                                <span className="text-[11px] font-mono text-slate-600 font-semibold">Mã số PIN:</span>
-                                <div className="flex items-center gap-1 font-mono text-base font-bold text-blue-900 tracking-wider">
+                                <span className="text-[11px] text-slate-600 font-medium">Mã PIN:</span>
+                                <div className="flex items-center gap-1 font-mono text-base font-bold text-slate-900 tracking-wider">
                                   {(pin || '------').split('').map((digit: string, idx: number) => (
-                                    <span key={idx} className="px-2 py-1 rounded bg-blue-50 border border-blue-200 text-blue-900">
+                                    <span key={idx} className="px-2 py-1 rounded bg-slate-100 border border-slate-200 text-slate-900">
                                       {digit}
                                     </span>
                                   ))}
@@ -1140,7 +1492,7 @@ export const CustomerDashboard: React.FC = () => {
                                 type="button"
                                 disabled={!pin}
                                 onClick={() => handleCopy(c.unitCode, pin)}
-                                className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                                className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
                               >
                                 <span className="material-symbols-outlined text-[14px]">content_copy</span>
                                 <span>{copiedPin === c.unitCode ? 'Đã sao chép' : 'Sao chép'}</span>
@@ -1150,10 +1502,10 @@ export const CustomerDashboard: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => togglePinReveal(c.unitCode, targetId)}
-                              className="w-full mt-1 py-2 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                              className="w-full mt-1 py-1.5 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                             >
                               <span className="material-symbols-outlined text-[16px]">visibility_off</span>
-                              <span>Ẩn xem</span>
+                              <span>Ẩn mã PIN</span>
                             </button>
                           </div>
                         )}
@@ -1162,14 +1514,14 @@ export const CustomerDashboard: React.FC = () => {
                       {/* Metrics: Giá thuê & Tiền cọc */}
                       <div className="grid grid-cols-2 gap-2 text-center">
                         <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                          <span className="text-[10px] text-slate-400 block uppercase font-medium">Giá thuê hàng tháng</span>
-                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-800">
+                          <span className="text-[11px] text-slate-500 block font-normal">Giá thuê hàng tháng</span>
+                          <span className="text-sm font-semibold text-slate-900">
                             {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫
                           </span>
                         </div>
                         <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                          <span className="text-[10px] text-slate-400 block uppercase font-medium">Tiền cọc lưu ký</span>
-                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-800">
+                          <span className="text-[11px] text-slate-500 block font-normal">Tiền cọc lưu ký</span>
+                          <span className="text-sm font-semibold text-slate-900">
                             {Number(c.depositHeld || 0).toLocaleString('vi-VN')} ₫
                           </span>
                         </div>
@@ -1182,7 +1534,7 @@ export const CustomerDashboard: React.FC = () => {
                         className="stitch-btn-secondary flex-1 text-xs py-2.5 flex items-center justify-center gap-1.5"
                       >
                         <span className="material-symbols-outlined text-[18px]">autorenew</span>
-                        <span>Yêu Cầu Gia Hạn</span>
+                        <span>Yêu cầu gia hạn</span>
                       </button>
                       <button
                         onClick={() => {
@@ -1215,9 +1567,7 @@ export const CustomerDashboard: React.FC = () => {
                   <span className="material-symbols-outlined text-blue-600">history_edu</span>
                   <span>Lịch Sử Đặt Giữ Chỗ Kho Boxora</span>
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Theo dõi trạng thái tất cả các lượt đặt kho, tiến độ nhận kho, tiền đặt cọc và hợp đồng lưu trữ từ database.
-                </p>
+                
               </div>
 
               <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
@@ -1260,7 +1610,7 @@ export const CustomerDashboard: React.FC = () => {
                 </span>
                 <input
                   type="text"
-                  placeholder="Tìm theo mã đơn (BX-...), mã kho (D1-...), hoặc cơ sở..."
+                  placeholder="Tìm theo mã đặt chỗ (BX-...), mã kho (D1-..., D7-...), hoặc cơ sở..."
                   value={bookingSearchTerm}
                   onChange={(e) => setBookingSearchTerm(e.target.value)}
                   className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
@@ -1388,40 +1738,68 @@ export const CustomerDashboard: React.FC = () => {
                             </div>
                           </div>
 
-                          <div className="text-right">
-                            <span
-                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                                b.status === 'CONFIRMED'
-                                  ? 'bg-cyan-100 text-cyan-800 border border-cyan-200'
-                                  : b.status === 'PENDING_PAYMENT'
-                                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                  : b.status === 'ACTIVE'
-                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                  : b.status === 'COMPLETED'
-                                  ? 'bg-slate-100 text-slate-700 border border-slate-200'
-                                  : 'bg-rose-100 text-rose-700 border border-rose-200'
-                              }`}
-                            >
-                              {isPendingCheckin && (
-                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-600 animate-pulse"></span>
-                              )}
-                              {isActive && (
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                              )}
-                              <span>
-                                {b.status === 'CONFIRMED'
-                                  ? 'Đã Giữ Chỗ • Chờ Nhận Kho'
-                                  : b.status === 'PENDING_PAYMENT'
-                                  ? 'Chờ Thanh Toán Cọc'
-                                  : b.status === 'ACTIVE'
-                                  ? 'Đang Hoạt Động'
-                                  : b.status === 'COMPLETED'
-                                  ? 'Đã Hoàn Tất'
-                                  : b.status === 'OVERDUE'
-                                  ? 'Quá Hạn'
-                                  : 'Đã Hủy'}
-                              </span>
-                            </span>
+                          <div className="text-right flex flex-col items-end gap-1">
+                            {(() => {
+                              const info = getBookingNoticeInfo(b)
+                              if (b.status === 'CANCELLED' || b.status === 'OVERDUE') {
+                                return (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
+                                    {b.status === 'OVERDUE' ? 'Quá Hạn' : 'Đã Hủy'}
+                                  </span>
+                                )
+                              }
+                              if (b.status === 'ACTIVE') {
+                                return (
+                                  <>
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                                      Đang Hoạt Động
+                                    </span>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                      ✓ Đã thanh toán đủ
+                                    </span>
+                                  </>
+                                )
+                              }
+                              if (info.scenario === 'PAID_SIGNED') {
+                                return (
+                                  <>
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                                      Đã Giữ Chỗ • Chờ Nhận Kho
+                                    </span>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                      ✓ Đã thanh toán &amp; Ký HĐ
+                                    </span>
+                                  </>
+                                )
+                              }
+                              if (info.scenario === 'PAID_UNSIGNED') {
+                                return (
+                                  <>
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-200">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-600 animate-pulse"></span>
+                                      Đã Giữ Chỗ • Chờ Nhận Kho
+                                    </span>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                      ✓ Đã thanh toán (Chờ ký HĐ)
+                                    </span>
+                                  </>
+                                )
+                              }
+                              // UNPAID_IN_PERSON
+                              return (
+                                <>
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-200">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-600 animate-pulse"></span>
+                                    Đã Giữ Chỗ (Tại cơ sở)
+                                  </span>
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                                    ○ Chưa thanh toán (Tại cơ sở)
+                                  </span>
+                                </>
+                              )
+                            })()}
                           </div>
                         </div>
 
@@ -1432,16 +1810,20 @@ export const CustomerDashboard: React.FC = () => {
                             <span className="font-mono font-bold text-slate-900">{b.bookingCode}</span>
                           </div>
                           <div>
-                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Vị trí tầng</span>
-                            <span className="font-medium text-slate-800">{b.floorLevel || 'Tầng 1 - Khu A'}</span>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Lịch hẹn nhận kho</span>
+                            <span className="font-mono font-bold text-slate-900">
+                              {b.expectedCheckInAt ? new Date(b.expectedCheckInAt).toLocaleString('vi-VN') : b.startDate}
+                            </span>
                           </div>
                           <div>
                             <span className="text-slate-400 block text-[10px] uppercase font-bold">Thời hạn thuê</span>
                             <span className="font-semibold text-slate-800">{b.rentalMonths} tháng</span>
                           </div>
                           <div>
-                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Ngày nhận kho</span>
-                            <span className="font-mono text-slate-800">{b.startDate}</span>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Hạn giữ chỗ</span>
+                            <span className="font-mono font-bold text-amber-700">
+                              {b.holdExpiresAt ? new Date(b.holdExpiresAt).toLocaleString('vi-VN') : (b.status === 'ACTIVE' ? 'Đã kích hoạt' : 'Theo chính sách')}
+                            </span>
                           </div>
                           <div>
                             <span className="text-slate-400 block text-[10px] uppercase font-bold">Tiền cọc giữ chỗ</span>
@@ -1458,39 +1840,120 @@ export const CustomerDashboard: React.FC = () => {
                         </div>
 
                         {/* Status Notice Block */}
-                        {b.status === 'CONFIRMED' && (
-                          <div className="p-3 rounded-lg bg-cyan-50/70 border border-cyan-200 text-[11px] text-cyan-900 flex items-start gap-2">
-                            <span className="material-symbols-outlined text-[16px] text-cyan-700 shrink-0 mt-0.5">
-                              info
+                        {(b.status === 'CANCELLED' || b.status === 'OVERDUE') && (
+                          <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-[11px] text-rose-800 flex items-start gap-2">
+                            <span className="material-symbols-outlined text-[16px] text-rose-600 shrink-0 mt-0.5">
+                              event_busy
                             </span>
                             <div className="leading-relaxed">
-                              <strong>Đã lưu ký cọc thành công:</strong> Vui lòng mang CCCD gốc đến cơ sở Boxora để nhân viên hoàn tất thủ tục bàn giao kho và cấp quyền mở khóa SmartLock.
+                              <strong>Đơn giữ chỗ đã hết hạn / đã hủy:</strong> {b.holdExpiresAt ? `Hạn giữ chỗ đã kết thúc lúc ${new Date(b.holdExpiresAt).toLocaleString('vi-VN')}. ` : ''}Kho đã được tự động giải phóng theo chính sách cơ sở.
                             </div>
                           </div>
                         )}
 
-                        {b.status === 'PENDING_PAYMENT' && (
-                          <div className="space-y-2">
-                            <div className="p-3 rounded-lg bg-amber-50/80 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
-                              <span className="material-symbols-outlined text-[16px] text-amber-700 shrink-0 mt-0.5">
-                                schedule
-                              </span>
-                              <div className="leading-relaxed">
-                                Đơn đặt kho đang trong thời gian giữ chỗ 24h. Vui lòng thanh toán tiền cọc để xác nhận giữ kho chính thức.
+                        {/* 3 Status Notice Cases for Reservations */}
+                        {(() => {
+                          const info = getBookingNoticeInfo(b)
+
+                          // Case 3: Đã thanh toán và ký hợp đồng rồi
+                          if (info.scenario === 'PAID_SIGNED') {
+                            return (
+                              <div className="p-3 rounded-lg bg-emerald-50/80 border border-emerald-200 text-[11px] text-emerald-950 flex items-start gap-2.5">
+                                <span className="material-symbols-outlined text-[18px] text-emerald-600 shrink-0 mt-0.5">
+                                  verified
+                                </span>
+                                <div className="leading-relaxed flex-1">
+                                  <div className="font-bold text-emerald-900 mb-0.5 flex items-center justify-between">
+                                    <span>Đã thanh toán &amp; ký hợp đồng rồi</span>
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-bold">
+                                      <span className="material-symbols-outlined text-[11px]">task_alt</span>
+                                      Sẵn sàng nhận kho
+                                    </span>
+                                  </div>
+                                  <div>
+                                    Thủ tục hợp đồng và thanh toán đã hoàn tất 100%! Quý khách chỉ cần mang CCCD gốc đến cơ sở Boxora đúng lịch hẹn (<strong>{b.expectedCheckInAt ? new Date(b.expectedCheckInAt).toLocaleString('vi-VN') : b.startDate}</strong>) để xem kho thực tế, nhận bàn giao và nhận mã PIN SmartLock. <em>Lưu ý: Thời hạn thuê kho sẽ chính thức có hiệu lực tính từ ngày bạn check-in và kích hoạt mã PIN tại cơ sở.</em>
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                            <div className="flex items-center justify-end">
-                              <button
-                                type="button"
-                                onClick={() => handlePayBookingVNPay(b)}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                              >
-                                <span className="material-symbols-outlined text-sm">credit_card</span>
-                                Thanh toán qua VNPay Sandbox
-                              </button>
-                            </div>
-                          </div>
-                        )}
+                            )
+                          }
+
+                          // Case 2: Đã thanh toán nhưng chưa ký
+                          if (info.scenario === 'PAID_UNSIGNED') {
+                            return (
+                              <div className="p-3 rounded-lg bg-blue-50/80 border border-blue-200 text-[11px] text-blue-950 flex items-start gap-2.5">
+                                <span className="material-symbols-outlined text-[18px] text-blue-600 shrink-0 mt-0.5">
+                                  edit_document
+                                </span>
+                                <div className="leading-relaxed flex-1">
+                                  <div className="font-bold text-blue-900 mb-0.5 flex items-center justify-between">
+                                    <span>Đã thanh toán nhưng chưa ký</span>
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[9px] font-bold">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                                      Chờ ký hợp đồng
+                                    </span>
+                                  </div>
+                                  <div>
+                                    Đơn đặt kho đã thanh toán đủ. Quý khách vui lòng ký hợp đồng điện tử trực tuyến (DocuSeal) hoặc mang CCCD gốc đến cơ sở Boxora để ký hợp đồng và nhận bàn giao kho.
+                                  </div>
+                                  {info.matchingContract && info.matchingContract.status === 'PENDING_SIGNATURE' ? (
+                                    <div className="mt-2.5 flex items-center justify-end">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSignContractNow(info.matchingContract!)}
+                                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                                      >
+                                        <span className="material-symbols-outlined text-[15px]">draw</span>
+                                        <span>Ký hợp đồng điện tử ngay</span>
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="mt-1 text-[10px] text-blue-700 italic">
+                                      (Quý khách có thể ký trực tiếp khi mang CCCD gốc đến cơ sở nhận kho)
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          }
+
+                          // Case 1: Check-in thanh toán và ký hợp đồng tại chỗ
+                          if (info.scenario === 'UNPAID_IN_PERSON') {
+                            return (
+                              <div className="space-y-2">
+                                <div className="p-3 rounded-lg bg-amber-50/80 border border-amber-200 text-[11px] text-amber-950 flex items-start gap-2.5">
+                                  <span className="material-symbols-outlined text-[18px] text-amber-700 shrink-0 mt-0.5">
+                                    storefront
+                                  </span>
+                                  <div className="leading-relaxed flex-1">
+                                    <div className="font-bold text-amber-900 mb-0.5 flex items-center justify-between">
+                                      <span>Check-in thanh toán và ký hợp đồng tại chỗ</span>
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-bold">
+                                        Thanh toán tại quầy
+                                      </span>
+                                    </div>
+                                    <div>
+                                      Kho được bảo lưu riêng cho bạn đến <strong>{b.holdExpiresAt ? new Date(b.holdExpiresAt).toLocaleString('vi-VN') : 'lịch hẹn + thời gian gia hạn'}</strong>. Quý khách vui lòng mang CCCD gốc đến cơ sở Boxora để xem kho thực tế, ký hợp đồng và thanh toán nhận bàn giao.
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePayBookingVNPay(b)}
+                                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                                    title="Thanh toán trước để hoàn tất nhanh thủ tục"
+                                  >
+                                    <span className="material-symbols-outlined text-sm">credit_card</span>
+                                    <span>Thanh toán và ký hợp đồng trực tuyến ngay -&gt;</span>
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          }
+
+                          return null
+                        })()}
 
                         {b.status === 'ACTIVE' && (
                           <div className="p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200 text-[11px] text-emerald-900 flex items-center justify-between">
@@ -1500,7 +1963,7 @@ export const CustomerDashboard: React.FC = () => {
                             </span>
                             <button
                               type="button"
-                              onClick={() => handleTabChange('my-units')}
+                              onClick={() => handleGoToMyUnit(b.unitCode)}
                               className="text-xs font-bold text-emerald-700 hover:text-emerald-900 underline cursor-pointer"
                             >
                               Xem mã PIN cửa kho
@@ -1510,36 +1973,53 @@ export const CustomerDashboard: React.FC = () => {
                       </div>
 
                       {/* Card Footer Actions */}
-                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedBookingForModal(b)}
-                          className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer flex-1 justify-center"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">visibility</span>
-                          <span>Chi Tiết &amp; Hướng Dẫn</span>
-                        </button>
-
-                        {b.status === 'ACTIVE' ? (
-                          <button
-                            type="button"
-                            onClick={() => handleTabChange('my-units')}
-                            className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
-                          >
-                            <span>Vào kho</span>
-                            <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                          </button>
-                        ) : (
+                      {b.status !== 'CANCELLED' && b.status !== 'OVERDUE' && (
+                        <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                           <button
                             type="button"
                             onClick={() => setSelectedBookingForModal(b)}
-                            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer flex-1 justify-center"
                           >
-                            <span>Nhận kho</span>
-                            <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                            <span className="material-symbols-outlined text-[16px]">visibility</span>
+                            <span>Chi Tiết &amp; Hướng Dẫn</span>
                           </button>
-                        )}
-                      </div>
+
+                          {(b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT') && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenRescheduleModal(b)}
+                                className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors cursor-pointer border border-amber-200"
+                                title="Đổi ngày / giờ hẹn nhận kho"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">edit_calendar</span>
+                                <span>Đổi lịch</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setCancellingBookingTarget(b)}
+                                className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-900 text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors cursor-pointer border border-rose-200"
+                                title="Hủy đơn đặt giữ chỗ kho"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">event_busy</span>
+                                <span>Hủy đơn</span>
+                              </button>
+                            </>
+                          )}
+
+                          {b.status === 'ACTIVE' && (
+                            <button
+                              type="button"
+                              onClick={() => handleGoToMyUnit(b.unitCode)}
+                              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:shadow"
+                            >
+                              <span>Vào kho</span>
+                              <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -1573,6 +2053,19 @@ export const CustomerDashboard: React.FC = () => {
               </select>
 
               <select
+                value={filterFloor}
+                onChange={(e) => setFilterFloor(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
+              >
+                <option value="all">Tất cả tầng</option>
+                {availableFloors.map(floor => (
+                  <option key={floor} value={floor}>
+                    {floor.startsWith('Floor ') ? `Tầng ${floor.replace('Floor ', '')}` : floor}
+                  </option>
+                ))}
+              </select>
+
+              <select
                 value={filterSize}
                 onChange={(e) => setFilterSize(e.target.value)}
                 className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
@@ -1593,6 +2086,7 @@ export const CustomerDashboard: React.FC = () => {
               </div>
             ) : availableUnits.filter(u => {
                 if (filterFacility !== 'all' && u.facilityId !== filterFacility) return false
+                if (filterFloor !== 'all' && u.floorLevel !== filterFloor) return false
                 const area = u.areaSqMeters || 6
                 if (filterSize === 'mini' && area > 5) return false
                 if (filterSize === 'family' && (area <= 5 || area > 10)) return false
@@ -1605,6 +2099,7 @@ export const CustomerDashboard: React.FC = () => {
             ) : (
               availableUnits.filter(u => {
                 if (filterFacility !== 'all' && u.facilityId !== filterFacility) return false
+                if (filterFloor !== 'all' && u.floorLevel !== filterFloor) return false
                 const area = u.areaSqMeters || 6
                 if (filterSize === 'mini' && area > 5) return false
                 if (filterSize === 'family' && (area <= 5 || area > 10)) return false
@@ -1865,7 +2360,18 @@ export const CustomerDashboard: React.FC = () => {
                         <td className="py-3.5 px-4 font-unit-code text-xs font-bold text-slate-900">#{c.contractCode}</td>
                         <td className="py-3.5 px-4 font-bold text-blue-600">#{c.unitCode}</td>
                         <td className="py-3.5 px-4 text-slate-700">{c.facilityName || 'Boxora Facility'}</td>
-                        <td className="py-3.5 px-4 text-slate-700 font-mono">{c.startDate} — {c.endDate}</td>
+                        <td className="py-3.5 px-4 text-slate-700 font-mono">
+                          {c.status === 'PENDING_ACTIVATION' ? (
+                            <div className="flex flex-col">
+                              <span>{c.startDate} — {c.endDate}</span>
+                              <span className="text-[10px] text-cyan-700 font-sans font-semibold">
+                                (Kích hoạt khi check-in)
+                              </span>
+                            </div>
+                          ) : (
+                            `${c.startDate} — ${c.endDate}`
+                          )}
+                        </td>
                         <td className="py-3.5 px-4 font-data-tabular font-bold text-slate-900 text-right">
                           {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫
                         </td>
@@ -1876,11 +2382,19 @@ export const CustomerDashboard: React.FC = () => {
                           <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${
                             c.status === 'ACTIVE' 
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : c.status === 'PENDING_ACTIVATION'
+                              ? 'bg-cyan-50 text-cyan-800 border border-cyan-300'
                               : c.status === 'PENDING_SIGNATURE'
                               ? 'bg-amber-50 text-amber-800 border border-amber-300 animate-pulse'
                               : 'bg-slate-100 text-slate-600 border border-slate-200'
                           }`}>
-                            {c.status === 'ACTIVE' ? 'Đang hiệu lực' : c.status === 'PENDING_SIGNATURE' ? 'Chờ ký số' : c.status}
+                            {c.status === 'ACTIVE' 
+                              ? 'Đang hiệu lực' 
+                              : c.status === 'PENDING_ACTIVATION'
+                              ? 'Đã ký • Chờ nhận kho'
+                              : c.status === 'PENDING_SIGNATURE' 
+                              ? 'Chờ ký số' 
+                              : c.status}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-right">
@@ -1890,7 +2404,7 @@ export const CustomerDashboard: React.FC = () => {
                                 type="button"
                                 onClick={() => handleSignContractNow(c)}
                                 className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-md font-bold text-xs shadow-sm flex items-center gap-1 transition-all cursor-pointer animate-pulse"
-                                title="Ký hợp đồng DocuSeal ngay"
+                                title="Ký hợp đồng trực tuyến ngay"
                               >
                                 <span className="material-symbols-outlined text-[15px]">edit_document</span>
                                 <span>Ký ngay</span>
@@ -2031,120 +2545,484 @@ export const CustomerDashboard: React.FC = () => {
 
       {/* 6. TAB 4: HỖ TRỢ & BÁO SỰ CỐ (SUPPORT) */}
       {activeTab === 'support' && (
-        <section className="bg-white rounded-2xl p-6 md:p-8 border border-slate-200 shadow-sm">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            <div className="lg:col-span-5 flex flex-col gap-4">
-              <div className="flex items-center gap-1.5 text-blue-600 font-unit-code text-xs font-bold">
-                <span>TRUNG TÂM PHẢN HỒI KHÁCH HÀNG 24/7</span>
+        <div className="flex flex-col gap-6">
+          <section className="bg-white rounded-2xl p-6 md:p-8 border border-slate-200 shadow-sm">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              <div className="lg:col-span-5 flex flex-col gap-4">
+                <div className="flex items-center gap-1.5 text-blue-600 font-unit-code text-xs font-bold">
+                  <span>TRUNG TÂM PHẢN HỒI KHÁCH HÀNG 24/7</span>
+                </div>
+                <h3 className="font-headline text-xl font-bold text-slate-900">
+                  Hỗ Trợ Kỹ Thuật &amp; Khóa Kho
+                </h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Đội ngũ kỹ thuật và bảo vệ trực ca tại trạm sẵn sàng xử lý yêu cầu của bạn nhanh chóng. Các sự cố kẹt cửa cuốn hoặc quên mã PIN được giải quyết trong vòng 3 phút.
+                </p>
+
+                <div className="mt-2 flex flex-col gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700">
+                  <div>
+                    Hotline khẩn cấp: <strong className="text-slate-900 font-bold">1900 6828 (Ext. 1)</strong>
+                  </div>
+                  <div>
+                    Thời gian tiếp nhận: <strong>24/7 không ngày nghỉ</strong>
+                  </div>
+                  <div>
+                    Bảo vệ chốt cổng hỗ trợ người thân &amp; xe tải ra vào
+                  </div>
+                </div>
               </div>
-              <h3 className="font-headline text-xl font-bold text-slate-900">
-                Hỗ Trợ Kỹ Thuật &amp; Khóa Kho
-              </h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Đội ngũ kỹ thuật và bảo vệ trực ca tại trạm sẵn sàng xử lý yêu cầu của bạn nhanh chóng. Các sự cố kẹt cửa cuốn hoặc quên mã PIN được giải quyết trong vòng 3 phút.
-              </p>
 
-              <div className="mt-2 flex flex-col gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700">
-                <div>
-                  Hotline khẩn cấp: <strong className="text-slate-900 font-bold">1900 6828 (Ext. 1)</strong>
-                </div>
-                <div>
-                  Thời gian tiếp nhận: <strong>24/7 không ngày nghỉ</strong>
-                </div>
-                <div>
-                  Bảo vệ chốt cổng hỗ trợ người thân &amp; xe tải ra vào
-                </div>
-              </div>
-            </div>
-
-            <div className="lg:col-span-7 bg-slate-50 border border-slate-200 p-6 rounded-xl">
-              {ticketSubmitted ? (
-                <div className="py-12 text-center flex flex-col items-center justify-center gap-2">
-                  <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[28px]">check</span>
-                  </div>
-                  <h4 className="font-bold text-slate-900 text-sm">Yêu Cầu Đã Được Tiếp Nhận!</h4>
-                  <p className="text-xs text-slate-500 max-w-xs">
-                    Nhân viên phụ trách đang xử lý và sẽ phản hồi hoặc liên hệ lại với bạn ngay lập tức.
-                  </p>
-                </div>
-              ) : (
-                <form className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left" onSubmit={handleSupportSubmit}>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      Kho lưu trữ liên quan
-                    </label>
-                    <select
-                      value={ticketUnit}
-                      onChange={(e) => setTicketUnit(e.target.value)}
-                      className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
-                    >
-                      {activeContracts.length > 0 ? (
-                        activeContracts.map(c => (
-                          <option key={c.unitCode} value={c.unitCode}>
-                            Kho #{c.unitCode} ({c.facilityName})
-                          </option>
-                        ))
-                      ) : (
-                        <option value="general">Chưa có kho hoạt động</option>
-                      )}
-                      <option value="general">Khác / Thắc mắc chung</option>
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      Vấn đề cần hỗ trợ
-                    </label>
-                    <select
-                      value={ticketType}
-                      onChange={(e) => setTicketType(e.target.value)}
-                      className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
-                    >
-                      <option value="lock">Sự cố khóa thông minh / Kẹt cửa cuốn</option>
-                      <option value="pin">Yêu cầu cấp lại mã PIN mới</option>
-                      <option value="delegate">Ủy quyền mở kho cho tài xế/người thân</option>
-                      <option value="climate">Kiểm tra nhiệt độ / độ ẩm phòng</option>
-                      <option value="billing">Hỗ trợ thanh toán &amp; Hóa đơn VAT</option>
-                    </select>
-                  </div>
-
-                  <div className="sm:col-span-2 flex flex-col gap-1.5">
-                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      Mô tả chi tiết nội dung
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={ticketContent}
-                      onChange={(e) => setTicketContent(e.target.value)}
-                      required
-                      placeholder="Mô tả cụ thể sự cố cần xử lý..."
-                      className="p-3 bg-white border border-slate-200 text-slate-900 text-xs rounded-lg focus:outline-none focus:border-slate-400"
-                    ></textarea>
-                  </div>
-
-                  {ticketError && (
-                    <div className="sm:col-span-2 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[18px]">error</span>
-                      <span>{ticketError}</span>
+              <div className="lg:col-span-7 bg-slate-50 border border-slate-200 p-6 rounded-xl">
+                {ticketSubmitted ? (
+                  <div className="py-12 text-center flex flex-col items-center justify-center gap-2">
+                    <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                      <span className="material-symbols-outlined text-[28px]">check</span>
                     </div>
-                  )}
-
-                  <div className="sm:col-span-2 flex items-center justify-between pt-2">
-                    <span className="text-[11px] text-slate-400">Thời gian phản hồi cam kết: &lt; 3 phút</span>
-                    <button
-                      type="submit"
-                      disabled={isSubmittingTicket}
-                      className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold text-xs rounded-lg transition-colors shadow-sm cursor-pointer"
-                    >
-                      {isSubmittingTicket ? 'Đang gửi...' : 'Gửi Yêu Cầu'}
-                    </button>
+                    <h4 className="font-bold text-slate-900 text-sm">Yêu Cầu Đã Được Tiếp Nhận!</h4>
+                    <p className="text-xs text-slate-500 max-w-xs">
+                      Nhân viên phụ trách đang xử lý và sẽ phản hồi hoặc liên hệ lại với bạn ngay lập tức.
+                    </p>
                   </div>
-                </form>
-              )}
+                ) : (
+                  <form className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left" onSubmit={handleSupportSubmit}>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        Kho lưu trữ liên quan
+                      </label>
+                      <select
+                        value={ticketUnit}
+                        onChange={(e) => setTicketUnit(e.target.value)}
+                        className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
+                      >
+                        {activeContracts.length > 0 ? (
+                          activeContracts.map(c => (
+                            <option key={c.unitCode} value={c.unitCode}>
+                              Kho #{c.unitCode} ({c.facilityName})
+                            </option>
+                          ))
+                        ) : (
+                          <option value="general">Chưa có kho hoạt động</option>
+                        )}
+                        <option value="general">Khác / Thắc mắc chung</option>
+                      </select>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        Vấn đề cần hỗ trợ
+                      </label>
+                      <select
+                        value={ticketType}
+                        onChange={(e) => {
+                          setTicketType(e.target.value)
+                          if (ticketError) setTicketError(null)
+                        }}
+                        className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
+                      >
+                        <option value="lock">Sự cố khóa thông minh / Kẹt cửa cuốn</option>
+                        <option value="access">Không thể truy cập kho / Cửa ra vào trạm</option>
+                        <option value="cleanliness">Vệ sinh &amp; Côn trùng trong kho</option>
+                        <option value="climate">Kiểm tra nhiệt độ / Độ ẩm phòng</option>
+                        <option value="facility_damage">Hư hỏng thiết bị &amp; Cơ sở vật chất</option>
+                        <option value="pin">Yêu cầu cấp lại mã PIN mới</option>
+                        <option value="billing">Hỗ trợ thanh toán &amp; Hóa đơn VAT</option>
+                        <option value="other">Khác</option>
+                      </select>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        Mức độ ảnh hưởng (Ưu tiên)
+                      </label>
+                      <select
+                        value={ticketPriority}
+                        onChange={(e) => setTicketPriority(e.target.value)}
+                        className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
+                      >
+                        <option value="LOW">Thấp - Thắc mắc / Góp ý thông thường</option>
+                        <option value="MEDIUM">Bình thường - Cần xử lý trong 24h</option>
+                        <option value="HIGH">Cao - Ảnh hưởng việc bốc dỡ hàng / Ra vào</option>
+                        <option value="URGENT">Khẩn cấp - Không mở được kho / Kẹt hàng hóa</option>
+                      </select>
+                    </div>
+
+                    <div className="sm:col-span-2 flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                          Mô tả chi tiết nội dung {ticketType === 'other' ? <span className="text-rose-500 font-bold">* (Bắt buộc ghi rõ mô tả)</span> : ''}
+                        </label>
+                        {ticketType === 'other' && (
+                          <span className="text-[11px] text-amber-700 font-medium">Vui lòng nêu rõ vấn đề cần xử lý</span>
+                        )}
+                      </div>
+                      <textarea
+                        rows={3}
+                        value={ticketContent}
+                        onChange={(e) => {
+                          setTicketContent(e.target.value)
+                          if (ticketError) setTicketError(null)
+                        }}
+                        required
+                        placeholder={
+                          ticketType === 'other'
+                            ? "Vui lòng ghi rõ mô tả cụ thể và chi tiết vấn đề bạn đang gặp phải để đội ngũ Boxora hỗ trợ..."
+                            : "Mô tả cụ thể sự cố cần xử lý..."
+                        }
+                        className={`p-3 bg-white border text-slate-900 text-xs rounded-lg focus:outline-none transition-colors ${
+                          ticketType === 'other' && !ticketContent.trim()
+                            ? 'border-amber-400 focus:border-amber-500 bg-amber-50/20'
+                            : 'border-slate-200 focus:border-slate-400'
+                        }`}
+                      ></textarea>
+                    </div>
+
+                    {ticketError && (
+                      <div className="sm:col-span-2 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[18px]">error</span>
+                        <span>{ticketError}</span>
+                      </div>
+                    )}
+
+                    <div className="sm:col-span-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
+                      <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                        Đội ngũ Boxora sẽ phản hồi và giải quyết vấn đề sớm nhất có thể
+                      </span>
+                      <button
+                        type="submit"
+                        disabled={isSubmittingTicket}
+                        className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold text-xs rounded-lg transition-colors shadow-sm cursor-pointer self-end sm:self-auto"
+                      >
+                        {isSubmittingTicket ? 'Đang gửi...' : 'Gửi Yêu Cầu'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+
+          {/* LỊCH SỬ BÁO CÁO & PHẢN HỒI SỰ CỐ */}
+          <section className="bg-white rounded-2xl p-6 md:p-8 border border-slate-200 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+              <div>
+                <div className="flex items-center gap-2 text-blue-600 font-mono text-xs font-bold uppercase tracking-wider mb-1">
+                  <span className="material-symbols-outlined text-[16px]">history</span>
+                  <span>NHẬT KÝ PHẢN HỒI &amp; XỬ LÝ SỰ CỐ</span>
+                </div>
+                <h3 className="font-headline text-lg font-bold text-slate-900">
+                  Lịch Sử Báo Cáo Sự Cố
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Theo dõi tiến độ, thời gian tiếp nhận và kết quả xử lý thực tế từ kỹ thuật viên và bảo vệ cơ sở Boxora.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={fetchCustomerTickets}
+                  disabled={loadingTickets}
+                  className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg border border-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                  title="Tải lại danh sách báo cáo mới nhất"
+                >
+                  <span className={`material-symbols-outlined text-[16px] ${loadingTickets ? 'animate-spin' : ''}`}>
+                    sync
+                  </span>
+                  <span>{loadingTickets ? 'Đang tải...' : 'Làm mới'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Filters & Search */}
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+              <div className="relative flex-1 max-w-md">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
+                  search
+                </span>
+                <input
+                  type="text"
+                  placeholder="Tìm theo mã phiếu (TK-...), kho, hoặc nội dung..."
+                  value={ticketSearchTerm}
+                  onChange={(e) => setTicketSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                />
+                {ticketSearchTerm && (
+                  <button
+                    onClick={() => setTicketSearchTerm('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-0.5"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Status Filter Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
+                {[
+                  { key: 'ALL', label: 'Tất cả', count: customerTickets.length },
+                  { key: 'PENDING', label: 'Chờ tiếp nhận', count: customerTickets.filter(t => t.status === 'OPEN' || t.status === 'PENDING').length },
+                  { key: 'IN_PROGRESS', label: 'Đang xử lý', count: customerTickets.filter(t => t.status === 'IN_PROGRESS').length },
+                  { key: 'RESOLVED', label: 'Đã giải quyết', count: customerTickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED').length },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setTicketStatusFilter(tab.key)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+                      ticketStatusFilter === tab.key
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span
+                      className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                        ticketStatusFilter === tab.key
+                          ? 'bg-white/20 text-white'
+                          : 'bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* List Content */}
+            {loadingTickets ? (
+              <div className="p-12 text-center text-slate-500 text-xs flex flex-col items-center justify-center gap-2">
+                <span className="material-symbols-outlined text-[32px] text-blue-600 animate-spin">sync</span>
+                <span>Đang tải lịch sử báo cáo sự cố từ hệ thống...</span>
+              </div>
+            ) : (() => {
+              const filteredTickets = customerTickets.filter(t => {
+                if (ticketStatusFilter !== 'ALL') {
+                  if (ticketStatusFilter === 'PENDING') {
+                    if (t.status !== 'OPEN' && t.status !== 'PENDING') return false
+                  } else if (ticketStatusFilter === 'RESOLVED') {
+                    if (t.status !== 'RESOLVED' && t.status !== 'CLOSED') return false
+                  } else if (t.status !== ticketStatusFilter) {
+                    return false
+                  }
+                }
+                if (ticketSearchTerm.trim()) {
+                  const term = ticketSearchTerm.toLowerCase().trim()
+                  const codeMatch = t.ticketCode?.toLowerCase().includes(term)
+                  const unitMatch = t.unitCode?.toLowerCase().includes(term)
+                  const titleMatch = t.title?.toLowerCase().includes(term)
+                  const descMatch = t.description?.toLowerCase().includes(term)
+                  const resMatch = t.resolutionNote?.toLowerCase().includes(term)
+                  if (!codeMatch && !unitMatch && !titleMatch && !descMatch && !resMatch) return false
+                }
+                return true
+              })
+
+              if (filteredTickets.length === 0) {
+                return (
+                  <div className="p-10 text-center flex flex-col items-center justify-center gap-3 bg-slate-50/70 border border-slate-200 rounded-xl">
+                    <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center">
+                      <span className="material-symbols-outlined text-[28px]">assignment_turned_in</span>
+                    </div>
+                    <div className="max-w-md">
+                      <h4 className="text-sm font-bold text-slate-800">
+                        {ticketSearchTerm || ticketStatusFilter !== 'ALL'
+                          ? 'Không có báo cáo sự cố nào phù hợp bộ lọc'
+                          : 'Chưa có yêu cầu hỗ trợ hoặc báo cáo sự cố nào'}
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {ticketSearchTerm || ticketStatusFilter !== 'ALL'
+                          ? 'Thử thay đổi từ khóa tìm kiếm hoặc chọn bộ lọc trạng thái khác.'
+                          : 'Khi gặp sự cố khóa thông minh, kẹt cửa cuốn, cần cấp lại mã PIN hoặc hỗ trợ thanh toán, bạn có thể gửi yêu cầu ở biểu mẫu phía trên.'}
+                      </p>
+                    </div>
+                  </div>
+                )
+              }
+
+              return (
+                <div className="space-y-4">
+                  {filteredTickets.map(t => {
+                    const catMeta = getTicketCategoryMeta(t.category)
+                    const statusMeta = getTicketStatusMeta(t.status)
+                    const priorityMeta = getTicketPriorityMeta(t.priority)
+                    const isResolved = t.status === 'RESOLVED' || t.status === 'CLOSED'
+                    const isInProgress = t.status === 'IN_PROGRESS'
+
+                    return (
+                      <div
+                        key={t.id}
+                        className="p-5 rounded-xl border border-slate-200 bg-white hover:border-blue-300 hover:shadow-xs transition-all space-y-4 text-left"
+                      >
+                        {/* Top: Header metadata */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-xs font-extrabold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
+                              #{t.ticketCode || t.id.substring(0, 8).toUpperCase()}
+                            </span>
+
+                            {t.unitCode && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                <span className="material-symbols-outlined text-[13px]">warehouse</span>
+                                <span>Kho #{t.unitCode}</span>
+                              </span>
+                            )}
+
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${catMeta.color}`}>
+                              <span className="material-symbols-outlined text-[13px]">{catMeta.icon}</span>
+                              <span>{catMeta.label}</span>
+                            </span>
+
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${priorityMeta.badge}`}>
+                              Ưu tiên: {priorityMeta.label}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <span className="text-[11px] text-slate-400">
+                              {formatDisplayDateTime(t.createdAt)}
+                            </span>
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${statusMeta.badge}`}>
+                              <span className="material-symbols-outlined text-[14px]">{statusMeta.icon}</span>
+                              <span>{statusMeta.label}</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Title & Description */}
+                        <div className="space-y-1.5">
+                          <h4 className="text-sm font-bold text-slate-900">
+                            {t.title}
+                          </h4>
+                          <div className="text-xs text-slate-700 bg-slate-50/80 p-3 rounded-lg border border-slate-100 leading-relaxed whitespace-pre-wrap">
+                            {t.description}
+                          </div>
+                        </div>
+
+                        {/* Resolution Note / Status update from Boxora */}
+                        {t.status === 'RESOLVED' ? (
+                          <div className="p-4 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs text-emerald-950 space-y-3">
+                            <div className="flex items-start gap-3">
+                              <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
+                                <span className="material-symbols-outlined text-[20px]">verified</span>
+                              </div>
+                              <div className="flex-1 space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-emerald-900 text-sm">
+                                    Kết quả xử lý từ nhân viên Boxora:
+                                  </span>
+                                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100/90 px-2.5 py-0.5 rounded-full border border-emerald-300">
+                                    ✓ Đã xử lý - Chờ xác nhận
+                                  </span>
+                                </div>
+                                <p className="text-xs text-emerald-900 leading-relaxed font-medium">
+                                  {t.resolutionNote || 'Kỹ thuật viên đã kiểm tra hiện trường cơ sở và giải quyết hoàn tất yêu cầu của quý khách.'}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Customer confirmation action bar */}
+                            <div className="border-t border-emerald-200/80 pt-3 flex flex-wrap items-center justify-between gap-2.5">
+                              <span className="text-[11px] text-emerald-800 font-medium">
+                                Quý khách vui lòng xác nhận sự cố đã hết hoặc gửi yêu cầu xử lý lại nếu chưa khắc phục triệt để:
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  disabled={isProcessingTicketAction}
+                                  onClick={() => {
+                                    setCloseTicketTarget(t)
+                                    setTicketActionError(null)
+                                  }}
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                                  <span>Xác nhận hài lòng &amp; Đóng phiếu</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isProcessingTicketAction}
+                                  onClick={() => {
+                                    setReopenModalTicket(t)
+                                    setReopenReasonText('')
+                                  }}
+                                  className="px-3 py-1.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+                                  <span>Yêu cầu xử lý lại</span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : t.status === 'CLOSED' ? (
+                          <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 flex items-start gap-3">
+                            <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 mt-0.5">
+                              <span className="material-symbols-outlined text-[18px]">lock</span>
+                            </div>
+                            <div className="flex-1 space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-slate-800">
+                                  Phiếu sự cố đã được nghiệm thu đóng
+                                </span>
+                                <span className="text-[10px] font-semibold text-slate-600 bg-slate-200 px-2 py-0.5 rounded">
+                                  ĐÃ ĐÓNG
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-600 leading-relaxed">
+                                {t.resolutionNote || 'Vấn đề đã được giải quyết và xác nhận nghiệm thu hoàn tất.'}
+                              </p>
+                            </div>
+                          </div>
+                        ) : t.status === 'REOPENED' ? (
+                          <div className="p-3.5 rounded-lg bg-amber-50 border border-amber-300 text-xs text-amber-950 flex items-start gap-3">
+                            <div className="w-7 h-7 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center shrink-0 mt-0.5">
+                              <span className="material-symbols-outlined text-[18px]">cached</span>
+                            </div>
+                            <div className="flex-1 space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-amber-900">
+                                  Đã yêu cầu xử lý lại (Đang mở lại)
+                                </span>
+                                <span className="text-[10px] font-bold text-amber-800 bg-amber-200 px-2 py-0.5 rounded">
+                                  CẦN KIỂM TRA LẠI
+                                </span>
+                              </div>
+                              <p className="text-xs text-amber-900 leading-relaxed font-medium">
+                                {t.resolutionNote ? `Lý do / Ghi chú: ${t.resolutionNote}` : 'Kỹ thuật viên ca trực đang được điều phối kiểm tra và xử lý lại sự cố.'}
+                              </p>
+                            </div>
+                          </div>
+                        ) : isInProgress ? (
+                          <div className="p-3.5 rounded-lg bg-blue-50/80 border border-blue-200 text-xs text-blue-900 flex items-start gap-2.5">
+                            <span className="material-symbols-outlined text-[18px] text-blue-600 shrink-0 mt-0.5 animate-spin">
+                              sync
+                            </span>
+                            <div className="flex-1">
+                              <strong>Đang xử lý:</strong> Kỹ thuật viên / bảo vệ ca trực Boxora đang kiểm tra hiện trường cơ sở.
+                              {t.resolutionNote && (
+                                <p className="mt-1 text-slate-700 font-medium">Ghi chú điều phối: {t.resolutionNote}</p>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-3 rounded-lg bg-amber-50/70 border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5">
+                            <span className="material-symbols-outlined text-[18px] text-amber-700 shrink-0 mt-0.5">
+                              schedule
+                            </span>
+                            <div>
+                              <strong>Chờ tiếp nhận:</strong> Yêu cầu đã được chuyển tới ca trực tại trạm. Đội ngũ kỹ thuật sẽ tiếp nhận và tiến hành xử lý trong ít phút.
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+          </section>
+        </div>
       )}
 
       {/* Booking Modal (Đặt giữ chỗ kho) */}
@@ -2183,20 +3061,38 @@ export const CustomerDashboard: React.FC = () => {
                     <span className="font-semibold text-slate-800">{bookingEstimate.days} ngày ({formatDisplayDate(bookingStartDate)} → {formatDisplayDate(bookingEstimate.endDate)})</span>
                   </div>
                   <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
-                    <span className="text-slate-500">Ngày check-in dự kiến:</span>
-                    <span className="font-semibold text-slate-800">{formatDisplayDate(bookingCheckInDate)}</span>
+                    <span className="text-slate-500">Lịch hẹn nhận kho:</span>
+                    <span className="font-mono font-bold text-slate-800">
+                      {createdBookingResult?.expectedCheckInAt
+                        ? new Date(createdBookingResult.expectedCheckInAt).toLocaleString('vi-VN')
+                        : `${formatDisplayDate(bookingCheckInDate)} lúc ${bookingCheckInTime}`}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Hạn giữ chỗ:</span>
+                    <span className="font-mono font-bold text-amber-700">
+                      {createdBookingResult?.holdExpiresAt
+                        ? new Date(createdBookingResult.holdExpiresAt).toLocaleString('vi-VN')
+                        : 'Sau giờ hẹn 24 giờ (Theo chính sách cơ sở)'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Trạng thái thanh toán:</span>
+                    <span className="font-semibold text-slate-800">
+                      {bookingWorkflow === 'HOLD_ONLY' ? 'Chưa thanh toán (Thanh toán tại quầy cơ sở)' : 'Chờ xác nhận VNPay'}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center py-1">
                     <span className="text-slate-500">Phương thức:</span>
                     <span className="font-bold text-slate-700">
-                      {bookingWorkflow === 'HOLD_ONLY' ? 'Giữ chỗ 24h (Ký & thanh toán tại quầy)' : 'Ký điện tử & Thanh toán online'}
+                      {bookingWorkflow === 'HOLD_ONLY' ? 'Giữ chỗ miễn phí theo lịch hẹn (Ký & thanh toán tại quầy)' : 'Ký điện tử & Thanh toán online'}
                     </span>
                   </div>
                 </div>
 
                 <p className="text-xs text-slate-600 leading-relaxed max-w-md mx-auto">
                   {bookingWorkflow === 'HOLD_ONLY' 
-                    ? 'Vị trí kho đã được giữ riêng cho bạn trong vòng 24 giờ. Quý khách vui lòng đến trực tiếp cơ sở để nhận bàn giao hoặc theo dõi trạng thái tại danh mục Đặt chỗ.'
+                    ? 'Vị trí kho đã được bảo lưu riêng cho bạn đến lịch hẹn và thời gian gia hạn theo chính sách. Quý khách vui lòng đến trực tiếp cơ sở để xem kho thực tế, ký biên bản và thanh toán nhận bàn giao.'
                     : 'Hợp đồng điện tử và yêu cầu thanh toán đã sẵn sàng. Mã PIN sẽ được kích hoạt sau khi hoàn tất thủ tục bàn giao theo quy định.'}
                 </p>
 
@@ -2257,7 +3153,8 @@ export const CustomerDashboard: React.FC = () => {
                     <span className="font-mono font-bold text-blue-600 text-sm block">
                       {(selectedBookingUnit.priceNumber || 2400000).toLocaleString('vi-VN')} ₫
                     </span>
-                    <span className="text-[11px] text-slate-500">/tháng · Giá niêm yết</span>
+                    <span className="text-[11px] text-slate-500 block">/tháng</span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Giá niêm yết, chưa áp dụng ưu đãi kỳ hạn</span>
                   </div>
                 </div>
 
@@ -2362,25 +3259,47 @@ export const CustomerDashboard: React.FC = () => {
                         className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
                       />
                       <p className="text-[10px] text-slate-500 leading-normal">
-                        Là ngày bắt đầu tính thời hạn và tiền thuê theo hợp đồng đã xác nhận.
+                        Ngày bắt đầu thuê chính thức được xác định khi bàn giao kho thực tế thành công theo hợp đồng.
                       </p>
                     </div>
 
-                    {/* Ngày check-in dự kiến */}
+                    {/* Ngày & Giờ check-in dự kiến */}
                     <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5">
                       <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-                        Ngày check-in dự kiến
+                        Lịch hẹn check-in dự kiến
                       </label>
-                      <input
-                        type="date"
-                        value={bookingCheckInDate}
-                        onChange={(e) => setBookingCheckInDate(e.target.value)}
-                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
-                      />
+                      <div className="grid grid-cols-5 gap-2">
+                        <input
+                          type="date"
+                          value={bookingCheckInDate}
+                          onChange={(e) => setBookingCheckInDate(e.target.value)}
+                          className="col-span-3 h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
+                        />
+                        <select
+                          value={bookingCheckInTime}
+                          onChange={(e) => setBookingCheckInTime(e.target.value)}
+                          className="col-span-2 h-9 px-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500 cursor-pointer"
+                        >
+                          <option value="09:00">09:00</option>
+                          <option value="13:00">13:00</option>
+                          <option value="15:00">15:00</option>
+                        </select>
+                      </div>
                       <p className="text-[10px] text-slate-500 leading-normal">
-                        Ngày bạn đến cơ sở để xác minh thông tin, kiểm tra kho và nhận bàn giao.
+                        Ngày hẹn nhận kho không mặc định là ngày bắt đầu thuê chính thức.
                       </p>
                     </div>
+                  </div>
+
+                  {/* Ngày kết thúc thuê dự kiến */}
+                  <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-bold text-slate-800 block text-[11px]">Ngày kết thúc thuê dự kiến:</span>
+                      <span className="text-[10px] text-slate-500">Được tính theo kỳ hạn và quy tắc tính thời hạn trong hợp đồng</span>
+                    </div>
+                    <span className="font-mono font-bold text-slate-900 bg-white px-2.5 py-1 rounded-md border border-slate-200">
+                      {bookingEstimate.endDate || '—'}
+                    </span>
                   </div>
 
                   {/* Warning: Ngày check-in sau ngày bắt đầu thuê */}
@@ -2481,7 +3400,7 @@ export const CustomerDashboard: React.FC = () => {
                   </h4>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {/* Option 1: Đặt giữ chỗ kho */}
+                    {/* Option 1: Giữ chỗ miễn phí theo lịch hẹn */}
                     <div
                       onClick={() => setBookingWorkflow('HOLD_ONLY')}
                       className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
@@ -2494,23 +3413,23 @@ export const CustomerDashboard: React.FC = () => {
                         <div className="flex items-center justify-between mb-1">
                           <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
                             <span className="material-symbols-outlined text-blue-600 text-[18px]">bookmark</span>
-                            Đặt giữ chỗ kho
+                            Giữ chỗ miễn phí theo lịch hẹn
                           </span>
                           <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
-                            Miễn phí 24 giờ
+                            Theo chính sách cơ sở
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500 leading-normal">
-                          Giữ vị trí kho trong 24 giờ. Đến cơ sở để xem kho, hoàn tất hợp đồng và thanh toán theo quy định.
+                          Giữ vị trí kho đến giờ hẹn ({formatDisplayDate(bookingCheckInDate)} lúc {bookingCheckInTime}) + 24 giờ gia hạn theo chính sách. Xem kho thực tế và thanh toán tại quầy.
                         </p>
                       </div>
                       <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
                         <span className="text-slate-600 font-medium">Thanh toán ngay</span>
-                        <span className="font-mono font-bold text-slate-900">0 ₫</span>
+                        <span className="font-mono font-bold text-slate-900">0 ₫ (Thanh toán tại quầy)</span>
                       </div>
                     </div>
 
-                    {/* Option 2: Ký online & thanh toán */}
+                    {/* Option 2: Ký online & thanh toán ngay */}
                     <div
                       onClick={() => setBookingWorkflow('ONLINE_NOW')}
                       className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
@@ -2523,15 +3442,18 @@ export const CustomerDashboard: React.FC = () => {
                         <div className="flex items-center justify-between mb-1">
                           <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
                             <span className="material-symbols-outlined text-blue-600 text-[18px]">history_edu</span>
-                            Ký online &amp; thanh toán
+                            Ký online &amp; thanh toán ngay
+                          </span>
+                          <span className="text-[10px] font-semibold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">
+                            Thanh toán trực tuyến
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500 leading-normal">
-                          Ký hợp đồng điện tử qua DocuSeal và thanh toán trực tuyến. Sau đó hoàn tất bước nhận kho trước khi mã PIN được kích hoạt.
+                          Ký hợp đồng điện tử trực tuyến và thanh toán cọc + tiền thuê tháng đầu qua cổng thanh toán bảo mật.
                         </p>
                       </div>
                       <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
-                        <span className="text-slate-600 font-medium">Tổng dự kiến</span>
+                        <span className="text-slate-600 font-medium">Tổng thanh toán ngay</span>
                         <span className="font-mono font-bold text-blue-600">{bookingEstimate.totalPayment.toLocaleString('vi-VN')} ₫</span>
                       </div>
                     </div>
@@ -3178,6 +4100,247 @@ export const CustomerDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* Reschedule Booking Modal (Đổi lịch hẹn nhận kho chuyên nghiệp theo chính sách Boxora) */}
+      <BookingRescheduleModal
+        isOpen={!!rescheduleBookingTarget}
+        booking={rescheduleBookingTarget}
+        onClose={() => setRescheduleBookingTarget(null)}
+        onSuccess={async (updatedBooking) => {
+          await fetchCustomerBookings()
+          if (selectedBookingForModal && selectedBookingForModal.id === updatedBooking.id) {
+            setSelectedBookingForModal(updatedBooking)
+          }
+        }}
+      />
+
+      {/* Booking Details & Handover Guide Modal */}
+      {selectedBookingForModal && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm overflow-y-auto">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-slate-900 px-6 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-cyan-400 text-2xl">info</span>
+                <div>
+                  <h3 className="font-bold text-sm tracking-wide">Chi Tiết Đơn Đặt &amp; Hướng Dẫn Nhận Kho</h3>
+                  <p className="text-[10px] text-slate-400 font-mono">Mã: #{selectedBookingForModal.bookingCode}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedBookingForModal(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            {(() => {
+              const modalInfo = getBookingNoticeInfo(selectedBookingForModal)
+              return (
+                <div className="p-6 space-y-4 text-xs text-slate-700 max-h-[75vh] overflow-y-auto">
+                  {/* Unit Header */}
+                  <div className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    <div>
+                      <span className="font-mono text-base font-extrabold text-blue-700">KHO #{selectedBookingForModal.unitCode}</span>
+                      <div className="text-slate-500 text-[11px]">{selectedBookingForModal.facilityName}</div>
+                    </div>
+                    <div className="text-right">
+                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold mb-1 border ${
+                        modalInfo.scenario === 'PAID_SIGNED'
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                          : modalInfo.scenario === 'PAID_UNSIGNED'
+                          ? 'bg-blue-100 text-blue-800 border-blue-200'
+                          : 'bg-cyan-100 text-cyan-800 border-cyan-200'
+                      }`}>
+                        {modalInfo.scenario === 'PAID_SIGNED'
+                          ? '✓ Đã hoàn tất thủ tục'
+                          : modalInfo.scenario === 'PAID_UNSIGNED'
+                          ? 'Chờ Ký Hợp Đồng'
+                          : selectedBookingForModal.status === 'CONFIRMED'
+                          ? 'Đang Giữ Chỗ (Tại cơ sở)'
+                          : selectedBookingForModal.status}
+                      </span>
+                      <div className="text-[10px] font-semibold text-slate-600">
+                        {modalInfo.scenario === 'PAID_SIGNED'
+                          ? '✓ Đã thanh toán & Đã ký HĐ'
+                          : modalInfo.scenario === 'PAID_UNSIGNED'
+                          ? '✓ Đã thanh toán đủ'
+                          : '○ Chưa thanh toán (Tại cơ sở)'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Dynamic Status Notice Banner */}
+                  {modalInfo.scenario === 'PAID_SIGNED' && (
+                    <div className="p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200 text-emerald-950 flex items-start gap-2.5">
+                      <span className="material-symbols-outlined text-[20px] text-emerald-600 shrink-0 mt-0.5">
+                        verified
+                      </span>
+                      <div className="leading-relaxed flex-1">
+                        <div className="font-bold text-emerald-900 text-xs mb-0.5 flex items-center justify-between">
+                          <span>Đã thanh toán &amp; ký hợp đồng rồi</span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                            <span className="material-symbols-outlined text-[12px]">task_alt</span>
+                            Sẵn sàng nhận kho
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-emerald-800">
+                          Thủ tục hợp đồng và thanh toán đã hoàn tất 100%! Quý khách chỉ cần mang CCCD gốc đến cơ sở Boxora đúng lịch hẹn để đối soát, nhận bàn giao kho và kích hoạt mã PIN mở khóa SmartLock. <em>Lưu ý: Thời hạn thuê và hiệu lực hợp đồng sẽ chính thức tính từ ngày bạn hoàn tất check-in và nhận mã PIN tại cơ sở.</em>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {modalInfo.scenario === 'PAID_UNSIGNED' && (
+                    <div className="p-3.5 rounded-xl bg-blue-50/80 border border-blue-200 text-blue-950 flex items-start gap-2.5">
+                      <span className="material-symbols-outlined text-[20px] text-blue-600 shrink-0 mt-0.5">
+                        edit_document
+                      </span>
+                      <div className="leading-relaxed flex-1">
+                        <div className="font-bold text-blue-900 text-xs mb-0.5 flex items-center justify-between">
+                          <span>Đã thanh toán nhưng chưa ký</span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                            Chờ ký hợp đồng
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-blue-800">
+                          Đơn đặt kho đã thanh toán đủ. Quý khách vui lòng hoàn tất ký hợp đồng điện tử trực tuyến (DocuSeal) hoặc mang CCCD gốc đến cơ sở Boxora để ký hợp đồng và nhận bàn giao kho.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {modalInfo.scenario === 'UNPAID_IN_PERSON' && (
+                    <div className="p-3.5 rounded-xl bg-amber-50/80 border border-amber-200 text-amber-950 flex items-start gap-2.5">
+                      <span className="material-symbols-outlined text-[20px] text-amber-700 shrink-0 mt-0.5">
+                        storefront
+                      </span>
+                      <div className="leading-relaxed flex-1">
+                        <div className="font-bold text-amber-900 text-xs mb-0.5 flex items-center justify-between">
+                          <span>Check-in thanh toán và ký hợp đồng tại chỗ</span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                            Thanh toán tại quầy
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-amber-800">
+                          Kho được bảo lưu riêng cho bạn đến <strong>{selectedBookingForModal.holdExpiresAt ? new Date(selectedBookingForModal.holdExpiresAt).toLocaleString('vi-VN') : 'lịch hẹn + thời gian gia hạn'}</strong>. Quý khách vui lòng mang CCCD gốc đến cơ sở Boxora để xem kho thực tế, ký hợp đồng và thanh toán nhận bàn giao.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Schedule and Hold Expiry (Clearly distinguishes expected dates before handover vs official dates after handover) */}
+                  <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2.5">
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                          {selectedBookingForModal.handoverTime ? 'Thời điểm bàn giao thực tế:' : 'Lịch hẹn check-in nhận kho:'}
+                        </span>
+                        <strong className="font-mono text-slate-900 text-xs">
+                          {selectedBookingForModal.handoverTime
+                            ? new Date(selectedBookingForModal.handoverTime).toLocaleString('vi-VN')
+                            : selectedBookingForModal.expectedCheckInAt
+                            ? new Date(selectedBookingForModal.expectedCheckInAt).toLocaleString('vi-VN')
+                            : selectedBookingForModal.startDate}
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                          {selectedBookingForModal.handoverTime ? 'Trạng thái bàn giao:' : 'Hạn bảo lưu giữ chỗ:'}
+                        </span>
+                        <strong className={`font-mono text-xs ${selectedBookingForModal.handoverTime ? 'text-emerald-700' : 'text-amber-700'}`}>
+                          {selectedBookingForModal.handoverTime
+                            ? 'Đã hoàn tất bàn giao & kích hoạt'
+                            : selectedBookingForModal.holdExpiresAt
+                            ? new Date(selectedBookingForModal.holdExpiresAt).toLocaleString('vi-VN')
+                            : 'Theo chính sách cơ sở'}
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                          {selectedBookingForModal.handoverTime ? 'Kỳ hạn thuê chính thức:' : 'Kỳ hạn thuê dự kiến:'}
+                        </span>
+                        <span className="font-semibold text-slate-800">
+                          {selectedBookingForModal.startDate} → {selectedBookingForModal.endDate} ({selectedBookingForModal.rentalMonths} tháng)
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">Tiền cọc giữ chỗ:</span>
+                        <span className="font-mono font-bold text-blue-600">
+                          {Number(selectedBookingForModal.depositPaid || selectedBookingForModal.depositAmount || 0).toLocaleString('vi-VN')} ₫
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Handover Steps Guide */}
+                  <div className="space-y-2">
+                    <h4 className="font-bold text-slate-900 uppercase text-[11px] tracking-wider">
+                      Quy trình nhận kho tại cơ sở Boxora
+                    </h4>
+                    <div className="space-y-2 border border-slate-200 rounded-xl p-3 bg-white">
+                      <div className="flex items-start gap-2.5">
+                        <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">1</span>
+                        <p className="text-[11px] leading-relaxed">
+                          <strong>Mang CCCD / Hộ chiếu gốc:</strong> Đến quầy tiếp đón của cơ sở <strong>{selectedBookingForModal.facilityName}</strong> đúng theo lịch hẹn.
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2.5">
+                        <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">2</span>
+                        <p className="text-[11px] leading-relaxed">
+                          <strong>Cung cấp mã #{selectedBookingForModal.bookingCode}:</strong> Nhân viên trực quầy sẽ đối soát và dẫn bạn đi xem thực tế ngăn kho.
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2.5">
+                        <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">3</span>
+                        <p className="text-[11px] leading-relaxed">
+                          {modalInfo.scenario === 'PAID_SIGNED' ? (
+                            <>
+                              <strong>Nghiệm thu &amp; Bàn giao nhanh:</strong> Hồ sơ hợp đồng và thanh toán đã hoàn tất 100%. Quý khách chỉ cần nghiệm thu ngăn kho thực tế và nhận bàn giao ngay.
+                            </>
+                          ) : modalInfo.scenario === 'PAID_UNSIGNED' ? (
+                            <>
+                              <strong>Ký hợp đồng &amp; Nghiệm thu:</strong> Đơn kho đã thanh toán đủ. Quý khách vui lòng ký hợp đồng điện tử DocuSeal hoặc ký trực tiếp tại cơ sở trước khi nhận bàn giao kho.
+                            </>
+                          ) : (
+                            <>
+                              <strong>Ký hợp đồng &amp; Thanh toán tại chỗ:</strong> Nghiệm thu thực tế ngăn kho, ký biên bản hợp đồng và thanh toán tiền mặt hoặc chuyển khoản tại quầy.
+                            </>
+                          )}
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2.5">
+                        <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">4</span>
+                        <p className="text-[11px] leading-relaxed">
+                          <strong>Kích hoạt mã PIN mở khóa:</strong> Sau khi bàn giao hoàn tất, hệ thống tự động phát hành mã PIN bảo mật cho bạn để mở khóa SmartLock.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Append-Only Check-in Rescheduling History */}
+                  <div className="border-t border-slate-200/80 pt-3">
+                    <BookingRescheduleHistorySection bookingId={selectedBookingForModal.id} />
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="pt-2 flex items-center">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedBookingForModal(null)}
+                      className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer text-center shadow-sm"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* Customer Policy Modal (Read-Only) */}
       <CustomerPolicyModal
         isOpen={isCustomerPolicyModalOpen}
@@ -3185,6 +4348,136 @@ export const CustomerDashboard: React.FC = () => {
         facilityId={facilities[0]?.id}
         facilityName={facilities[0]?.name}
       />
+
+      {/* Booking Cancellation Modal (3 Refund Milestones & Unit Release) */}
+      <BookingCancelModal
+        isOpen={Boolean(cancellingBookingTarget)}
+        booking={cancellingBookingTarget}
+        onClose={() => setCancellingBookingTarget(null)}
+        onSuccess={async () => {
+          await Promise.all([
+            fetchCustomerBookings(),
+            fetchContracts(),
+            fetchCustomerPayments(),
+            fetchAvailableUnits(),
+          ])
+        }}
+      />
+
+      {/* Booking Checkout & Payment Continuation Modal */}
+      {requestToPay && user && (
+        <BookingCheckoutModal
+          unit={{
+            backendId: requestToPay.storageUnitId || requestToPay.id,
+            code: requestToPay.unitCode || 'N/A',
+            name: requestToPay.unitCode ? `Kho #${requestToPay.unitCode}` : 'Kho Boxora',
+            facilityName: requestToPay.facilityName || 'Boxora Facility',
+            monthlyPrice: (requestToPay.totalRentalFee && requestToPay.rentalMonths ? requestToPay.totalRentalFee / requestToPay.rentalMonths : 0) || 1000000,
+            depositAmount: requestToPay.depositPaid || requestToPay.depositAmount || 0,
+            size: undefined,
+            address: ''
+          }}
+          user={user}
+          existingBooking={requestToPay}
+          onClose={() => {
+            setRequestToPay(null)
+            fetchCustomerBookings()
+            fetchContracts()
+            fetchCustomerPayments()
+          }}
+        />
+      )}
+
+      {/* Ticket closure confirmation: no state changes until the backend confirms. */}
+      {closeTicketTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <section role="dialog" aria-modal="true" aria-labelledby="close-ticket-title" className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700"><span className="material-symbols-outlined">verified</span></div>
+              <div>
+                <h3 id="close-ticket-title" className="text-base font-bold text-slate-900">Xác nhận hài lòng và đóng phiếu</h3>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600">Xác nhận này sẽ đóng phiếu sự cố #{closeTicketTarget.ticketCode || closeTicketTarget.id.slice(0, 8)}. Bạn chỉ nên tiếp tục khi sự cố đã được xử lý hoàn toàn.</p>
+              </div>
+            </div>
+            {ticketActionError && <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{ticketActionError}</p>}
+            <div className="mt-6 flex justify-end gap-2">
+              <button type="button" disabled={isProcessingTicketAction} onClick={() => setCloseTicketTarget(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Hủy</button>
+              <button type="button" disabled={isProcessingTicketAction} onClick={handleCloseCustomerTicket} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50">{isProcessingTicketAction ? 'Đang xử lý...' : 'Xác nhận'}</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* Reopen Ticket Modal (Customer Request Re-handling) */}
+      {reopenModalTicket && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-rose-600 text-[22px]">restart_alt</span>
+                <h3 className="font-bold text-slate-900 text-sm">
+                  Yêu Cầu Xử Lý Lại Sự Cố #{reopenModalTicket.ticketCode || reopenModalTicket.id.substring(0, 8)}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReopenModalTicket(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Nếu sự cố của bạn chưa được khắc phục triệt để hoặc phát sinh vấn đề mới liên quan, vui lòng nêu rõ lý do để kỹ thuật viên kiểm tra lại.
+              </p>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Lý do yêu cầu xử lý lại <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={4}
+                  value={reopenReasonText}
+                  onChange={(e) => setReopenReasonText(e.target.value)}
+                  placeholder="Ví dụ: Khóa thông minh vẫn báo lỗi sau khi mở lần đầu, hoặc cửa cuốn vẫn phát tiếng kêu bất thường..."
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isProcessingTicketAction}
+                onClick={() => setReopenModalTicket(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                disabled={isProcessingTicketAction || !reopenReasonText.trim()}
+                onClick={handleReopenCustomerTicket}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white text-xs font-bold rounded-lg transition-colors shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                {isProcessingTicketAction ? (
+                  <>
+                    <span className="material-symbols-outlined text-[16px] animate-spin">sync</span>
+                    <span>Đang gửi...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[16px]">send</span>
+                    <span>Gửi Yêu Cầu Xử Lý Lại</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )

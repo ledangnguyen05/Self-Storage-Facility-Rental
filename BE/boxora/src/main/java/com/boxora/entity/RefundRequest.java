@@ -92,4 +92,30 @@ public class RefundRequest extends BaseEntity {
 
     @Column(name = "process_notes", length = 500)
     private String processNotes;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "transfer_initiated_by_id")
+    private User transferInitiatedBy;
+
+    @Column(name = "transfer_initiated_at")
+    private LocalDateTime transferInitiatedAt;
+
+    @Column(name = "transfer_reference", length = 100)
+    private String transferReference;
+
+    @Column(name = "customer_confirmed_at")
+    private LocalDateTime customerConfirmedAt;
+
+    @Column(name = "customer_confirmation_notes", length = 500)
+    private String customerConfirmationNotes;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reconciled_by_id")
+    private User reconciledBy;
+
+    @Column(name = "reconciled_at")
+    private LocalDateTime reconciledAt;
+
+    @Column(name = "reconciliation_notes", length = 500)
+    private String reconciliationNotes;
 }

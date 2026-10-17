@@ -145,7 +145,7 @@ export const PaymentResultPage: React.FC = () => {
       (booking.depositPaid && Number(booking.depositPaid) > 0)
     )
   )
-  const isPaid = isServerConfirmedPaid && Boolean(txnRef) && !bookingId?.startsWith('mock-')
+  const isPaid = isServerConfirmedPaid && !bookingId?.startsWith('mock-')
   const isPendingReconciliation = status === 'PAID' && !isServerConfirmedPaid && !errorMessage
   const paymentExpired = booking?.paymentExpiresAt
     ? new Date(booking.paymentExpiresAt).getTime() <= Date.now()
@@ -153,7 +153,7 @@ export const PaymentResultPage: React.FC = () => {
 
   const displayPaidAmount = Number(amountParam) 
     ? (Number(amountParam) > 100000000 ? Math.round(Number(amountParam) / 100) : Number(amountParam))
-    : (booking?.initialPaymentAmount || 2400000)
+    : booking?.initialPaymentAmount
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100/80 px-4 py-10">
@@ -161,7 +161,7 @@ export const PaymentResultPage: React.FC = () => {
         {isLoading ? (
           <div className="space-y-3 py-10">
             <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
-            <p className="text-sm font-semibold text-slate-700">Đang xác minh kết quả thanh toán từ cổng VNPay Sandbox...</p>
+            <p className="text-sm font-semibold text-slate-700">Đang xác minh kết quả thanh toán từ hệ thống...</p>
           </div>
         ) : isPendingReconciliation ? (
           <div className="space-y-5 py-6">
@@ -176,7 +176,7 @@ export const PaymentResultPage: React.FC = () => {
                 Đang Chờ Ngân Hàng Xác Thực
               </h1>
               <p className="mt-2 text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                Hệ thống đã nhận được tín hiệu chuyển hướng từ VNPay (Mã GD: <strong className="text-slate-800 font-mono">{txnRef}</strong>) và đang chờ webhook HMAC-SHA512 xác thực số tiền {displayPaidAmount.toLocaleString('vi-VN')} ₫.
+                Hệ thống đã nhận tín hiệu thanh toán (Mã giao dịch: <strong className="text-slate-800 font-mono">{txnRef || 'đang cập nhật'}</strong>) và đang chờ đối soát chính thức từ máy chủ.
               </p>
             </div>
             <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl text-left text-xs text-blue-900 space-y-1">
@@ -208,10 +208,10 @@ export const PaymentResultPage: React.FC = () => {
 
             <div>
               <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold uppercase tracking-wider inline-block">
-                Giao Dịch Thành Công
+                Thanh toán đã xác nhận
               </span>
               <h1 className="mt-2 text-2xl font-extrabold text-slate-900 tracking-tight">
-                Thanh Toán Thành Công Qua VNPay!
+                Thanh toán thành công
               </h1>
               <p className="mt-1 text-xs text-slate-500 max-w-md mx-auto">
                 Hệ thống Boxora đã nhận được tiền đặt cọc và tiền thuê kho từ cổng thanh toán trực tuyến.
@@ -221,46 +221,112 @@ export const PaymentResultPage: React.FC = () => {
             {/* Financial & Unit Details Sheet */}
             <div className="rounded-xl border border-slate-200/90 bg-slate-50/70 p-4 text-left text-xs space-y-2">
               <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
-                <span className="text-slate-500">Mã giao dịch VNPay:</span>
+                <span className="text-slate-500">Mã giao dịch:</span>
                 <span className="font-mono font-bold text-slate-800">{txnRef || 'Chưa xác thực'}</span>
               </div>
               <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
                 <span className="text-slate-500">Số tiền đã thanh toán:</span>
                 <span className="font-mono font-bold text-emerald-600 text-sm">
-                  {displayPaidAmount.toLocaleString('vi-VN')} ₫
+                  {displayPaidAmount ? `${displayPaidAmount.toLocaleString('vi-VN')} ₫` : 'Đã xác nhận'}
                 </span>
               </div>
               <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
                 <span className="text-slate-500">Mã đặt chỗ:</span>
                 <span className="font-mono font-semibold text-slate-800">
-                  #{booking?.bookingCode || searchParams.get('bookingId') || 'BX-2026-9042'}
+                  #{booking?.bookingCode || bookingId || 'Đang cập nhật'}
                 </span>
               </div>
               <div className="flex justify-between items-center py-1">
                 <span className="text-slate-500">Ngăn kho tiếp nhận:</span>
                 <span className="font-bold text-blue-600">
-                  Kho #{booking?.unitCode || searchParams.get('unitCode') || 'TD-B101'} · {booking?.facilityName || searchParams.get('facilityName') || 'Boxora Smart Storage'}
+                  #{booking?.unitCode || 'Đang cập nhật'} · {booking?.facilityName || 'Boxora'}
                 </span>
               </div>
             </div>
 
             {/* Signature Status or Contract Signed Box */}
             {signedContractSuccess ? (
-              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-left space-y-2">
-                <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
-                  <span className="material-symbols-outlined text-lg text-emerald-600">verified</span>
-                  Hợp Đồng Đã Ký Số DocuSeal Thành Công!
+              <div className="rounded-2xl border border-emerald-200 bg-white p-6 text-left shadow-sm space-y-5">
+                <div className="text-center space-y-2 pb-3 border-b border-slate-100">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                    <span className="material-symbols-outlined text-3xl">verified</span>
+                  </div>
+                  <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">Ký hợp đồng thành công!</h2>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Hợp đồng điện tử của bạn đã được xác nhận ký thành công.
+                  </p>
                 </div>
-                <p className="text-[11px] text-emerald-700 leading-relaxed">
-                  Chữ ký tay điện tử của bạn đã được chứng thực toàn vẹn số liệu và lưu trữ an toàn trên Boxora Cloud. Mã PIN mở kho thông minh đã sẵn sàng.
-                </p>
-                <div className="pt-2">
+
+                <div className="space-y-3">
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Thông tin đặt thuê</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[11px] text-slate-500 block">Mã đặt chỗ</span>
+                      <strong className="font-mono text-slate-900 text-sm">{booking?.bookingCode || bookingId || 'Chưa có'}</strong>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[11px] text-slate-500 block">Kho đã chọn</span>
+                      <strong className="text-blue-700 text-sm">#{booking?.unitCode || 'Chưa xác định'} · {booking?.facilityName || 'Boxora'}</strong>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[11px] text-slate-500 block">Trạng thái hợp đồng</span>
+                      <strong className="text-emerald-700 text-sm">Đã ký điện tử</strong>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[11px] text-slate-500 block">Trạng thái thanh toán</span>
+                      <strong className="text-emerald-700 text-sm">Đã xác nhận</strong>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[11px] text-slate-500 block">Mã giao dịch</span>
+                      <strong className="font-mono text-slate-800 text-xs break-all">{txnRef || 'BOX' + (booking?.id?.slice(0, 14) || 'VERIFIED')}</strong>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[11px] text-slate-500 block">Số tiền đã thanh toán</span>
+                      <strong className="font-mono text-emerald-700 text-sm">
+                        {displayPaidAmount ? `${displayPaidAmount.toLocaleString('vi-VN')} ₫` : 'Đã thanh toán'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 text-xs space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-blue-900">Trạng thái nhận kho:</span>
+                      <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-bold text-[11px]">Chờ hoàn tất bàn giao</span>
+                    </div>
+                    <p className="text-[11px] text-blue-800 leading-relaxed">
+                      Ngày check-in và ngày bắt đầu thuê chính thức được xác nhận theo lịch bàn giao thực tế và điều khoản hợp đồng.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-100/80 border border-slate-200 text-xs space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-800">Mã PIN:</span>
+                      <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold text-[11px]">Chưa kích hoạt</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Mã PIN chỉ sử dụng được khi đáp ứng đầy đủ điều kiện kích hoạt và bàn giao của Boxora.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2.5 pt-2 border-t border-slate-100">
+                  <Link
+                    to={`/portal/customer?tab=contracts&bookingId=${booking?.id || ''}`}
+                    className="flex-1 py-2.5 px-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 text-xs font-bold rounded-xl text-center transition-colors"
+                  >
+                    Xem hợp đồng đã ký
+                  </Link>
+                  <Link
+                    to={`/portal/customer?tab=bookings&bookingId=${booking?.id || ''}`}
+                    className="flex-1 py-2.5 px-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 text-xs font-bold rounded-xl text-center transition-colors"
+                  >
+                    Xem lịch nhận kho
+                  </Link>
                   <Link
                     to="/portal/customer?tab=my-units"
-                    className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    className="flex-1 py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl text-center transition-colors shadow-xs"
                   >
-                    <span>Vào Danh Sách Kho Của Tôi &amp; Lấy Mã PIN</span>
-                    <span className="material-symbols-outlined text-sm">arrow_forward</span>
+                    Vào trang chủ tổng quan
                   </Link>
                 </div>
               </div>
@@ -269,14 +335,14 @@ export const PaymentResultPage: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-xs text-blue-950 flex items-center gap-1.5">
                     <span className="material-symbols-outlined text-base text-blue-600">draw</span>
-                    Bước 2: Ký Hợp Đồng Điện Tử DocuSeal
+                    Bước tiếp theo: Ký hợp đồng điện tử
                   </span>
                   <span className="text-[10px] font-semibold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
                     Chờ ký tay bằng chuột
                   </span>
                 </div>
                 <p className="text-[11px] text-blue-800 leading-relaxed">
-                  Vui lòng ký tay trực tiếp bằng chuột hoặc màn hình cảm ứng để kích hoạt hợp đồng điện tử và nhận mã PIN mở kho thông minh ngay lập tức.
+                  Hoàn tất chữ ký điện tử để hệ thống xác nhận hợp đồng. Trạng thái bàn giao và mã PIN được xác lập riêng theo dữ liệu thực tế.
                 </p>
                 <div className="pt-2 flex flex-col sm:flex-row gap-2">
                   <button
@@ -285,14 +351,8 @@ export const PaymentResultPage: React.FC = () => {
                     className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-lg">draw</span>
-                    <span>Ký Hợp Đồng DocuSeal Ngay (Ký Chuột)</span>
+                    <span>Ký hợp đồng trực tuyến ngay</span>
                   </button>
-                  <Link
-                    to="/portal/customer?tab=contracts"
-                    className="px-4 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-xl flex items-center justify-center transition-colors"
-                  >
-                    Vào Customer Portal
-                  </Link>
                 </div>
               </div>
             )}
@@ -306,7 +366,7 @@ export const PaymentResultPage: React.FC = () => {
               {status === 'FAILED' ? 'Giao dịch thanh toán chưa thành công' : 'Chưa xác nhận được thanh toán'}
             </h1>
             <p className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed">
-              {errorMessage || 'Giao dịch qua cổng VNPay chưa hoàn tất. Bạn có thể thử lại trong thời gian giữ chỗ còn hiệu lực.'}
+              {errorMessage || 'Giao dịch chưa hoàn tất. Bạn có thể thử lại trong thời gian giữ chỗ còn hiệu lực.'}
             </p>
             {booking && (
               <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-left text-xs text-slate-600 space-y-1.5">
@@ -321,12 +381,12 @@ export const PaymentResultPage: React.FC = () => {
                 onClick={retryPayment}
                 className="mt-4 w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer"
               >
-                {isRetrying ? 'Đang khởi tạo lại...' : 'Thử thanh toán lại qua VNPay'}
+                {isRetrying ? 'Đang khởi tạo lại...' : 'Thử thanh toán lại'}
               </button>
             )}
             <div className="pt-2">
               <Link to="/portal/customer" className="text-xs font-semibold text-slate-600 hover:text-slate-900 underline">
-                Quay lại Customer Portal
+                Quay lại trang chủ tổng quan
               </Link>
             </div>
           </div>

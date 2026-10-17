@@ -17,8 +17,17 @@ public interface RefundService {
     /** Duyệt hoặc từ chối yêu cầu hoàn tiền (PENDING_REVIEW -> APPROVED / REJECTED). */
     RefundRequestResponse reviewRefundRequest(UUID refundId, RefundReviewRequest request);
 
-    /** Xử lý chi trả tiền hoàn thành công (APPROVED -> PROCESSED). */
+    /** Xử lý chi trả tiền hoàn thành công (APPROVED / PROCESSING_TRANSFER -> AWAITING_CUSTOMER_CONFIRMATION / PROCESSED). */
     RefundRequestResponse processRefund(UUID refundId, RefundProcessRequest request);
+
+    /** Bắt đầu xử lý chuyển tiền (APPROVED -> PROCESSING_TRANSFER). */
+    RefundRequestResponse startTransfer(UUID refundId, com.boxora.dto.request.RefundTransferRequest request);
+
+    /** Khách hàng xác nhận đã nhận được tiền hoàn vào tài khoản (AWAITING_CUSTOMER_CONFIRMATION / PROCESSED -> RECONCILED). */
+    RefundRequestResponse confirmCustomerReceived(UUID refundId, com.boxora.dto.request.RefundCustomerConfirmRequest request);
+
+    /** Kế toán / Quản lý hoàn tất đối soát và đóng hồ sơ hoàn tiền (RECONCILED / PROCESSED -> COMPLETED). */
+    RefundRequestResponse reconcileRefund(UUID refundId, com.boxora.dto.request.RefundReconcileRequest request);
 
     /** Lấy chi tiết yêu cầu hoàn tiền theo ID. */
     RefundRequestResponse getById(UUID refundId);

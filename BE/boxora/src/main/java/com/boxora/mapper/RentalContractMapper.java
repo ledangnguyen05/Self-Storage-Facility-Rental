@@ -17,6 +17,8 @@ public interface RentalContractMapper {
     @Mapping(source = "facility.id", target = "facilityId")
     @Mapping(source = "facility.name", target = "facilityName")
     @Mapping(source = "booking.id", target = "bookingId")
+    @Mapping(source = "paperVerifiedBy.id", target = "paperVerifiedById")
+    @Mapping(source = "paperVerifiedBy.fullName", target = "paperVerifiedByName")
     @Mapping(target = "signingUrl", ignore = true)
     RentalContractResponse toResponse(RentalContract entity);
 }

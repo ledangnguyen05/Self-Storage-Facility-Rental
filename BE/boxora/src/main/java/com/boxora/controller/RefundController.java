@@ -2,9 +2,7 @@ package com.boxora.controller;
 
 import com.boxora.common.response.ApiResponse;
 import com.boxora.common.response.PageResponse;
-import com.boxora.dto.request.RefundCreateRequest;
-import com.boxora.dto.request.RefundProcessRequest;
-import com.boxora.dto.request.RefundReviewRequest;
+import com.boxora.dto.request.*;
 import com.boxora.dto.response.RefundRequestResponse;
 import com.boxora.enums.RefundStatus;
 import com.boxora.service.RefundService;
@@ -22,7 +20,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("api/v1/refunds")
-@Tag(name = "Refunds", description = "API quản lý quy trình hoàn tiền cọc/thừa: PENDING_REVIEW -> APPROVED -> PROCESSED")
+@Tag(name = "Refunds", description = "API quản lý quy trình hoàn tiền cọc/thừa: PENDING_REVIEW -> APPROVED -> PROCESSING_TRANSFER -> AWAITING_CUSTOMER_CONFIRMATION -> RECONCILED -> COMPLETED")
 @RequiredArgsConstructor
 @Slf4j
 public class RefundController {
@@ -49,14 +47,44 @@ public class RefundController {
         return ResponseEntity.ok(ApiResponse.success("Xem xét yêu cầu hoàn tiền thành công", response));
     }
 
+    @PutMapping("{id}/start-transfer")
+    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasAnyRole('ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Bắt đầu chuyển khoản hoàn tiền (APPROVED -> PROCESSING_TRANSFER)")
+    public ResponseEntity<ApiResponse<RefundRequestResponse>> startTransfer(
+            @PathVariable UUID id,
+            @Valid @RequestBody RefundTransferRequest request) {
+        RefundRequestResponse response = refundService.startTransfer(id, request);
+        return ResponseEntity.ok(ApiResponse.success("Bắt đầu xử lý chuyển tiền hoàn", response));
+    }
+
     @PutMapping("{id}/process")
     @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasAnyRole('ADMIN', 'FACILITY_MANAGER', 'STAFF')")
-    @Operation(summary = "Thực hiện chi trả và hoàn tất yêu cầu hoàn tiền (APPROVED -> PROCESSED)")
+    @Operation(summary = "Xác nhận chuyển tiền với mã đối soát (APPROVED/PROCESSING_TRANSFER -> AWAITING_CUSTOMER_CONFIRMATION)")
     public ResponseEntity<ApiResponse<RefundRequestResponse>> processRefund(
             @PathVariable UUID id,
             @Valid @RequestBody RefundProcessRequest request) {
         RefundRequestResponse response = refundService.processRefund(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Chi trả hoàn tiền thành công", response));
+        return ResponseEntity.ok(ApiResponse.success("Chi trả hoàn tiền thành công, chờ khách hàng xác nhận", response));
+    }
+
+    @PutMapping("{id}/confirm-received")
+    @PreAuthorize("hasRole('CUSTOMER') or hasAnyRole('ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Khách hàng xác nhận đã nhận được tiền hoàn (AWAITING_CUSTOMER_CONFIRMATION -> RECONCILED)")
+    public ResponseEntity<ApiResponse<RefundRequestResponse>> confirmReceived(
+            @PathVariable UUID id,
+            @RequestBody(required = false) RefundCustomerConfirmRequest request) {
+        RefundRequestResponse response = refundService.confirmCustomerReceived(id, request != null ? request : new RefundCustomerConfirmRequest());
+        return ResponseEntity.ok(ApiResponse.success("Xác nhận đã nhận tiền thành công", response));
+    }
+
+    @PutMapping("{id}/reconcile")
+    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasAnyRole('ADMIN', 'FACILITY_MANAGER', 'BUSINESS_MANAGER')")
+    @Operation(summary = "Kế toán / Quản lý đối soát và hoàn tất hồ sơ (RECONCILED -> COMPLETED)")
+    public ResponseEntity<ApiResponse<RefundRequestResponse>> reconcileRefund(
+            @PathVariable UUID id,
+            @RequestBody(required = false) RefundReconcileRequest request) {
+        RefundRequestResponse response = refundService.reconcileRefund(id, request != null ? request : new RefundReconcileRequest());
+        return ResponseEntity.ok(ApiResponse.success("Hoàn tất đối soát và đóng hồ sơ hoàn tiền", response));
     }
 
     @GetMapping("{id}")

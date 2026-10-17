@@ -1,9 +1,7 @@
 package com.boxora.service.impl;
 
 import com.boxora.common.response.PageResponse;
-import com.boxora.dto.request.RefundCreateRequest;
-import com.boxora.dto.request.RefundProcessRequest;
-import com.boxora.dto.request.RefundReviewRequest;
+import com.boxora.dto.request.*;
 import com.boxora.dto.response.RefundRequestResponse;
 import com.boxora.entity.*;
 import com.boxora.enums.*;
@@ -43,6 +41,7 @@ public class RefundServiceImpl implements RefundService {
     private final RentalContractRepository rentalContractRepository;
     private final UserRepository userRepository;
     private final NotificationLogRepository notificationLogRepository;
+    private final PaymentRepository paymentRepository;
     private final EmailService emailService;
     private final ActivityLogService activityLogService;
     private final FacilityAccessGuard facilityAccessGuard;
@@ -53,14 +52,6 @@ public class RefundServiceImpl implements RefundService {
     public RefundRequestResponse createRefundRequest(RefundCreateRequest request) {
         if (request.getBookingId() == null && request.getContractId() == null) {
             throw new AppException(ErrorCode.REFUND_TARGET_REQUIRED);
-        }
-
-        BigDecimal requestedAmount = request.getRequestedAmount();
-        BigDecimal deductionAmount = request.getDeductionAmount() != null ? request.getDeductionAmount() : BigDecimal.ZERO;
-        BigDecimal finalRefundAmount = requestedAmount.subtract(deductionAmount);
-
-        if (finalRefundAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new AppException(ErrorCode.INVALID_REFUND_AMOUNT);
         }
 
         Booking booking = null;
@@ -85,11 +76,37 @@ public class RefundServiceImpl implements RefundService {
             }
         }
 
+        UUID currentUserId = requestContext.currentUserId();
+        String currentRole = requestContext.currentUserRole();
+        if ("CUSTOMER".equalsIgnoreCase(currentRole)
+                && (customer == null || !customer.getId().equals(currentUserId))) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        if (booking != null && refundRequestRepository.existsByBooking_IdAndStatusIn(
+                booking.getId(), List.of(
+                        RefundStatus.PENDING_REVIEW,
+                        RefundStatus.APPROVED,
+                        RefundStatus.PROCESSING_TRANSFER,
+                        RefundStatus.AWAITING_CUSTOMER_CONFIRMATION,
+                        RefundStatus.RECONCILED
+                ))) {
+            throw new AppException(ErrorCode.INVALID_REFUND_AMOUNT, "Đơn này đã có yêu cầu hoàn tiền đang được xử lý");
+        }
+
+        BigDecimal paidDeposit = booking != null && booking.getDepositPaid() != null
+                ? booking.getDepositPaid() : BigDecimal.ZERO;
+        if (paidDeposit.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new AppException(ErrorCode.INVALID_REFUND_AMOUNT, "Chưa có tiền cọc đã xác nhận để hoàn");
+        }
+        BigDecimal requestedAmount = paidDeposit;
+        BigDecimal deductionAmount = BigDecimal.ZERO;
+        BigDecimal finalRefundAmount = requestedAmount;
+
         if (facility != null && facilityAccessGuard.isFacilityScoped()) {
             facilityAccessGuard.checkFacilityAccess(facility.getId());
         }
 
-        UUID currentUserId = requestContext.currentUserId();
         User requestedByUser = currentUserId != null
                 ? userRepository.findById(currentUserId).orElse(null)
                 : customer;
@@ -123,7 +140,7 @@ public class RefundServiceImpl implements RefundService {
                 ActivityAction.REFUND_REQUEST_CREATE,
                 "RefundRequest",
                 refund.getId(),
-                "Khởi tạo yêu cầu hoàn tiền " + refund.getRequestCode() + " với số tiền thực nhận " + finalRefundAmount,
+                "Khởi tạo yêu cầu hoàn tiền " + refund.getRequestCode() + " với số tiền " + finalRefundAmount,
                 null,
                 RefundStatus.PENDING_REVIEW.name()
         );
@@ -167,7 +184,6 @@ public class RefundServiceImpl implements RefundService {
 
         refund = refundRequestRepository.save(refund);
 
-        // Gửi email thông báo trạng thái
         User customer = refund.getCustomer();
         if (customer != null && customer.getEmail() != null) {
             try {
@@ -178,7 +194,7 @@ public class RefundServiceImpl implements RefundService {
                         nextStatus.name(),
                         refund.getFinalRefundAmount(),
                         refund.getBankName(),
-                        refund.getBankAccountNumber(),
+                        maskAccountNumber(refund.getBankAccountNumber()),
                         null,
                         isApprove ? refund.getReviewNote() : refund.getRejectionReason()
                 );
@@ -216,16 +232,61 @@ public class RefundServiceImpl implements RefundService {
 
     @Override
     @Transactional
+    public RefundRequestResponse startTransfer(UUID refundId, RefundTransferRequest request) {
+        RefundRequest refund = refundRequestRepository.findById(refundId)
+                .orElseThrow(() -> new AppException(ErrorCode.REFUND_REQUEST_NOT_FOUND));
+
+        if (refund.getStatus() != RefundStatus.APPROVED) {
+            throw new AppException(ErrorCode.REFUND_NOT_APPROVED, "Yêu cầu hoàn tiền phải ở trạng thái APPROVED mới được bắt đầu chuyển tiền");
+        }
+
+        if (refund.getFacility() != null && facilityAccessGuard.isFacilityScoped()) {
+            facilityAccessGuard.checkFacilityAccess(refund.getFacility().getId());
+        }
+
+        UUID currentUserId = requestContext.currentUserId();
+        User initiator = currentUserId != null
+                ? userRepository.findById(currentUserId).orElse(null)
+                : null;
+        if (initiator == null) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
+
+        refund.setStatus(RefundStatus.PROCESSING_TRANSFER);
+        refund.setTransferInitiatedBy(initiator);
+        refund.setTransferInitiatedAt(LocalDateTime.now());
+        refund.setTransferReference(request.getTransferReference().trim());
+        if (request.getTransferNotes() != null && !request.getTransferNotes().isBlank()) {
+            refund.setProcessNotes(request.getTransferNotes().trim());
+        }
+
+        refund = refundRequestRepository.save(refund);
+
+        activityLogService.record(
+                refund.getFacility() != null ? refund.getFacility().getId() : null,
+                ActivityAction.REFUND_PROCESS,
+                "RefundRequest",
+                refund.getId(),
+                "Bắt đầu chuyển tiền hoàn " + refund.getRequestCode() + " - Mã UNC/Ref: " + refund.getTransferReference(),
+                RefundStatus.APPROVED.name(),
+                RefundStatus.PROCESSING_TRANSFER.name()
+        );
+
+        return toResponse(refund);
+    }
+
+    @Override
+    @Transactional
     public RefundRequestResponse processRefund(UUID refundId, RefundProcessRequest request) {
         RefundRequest refund = refundRequestRepository.findById(refundId)
                 .orElseThrow(() -> new AppException(ErrorCode.REFUND_REQUEST_NOT_FOUND));
 
-        if (refund.getStatus() == RefundStatus.PROCESSED) {
+        if (refund.getStatus() == RefundStatus.PROCESSED || refund.getStatus() == RefundStatus.COMPLETED) {
             throw new AppException(ErrorCode.REFUND_ALREADY_PROCESSED);
         }
 
-        if (refund.getStatus() != RefundStatus.APPROVED) {
-            throw new AppException(ErrorCode.REFUND_NOT_APPROVED);
+        if (refund.getStatus() != RefundStatus.APPROVED && refund.getStatus() != RefundStatus.PROCESSING_TRANSFER) {
+            throw new AppException(ErrorCode.REFUND_NOT_APPROVED, "Yêu cầu phải được duyệt (APPROVED) hoặc đang chuyển (PROCESSING_TRANSFER) mới có thể xác nhận đã chuyển tiền");
         }
 
         if (refund.getFacility() != null && facilityAccessGuard.isFacilityScoped()) {
@@ -240,7 +301,9 @@ public class RefundServiceImpl implements RefundService {
             throw new AppException(ErrorCode.UNAUTHORIZED);
         }
 
-        refund.setStatus(RefundStatus.PROCESSED);
+        RefundStatus oldStatus = refund.getStatus();
+        // Sau khi kế toán/staff chuyển tiền và cung cấp mã giao dịch thực tế, chuyển sang AWAITING_CUSTOMER_CONFIRMATION
+        refund.setStatus(RefundStatus.AWAITING_CUSTOMER_CONFIRMATION);
         refund.setProcessedBy(processor);
         refund.setProcessedAt(LocalDateTime.now());
         refund.setTransactionReference(request.getTransactionReference().trim());
@@ -248,7 +311,33 @@ public class RefundServiceImpl implements RefundService {
 
         refund = refundRequestRepository.save(refund);
 
-        // Gửi email thông báo chi trả hoàn tất
+        // Tạo hoặc cập nhật bản ghi Payment hoàn tiền thực tế với mã giao dịch ngân hàng thật
+        if (refund.getBooking() != null && refund.getFinalRefundAmount().compareTo(BigDecimal.ZERO) > 0) {
+            String txnRef = refund.getTransactionReference();
+            Payment refundPayment = paymentRepository.findByTransactionId(txnRef).orElse(null);
+            if (refundPayment == null) {
+                refundPayment = Payment.builder()
+                        .transactionId(txnRef)
+                        .booking(refund.getBooking())
+                        .contract(refund.getContract())
+                        .amount(refund.getFinalRefundAmount())
+                        .paymentType(PaymentType.DEPOSIT)
+                        .status(PaymentStatus.REFUNDED)
+                        .paymentMethod("BANK_TRANSFER")
+                        .paymentTime(LocalDateTime.now())
+                        .confirmedByStaff(processor)
+                        .confirmedAt(LocalDateTime.now())
+                        .paymentNotes(request.getProcessNotes())
+                        .build();
+            } else {
+                refundPayment.setStatus(PaymentStatus.REFUNDED);
+                refundPayment.setAmount(refund.getFinalRefundAmount());
+                refundPayment.setConfirmedByStaff(processor);
+                refundPayment.setConfirmedAt(LocalDateTime.now());
+            }
+            paymentRepository.save(refundPayment);
+        }
+
         User customer = refund.getCustomer();
         if (customer != null && customer.getEmail() != null) {
             try {
@@ -256,10 +345,10 @@ public class RefundServiceImpl implements RefundService {
                         customer.getEmail(),
                         customer.getFullName() != null ? customer.getFullName() : customer.getUsername(),
                         refund.getRequestCode(),
-                        RefundStatus.PROCESSED.name(),
+                        RefundStatus.AWAITING_CUSTOMER_CONFIRMATION.name(),
                         refund.getFinalRefundAmount(),
                         refund.getBankName(),
-                        refund.getBankAccountNumber(),
+                        maskAccountNumber(refund.getBankAccountNumber()),
                         refund.getTransactionReference(),
                         refund.getProcessNotes()
                 );
@@ -277,7 +366,7 @@ public class RefundServiceImpl implements RefundService {
                     .referenceType("RefundRequest")
                     .referenceId(refund.getId())
                     .title("Chi trả tiền hoàn tất: " + refund.getRequestCode())
-                    .content("Khoản tiền hoàn " + refund.getFinalRefundAmount() + " VND đã được chi trả thành công. Mã GD: " + refund.getTransactionReference())
+                    .content("Khoản tiền hoàn " + refund.getFinalRefundAmount() + " VND đã được chi trả qua ngân hàng. Mã GD: " + refund.getTransactionReference() + ". Quý khách vui lòng kiểm tra tài khoản và xác nhận.")
                     .status("SENT")
                     .build());
         }
@@ -288,8 +377,97 @@ public class RefundServiceImpl implements RefundService {
                 "RefundRequest",
                 refund.getId(),
                 "Thực hiện chi trả thành công yêu cầu hoàn tiền " + refund.getRequestCode() + " - Mã GD: " + refund.getTransactionReference(),
-                RefundStatus.APPROVED.name(),
-                RefundStatus.PROCESSED.name()
+                oldStatus.name(),
+                RefundStatus.AWAITING_CUSTOMER_CONFIRMATION.name()
+        );
+
+        return toResponse(refund);
+    }
+
+    @Override
+    @Transactional
+    public RefundRequestResponse confirmCustomerReceived(UUID refundId, RefundCustomerConfirmRequest request) {
+        RefundRequest refund = refundRequestRepository.findById(refundId)
+                .orElseThrow(() -> new AppException(ErrorCode.REFUND_REQUEST_NOT_FOUND));
+
+        if (refund.getStatus() != RefundStatus.AWAITING_CUSTOMER_CONFIRMATION
+                && refund.getStatus() != RefundStatus.PROCESSED) {
+            throw new AppException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION,
+                    "Chỉ có thể xác nhận nhận tiền khi yêu cầu đang ở trạng thái AWAITING_CUSTOMER_CONFIRMATION hoặc PROCESSED");
+        }
+
+        UUID currentUserId = requestContext.currentUserId();
+        String currentRole = requestContext.currentUserRole();
+        if ("CUSTOMER".equalsIgnoreCase(currentRole)
+                && (refund.getCustomer() == null || !refund.getCustomer().getId().equals(currentUserId))) {
+            throw new AppException(ErrorCode.FORBIDDEN, "Bạn chỉ có thể xác nhận nhận tiền cho yêu cầu hoàn của chính mình");
+        }
+
+        RefundStatus oldStatus = refund.getStatus();
+        refund.setStatus(RefundStatus.RECONCILED);
+        refund.setCustomerConfirmedAt(LocalDateTime.now());
+        if (request != null && request.getConfirmationNotes() != null) {
+            refund.setCustomerConfirmationNotes(request.getConfirmationNotes().trim());
+        }
+
+        refund = refundRequestRepository.save(refund);
+
+        activityLogService.record(
+                refund.getFacility() != null ? refund.getFacility().getId() : null,
+                ActivityAction.REFUND_CONFIRM,
+                "RefundRequest",
+                refund.getId(),
+                "Khách hàng xác nhận đã nhận tiền cho yêu cầu " + refund.getRequestCode(),
+                oldStatus.name(),
+                RefundStatus.RECONCILED.name()
+        );
+
+        return toResponse(refund);
+    }
+
+    @Override
+    @Transactional
+    public RefundRequestResponse reconcileRefund(UUID refundId, RefundReconcileRequest request) {
+        RefundRequest refund = refundRequestRepository.findById(refundId)
+                .orElseThrow(() -> new AppException(ErrorCode.REFUND_REQUEST_NOT_FOUND));
+
+        if (refund.getStatus() != RefundStatus.RECONCILED
+                && refund.getStatus() != RefundStatus.AWAITING_CUSTOMER_CONFIRMATION
+                && refund.getStatus() != RefundStatus.PROCESSED) {
+            throw new AppException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION,
+                    "Yêu cầu hoàn tiền phải ở trạng thái RECONCILED hoặc PROCESSED mới có thể hoàn tất đối soát");
+        }
+
+        if (refund.getFacility() != null && facilityAccessGuard.isFacilityScoped()) {
+            facilityAccessGuard.checkFacilityAccess(refund.getFacility().getId());
+        }
+
+        UUID currentUserId = requestContext.currentUserId();
+        User reconciler = currentUserId != null
+                ? userRepository.findById(currentUserId).orElse(null)
+                : null;
+        if (reconciler == null) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
+
+        RefundStatus oldStatus = refund.getStatus();
+        refund.setStatus(RefundStatus.COMPLETED);
+        refund.setReconciledBy(reconciler);
+        refund.setReconciledAt(LocalDateTime.now());
+        if (request != null && request.getReconciliationNotes() != null) {
+            refund.setReconciliationNotes(request.getReconciliationNotes().trim());
+        }
+
+        refund = refundRequestRepository.save(refund);
+
+        activityLogService.record(
+                refund.getFacility() != null ? refund.getFacility().getId() : null,
+                ActivityAction.REFUND_RECONCILE,
+                "RefundRequest",
+                refund.getId(),
+                "Hoàn tất đối soát và đóng hồ sơ hoàn tiền " + refund.getRequestCode(),
+                oldStatus.name(),
+                RefundStatus.COMPLETED.name()
         );
 
         return toResponse(refund);
@@ -367,7 +545,7 @@ public class RefundServiceImpl implements RefundService {
                 .deductionAmount(r.getDeductionAmount())
                 .finalRefundAmount(r.getFinalRefundAmount())
                 .bankName(r.getBankName())
-                .bankAccountNumber(r.getBankAccountNumber())
+                .bankAccountNumber(maskAccountNumber(r.getBankAccountNumber()))
                 .bankAccountName(r.getBankAccountName())
                 .reason(r.getReason())
                 .status(r.getStatus())
@@ -384,6 +562,21 @@ public class RefundServiceImpl implements RefundService {
                 .processedAt(r.getProcessedAt())
                 .transactionReference(r.getTransactionReference())
                 .processNotes(r.getProcessNotes())
+                .transferInitiatedById(r.getTransferInitiatedBy() != null ? r.getTransferInitiatedBy().getId() : null)
+                .transferInitiatedByName(r.getTransferInitiatedBy() != null ? r.getTransferInitiatedBy().getFullName() : null)
+                .transferInitiatedAt(r.getTransferInitiatedAt())
+                .transferReference(r.getTransferReference())
+                .customerConfirmedAt(r.getCustomerConfirmedAt())
+                .customerConfirmationNotes(r.getCustomerConfirmationNotes())
+                .reconciledById(r.getReconciledBy() != null ? r.getReconciledBy().getId() : null)
+                .reconciledByName(r.getReconciledBy() != null ? r.getReconciledBy().getFullName() : null)
+                .reconciledAt(r.getReconciledAt())
+                .reconciliationNotes(r.getReconciliationNotes())
                 .build();
+    }
+
+    private String maskAccountNumber(String accountNumber) {
+        if (accountNumber == null || accountNumber.length() <= 4) return "****";
+        return "****" + accountNumber.substring(accountNumber.length() - 4);
     }
 }

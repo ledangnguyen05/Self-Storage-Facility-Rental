@@ -51,4 +51,10 @@ public class PricingQuoteResponse {
     /** Chính sách hoàn tiền cọc SLA (3-5 ngày làm việc) */
     private Integer refundSlaDays;
     private String cancellationPolicy;
+
+    /** Số giờ gia hạn sau giờ hẹn nhận kho trước khi booking tự giải phóng */
+    private Integer holdGraceHours;
+
+    /** Số ngày tối đa cho phép đặt giữ chỗ trước lịch hẹn */
+    private Integer maxHoldDays;
 }

@@ -28,6 +28,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -72,6 +73,12 @@ class BookingServiceTest {
 
     @Mock
     private com.boxora.repository.PaymentRepository paymentRepository;
+
+    @Mock
+    private com.boxora.repository.BookingRescheduleHistoryRepository bookingRescheduleHistoryRepository;
+
+    @Mock
+    private com.boxora.repository.RentalContractRepository rentalContractRepository;
 
     @InjectMocks
     private BookingServiceImpl bookingService;
@@ -139,7 +146,7 @@ class BookingServiceTest {
 
             when(storageUnitRepository.findWithDetailsByIdForUpdate(unitId)).thenReturn(Optional.of(testUnit));
             when(storageUnitLockService.isUnitLocked(unitId)).thenReturn(false);
-            when(storageUnitLockService.tryLockUnit(eq(unitId), any(), eq(24L))).thenReturn(true);
+            when(storageUnitLockService.tryLockUnit(eq(unitId), any(), anyLong())).thenReturn(true);
             when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
             when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(testPolicy));
             when(bookingRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -152,7 +159,7 @@ class BookingServiceTest {
             assertThat(response.getQrAccessToken()).isNull();
             assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.RESERVED);
 
-            verify(storageUnitLockService).tryLockUnit(eq(unitId), any(), eq(24L));
+            verify(storageUnitLockService).tryLockUnit(eq(unitId), any(), anyLong());
             verify(activityLogService).record(
                     eq(testFacility.getId()),
                     eq(ActivityAction.RESERVATION_CREATE),
@@ -320,9 +327,7 @@ class BookingServiceTest {
                     .build();
             booking.setId(UUID.randomUUID());
 
-            when(bookingRepository.findByStatusAndPaymentExpiresAtBefore(eq(BookingStatus.PENDING_APPROVAL), any()))
-                    .thenReturn(java.util.List.of());
-            when(bookingRepository.findByStatusAndPaymentExpiresAtBefore(eq(BookingStatus.PENDING_PAYMENT), any()))
+            when(bookingRepository.findExpiredHoldCandidates(any(), any(), any(), any()))
                     .thenReturn(java.util.List.of(booking));
             when(bookingRepository.findByIdForUpdate(booking.getId())).thenReturn(Optional.of(booking));
 
@@ -339,13 +344,12 @@ class BookingServiceTest {
             com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
                     .bookingCode("BK-EXP-002")
                     .status(BookingStatus.PENDING_PAYMENT)
+                    .paymentStatus("UNPAID")
                     .storageUnit(testUnit)
                     .build();
             booking.setId(UUID.randomUUID());
 
-            when(bookingRepository.findByStatusAndPaymentExpiresAtBefore(eq(BookingStatus.PENDING_APPROVAL), any()))
-                    .thenReturn(java.util.List.of());
-            when(bookingRepository.findByStatusAndPaymentExpiresAtBefore(eq(BookingStatus.PENDING_PAYMENT), any()))
+            when(bookingRepository.findExpiredHoldCandidates(any(), any(), any(), any()))
                     .thenReturn(java.util.List.of(booking));
             when(bookingRepository.findByIdForUpdate(booking.getId())).thenReturn(Optional.of(booking));
             // Payment repo reports PAID
@@ -365,14 +369,13 @@ class BookingServiceTest {
             com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
                     .bookingCode("BK-EXP-003")
                     .status(BookingStatus.PENDING_PAYMENT)
+                    .paymentStatus("UNPAID")
                     .storageUnit(testUnit)
                     .build();
             booking.setId(UUID.randomUUID());
             testUnit.setStatus(UnitStatus.RESERVED);
 
-            when(bookingRepository.findByStatusAndPaymentExpiresAtBefore(eq(BookingStatus.PENDING_APPROVAL), any()))
-                    .thenReturn(java.util.List.of());
-            when(bookingRepository.findByStatusAndPaymentExpiresAtBefore(eq(BookingStatus.PENDING_PAYMENT), any()))
+            when(bookingRepository.findExpiredHoldCandidates(any(), any(), any(), any()))
                     .thenReturn(java.util.List.of(booking));
             when(bookingRepository.findByIdForUpdate(booking.getId())).thenReturn(Optional.of(booking));
             when(paymentRepository.existsByBooking_IdAndStatus(booking.getId(), com.boxora.enums.PaymentStatus.PAID))
@@ -389,6 +392,323 @@ class BookingServiceTest {
             // testUnit should NOT be reverted to AVAILABLE because another active booking exists
             assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.RESERVED);
             verify(storageUnitRepository, never()).save(testUnit);
+        }
+
+        @Test
+        @DisplayName("expireUnpaidBookings: Booking CONFIRMED quá hạn lịch check-in -> Tự động chuyển sang OVERDUE và giải phóng kho")
+        void expireUnpaidBookings_ConfirmedPastAppointment_TransitionsToOverdueAndReleasesUnit() {
+            com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                    .bookingCode("BX-2025-6291")
+                    .status(BookingStatus.CONFIRMED)
+                    .paymentStatus("UNPAID")
+                    .expectedCheckInAt(LocalDateTime.now().minusDays(3))
+                    .storageUnit(testUnit)
+                    .build();
+            booking.setId(UUID.randomUUID());
+            testUnit.setStatus(UnitStatus.RESERVED);
+
+            when(bookingRepository.findExpiredHoldCandidates(any(), any(), any(), any()))
+                    .thenReturn(java.util.List.of(booking));
+            when(bookingRepository.findByIdForUpdate(booking.getId())).thenReturn(Optional.of(booking));
+            when(paymentRepository.existsByBooking_IdAndStatus(booking.getId(), com.boxora.enums.PaymentStatus.PAID))
+                    .thenReturn(false);
+
+            when(storageUnitRepository.findWithDetailsByIdForUpdate(testUnit.getId())).thenReturn(Optional.of(testUnit));
+            when(bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(eq(testUnit.getId()), any(), eq(booking.getId())))
+                    .thenReturn(false);
+
+            bookingService.expireUnpaidBookings();
+
+            assertThat(booking.getStatus()).isEqualTo(BookingStatus.OVERDUE);
+            assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.AVAILABLE);
+            verify(storageUnitRepository).save(testUnit);
+            verify(bookingRepository).save(booking);
+        }
+    }
+
+    @Nested
+    @DisplayName("Check-in Rescheduling Workflow Tests")
+    class RescheduleWorkflowTests {
+
+        private com.boxora.entity.Booking eligibleBooking;
+        private UUID bookingId;
+
+        @BeforeEach
+        void initBooking() {
+            bookingId = UUID.randomUUID();
+            com.boxora.entity.Role customerRole = new com.boxora.entity.Role();
+            customerRole.setName("CUSTOMER");
+            testCustomer.setRole(customerRole);
+
+            eligibleBooking = com.boxora.entity.Booking.builder()
+                    .bookingCode("BK-RESCHED-01")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(LocalDate.now().plusDays(2))
+                    .endDate(LocalDate.now().plusDays(2).plusMonths(3))
+                    .rentalMonths(3)
+                    .totalRentalFee(new BigDecimal("3000000.00"))
+                    .depositPaid(new BigDecimal("1000000.00"))
+                    .depositAmount(new BigDecimal("1000000.00"))
+                    .status(BookingStatus.CONFIRMED)
+                    .paymentStatus("PAID")
+                    .expectedCheckInAt(LocalDate.now().plusDays(2).atTime(10, 0))
+                    .build();
+            eligibleBooking.setId(bookingId);
+        }
+
+        @Test
+        @DisplayName("1. Reschedule thành công: Cập nhật lịch hẹn và lưu lịch sử kiểm toán nguyên tử")
+        void reschedule_Success_ValidBooking() {
+            LocalDate newDate = LocalDate.now().plusDays(5);
+            com.boxora.dto.request.BookingRescheduleRequest req = com.boxora.dto.request.BookingRescheduleRequest.builder()
+                    .newStartDate(newDate)
+                    .newExpectedCheckInAt(newDate.atTime(14, 0))
+                    .newCheckInTime("14:00")
+                    .reason("Thay đổi lịch vận chuyển đồ đạc")
+                    .build();
+
+            when(bookingRepository.findByIdForUpdate(bookingId)).thenReturn(Optional.of(eligibleBooking));
+            when(requestContext.currentUserId()).thenReturn(testCustomer.getId());
+            when(userRepository.findById(testCustomer.getId())).thenReturn(Optional.of(testCustomer));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+            when(bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(eq(testUnit.getId()), any(), eq(bookingId)))
+                    .thenReturn(false);
+            when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.empty());
+            when(bookingRescheduleHistoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            com.boxora.dto.response.BookingRescheduleResponse res = bookingService.rescheduleBookingDetailed(bookingId, req);
+
+            assertThat(res).isNotNull();
+            assertThat(res.getBooking().getStartDate()).isEqualTo(newDate);
+            assertThat(res.getBooking().getEndDate()).isEqualTo(newDate.plusMonths(3));
+            assertThat(res.getBooking().getExpectedCheckInAt()).isEqualTo(newDate.atTime(14, 0));
+            verify(bookingRescheduleHistoryRepository).save(any());
+            verify(activityLogService).record(eq(testFacility.getId()), eq(ActivityAction.CHECKIN_RESCHEDULE), eq("Booking"), eq(bookingId), any(), any(), eq(BookingStatus.CONFIRMED));
+        }
+
+        @Test
+        @DisplayName("2. Khách hàng không thể đổi lịch đơn của khách hàng khác -> FORBIDDEN")
+        void reschedule_Forbidden_AnotherCustomer() {
+            UUID strangerId = UUID.randomUUID();
+            User stranger = User.builder().fullName("Người Lạ").build();
+            stranger.setId(strangerId);
+            com.boxora.entity.Role role = new com.boxora.entity.Role();
+            role.setName("CUSTOMER");
+            stranger.setRole(role);
+
+            when(bookingRepository.findByIdForUpdate(bookingId)).thenReturn(Optional.of(eligibleBooking));
+            when(requestContext.currentUserId()).thenReturn(strangerId);
+            when(userRepository.findById(strangerId)).thenReturn(Optional.of(stranger));
+
+            com.boxora.dto.request.BookingRescheduleRequest req = com.boxora.dto.request.BookingRescheduleRequest.builder()
+                    .newStartDate(LocalDate.now().plusDays(4))
+                    .build();
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.rescheduleBookingDetailed(bookingId, req));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("3. Đơn đã bàn giao thực tế -> Không thể đổi lịch (BOOKING_ALREADY_HANDED_OVER)")
+        void reschedule_Rejected_CompletedHandover() {
+            eligibleBooking.setHandoverTime(java.time.LocalDateTime.now().minusDays(1));
+            when(bookingRepository.findByIdForUpdate(bookingId)).thenReturn(Optional.of(eligibleBooking));
+            when(requestContext.currentUserId()).thenReturn(testCustomer.getId());
+            when(userRepository.findById(testCustomer.getId())).thenReturn(Optional.of(testCustomer));
+
+            com.boxora.dto.request.BookingRescheduleRequest req = com.boxora.dto.request.BookingRescheduleRequest.builder()
+                    .newStartDate(LocalDate.now().plusDays(4))
+                    .build();
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.rescheduleBookingDetailed(bookingId, req));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BOOKING_ALREADY_HANDED_OVER);
+        }
+
+        @Test
+        @DisplayName("4. Đơn đã bị hủy -> Không thể đổi lịch (BOOKING_ALREADY_CANCELLED)")
+        void reschedule_Rejected_CancelledBooking() {
+            eligibleBooking.setStatus(BookingStatus.CANCELLED);
+            when(bookingRepository.findByIdForUpdate(bookingId)).thenReturn(Optional.of(eligibleBooking));
+            when(requestContext.currentUserId()).thenReturn(testCustomer.getId());
+            when(userRepository.findById(testCustomer.getId())).thenReturn(Optional.of(testCustomer));
+
+            com.boxora.dto.request.BookingRescheduleRequest req = com.boxora.dto.request.BookingRescheduleRequest.builder()
+                    .newStartDate(LocalDate.now().plusDays(4))
+                    .build();
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.rescheduleBookingDetailed(bookingId, req));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BOOKING_ALREADY_CANCELLED);
+        }
+
+        @Test
+        @DisplayName("5. Ngày hẹn trong quá khứ -> Bị từ chối (BOOKING_START_DATE_PAST)")
+        void reschedule_Rejected_PastDate() {
+            when(bookingRepository.findByIdForUpdate(bookingId)).thenReturn(Optional.of(eligibleBooking));
+            when(requestContext.currentUserId()).thenReturn(testCustomer.getId());
+            when(userRepository.findById(testCustomer.getId())).thenReturn(Optional.of(testCustomer));
+
+            com.boxora.dto.request.BookingRescheduleRequest req = com.boxora.dto.request.BookingRescheduleRequest.builder()
+                    .newStartDate(LocalDate.now().minusDays(1))
+                    .build();
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.rescheduleBookingDetailed(bookingId, req));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BOOKING_START_DATE_PAST);
+        }
+
+        @Test
+        @DisplayName("6. Hợp đồng đã ký điện tử: Bảo lưu chữ ký số và cập nhật lịch dự kiến")
+        void reschedule_PreservesSignedContract() {
+            LocalDate newDate = LocalDate.now().plusDays(7);
+            com.boxora.dto.request.BookingRescheduleRequest req = com.boxora.dto.request.BookingRescheduleRequest.builder()
+                    .newStartDate(newDate)
+                    .newExpectedCheckInAt(newDate.atTime(10, 0))
+                    .build();
+
+            com.boxora.entity.RentalContract contract = com.boxora.entity.RentalContract.builder()
+                    .contractCode("HD-TEST-001")
+                    .status(com.boxora.enums.RentalContractStatus.PENDING_ACTIVATION)
+                    .signedDocumentUrl("https://boxora.storage/contracts/signed_doc_01.pdf")
+                    .signatureData("SIG-DATA-BASE64")
+                    .signedAt(java.time.LocalDateTime.now().minusDays(1))
+                    .startDate(eligibleBooking.getStartDate())
+                    .endDate(eligibleBooking.getEndDate())
+                    .build();
+
+            when(bookingRepository.findByIdForUpdate(bookingId)).thenReturn(Optional.of(eligibleBooking));
+            when(requestContext.currentUserId()).thenReturn(testCustomer.getId());
+            when(userRepository.findById(testCustomer.getId())).thenReturn(Optional.of(testCustomer));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+            when(bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(any(), any(), any())).thenReturn(false);
+            when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(contract));
+            when(bookingRescheduleHistoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            com.boxora.dto.response.BookingRescheduleResponse res = bookingService.rescheduleBookingDetailed(bookingId, req);
+
+            assertThat(contract.getStartDate()).isEqualTo(newDate);
+            assertThat(contract.getEndDate()).isEqualTo(newDate.plusMonths(3));
+            // Signed contract integrity preserved
+            assertThat(contract.getSignedDocumentUrl()).isEqualTo("https://boxora.storage/contracts/signed_doc_01.pdf");
+            assertThat(contract.getSignatureData()).isEqualTo("SIG-DATA-BASE64");
+            assertThat(contract.getSignedAt()).isNotNull();
+            assertThat(res.getHistoryRecord().getContractAmendmentNotes()).contains("bảo lưu chữ ký số");
+        }
+
+        @Test
+        @DisplayName("7. getRescheduleEligibility: Trả về đầy đủ thông tin kiểm tra điều kiện")
+        void getRescheduleEligibility_ReturnsCorrectDetails() {
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(eligibleBooking));
+            when(requestContext.currentUserId()).thenReturn(testCustomer.getId());
+            when(userRepository.findById(testCustomer.getId())).thenReturn(Optional.of(testCustomer));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.empty());
+
+            com.boxora.dto.response.BookingRescheduleEligibilityResponse res = bookingService.getRescheduleEligibility(bookingId);
+
+            assertThat(res).isNotNull();
+            assertThat(res.isEligible()).isTrue();
+            assertThat(res.getBookingId()).isEqualTo(bookingId);
+            assertThat(res.getRestrictions()).isNotEmpty();
+            assertThat(res.getAllowedMinDate()).isEqualTo(LocalDate.now());
+        }
+    }
+
+    @Nested
+    @DisplayName("Get Booking By Id Authorization Tests")
+    class GetByIdAuthorizationTests {
+
+        @Test
+        @DisplayName("getById: Chủ sở hữu booking được phép truy cập thành công")
+        void getById_AuthorizedOwner_ReturnsBooking() {
+            UUID id = UUID.randomUUID();
+            com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                    .bookingCode("BX-OWNER-01")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(LocalDate.now())
+                    .endDate(LocalDate.now().plusMonths(1))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            booking.setId(id);
+
+            when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
+            when(requestContext.currentUserId()).thenReturn(testCustomer.getId());
+            when(userRepository.findById(testCustomer.getId())).thenReturn(Optional.of(testCustomer));
+
+            com.boxora.dto.response.BookingResponse response = bookingService.getById(id);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getBookingCode()).isEqualTo("BX-OWNER-01");
+        }
+
+        @Test
+        @DisplayName("getById: Khách hàng khác truy cập booking của người khác -> Bị từ chối FORBIDDEN (403)")
+        void getById_UnauthorizedCustomer_ThrowsForbidden() {
+            UUID id = UUID.randomUUID();
+            com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                    .bookingCode("BX-OTHER-01")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(LocalDate.now())
+                    .endDate(LocalDate.now().plusMonths(1))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            booking.setId(id);
+
+            UUID attackerId = UUID.randomUUID();
+            com.boxora.entity.User attacker = com.boxora.entity.User.builder()
+                    .email("attacker@gmail.com")
+                    .role(com.boxora.entity.Role.builder().name("CUSTOMER").build())
+                    .build();
+            attacker.setId(attackerId);
+
+            when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
+            when(requestContext.currentUserId()).thenReturn(attackerId);
+            when(userRepository.findById(attackerId)).thenReturn(Optional.of(attacker));
+
+            org.junit.jupiter.api.Assertions.assertThrows(
+                    com.boxora.exception.AppException.class,
+                    () -> bookingService.getById(id)
+            );
+        }
+
+        @Test
+        @DisplayName("getById: Nhân viên cơ sở khác cố truy cập booking cơ sở ngoài phạm vi -> Ném lỗi FACILITY_ACCESS_DENIED")
+        void getById_OutOfScopeStaff_ThrowsFacilityAccessDenied() {
+            UUID id = UUID.randomUUID();
+            com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                    .bookingCode("BX-FACILITY-01")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(LocalDate.now())
+                    .endDate(LocalDate.now().plusMonths(1))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            booking.setId(id);
+
+            UUID staffId = UUID.randomUUID();
+            com.boxora.entity.User otherStaff = com.boxora.entity.User.builder()
+                    .email("staff.d7@boxora.com")
+                    .role(com.boxora.entity.Role.builder().name("STAFF").build())
+                    .build();
+            otherStaff.setId(staffId);
+
+            when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(otherStaff));
+            when(facilityAccessGuard.isFacilityScoped()).thenReturn(true);
+            org.mockito.Mockito.doThrow(new com.boxora.exception.AppException(com.boxora.exception.ErrorCode.FACILITY_ACCESS_DENIED))
+                    .when(facilityAccessGuard).checkFacilityAccess(testFacility.getId());
+
+            org.junit.jupiter.api.Assertions.assertThrows(
+                    com.boxora.exception.AppException.class,
+                    () -> bookingService.getById(id)
+            );
         }
     }
 }

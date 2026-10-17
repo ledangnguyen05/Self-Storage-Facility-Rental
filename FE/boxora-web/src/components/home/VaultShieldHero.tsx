@@ -725,7 +725,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
       <div className="relative z-20 pb-4 flex flex-col items-center justify-center gap-1 pointer-events-none">
         <a href="#telemetry" className="pointer-events-auto flex flex-col items-center gap-1 group">
           <span className="text-[10px] font-mono font-bold tracking-widest text-slate-500 group-hover:text-cyan-700 uppercase transition-colors">
-            Cuộn chuột khám phá chi tiết
+            Cuộn xuống để khám phá chi tiết
           </span>
           <div className="w-5 h-8 rounded-full border-2 border-slate-300 group-hover:border-cyan-500 flex items-start justify-center p-1 transition-colors">
             <div className="w-1.5 h-2 bg-cyan-600 rounded-full animate-bounce" />

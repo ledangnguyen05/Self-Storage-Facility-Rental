@@ -23,13 +23,20 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class PricingServiceImpl implements PricingService {
 
     private final StorageUnitRepository storageUnitRepository;
     private final FacilityPolicyRepository facilityPolicyRepository;
     private final DiscountService discountService;
+
+    public PricingServiceImpl(StorageUnitRepository storageUnitRepository,
+                              FacilityPolicyRepository facilityPolicyRepository,
+                              DiscountService discountService) {
+        this.storageUnitRepository = storageUnitRepository;
+        this.facilityPolicyRepository = facilityPolicyRepository;
+        this.discountService = discountService;
+    }
 
     @Override
     @Transactional(readOnly = true)
@@ -92,6 +99,30 @@ public class PricingServiceImpl implements PricingService {
             }
         }
 
+        // Tự động áp dụng chiết khấu theo kỳ hạn thuê nếu chưa có mã giảm giá hoặc chiết khấu kỳ hạn cao hơn
+        int termDiscountPct = 0;
+        if (months >= 24) {
+            termDiscountPct = 20;
+        } else if (months >= 12) {
+            termDiscountPct = 15;
+        } else if (months >= 6) {
+            termDiscountPct = 10;
+        } else if (months >= 3) {
+            termDiscountPct = 5;
+        }
+
+        if (termDiscountPct > 0) {
+            BigDecimal termDiscountAmount = subtotal.multiply(BigDecimal.valueOf(termDiscountPct))
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            if (termDiscountAmount.compareTo(discountAmount) > 0) {
+                discountPct = termDiscountPct;
+                discountAmount = termDiscountAmount;
+                if (appliedDiscountCode == null) {
+                    appliedDiscountCode = "TERM_" + termDiscountPct + "PCT";
+                }
+            }
+        }
+
         BigDecimal totalRentalFee = subtotal.subtract(discountAmount);
         if (totalRentalFee.compareTo(BigDecimal.ZERO) < 0) {
             totalRentalFee = BigDecimal.ZERO;
@@ -114,7 +145,15 @@ public class PricingServiceImpl implements PricingService {
                 ? policy.getDepositRefundSlaDays()
                 : 5;
 
-        String cancellationPolicy = "Giữ chỗ trực tuyến có hiệu lực 24 giờ. Hoàn 100% tiền cọc nếu hủy trước giờ nhận bàn giao kho. " +
+        int holdGraceHours = (policy != null && policy.getHoldGraceHours() != null)
+                ? policy.getHoldGraceHours()
+                : 24;
+
+        int maxHoldDays = (policy != null && policy.getMaxHoldDays() != null)
+                ? policy.getMaxHoldDays()
+                : 14;
+
+        String cancellationPolicy = "Giữ chỗ miễn phí theo lịch hẹn được bảo lưu đến giờ hẹn cộng thêm " + holdGraceHours + " giờ theo chính sách cơ sở. " +
                 "Sau khi nhận kho, quy trình hoàn cọc được thẩm định hiện trường và thanh toán trong 3-5 ngày làm việc.";
 
         return PricingQuoteResponse.builder()
@@ -137,6 +176,8 @@ public class PricingServiceImpl implements PricingService {
                 .totalContractValue(totalContractValue)
                 .refundSlaDays(slaDays)
                 .cancellationPolicy(cancellationPolicy)
+                .holdGraceHours(holdGraceHours)
+                .maxHoldDays(maxHoldDays)
                 .build();
     }
 }

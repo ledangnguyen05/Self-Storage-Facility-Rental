@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { useOutletContext, Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { reportService } from '../../services/reportService'
@@ -9,6 +9,7 @@ import { paymentService, PaymentItem } from '../../services/paymentService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { contractService, RentalContract } from '../../services/contractService'
 import { userService } from '../../services/userService'
+import { supportTicketService, SupportTicketStats, SupportTicketRecord } from '../../services/supportTicketService'
 import { Facility, FacilityPolicy, FacilityPolicyCreateRequest, FacilityPolicyUpdateRequest, RevenueReport, OccupancyReport, OverdueDebtReport, UnitType, User } from '../../types'
 import { FacilityPolicyModal } from './components/FacilityPolicyModal'
 
@@ -65,6 +66,14 @@ export const OperationsDashboard: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [toastIsError, setToastIsError] = useState(false)
 
+  // Incident Reporting & Support Ticket Monitoring (Read-Only for BOM)
+  const [ticketStats, setTicketStats] = useState<SupportTicketStats | null>(null)
+  const [allTickets, setAllTickets] = useState<SupportTicketRecord[]>([])
+  const [ticketCategoryFilter, setTicketCategoryFilter] = useState('ALL')
+  const [ticketPriorityFilter, setTicketPriorityFilter] = useState('ALL')
+  const [ticketStatusFilter, setTicketStatusFilter] = useState('ALL')
+  const [selectedIncidentDetail, setSelectedIncidentDetail] = useState<SupportTicketRecord | null>(null)
+
   // Report Date Range State - Default to All Time (empty) so user sees full DB revenue initially
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
@@ -94,7 +103,7 @@ export const OperationsDashboard: React.FC = () => {
       const queryTo = tDate || undefined
       const scope = targetScope !== undefined ? targetScope : selectedFacilityId
       const targetFacilityId = scope === 'all' ? undefined : scope
-      const [facRes, revRes, occRes, debtRes, polRes, payRes, utRes, ctRes, allPolRes] = await Promise.allSettled([
+      const [facRes, revRes, occRes, debtRes, polRes, payRes, utRes, ctRes, allPolRes, tStatRes, tQueueRes] = await Promise.allSettled([
         facilityService.getFacilities(),
         reportService.getRevenueReport(queryFrom, queryTo, targetFacilityId),
         reportService.getOccupancyReport(targetFacilityId),
@@ -106,7 +115,15 @@ export const OperationsDashboard: React.FC = () => {
         storageUnitService.getUnitTypes(),
         contractService.getMyContracts({ size: 100 }),
         facilityPolicyService.getAll({ size: 100 }),
+        supportTicketService.getStats(),
+        supportTicketService.getQueue()
       ])
+      if (tStatRes.status === 'fulfilled' && tStatRes.value) {
+        setTicketStats(tStatRes.value)
+      }
+      if (tQueueRes.status === 'fulfilled' && Array.isArray(tQueueRes.value)) {
+        setAllTickets(tQueueRes.value)
+      }
       if (facRes.status === 'fulfilled' && facRes.value?.content) {
         setFacilities(facRes.value.content)
       }
@@ -1169,8 +1186,9 @@ export const OperationsDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* FACILITY OPERATING POLICIES MANAGEMENT (BUSINESS MANAGER & ADMIN) */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+      {/* FACILITY OPERATING POLICIES MANAGEMENT (BUSINESS MANAGER ONLY) */}
+      {canManagePolicies && (
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-lg bg-cyan-50 flex items-center justify-center text-cyan-600 border border-cyan-100">
@@ -1388,9 +1406,10 @@ export const OperationsDashboard: React.FC = () => {
           </table>
         </div>
       </div>
+      )}
 
-      {/* 4-TIER DYNAMIC PRICING MATRIX & BUSINESS POLICY ENGINE */}
-      {canManagePolicies ? (
+      {/* 4-TIER DYNAMIC PRICING MATRIX & BUSINESS POLICY ENGINE (BUSINESS MANAGER ONLY) */}
+      {canManagePolicies && (
       <form onSubmit={handleSavePolicies} className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
@@ -1653,16 +1672,6 @@ export const OperationsDashboard: React.FC = () => {
           </div>
         </div>
       </form>
-      ) : (
-        <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <div className="flex items-start gap-3">
-            <span className="material-symbols-outlined rounded-lg bg-slate-100 p-2 text-slate-600 dark:bg-slate-800 dark:text-slate-300">visibility</span>
-            <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{t('Chính sách kinh doanh & Bảng giá hệ thống (Chế độ xem)', 'Business policies & System pricing (Read-only)')}</h2>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{t('Quản trị viên (Admin) chỉ có quyền xem chính sách và bảng giá. Thẩm quyền ban hành, cấu hình quy tắc và kích hoạt chính sách thuộc về Business Operations Manager.', 'Admin is only authorized to view policies and pricing. Policy creation, rule configuration, and activation are managed by Business Operations Manager.')}</p>
-            </div>
-          </div>
-        </section>
       )}
 
       {/* Facility Policy Modal for Business Manager & Admin */}
@@ -1772,6 +1781,262 @@ export const OperationsDashboard: React.FC = () => {
           </div>
         </div>
       )}
+      {/* SECTION: GIÁM SÁT SỰ CỐ VẬN HÀNH & TUÂN THỦ SLA (READ-ONLY FOR BUSINESS OPERATIONS MANAGER) */}
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600 border border-rose-100">
+              <span className="material-symbols-outlined text-[24px]">troubleshoot</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-slate-900">
+                  Giám Sát Sự Cố Vận Hành &amp; Tuân Thủ SLA Hệ Thống
+                </h2>
+                <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded-md border border-blue-200">
+                  READ-ONLY BOM
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Theo dõi hiệu quả xử lý sự cố, tỷ lệ vi phạm SLA 24h và phân bố sự cố theo cơ sở trên toàn hệ thống.
+              </p>
+            </div>
+          </div>
+
+          <Link
+            to="/tickets"
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs self-start md:self-auto cursor-pointer"
+          >
+            <span>Trang Queue Sự Cố Chi Tiết</span>
+            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+          </Link>
+        </div>
+
+        {/* 4 Incident KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200">
+            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Tổng sự cố phát sinh</div>
+            <div className="text-2xl font-black text-slate-900 font-mono mt-1">
+              {ticketStats?.totalTickets ?? allTickets.length}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1">Trên toàn chuỗi cơ sở Boxora</div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-blue-50/50 border border-blue-200">
+            <div className="text-[11px] font-semibold text-blue-800 uppercase tracking-wider">Đang trong tiến trình xử lý</div>
+            <div className="text-2xl font-black text-blue-700 font-mono mt-1">
+              {ticketStats?.inProgressTickets ?? allTickets.filter(t => t.status === 'IN_PROGRESS' || t.status === 'OPEN').length}
+            </div>
+            <div className="text-[11px] text-blue-600 mt-1">Đội kỹ thuật đang có mặt hiện trường</div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-rose-50/50 border border-rose-200">
+            <div className="text-[11px] font-semibold text-rose-800 uppercase tracking-wider">Vi phạm SLA (&gt; 24h)</div>
+            <div className="text-2xl font-black text-rose-700 font-mono mt-1">
+              {ticketStats?.overdueTickets ?? allTickets.filter(t => t.isOverdue || t.isOverdueSla).length}
+            </div>
+            <div className="text-[11px] text-rose-600 mt-1">Cần Ban Quản Lý (BOM) lưu ý điều phối</div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-200">
+            <div className="text-[11px] font-semibold text-emerald-800 uppercase tracking-wider">Đã khắc phục hoàn tất</div>
+            <div className="text-2xl font-black text-emerald-700 font-mono mt-1">
+              {ticketStats?.resolvedTickets ?? allTickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED').length}
+            </div>
+            <div className="text-[11px] text-emerald-600 mt-1">Khôi phục vận hành an toàn</div>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-2 pt-2">
+          <select
+            value={ticketCategoryFilter}
+            onChange={(e) => setTicketCategoryFilter(e.target.value)}
+            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none cursor-pointer"
+          >
+            <option value="ALL">Tất cả loại sự cố</option>
+            <option value="LOCK_ISSUE">Khóa SmartLock</option>
+            <option value="ACCESS_ISSUE">Truy cập kho</option>
+            <option value="CLEANLINESS_PEST">Vệ sinh &amp; Côn trùng</option>
+            <option value="CLIMATE_TEMP">Nhiệt độ &amp; Độ ẩm</option>
+            <option value="FACILITY_DAMAGE">Hư hỏng thiết bị</option>
+            <option value="PAYMENT_ISSUE">Thanh toán</option>
+            <option value="PIN_CODE">Mã PIN</option>
+            <option value="OTHER">Vấn đề khác</option>
+          </select>
+
+          <select
+            value={ticketPriorityFilter}
+            onChange={(e) => setTicketPriorityFilter(e.target.value)}
+            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none cursor-pointer"
+          >
+            <option value="ALL">Tất cả mức ưu tiên</option>
+            <option value="CRITICAL">Nguy cấp (Critical / Urgent)</option>
+            <option value="HIGH">Ưu tiên cao (High)</option>
+            <option value="MEDIUM">Bình thường (Medium)</option>
+            <option value="LOW">Thấp (Low)</option>
+          </select>
+
+          <select
+            value={ticketStatusFilter}
+            onChange={(e) => setTicketStatusFilter(e.target.value)}
+            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none cursor-pointer"
+          >
+            <option value="ALL">Tất cả trạng thái</option>
+            <option value="OPEN">Chờ tiếp nhận</option>
+            <option value="IN_PROGRESS">Đang xử lý</option>
+            <option value="RESOLVED">Đã giải quyết</option>
+            <option value="CLOSED">Đã đóng</option>
+            <option value="REOPENED">Mở lại</option>
+          </select>
+        </div>
+
+        {/* Read-Only Incidents Table */}
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 font-mono uppercase tracking-wider text-[11px]">
+                <th className="py-3 px-3.5">Mã Ticket</th>
+                <th className="py-3 px-3.5">Sự Cố &amp; Danh Mục</th>
+                <th className="py-3 px-3.5">Cơ Sở &amp; Vị Trí</th>
+                <th className="py-3 px-3.5 text-center">Ưu Tiên</th>
+                <th className="py-3 px-3.5">Phụ Trách</th>
+                <th className="py-3 px-3.5">SLA / Quá Hạn</th>
+                <th className="py-3 px-3.5 text-center">Trạng Thái</th>
+                <th className="py-3 px-3.5 text-right">Chi Tiết</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {allTickets
+                .filter(t => {
+                  if (selectedFacilityId !== 'all' && t.facilityId !== selectedFacilityId) return false
+                  if (ticketCategoryFilter !== 'ALL' && t.category !== ticketCategoryFilter) return false
+                  if (ticketPriorityFilter !== 'ALL' && t.priority !== ticketPriorityFilter) return false
+                  if (ticketStatusFilter !== 'ALL' && t.status !== ticketStatusFilter) return false
+                  return true
+                })
+                .slice(0, 10)
+                .map(t => (
+                  <tr key={t.id} className="hover:bg-slate-50/70">
+                    <td className="py-3 px-3.5">
+                      <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                        #{t.ticketCode || t.id.substring(0, 8)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3.5">
+                      <div className="font-semibold text-slate-900 text-xs">{t.title}</div>
+                      <div className="text-[11px] text-slate-500 line-clamp-1">{t.description}</div>
+                    </td>
+                    <td className="py-3 px-3.5">
+                      <div className="text-slate-800 font-medium">{t.facilityName || 'Boxora'}</div>
+                      <div className="font-mono text-slate-500 text-[10px]">{t.unitCode ? `Kho #${t.unitCode}` : 'Khu vực chung'}</div>
+                    </td>
+                    <td className="py-3 px-3.5 text-center">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                        {t.priority}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3.5 text-slate-700">
+                      {t.assignedStaffName || <span className="text-slate-400 italic">Chưa giao</span>}
+                    </td>
+                    <td className="py-3 px-3.5">
+                      {t.isOverdue || t.isOverdueSla ? (
+                        <span className="px-2 py-0.5 bg-rose-100 text-rose-700 border border-rose-300 rounded text-[10px] font-bold">
+                          Quá SLA 24h
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-slate-500">Đúng hạn</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-3.5 text-center">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                        {t.status}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3.5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedIncidentDetail(t)}
+                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                      >
+                        Xem
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Detail Modal for BOM (Read-Only) */}
+      {selectedIncidentDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-bold text-xs bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-slate-800">
+                  #{selectedIncidentDetail.ticketCode || selectedIncidentDetail.id.substring(0, 8)}
+                </span>
+                <h3 className="text-sm font-bold text-slate-900 truncate max-w-[240px]">
+                  {selectedIncidentDetail.title}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedIncidentDetail(null)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-[10px] text-slate-400 block">Cơ sở:</span>
+                  <strong>{selectedIncidentDetail.facilityName || 'N/A'}</strong>
+                </div>
+                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-[10px] text-slate-400 block">Kho:</span>
+                  <strong>{selectedIncidentDetail.unitCode ? `#${selectedIncidentDetail.unitCode}` : 'Chung'}</strong>
+                </div>
+                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-[10px] text-slate-400 block">Người phụ trách:</span>
+                  <strong>{selectedIncidentDetail.assignedStaffName || 'Chưa phân công'}</strong>
+                </div>
+                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-[10px] text-slate-400 block">Trạng thái:</span>
+                  <strong>{selectedIncidentDetail.status}</strong>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
+                <div className="text-[10px] font-bold text-slate-500 uppercase">Nội dung sự cố:</div>
+                <p className="text-slate-700 leading-relaxed whitespace-pre-wrap">{selectedIncidentDetail.description}</p>
+              </div>
+
+              {selectedIncidentDetail.resolutionNote && (
+                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 space-y-1">
+                  <div className="text-[10px] font-bold text-emerald-800 uppercase">Ghi chú giải quyết:</div>
+                  <p className="text-emerald-900 leading-relaxed whitespace-pre-wrap">{selectedIncidentDetail.resolutionNote}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSelectedIncidentDetail(null)}
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

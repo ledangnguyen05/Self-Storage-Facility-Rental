@@ -47,6 +47,14 @@ public class RentalContractResponse {
     private LocalDateTime signedAt;
     private String signatureData;
 
+    private String signingMethod;
+    private String paperContractUrl;
+    private String paperOriginalLocation;
+    private UUID paperVerifiedById;
+    private String paperVerifiedByName;
+    private LocalDateTime paperVerifiedAt;
+    private String paperNotes;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

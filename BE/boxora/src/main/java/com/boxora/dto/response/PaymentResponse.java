@@ -31,4 +31,14 @@ public class PaymentResponse {
     private String paymentMethod;
 
     private LocalDateTime paymentTime;
-}
+
+    private UUID collectedById;
+    private String collectedByName;
+    private String receiptVoucherCode;
+    private String referenceCode;
+    private String proofDocumentUrl;
+    private UUID confirmedById;
+    private String confirmedByName;
+    private LocalDateTime confirmedAt;
+    private String paymentNotes;
+}
