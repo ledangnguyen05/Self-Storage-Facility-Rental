@@ -66,6 +66,12 @@ class ContractSigningServiceTest {
     private BookingRepository bookingRepository;
 
     @Mock
+    private com.boxora.repository.PaymentRepository paymentRepository;
+
+    @Mock
+    private com.boxora.repository.RefundRequestRepository refundRequestRepository;
+
+    @Mock
     private RentalContractMapper rentalContractMapper;
 
     @Mock
@@ -248,5 +254,250 @@ class ContractSigningServiceTest {
                 .when(facilityAccessGuard).checkFacilityAccess(mockFacility.getId());
 
         assertThrows(AppException.class, () -> contractSigningService.getContractByBookingId(bookingId));
+    }
+
+    @Test
+    @DisplayName("Task 09 Case 6: mockSign with empty, null, or invalid format signatureData is rejected")
+    void testTask09_Case6_MockSignWithEmptyOrInvalidSignature_Rejected() {
+        when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(mockContract));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(mockUser.getId());
+        when(docuSealConfig.isMockActive()).thenReturn(true);
+
+        AppException exNull = assertThrows(AppException.class, () -> contractSigningService.mockSign(contractId, null));
+        assertThat(exNull.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+
+        AppException exEmpty = assertThrows(AppException.class, () -> contractSigningService.mockSign(contractId, "   "));
+        assertThat(exEmpty.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+
+        AppException exInvalidPrefix = assertThrows(AppException.class, () -> contractSigningService.mockSign(contractId, "not-a-valid-data-uri"));
+        assertThat(exInvalidPrefix.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+
+        AppException exEmptyBase64 = assertThrows(AppException.class, () -> contractSigningService.mockSign(contractId, "data:image/png;base64,   "));
+        assertThat(exEmptyBase64.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("Task 09 Case 7: mockSign for a contract not belonging to current customer is rejected with FORBIDDEN")
+    void testTask09_Case7_MockSignForAnotherCustomerContract_Rejected() {
+        when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(mockContract));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(UUID.randomUUID()); // Different user!
+
+        AppException ex = assertThrows(AppException.class,
+                () -> contractSigningService.mockSign(contractId, "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("Task 09 Case 2 & 8: mockSign when booking is unpaid or only DEPOSIT (PARTIALLY_PAID) is rejected and does NOT auto-confirm PENDING_PAYMENT booking")
+    void testTask09_Case2_And_8_MockSignWhenBookingUnpaidOrPartiallyPaid_Rejected() {
+        com.boxora.entity.Booking unpaidBooking = com.boxora.entity.Booking.builder()
+                .bookingCode("BK-UNPAID-01")
+                .status(com.boxora.enums.BookingStatus.PENDING_PAYMENT)
+                .paymentStatus("UNPAID")
+                .signingMethod("ONLINE")
+                .depositAmount(new BigDecimal("500000"))
+                .totalRentalFee(new BigDecimal("1000000"))
+                .rentalMonths(1)
+                .build();
+        unpaidBooking.setId(UUID.randomUUID());
+        mockContract.setBooking(unpaidBooking);
+
+        when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(mockContract));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(mockUser.getId());
+        when(docuSealConfig.isMockActive()).thenReturn(true);
+
+        String validSig = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+        // 1. Completely unpaid PENDING_PAYMENT booking -> rejected, status remains PENDING_PAYMENT
+        AppException exUnpaid = assertThrows(AppException.class, () -> contractSigningService.mockSign(contractId, validSig));
+        assertThat(exUnpaid.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+        assertThat(unpaidBooking.getStatus()).isEqualTo(com.boxora.enums.BookingStatus.PENDING_PAYMENT);
+
+        // 2. Confirmed booking with ONLY DEPOSIT paid (PARTIALLY_PAID, rent still unpaid) -> rejected
+        unpaidBooking.setStatus(com.boxora.enums.BookingStatus.CONFIRMED);
+        unpaidBooking.setPaymentStatus("PARTIALLY_PAID");
+        unpaidBooking.setDepositPaid(new BigDecimal("500000"));
+        com.boxora.entity.Payment depositOnlyTx = com.boxora.entity.Payment.builder()
+                .booking(unpaidBooking)
+                .paymentType(com.boxora.enums.PaymentType.DEPOSIT)
+                .status(com.boxora.enums.PaymentStatus.PAID)
+                .amount(new BigDecimal("500000"))
+                .build();
+        when(paymentRepository.findAllByBooking_Id(unpaidBooking.getId())).thenReturn(List.of(depositOnlyTx));
+
+        AppException exPartial = assertThrows(AppException.class, () -> contractSigningService.mockSign(contractId, validSig));
+        assertThat(exPartial.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+        assertThat(mockContract.getStatus()).isEqualTo(RentalContractStatus.PENDING_SIGNATURE);
+    }
+
+    @Test
+    @DisplayName("Task 09 Case 4 & 14: mockSign succeeds when BOOKING_PAYMENT is fully PAID, sets PENDING_ACTIVATION, and does NOT decrypt/expose PIN before check-in")
+    void testTask09_Case4_And_14_MockSignWhenBookingFullyPaid_SucceedsWithoutPinBeforeCheckIn() {
+        com.boxora.entity.Booking paidBooking = com.boxora.entity.Booking.builder()
+                .bookingCode("BK-PAID-01")
+                .status(com.boxora.enums.BookingStatus.CONFIRMED)
+                .paymentStatus("PAID")
+                .signingMethod("ONLINE")
+                .depositAmount(new BigDecimal("500000"))
+                .depositPaid(new BigDecimal("500000"))
+                .totalRentalFee(new BigDecimal("1000000"))
+                .rentalMonths(1)
+                .accessPin("ENCRYPTED-PIN-SECRET")
+                .build();
+        paidBooking.setId(UUID.randomUUID());
+        mockContract.setBooking(paidBooking);
+
+        com.boxora.entity.Payment fullBookingPayment = com.boxora.entity.Payment.builder()
+                .booking(paidBooking)
+                .paymentType(com.boxora.enums.PaymentType.BOOKING_PAYMENT)
+                .status(com.boxora.enums.PaymentStatus.PAID)
+                .amount(new BigDecimal("1500000"))
+                .build();
+
+        when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(mockContract));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(mockUser.getId());
+        when(docuSealConfig.isMockActive()).thenReturn(true);
+        when(paymentRepository.findAllByBooking_Id(paidBooking.getId())).thenReturn(List.of(fullBookingPayment));
+
+        String validSig = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        contractSigningService.mockSign(contractId, validSig);
+
+        assertThat(mockContract.getStatus()).isEqualTo(RentalContractStatus.PENDING_ACTIVATION);
+        assertThat(mockContract.getSignedAt()).isNotNull();
+        assertThat(mockContract.getSignatureData()).isEqualTo(validSig);
+        // Must NOT decrypt or expose accessPin while booking is CONFIRMED (awaiting check-in)
+        verify(encryptionService, never()).decrypt(anyString());
+    }
+
+    @Test
+    @DisplayName("Final Review Issue 2: mockSign is strictly rejected with FORBIDDEN when mock mode is disabled, even if contract slug starts with mock-")
+    void testFinalReview_Issue2_MockSignRejectedWhenMockModeDisabled_EvenWithMockSlug() {
+        mockContract.setDocusealSubmitterSlug("mock-bypass-attempt-999");
+
+        when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(mockContract));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(mockUser.getId());
+        when(docuSealConfig.isMockActive()).thenReturn(false); // Production mode (mock disabled)
+
+        String validSig = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+        AppException ex = assertThrows(AppException.class, () -> contractSigningService.mockSign(contractId, validSig));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        assertThat(mockContract.getStatus()).isEqualTo(RentalContractStatus.PENDING_SIGNATURE);
+        assertThat(mockContract.getSignedAt()).isNull();
+        verify(rentalContractRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Final Review Issue 1: mockSign is rejected when booking.depositPaid > 0 and paymentStatus is PAID but transaction has been REFUNDED")
+    void testFinalReview_Issue1_MockSignRejectedWhenPaymentRefunded() {
+        com.boxora.entity.Booking refundedBooking = com.boxora.entity.Booking.builder()
+                .bookingCode("BK-REFUND-01")
+                .status(com.boxora.enums.BookingStatus.CONFIRMED)
+                .paymentStatus("PAID")
+                .signingMethod("ONLINE")
+                .depositAmount(new BigDecimal("500000"))
+                .depositPaid(new BigDecimal("500000"))
+                .totalRentalFee(new BigDecimal("1000000"))
+                .rentalMonths(1)
+                .build();
+        refundedBooking.setId(UUID.randomUUID());
+        mockContract.setBooking(refundedBooking);
+
+        com.boxora.entity.Payment paidTx = com.boxora.entity.Payment.builder()
+                .booking(refundedBooking)
+                .paymentType(com.boxora.enums.PaymentType.BOOKING_PAYMENT)
+                .status(com.boxora.enums.PaymentStatus.PAID)
+                .amount(new BigDecimal("1500000"))
+                .build();
+        com.boxora.entity.Payment refundTx = com.boxora.entity.Payment.builder()
+                .booking(refundedBooking)
+                .paymentType(com.boxora.enums.PaymentType.DEPOSIT)
+                .status(com.boxora.enums.PaymentStatus.REFUNDED)
+                .amount(new BigDecimal("500000"))
+                .build();
+
+        when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(mockContract));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(mockUser.getId());
+        when(docuSealConfig.isMockActive()).thenReturn(true);
+        when(paymentRepository.findAllByBooking_Id(refundedBooking.getId())).thenReturn(List.of(paidTx, refundTx));
+
+        String validSig = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+        AppException ex = assertThrows(AppException.class, () -> contractSigningService.mockSign(contractId, validSig));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+        assertThat(mockContract.getStatus()).isEqualTo(RentalContractStatus.PENDING_SIGNATURE);
+        assertThat(mockContract.getSignedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("Refund Spec Case 5, 7, 9: Block mockSign and createSigningRequest when booking is awaiting refund (REFUND_PENDING or active RefundRequest), allow when RefundRequest is REJECTED, and preserve legacy depositPaid fallback")
+    void testRefundSpec_Cases5_7_9_ContractSigningProtectionAndLegacyFallback() {
+        com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                .bookingCode("BK-REFUND-PENDING-01")
+                .status(com.boxora.enums.BookingStatus.CONFIRMED)
+                .paymentStatus("PAID")
+                .signingMethod("ONLINE")
+                .depositAmount(new BigDecimal("500000"))
+                .depositPaid(new BigDecimal("500000"))
+                .totalRentalFee(new BigDecimal("1000000"))
+                .rentalMonths(1)
+                .build();
+        booking.setId(UUID.randomUUID());
+        mockContract.setBooking(booking);
+
+        com.boxora.entity.Payment paidRentTx = com.boxora.entity.Payment.builder()
+                .booking(booking)
+                .paymentType(com.boxora.enums.PaymentType.RENTAL_FEE)
+                .status(com.boxora.enums.PaymentStatus.PAID)
+                .amount(new BigDecimal("1000000"))
+                .build();
+        com.boxora.entity.Payment pendingRefundTx = com.boxora.entity.Payment.builder()
+                .booking(booking)
+                .paymentType(com.boxora.enums.PaymentType.DEPOSIT)
+                .status(com.boxora.enums.PaymentStatus.REFUND_PENDING)
+                .amount(new BigDecimal("500000"))
+                .build();
+
+        when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(mockContract));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(mockUser.getId());
+        when(docuSealConfig.isMockActive()).thenReturn(true);
+
+        String validSig = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+        // Case 7a: Booking has REFUND_PENDING -> both createSigningRequest and mockSign are blocked with INVALID_REQUEST
+        when(paymentRepository.findAllByBooking_Id(booking.getId())).thenReturn(List.of(paidRentTx, pendingRefundTx));
+        AppException exCreateUrl = assertThrows(AppException.class, () -> contractSigningService.createSigningRequest(mockContract));
+        assertThat(exCreateUrl.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+
+        AppException exMockSignPendingRefund = assertThrows(AppException.class, () -> contractSigningService.mockSign(contractId, validSig));
+        assertThat(exMockSignPendingRefund.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+
+        // Case 7b: Booking has active RefundRequest (PENDING_REVIEW / APPROVED / PROCESSING_TRANSFER) -> blocked even if no REFUND_PENDING payment
+        when(paymentRepository.findAllByBooking_Id(booking.getId())).thenReturn(List.of(paidRentTx));
+        when(refundRequestRepository.existsByBooking_IdAndStatusIn(eq(booking.getId()), any())).thenReturn(true);
+        AppException exActiveRefundReq = assertThrows(AppException.class, () -> contractSigningService.mockSign(contractId, validSig));
+        assertThat(exActiveRefundReq.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+
+        // Case 5 & 9: RefundRequest is REJECTED (existsByBooking_IdAndStatusIn returns false), and legacy CONFIRMED booking has
+        // booking.depositPaid = 500,000đ + PAID RENTAL_FEE = 1,000,000đ + a FAILED deposit attempt -> signing succeeds!
+        com.boxora.entity.Payment failedDepositAttempt = com.boxora.entity.Payment.builder()
+                .booking(booking)
+                .paymentType(com.boxora.enums.PaymentType.DEPOSIT)
+                .status(com.boxora.enums.PaymentStatus.FAILED)
+                .amount(new BigDecimal("500000"))
+                .build();
+        when(refundRequestRepository.existsByBooking_IdAndStatusIn(eq(booking.getId()), any())).thenReturn(false);
+        when(paymentRepository.findAllByBooking_Id(booking.getId())).thenReturn(List.of(paidRentTx, failedDepositAttempt));
+
+        contractSigningService.mockSign(contractId, validSig);
+        assertThat(mockContract.getStatus()).isEqualTo(RentalContractStatus.PENDING_ACTIVATION);
+        assertThat(mockContract.getSignedAt()).isNotNull();
     }
 }

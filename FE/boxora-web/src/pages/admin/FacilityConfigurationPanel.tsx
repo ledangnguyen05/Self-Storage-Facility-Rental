@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { facilityService } from '../../services/facilityService'
@@ -7,6 +8,8 @@ import { Facility, FacilityLayoutConfig, FacilityPolicy } from '../../types'
 import { DEFAULT_FACILITY_LAYOUT_CONFIG, parseFacilityLayoutConfig } from '../../utils/facilityLayout'
 import { createDefaultFacilityPolicy } from '../../utils/facilityPolicyDefaults'
 import { FacilityPolicyViewModal } from '../manager/modals/FacilityPolicyViewModal'
+import { FacilityOperatingPoliciesPanel } from './FacilityOperatingPoliciesPanel'
+import { DynamicPricingMatrixPanel } from './DynamicPricingMatrixPanel'
 
 interface FacilityConfigurationPanelProps {
   facilities: Facility[]
@@ -106,6 +109,39 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   const { role } = useAuth()
   const canManage = role === 'BUSINESS_MANAGER'
   const { t } = useLanguage()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const subtabParam = searchParams.get('subtab')
+
+  const [configTab, setConfigTab] = useState<'branches' | 'policies' | 'pricing'>(() => {
+    if (subtabParam === 'policies' || subtabParam === 'operating-policies') return 'policies'
+    if (subtabParam === 'pricing' || subtabParam === 'pricing-matrix') return 'pricing'
+    return 'branches'
+  })
+
+  // Sync state if URL changes externally
+  useEffect(() => {
+    if (subtabParam === 'policies' || subtabParam === 'operating-policies') {
+      setConfigTab('policies')
+    } else if (subtabParam === 'pricing' || subtabParam === 'pricing-matrix') {
+      setConfigTab('pricing')
+    } else {
+      setConfigTab('branches')
+    }
+  }, [subtabParam])
+
+  const handleTabChange = (newTab: 'branches' | 'policies' | 'pricing') => {
+    setConfigTab(newTab)
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      if (newTab === 'branches') {
+        next.delete('subtab')
+      } else {
+        next.set('subtab', newTab)
+      }
+      return next
+    })
+  }
+
   const [editingFacility, setEditingFacility] = useState<Facility | null>(null)
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [draft, setDraft] = useState<FacilityDraft>(blankDraft)
@@ -243,21 +279,65 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   }
 
   return (
-    <div className="space-y-5">
-      <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-slate-700 dark:bg-slate-900">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{t('Cấu hình chi nhánh', 'Branch configuration')}</h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{t('Quản lý thông tin, vị trí GPS và sơ đồ mặt bằng của từng cơ sở.', 'Manage branch details, GPS location, and floor layout.')}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {canManage && (
-            <button type="button" onClick={startCreate} className="inline-flex items-center gap-2 rounded-lg bg-cyan-700 px-3.5 py-2.5 text-xs font-bold text-white hover:bg-cyan-800 cursor-pointer">
-              <span className="material-symbols-outlined text-[18px]">add_business</span>
-              {t('Thêm chi nhánh', 'Add branch')}
-            </button>
-          )}
-        </div>
-      </section>
+    <div className="space-y-6">
+      {/* Sub-tab Navigation Bar */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
+        <button
+          type="button"
+          onClick={() => handleTabChange('branches')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer shadow-xs ${
+            configTab === 'branches'
+              ? 'bg-cyan-700 text-white shadow-cyan-700/20'
+              : 'bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-slate-200'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">domain</span>
+          <span>{t('1. Thông tin & Mặt bằng chi nhánh')}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleTabChange('policies')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer shadow-xs ${
+            configTab === 'policies'
+              ? 'bg-cyan-700 text-white shadow-cyan-700/20'
+              : 'bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-slate-200'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">policy</span>
+          <span>{t('2. Chính Sách Vận Hành Cơ Sở')}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleTabChange('pricing')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer shadow-xs ${
+            configTab === 'pricing'
+              ? 'bg-cyan-700 text-white shadow-cyan-700/20'
+              : 'bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-slate-200'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">tune</span>
+          <span>{t('3. Quy Tắc Kinh Doanh & Giá Động')}</span>
+        </button>
+      </div>
+
+      {configTab === 'branches' && (
+        <div className="space-y-5">
+          <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-slate-700 dark:bg-slate-900">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{t('Cấu hình chi nhánh', 'Branch configuration')}</h2>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{t('Quản lý thông tin, vị trí GPS và sơ đồ mặt bằng của từng cơ sở.', 'Manage branch details, GPS location, and floor layout.')}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {canManage && (
+                <button type="button" onClick={startCreate} className="inline-flex items-center gap-2 rounded-lg bg-cyan-700 px-3.5 py-2.5 text-xs font-bold text-white hover:bg-cyan-800 cursor-pointer">
+                  <span className="material-symbols-outlined text-[18px]">add_business</span>
+                  {t('Thêm chi nhánh', 'Add branch')}
+                </button>
+              )}
+            </div>
+          </section>
 
       {notice && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">{notice}</p>}
 
@@ -511,6 +591,18 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
           facilityName={modalPolicyFacility.name}
           canEdit={canManage}
         />
+      )}
+        </div>
+      )}
+
+      {/* 2. CHÍNH SÁCH VẬN HÀNH CƠ SỞ */}
+      {configTab === 'policies' && (
+        <FacilityOperatingPoliciesPanel facilities={facilities} />
+      )}
+
+      {/* 3. CẤU HÌNH QUY TẮC KINH DOANH & GIÁ ĐỘNG */}
+      {configTab === 'pricing' && (
+        <DynamicPricingMatrixPanel facilities={facilities} />
       )}
     </div>
   )

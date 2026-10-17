@@ -19,7 +19,7 @@ export const CashierJournalPage: React.FC = () => {
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState<number>(1)
-  const [pageSize, setPageSize] = useState<number>(10)
+  const pageSize = 10
 
   const activeFacilityId = useMemo(() => {
     if (user?.role?.name === 'FACILITY_MANAGER' || user?.role?.name === 'STAFF') {
@@ -65,7 +65,7 @@ export const CashierJournalPage: React.FC = () => {
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, typeFilter, statusFilter, pageSize])
+  }, [searchQuery, typeFilter, statusFilter])
 
   // Calculations
   const shiftTotalCollected = useMemo(() => {
@@ -332,20 +332,6 @@ export const CashierJournalPage: React.FC = () => {
               <option value="FAILED">Thất bại / Hủy</option>
             </select>
           </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="text-xs text-slate-500 font-medium">Hiển thị:</span>
-            <select
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-              className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 cursor-pointer"
-            >
-              <option value={5}>5 / trang</option>
-              <option value={10}>10 / trang</option>
-              <option value={20}>20 / trang</option>
-              <option value={50}>50 / trang</option>
-            </select>
-          </div>
         </div>
 
         {/* Real Ledger Table */}
@@ -441,14 +427,14 @@ export const CashierJournalPage: React.FC = () => {
         </div>
 
         {/* Pagination Toolbar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-100 text-xs text-slate-500">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
           <div>
             Hiển thị <span className="font-semibold text-slate-800 font-mono">{totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1}</span> -{' '}
             <span className="font-semibold text-slate-800 font-mono">{Math.min(currentPage * pageSize, totalItems)}</span> trên tổng số{' '}
             <span className="font-semibold text-slate-800 font-mono">{totalItems}</span> giao dịch
           </div>
 
-          <div className="flex items-center gap-1.5 self-end sm:self-auto">
+          <div className="flex items-center gap-1.5 sm:ml-auto">
             <button
               type="button"
               disabled={currentPage <= 1}

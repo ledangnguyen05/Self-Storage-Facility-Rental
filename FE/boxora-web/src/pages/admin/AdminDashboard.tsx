@@ -68,7 +68,7 @@ export const AdminDashboard: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('ALL')
   const [currentPage, setCurrentPage] = useState<number>(1)
-  const [pageSize, setPageSize] = useState<number>(10)
+  const pageSize = 10
 
   // Facility Scoping Modal State (Stitch Feature)
   const [scopingUser, setScopingUser] = useState<User | null>(null)
@@ -757,30 +757,11 @@ export const AdminDashboard: React.FC = () => {
             {/* Pagination Controls */}
             {filteredUsers.length > 0 && (
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-3 border-t border-slate-200 bg-slate-50/70 text-xs text-slate-600">
-                <div className="flex items-center gap-3">
-                  <span>
-                    Hiển thị <span className="font-semibold text-slate-900">{(currentPage - 1) * pageSize + 1}</span> - <span className="font-semibold text-slate-900">{Math.min(currentPage * pageSize, filteredUsers.length)}</span> trong tổng số <span className="font-semibold text-slate-900">{filteredUsers.length}</span> tài khoản
-                  </span>
-                  <div className="flex items-center gap-1.5 ml-2">
-                    <span className="text-slate-400">|</span>
-                    <span className="text-slate-500">Mỗi trang:</span>
-                    <select
-                      value={pageSize}
-                      onChange={(e) => {
-                        setPageSize(Number(e.target.value))
-                        setCurrentPage(1)
-                      }}
-                      className="px-2 py-1 bg-white border border-slate-200 rounded-md text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
-                    >
-                      <option value={10}>10</option>
-                      <option value={15}>15</option>
-                      <option value={20}>20</option>
-                      <option value={50}>50</option>
-                    </select>
-                  </div>
+                <div className="text-slate-600">
+                  Hiển thị <span className="font-semibold text-slate-900 font-mono">{(currentPage - 1) * pageSize + 1}</span> - <span className="font-semibold text-slate-900 font-mono">{Math.min(currentPage * pageSize, filteredUsers.length)}</span> trong tổng số <span className="font-semibold text-slate-900 font-mono">{filteredUsers.length}</span> tài khoản
                 </div>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 sm:ml-auto">
                   <button
                     type="button"
                     onClick={() => setCurrentPage(1)}

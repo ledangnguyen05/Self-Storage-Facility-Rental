@@ -1410,7 +1410,7 @@ export const ManagerDashboard: React.FC = () => {
       )}
 
       {/* ============================================================== */}
-      {/* TAB 6: HIỆU SUẤT & NGOẠI LỆ QUẢN LÝ (SUMMARIES 6 & 7) */}
+      {/* TAB 4: HIỆU SUẤT & NGOẠI LỆ QUẢN LÝ */}
       {/* ============================================================== */}
       {activeTab === 'performance' && (
         <section className="flex flex-col gap-6">
@@ -1447,7 +1447,7 @@ export const ManagerDashboard: React.FC = () => {
 
           </div>
 
-          {/* Exceptions Requiring Manager Review (Summary 7) */}
+          {/* Exceptions Requiring Manager Review */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col gap-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -1459,7 +1459,7 @@ export const ManagerDashboard: React.FC = () => {
               <span className="text-xs text-slate-500">Chỉ dành cho Quản lý cơ sở / BOM</span>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 max-w-2xl">
+            <div className="grid grid-cols-1 gap-4">
               
               {/* Exception 1: Asset Sealing & Delinquency */}
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
@@ -1471,7 +1471,7 @@ export const ManagerDashboard: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Áp dụng quy chế cưỡng chế khóa SmartLock và lập biên bản niêm phong tài sản đối với các hợp đồng quá hạn &gt; 7 ngày.
+                    Áp dụng quy chế cưỡng chế khóa SmartLock và lập biên bản niêm phong tài sản đối với các hợp đồng quá hạn &gt; 7 ngày ({overdueItems.length} hồ sơ cần theo dõi).
                   </p>
                 </div>
                 <Link

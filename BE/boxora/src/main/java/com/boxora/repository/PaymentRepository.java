@@ -25,6 +25,10 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
 
     java.util.List<Payment> findAllByBooking_Id(UUID bookingId);
 
+    boolean existsByReceiptVoucherCodeIgnoreCase(String receiptVoucherCode);
+
+    boolean existsByReferenceCodeIgnoreCase(String referenceCode);
+
     // Revenue grouped by facility - only PAID payments count as real revenue.
     // fromDate/toDate are inclusive bounds on payment_time; pass null to leave a side open.
     @Query("""
