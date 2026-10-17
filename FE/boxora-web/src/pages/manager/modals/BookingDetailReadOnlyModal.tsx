@@ -231,7 +231,7 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
                     <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
                       prereq.contractSigned ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                     }`}>
-                      {prereq.contractSigned ? 'Đã ký OTP/DocuSeal' : 'Chưa ký xác nhận'}
+                      {prereq.contractSigned ? 'Đã ký xác thực điện tử' : 'Chưa ký xác nhận'}
                     </span>
                   </div>
                   <div className="text-xs text-slate-600 space-y-1">

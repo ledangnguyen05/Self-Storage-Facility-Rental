@@ -83,7 +83,7 @@ export const StaffPolicyGuideModal: React.FC<StaffPolicyGuideModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Cẩm nang tra cứu quy định phục vụ đón tiếp, bàn giao kho &amp; giải quyết sự cố
+                Hướng dẫn nghiệp vụ tra cứu quy định phục vụ đón tiếp, bàn giao kho &amp; giải quyết sự cố
               </p>
             </div>
           </div>
@@ -191,7 +191,7 @@ export const StaffPolicyGuideModal: React.FC<StaffPolicyGuideModalProps> = ({
         {/* Footer */}
         <div className="flex items-center justify-between pt-2 border-t border-slate-100">
           <span className="text-[11px] text-slate-500">
-            Cẩm nang trích xuất từ quy định vận hành Boxora
+            Hướng dẫn nghiệp vụ trích xuất từ quy định vận hành Boxora
           </span>
           <button
             type="button"

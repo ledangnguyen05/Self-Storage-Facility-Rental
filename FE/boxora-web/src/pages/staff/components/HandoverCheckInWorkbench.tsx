@@ -975,7 +975,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     : 'bg-blue-100 text-blue-900 border border-blue-200'
                 }`}
               >
-                {currentBooking.signingMethod === 'IN_PERSON' ? '🏢 Ký Trực Tiếp Tại Kho' : '✍️ Ký Online DocuSeal'}
+                {currentBooking.signingMethod === 'IN_PERSON' ? '🏢 Ký Trực Tiếp Tại Kho' : '✍️ Ký Điện Tử Trực Tuyến'}
               </span>
             )}
           </div>
@@ -1105,7 +1105,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                         <div>
                           <span className="font-bold text-slate-900 text-xs block">1. Hợp Đồng Thuê Kho</span>
                           <span className="text-[11px] text-slate-500 font-mono">
-                            {currentPrerequisites?.contractSigningMethod === 'PAPER' ? '🏢 Ký Giấy Tại Kho' : '✍️ Ký Điện Tử DocuSeal'}
+                            {currentPrerequisites?.contractSigningMethod === 'PAPER' ? '🏢 Ký Giấy Tại Kho' : '✍️ Ký Điện Tử Trực Tuyến'}
                           </span>
                         </div>
                       </div>

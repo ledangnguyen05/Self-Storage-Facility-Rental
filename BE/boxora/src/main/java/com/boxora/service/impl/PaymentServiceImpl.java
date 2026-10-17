@@ -483,6 +483,27 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional(readOnly = true)
     public List<PaymentResponse> getByBookingId(UUID bookingId) {
+        if (bookingId == null) {
+            throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
+        }
+
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        if (facilityAccessGuard.isFacilityScoped()) {
+            UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                    ? booking.getStorageUnit().getFacility().getId() : null;
+            if (facilityId != null) {
+                facilityAccessGuard.checkFacilityAccess(facilityId);
+            }
+        }
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            UUID currentUserId = requestContext.currentUserId();
+            if (currentUserId == null || booking.getCustomer() == null || !currentUserId.equals(booking.getCustomer().getId())) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        }
+
         List<Payment> payments = paymentRepository.findAllByBooking_Id(bookingId);
         return payments.stream().map(paymentMapper::toResponse).toList();
     }

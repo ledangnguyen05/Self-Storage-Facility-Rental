@@ -33,7 +33,7 @@ export interface PricingQuoteResponse {
 
 export const pricingService = {
   getQuote: async (data: PricingQuoteRequest): Promise<PricingQuoteResponse> => {
-    const res = await api.post('/pricing/quote', data);
+    const res = await api.post('/api/v1/pricing/quote', data);
     return res.data?.data || res.data;
   },
 };

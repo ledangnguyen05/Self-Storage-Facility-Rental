@@ -143,7 +143,7 @@ export function DocuSealSimulationModal({
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-3 md:p-6 backdrop-blur-md overflow-y-auto">
       <div className="w-full max-w-3xl my-auto space-y-4 rounded-2xl border border-slate-700 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
-        {/* Header mô phỏng DocuSeal */}
+        {/* Header ký hợp đồng điện tử trực tuyến */}
         <div className="bg-gradient-to-r from-slate-900 via-cyan-950 to-slate-900 px-6 py-4 text-white flex items-center justify-between border-b border-cyan-800/40">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
@@ -152,10 +152,10 @@ export function DocuSealSimulationModal({
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[11px] font-bold tracking-widest text-cyan-400 uppercase">
-                  DocuSeal e-Sign Verification
+                  Xác Thực Chữ Ký Điện Tử
                 </span>
                 <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[10px] font-semibold text-cyan-300 border border-cyan-500/30">
-                  Mô Phỏng Ký Số Trực Tuyến
+                  Ký Hợp Đồng Trực Tuyến
                 </span>
               </div>
               <h2 className="text-base font-bold text-white tracking-tight">

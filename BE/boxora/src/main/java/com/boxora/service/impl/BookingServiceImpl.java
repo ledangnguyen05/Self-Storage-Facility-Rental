@@ -548,9 +548,10 @@ public class BookingServiceImpl implements BookingService {
         User currentUser = (requestContext != null && requestContext.currentUserId() != null)
                 ? userRepository.findById(requestContext.currentUserId()).orElse(null)
                 : null;
-        if (currentUser != null) {
-            validateBookingAccess(booking, currentUser);
+        if (currentUser == null) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
         }
+        validateBookingAccess(booking, currentUser);
 
         return mapToResponse(booking);
     }

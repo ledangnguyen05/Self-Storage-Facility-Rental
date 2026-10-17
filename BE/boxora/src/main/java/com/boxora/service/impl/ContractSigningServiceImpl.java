@@ -159,6 +159,43 @@ public class ContractSigningServiceImpl implements ContractSigningService {
     }
 
     @Override
+    @Transactional
+    public RentalContractResponse getContractByBookingId(UUID bookingId) {
+        if (bookingId == null) {
+            throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
+        }
+
+        RentalContract contract = rentalContractRepository.findByBookingId(bookingId)
+                .orElseGet(() -> {
+                    // Nếu hợp đồng chưa được khởi tạo trước đó, tự động tạo hợp đồng cho booking hợp lệ
+                    Booking booking = bookingRepository.findById(bookingId)
+                            .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+                    return ensureContractForBooking(booking);
+                });
+
+        if (contract == null) {
+            throw new AppException(ErrorCode.CONTRACT_NOT_FOUND);
+        }
+
+        if (facilityAccessGuard.isFacilityScoped()) {
+            facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
+        }
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            UUID currentUserId = requestContext.currentUserId();
+            if (currentUserId == null || contract.getCustomer() == null || !currentUserId.equals(contract.getCustomer().getId())) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        }
+
+        RentalContractResponse response = rentalContractMapper.toResponse(contract);
+        if (!"CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())
+                && contract.getDocusealSubmitterSlug() != null) {
+            response.setSigningUrl(signingUrl(contract, contract.getDocusealSubmitterSlug()));
+        }
+        return response;
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public PageResponse<RentalContractResponse> getAllContracts(
             UUID customerId, UUID facilityId, RentalContractStatus status,

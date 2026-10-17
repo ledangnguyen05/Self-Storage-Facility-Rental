@@ -46,6 +46,11 @@ export const paymentService = {
     return (response.data?.data?.content || []) as PaymentItem[]
   },
 
+  async getByBookingId(bookingId: string) {
+    const response = await api.get(`/api/v1/payments/booking/${bookingId}`)
+    return (response.data?.data || []) as PaymentItem[]
+  },
+
   async getMyPayments() {
     const response = await api.get('/api/v1/payments/my-payments')
     return (response.data?.data || []) as PaymentItem[]

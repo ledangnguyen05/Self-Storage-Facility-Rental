@@ -528,4 +528,283 @@ class SupportTicketServiceTest {
             assertThat(closedRes.getStatus()).isEqualTo("CLOSED");
         }
     }
+
+    @Nested
+    @DisplayName("Task 2: Close Ticket Tests (Xác nhận hài lòng & Đóng phiếu)")
+    class Task2CloseTicketTests {
+
+        @Test
+        @DisplayName("Customer closes own resolved ticket successfully")
+        void customerClosesOwnResolvedTicket_success() {
+            UUID ticketId = UUID.randomUUID();
+            SupportTicket ticket = SupportTicket.builder()
+                    .title("Hỏng đèn chiếu sáng")
+                    .customer(testCustomer)
+                    .facility(testFacility)
+                    .status(TicketStatus.RESOLVED)
+                    .resolutionNote("Đã thay bóng đèn led mới")
+                    .build();
+            ticket.setId(ticketId);
+
+            when(requestContext.currentUserId()).thenReturn(customerId);
+            when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+            when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+            when(supportTicketRepository.save(any(SupportTicket.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            SupportTicketResponse res = supportTicketService.closeTicket(ticketId, "Khách hàng rất hài lòng");
+
+            assertThat(res).isNotNull();
+            assertThat(res.getStatus()).isEqualTo("CLOSED");
+            assertThat(ticket.getStatus()).isEqualTo(TicketStatus.CLOSED);
+            assertThat(ticket.getClosedAt()).isNotNull();
+            assertThat(ticket.getResolutionNote()).contains("[ĐÓNG PHIẾU]: Khách hàng rất hài lòng");
+        }
+
+        @Test
+        @DisplayName("Customer cannot close ticket if status is OPEN or IN_PROGRESS")
+        void customerCannotCloseNonResolvedTicket_throwsException() {
+            UUID ticketId = UUID.randomUUID();
+            SupportTicket ticket = SupportTicket.builder()
+                    .title("Hỏng khóa")
+                    .customer(testCustomer)
+                    .facility(testFacility)
+                    .status(TicketStatus.IN_PROGRESS)
+                    .build();
+            ticket.setId(ticketId);
+
+            when(requestContext.currentUserId()).thenReturn(customerId);
+            when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+            when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    supportTicketService.closeTicket(ticketId, "Đóng sớm"));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_INVALID_STATUS_TRANSITION);
+            assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        }
+
+        @Test
+        @DisplayName("Customer cannot close ticket of another customer")
+        void customerCannotCloseOtherCustomerTicket_throwsForbidden() {
+            UUID ticketId = UUID.randomUUID();
+            User otherCustomer = User.builder().fullName("Người khác").build();
+            otherCustomer.setId(UUID.randomUUID());
+
+            SupportTicket ticket = SupportTicket.builder()
+                    .title("Sự cố người khác")
+                    .customer(otherCustomer)
+                    .facility(testFacility)
+                    .status(TicketStatus.RESOLVED)
+                    .build();
+            ticket.setId(ticketId);
+
+            when(requestContext.currentUserId()).thenReturn(customerId);
+            when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+            when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    supportTicketService.closeTicket(ticketId, "Can thiệp ticket người khác"));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("Staff cannot directly close ticket (throws FORBIDDEN)")
+        void staffCannotDirectlyCloseTicket_throwsForbidden() {
+            UUID staffId = UUID.randomUUID();
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    supportTicketService.closeTicket(UUID.randomUUID(), "Staff tự đóng"));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("Cannot close ticket that is already CLOSED")
+        void alreadyClosedTicketCannotBeClosedAgain_throwsException() {
+            UUID ticketId = UUID.randomUUID();
+            SupportTicket ticket = SupportTicket.builder()
+                    .title("Sự cố đã đóng")
+                    .customer(testCustomer)
+                    .facility(testFacility)
+                    .status(TicketStatus.CLOSED)
+                    .build();
+            ticket.setId(ticketId);
+
+            when(requestContext.currentUserId()).thenReturn(customerId);
+            when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+            when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    supportTicketService.closeTicket(ticketId, "Đóng lần hai"));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_INVALID_STATUS_TRANSITION);
+        }
+    }
+
+    @Nested
+    @DisplayName("Task 3: Facility Filter Scoping Tests (Phân quyền lọc cơ sở)")
+    class Task3FacilityFilterScopingTests {
+
+        @Test
+        @DisplayName("Staff queries queue without facilityId -> returns tickets strictly for assigned facility")
+        void staffQueriesQueueWithoutFacilityId_returnsScopedTickets() {
+            UUID staffId = UUID.randomUUID();
+            User staff = User.builder().fullName("Staff Bao").facility(testFacility).build();
+            staff.setId(staffId);
+
+            SupportTicket ticket1 = SupportTicket.builder()
+                    .title("Sự cố 1")
+                    .facility(testFacility)
+                    .status(TicketStatus.OPEN)
+                    .build();
+
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staff));
+            when(supportTicketRepository.findByFacility_IdOrAssignedStaff_Id(facilityId, staffId))
+                    .thenReturn(List.of(ticket1));
+
+            List<SupportTicketResponse> res = supportTicketService.getQueue(null, null, null, null);
+
+            assertThat(res).hasSize(1);
+            assertThat(res.get(0).getTitle()).isEqualTo("Sự cố 1");
+            verify(supportTicketRepository).findByFacility_IdOrAssignedStaff_Id(facilityId, staffId);
+        }
+
+        @Test
+        @DisplayName("Staff queries queue with another facilityId -> throws FORBIDDEN")
+        void staffQueriesQueueWithOtherFacilityId_throwsForbidden() {
+            UUID staffId = UUID.randomUUID();
+            User staff = User.builder().fullName("Staff Bao").facility(testFacility).build();
+            staff.setId(staffId);
+            UUID otherFacilityId = UUID.randomUUID();
+
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staff));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    supportTicketService.getQueue(otherFacilityId, null, null, null));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("Facility Manager queries queue without facilityId -> returns tickets for their facility")
+        void managerQueriesQueueWithoutFacilityId_returnsScopedTickets() {
+            UUID managerId = UUID.randomUUID();
+            User manager = User.builder().fullName("Manager Chi").facility(testFacility).build();
+            manager.setId(managerId);
+
+            SupportTicket ticket1 = SupportTicket.builder()
+                    .title("Sự cố cơ sở 1")
+                    .facility(testFacility)
+                    .status(TicketStatus.OPEN)
+                    .build();
+
+            when(requestContext.currentUserId()).thenReturn(managerId);
+            when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
+            when(userRepository.findById(managerId)).thenReturn(Optional.of(manager));
+            when(supportTicketRepository.findByFacility_Id(facilityId))
+                    .thenReturn(List.of(ticket1));
+
+            List<SupportTicketResponse> res = supportTicketService.getQueue(null, null, null, null);
+
+            assertThat(res).hasSize(1);
+            verify(supportTicketRepository).findByFacility_Id(facilityId);
+        }
+
+        @Test
+        @DisplayName("Facility Manager queries queue with another facilityId -> throws FORBIDDEN")
+        void managerQueriesQueueWithOtherFacilityId_throwsForbidden() {
+            UUID managerId = UUID.randomUUID();
+            User manager = User.builder().fullName("Manager Chi").facility(testFacility).build();
+            manager.setId(managerId);
+            UUID otherFacilityId = UUID.randomUUID();
+
+            when(requestContext.currentUserId()).thenReturn(managerId);
+            when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
+            when(userRepository.findById(managerId)).thenReturn(Optional.of(manager));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    supportTicketService.getQueue(otherFacilityId, null, null, null));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("Admin queries queue with null facilityId -> returns system-wide tickets (Tất cả cơ sở)")
+        void adminQueriesQueueWithNullFacilityId_returnsAllTickets() {
+            UUID adminId = UUID.randomUUID();
+            User admin = User.builder().fullName("Admin Sys").build();
+            admin.setId(adminId);
+
+            SupportTicket ticket1 = SupportTicket.builder().title("Ticket 1").facility(testFacility).status(TicketStatus.OPEN).build();
+            Facility otherFacility = Facility.builder().name("Boxora Q2").build();
+            otherFacility.setId(UUID.randomUUID());
+            SupportTicket ticket2 = SupportTicket.builder().title("Ticket 2").facility(otherFacility).status(TicketStatus.OPEN).build();
+
+            when(requestContext.currentUserId()).thenReturn(adminId);
+            when(requestContext.currentUserRole()).thenReturn("ADMIN");
+            when(userRepository.findById(adminId)).thenReturn(Optional.of(admin));
+            when(supportTicketRepository.findAll()).thenReturn(List.of(ticket1, ticket2));
+
+            List<SupportTicketResponse> res = supportTicketService.getQueue(null, null, null, null);
+
+            assertThat(res).hasSize(2);
+            verify(supportTicketRepository).findAll();
+        }
+
+        @Test
+        @DisplayName("Admin queries queue with specific facilityId -> returns tickets for that facility")
+        void adminQueriesQueueWithSpecificFacilityId_returnsFilteredTickets() {
+            UUID adminId = UUID.randomUUID();
+            User admin = User.builder().fullName("Admin Sys").build();
+            admin.setId(adminId);
+
+            SupportTicket ticket1 = SupportTicket.builder().title("Ticket 1").facility(testFacility).status(TicketStatus.OPEN).build();
+
+            when(requestContext.currentUserId()).thenReturn(adminId);
+            when(requestContext.currentUserRole()).thenReturn("ADMIN");
+            when(userRepository.findById(adminId)).thenReturn(Optional.of(admin));
+            when(supportTicketRepository.findByFacility_Id(facilityId)).thenReturn(List.of(ticket1));
+
+            List<SupportTicketResponse> res = supportTicketService.getQueue(facilityId, null, null, null);
+
+            assertThat(res).hasSize(1);
+            verify(supportTicketRepository).findByFacility_Id(facilityId);
+        }
+
+        @Test
+        @DisplayName("Unauthenticated request to getQueue -> throws UNAUTHORIZED")
+        void unauthenticatedRequestToGetQueue_throwsUnauthorized() {
+            when(requestContext.currentUserId()).thenReturn(null);
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    supportTicketService.getQueue(null, null, null, null));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.UNAUTHORIZED);
+        }
+
+        @Test
+        @DisplayName("Staff queries stats with another facilityId -> throws FORBIDDEN")
+        void staffQueriesStatsWithOtherFacilityId_throwsForbidden() {
+            UUID staffId = UUID.randomUUID();
+            User staff = User.builder().fullName("Staff Bao").facility(testFacility).build();
+            staff.setId(staffId);
+            UUID otherFacilityId = UUID.randomUUID();
+
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staff));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    supportTicketService.getStats(otherFacilityId));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+    }
 }

@@ -322,7 +322,7 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
                 3.1. Tiền đặt cọc được lưu ký an toàn tại tài khoản bảo chứng Boxora Cloud và được hoàn trả cho Bên B sau khi thanh lý hợp đồng và nghiệm thu hoàn trả kho nguyên trạng.
               </p>
               <p className="text-justify leading-relaxed pl-7 mt-1">
-                3.2. Phương thức thanh toán: Cổng thanh toán trực tuyến VNPay Sandbox / Thẻ thanh toán quốc tế / Chuyển khoản QR Napas.
+                3.2. Phương thức thanh toán: Cổng thanh toán trực tuyến bảo mật / Thẻ thanh toán quốc tế / Chuyển khoản QR.
               </p>
             </div>
 
@@ -330,10 +330,10 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
             <div>
               <h4 className="font-bold text-slate-900 font-sans uppercase text-xs mb-1.5 flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center font-bold text-[10px]">4</span>
-                Điều 4: PHƯƠNG THỨC KÝ KẾT VĂN BẢN &amp; XÁC THỰC DOCUSEAL
+                Điều 4: PHƯƠNG THỨC KÝ KẾT VĂN BẢN &amp; XÁC THỰC ĐIỆN TỬ
               </h4>
               <p className="text-justify leading-relaxed pl-7">
-                4.1. Hợp đồng này được tạo lập và ký kết bằng hình thức điện tử thông qua hạ tầng DocuSeal e-Signature Verification theo tiêu chuẩn mã hóa PKI SHA-256 hoặc ký trực tiếp tại quầy tiếp đón cơ sở.
+                4.1. Hợp đồng này được tạo lập và ký kết bằng hình thức điện tử thông qua hạ tầng xác thực chữ ký điện tử trực tuyến an toàn theo tiêu chuẩn mã hóa PKI SHA-256 hoặc ký trực tiếp tại quầy tiếp đón cơ sở.
               </p>
               <p className="text-justify leading-relaxed pl-7 mt-1">
                 4.2. Chữ ký số và con dấu điện tử được chứng thực số liệu toàn vẹn trên hệ thống Boxora Cloud, có đầy đủ giá trị pháp lý ràng buộc quyền và nghĩa vụ của hai bên.

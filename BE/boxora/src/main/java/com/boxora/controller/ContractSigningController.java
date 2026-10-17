@@ -62,6 +62,15 @@ public class ContractSigningController {
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
+    @GetMapping("booking/{bookingId}")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'STAFF')")
+    @Operation(summary = "Lấy hợp đồng thuê theo Booking ID")
+    public ResponseEntity<ApiResponse<RentalContractResponse>> getContractByBookingId(
+            @PathVariable UUID bookingId) {
+        RentalContractResponse response = contractSigningService.getContractByBookingId(bookingId);
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
     @GetMapping
     @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'STAFF')")
     @Operation(summary = "Lấy danh sách hợp đồng phân trang theo bộ lọc")

@@ -7,6 +7,7 @@ import { supportTicketService, SupportTicketRecord } from '../../services/suppor
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
+import { pricingService, PricingQuoteResponse } from '../../services/pricingService'
 import { Booking, Facility, StorageUnit } from '../../types'
 import { BookingCheckoutModal } from '../../components/modals/BookingCheckoutModal'
 import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
@@ -16,6 +17,7 @@ import { CustomerPolicyModal } from '../../components/modals/CustomerPolicyModal
 import { BookingCancelModal } from '../../components/modals/BookingCancelModal'
 import { BookingRescheduleModal } from '../../components/modals/BookingRescheduleModal'
 import { BookingRescheduleHistorySection } from '../../components/booking/BookingRescheduleHistorySection'
+import { TicketCloseConfirmModal } from '../../components/modals/TicketCloseConfirmModal'
 
 const UNIT_CARD_IMAGES = [
   'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80',
@@ -320,6 +322,10 @@ export const CustomerDashboard: React.FC = () => {
     floorLevel?: string
   }
   const [selectedBookingUnit, setSelectedBookingUnit] = useState<SelectedBookingUnitData | null>(null)
+  const [serverBookingQuote, setServerBookingQuote] = useState<PricingQuoteResponse | null>(null)
+  const [isLoadingQuote, setIsLoadingQuote] = useState<boolean>(false)
+  const [quoteError, setQuoteError] = useState<string | null>(null)
+  const [bookingModalError, setBookingModalError] = useState<string | null>(null)
   const [bookingSuccess, setBookingSuccess] = useState(false)
   const [createdBookingResult, setCreatedBookingResult] = useState<{
     bookingCode: string
@@ -338,7 +344,7 @@ export const CustomerDashboard: React.FC = () => {
     return d.toISOString().split('T')[0]
   })
   const [bookingCheckInTime, setBookingCheckInTime] = useState<string>('09:00')
-  const [bookingPolicyAccepted, setBookingPolicyAccepted] = useState<boolean>(true)
+  const [bookingPolicyAccepted, setBookingPolicyAccepted] = useState<boolean>(false)
   const [bookingWorkflow, setBookingWorkflow] = useState<'HOLD_ONLY' | 'ONLINE_NOW'>('HOLD_ONLY')
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false)
 
@@ -441,21 +447,6 @@ export const CustomerDashboard: React.FC = () => {
     }
   }
 
-  const handleCloseCustomerTicket = async () => {
-    if (!closeTicketTarget) return
-    setIsProcessingTicketAction(true)
-    setTicketActionError(null)
-    try {
-      await supportTicketService.closeTicket(closeTicketTarget.id, 'Khách hàng xác nhận sự cố đã được xử lý hoàn tất')
-      await fetchCustomerTickets()
-      setCloseTicketTarget(null)
-    } catch (err: any) {
-      console.error('Failed to close ticket:', err)
-      setTicketActionError(err?.response?.data?.message || err?.message || 'Không thể đóng phiếu. Phiếu vẫn giữ nguyên trạng thái.')
-    } finally {
-      setIsProcessingTicketAction(false)
-    }
-  }
 
   const handleReopenCustomerTicket = async () => {
     if (!reopenModalTicket || !reopenReasonText.trim()) return
@@ -725,6 +716,92 @@ export const CustomerDashboard: React.FC = () => {
     }
   }
 
+  // Effect: Đồng bộ báo giá và chính sách chuẩn xác từ backend PricingService
+  useEffect(() => {
+    if (!selectedBookingUnit?.id) {
+      setServerBookingQuote(null)
+      setQuoteError(null)
+      return
+    }
+
+    let isCurrent = true
+    setIsLoadingQuote(true)
+    setQuoteError(null)
+
+    let months = 1
+    if (bookingPackage === '15d' || bookingPackage === '1m') {
+      months = 1
+    } else if (bookingPackage === '3m') {
+      months = 3
+    } else if (bookingPackage === '6m') {
+      months = 6
+    } else if (bookingPackage === '12m') {
+      months = 12
+    } else if (bookingPackage === '24m') {
+      months = 24
+    } else if (bookingPackage === 'custom') {
+      months = Math.max(1, Math.min(60, Math.round((bookingCustomDays || 30) / 30)))
+    }
+
+    pricingService.getQuote({
+      storageUnitId: selectedBookingUnit.id,
+      rentalMonths: months,
+      startDate: bookingStartDate || undefined
+    })
+      .then(quote => {
+        if (isCurrent) {
+          setServerBookingQuote(quote)
+          setQuoteError(null)
+        }
+      })
+      .catch(err => {
+        if (isCurrent) {
+          console.warn('Could not fetch server quote:', err)
+          const msg = err?.response?.data?.message || err?.message || 'Không thể tải báo giá và chính sách giá từ máy chủ.'
+          setQuoteError(msg)
+          setServerBookingQuote(null)
+        }
+      })
+      .finally(() => {
+        if (isCurrent) {
+          setIsLoadingQuote(false)
+        }
+      })
+
+    return () => {
+      isCurrent = false
+    }
+  }, [selectedBookingUnit?.id, bookingPackage, bookingCustomDays, bookingStartDate])
+
+  const handleRetryQuote = () => {
+    if (!selectedBookingUnit?.id) return
+    setIsLoadingQuote(true)
+    setQuoteError(null)
+    let months = 1
+    if (bookingPackage === '15d' || bookingPackage === '1m') months = 1
+    else if (bookingPackage === '3m') months = 3
+    else if (bookingPackage === '6m') months = 6
+    else if (bookingPackage === '12m') months = 12
+    else if (bookingPackage === '24m') months = 24
+    else if (bookingPackage === 'custom') months = Math.max(1, Math.min(60, Math.round((bookingCustomDays || 30) / 30)))
+
+    pricingService.getQuote({
+      storageUnitId: selectedBookingUnit.id,
+      rentalMonths: months,
+      startDate: bookingStartDate || undefined
+    })
+      .then(quote => {
+        setServerBookingQuote(quote)
+        setQuoteError(null)
+      })
+      .catch(err => {
+        setQuoteError(err?.response?.data?.message || err?.message || 'Không thể tải báo giá từ máy chủ.')
+      })
+      .finally(() => {
+        setIsLoadingQuote(false)
+      })
+  }
+
   const bookingEstimate = useMemo(() => {
     if (!selectedBookingUnit) {
       return {
@@ -737,80 +814,86 @@ export const CustomerDashboard: React.FC = () => {
         effectiveMonthly: 0,
         deposit: 0,
         totalPayment: 0,
+        initialPayment: 0,
         endDate: '',
-        condition: ''
+        condition: '',
+        holdGraceHours: 24,
+        maxHoldDays: 14,
+        refundSlaDays: 5,
+        cancellationPolicy: ''
+      }
+    }
+
+    let days = 30
+    let months = 1
+    let condition = 'Áp dụng đơn giá tháng tiêu chuẩn'
+
+    if (bookingPackage === '15d') {
+      days = 15
+      months = 1
+      condition = 'Gói lưu trữ ngắn hạn 15 ngày (áp dụng mức cam kết tối thiểu 1 tháng theo chính sách cơ sở)'
+    } else if (bookingPackage === '1m') {
+      days = 30
+      months = 1
+      condition = 'Tiêu chuẩn thanh toán linh hoạt theo từng tháng'
+    } else if (bookingPackage === '3m') {
+      days = 90
+      months = 3
+      condition = 'Giảm 5% khi cam kết thuê từ 3 tháng'
+    } else if (bookingPackage === '6m') {
+      days = 180
+      months = 6
+      condition = 'Giảm 10% khi cam kết thuê từ 6 tháng'
+    } else if (bookingPackage === '12m') {
+      days = 365
+      months = 12
+      condition = 'Giảm 15% khi cam kết thuê gói năm (12 tháng)'
+    } else if (bookingPackage === '24m') {
+      days = 730
+      months = 24
+      condition = 'Giảm 20% khi cam kết thuê dài hạn 2 năm (24 tháng)'
+    } else if (bookingPackage === 'custom') {
+      days = Math.max(15, Math.min(1825, bookingCustomDays || 30))
+      months = Math.max(1, Math.min(60, Math.round(days / 30)))
+      if (months >= 24) condition = 'Giảm 20% thời hạn tùy chỉnh từ 2 năm trở lên'
+      else if (months >= 12) condition = 'Giảm 15% thời hạn tùy chỉnh từ 1 năm trở lên'
+      else if (months >= 6) condition = 'Giảm 10% thời hạn tùy chỉnh từ 6 tháng trở lên'
+      else if (months >= 3) condition = 'Giảm 5% thời hạn tùy chỉnh từ 3 tháng trở lên'
+      else condition = 'Đơn giá tiêu chuẩn theo số tháng thực tế'
+    }
+
+    if (serverBookingQuote) {
+      return {
+        days,
+        months: serverBookingQuote.rentalMonths || months,
+        rawRent: serverBookingQuote.subtotalRentalFee,
+        discountPercent: serverBookingQuote.discountPercentage || 0,
+        discountAmount: serverBookingQuote.discountAmount || 0,
+        rentAfterDiscount: serverBookingQuote.totalRentalFee,
+        effectiveMonthly: Math.round(serverBookingQuote.totalRentalFee / (serverBookingQuote.rentalMonths || 1)),
+        deposit: serverBookingQuote.depositAmount,
+        totalPayment: serverBookingQuote.totalContractValue,
+        initialPayment: serverBookingQuote.initialPaymentAmount,
+        endDate: serverBookingQuote.endDate,
+        condition,
+        holdGraceHours: serverBookingQuote.holdGraceHours || 24,
+        maxHoldDays: serverBookingQuote.maxHoldDays || 14,
+        refundSlaDays: serverBookingQuote.refundSlaDays || 5,
+        cancellationPolicy: serverBookingQuote.cancellationPolicy
       }
     }
 
     const monthlyPrice = selectedBookingUnit.priceNumber || 1250000
     const deposit = selectedBookingUnit.depositNumber || monthlyPrice
-    let days = 30
-    let months = 1
+    const rawRent = monthlyPrice * months
     let discountPercent = 0
-    let condition = 'Áp dụng đơn giá tháng tiêu chuẩn'
-
-    if (bookingPackage === '15d') {
-      days = 15
-      months = 0.5
-      discountPercent = 0
-      condition = 'Gói lưu trữ ngắn hạn linh hoạt 15 ngày'
-    } else if (bookingPackage === '1m') {
-      days = 30
-      months = 1
-      discountPercent = 0
-      condition = 'Tiêu chuẩn thanh toán theo từng tháng'
-    } else if (bookingPackage === '3m') {
-      days = 90
-      months = 3
-      discountPercent = 5
-      condition = 'Giảm 5% khi cam kết thuê từ 3 tháng'
-    } else if (bookingPackage === '6m') {
-      days = 180
-      months = 6
-      discountPercent = 10
-      condition = 'Giảm 10% khi cam kết thuê từ 6 tháng'
-    } else if (bookingPackage === '12m') {
-      days = 365
-      months = 12
-      discountPercent = 15
-      condition = 'Giảm 15% khi cam kết thuê gói năm (12 tháng)'
-    } else if (bookingPackage === '24m') {
-      days = 730
-      months = 24
-      discountPercent = 20
-      condition = 'Giảm 20% khi cam kết thuê dài hạn 2 năm (24 tháng)'
-    } else if (bookingPackage === 'custom') {
-      days = Math.max(1, bookingCustomDays || 30)
-      months = +(days / 30).toFixed(1)
-      if (days >= 730) {
-        discountPercent = 20
-        condition = 'Giảm 20% thời hạn tùy chỉnh từ 2 năm trở lên'
-      } else if (days >= 365) {
-        discountPercent = 15
-        condition = 'Giảm 15% thời hạn tùy chỉnh từ 1 năm trở lên'
-      } else if (days >= 180) {
-        discountPercent = 10
-        condition = 'Giảm 10% thời hạn tùy chỉnh từ 6 tháng trở lên'
-      } else if (days >= 90) {
-        discountPercent = 5
-        condition = 'Giảm 5% thời hạn tùy chỉnh từ 3 tháng trở lên'
-      } else {
-        discountPercent = 0
-        condition = 'Đơn giá tùy chỉnh theo ngày thực tế'
-      }
-    }
-
-    const rawRent = bookingPackage === 'custom'
-      ? Math.round((monthlyPrice / 30) * days)
-      : bookingPackage === '15d'
-      ? Math.round(monthlyPrice * 0.5)
-      : Math.round(monthlyPrice * months)
+    if (months >= 24) discountPercent = 20
+    else if (months >= 12) discountPercent = 15
+    else if (months >= 6) discountPercent = 10
+    else if (months >= 3) discountPercent = 5
     const discountAmount = Math.round(rawRent * (discountPercent / 100))
     const rentAfterDiscount = rawRent - discountAmount
-    const effectiveMonthly = Math.round((rentAfterDiscount / days) * 30)
     const totalPayment = rentAfterDiscount + deposit
-
-    // Calculate end date
     const startObj = new Date(bookingStartDate || new Date())
     const endObj = new Date(startObj.getTime() + days * 24 * 60 * 60 * 1000)
     const endDate = endObj.toISOString().split('T')[0]
@@ -822,13 +905,18 @@ export const CustomerDashboard: React.FC = () => {
       discountPercent,
       discountAmount,
       rentAfterDiscount,
-      effectiveMonthly,
+      effectiveMonthly: Math.round(rentAfterDiscount / months),
       deposit,
       totalPayment,
+      initialPayment: Math.round(rentAfterDiscount / months) + deposit,
       endDate,
-      condition
+      condition,
+      holdGraceHours: 24,
+      maxHoldDays: 14,
+      refundSlaDays: 5,
+      cancellationPolicy: ''
     }
-  }, [selectedBookingUnit, bookingPackage, bookingCustomDays, bookingStartDate])
+  }, [selectedBookingUnit, serverBookingQuote, bookingPackage, bookingCustomDays, bookingStartDate])
 
   const handlePayBookingVNPay = (b: Booking) => {
     setRequestToPay(b)
@@ -836,13 +924,25 @@ export const CustomerDashboard: React.FC = () => {
 
   const handleConfirmBooking = async () => {
     if (!selectedBookingUnit) return
+    setBookingModalError(null)
+
+    if (!bookingPolicyAccepted) {
+      setBookingModalError('Vui lòng đánh dấu xác nhận bạn đã đọc và đồng ý với các chính sách đặt giữ chỗ kho trước khi tiếp tục.')
+      return
+    }
+
+    if (quoteError) {
+      setBookingModalError('Không thể hoàn tất đơn đặt chỗ do chưa tải được báo giá chính thức từ máy chủ. Vui lòng bấm "Thử lại".')
+      return
+    }
+
     setIsSubmittingBooking(true)
     try {
       const months = Math.max(1, Math.round(bookingEstimate.months || 1))
       const expectedCheckInAt = `${bookingCheckInDate}T${bookingCheckInTime || '09:00'}:00`
 
       if (bookingWorkflow === 'ONLINE_NOW') {
-        // Option "Ký online & thanh toán": Tạo booking và chuyển tiếp ngay sang cổng VNPay Sandbox thực
+        // Option B: Ký online & thanh toán: Tạo booking và chuyển tiếp ngay sang cổng VNPay Sandbox
         let bookingId = ''
         let createdBooking: any = null
         try {
@@ -864,7 +964,7 @@ export const CustomerDashboard: React.FC = () => {
         } catch (bErr: any) {
           console.error('Booking creation error:', bErr)
           const errorMsg = bErr?.response?.data?.message || bErr?.message || 'Không thể tạo đơn đặt kho. Ngăn kho này có thể vừa được đặt hoặc đang có người giữ chỗ.'
-          alert(errorMsg)
+          setBookingModalError(errorMsg)
           return
         }
 
@@ -881,7 +981,6 @@ export const CustomerDashboard: React.FC = () => {
             orderInfo: `Thanh toan giu cho kho ${selectedBookingUnit.unitCode}`
           })
           if (payment?.paymentUrl) {
-            // Chuyển hướng trực tiếp sang cổng thanh toán VNPay Sandbox để khách tự nhập thẻ test
             window.location.href = payment.paymentUrl
             return
           }
@@ -889,10 +988,7 @@ export const CustomerDashboard: React.FC = () => {
         } catch (payErr: any) {
           console.error('VNPay create payment error:', payErr)
           const errorMsg = payErr?.response?.data?.message || payErr?.message || 'Không thể khởi tạo giao dịch VNPay. Vui lòng thử lại.'
-          alert(`Đơn đặt kho đã được tạo (Mã: ${createdBooking?.bookingCode || bookingId}) nhưng chưa thể mở cổng thanh toán: ${errorMsg}\nBạn có thể vào tab "Đơn đặt chỗ" để thanh toán lại bất cứ lúc nào.`)
-          handleTabChange('bookings')
-          setSelectedBookingUnit(null)
-          setBookingSuccess(false)
+          setBookingModalError(`Đơn đặt kho đã được tạo (Mã: ${createdBooking?.bookingCode || bookingId}) nhưng chưa thể mở cổng thanh toán: ${errorMsg}\nBạn có thể vào tab "Đơn đặt chỗ" để thanh toán lại bất cứ lúc nào.`)
           await fetchCustomerBookings()
           await fetchContracts()
           await fetchCustomerPayments()
@@ -900,7 +996,7 @@ export const CustomerDashboard: React.FC = () => {
         return
       }
 
-      // Option "Giữ chỗ miễn phí theo lịch hẹn": Giữ chỗ theo lịch hẹn và hạn chính sách
+      // Option A: Giữ chỗ miễn phí theo lịch hẹn: Giữ chỗ theo lịch hẹn và hạn chính sách
       try {
         const res = await bookingService.createBooking({
           storageUnitId: selectedBookingUnit.id,
@@ -931,7 +1027,7 @@ export const CustomerDashboard: React.FC = () => {
       } catch (err: any) {
         console.error('In-person booking error:', err)
         const errorMsg = err?.response?.data?.message || err?.message || 'Không thể giữ chỗ kho này. Vui lòng kiểm tra lại.'
-        alert(errorMsg)
+        setBookingModalError(errorMsg)
       }
     } finally {
       setIsSubmittingBooking(false)
@@ -1889,7 +1985,7 @@ export const CustomerDashboard: React.FC = () => {
                                     </span>
                                   </div>
                                   <div>
-                                    Đơn đặt kho đã thanh toán đủ. Quý khách vui lòng ký hợp đồng điện tử trực tuyến (DocuSeal) hoặc mang CCCD gốc đến cơ sở Boxora để ký hợp đồng và nhận bàn giao kho.
+                                    Đơn đặt kho đã thanh toán đủ. Quý khách vui lòng ký hợp đồng điện tử trực tuyến hoặc mang CCCD gốc đến cơ sở Boxora để ký hợp đồng và nhận bàn giao kho.
                                   </div>
                                   {info.matchingContract && info.matchingContract.status === 'PENDING_SIGNATURE' ? (
                                     <div className="mt-2.5 flex items-center justify-end">
@@ -2182,9 +2278,12 @@ export const CustomerDashboard: React.FC = () => {
                           const checkInD = new Date()
                           checkInD.setDate(checkInD.getDate() + 3)
                           setBookingCheckInDate(checkInD.toISOString().split('T')[0])
-                          setBookingPolicyAccepted(true)
+                          setBookingCheckInTime('09:00')
+                          setBookingPolicyAccepted(false)
                           setBookingWorkflow('HOLD_ONLY')
                           setBookingSuccess(false)
+                          setBookingModalError(null)
+                          setQuoteError(null)
                         }}
                         className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
                       >
@@ -2283,7 +2382,7 @@ export const CustomerDashboard: React.FC = () => {
                   )}
                 </div>
                 <div className="text-[11px] text-slate-500 mt-1">
-                  Ký kết điện tử DocuSeal bảo chứng
+                  Ký kết điện tử bảo chứng
                 </div>
               </div>
             </div>
@@ -2300,7 +2399,7 @@ export const CustomerDashboard: React.FC = () => {
                   <h3 className="font-headline text-base font-bold text-slate-900">
                     Danh Sách Hợp Đồng Thuê Kho Điện Tử
                   </h3>
-                  <span className="text-xs text-slate-500">Xem chi tiết điều khoản, thời hạn thuê và văn bản ký DocuSeal</span>
+                  <span className="text-xs text-slate-500">Xem chi tiết điều khoản, thời hạn thuê và văn bản hợp đồng đã ký</span>
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
@@ -3074,7 +3173,7 @@ export const CustomerDashboard: React.FC = () => {
                   <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
                     <span className="text-slate-500">Trạng thái thanh toán:</span>
                     <span className="font-semibold text-slate-800">
-                      {bookingWorkflow === 'HOLD_ONLY' ? 'Chưa thanh toán (Thanh toán tại quầy cơ sở)' : 'Chờ xác nhận VNPay'}
+                      {bookingWorkflow === 'HOLD_ONLY' ? 'Chưa thanh toán (Thanh toán tại quầy cơ sở)' : 'Chờ xác nhận thanh toán'}
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-1">
@@ -3127,26 +3226,31 @@ export const CustomerDashboard: React.FC = () => {
                     </p>
                   </div>
                   <button
-                    onClick={() => setSelectedBookingUnit(null)}
+                    onClick={() => {
+                      setSelectedBookingUnit(null)
+                      setBookingModalError(null)
+                      setQuoteError(null)
+                    }}
                     className="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+                    aria-label="Đóng"
                   >
                     ✕
                   </button>
                 </div>
 
                 {/* Unit Details Banner */}
-                <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between text-xs">
+                <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                   <div>
                     <div className="font-bold text-slate-900 text-sm">
                       {selectedBookingUnit.name}
                     </div>
-                    <div className="text-slate-500 text-[11px] mt-0.5">
-                      Diện tích: <span className="font-semibold text-slate-700">{selectedBookingUnit.areaSqMeters || 6} m²</span> · Vị trí: <span className="font-semibold text-slate-700">{selectedBookingUnit.floorLevel || 'Tầng 1'}</span>
+                    <div className="text-slate-500 text-xs mt-1">
+                      Diện tích: <span className="font-semibold text-slate-800">{selectedBookingUnit.areaSqMeters || 6} m²</span> · Vị trí: <span className="font-semibold text-slate-800">{selectedBookingUnit.floorLevel || 'Tầng 1'}</span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <span className="font-mono font-bold text-blue-600 text-sm block">
-                      {(selectedBookingUnit.priceNumber || 2400000).toLocaleString('vi-VN')} ₫
+                  <div className="sm:text-right">
+                    <span className="font-mono font-bold text-blue-600 text-base block">
+                      {(serverBookingQuote?.monthlyRate || selectedBookingUnit.priceNumber || 1250000).toLocaleString('vi-VN')} ₫
                     </span>
                     <span className="text-[11px] text-slate-500 block">/tháng</span>
                     <span className="text-[10px] text-slate-400 block mt-0.5">Giá niêm yết, chưa áp dụng ưu đãi kỳ hạn</span>
@@ -3160,7 +3264,7 @@ export const CustomerDashboard: React.FC = () => {
                       1. Chọn thời hạn thuê
                     </h4>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      Chọn kỳ hạn phù hợp với nhu cầu của bạn.
+                      Chọn kỳ hạn phù hợp với nhu cầu lưu trữ của bạn.
                     </p>
                   </div>
 
@@ -3172,7 +3276,7 @@ export const CustomerDashboard: React.FC = () => {
                       { id: '6m', title: '6 tháng', sub: 'Giảm 10%' },
                       { id: '12m', title: '12 tháng', sub: 'Giảm 15%' },
                       { id: '24m', title: '24 tháng', sub: 'Giảm 20%' },
-                      { id: 'custom', title: 'Tùy chỉnh', sub: 'Chọn số ngày/tháng' }
+                      { id: 'custom', title: 'Tùy chỉnh', sub: 'Chọn thời hạn' }
                     ].map(pkg => {
                       const isSelected = bookingPackage === pkg.id
                       return (
@@ -3207,13 +3311,18 @@ export const CustomerDashboard: React.FC = () => {
                       <div className="flex items-center gap-2 flex-1">
                         <input
                           type="number"
-                          min={1}
+                          min={15}
                           max={1825}
                           value={bookingCustomDays}
-                          onChange={(e) => setBookingCustomDays(Math.max(1, parseInt(e.target.value || '1', 10)))}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value || '15', 10)
+                            setBookingCustomDays(isNaN(val) ? 15 : Math.max(15, Math.min(1825, val)))
+                          }}
                           className="h-9 w-24 px-3 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-blue-500"
                         />
-                        <span className="text-xs text-slate-500 font-medium">ngày (tương đương ~{(bookingCustomDays / 30).toFixed(1)} tháng)</span>
+                        <span className="text-xs text-slate-500 font-medium">
+                          ngày (tương đương ~{Math.max(1, Math.round(bookingCustomDays / 30))} tháng hợp đồng)
+                        </span>
                       </div>
                     </div>
                   )}
@@ -3225,36 +3334,38 @@ export const CustomerDashboard: React.FC = () => {
                       Ưu đãi kỳ hạn · Chiết khấu theo thời hạn
                     </div>
                     <p className="text-[11px] text-slate-600 leading-relaxed">
-                      Mức giảm giá được áp dụng theo chính sách và kỳ hạn đủ điều kiện. Giá cuối cùng sẽ được hệ thống xác nhận trước khi ký hợp đồng.
+                      Mức giảm giá được áp dụng theo chính sách giá hiện hành của hệ thống Boxora cho các kỳ hạn đủ điều kiện (từ 3 tháng giảm 5%, từ 6 tháng giảm 10%, từ 12 tháng giảm 15%, từ 24 tháng giảm 20%). Giá và chiết khấu cuối cùng được máy chủ xác nhận theo thời gian thực.
                     </p>
                   </div>
                 </div>
 
-                {/* 2. Lịch nhận kho & kích hoạt mã PIN */}
+                {/* 2. Chọn lịch hẹn nhận kho & Lịch thuê */}
                 <div className="space-y-3">
                   <div>
                     <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                      2. Lịch nhận kho &amp; kích hoạt mã PIN
+                      2. Chọn lịch hẹn nhận kho &amp; Lịch thuê
                     </h4>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      Hai ngày này có thể khác nhau. Hãy kiểm tra kỹ trước khi xác nhận.
+                      Kiểm tra kỹ ngày hẹn nhận kho và ngày bắt đầu hợp đồng trước khi xác nhận.
                     </p>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Ngày bắt đầu thuê */}
+                    {/* Ngày bắt đầu thuê chính thức */}
                     <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5">
                       <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-                        Ngày bắt đầu thuê
+                        Ngày bắt đầu thuê chính thức
                       </label>
                       <input
                         type="date"
+                        min={new Date().toISOString().split('T')[0]}
+                        max={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
                         value={bookingStartDate}
                         onChange={(e) => setBookingStartDate(e.target.value)}
                         className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
                       />
                       <p className="text-[10px] text-slate-500 leading-normal">
-                        Ngày bắt đầu thuê chính thức được xác định khi bàn giao kho thực tế thành công theo hợp đồng.
+                        Ngày bắt đầu thuê chính thức được xác lập khi hoàn tất bàn giao thực tế và hợp đồng có hiệu lực.
                       </p>
                     </div>
 
@@ -3266,6 +3377,8 @@ export const CustomerDashboard: React.FC = () => {
                       <div className="grid grid-cols-5 gap-2">
                         <input
                           type="date"
+                          min={new Date().toISOString().split('T')[0]}
+                          max={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
                           value={bookingCheckInDate}
                           onChange={(e) => setBookingCheckInDate(e.target.value)}
                           className="col-span-3 h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
@@ -3281,7 +3394,7 @@ export const CustomerDashboard: React.FC = () => {
                         </select>
                       </div>
                       <p className="text-[10px] text-slate-500 leading-normal">
-                        Ngày hẹn nhận kho không mặc định là ngày bắt đầu thuê chính thức.
+                        Ngày hẹn nhận kho không mặc nhiên là ngày bắt đầu thuê chính thức.
                       </p>
                     </div>
                   </div>
@@ -3290,7 +3403,7 @@ export const CustomerDashboard: React.FC = () => {
                   <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between text-xs">
                     <div>
                       <span className="font-bold text-slate-800 block text-[11px]">Ngày kết thúc thuê dự kiến:</span>
-                      <span className="text-[10px] text-slate-500">Được tính theo kỳ hạn và quy tắc tính thời hạn trong hợp đồng</span>
+                      <span className="text-[10px] text-slate-500">Được tính theo kỳ hạn và quy tắc tính thời hạn trong hợp đồng từ máy chủ</span>
                     </div>
                     <span className="font-mono font-bold text-slate-900 bg-white px-2.5 py-1 rounded-md border border-slate-200">
                       {bookingEstimate.endDate || '—'}
@@ -3305,7 +3418,7 @@ export const CustomerDashboard: React.FC = () => {
                         Ngày check-in sau ngày bắt đầu thuê
                       </div>
                       <p className="text-[11px] text-amber-800 leading-relaxed">
-                        Hợp đồng dự kiến bắt đầu trước ngày bạn nhận kho. Vui lòng xác nhận chính sách tính tiền cho khoảng thời gian chênh lệch trước khi ký. Hệ thống không nên tự động tính thêm phí nếu chưa có thỏa thuận rõ ràng.
+                        Hợp đồng dự kiến bắt đầu trước ngày bạn nhận kho. Vui lòng xác nhận chính sách tính tiền cho khoảng thời gian chênh lệch trước khi ký. Hệ thống không tự động tính thêm phụ phí ngoài hợp đồng.
                       </p>
                     </div>
                   )}
@@ -3313,7 +3426,7 @@ export const CustomerDashboard: React.FC = () => {
                   {/* Trạng thái mã PIN */}
                   <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5 text-xs">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-800 text-[11px]">Trạng thái mã PIN</span>
+                      <span className="font-bold text-slate-800 text-[11px]">Trạng thái mã PIN SmartLock</span>
                       <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold text-[10px] flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
                         Chưa kích hoạt
@@ -3326,76 +3439,123 @@ export const CustomerDashboard: React.FC = () => {
                 </div>
 
                 {/* 3. Bảng tính chi phí dự kiến */}
-                <div className="space-y-2">
-                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                    3. Bảng tính chi phí dự kiến
-                  </h4>
-
-                  <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2 text-xs">
-                    {/* Row 1: Tiền thuê kho */}
-                    <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
-                      <div>
-                        <div className="font-bold text-slate-800">Tiền thuê kho</div>
-                        <div className="text-[10px] text-slate-500">Theo kỳ hạn đã chọn</div>
-                      </div>
-                      <div className="font-mono font-bold text-slate-900 text-xs">
-                        {bookingEstimate.rawRent.toLocaleString('vi-VN')} ₫
-                      </div>
-                    </div>
-
-                    {/* Row 2: Chiết khấu kỳ hạn */}
-                    <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
-                      <div>
-                        <div className="font-bold text-emerald-800">Chiết khấu kỳ hạn</div>
-                        <div className="text-[10px] text-slate-500">
-                          {bookingEstimate.discountPercent > 0 
-                            ? `Ví dụ: giảm ${bookingEstimate.discountPercent}% trên tiền thuê`
-                            : 'Theo kỳ hạn đã chọn'}
-                        </div>
-                      </div>
-                      <div className="font-mono font-bold text-emerald-700 text-xs">
-                        {bookingEstimate.discountAmount > 0 
-                          ? `−${bookingEstimate.discountAmount.toLocaleString('vi-VN')} ₫`
-                          : '0 ₫'}
-                      </div>
-                    </div>
-
-                    {/* Row 3: Tiền cọc an ninh */}
-                    <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
-                      <div>
-                        <div className="font-bold text-slate-800">Tiền cọc an ninh</div>
-                        <div className="text-[10px] text-slate-500">Hoàn trả theo điều kiện hợp đồng</div>
-                      </div>
-                      <div className="font-mono font-bold text-slate-900 text-xs">
-                        {bookingEstimate.deposit.toLocaleString('vi-VN')} ₫
-                      </div>
-                    </div>
-
-                    {/* Row 4: Tổng dự kiến */}
-                    <div className="flex justify-between items-center pt-2">
-                      <div>
-                        <div className="font-bold text-slate-900 text-sm">Tổng dự kiến</div>
-                        <div className="text-[10px] text-slate-500">Đã gồm tiền thuê sau giảm và tiền cọc</div>
-                      </div>
-                      <div className="font-mono font-bold text-blue-600 text-base">
-                        {bookingEstimate.totalPayment.toLocaleString('vi-VN')} ₫
-                      </div>
-                    </div>
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                      3. Bảng tính chi phí dự kiến
+                    </h4>
+                    {isLoadingQuote && (
+                      <span className="text-[11px] text-blue-600 flex items-center gap-1 font-medium">
+                        <span className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></span>
+                        Đang đồng bộ báo giá máy chủ...
+                      </span>
+                    )}
                   </div>
 
-                  <p className="text-[10px] text-slate-500 leading-relaxed italic">
-                    Số tiền trên là ví dụ minh họa cho kỳ hạn {bookingEstimate.days} ngày. Giá cuối cùng, chiết khấu, thuế/phí nếu có và tiền cần thanh toán phải được backend tính theo chính sách thực tế.
-                  </p>
+                  {quoteError ? (
+                    <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl space-y-2 text-xs">
+                      <div className="font-bold text-rose-800 flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-rose-600 text-[18px]">error</span>
+                        Không thể tải báo giá và chính sách từ máy chủ
+                      </div>
+                      <p className="text-rose-700 leading-relaxed text-[11px]">
+                        {quoteError}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleRetryQuote}
+                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-lg transition-colors cursor-pointer"
+                      >
+                        Thử lại
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2.5 text-xs">
+                      {/* Row 1: Tiền thuê trước ưu đãi */}
+                      <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                        <div>
+                          <div className="font-bold text-slate-800">Tiền thuê trước ưu đãi</div>
+                          <div className="text-[10px] text-slate-500">
+                            {bookingEstimate.months} tháng × {(serverBookingQuote?.monthlyRate || selectedBookingUnit.priceNumber || 1250000).toLocaleString('vi-VN')} ₫
+                          </div>
+                        </div>
+                        <div className="font-mono font-bold text-slate-900 text-xs">
+                          {bookingEstimate.rawRent.toLocaleString('vi-VN')} ₫
+                        </div>
+                      </div>
+
+                      {/* Row 2: Chiết khấu kỳ hạn */}
+                      <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                        <div>
+                          <div className="font-bold text-emerald-800">Chiết khấu kỳ hạn</div>
+                          <div className="text-[10px] text-slate-500">
+                            {bookingEstimate.discountPercent > 0 
+                              ? `Giảm ${bookingEstimate.discountPercent}% theo chính sách kỳ hạn ${bookingEstimate.months} tháng`
+                              : 'Chưa đủ điều kiện hưởng chiết khấu kỳ hạn (từ 3 tháng trở lên)'}
+                          </div>
+                        </div>
+                        <div className="font-mono font-bold text-emerald-700 text-xs">
+                          {bookingEstimate.discountAmount > 0 
+                            ? `−${bookingEstimate.discountAmount.toLocaleString('vi-VN')} ₫`
+                            : '0 ₫'}
+                        </div>
+                      </div>
+
+                      {/* Row 3: Tiền thuê sau ưu đãi */}
+                      <div className="flex justify-between items-center py-1 border-b border-slate-200/60 bg-blue-50/40 -mx-2 px-2 rounded-lg">
+                        <div>
+                          <div className="font-bold text-blue-900">Tiền thuê sau ưu đãi</div>
+                          <div className="text-[10px] text-blue-600">Tiền thuê thực tế phải trả cho toàn bộ kỳ hạn</div>
+                        </div>
+                        <div className="font-mono font-bold text-blue-700 text-xs">
+                          {bookingEstimate.rentAfterDiscount.toLocaleString('vi-VN')} ₫
+                        </div>
+                      </div>
+
+                      {/* Row 4: Tiền cọc an ninh */}
+                      <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                        <div>
+                          <div className="font-bold text-slate-800">Tiền cọc an ninh</div>
+                          <div className="text-[10px] text-slate-500">
+                            Khoản bảo đảm tài sản theo quy định cơ sở (hoàn trả 100% khi thanh lý hợp đồng)
+                          </div>
+                        </div>
+                        <div className="font-mono font-bold text-slate-900 text-xs">
+                          {bookingEstimate.deposit.toLocaleString('vi-VN')} ₫
+                        </div>
+                      </div>
+
+                      {/* Row 5: Tổng chi phí dự kiến */}
+                      <div className="flex justify-between items-center pt-2">
+                        <div>
+                          <div className="font-bold text-slate-900 text-sm">Tổng chi phí dự kiến</div>
+                          <div className="text-[10px] text-slate-500">Bao gồm tiền thuê sau ưu đãi + tiền cọc an ninh</div>
+                        </div>
+                        <div className="font-mono font-bold text-blue-600 text-base">
+                          {bookingEstimate.totalPayment.toLocaleString('vi-VN')} ₫
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-200/60 text-[10px] text-slate-500 leading-relaxed">
+                        Ghi chú: Đơn giá đã bao gồm VAT và dịch vụ tiêu chuẩn của Boxora. Tiền cọc an ninh được bảo lưu riêng biệt và không tính gộp vào tiền thuê. Số tiền thanh toán thực tế phụ thuộc vào phương thức tiếp nhận đã chọn bên dưới.
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 4. Chọn phương thức tiếp nhận */}
                 <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                    4. Chọn phương thức tiếp nhận
-                  </h4>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                      4. Chọn phương thức tiếp nhận &amp; đặt chỗ
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Chọn hình thức hoàn tất thủ tục phù hợp với thời gian của bạn.
+                    </p>
+                  </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {/* Option 1: Giữ chỗ miễn phí theo lịch hẹn */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Option A: Giữ chỗ miễn phí theo lịch hẹn */}
                     <div
                       onClick={() => setBookingWorkflow('HOLD_ONLY')}
                       className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
@@ -3405,26 +3565,29 @@ export const CustomerDashboard: React.FC = () => {
                       }`}
                     >
                       <div>
-                        <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center justify-between mb-1.5">
                           <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
                             <span className="material-symbols-outlined text-blue-600 text-[18px]">bookmark</span>
-                            Giữ chỗ miễn phí theo lịch hẹn
+                            Phương thức A — Giữ chỗ theo lịch hẹn
                           </span>
-                          <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
-                            Theo chính sách cơ sở
+                          <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                            Miễn phí giữ chỗ
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-500 leading-normal">
-                          Giữ vị trí kho đến giờ hẹn ({formatDisplayDate(bookingCheckInDate)} lúc {bookingCheckInTime}) + 24 giờ gia hạn theo chính sách. Xem kho thực tế và thanh toán tại quầy.
+                        <p className="text-[11px] text-slate-600 leading-normal">
+                          Bảo lưu vị trí kho riêng cho bạn đến giờ hẹn ({formatDisplayDate(bookingCheckInDate)} lúc {bookingCheckInTime}) và cộng thêm {bookingEstimate.holdGraceHours} giờ gia hạn theo chính sách cơ sở.
                         </p>
+                        <div className="mt-2 text-[10px] text-slate-500 bg-white/80 p-2 rounded-lg border border-slate-100">
+                          Quy trình tại cơ sở: Đến xem kho thực tế, ký biên bản bàn giao tại quầy và thanh toán cọc + tiền thuê nhận mã SmartLock.
+                        </div>
                       </div>
-                      <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
+                      <div className="mt-3 pt-2.5 border-t border-slate-200/60 flex items-center justify-between text-xs">
                         <span className="text-slate-600 font-medium">Thanh toán ngay</span>
-                        <span className="font-mono font-bold text-slate-900">0 ₫ (Thanh toán tại quầy)</span>
+                        <span className="font-mono font-bold text-emerald-600">0 ₫ (Thanh toán tại quầy)</span>
                       </div>
                     </div>
 
-                    {/* Option 2: Ký online & thanh toán ngay */}
+                    {/* Option B: Ký online & thanh toán ngay */}
                     <div
                       onClick={() => setBookingWorkflow('ONLINE_NOW')}
                       className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
@@ -3434,56 +3597,86 @@ export const CustomerDashboard: React.FC = () => {
                       }`}
                     >
                       <div>
-                        <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center justify-between mb-1.5">
                           <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
                             <span className="material-symbols-outlined text-blue-600 text-[18px]">history_edu</span>
-                            Ký online &amp; thanh toán ngay
+                            Phương thức B — Ký online &amp; thanh toán
                           </span>
-                          <span className="text-[10px] font-semibold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">
-                            Thanh toán trực tuyến
+                          <span className="text-[10px] font-semibold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                            Ký điện tử &amp; Thanh toán trực tuyến
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-500 leading-normal">
-                          Ký hợp đồng điện tử trực tuyến và thanh toán cọc + tiền thuê tháng đầu qua cổng thanh toán bảo mật.
+                        <p className="text-[11px] text-slate-600 leading-normal">
+                          Xem điều khoản hợp đồng điện tử, xác nhận thông tin và thanh toán trực tuyến tiền cọc cùng cước phí qua cổng thanh toán bảo mật.
                         </p>
+                        <div className="mt-2 text-[10px] text-slate-500 bg-white/80 p-2 rounded-lg border border-slate-100">
+                          Quy trình: Ký trực tuyến qua hệ thống Boxora, thanh toán xác nhận tức thì, nhân viên chỉ bàn giao mã mở kho khi đến nhận.
+                        </div>
                       </div>
-                      <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
-                        <span className="text-slate-600 font-medium">Tổng thanh toán ngay</span>
-                        <span className="font-mono font-bold text-blue-600">{bookingEstimate.totalPayment.toLocaleString('vi-VN')} ₫</span>
+                      <div className="mt-3 pt-2.5 border-t border-slate-200/60 flex items-center justify-between text-xs">
+                        <span className="text-slate-600 font-medium">Số tiền đến hạn thanh toán</span>
+                        <span className="font-mono font-bold text-blue-600">
+                          {bookingEstimate.totalPayment.toLocaleString('vi-VN')} ₫
+                        </span>
                       </div>
                     </div>
                   </div>
-
-                  {/* Policy acceptance checkbox */}
-                  <label className="flex items-start gap-2.5 p-3 bg-slate-50 border border-slate-200/80 rounded-xl cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={bookingPolicyAccepted}
-                      onChange={(e) => setBookingPolicyAccepted(e.target.checked)}
-                      className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                    />
-                    <span className="text-xs text-slate-700 leading-relaxed">
-                      Tôi đã đọc thông tin về ngày bắt đầu thuê, ngày check-in, điều kiện kích hoạt mã PIN và chính sách hủy/hoàn tiền.
-                    </span>
-                  </label>
                 </div>
+
+                {/* Modal Error Banner */}
+                {bookingModalError && (
+                  <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-xs text-rose-800">
+                    <span className="material-symbols-outlined text-rose-600 text-[18px] shrink-0 mt-0.5">error</span>
+                    <div className="flex-1 leading-relaxed">
+                      <strong className="block font-semibold">Không thể hoàn tất đặt chỗ:</strong>
+                      <span>{bookingModalError}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setBookingModalError(null)}
+                      className="text-rose-400 hover:text-rose-700 text-xs shrink-0 cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
+                {/* Policy acceptance checkbox */}
+                <label className="flex items-start gap-2.5 p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl cursor-pointer hover:bg-slate-100/50 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={bookingPolicyAccepted}
+                    onChange={(e) => {
+                      setBookingPolicyAccepted(e.target.checked)
+                      if (e.target.checked) setBookingModalError(null)
+                    }}
+                    className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <span className="text-xs text-slate-700 leading-relaxed">
+                    Tôi xác nhận đã đọc, hiểu rõ và đồng ý với các nội dung: (1) Kỳ hạn thuê đã chọn; (2) Ngày check-in và cách xác lập ngày bắt đầu thuê chính thức tại thời điểm bàn giao; (3) Chi phí dự kiến và tiền cọc an ninh; (4) Chính sách bảo lưu giữ chỗ của cơ sở; (5) Điều kiện hủy đơn và hoàn tiền cọc.
+                  </span>
+                </label>
 
                 {/* Modal Footer Actions */}
                 <div className="pt-3 border-t border-slate-100 flex items-center gap-2.5">
                   <button
                     type="button"
-                    onClick={() => setSelectedBookingUnit(null)}
+                    onClick={() => {
+                      setSelectedBookingUnit(null)
+                      setBookingModalError(null)
+                      setQuoteError(null)
+                    }}
                     disabled={isSubmittingBooking}
-                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                    className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
                   >
                     Hủy bỏ
                   </button>
                   <button
                     type="button"
                     onClick={handleConfirmBooking}
-                    disabled={isSubmittingBooking || !bookingPolicyAccepted}
+                    disabled={isSubmittingBooking || !bookingPolicyAccepted || isLoadingQuote || !!quoteError}
                     className={`flex-1 py-2.5 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                      !bookingPolicyAccepted
+                      !bookingPolicyAccepted || isLoadingQuote || !!quoteError
                         ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
                         : bookingWorkflow === 'HOLD_ONLY'
                         ? 'bg-slate-900 hover:bg-slate-800'
@@ -3496,7 +3689,7 @@ export const CustomerDashboard: React.FC = () => {
                         <span>Đang xử lý đặt chỗ...</span>
                       </>
                     ) : bookingWorkflow === 'HOLD_ONLY' ? (
-                      <span>Xác nhận đặt giữ chỗ</span>
+                      <span>Xác nhận giữ chỗ</span>
                     ) : (
                       <span>Xác nhận ký online &amp; thanh toán</span>
                     )}
@@ -4200,7 +4393,7 @@ export const CustomerDashboard: React.FC = () => {
                           </span>
                         </div>
                         <p className="text-[11px] text-blue-800">
-                          Đơn đặt kho đã thanh toán đủ. Quý khách vui lòng hoàn tất ký hợp đồng điện tử trực tuyến (DocuSeal) hoặc mang CCCD gốc đến cơ sở Boxora để ký hợp đồng và nhận bàn giao kho.
+                          Đơn đặt kho đã thanh toán đủ. Quý khách vui lòng hoàn tất ký hợp đồng điện tử trực tuyến hoặc mang CCCD gốc đến cơ sở Boxora để ký hợp đồng và nhận bàn giao kho.
                         </p>
                       </div>
                     </div>
@@ -4296,7 +4489,7 @@ export const CustomerDashboard: React.FC = () => {
                             </>
                           ) : modalInfo.scenario === 'PAID_UNSIGNED' ? (
                             <>
-                              <strong>Ký hợp đồng &amp; Nghiệm thu:</strong> Đơn kho đã thanh toán đủ. Quý khách vui lòng ký hợp đồng điện tử DocuSeal hoặc ký trực tiếp tại cơ sở trước khi nhận bàn giao kho.
+                              <strong>Ký hợp đồng &amp; Nghiệm thu:</strong> Đơn kho đã thanh toán đủ. Quý khách vui lòng ký hợp đồng điện tử trực tuyến hoặc ký trực tiếp tại cơ sở trước khi nhận bàn giao kho.
                             </>
                           ) : (
                             <>
@@ -4383,25 +4576,15 @@ export const CustomerDashboard: React.FC = () => {
         />
       )}
 
-      {/* Ticket closure confirmation: no state changes until the backend confirms. */}
-      {closeTicketTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
-          <section role="dialog" aria-modal="true" aria-labelledby="close-ticket-title" className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700"><span className="material-symbols-outlined">verified</span></div>
-              <div>
-                <h3 id="close-ticket-title" className="text-base font-bold text-slate-900">Xác nhận hài lòng và đóng phiếu</h3>
-                <p className="mt-1 text-xs leading-relaxed text-slate-600">Xác nhận này sẽ đóng phiếu sự cố #{closeTicketTarget.ticketCode || closeTicketTarget.id.slice(0, 8)}. Bạn chỉ nên tiếp tục khi sự cố đã được xử lý hoàn toàn.</p>
-              </div>
-            </div>
-            {ticketActionError && <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{ticketActionError}</p>}
-            <div className="mt-6 flex justify-end gap-2">
-              <button type="button" disabled={isProcessingTicketAction} onClick={() => setCloseTicketTarget(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Hủy</button>
-              <button type="button" disabled={isProcessingTicketAction} onClick={handleCloseCustomerTicket} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50">{isProcessingTicketAction ? 'Đang xử lý...' : 'Xác nhận'}</button>
-            </div>
-          </section>
-        </div>
-      )}
+      {/* Ticket closure confirmation: Task 2 standardized modal */}
+      <TicketCloseConfirmModal
+        isOpen={Boolean(closeTicketTarget)}
+        ticket={closeTicketTarget}
+        onClose={() => setCloseTicketTarget(null)}
+        onSuccess={async () => {
+          await fetchCustomerTickets()
+        }}
+      />
 
       {/* Reopen Ticket Modal (Customer Request Re-handling) */}
       {reopenModalTicket && (

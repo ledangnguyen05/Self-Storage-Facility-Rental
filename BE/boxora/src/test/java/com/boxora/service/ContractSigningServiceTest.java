@@ -203,4 +203,50 @@ class ContractSigningServiceTest {
         verify(contractRenewalService).handleRenewalSigned(renewalId, "https://docuseal.com/docs/renewal-addendum.pdf");
         verifyNoInteractions(rentalContractRepository);
     }
+
+    @Test
+    @DisplayName("getContractByBookingId: Chủ sở hữu booking được phép lấy hợp đồng")
+    void getContractByBookingId_AuthorizedOwner_ReturnsContract() {
+        UUID bookingId = UUID.randomUUID();
+        when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(mockContract));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(mockUser.getId());
+        when(rentalContractMapper.toResponse(mockContract)).thenReturn(
+                com.boxora.dto.response.RentalContractResponse.builder()
+                        .id(mockContract.getId())
+                        .contractCode(mockContract.getContractCode())
+                        .build()
+        );
+
+        com.boxora.dto.response.RentalContractResponse res = contractSigningService.getContractByBookingId(bookingId);
+
+        assertThat(res).isNotNull();
+        assertThat(res.getId()).isEqualTo(mockContract.getId());
+    }
+
+    @Test
+    @DisplayName("getContractByBookingId: Khách hàng khác cố truy cập hợp đồng -> Bị từ chối FORBIDDEN (403)")
+    void getContractByBookingId_UnauthorizedCustomer_ThrowsForbidden() {
+        UUID bookingId = UUID.randomUUID();
+        UUID attackerId = UUID.randomUUID();
+
+        when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(mockContract));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(attackerId);
+
+        assertThrows(AppException.class, () -> contractSigningService.getContractByBookingId(bookingId));
+    }
+
+    @Test
+    @DisplayName("getContractByBookingId: Nhân viên ngoài phạm vi cơ sở -> Bị từ chối FACILITY_ACCESS_DENIED (403)")
+    void getContractByBookingId_OutOfScopeStaff_ThrowsFacilityAccessDenied() {
+        UUID bookingId = UUID.randomUUID();
+
+        when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(mockContract));
+        when(facilityAccessGuard.isFacilityScoped()).thenReturn(true);
+        doThrow(new AppException(ErrorCode.FACILITY_ACCESS_DENIED))
+                .when(facilityAccessGuard).checkFacilityAccess(mockFacility.getId());
+
+        assertThrows(AppException.class, () -> contractSigningService.getContractByBookingId(bookingId));
+    }
 }

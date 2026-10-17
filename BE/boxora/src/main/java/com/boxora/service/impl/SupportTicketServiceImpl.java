@@ -222,26 +222,43 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
         String currentUserRole = requestContext != null ? requestContext.currentUserRole() : null;
 
-        User currentUser = currentUserId != null ? userRepository.findById(currentUserId).orElse(null) : null;
+        if (currentUserId == null) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
+
+        User currentUser = userRepository.findById(currentUserId).orElse(null);
 
         List<SupportTicket> rawList;
 
         if ("CUSTOMER".equalsIgnoreCase(currentUserRole)) {
             // Customer only sees own tickets
-            if (currentUserId == null) throw new AppException(ErrorCode.UNAUTHORIZED);
             rawList = supportTicketRepository.findByCustomer_Id(currentUserId);
         } else if ("STAFF".equalsIgnoreCase(currentUserRole)) {
             // Staff only sees tickets in their assigned facility or assigned to them
             if (currentUser == null || currentUser.getFacility() == null) {
-                rawList = currentUserId != null ? supportTicketRepository.findByAssignedStaff_Id(currentUserId) : Collections.emptyList();
+                if (facilityId != null) {
+                    throw new AppException(ErrorCode.FORBIDDEN, "Nhân viên chưa được phân công cơ sở");
+                }
+                rawList = supportTicketRepository.findByAssignedStaff_Id(currentUserId);
             } else {
+                if (facilityId != null && !facilityId.equals(currentUser.getFacility().getId())) {
+                    log.warn("[SECURITY] Staff {} attempted to access tickets of facility {}", currentUserId, facilityId);
+                    throw new AppException(ErrorCode.FORBIDDEN, "Nhân viên không có quyền truy cập dữ liệu của cơ sở khác");
+                }
                 rawList = supportTicketRepository.findByFacility_IdOrAssignedStaff_Id(currentUser.getFacility().getId(), currentUserId);
             }
         } else if ("FACILITY_MANAGER".equalsIgnoreCase(currentUserRole)) {
             // Facility manager only sees tickets in their facility
             if (currentUser == null || currentUser.getFacility() == null) {
+                if (facilityId != null) {
+                    throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở chưa được phân công cơ sở");
+                }
                 rawList = Collections.emptyList();
             } else {
+                if (facilityId != null && !facilityId.equals(currentUser.getFacility().getId())) {
+                    log.warn("[SECURITY] Facility Manager {} attempted to access tickets of facility {}", currentUserId, facilityId);
+                    throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở không có quyền truy cập dữ liệu của cơ sở khác");
+                }
                 rawList = supportTicketRepository.findByFacility_Id(currentUser.getFacility().getId());
             }
         } else if ("BUSINESS_MANAGER".equalsIgnoreCase(currentUserRole) || "ADMIN".equalsIgnoreCase(currentUserRole)) {
@@ -685,11 +702,31 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         String currentUserRole = requestContext != null ? requestContext.currentUserRole() : null;
         UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
 
-        User currentUser = currentUserId != null ? userRepository.findById(currentUserId).orElse(null) : null;
+        if (currentUserId == null) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
+
+        User currentUser = userRepository.findById(currentUserId).orElse(null);
 
         UUID targetFacilityId = facilityId;
-        if ("FACILITY_MANAGER".equalsIgnoreCase(currentUserRole) && currentUser != null && currentUser.getFacility() != null) {
-            targetFacilityId = currentUser.getFacility().getId();
+        if ("STAFF".equalsIgnoreCase(currentUserRole)) {
+            if (currentUser != null && currentUser.getFacility() != null) {
+                if (facilityId != null && !facilityId.equals(currentUser.getFacility().getId())) {
+                    throw new AppException(ErrorCode.FORBIDDEN, "Nhân viên không có quyền xem thống kê của cơ sở khác");
+                }
+                targetFacilityId = currentUser.getFacility().getId();
+            } else if (facilityId != null) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Nhân viên chưa được phân công cơ sở");
+            }
+        } else if ("FACILITY_MANAGER".equalsIgnoreCase(currentUserRole)) {
+            if (currentUser != null && currentUser.getFacility() != null) {
+                if (facilityId != null && !facilityId.equals(currentUser.getFacility().getId())) {
+                    throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở không có quyền xem thống kê của cơ sở khác");
+                }
+                targetFacilityId = currentUser.getFacility().getId();
+            } else if (facilityId != null) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở chưa được phân công cơ sở");
+            }
         }
 
         List<SupportTicket> list = (targetFacilityId != null)
