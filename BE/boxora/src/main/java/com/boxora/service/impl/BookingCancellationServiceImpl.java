@@ -27,6 +27,7 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -100,17 +101,27 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         BigDecimal depositPaid = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
         BigDecimal totalRentalFee = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO;
 
+        // Xác định mốc thời gian nhận kho chuẩn xác:
+        // Ưu tiên expectedCheckInAt của booking (lịch hẹn nhận kho đang có hiệu lực).
+        // Nếu không có, dùng ngày bắt đầu thuê (startDate) kết hợp giờ mở cửa của cơ sở (mặc định 08:00 sáng).
+        LocalDateTime checkinDateTime = resolveEffectiveCheckInDateTime(booking);
+        LocalDateTime now = LocalDateTime.now();
+        Duration durationUntilCheckin = Duration.between(now, checkinDateTime);
+        long hoursUntilCheckin = durationUntilCheckin.toHours();
+        String timeRemainingLabel = formatCalmRemainingTime(durationUntilCheckin, hoursUntilCheckin);
+
         // Nếu booking ở trạng thái PENDING_PAYMENT hoặc PENDING_APPROVAL: chưa thanh toán cọc -> không có tiền hoàn và không phạt
         if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
-            long hoursUntilCheckin = Duration.between(LocalDateTime.now(), booking.getStartDate().atStartOfDay()).toHours();
             return BookingCancellationPreviewResponse.builder()
                     .bookingId(booking.getId())
                     .bookingCode(booking.getBookingCode())
                     .unitCode(unitCode)
                     .startDate(booking.getStartDate())
+                    .checkInDateTime(checkinDateTime)
                     .depositPaid(depositPaid)
                     .totalRentalFee(totalRentalFee)
                     .hoursUntilCheckin(hoursUntilCheckin)
+                    .timeRemainingLabel(timeRemainingLabel)
                     .milestoneStage("STAGE_PENDING_NO_PAYMENT")
                     .refundPercentage(0.0)
                     .refundAmount(BigDecimal.ZERO)
@@ -120,10 +131,6 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     .build();
         }
 
-        // Tính số giờ còn lại từ bây giờ tới thời điểm check-in (startDate 00:00)
-        LocalDateTime checkinDateTime = booking.getStartDate().atStartOfDay();
-        long hoursUntilCheckin = Duration.between(LocalDateTime.now(), checkinDateTime).toHours();
-
         String milestoneStage;
         double refundPercentage;
         BigDecimal refundAmount;
@@ -131,28 +138,28 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         String policyDescription;
 
         if (hoursUntilCheckin >= fullRefundHours) {
-            // MỐC 1: >= 48h trước check-in -> Hoàn 100% tiền cọc
+            // MỐC 1: >= 48h trước lịch hẹn nhận kho -> Hoàn 100% tiền cọc
             milestoneStage = "STAGE_1_FULL_REFUND";
             refundPercentage = 100.0;
             refundAmount = depositPaid;
             penaltyAmount = BigDecimal.ZERO;
-            policyDescription = String.format("Mốc 1: Hủy trước giờ nhận kho từ %d giờ trở lên. Hoàn 100%% tiền cọc đã đóng.", fullRefundHours);
+            policyDescription = String.format("Mốc 1: Hủy trước giờ hẹn nhận kho từ %d giờ trở lên. Hoàn 100%% tiền cọc đã đóng.", fullRefundHours);
         } else if (hoursUntilCheckin >= partialRefundHours) {
-            // MỐC 2: Từ 24h đến dưới 48h trước check-in -> Hoàn 50% tiền cọc (giữ lại 50% phí phạt)
+            // MỐC 2: Từ 24h đến dưới 48h trước lịch hẹn nhận kho -> Hoàn 50% tiền cọc
             milestoneStage = "STAGE_2_PARTIAL_REFUND";
             refundPercentage = partialRefundPercent;
             refundAmount = depositPaid.multiply(BigDecimal.valueOf(partialRefundPercent / 100.0))
                     .setScale(2, RoundingMode.HALF_UP);
             penaltyAmount = depositPaid.subtract(refundAmount);
-            policyDescription = String.format("Mốc 2: Hủy trước giờ nhận kho từ %d đến dưới %d giờ. Hoàn %.0f%% tiền cọc, giữ lại %.0f%% làm phí giữ chỗ.",
+            policyDescription = String.format("Mốc 2: Hủy trước giờ hẹn nhận kho từ %d đến dưới %d giờ. Hoàn %.0f%% tiền cọc, khấu trừ %.0f%% chi phí giữ chỗ.",
                     partialRefundHours, fullRefundHours, partialRefundPercent, 100.0 - partialRefundPercent);
         } else {
-            // MỐC 3: Dưới 24h trước check-in hoặc sau ngày bắt đầu thuê -> Hoàn 0% (khấu trừ 100%)
+            // MỐC 3: Dưới 24h trước lịch hẹn nhận kho hoặc đã qua lịch hẹn -> Áp dụng chính sách hủy sát giờ
             milestoneStage = "STAGE_3_NO_REFUND";
             refundPercentage = 0.0;
             refundAmount = BigDecimal.ZERO;
             penaltyAmount = depositPaid;
-            policyDescription = String.format("Mốc 3: Hủy dưới %d giờ trước giờ nhận kho hoặc sau ngày bắt đầu thuê. Không hoàn tiền cọc (phạt 100%% tiền cọc).",
+            policyDescription = String.format("Mốc 3: Hủy dưới %d giờ trước giờ hẹn nhận kho hoặc đã qua giờ hẹn. Khấu trừ 100%% tiền cọc theo điều khoản hủy sát giờ.",
                     partialRefundHours);
         }
 
@@ -163,9 +170,11 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                 .bookingCode(booking.getBookingCode())
                 .unitCode(unitCode)
                 .startDate(booking.getStartDate())
+                .checkInDateTime(checkinDateTime)
                 .depositPaid(depositPaid)
                 .totalRentalFee(totalRentalFee)
                 .hoursUntilCheckin(hoursUntilCheckin)
+                .timeRemainingLabel(timeRemainingLabel)
                 .milestoneStage(milestoneStage)
                 .refundPercentage(refundPercentage)
                 .refundAmount(refundAmount)
@@ -485,5 +494,48 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     .orElse(null);
         }
         return null;
+    }
+
+    /**
+     * Xác định mốc thời gian nhận kho có hiệu lực:
+     * 1. Ưu tiên expectedCheckInAt nếu khách đã đặt lịch hẹn nhận kho.
+     * 2. Nếu không có lịch hẹn, lấy ngày startDate kết hợp với giờ mở cửa của cơ sở (hoặc mặc định 08:00 sáng).
+     */
+    private LocalDateTime resolveEffectiveCheckInDateTime(Booking booking) {
+        if (booking.getExpectedCheckInAt() != null) {
+            return booking.getExpectedCheckInAt();
+        }
+
+        if (booking.getStartDate() != null) {
+            LocalTime openTime = LocalTime.of(8, 0);
+            if (booking.getStorageUnit() != null
+                    && booking.getStorageUnit().getFacility() != null
+                    && booking.getStorageUnit().getFacility().getOpenTime() != null) {
+                openTime = booking.getStorageUnit().getFacility().getOpenTime();
+            }
+            return booking.getStartDate().atTime(openTime);
+        }
+
+        // Fallback an toàn nếu thiếu cả startDate: lấy ngày tạo đơn cộng 1 ngày lúc 08:00
+        return LocalDateTime.now().plusDays(1).withHour(8).withMinute(0).withSecond(0);
+    }
+
+    /**
+     * Định dạng thời gian còn lại nhẹ nhàng, không gây áp lực theo tiêu chuẩn UX Boxora.
+     */
+    private String formatCalmRemainingTime(Duration duration, long hoursUntilCheckin) {
+        if (duration.isNegative() || hoursUntilCheckin < 0) {
+            return "Đã qua lịch hẹn nhận kho";
+        }
+        if (hoursUntilCheckin < 24) {
+            return "Lịch hẹn còn dưới 24 giờ";
+        }
+        long days = duration.toDays();
+        long remainingHours = duration.toHours() % 24;
+        if (remainingHours > 0) {
+            return String.format("Còn khoảng %d ngày %d giờ đến lịch hẹn nhận kho", days, remainingHours);
+        } else {
+            return String.format("Còn khoảng %d ngày đến lịch hẹn nhận kho", days);
+        }
     }
 }

@@ -176,7 +176,8 @@ class BookingCancellationServiceTest {
         @Test
         @DisplayName("Mốc 3 (< 24h): Hoàn 0% tiền cọc, khấu trừ 100%")
         void preview_Stage3_NoRefund() {
-            testBooking.setStartDate(LocalDate.now().plusDays(1));
+            // Lịch hẹn nhận kho trong vòng 10 giờ tới (< 24h)
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(10));
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
             when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));
@@ -189,6 +190,153 @@ class BookingCancellationServiceTest {
             assertThat(preview.getRefundAmount()).isEqualByComparingTo(BigDecimal.ZERO);
             assertThat(preview.getPenaltyAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
             assertThat(preview.isRefundable()).isFalse();
+            assertThat(preview.getTimeRemainingLabel()).isEqualTo("Lịch hẹn còn dưới 24 giờ");
+        }
+
+        @Test
+        @DisplayName("Đơn vừa tạo, thanh toán cọc và có lịch hẹn sau 3 ngày: Hoàn 100% tiền cọc (Mốc 1), không bị rơi vào Mốc 3")
+        void preview_NewlyCreatedBooking_WithFutureAppointment_FullRefund() {
+            // Đơn có startDate là hôm nay nhưng lịch hẹn nhận kho là 3 ngày sau lúc 14:00 (khoảng 72h)
+            testBooking.setStartDate(LocalDate.now());
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusDays(3));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview).isNotNull();
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_1_FULL_REFUND");
+            assertThat(preview.getRefundPercentage()).isEqualTo(100.0);
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
+            assertThat(preview.getPenaltyAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(preview.isRefundable()).isTrue();
+            assertThat(preview.getTimeRemainingLabel()).contains("đến lịch hẹn nhận kho");
+        }
+
+        @Test
+        @DisplayName("Mốc 1: Còn 49 giờ (> 48h) -> Hoàn 100%")
+        void preview_49Hours_Stage1_FullRefund() {
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(49).plusMinutes(1));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_1_FULL_REFUND");
+            assertThat(preview.getRefundPercentage()).isEqualTo(100.0);
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
+        }
+
+        @Test
+        @DisplayName("Ranh giới chính xác 48 giờ: Thuộc nhóm Mốc 1 hoàn 100%")
+        void preview_Exact48Hours_Stage1_FullRefund() {
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(48).plusMinutes(1));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_1_FULL_REFUND");
+            assertThat(preview.getRefundPercentage()).isEqualTo(100.0);
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
+        }
+
+        @Test
+        @DisplayName("Mốc 2: Còn 47 giờ (< 48h và >= 24h) -> Hoàn 50%")
+        void preview_47Hours_Stage2_PartialRefund() {
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(47).plusMinutes(1));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_2_PARTIAL_REFUND");
+            assertThat(preview.getRefundPercentage()).isEqualTo(50.0);
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("500000.00"));
+        }
+
+        @Test
+        @DisplayName("Mốc 2: Còn 25 giờ (> 24h và < 48h) -> Hoàn 50%")
+        void preview_25Hours_Stage2_PartialRefund() {
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(25).plusMinutes(1));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_2_PARTIAL_REFUND");
+            assertThat(preview.getRefundPercentage()).isEqualTo(50.0);
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("500000.00"));
+        }
+
+        @Test
+        @DisplayName("Ranh giới chính xác 24 giờ: Thuộc nhóm Mốc 2 hoàn 50%")
+        void preview_Exact24Hours_Stage2_PartialRefund() {
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(24).plusMinutes(1));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_2_PARTIAL_REFUND");
+            assertThat(preview.getRefundPercentage()).isEqualTo(50.0);
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("500000.00"));
+        }
+
+        @Test
+        @DisplayName("Mốc 3: Còn 23 giờ (< 24h) -> Hoàn 0%, khấu trừ 100%")
+        void preview_23Hours_Stage3_NoRefund() {
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(23).plusMinutes(30));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_3_NO_REFUND");
+            assertThat(preview.getRefundPercentage()).isEqualTo(0.0);
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(preview.getPenaltyAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
+        }
+
+        @Test
+        @DisplayName("Đã qua lịch hẹn nhận kho (quá khứ) -> Mốc 3, hoàn 0%")
+        void preview_PastAppointment_Stage3_NoRefund() {
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().minusHours(2));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_3_NO_REFUND");
+            assertThat(preview.getRefundPercentage()).isEqualTo(0.0);
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(preview.getTimeRemainingLabel()).isEqualTo("Đã qua lịch hẹn nhận kho");
+        }
+
+        @Test
+        @DisplayName("Kiểm tra làm tròn và số tiền lẻ: Cọc 450.000 ₫ hoàn 50% = 225.000 ₫")
+        void preview_OddDepositAmount_RoundingCorrectness() {
+            testBooking.setDepositPaid(new BigDecimal("450000.00"));
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(30));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_2_PARTIAL_REFUND");
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("225000.00"));
+            assertThat(preview.getPenaltyAmount()).isEqualByComparingTo(new BigDecimal("225000.00"));
+            assertThat(preview.getRefundAmount().add(preview.getPenaltyAmount()))
+                    .isEqualByComparingTo(new BigDecimal("450000.00"));
         }
 
         @Test

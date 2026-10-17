@@ -1082,21 +1082,6 @@ export const CustomerDashboard: React.FC = () => {
               Quản lý kho đang thuê, kiểm tra mã PIN và theo dõi trạng thái khóa bảo mật.
             </p>
           </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleTabChange('explore')}
-              className="stitch-btn-primary text-xs"
-            >
-              <span>Thuê thêm kho</span>
-            </button>
-            <button
-              onClick={() => handleTabChange('support')}
-              className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
-            >
-              <span>Hỗ trợ và sự cố</span>
-            </button>
-          </div>
         </div>
 
         {/* 4 Metric Cards */}
@@ -1631,9 +1616,18 @@ export const CustomerDashboard: React.FC = () => {
                   { key: 'ALL', label: 'Tất cả', count: customerBookings.length },
                   { key: 'CONFIRMED', label: 'Đã giữ chỗ', count: customerBookings.filter(b => b.status === 'CONFIRMED').length },
                   { key: 'PENDING_PAYMENT', label: 'Chờ cọc', count: customerBookings.filter(b => b.status === 'PENDING_PAYMENT').length },
+                  { 
+                    key: 'PENDING_SIGNATURE', 
+                    label: 'Chờ ký', 
+                    count: customerBookings.filter(b => {
+                      const info = getBookingNoticeInfo(b)
+                      return info.scenario === 'PAID_UNSIGNED'
+                    }).length 
+                  },
                   { key: 'ACTIVE', label: 'Đang dùng', count: customerBookings.filter(b => b.status === 'ACTIVE').length },
                   { key: 'COMPLETED', label: 'Đã xong', count: customerBookings.filter(b => b.status === 'COMPLETED').length },
-                  { key: 'CANCELLED', label: 'Hủy / Quá hạn', count: customerBookings.filter(b => b.status === 'CANCELLED' || b.status === 'OVERDUE').length },
+                  { key: 'CANCELLED', label: 'Hủy', count: customerBookings.filter(b => b.status === 'CANCELLED').length },
+                  { key: 'OVERDUE', label: 'Quá hạn', count: customerBookings.filter(b => b.status === 'OVERDUE').length },
                 ].map((tab) => (
                   <button
                     key={tab.key}
@@ -1666,8 +1660,9 @@ export const CustomerDashboard: React.FC = () => {
           ) : (() => {
             const filteredBookings = customerBookings.filter((b) => {
               if (bookingStatusFilter !== 'ALL') {
-                if (bookingStatusFilter === 'CANCELLED') {
-                  if (b.status !== 'CANCELLED' && b.status !== 'OVERDUE') return false
+                if (bookingStatusFilter === 'PENDING_SIGNATURE') {
+                  const info = getBookingNoticeInfo(b)
+                  if (info.scenario !== 'PAID_UNSIGNED') return false
                 } else if (b.status !== bookingStatusFilter) {
                   return false
                 }

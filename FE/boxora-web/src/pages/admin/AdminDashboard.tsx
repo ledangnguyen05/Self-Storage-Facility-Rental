@@ -123,6 +123,9 @@ export const AdminDashboard: React.FC = () => {
   const [logTypeFilter, setLogTypeFilter] = useState<string>('ALL')
   const [logSearch, setLogSearch] = useState('')
   const [isLoginHistoryMode, setIsLoginHistoryMode] = useState(false)
+  const [logsPage, setLogsPage] = useState(0)
+  const [logsTotalPages, setLogsTotalPages] = useState(1)
+  const [logsTotalElements, setLogsTotalElements] = useState(0)
 
   // Sync facilities and selectedFacility from DashboardLayout outlet context
   useEffect(() => {
@@ -238,15 +241,19 @@ export const AdminDashboard: React.FC = () => {
     }
   }
 
-  const fetchLogs = async (loginHistoryMode = isLoginHistoryMode) => {
+  const fetchLogs = async (loginHistoryMode = isLoginHistoryMode, page = logsPage) => {
     setLogsError(false)
     try {
       if (loginHistoryMode) {
-        const res = await activityLogService.getLoginHistory({ size: 30 })
+        const res = await activityLogService.getLoginHistory({ page, size: 20 })
         setLogs(res?.content || [])
+        setLogsTotalPages(res?.totalPages || 1)
+        setLogsTotalElements(res?.totalElements || 0)
       } else {
-        const res = await activityLogService.getAll({ size: 30 })
+        const res = await activityLogService.getAll({ page, size: 20 })
         setLogs(res?.content || [])
+        setLogsTotalPages(res?.totalPages || 1)
+        setLogsTotalElements(res?.totalElements || 0)
       }
     } catch {
       setLogs([])
@@ -1078,6 +1085,64 @@ export const AdminDashboard: React.FC = () => {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls */}
+          {logsTotalPages > 1 && (
+            <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs">
+              <span className="text-slate-500">
+                Hiển thị trang <strong>{logsPage + 1}</strong> / <strong>{logsTotalPages}</strong> (Tổng số: {logsTotalElements} nhật ký)
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={logsPage === 0}
+                  onClick={() => {
+                    const next = Math.max(0, logsPage - 1)
+                    setLogsPage(next)
+                    fetchLogs(isLoginHistoryMode, next)
+                  }}
+                  className="px-2.5 py-1 rounded bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-medium"
+                >
+                  ‹ Trước
+                </button>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, logsTotalPages) }, (_, i) => {
+                    let pageNum = i
+                    if (logsTotalPages > 5) {
+                      if (logsPage > 2) {
+                        pageNum = Math.min(logsPage - 2 + i, logsTotalPages - 1)
+                      }
+                    }
+                    return (
+                      <button
+                        key={pageNum}
+                        type="button"
+                        onClick={() => {
+                          setLogsPage(pageNum)
+                          fetchLogs(isLoginHistoryMode, pageNum)
+                        }}
+                        className={logsPage === pageNum ? "w-7 h-7 rounded text-xs font-semibold flex items-center justify-center transition-colors bg-blue-600 text-white" : "w-7 h-7 rounded text-xs font-semibold flex items-center justify-center transition-colors bg-white border border-slate-200 text-slate-700 hover:bg-slate-100"}
+                      >
+                        {pageNum + 1}
+                      </button>
+                    )
+                  })}
+                </div>
+                <button
+                  type="button"
+                  disabled={logsPage >= logsTotalPages - 1}
+                  onClick={() => {
+                    const next = Math.min(logsTotalPages - 1, logsPage + 1)
+                    setLogsPage(next)
+                    fetchLogs(isLoginHistoryMode, next)
+                  }}
+                  className="px-2.5 py-1 rounded bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-medium"
+                >
+                  Sau ›
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
         </div>

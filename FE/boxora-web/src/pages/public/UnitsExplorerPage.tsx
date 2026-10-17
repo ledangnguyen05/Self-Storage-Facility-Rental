@@ -152,7 +152,12 @@ export const UnitsExplorerPage: React.FC = () => {
   const availableFloors = useMemo(() => Array.from(new Set(
     rawUnits
       .filter(unit => selectedFacilityFilter === 'all' || unit.facilityId === selectedFacilityFilter)
-      .map(unit => unit.floorLevel?.replace(/^Floor\s*/i, 'Tầng ').trim())
+      .map(unit => {
+        const floor = unit.floorLevel?.trim()
+        if (!floor) return 'Tầng 1'
+        const match = floor.match(/\d+/)
+        return match ? "Tầng " + match[0] : floor.replace(/^Floor\s*/i, 'Tầng ').trim()
+      })
       .filter((floor): floor is string => Boolean(floor))
   )).sort((left, right) => left.localeCompare(right, 'vi')), [rawUnits, selectedFacilityFilter])
 
