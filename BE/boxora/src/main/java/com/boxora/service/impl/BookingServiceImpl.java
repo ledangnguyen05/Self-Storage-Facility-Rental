@@ -1123,7 +1123,7 @@ public class BookingServiceImpl implements BookingService {
                 log.info("[EXPIRE_RECONCILE] Booking {} has PAID payment/deposit; reconciling to CONFIRMED instead of CANCELLED", booking.getBookingCode());
                 booking.setStatus(BookingStatus.CONFIRMED);
                 booking.setPaymentExpiresAt(null);
-                booking.setPaymentStatus("PAID");
+                booking.setPaymentStatus(resolveReconciledPaymentStatus(booking));
                 bookingRepository.save(booking);
                 if (booking.getStorageUnit() != null) {
                     storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
@@ -1181,6 +1181,126 @@ public class BookingServiceImpl implements BookingService {
         }
     }
 
+    private String resolveReconciledPaymentStatus(Booking booking) {
+        if (booking.getStatus() == BookingStatus.CANCELLED || "REFUNDED".equalsIgnoreCase(booking.getPaymentStatus())) {
+            return "UNPAID";
+        }
+        List<com.boxora.entity.Payment> payments = paymentRepository.findAllByBooking_Id(booking.getId());
+        BigDecimal requiredDeposit = booking.getDepositAmount() != null && booking.getDepositAmount().compareTo(BigDecimal.ZERO) > 0
+                ? booking.getDepositAmount()
+                : (booking.getStorageUnit() != null && booking.getStorageUnit().getUnitType() != null
+                        && booking.getStorageUnit().getUnitType().getDepositAmount() != null
+                        ? booking.getStorageUnit().getUnitType().getDepositAmount()
+                        : BigDecimal.ZERO);
+        BigDecimal requiredFirstMonthRent = booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
+                ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP)
+                : (booking.getTotalRentalFee() != null && booking.getTotalRentalFee().compareTo(BigDecimal.ZERO) > 0
+                        ? booking.getTotalRentalFee()
+                        : BigDecimal.ZERO);
+
+        BigDecimal paidDeposit = BigDecimal.ZERO;
+        BigDecimal paidRent = BigDecimal.ZERO;
+        BigDecimal paidBooking = BigDecimal.ZERO;
+        BigDecimal refundedDeposit = BigDecimal.ZERO;
+        BigDecimal refundedRent = BigDecimal.ZERO;
+        BigDecimal refundedBooking = BigDecimal.ZERO;
+        boolean hasRefundedOrRefundPendingDepositTx = false;
+        boolean hasAnyRefundPendingTx = false;
+
+        if (payments != null) {
+            for (com.boxora.entity.Payment p : payments) {
+                if (p == null || p.getAmount() == null || p.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                    continue;
+                }
+                if (booking.getId() != null && p.getBooking() != null && p.getBooking().getId() != null
+                        && !booking.getId().equals(p.getBooking().getId())) {
+                    continue;
+                }
+                PaymentStatus st = p.getStatus();
+                com.boxora.enums.PaymentType pt = p.getPaymentType();
+                if (pt != com.boxora.enums.PaymentType.DEPOSIT
+                        && pt != com.boxora.enums.PaymentType.RENTAL_FEE
+                        && pt != com.boxora.enums.PaymentType.BOOKING_PAYMENT) {
+                    continue;
+                }
+                if (st == PaymentStatus.PAID) {
+                    if (pt == com.boxora.enums.PaymentType.DEPOSIT) {
+                        paidDeposit = paidDeposit.add(p.getAmount());
+                    } else if (pt == com.boxora.enums.PaymentType.RENTAL_FEE) {
+                        paidRent = paidRent.add(p.getAmount());
+                    } else if (pt == com.boxora.enums.PaymentType.BOOKING_PAYMENT) {
+                        paidBooking = paidBooking.add(p.getAmount());
+                    }
+                } else if (st == PaymentStatus.REFUND_PENDING) {
+                    // REFUND_PENDING is awaiting refund/reconciliation, NOT yet transferred out.
+                    hasAnyRefundPendingTx = true;
+                    if (pt == com.boxora.enums.PaymentType.DEPOSIT || pt == com.boxora.enums.PaymentType.BOOKING_PAYMENT) {
+                        hasRefundedOrRefundPendingDepositTx = true;
+                    }
+                } else if (st == PaymentStatus.REFUNDED) {
+                    if (pt == com.boxora.enums.PaymentType.DEPOSIT) {
+                        refundedDeposit = refundedDeposit.add(p.getAmount());
+                        hasRefundedOrRefundPendingDepositTx = true;
+                    } else if (pt == com.boxora.enums.PaymentType.RENTAL_FEE) {
+                        refundedRent = refundedRent.add(p.getAmount());
+                    } else if (pt == com.boxora.enums.PaymentType.BOOKING_PAYMENT) {
+                        refundedBooking = refundedBooking.add(p.getAmount());
+                        hasRefundedOrRefundPendingDepositTx = true;
+                    }
+                }
+            }
+        }
+
+        if (paidDeposit.compareTo(BigDecimal.ZERO) == 0
+                && paidRent.compareTo(BigDecimal.ZERO) == 0
+                && paidBooking.compareTo(BigDecimal.ZERO) == 0
+                && !hasRefundedOrRefundPendingDepositTx
+                && !hasAnyRefundPendingTx
+                && refundedRent.compareTo(BigDecimal.ZERO) == 0
+                && booking.getStatus() != BookingStatus.PENDING_PAYMENT
+                && "PAID".equalsIgnoreCase(booking.getPaymentStatus())) {
+            return "PAID";
+        }
+
+        BigDecimal bookingDepositField = booking.getDepositPaid() != null && booking.getDepositPaid().compareTo(BigDecimal.ZERO) > 0
+                ? booking.getDepositPaid()
+                : BigDecimal.ZERO;
+        boolean canFallbackToBookingDepositField = booking.getStatus() != BookingStatus.PENDING_PAYMENT
+                && !hasRefundedOrRefundPendingDepositTx
+                && !"UNPAID".equalsIgnoreCase(booking.getPaymentStatus());
+        BigDecimal baseDepositPaid = (paidDeposit.compareTo(BigDecimal.ZERO) == 0 && paidBooking.compareTo(BigDecimal.ZERO) == 0)
+                ? (canFallbackToBookingDepositField ? bookingDepositField : BigDecimal.ZERO)
+                : paidDeposit;
+
+        BigDecimal unpaidDeposit = requiredDeposit.subtract(baseDepositPaid).max(BigDecimal.ZERO);
+        BigDecimal allocDeposit = paidBooking.min(unpaidDeposit);
+        BigDecimal remBooking = paidBooking.subtract(allocDeposit).max(BigDecimal.ZERO);
+
+        BigDecimal grossDepositPaid = baseDepositPaid.add(allocDeposit);
+        BigDecimal grossRentPaid = paidRent.add(remBooking);
+
+        BigDecimal deductDeposit = refundedDeposit.min(grossDepositPaid);
+        BigDecimal excessDepositRefund = refundedDeposit.subtract(deductDeposit).max(BigDecimal.ZERO);
+        BigDecimal afterDepositRefund = grossDepositPaid.subtract(deductDeposit).max(BigDecimal.ZERO);
+        BigDecimal afterRentRefund = grossRentPaid.subtract(refundedRent).subtract(excessDepositRefund).max(BigDecimal.ZERO);
+
+        BigDecimal deductBookingFromDeposit = refundedBooking.min(afterDepositRefund);
+        BigDecimal remBookingRefund = refundedBooking.subtract(deductBookingFromDeposit).max(BigDecimal.ZERO);
+
+        BigDecimal effectiveDepositPaid = afterDepositRefund.subtract(deductBookingFromDeposit).max(BigDecimal.ZERO);
+        BigDecimal effectiveRentPaid = afterRentRefund.subtract(remBookingRefund).max(BigDecimal.ZERO);
+
+        boolean depositOk = requiredDeposit.compareTo(BigDecimal.ZERO) <= 0 || effectiveDepositPaid.compareTo(requiredDeposit) >= 0;
+        boolean rentOk = requiredFirstMonthRent.compareTo(BigDecimal.ZERO) <= 0 || effectiveRentPaid.compareTo(requiredFirstMonthRent) >= 0;
+        if (depositOk && rentOk && (effectiveDepositPaid.compareTo(BigDecimal.ZERO) > 0 || effectiveRentPaid.compareTo(BigDecimal.ZERO) > 0)) {
+            return "PAID";
+        }
+        if (effectiveDepositPaid.compareTo(BigDecimal.ZERO) > 0 || effectiveRentPaid.compareTo(BigDecimal.ZERO) > 0) {
+            return "PARTIALLY_PAID";
+        }
+        return "UNPAID";
+    }
+
     private BookingResponse mapToResponse(Booking b) {
         BigDecimal initialPaymentAmount = b.getTotalRentalFee() != null && b.getRentalMonths() != null && b.getRentalMonths() > 0
                 ? b.getTotalRentalFee().divide(BigDecimal.valueOf(b.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP).add(
@@ -1221,6 +1341,9 @@ public class BookingServiceImpl implements BookingService {
                 .customerEmail(b.getCustomer() != null ? b.getCustomer().getEmail() : null)
                 .storageUnitId(b.getStorageUnit() != null ? b.getStorageUnit().getId() : null)
                 .unitCode(b.getStorageUnit() != null ? b.getStorageUnit().getUnitCode() : null)
+                .facilityId(b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null
+                        ? b.getStorageUnit().getFacility().getId()
+                        : null)
                 .facilityName(b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null
                         ? b.getStorageUnit().getFacility().getName()
                         : null)

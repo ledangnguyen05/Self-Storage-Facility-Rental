@@ -362,27 +362,27 @@ export const ShiftRosterPage: React.FC = () => {
 
         {/* Pagination */}
         {filteredStaff.length > itemsPerPage && (
-          <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs text-slate-500">
-            <span>
-              Hiển thị {paginatedStaff.length} trên {filteredStaff.length} nhân sự
-            </span>
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
+            <div>
+              Hiển thị <span className="font-semibold text-slate-800 font-mono">{paginatedStaff.length}</span> trên <span className="font-semibold text-slate-800 font-mono">{filteredStaff.length}</span> nhân sự
+            </div>
+            <div className="flex items-center gap-2 sm:ml-auto">
               <button
                 type="button"
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 cursor-pointer font-semibold"
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-semibold transition-colors"
               >
                 Trang trước
               </button>
-              <span className="font-mono font-bold text-slate-900">
+              <span className="font-mono font-bold text-slate-900 px-1">
                 {currentPage} / {totalPages}
               </span>
               <button
                 type="button"
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 cursor-pointer font-semibold"
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-semibold transition-colors"
               >
                 Trang sau
               </button>

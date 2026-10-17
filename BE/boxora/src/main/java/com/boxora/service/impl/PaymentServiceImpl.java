@@ -62,6 +62,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractRenewalService> contractRenewalServiceProvider;
     private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractSigningService> contractSigningServiceProvider;
     private final com.boxora.service.StorageUnitLockService storageUnitLockService;
+    private final com.boxora.repository.RefundRequestRepository refundRequestRepository;
 
     private UUID extractFacilityId(Payment payment) {
         if (payment == null) return null;
@@ -74,59 +75,426 @@ public class PaymentServiceImpl implements PaymentService {
         return null;
     }
 
+    public record BookingPaymentSummary(
+            BigDecimal requiredDeposit,
+            BigDecimal requiredFirstMonthRent,
+            BigDecimal requiredTotalInitial,
+            BigDecimal effectiveDepositPaid,
+            BigDecimal effectiveRentPaid,
+            BigDecimal depositRemaining,
+            BigDecimal rentRemaining,
+            BigDecimal totalInitialRemaining,
+            boolean hasAnyConfirmedPayment,
+            boolean isFullyPaid,
+            String resolvedPaymentStatus,
+            boolean hasPendingRefund,
+            String refundConfirmationLevel
+    ) {}
+
+    private boolean isMutatedOriginalIncomingPayment(Payment p) {
+        if (p == null) return false;
+        if ("VNPAY".equalsIgnoreCase(p.getPaymentMethod()) || "CASH".equalsIgnoreCase(p.getPaymentMethod())) {
+            return true;
+        }
+        if (p.getReceiptVoucherCode() != null || p.getCollectedByStaff() != null) {
+            return true;
+        }
+        String txId = p.getTransactionId();
+        if (txId != null) {
+            String upper = txId.trim().toUpperCase();
+            if (upper.startsWith("BOX") || upper.startsWith("CASH-") || upper.startsWith("BANK-")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasActiveOrCompletedRefundRequest(Booking booking) {
+        if (booking == null || booking.getId() == null || refundRequestRepository == null) {
+            return false;
+        }
+        return refundRequestRepository.existsByBooking_IdAndStatusIn(
+                booking.getId(),
+                List.of(
+                        com.boxora.enums.RefundStatus.PENDING_REVIEW,
+                        com.boxora.enums.RefundStatus.APPROVED,
+                        com.boxora.enums.RefundStatus.PROCESSING_TRANSFER,
+                        com.boxora.enums.RefundStatus.AWAITING_CUSTOMER_CONFIRMATION,
+                        com.boxora.enums.RefundStatus.RECONCILED,
+                        com.boxora.enums.RefundStatus.PROCESSED,
+                        com.boxora.enums.RefundStatus.COMPLETED
+                )
+        );
+    }
+
+    private boolean isRefundBankReconciled(Booking booking) {
+        if (booking == null || booking.getId() == null || refundRequestRepository == null) {
+            return false;
+        }
+        return refundRequestRepository.existsByBooking_IdAndStatusIn(
+                booking.getId(),
+                List.of(
+                        com.boxora.enums.RefundStatus.RECONCILED,
+                        com.boxora.enums.RefundStatus.COMPLETED
+                )
+        );
+    }
+
+    public BookingPaymentSummary calculateBookingPaymentSummary(Booking booking, List<Payment> payments) {
+        StorageUnit unit = booking.getStorageUnit();
+        BigDecimal requiredDeposit = booking.getDepositAmount() != null && booking.getDepositAmount().compareTo(BigDecimal.ZERO) > 0
+                ? booking.getDepositAmount()
+                : (unit != null && unit.getUnitType() != null && unit.getUnitType().getDepositAmount() != null
+                        ? unit.getUnitType().getDepositAmount()
+                        : BigDecimal.ZERO);
+
+        BigDecimal requiredFirstMonthRent = booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
+                ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP)
+                : (booking.getTotalRentalFee() != null && booking.getTotalRentalFee().compareTo(BigDecimal.ZERO) > 0
+                        ? booking.getTotalRentalFee()
+                        : BigDecimal.ZERO);
+
+        BigDecimal requiredTotalInitial = requiredDeposit.add(requiredFirstMonthRent);
+
+        BigDecimal paidDepositFromTx = BigDecimal.ZERO;
+        BigDecimal paidRentFromTx = BigDecimal.ZERO;
+        BigDecimal paidBookingFromTx = BigDecimal.ZERO;
+        BigDecimal refundedDepositFromTx = BigDecimal.ZERO;
+        BigDecimal refundedRentFromTx = BigDecimal.ZERO;
+        BigDecimal refundedBookingFromTx = BigDecimal.ZERO;
+
+        boolean hasRefundPendingTx = false;
+        boolean hasRefundedOrRefundPendingDepositTx = false;
+        List<Payment> refundedPayments = new ArrayList<>();
+
+        if (payments != null) {
+            for (Payment p : payments) {
+                if (p == null || p.getAmount() == null || p.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                    continue;
+                }
+                // Ignore payments belonging to another booking
+                if (booking.getId() != null && p.getBooking() != null && p.getBooking().getId() != null
+                        && !booking.getId().equals(p.getBooking().getId())) {
+                    continue;
+                }
+                PaymentType pt = p.getPaymentType();
+                // Only include initial booking payment obligations (exclude RENEWAL_FEE or unrelated obligations)
+                if (pt != PaymentType.DEPOSIT && pt != PaymentType.RENTAL_FEE && pt != PaymentType.BOOKING_PAYMENT) {
+                    continue;
+                }
+
+                PaymentStatus st = p.getStatus();
+                if (st == PaymentStatus.PAID) {
+                    if (pt == PaymentType.DEPOSIT) {
+                        paidDepositFromTx = paidDepositFromTx.add(p.getAmount());
+                    } else if (pt == PaymentType.RENTAL_FEE) {
+                        paidRentFromTx = paidRentFromTx.add(p.getAmount());
+                    } else if (pt == PaymentType.BOOKING_PAYMENT) {
+                        paidBookingFromTx = paidBookingFromTx.add(p.getAmount());
+                    }
+                } else if (st == PaymentStatus.REFUND_PENDING) {
+                    // REFUND_PENDING is a pending refund/reconciliation item, NOT yet transferred out.
+                    // Never add to PAID and never subtract from held money like REFUNDED.
+                    hasRefundPendingTx = true;
+                    if (pt == PaymentType.DEPOSIT || pt == PaymentType.BOOKING_PAYMENT) {
+                        hasRefundedOrRefundPendingDepositTx = true;
+                    }
+                } else if (st == PaymentStatus.REFUNDED) {
+                    refundedPayments.add(p);
+                    if (pt == PaymentType.DEPOSIT || pt == PaymentType.BOOKING_PAYMENT) {
+                        hasRefundedOrRefundPendingDepositTx = true;
+                    }
+                }
+            }
+        }
+
+        // Prevent double-deduction if the system both mutated an original incoming Payment to REFUNDED
+        // and created a separate new refund Payment(status = REFUNDED).
+        List<Payment> mutatedOriginals = new ArrayList<>();
+        List<Payment> dedicatedRefunds = new ArrayList<>();
+        for (Payment rp : refundedPayments) {
+            if (isMutatedOriginalIncomingPayment(rp)) {
+                mutatedOriginals.add(rp);
+            } else {
+                dedicatedRefunds.add(rp);
+            }
+        }
+
+        List<Payment> effectiveRefundsToDeduct;
+        if (!mutatedOriginals.isEmpty() && !dedicatedRefunds.isEmpty()) {
+            for (Payment orig : mutatedOriginals) {
+                PaymentType pt = orig.getPaymentType();
+                if (pt == PaymentType.DEPOSIT && paidDepositFromTx.compareTo(requiredDeposit) < 0) {
+                    BigDecimal restore = orig.getAmount().min(requiredDeposit.subtract(paidDepositFromTx).max(BigDecimal.ZERO));
+                    paidDepositFromTx = paidDepositFromTx.add(restore);
+                } else if (pt == PaymentType.RENTAL_FEE && paidRentFromTx.compareTo(requiredFirstMonthRent) < 0) {
+                    BigDecimal restore = orig.getAmount().min(requiredFirstMonthRent.subtract(paidRentFromTx).max(BigDecimal.ZERO));
+                    paidRentFromTx = paidRentFromTx.add(restore);
+                } else if (pt == PaymentType.BOOKING_PAYMENT && paidBookingFromTx.compareTo(requiredTotalInitial) < 0) {
+                    BigDecimal restore = orig.getAmount().min(requiredTotalInitial.subtract(paidBookingFromTx).max(BigDecimal.ZERO));
+                    paidBookingFromTx = paidBookingFromTx.add(restore);
+                }
+            }
+            effectiveRefundsToDeduct = dedicatedRefunds;
+        } else {
+            effectiveRefundsToDeduct = refundedPayments;
+        }
+
+        Set<String> seenRefundDeduplicationKeys = new HashSet<>();
+        for (Payment rp : effectiveRefundsToDeduct) {
+            String txKey = rp.getTransactionId() != null ? rp.getTransactionId().trim() : "";
+            String refKey = rp.getReferenceCode() != null ? rp.getReferenceCode().trim() : "";
+            String dedupKey = rp.getPaymentType() + "|" + rp.getAmount().stripTrailingZeros().toPlainString() + "|" + txKey + "|" + refKey;
+            if (!seenRefundDeduplicationKeys.add(dedupKey)) {
+                continue;
+            }
+            if (rp.getPaymentType() == PaymentType.DEPOSIT) {
+                refundedDepositFromTx = refundedDepositFromTx.add(rp.getAmount());
+            } else if (rp.getPaymentType() == PaymentType.RENTAL_FEE) {
+                refundedRentFromTx = refundedRentFromTx.add(rp.getAmount());
+            } else if (rp.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
+                refundedBookingFromTx = refundedBookingFromTx.add(rp.getAmount());
+            }
+        }
+
+        boolean isBookingCancelledOrRefunded = booking.getStatus() == BookingStatus.CANCELLED
+                || "REFUNDED".equalsIgnoreCase(booking.getPaymentStatus());
+
+        BigDecimal bookingDepositField = booking.getDepositPaid() != null && booking.getDepositPaid().compareTo(BigDecimal.ZERO) > 0
+                ? booking.getDepositPaid()
+                : BigDecimal.ZERO;
+
+        // Allow fallback to booking.depositPaid for valid legacy/in-person confirmed bookings (even if a subsequent
+        // VNPay attempt FAILED or EXPIRED), while blocking fallback when deposit is REFUNDED/REFUND_PENDING or booking is PENDING_PAYMENT/CANCELLED/UNPAID/REFUNDED.
+        boolean canFallbackToBookingDepositField = !isBookingCancelledOrRefunded
+                && booking.getStatus() != BookingStatus.PENDING_PAYMENT
+                && !hasRefundedOrRefundPendingDepositTx
+                && !"UNPAID".equalsIgnoreCase(booking.getPaymentStatus());
+
+        BigDecimal baseDepositPaid = (paidDepositFromTx.compareTo(BigDecimal.ZERO) == 0 && paidBookingFromTx.compareTo(BigDecimal.ZERO) == 0)
+                ? (canFallbackToBookingDepositField ? bookingDepositField : BigDecimal.ZERO)
+                : paidDepositFromTx;
+
+        // Allocate BOOKING_PAYMENT without double-counting already paid DEPOSIT or RENTAL_FEE
+        BigDecimal unpaidDepositBeforeBookingTx = requiredDeposit.subtract(baseDepositPaid).max(BigDecimal.ZERO);
+        BigDecimal allocatedToDeposit = paidBookingFromTx.min(unpaidDepositBeforeBookingTx);
+        BigDecimal remainingBookingTx = paidBookingFromTx.subtract(allocatedToDeposit).max(BigDecimal.ZERO);
+
+        BigDecimal grossDepositPaid = isBookingCancelledOrRefunded ? BigDecimal.ZERO : baseDepositPaid.add(allocatedToDeposit);
+        BigDecimal grossRentPaid = isBookingCancelledOrRefunded ? BigDecimal.ZERO : paidRentFromTx.add(remainingBookingTx);
+
+        // Subtract only confirmed REFUNDED amounts (full or partial refunds)
+        BigDecimal deductDeposit = refundedDepositFromTx.min(grossDepositPaid);
+        BigDecimal excessDepositRefund = refundedDepositFromTx.subtract(deductDeposit).max(BigDecimal.ZERO);
+        BigDecimal afterDepositRefund = grossDepositPaid.subtract(deductDeposit).max(BigDecimal.ZERO);
+        BigDecimal afterRentRefund = grossRentPaid.subtract(refundedRentFromTx).subtract(excessDepositRefund).max(BigDecimal.ZERO);
+
+        BigDecimal deductBookingFromDeposit = refundedBookingFromTx.min(afterDepositRefund);
+        BigDecimal remBookingRefund = refundedBookingFromTx.subtract(deductBookingFromDeposit).max(BigDecimal.ZERO);
+
+        BigDecimal effectiveDepositPaid = afterDepositRefund.subtract(deductBookingFromDeposit).max(BigDecimal.ZERO);
+        BigDecimal effectiveRentPaid = afterRentRefund.subtract(remBookingRefund).max(BigDecimal.ZERO);
+
+        BigDecimal depositRemaining = requiredDeposit.subtract(effectiveDepositPaid).max(BigDecimal.ZERO);
+        BigDecimal rentRemaining = requiredFirstMonthRent.subtract(effectiveRentPaid).max(BigDecimal.ZERO);
+        BigDecimal totalInitialRemaining = depositRemaining.add(rentRemaining);
+
+        boolean hasAnyConfirmedPayment = effectiveDepositPaid.compareTo(BigDecimal.ZERO) > 0
+                || effectiveRentPaid.compareTo(BigDecimal.ZERO) > 0;
+
+        boolean isFullyPaid = !isBookingCancelledOrRefunded && (requiredTotalInitial.compareTo(BigDecimal.ZERO) > 0
+                ? (depositRemaining.compareTo(BigDecimal.ZERO) == 0 && rentRemaining.compareTo(BigDecimal.ZERO) == 0)
+                : (paidBookingFromTx.subtract(refundedBookingFromTx).compareTo(BigDecimal.ZERO) > 0));
+
+        String resolvedPaymentStatus = isFullyPaid
+                ? "PAID"
+                : (hasAnyConfirmedPayment ? "PARTIALLY_PAID" : "UNPAID");
+
+        boolean hasActiveRefundReq = hasActiveOrCompletedRefundRequest(booking);
+        boolean hasPendingRefund = hasRefundPendingTx || hasActiveRefundReq;
+
+        boolean hasRecordedRefundTx = !effectiveRefundsToDeduct.isEmpty();
+        String refundConfirmationLevel;
+        if (hasRecordedRefundTx) {
+            // Reflect exact confirmation level: Payment(REFUNDED) created by staff in processRefund is a staff-recorded transfer
+            // and is only bank-reconciled once RefundRequest reaches RECONCILED/COMPLETED.
+            refundConfirmationLevel = isRefundBankReconciled(booking)
+                    ? "BANK_RECONCILED"
+                    : "STAFF_RECORDED_TRANSFER_UNVERIFIED_BANK";
+        } else if (hasPendingRefund) {
+            refundConfirmationLevel = "REFUND_PENDING_RECONCILIATION";
+        } else {
+            refundConfirmationLevel = "NONE";
+        }
+
+        return new BookingPaymentSummary(
+                requiredDeposit,
+                requiredFirstMonthRent,
+                requiredTotalInitial,
+                effectiveDepositPaid,
+                effectiveRentPaid,
+                depositRemaining,
+                rentRemaining,
+                totalInitialRemaining,
+                hasAnyConfirmedPayment,
+                isFullyPaid,
+                resolvedPaymentStatus,
+                hasPendingRefund,
+                refundConfirmationLevel
+        );
+    }
+
+    private void reconcileBookingAfterConfirmedPayment(Booking booking, Payment currentConfirmedPayment) {
+        List<Payment> bookingPayments = new ArrayList<>(paymentRepository.findAllByBooking_Id(booking.getId()));
+        boolean containsCurrent = bookingPayments.stream()
+                .anyMatch(p -> (p.getId() != null && p.getId().equals(currentConfirmedPayment.getId()))
+                        || (p.getTransactionId() != null && p.getTransactionId().equals(currentConfirmedPayment.getTransactionId())));
+        if (!containsCurrent) {
+            bookingPayments.add(currentConfirmedPayment);
+        }
+
+        BookingPaymentSummary summary = calculateBookingPaymentSummary(booking, bookingPayments);
+
+        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
+            booking.setStatus(BookingStatus.CONFIRMED);
+            booking.setPaymentExpiresAt(null);
+            booking.setHoldExpiresAt(null);
+            if (booking.getStorageUnit() != null) {
+                storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
+            }
+        } else if (currentConfirmedPayment.getPaymentType() == PaymentType.DEPOSIT
+                || currentConfirmedPayment.getPaymentType() == PaymentType.BOOKING_PAYMENT
+                || currentConfirmedPayment.getPaymentType() == PaymentType.RENTAL_FEE) {
+            booking.setHoldExpiresAt(null);
+            booking.setPaymentExpiresAt(null);
+        }
+
+        if (summary.requiredDeposit().compareTo(BigDecimal.ZERO) > 0) {
+            booking.setDepositPaid(summary.effectiveDepositPaid().min(summary.requiredDeposit()));
+        } else if (currentConfirmedPayment.getPaymentType() == PaymentType.DEPOSIT) {
+            booking.setDepositPaid(summary.effectiveDepositPaid());
+        } else if (currentConfirmedPayment.getPaymentType() == PaymentType.BOOKING_PAYMENT
+                && (booking.getDepositPaid() == null || booking.getDepositPaid().compareTo(BigDecimal.ZERO) == 0)) {
+            booking.setDepositPaid(currentConfirmedPayment.getAmount());
+        }
+
+        booking.setPaymentStatus(summary.resolvedPaymentStatus());
+    }
+
     @Override
     public VNPayPaymentResponse createVNPayPayment(PaymentCreateRequest request, HttpServletRequest httpRequest) {
         Booking booking = bookingRepository.findById(request.getBookingId())
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        booking = bookingRepository.findByIdForUpdate(booking.getId()).orElse(booking);
 
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            UUID currentUserId = requestContext.currentUserId();
+            if (currentUserId != null && booking.getCustomer() != null && booking.getCustomer().getId() != null
+                    && !currentUserId.equals(booking.getCustomer().getId())) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        }
+
+        if (booking.getStatus() == BookingStatus.CANCELLED
+                || booking.getStatus() == BookingStatus.COMPLETED
+                || booking.getStatus() == BookingStatus.OVERDUE
+                || "REFUNDED".equalsIgnoreCase(booking.getPaymentStatus())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST);
+        }
+
+        List<Payment> existingPayments = paymentRepository.findAllByBooking_Id(booking.getId());
+        BookingPaymentSummary summary = calculateBookingPaymentSummary(booking, existingPayments);
+
+        // Do not allow continuing payment if the booking is awaiting refund or in an active refund flow
+        if (summary.hasPendingRefund()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST);
+        }
+
+        if (summary.isFullyPaid() || ("PAID".equalsIgnoreCase(booking.getPaymentStatus()) && summary.totalInitialRemaining().compareTo(BigDecimal.ZERO) == 0 && summary.requiredTotalInitial().compareTo(BigDecimal.ZERO) > 0)) {
+            throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED);
+        }
+
+        PaymentType effectivePaymentType = request.getPaymentType();
         BigDecimal authoritativeAmount;
+
         if (request.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
-            boolean isUnpaidConfirmed = booking.getStatus() == BookingStatus.CONFIRMED
-                    && !"PAID".equalsIgnoreCase(booking.getPaymentStatus());
-            if (booking.getStatus() != BookingStatus.PENDING_PAYMENT
-                    && booking.getStatus() != BookingStatus.PENDING_APPROVAL
-                    && !isUnpaidConfirmed) {
+            boolean isPayableStatus = booking.getStatus() == BookingStatus.PENDING_PAYMENT
+                    || booking.getStatus() == BookingStatus.PENDING_APPROVAL
+                    || booking.getStatus() == BookingStatus.CONFIRMED;
+            if (!isPayableStatus) {
                 throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED);
             }
+
             java.time.Instant effectiveExpiry = booking.getPaymentExpiresAt() != null
                     ? booking.getPaymentExpiresAt()
                     : booking.getHoldExpiresAt();
-            if (effectiveExpiry == null || !effectiveExpiry.isAfter(java.time.Instant.now())) {
+            if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                if (effectiveExpiry == null || !effectiveExpiry.isAfter(java.time.Instant.now())) {
+                    throw new AppException(ErrorCode.BOOKING_PAYMENT_EXPIRED);
+                }
+            } else if (effectiveExpiry != null && !effectiveExpiry.isAfter(java.time.Instant.now()) && !summary.hasAnyConfirmedPayment()) {
                 throw new AppException(ErrorCode.BOOKING_PAYMENT_EXPIRED);
             }
-            BigDecimal monthlyFee = booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
-                    ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP)
-                    : BigDecimal.ZERO;
-            BigDecimal expectedInitialAmount = monthlyFee.add(booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO);
-            BigDecimal totalExpected = (booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO)
-                    .add(booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO);
-            BigDecimal depositOnly = booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO;
-            BigDecimal rentalFeeOnly = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO;
 
-            if (request.getAmount() != null && request.getAmount().compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal reqAmt = request.getAmount();
-                boolean matchesInitial = reqAmt.compareTo(expectedInitialAmount) == 0 || reqAmt.subtract(expectedInitialAmount).abs().compareTo(BigDecimal.valueOf(1000)) <= 0;
-                boolean matchesTotal = reqAmt.compareTo(totalExpected) == 0 || reqAmt.subtract(totalExpected).abs().compareTo(BigDecimal.valueOf(1000)) <= 0;
-                boolean matchesDeposit = reqAmt.compareTo(depositOnly) == 0 || reqAmt.subtract(depositOnly).abs().compareTo(BigDecimal.valueOf(1000)) <= 0;
-                boolean matchesRental = reqAmt.compareTo(rentalFeeOnly) == 0 || reqAmt.subtract(rentalFeeOnly).abs().compareTo(BigDecimal.valueOf(1000)) <= 0;
-
-                if (!matchesInitial && !matchesTotal && !matchesDeposit && !matchesRental) {
-                    log.warn("VNPay payment amount mismatch. Received={}, ExpectedInitial={}, TotalExpected={}, DepositOnly={}",
-                            request.getAmount(), expectedInitialAmount, totalExpected, depositOnly);
-                    throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
-                }
-
-                if (matchesTotal) {
-                    authoritativeAmount = totalExpected;
-                } else if (matchesInitial) {
-                    authoritativeAmount = expectedInitialAmount;
-                } else if (matchesDeposit) {
-                    authoritativeAmount = depositOnly;
+            if (summary.hasAnyConfirmedPayment()) {
+                // Partial payment already exists: never re-create a full BOOKING_PAYMENT or re-charge already paid deposit/rent
+                if (summary.depositRemaining().compareTo(BigDecimal.ZERO) == 0 && summary.rentRemaining().compareTo(BigDecimal.ZERO) > 0) {
+                    effectivePaymentType = PaymentType.RENTAL_FEE;
+                    authoritativeAmount = summary.rentRemaining();
+                } else if (summary.rentRemaining().compareTo(BigDecimal.ZERO) == 0 && summary.depositRemaining().compareTo(BigDecimal.ZERO) > 0) {
+                    effectivePaymentType = PaymentType.DEPOSIT;
+                    authoritativeAmount = summary.depositRemaining();
                 } else {
-                    authoritativeAmount = rentalFeeOnly;
+                    effectivePaymentType = PaymentType.BOOKING_PAYMENT;
+                    authoritativeAmount = summary.totalInitialRemaining();
                 }
             } else {
-                authoritativeAmount = totalExpected.compareTo(BigDecimal.ZERO) > 0 ? totalExpected : expectedInitialAmount;
+                BigDecimal expectedInitialAmount = summary.requiredTotalInitial();
+                BigDecimal totalExpected = (booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO)
+                        .add(summary.requiredDeposit());
+
+                if (request.getAmount() != null && request.getAmount().compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal reqAmt = request.getAmount();
+                    boolean matchesInitial = expectedInitialAmount.compareTo(BigDecimal.ZERO) > 0
+                            && (reqAmt.compareTo(expectedInitialAmount) == 0 || reqAmt.subtract(expectedInitialAmount).abs().compareTo(BigDecimal.valueOf(1000)) <= 0);
+                    boolean matchesTotal = totalExpected.compareTo(BigDecimal.ZERO) > 0
+                            && (reqAmt.compareTo(totalExpected) == 0 || reqAmt.subtract(totalExpected).abs().compareTo(BigDecimal.valueOf(1000)) <= 0);
+
+                    if (!matchesInitial && !matchesTotal) {
+                        log.warn("VNPay BOOKING_PAYMENT amount mismatch. Received={}, ExpectedInitial={}, TotalExpected={}",
+                                request.getAmount(), expectedInitialAmount, totalExpected);
+                        throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
+                    }
+
+                    authoritativeAmount = matchesInitial ? expectedInitialAmount : totalExpected;
+                } else {
+                    authoritativeAmount = expectedInitialAmount.compareTo(BigDecimal.ZERO) > 0 ? expectedInitialAmount : totalExpected;
+                }
+            }
+        } else if (request.getPaymentType() == PaymentType.DEPOSIT) {
+            if ((summary.requiredDeposit().compareTo(BigDecimal.ZERO) > 0 && summary.depositRemaining().compareTo(BigDecimal.ZERO) <= 0)
+                    || (summary.requiredDeposit().compareTo(BigDecimal.ZERO) == 0 && summary.effectiveDepositPaid().compareTo(BigDecimal.ZERO) > 0)) {
+                throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED);
+            }
+            if (summary.requiredDeposit().compareTo(BigDecimal.ZERO) > 0) {
+                authoritativeAmount = summary.depositRemaining();
+            } else {
+                if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST);
+                }
+                authoritativeAmount = request.getAmount();
+            }
+        } else if (request.getPaymentType() == PaymentType.RENTAL_FEE) {
+            if (summary.requiredFirstMonthRent().compareTo(BigDecimal.ZERO) > 0 && summary.rentRemaining().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED);
+            }
+            if (summary.requiredFirstMonthRent().compareTo(BigDecimal.ZERO) > 0) {
+                authoritativeAmount = summary.rentRemaining();
+            } else {
+                if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST);
+                }
+                authoritativeAmount = request.getAmount();
             }
         } else {
             if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
@@ -139,9 +507,6 @@ public class PaymentServiceImpl implements PaymentService {
             log.warn("Payment amount is 0 or negative for booking {}", booking.getBookingCode());
             throw new AppException(ErrorCode.PAYMENT_AMOUNT_INVALID);
         }
-
-        // Generate unique transaction reference (e.g. BOX + timestamp + 6 random chars)
-        String txnRef = "BOX" + System.currentTimeMillis() + VNPayUtil.randomAlphaNumeric(6);
 
         // Determine client IP
         String ipAddress = null;
@@ -161,12 +526,46 @@ public class PaymentServiceImpl implements PaymentService {
             orderInfo = "Thanh toan don dat cho " + booking.getBookingCode();
         }
 
-        // Create PENDING payment entity with server-verified authoritative amount
+        // Idempotency / duplicate-click protection: reuse active PENDING VNPAY payment with matching type and amount
+        LocalDateTime recentCutoff = LocalDateTime.now().minusMinutes(15);
+        Payment reusablePending = null;
+        for (Payment p : existingPayments) {
+            if (p != null && p.getStatus() == PaymentStatus.PENDING && "VNPAY".equalsIgnoreCase(p.getPaymentMethod())) {
+                if (reusablePending == null
+                        && p.getPaymentType() == effectivePaymentType
+                        && p.getAmount() != null
+                        && p.getAmount().compareTo(authoritativeAmount) == 0
+                        && p.getPaymentTime() != null
+                        && p.getPaymentTime().isAfter(recentCutoff)) {
+                    reusablePending = p;
+                } else {
+                    p.setStatus(PaymentStatus.EXPIRED);
+                    paymentRepository.save(p);
+                }
+            }
+        }
+
+        if (reusablePending != null) {
+            String existingUrl = vnPayService.createPaymentUrl(reusablePending.getTransactionId(), authoritativeAmount, orderInfo, ipAddress);
+            return VNPayPaymentResponse.builder()
+                    .paymentUrl(existingUrl)
+                    .transactionId(reusablePending.getTransactionId())
+                    .paymentId(reusablePending.getId())
+                    .bookingId(booking.getId())
+                    .amount(reusablePending.getAmount())
+                    .orderInfo(orderInfo)
+                    .build();
+        }
+
+        // Generate unique transaction reference (e.g. BOX + timestamp + 6 random chars)
+        String txnRef = "BOX" + System.currentTimeMillis() + VNPayUtil.randomAlphaNumeric(6);
+
+        // Create PENDING payment entity with server-verified authoritative amount and paymentType
         Payment payment = Payment.builder()
                 .transactionId(txnRef)
                 .booking(booking)
                 .amount(authoritativeAmount)
-                .paymentType(request.getPaymentType())
+                .paymentType(effectivePaymentType)
                 .status(PaymentStatus.PENDING)
                 .paymentMethod("VNPAY")
                 .paymentTime(LocalDateTime.now())
@@ -181,7 +580,7 @@ public class PaymentServiceImpl implements PaymentService {
                 ActivityAction.PAYMENT_INITIATED,
                 "PAYMENT",
                 payment.getId(),
-                "Khoi tao giao dich thanh toan VNPAY cho booking " + booking.getBookingCode() + ", so tien: " + authoritativeAmount,
+                "Khoi tao giao dich thanh toan VNPAY (" + effectivePaymentType + ") cho booking " + booking.getBookingCode() + ", so tien: " + authoritativeAmount,
                 null,
                 payment.getId()
         );
@@ -261,33 +660,15 @@ public class PaymentServiceImpl implements PaymentService {
                     return paymentMapper.toResponse(payment);
                 }
 
-                if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
-                    booking.setStatus(BookingStatus.CONFIRMED);
-                    booking.setPaymentExpiresAt(null);
-                    booking.setHoldExpiresAt(null);
-                    if (payment.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
-                        booking.setDepositPaid(booking.getDepositAmount() != null ? booking.getDepositAmount() : payment.getAmount());
-                        booking.setPaymentStatus("PAID");
-                    } else if (payment.getPaymentType() == PaymentType.DEPOSIT) {
-                        BigDecimal cur = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
-                        booking.setDepositPaid(cur.add(payment.getAmount()));
-                        booking.setPaymentStatus("PARTIALLY_PAID");
-                    }
-                    if (booking.getStorageUnit() != null) {
-                        storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
-                    }
-                } else if (payment.getPaymentType() == PaymentType.DEPOSIT) {
-                    BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
-                    booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
-                    booking.setHoldExpiresAt(null);
-                    booking.setPaymentStatus("PARTIALLY_PAID");
-                }
+                reconcileBookingAfterConfirmedPayment(booking, payment);
 
                 // Lưu ý (P0-03 & BR-RULE-005): Không cấp mã PIN/QR ở bước thanh toán.
                 // Quyền truy cập PIN/QR chỉ được cấp phát chính thức khi nhân viên hoàn tất thủ tục bàn giao check-in.
                 bookingRepository.save(booking);
 
-                com.boxora.service.ContractSigningService contractSigningService = contractSigningServiceProvider.getIfAvailable();
+                com.boxora.service.ContractSigningService contractSigningService = contractSigningServiceProvider != null
+                        ? contractSigningServiceProvider.getIfAvailable()
+                        : null;
                 if (contractSigningService != null) {
                     try {
                         contractSigningService.ensureContractForBooking(booking);
@@ -297,7 +678,7 @@ public class PaymentServiceImpl implements PaymentService {
                 }
             }
 
-            if (payment.getPaymentType() == PaymentType.RENEWAL_FEE) {
+            if (payment.getPaymentType() == PaymentType.RENEWAL_FEE && contractRenewalServiceProvider != null) {
                 ContractRenewalService renewalService = contractRenewalServiceProvider.getIfAvailable();
                 if (renewalService != null) {
                     renewalService.handleRenewalPaid(payment);
@@ -408,28 +789,15 @@ public class PaymentServiceImpl implements PaymentService {
                     return VNPayIpnResponse.success();
                 }
 
-                if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
-                    booking.setStatus(BookingStatus.CONFIRMED);
-                    booking.setPaymentExpiresAt(null);
-                    if (payment.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
-                        booking.setDepositPaid(booking.getDepositAmount() != null ? booking.getDepositAmount() : payment.getAmount());
-                    } else if (payment.getPaymentType() == PaymentType.DEPOSIT) {
-                        BigDecimal cur = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
-                        booking.setDepositPaid(cur.add(payment.getAmount()));
-                    }
-                    if (booking.getStorageUnit() != null) {
-                        storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
-                    }
-                } else if (payment.getPaymentType() == PaymentType.DEPOSIT) {
-                    BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
-                    booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
-                }
+                reconcileBookingAfterConfirmedPayment(booking, payment);
 
                 // Lưu ý (P0-03 & BR-RULE-005): Không cấp mã PIN/QR ở bước thanh toán.
                 // Quyền truy cập PIN/QR chỉ được cấp phát chính thức khi nhân viên hoàn tất thủ tục bàn giao check-in.
                 bookingRepository.save(booking);
 
-                com.boxora.service.ContractSigningService contractSigningService = contractSigningServiceProvider.getIfAvailable();
+                com.boxora.service.ContractSigningService contractSigningService = contractSigningServiceProvider != null
+                        ? contractSigningServiceProvider.getIfAvailable()
+                        : null;
                 if (contractSigningService != null) {
                     try {
                         contractSigningService.ensureContractForBooking(booking);
@@ -439,7 +807,7 @@ public class PaymentServiceImpl implements PaymentService {
                 }
             }
 
-            if (payment.getPaymentType() == PaymentType.RENEWAL_FEE) {
+            if (payment.getPaymentType() == PaymentType.RENEWAL_FEE && contractRenewalServiceProvider != null) {
                 ContractRenewalService renewalService = contractRenewalServiceProvider.getIfAvailable();
                 if (renewalService != null) {
                     renewalService.handleRenewalPaid(payment);

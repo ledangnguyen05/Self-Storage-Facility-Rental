@@ -49,7 +49,7 @@ public class SecurityConfig {
             "/swagger-ui.html",
             "/api-docs/**",
             "/v3/api-docs/**",
-            "/uploads/**",
+            "/uploads/public/**",
             "/api/v1/chatbot/**",
             "/api/v1/pricing/**"
     };

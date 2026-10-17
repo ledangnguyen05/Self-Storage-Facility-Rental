@@ -257,7 +257,7 @@ export const CustomerDashboard: React.FC = () => {
         }
       }, 250)
     }
-  }, [tabParam, searchParams])
+  }, [tabParam, searchParams, customerBookings.length])
 
   const handleTabChange = (tab: 'my-units' | 'bookings' | 'explore' | 'contracts' | 'support') => {
     setActiveTab(tab)
@@ -285,7 +285,11 @@ export const CustomerDashboard: React.FC = () => {
   }
 
   const handleGoToBooking = (booking: Booking) => {
-    const targetCode = booking.bookingCode || booking.id
+    const fullBooking =
+      customerBookings.find(
+        cb => cb.id === booking.id || (cb.bookingCode && cb.bookingCode === booking.bookingCode)
+      ) || booking
+    const targetCode = fullBooking.bookingCode || fullBooking.id
     setActiveTab('bookings')
     setBookingStatusFilter('ALL')
     setBookingSearchTerm('')
@@ -298,6 +302,13 @@ export const CustomerDashboard: React.FC = () => {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
     }, 150)
+
+    const info = getBookingNoticeInfo(fullBooking)
+    if (info.scenario === 'UNPAID_IN_PERSON') {
+      handlePayBookingVNPay(fullBooking)
+    } else if (info.scenario === 'PAID_UNSIGNED') {
+      void handleSignContractForBooking(fullBooking, info.matchingContract)
+    }
   }
 
   // IoT Remote Unlock state
@@ -861,6 +872,13 @@ export const CustomerDashboard: React.FC = () => {
   }, [selectedBookingUnit, bookingPackage, bookingCustomDays, bookingStartDate])
 
   const handlePayBookingVNPay = (b: Booking) => {
+    const info = getBookingNoticeInfo(b)
+    if (info.isPaid) {
+      if (!info.isContractSigned) {
+        void handleSignContractForBooking(b, info.matchingContract)
+      }
+      return
+    }
     setRequestToPay(b)
   }
 
@@ -1007,6 +1025,35 @@ export const CustomerDashboard: React.FC = () => {
     setContractForDocuSealModal(contract)
   }
 
+  const handleSignContractForBooking = async (b: Booking, existingContract?: RentalContract) => {
+    if (existingContract) {
+      handleSignContractNow(existingContract)
+      return
+    }
+    try {
+      const res = await contractService.getMyContracts({ size: 50 })
+      const list = Array.isArray(res?.content) ? res.content : contracts
+      if (Array.isArray(res?.content)) {
+        setContracts(res.content)
+      }
+      const found =
+        list.find(c => Boolean(c.bookingId) && (c.bookingId === b.id || c.bookingId === b.bookingCode)) ||
+        list.find(
+          c =>
+            !c.bookingId &&
+            Boolean(c.unitCode) &&
+            c.unitCode === b.unitCode &&
+            c.status !== 'TERMINATED' &&
+            c.status !== 'EXPIRED'
+        )
+      if (found) {
+        handleSignContractNow(found)
+      }
+    } catch (err) {
+      console.warn('Could not load contract for booking signing:', err)
+    }
+  }
+
   const handleContractSignedSuccess = async () => {
     setContractForDocuSealModal(null)
     setSelectedContractForModal(null)
@@ -1056,11 +1103,138 @@ export const CustomerDashboard: React.FC = () => {
   }
 
   const getBookingNoticeInfo = (b: Booking) => {
-    const matchingContract = contracts.find(c =>
-      (c.bookingId && (c.bookingId === b.id || c.bookingId === b.bookingCode)) ||
-      (c.unitCode && c.unitCode === b.unitCode)
+    const matchingContract =
+      contracts.find(c => Boolean(c.bookingId) && (c.bookingId === b.id || c.bookingId === b.bookingCode)) ||
+      contracts.find(
+        c =>
+          !c.bookingId &&
+          Boolean(c.unitCode) &&
+          c.unitCode === b.unitCode &&
+          c.status !== 'TERMINATED' &&
+          c.status !== 'EXPIRED'
+      )
+
+    // Filter initial booking payment transactions and separate PAID, REFUNDED, and REFUND_PENDING
+    const allBookingPayments = customerPayments.filter(
+      p =>
+        ((p.bookingId && (p.bookingId === b.id || p.bookingId === b.bookingCode)) ||
+          (p.bookingCode && (p.bookingCode === b.bookingCode || p.bookingCode === b.id))) &&
+        (p.paymentType === 'DEPOSIT' || p.paymentType === 'RENTAL_FEE' || p.paymentType === 'BOOKING_PAYMENT') &&
+        Number(p.amount || 0) > 0
     )
-    const isPaid = b.paymentStatus === 'PAID'
+    const confirmedBookingPayments = allBookingPayments.filter(
+      p => p.status === 'PAID' || p.status === 'SUCCESS'
+    )
+    // Only confirmed REFUNDED transactions are deducted from held money; REFUND_PENDING is NOT deducted
+    const refundedBookingPayments = allBookingPayments.filter(
+      p => p.status === 'REFUNDED'
+    )
+    const refundPendingBookingPayments = allBookingPayments.filter(
+      p => p.status === 'REFUND_PENDING'
+    )
+    const hasRefundPendingTx = refundPendingBookingPayments.length > 0
+    const hasRefundedOrRefundPendingDepositTx = allBookingPayments.some(
+      p =>
+        (p.paymentType === 'DEPOSIT' || p.paymentType === 'BOOKING_PAYMENT') &&
+        (p.status === 'REFUNDED' || p.status === 'REFUND_PENDING')
+    )
+
+    const requiredDeposit = Math.max(0, Number(b.depositAmount ?? matchingContract?.depositHeld ?? 0))
+    const requiredFirstMonthRent = Math.max(
+      0,
+      b.totalRentalFee && b.rentalMonths && b.rentalMonths > 0
+        ? Math.round(Number(b.totalRentalFee) / Number(b.rentalMonths))
+        : Number(b.totalRentalFee ?? matchingContract?.monthlyFee ?? 0)
+    )
+    const requiredTotalInitial =
+      b.initialPaymentAmount && Number(b.initialPaymentAmount) > 0
+        ? Number(b.initialPaymentAmount)
+        : requiredDeposit + requiredFirstMonthRent
+
+    const paidDepositTx = confirmedBookingPayments
+      .filter(p => p.paymentType === 'DEPOSIT')
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+    const paidRentTx = confirmedBookingPayments
+      .filter(p => p.paymentType === 'RENTAL_FEE')
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+    const paidBookingTx = confirmedBookingPayments
+      .filter(p => p.paymentType === 'BOOKING_PAYMENT')
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+
+    const refundedDepositTx = refundedBookingPayments
+      .filter(p => p.paymentType === 'DEPOSIT')
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+    const refundedRentTx = refundedBookingPayments
+      .filter(p => p.paymentType === 'RENTAL_FEE')
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+    const refundedBookingTx = refundedBookingPayments
+      .filter(p => p.paymentType === 'BOOKING_PAYMENT')
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+
+    const isBookingCancelledOrRefunded =
+      b.status === 'CANCELLED' || String(b.paymentStatus || '').toUpperCase() === 'REFUNDED'
+    const canFallbackToBookingDepositField =
+      !isBookingCancelledOrRefunded &&
+      b.status !== 'PENDING_PAYMENT' &&
+      !hasRefundedOrRefundPendingDepositTx &&
+      String(b.paymentStatus || '').toUpperCase() !== 'UNPAID'
+
+    // Avoid double-counting BOOKING_PAYMENT with DEPOSIT / RENTAL_FEE or booking.depositPaid
+    const baseDepositPaid =
+      paidDepositTx === 0 && paidBookingTx === 0
+        ? canFallbackToBookingDepositField
+          ? Math.max(0, Number(b.depositPaid || 0))
+          : 0
+        : paidDepositTx
+    const unpaidDepositBeforeBookingTx = Math.max(0, requiredDeposit - baseDepositPaid)
+    const allocatedBookingToDeposit = Math.min(paidBookingTx, unpaidDepositBeforeBookingTx)
+    const remainingBookingTxForRent = Math.max(0, paidBookingTx - allocatedBookingToDeposit)
+
+    const grossDepositPaid = isBookingCancelledOrRefunded ? 0 : baseDepositPaid + allocatedBookingToDeposit
+    const grossRentPaid = isBookingCancelledOrRefunded ? 0 : paidRentTx + remainingBookingTxForRent
+
+    const deductDeposit = Math.min(refundedDepositTx, grossDepositPaid)
+    const excessDepositRefund = Math.max(0, refundedDepositTx - deductDeposit)
+    const afterDepositRefund = Math.max(0, grossDepositPaid - deductDeposit)
+    const afterRentRefund = Math.max(0, grossRentPaid - refundedRentTx - excessDepositRefund)
+
+    const deductBookingFromDeposit = Math.min(refundedBookingTx, afterDepositRefund)
+    const remBookingRefund = Math.max(0, refundedBookingTx - deductBookingFromDeposit)
+
+    const effectiveDepositPaid = Math.max(0, afterDepositRefund - deductBookingFromDeposit)
+    const effectiveRentPaid = Math.max(0, afterRentRefund - remBookingRefund)
+
+    const depositRemaining = Math.max(0, requiredDeposit - effectiveDepositPaid)
+    const rentRemaining = Math.max(0, requiredFirstMonthRent - effectiveRentPaid)
+    const remainingAmountDue = depositRemaining + rentRemaining
+
+    const isObligationSatisfiedByTx =
+      !isBookingCancelledOrRefunded &&
+      !hasRefundPendingTx &&
+      (requiredTotalInitial > 0
+        ? depositRemaining === 0 && rentRemaining === 0
+        : paidBookingTx - refundedBookingTx > 0)
+
+    // Never treat PARTIALLY_PAID or a single DEPOSIT transaction as full payment when rental fee is still unpaid
+    const isPaid =
+      !isBookingCancelledOrRefunded &&
+      !hasRefundPendingTx &&
+      b.paymentStatus !== 'PARTIALLY_PAID' &&
+      (isObligationSatisfiedByTx ||
+        (b.paymentStatus === 'PAID' &&
+          b.status !== 'PENDING_PAYMENT' &&
+          confirmedBookingPayments.length === 0 &&
+          refundedBookingPayments.length === 0 &&
+          !hasRefundedOrRefundPendingDepositTx))
+
+    const isPartiallyPaid =
+      !isBookingCancelledOrRefunded &&
+      !hasRefundPendingTx &&
+      !isPaid &&
+      ((b.paymentStatus === 'PARTIALLY_PAID' && !hasRefundedOrRefundPendingDepositTx) ||
+        effectiveDepositPaid > 0 ||
+        effectiveRentPaid > 0)
+
     const isContractSigned = Boolean(
       b.status === 'ACTIVE' ||
       (matchingContract && (
@@ -1075,7 +1249,7 @@ export const CustomerDashboard: React.FC = () => {
 
     let scenario: 'CANCELLED_OR_OVERDUE' | 'ACTIVE' | 'PAID_SIGNED' | 'PAID_UNSIGNED' | 'UNPAID_IN_PERSON' = 'UNPAID_IN_PERSON'
 
-    if (b.status === 'CANCELLED' || b.status === 'OVERDUE') {
+    if (b.status === 'CANCELLED' || b.status === 'OVERDUE' || hasRefundPendingTx) {
       scenario = 'CANCELLED_OR_OVERDUE'
     } else if (b.status === 'ACTIVE') {
       scenario = 'ACTIVE'
@@ -1090,6 +1264,12 @@ export const CustomerDashboard: React.FC = () => {
     return {
       matchingContract,
       isPaid,
+      isPartiallyPaid,
+      effectiveDepositPaid,
+      effectiveRentPaid,
+      depositRemaining,
+      rentRemaining,
+      remainingAmountDue,
       isContractSigned,
       scenario,
     }
@@ -1286,28 +1466,41 @@ export const CustomerDashboard: React.FC = () => {
               </div>
               <div className="space-y-2">
                 {bookingRequests.slice(0, 5).map(request => {
-                  const isUnpaidPending = request.status === 'PENDING_PAYMENT' || (request.status === 'CONFIRMED' && request.paymentStatus !== 'PAID')
-                  const statusLabel = request.status === 'CONFIRMED'
-                    ? 'Đã xác nhận đặt chỗ'
-                    : request.status === 'PENDING_APPROVAL'
-                      ? 'Chờ xử lý'
-                      : 'Yêu cầu đã đóng'
-                  const statusClass = request.status === 'CONFIRMED'
-                    ? 'bg-blue-50 text-blue-800 border-blue-200'
-                    : 'bg-slate-100 text-slate-600 border-slate-200'
+                  const fullBooking =
+                    customerBookings.find(
+                      cb => cb.id === request.id || (cb.bookingCode && cb.bookingCode === request.bookingCode)
+                    ) || request
+                  const noticeInfo = getBookingNoticeInfo(fullBooking)
+                  const needsOnlineProcedure =
+                    (fullBooking.status === 'PENDING_PAYMENT' || fullBooking.status === 'CONFIRMED') &&
+                    (noticeInfo.scenario === 'UNPAID_IN_PERSON' || noticeInfo.scenario === 'PAID_UNSIGNED')
+                  const statusLabel =
+                    noticeInfo.scenario === 'PAID_SIGNED'
+                      ? 'Đã thanh toán & Ký HĐ'
+                      : fullBooking.status === 'CONFIRMED'
+                        ? 'Đã xác nhận đặt chỗ'
+                        : fullBooking.status === 'PENDING_APPROVAL'
+                          ? 'Chờ xử lý'
+                          : 'Yêu cầu đã đóng'
+                  const statusClass =
+                    noticeInfo.scenario === 'PAID_SIGNED'
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      : fullBooking.status === 'CONFIRMED'
+                        ? 'bg-blue-50 text-blue-800 border-blue-200'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
                   return (
                     <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3">
                       <div>
-                        <p className="text-xs font-bold text-slate-900">Kho #{request.unitCode} · {request.facilityName}</p>
-                        <p className="mt-1 text-[11px] text-slate-500">Mã yêu cầu {request.bookingCode} · {request.rentalMonths} tháng</p>
+                        <p className="text-xs font-bold text-slate-900">Kho #{fullBooking.unitCode} · {fullBooking.facilityName}</p>
+                        <p className="mt-1 text-[11px] text-slate-500">Mã yêu cầu {fullBooking.bookingCode} · {fullBooking.rentalMonths} tháng</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        {isUnpaidPending ? (
+                        {needsOnlineProcedure ? (
                           <a
-                            href={`/portal/customer?tab=bookings&booking=${encodeURIComponent(request.bookingCode || request.id)}`}
+                            href={`/portal/customer?tab=bookings&booking=${encodeURIComponent(fullBooking.bookingCode || fullBooking.id)}`}
                             onClick={(e) => {
                               e.preventDefault()
-                              handleGoToBooking(request)
+                              handleGoToBooking(fullBooking)
                             }}
                             className="rounded-lg bg-cyan-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-cyan-800 transition-colors cursor-pointer inline-flex items-center"
                           >
@@ -1952,44 +2145,54 @@ export const CustomerDashboard: React.FC = () => {
                                   <div>
                                     Đơn đặt kho đã thanh toán đủ. Quý khách vui lòng ký hợp đồng điện tử trực tuyến (DocuSeal) hoặc mang CCCD gốc đến cơ sở Boxora để ký hợp đồng và nhận bàn giao kho.
                                   </div>
-                                  {info.matchingContract && info.matchingContract.status === 'PENDING_SIGNATURE' ? (
-                                    <div className="mt-2.5 flex items-center justify-end">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleSignContractNow(info.matchingContract!)}
-                                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                                      >
-                                        <span className="material-symbols-outlined text-[15px]">draw</span>
-                                        <span>Ký hợp đồng điện tử ngay</span>
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <div className="mt-1 text-[10px] text-blue-700 italic">
-                                      (Quý khách có thể ký trực tiếp khi mang CCCD gốc đến cơ sở nhận kho)
-                                    </div>
-                                  )}
+                                  <div className="mt-2.5 flex items-center justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleSignContractForBooking(b, info.matchingContract)}
+                                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                                    >
+                                      <span className="material-symbols-outlined text-[15px]">draw</span>
+                                      <span>Ký hợp đồng điện tử ngay</span>
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
                             )
                           }
 
-                          // Case 1: Check-in thanh toán và ký hợp đồng tại chỗ
+                          // Case 1: Chưa thanh toán đủ (chưa thanh toán hoặc mới thanh toán một phần như tiền cọc)
                           if (info.scenario === 'UNPAID_IN_PERSON') {
                             return (
                               <div className="space-y-2">
                                 <div className="p-3 rounded-lg bg-amber-50/80 border border-amber-200 text-[11px] text-amber-950 flex items-start gap-2.5">
                                   <span className="material-symbols-outlined text-[18px] text-amber-700 shrink-0 mt-0.5">
-                                    storefront
+                                    {info.isPartiallyPaid ? 'payments' : 'storefront'}
                                   </span>
                                   <div className="leading-relaxed flex-1">
                                     <div className="font-bold text-amber-900 mb-0.5 flex items-center justify-between">
-                                      <span>Check-in thanh toán và ký hợp đồng tại chỗ</span>
+                                      <span>
+                                        {info.isPartiallyPaid
+                                          ? 'Đã thanh toán một phần • Chờ hoàn tất phần còn lại'
+                                          : 'Check-in thanh toán và ký hợp đồng tại chỗ'}
+                                      </span>
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-bold">
-                                        Thanh toán tại quầy
+                                        {info.isPartiallyPaid
+                                          ? `Còn thiếu ${Number(info.remainingAmountDue || 0).toLocaleString('vi-VN')} ₫`
+                                          : 'Thanh toán tại quầy'}
                                       </span>
                                     </div>
                                     <div>
-                                      Kho được bảo lưu riêng cho bạn đến <strong>{b.holdExpiresAt ? new Date(b.holdExpiresAt).toLocaleString('vi-VN') : 'lịch hẹn + thời gian gia hạn'}</strong>. Quý khách vui lòng mang CCCD gốc đến cơ sở Boxora để xem kho thực tế, ký hợp đồng và thanh toán nhận bàn giao.
+                                      {info.isPartiallyPaid ? (
+                                        <>
+                                          Hệ thống đã ghi nhận khoản thanh toán hợp lệ{' '}
+                                          <strong>{Number((info.effectiveDepositPaid || 0) + (info.effectiveRentPaid || 0)).toLocaleString('vi-VN')} ₫</strong>. Quý khách vui lòng thanh toán phần còn thiếu{' '}
+                                          <strong>{Number(info.remainingAmountDue || 0).toLocaleString('vi-VN')} ₫</strong> trực tuyến để ký hợp đồng điện tử ngay hoặc hoàn tất tại quầy khi nhận bàn giao kho.
+                                        </>
+                                      ) : (
+                                        <>
+                                          Kho được bảo lưu riêng cho bạn đến <strong>{b.holdExpiresAt ? new Date(b.holdExpiresAt).toLocaleString('vi-VN') : 'lịch hẹn + thời gian gia hạn'}</strong>. Quý khách vui lòng mang CCCD gốc đến cơ sở Boxora để xem kho thực tế, ký hợp đồng và thanh toán nhận bàn giao.
+                                        </>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -2570,13 +2773,21 @@ export const CustomerDashboard: React.FC = () => {
                           <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
                             p.status === 'PAID' || p.status === 'SUCCESS'
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : p.status === 'PENDING'
+                              : p.status === 'PENDING' || p.status === 'REFUND_PENDING'
                               ? 'bg-amber-50 text-amber-700 border-amber-200'
                               : p.status === 'REFUNDED'
                               ? 'bg-purple-50 text-purple-700 border-purple-200'
                               : 'bg-rose-50 text-rose-700 border-rose-200'
                           }`}>
-                            {p.status === 'PAID' || p.status === 'SUCCESS' ? 'Thành công' : p.status === 'PENDING' ? 'Chờ xử lý' : p.status === 'REFUNDED' ? 'Đã hoàn tiền' : 'Thất bại'}
+                            {p.status === 'PAID' || p.status === 'SUCCESS'
+                              ? 'Thành công'
+                              : p.status === 'PENDING'
+                              ? 'Chờ xử lý'
+                              : p.status === 'REFUND_PENDING'
+                              ? 'Chờ hoàn tiền'
+                              : p.status === 'REFUNDED'
+                              ? 'Đã ghi nhận hoàn tiền'
+                              : 'Thất bại'}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-right">
@@ -4381,7 +4592,34 @@ export const CustomerDashboard: React.FC = () => {
                   </div>
 
                   {/* Action buttons */}
-                  <div className="pt-2 flex items-center">
+                  <div className="pt-2 flex flex-col sm:flex-row items-center gap-2">
+                    {modalInfo.scenario === 'UNPAID_IN_PERSON' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = selectedBookingForModal
+                          setSelectedBookingForModal(null)
+                          handlePayBookingVNPay(target)
+                        }}
+                        className="w-full py-2.5 bg-cyan-700 hover:bg-cyan-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer text-center shadow-sm"
+                      >
+                        Thanh toán và ký hợp đồng trực tuyến ngay -&gt;
+                      </button>
+                    )}
+                    {modalInfo.scenario === 'PAID_UNSIGNED' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = selectedBookingForModal
+                          const contract = modalInfo.matchingContract
+                          setSelectedBookingForModal(null)
+                          void handleSignContractForBooking(target, contract)
+                        }}
+                        className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer text-center shadow-sm"
+                      >
+                        Ký hợp đồng điện tử ngay -&gt;
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setSelectedBookingForModal(null)}
@@ -4429,12 +4667,13 @@ export const CustomerDashboard: React.FC = () => {
             name: requestToPay.unitCode ? `Kho #${requestToPay.unitCode}` : 'Kho Boxora',
             facilityName: requestToPay.facilityName || 'Boxora Facility',
             monthlyPrice: (requestToPay.totalRentalFee && requestToPay.rentalMonths ? requestToPay.totalRentalFee / requestToPay.rentalMonths : 0) || 1000000,
-            depositAmount: requestToPay.depositPaid || requestToPay.depositAmount || 0,
+            depositAmount: requestToPay.depositAmount || requestToPay.depositPaid || 0,
             size: undefined,
             address: ''
           }}
           user={user}
           existingBooking={requestToPay}
+          existingPayments={customerPayments}
           onClose={() => {
             setRequestToPay(null)
             fetchCustomerBookings()

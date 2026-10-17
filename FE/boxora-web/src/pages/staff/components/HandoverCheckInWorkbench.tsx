@@ -129,6 +129,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const [paperContractCode, setPaperContractCode] = useState('')
   const [paperOriginalLocation, setPaperOriginalLocation] = useState('')
   const [paperContractUrl, setPaperContractUrl] = useState('')
+  const [paperFileName, setPaperFileName] = useState('')
+  const [isUploadingPaperFile, setIsUploadingPaperFile] = useState(false)
   const [paperNotes, setPaperNotes] = useState('')
   const [isSavingPaperContract, setIsSavingPaperContract] = useState(false)
   const [isVerifyingPaperContract, setIsVerifyingPaperContract] = useState(false)
@@ -141,9 +143,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const [receiptVoucherCode, setReceiptVoucherCode] = useState('')
   const [referenceCode, setReferenceCode] = useState('')
   const [proofDocumentUrl, setProofDocumentUrl] = useState('')
+  const [proofFileName, setProofFileName] = useState('')
+  const [isUploadingProofFile, setIsUploadingProofFile] = useState(false)
   const [paymentNotes, setPaymentNotes] = useState('')
   const [isSavingPayment, setIsSavingPayment] = useState(false)
   const [confirmingBankPaymentId, setConfirmingBankPaymentId] = useState<string | null>(null)
+  const [openingDocumentUrl, setOpeningDocumentUrl] = useState<string | null>(null)
   const proofFileInputRef = useRef<HTMLInputElement | null>(null)
 
   // Identity Form States
@@ -528,19 +533,46 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     setPaperContractCode(currentPrerequisites?.contractCode || `HD-PAPER-${bookingDisplayCode}`)
     setPaperOriginalLocation(currentPrerequisites?.paperOriginalLocation || 'Kệ A - Ngăn 01 - Tủ lưu trữ hồ sơ cơ sở')
     setPaperContractUrl(currentPrerequisites?.paperContractUrl || '')
+    setPaperFileName(currentPrerequisites?.paperContractUrl ? 'Bản scan hợp đồng hiện có' : '')
     setPaperNotes('')
     setActiveModal('PAPER_CONTRACT')
   }
 
-  const handlePaperFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePaperFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      setPaperContractUrl(reader.result as string)
+    if (!selectedBookingId) {
+      setModalFeedback({ text: 'Vui lòng chọn lượt đặt kho trước khi tải tệp.', isError: true })
+      return
     }
-    reader.readAsDataURL(file)
-    e.target.value = ''
+
+    const MAX_SIZE = 10 * 1024 * 1024
+    if (file.size > MAX_SIZE) {
+      setModalFeedback({ text: 'Dung lượng tệp vượt quá giới hạn cho phép (10MB).', isError: true })
+      return
+    }
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    if (!['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
+      setModalFeedback({ text: 'Chỉ chấp nhận tệp định dạng PDF, JPG, JPEG, PNG, WEBP.', isError: true })
+      return
+    }
+
+    setIsUploadingPaperFile(true)
+    setModalFeedback(null)
+    try {
+      const res = await handoverService.uploadHandoverDocument(selectedBookingId, file, 'PAPER_CONTRACT')
+      if (res?.fileUrl) {
+        setPaperContractUrl(res.fileUrl)
+        setPaperFileName(file.name)
+        setModalFeedback({ text: `Đã tải lên tệp ${file.name} thành công!`, isError: false })
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Tải lên hợp đồng giấy thất bại.'
+      setModalFeedback({ text: msg, isError: true })
+    } finally {
+      setIsUploadingPaperFile(false)
+      e.target.value = ''
+    }
   }
 
   const handleSubmitPaperContract = async () => {
@@ -555,7 +587,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       await handoverService.createOrUploadPaperContract({
         bookingId: selectedBookingId,
         contractCode: paperContractCode.trim() || undefined,
-        paperContractUrl,
+        paperContractUrl: paperContractUrl.trim(),
         paperOriginalLocation: paperOriginalLocation.trim() || undefined,
         notes: paperNotes.trim() || undefined
       })
@@ -586,6 +618,20 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
   }
 
+  const handleOpenAuthorizedDocument = async (fileUrl: string) => {
+    if (!selectedBookingId || !fileUrl) return
+    try {
+      setOpeningDocumentUrl(fileUrl)
+      const blobUrl = await handoverService.viewAuthorizedDocument(selectedBookingId, fileUrl)
+      window.open(blobUrl, '_blank')
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Không thể xem tài liệu hoặc bạn không có quyền truy cập.'
+      setDispatchFeedback({ text: msg, isError: true })
+    } finally {
+      setOpeningDocumentUrl(null)
+    }
+  }
+
   // --- PAYMENT HANDLERS (DEPOSIT / RENT) ---
   const handleOpenPaymentModal = (type: 'DEPOSIT' | 'RENTAL_FEE') => {
     setModalFeedback(null)
@@ -599,19 +645,46 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     setReceiptVoucherCode(type === 'DEPOSIT' ? `PT-COC-${bookingDisplayCode}-${randomSuffix}` : `PT-THUE-${bookingDisplayCode}-${randomSuffix}`)
     setReferenceCode(`BANK-${bookingDisplayCode}-${randomSuffix}`)
     setProofDocumentUrl('')
+    setProofFileName('')
     setPaymentNotes('')
     setActiveModal(type === 'DEPOSIT' ? 'DEPOSIT_PAYMENT' : 'RENT_PAYMENT')
   }
 
-  const handleProofFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProofFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      setProofDocumentUrl(reader.result as string)
+    if (!selectedBookingId) {
+      setModalFeedback({ text: 'Vui lòng chọn lượt đặt kho trước khi tải tệp.', isError: true })
+      return
     }
-    reader.readAsDataURL(file)
-    e.target.value = ''
+
+    const MAX_SIZE = 10 * 1024 * 1024
+    if (file.size > MAX_SIZE) {
+      setModalFeedback({ text: 'Dung lượng tệp vượt quá giới hạn cho phép (10MB).', isError: true })
+      return
+    }
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    if (!['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
+      setModalFeedback({ text: 'Chỉ chấp nhận tệp định dạng PDF, JPG, JPEG, PNG, WEBP.', isError: true })
+      return
+    }
+
+    setIsUploadingProofFile(true)
+    setModalFeedback(null)
+    try {
+      const res = await handoverService.uploadHandoverDocument(selectedBookingId, file, 'PAYMENT_PROOF')
+      if (res?.fileUrl) {
+        setProofDocumentUrl(res.fileUrl)
+        setProofFileName(file.name)
+        setModalFeedback({ text: `Đã tải lên tệp ${file.name} thành công!`, isError: false })
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Tải lên chứng từ thất bại.'
+      setModalFeedback({ text: msg, isError: true })
+    } finally {
+      setIsUploadingProofFile(false)
+      e.target.value = ''
+    }
   }
 
   const handleSubmitPayment = async () => {
@@ -628,6 +701,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       setModalFeedback({ text: 'Vui lòng nhập Mã tham chiếu ngân hàng (Ref Code).', isError: true })
       return
     }
+    if (paymentMethod === 'BANK_TRANSFER' && !proofDocumentUrl.trim()) {
+      setModalFeedback({ text: 'Vui lòng tải lên ảnh chụp biên lai chuyển khoản / ủy nhiệm chi.', isError: true })
+      return
+    }
 
     setIsSavingPayment(true)
     setModalFeedback(null)
@@ -639,7 +716,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         amount: paymentAmount,
         receiptVoucherCode: paymentMethod === 'CASH' ? receiptVoucherCode.trim() : undefined,
         referenceCode: paymentMethod === 'BANK_TRANSFER' ? referenceCode.trim() : undefined,
-        proofDocumentUrl: proofDocumentUrl || undefined,
+        proofDocumentUrl: paymentMethod === 'BANK_TRANSFER' ? (proofDocumentUrl.trim() || undefined) : undefined,
         notes: paymentNotes.trim() || undefined
       })
       await fetchPrerequisitesForBooking(selectedBookingId)
@@ -657,6 +734,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       setIsSavingPayment(false)
     }
   }
+
 
   const handleConfirmBankPayment = async (paymentId: string) => {
     setConfirmingBankPaymentId(paymentId)
@@ -1146,15 +1224,17 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       {currentPrerequisites?.paperContractUrl && (
                         <div className="pt-1 flex items-center justify-between border-t border-slate-200/60">
                           <span className="text-slate-500">Bản scan hợp đồng:</span>
-                          <a
-                            href={currentPrerequisites.paperContractUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-cyan-700 hover:text-cyan-800 font-bold inline-flex items-center gap-1"
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAuthorizedDocument(currentPrerequisites.paperContractUrl!)}
+                            disabled={openingDocumentUrl === currentPrerequisites.paperContractUrl}
+                            className="text-cyan-700 hover:text-cyan-800 font-bold inline-flex items-center gap-1 cursor-pointer"
                           >
-                            <span className="material-symbols-outlined text-[14px]">attachment</span>
-                            <span>Xem file scan</span>
-                          </a>
+                            <span className="material-symbols-outlined text-[14px]">
+                              {openingDocumentUrl === currentPrerequisites.paperContractUrl ? 'hourglass_top' : 'attachment'}
+                            </span>
+                            <span>{openingDocumentUrl === currentPrerequisites.paperContractUrl ? 'Đang tải...' : 'Xem file scan'}</span>
+                          </button>
                         </div>
                       )}
                     </div>
@@ -1243,6 +1323,18 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                               {p.paymentMethod} • {p.amount.toLocaleString('vi-VN')}đ
                             </span>
                             <div className="flex items-center gap-1.5">
+                              {p.proofDocumentUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAuthorizedDocument(p.proofDocumentUrl!)}
+                                  disabled={openingDocumentUrl === p.proofDocumentUrl}
+                                  className="px-1.5 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[10px] inline-flex items-center gap-0.5 cursor-pointer"
+                                  title="Xem ảnh chụp ủy nhiệm chi / biên lai chuyển khoản"
+                                >
+                                  <span className="material-symbols-outlined text-[12px]">receipt_long</span>
+                                  <span>{openingDocumentUrl === p.proofDocumentUrl ? '...' : 'Xem UNC'}</span>
+                                </button>
+                              )}
                               <span className={`px-1.5 py-0.2 rounded font-bold ${p.status === 'PAID' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
                                 {p.status === 'PAID' ? 'Đã xác nhận' : 'Chờ xác minh TK'}
                               </span>
@@ -1336,6 +1428,18 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                               {p.paymentMethod} • {p.amount.toLocaleString('vi-VN')}đ
                             </span>
                             <div className="flex items-center gap-1.5">
+                              {p.proofDocumentUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAuthorizedDocument(p.proofDocumentUrl!)}
+                                  disabled={openingDocumentUrl === p.proofDocumentUrl}
+                                  className="px-1.5 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[10px] inline-flex items-center gap-0.5 cursor-pointer"
+                                  title="Xem ảnh chụp ủy nhiệm chi / biên lai chuyển khoản"
+                                >
+                                  <span className="material-symbols-outlined text-[12px]">receipt_long</span>
+                                  <span>{openingDocumentUrl === p.proofDocumentUrl ? '...' : 'Xem UNC'}</span>
+                                </button>
+                              )}
                               <span className={`px-1.5 py-0.2 rounded font-bold ${p.status === 'PAID' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
                                 {p.status === 'PAID' ? 'Đã xác nhận' : 'Chờ xác minh TK'}
                               </span>
@@ -2181,11 +2285,23 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   className="hidden"
                   onChange={handlePaperFileChange}
                 />
-                {paperContractUrl ? (
+                {isUploadingPaperFile ? (
+                  <div className="p-4 rounded-xl border border-cyan-200 bg-cyan-50/50 flex items-center justify-center gap-2 text-cyan-800 text-xs">
+                    <span className="material-symbols-outlined text-[20px] animate-spin">sync</span>
+                    <span className="font-bold">Đang tải tệp hợp đồng lên hệ thống...</span>
+                  </div>
+                ) : paperContractUrl ? (
                   <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/50 flex items-center justify-between">
                     <div className="flex items-center gap-2 truncate">
                       <span className="material-symbols-outlined text-emerald-600 text-[20px]">task_alt</span>
-                      <span className="text-[11px] text-emerald-900 font-bold truncate">Đã tải tài liệu scan hợp đồng giấy</span>
+                      <div className="truncate">
+                        <span className="text-[11px] text-emerald-900 font-bold block truncate">
+                          {paperFileName || 'Đã tải tài liệu scan hợp đồng giấy'}
+                        </span>
+                        <span className="text-[10px] text-emerald-700 font-mono truncate block">
+                          {paperContractUrl}
+                        </span>
+                      </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
@@ -2197,7 +2313,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       </button>
                       <button
                         type="button"
-                        onClick={() => setPaperContractUrl('')}
+                        onClick={() => {
+                          setPaperContractUrl('')
+                          setPaperFileName('')
+                        }}
                         className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] cursor-pointer"
                       >
                         Xóa
@@ -2212,9 +2331,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   >
                     <span className="material-symbols-outlined text-[24px] text-cyan-700">upload_file</span>
                     <span className="font-bold text-xs text-slate-800">Tải ảnh chụp / file scan hợp đồng giấy</span>
-                    <span className="text-[10px] text-slate-400">Định dạng JPG, PNG hoặc PDF có đủ chữ ký khách & nhân viên</span>
+                    <span className="text-[10px] text-slate-400">Định dạng JPG, PNG hoặc PDF (tối đa 10MB)</span>
                   </button>
                 )}
+
               </div>
 
               <div>
@@ -2305,7 +2425,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setPaymentMethod('CASH')}
+                    onClick={() => {
+                      setPaymentMethod('CASH')
+                      setProofDocumentUrl('')
+                      setProofFileName('')
+                    }}
                     className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 font-bold text-xs transition-all cursor-pointer ${
                       paymentMethod === 'CASH'
                         ? 'bg-cyan-600 text-white border-cyan-600 shadow-xs'
@@ -2385,7 +2509,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   </div>
 
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">Ảnh chụp biên lai chuyển khoản / Ủy nhiệm chi</label>
+                    <label className="block font-bold text-slate-700 mb-1">
+                      Ảnh chụp biên lai chuyển khoản / Ủy nhiệm chi <span className="text-rose-500">*</span>
+                    </label>
                     <input
                       type="file"
                       ref={proofFileInputRef}
@@ -2393,11 +2519,23 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       className="hidden"
                       onChange={handleProofFileChange}
                     />
-                    {proofDocumentUrl ? (
+                    {isUploadingProofFile ? (
+                      <div className="p-3.5 rounded-xl border border-cyan-200 bg-cyan-50/50 flex items-center justify-center gap-2 text-cyan-800 text-xs">
+                        <span className="material-symbols-outlined text-[20px] animate-spin">sync</span>
+                        <span className="font-bold">Đang tải chứng từ lên hệ thống...</span>
+                      </div>
+                    ) : proofDocumentUrl ? (
                       <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/50 flex items-center justify-between">
                         <div className="flex items-center gap-2 truncate">
                           <span className="material-symbols-outlined text-emerald-600 text-[20px]">task_alt</span>
-                          <span className="text-[11px] text-emerald-900 font-bold truncate">Đã đính kèm ảnh ủy nhiệm chi</span>
+                          <div className="truncate">
+                            <span className="text-[11px] text-emerald-900 font-bold block truncate">
+                              {proofFileName || 'Đã đính kèm ảnh ủy nhiệm chi'}
+                            </span>
+                            <span className="text-[10px] text-emerald-700 font-mono truncate block">
+                              {proofDocumentUrl}
+                            </span>
+                          </div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
                           <button
@@ -2409,7 +2547,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                           </button>
                           <button
                             type="button"
-                            onClick={() => setProofDocumentUrl('')}
+                            onClick={() => {
+                              setProofDocumentUrl('')
+                              setProofFileName('')
+                            }}
                             className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] cursor-pointer"
                           >
                             Xóa
@@ -2424,10 +2565,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       >
                         <span className="material-symbols-outlined text-[22px] text-cyan-700">receipt_long</span>
                         <span className="font-bold text-xs text-slate-800">Tải ảnh chụp giao dịch ngân hàng</span>
-                        <span className="text-[10px] text-slate-400">Hình ảnh màn hình app ngân hàng hoặc ủy nhiệm chi</span>
+                        <span className="text-[10px] text-slate-400">Định dạng JPG, PNG hoặc PDF (tối đa 10MB)</span>
                       </button>
                     )}
                   </div>
+
 
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] flex items-start gap-2">
                     <span className="material-symbols-outlined text-[16px] text-amber-700 mt-0.5">info</span>

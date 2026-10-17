@@ -1,16 +1,18 @@
 package com.boxora.service;
 
 import com.boxora.dto.request.HandoverRequest;
-import com.boxora.dto.response.HandoverPrerequisitesResponse;
-import com.boxora.dto.response.HandoverResponse;
-import com.boxora.dto.response.ReturnSettlementPreviewResponse;
-import com.boxora.dto.response.ReturnSettlementResponse;
+import com.boxora.dto.request.IdentityVerifyRequest;
+import com.boxora.dto.request.ManualPaymentRecordRequest;
+import com.boxora.dto.request.PaperContractCreateRequest;
+import com.boxora.dto.response.*;
 import com.boxora.entity.*;
 import com.boxora.enums.*;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.repository.*;
 import com.boxora.service.impl.HandoverServiceImpl;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -83,6 +85,9 @@ class HandoverServiceTest {
 
     @Mock
     private com.boxora.mapper.RentalContractMapper rentalContractMapper;
+
+    @Mock
+    private FileStorageService fileStorageService;
 
     @InjectMocks
     private HandoverServiceImpl handoverService;
@@ -909,6 +914,644 @@ class HandoverServiceTest {
 
             AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(tamperedRequest));
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
+        }
+    }
+
+    @Nested
+    @DisplayName("Task 13: Lưu hợp đồng giấy, ghi nhận tiền cọc chuyển khoản và tiền mặt tại quầy (BR-RULE-005/006)")
+    class Task13HandoverTests {
+
+        @BeforeEach
+        void initTask13Booking() {
+            testBooking.setDepositAmount(new BigDecimal("450000.00"));
+            testBooking.setDepositPaid(BigDecimal.ZERO);
+            testBooking.setStatus(BookingStatus.CONFIRMED);
+            lenient().when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+            lenient().when(rentalContractRepository.save(any(RentalContract.class))).thenAnswer(inv -> inv.getArgument(0));
+        }
+
+        @Test
+        @DisplayName("1. Upload hợp đồng giấy với file ảnh hợp lệ -> Lưu thành công với status PENDING_VERIFICATION")
+        void createOrUploadPaperContract_validImage_statusPendingVerification() {
+            String paperUrl = "/uploads/contracts/" + bookingId + "/doc-image-scan.jpg";
+            PaperContractCreateRequest req = PaperContractCreateRequest.builder()
+                    .bookingId(bookingId)
+                    .paperContractUrl(paperUrl)
+                    .paperOriginalLocation("Tủ hồ sơ tầng 1, ngăn A12")
+                    .notes("Đã ký sống tại quầy Tân Bình")
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.empty());
+            when(rentalContractRepository.findByContractCodeIgnoreCase(anyString())).thenReturn(Optional.empty());
+            when(rentalContractRepository.save(any(RentalContract.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            RentalContractResponse res = handoverService.createOrUploadPaperContract(req);
+
+            assertThat(res).isNotNull();
+            verify(rentalContractRepository).save(argThat(c ->
+                    RentalContractStatus.PENDING_VERIFICATION.equals(c.getStatus())
+                            && paperUrl.equals(c.getPaperContractUrl())
+                            && "PAPER".equals(c.getSigningMethod())
+                            && c.getPaperVerifiedAt() == null
+                            && c.getSignedAt() == null
+            ));
+        }
+
+        @Test
+        @DisplayName("2. Upload hợp đồng giấy với file PDF hợp lệ -> Lưu thành công với status PENDING_VERIFICATION")
+        void createOrUploadPaperContract_validPdf_statusPendingVerification() {
+            String paperUrl = "/uploads/contracts/" + bookingId + "/doc-contract-signed.pdf";
+            PaperContractCreateRequest req = PaperContractCreateRequest.builder()
+                    .bookingId(bookingId)
+                    .paperContractUrl(paperUrl)
+                    .contractCode("HD-GIAY-" + testBooking.getBookingCode())
+                    .paperOriginalLocation("Tủ hồ sơ văn phòng")
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.empty());
+            when(rentalContractRepository.findByContractCodeIgnoreCase(anyString())).thenReturn(Optional.empty());
+            when(rentalContractRepository.save(any(RentalContract.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            handoverService.createOrUploadPaperContract(req);
+
+            verify(rentalContractRepository).save(argThat(c ->
+                    RentalContractStatus.PENDING_VERIFICATION.equals(c.getStatus())
+                            && paperUrl.equals(c.getPaperContractUrl())
+            ));
+        }
+
+        @Test
+        @DisplayName("3. Upload tài liệu định dạng không hỗ trợ hoặc kích thước >10MB -> Ném lỗi INVALID_REQUEST / TICKET_IMAGE_SIZE_EXCEEDED")
+        void uploadHandoverDocument_invalidFormatOrOversized_throwsError() {
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+
+            MultipartFile dummyFile = mock(MultipartFile.class);
+            AppException exType = assertThrows(AppException.class, () ->
+                    handoverService.uploadHandoverDocument(bookingId, dummyFile, "UNKNOWN_TYPE"));
+            assertThat(exType.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+
+            when(fileStorageService.storeDocumentFile(any(), eq("contracts/" + bookingId)))
+                    .thenThrow(new AppException(ErrorCode.TICKET_IMAGE_SIZE_EXCEEDED));
+            AppException exSize = assertThrows(AppException.class, () ->
+                    handoverService.uploadHandoverDocument(bookingId, dummyFile, "PAPER_CONTRACT"));
+            assertThat(exSize.getErrorCode()).isEqualTo(ErrorCode.TICKET_IMAGE_SIZE_EXCEEDED);
+        }
+
+        @Test
+        @DisplayName("4. Base64 data URI hoặc URL > 500 ký tự -> Từ chối với INVALID_REQUEST (ngăn lỗi VARCHAR 500)")
+        void createOrUploadPaperContract_base64OrTooLong_throwsInvalidRequest() {
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+
+            PaperContractCreateRequest base64Req = PaperContractCreateRequest.builder()
+                    .bookingId(bookingId)
+                    .paperContractUrl("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD...")
+                    .build();
+            AppException ex1 = assertThrows(AppException.class, () ->
+                    handoverService.createOrUploadPaperContract(base64Req));
+            assertThat(ex1.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+
+            String longUrl = "/uploads/contracts/" + "a".repeat(500) + ".pdf";
+            PaperContractCreateRequest longReq = PaperContractCreateRequest.builder()
+                    .bookingId(bookingId)
+                    .paperContractUrl(longUrl)
+                    .build();
+            AppException ex2 = assertThrows(AppException.class, () ->
+                    handoverService.createOrUploadPaperContract(longReq));
+            assertThat(ex2.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+
+            ManualPaymentRecordRequest bankBase64Req = ManualPaymentRecordRequest.builder()
+                    .bookingId(bookingId)
+                    .paymentType(PaymentType.DEPOSIT)
+                    .paymentMethod("BANK_TRANSFER")
+                    .amount(new BigDecimal("450000.00"))
+                    .referenceCode("REF-123")
+                    .proofDocumentUrl("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...")
+                    .build();
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+            AppException ex3 = assertThrows(AppException.class, () ->
+                    handoverService.recordManualPayment(bankBase64Req));
+            assertThat(ex3.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+        }
+
+        @Test
+        @DisplayName("5. Hợp đồng giấy ở trạng thái PENDING_VERIFICATION -> Chưa đủ điều kiện check-in (eligibleForCheckIn = false)")
+        void getCheckInPrerequisites_paperContractPendingVerification_notEligible() {
+            testBooking.setDepositPaid(new BigDecimal("450000.00"));
+            RentalContract paperContract = RentalContract.builder()
+                    .contractCode("HĐ-GIAY-8921")
+                    .booking(testBooking)
+                    .customer(testCustomer)
+                    .unit(testUnit)
+                    .facility(testFacility)
+                    .signingMethod("PAPER")
+                    .paperContractUrl("/uploads/contracts/" + bookingId + "/scan.pdf")
+                    .status(RentalContractStatus.PENDING_VERIFICATION)
+                    .paperVerifiedAt(null)
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(paperContract));
+
+            HandoverPrerequisitesResponse resp = handoverService.getCheckInPrerequisites(bookingId);
+            assertThat(resp.isContractSigned()).isFalse();
+            assertThat(resp.getContractVerificationStatus()).isEqualTo("PENDING_VERIFICATION");
+            assertThat(resp.isEligibleForCheckIn()).isFalse();
+            assertThat(resp.getMissingPrerequisites()).anyMatch(m -> m.contains("chờ nhân viên kiểm tra chữ ký"));
+        }
+
+        @Test
+        @DisplayName("6. Xác minh hợp đồng giấy: Nhân viên hợp lệ -> PASS (ACTIVE/PENDING_ACTIVATION); Khách hàng -> FORBIDDEN")
+        void verifyPaperContract_authorizedStaffPass_customerForbidden() {
+            RentalContract paperContract = RentalContract.builder()
+                    .contractCode("HĐ-GIAY-8921")
+                    .booking(testBooking)
+                    .customer(testCustomer)
+                    .unit(testUnit)
+                    .facility(testFacility)
+                    .signingMethod("PAPER")
+                    .paperContractUrl("/uploads/contracts/" + bookingId + "/scan.pdf")
+                    .status(RentalContractStatus.PENDING_VERIFICATION)
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(paperContract));
+            when(rentalContractRepository.save(any(RentalContract.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            RentalContractResponse res = handoverService.verifyPaperContract(bookingId, "Đã kiểm tra chữ ký tay đối chiếu CMND");
+            assertThat(res).isNotNull();
+            assertThat(paperContract.getPaperVerifiedAt()).isNotNull();
+            assertThat(paperContract.getPaperVerifiedBy()).isEqualTo(testStaff);
+            assertThat(paperContract.getStatus()).isEqualTo(RentalContractStatus.PENDING_ACTIVATION);
+
+            UUID customerUserId = testCustomer.getId();
+            when(requestContext.currentUserId()).thenReturn(customerUserId);
+            when(userRepository.findById(customerUserId)).thenReturn(Optional.of(testCustomer));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.verifyPaperContract(bookingId, "Khách tự duyệt"));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("7. Thu tiền mặt (CASH) tại quầy -> Bắt buộc có mã phiếu thu, tự động loại bỏ proofDocumentUrl và referenceCode thừa")
+        void recordManualPayment_cash_nullifiesProofAndRefCode_andSetsPaid() {
+            ManualPaymentRecordRequest req = ManualPaymentRecordRequest.builder()
+                    .bookingId(bookingId)
+                    .paymentType(PaymentType.DEPOSIT)
+                    .paymentMethod("CASH")
+                    .amount(new BigDecimal("450000.00"))
+                    .receiptVoucherCode("PT-2026-TANBINH-001")
+                    .referenceCode("REF-LEFTOVER-999")
+                    .proofDocumentUrl("/uploads/payments/" + bookingId + "/leftover.png")
+                    .notes("Khách đóng tiền mặt tại sảnh")
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.existsByReceiptVoucherCodeIgnoreCase("PT-2026-TANBINH-001")).thenReturn(false);
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+            when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            handoverService.recordManualPayment(req);
+
+            verify(paymentRepository).save(argThat(p ->
+                    PaymentStatus.PAID.equals(p.getStatus())
+                            && "CASH".equals(p.getPaymentMethod())
+                            && "PT-2026-TANBINH-001".equals(p.getReceiptVoucherCode())
+                            && p.getReferenceCode() == null
+                            && p.getProofDocumentUrl() == null
+                            && p.getConfirmedByStaff() != null
+                            && p.getConfirmedAt() != null
+            ));
+        }
+
+        @Test
+        @DisplayName("8. Thu tiền mặt trùng mã phiếu thu (duplicate voucher code) -> Ném lỗi PAYMENT_ALREADY_PROCESSED")
+        void recordManualPayment_duplicateCashVoucherCode_throwsPaymentAlreadyProcessed() {
+            ManualPaymentRecordRequest req = ManualPaymentRecordRequest.builder()
+                    .bookingId(bookingId)
+                    .paymentType(PaymentType.DEPOSIT)
+                    .paymentMethod("CASH")
+                    .amount(new BigDecimal("450000.00"))
+                    .receiptVoucherCode("PT-DUPLICATE-999")
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+            when(paymentRepository.existsByReceiptVoucherCodeIgnoreCase("PT-DUPLICATE-999")).thenReturn(true);
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.recordManualPayment(req));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_ALREADY_PROCESSED);
+        }
+
+        @Test
+        @DisplayName("9. Thu tiền mặt khi nghĩa vụ đã hoàn tất -> Ném lỗi PAYMENT_ALREADY_PROCESSED chống cộng tiền trùng")
+        void recordManualPayment_obligationAlreadySatisfied_throwsPaymentAlreadyProcessed() {
+            Payment existingDep = Payment.builder()
+                    .paymentType(PaymentType.DEPOSIT)
+                    .status(PaymentStatus.PAID)
+                    .amount(new BigDecimal("450000.00"))
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of(existingDep));
+
+            ManualPaymentRecordRequest req = ManualPaymentRecordRequest.builder()
+                    .bookingId(bookingId)
+                    .paymentType(PaymentType.DEPOSIT)
+                    .paymentMethod("CASH")
+                    .amount(new BigDecimal("450000.00"))
+                    .receiptVoucherCode("PT-EXTRA-888")
+                    .build();
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.recordManualPayment(req));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_ALREADY_PROCESSED);
+        }
+
+        @Test
+        @DisplayName("10. Ghi nhận chuyển khoản ngân hàng -> Trạng thái PENDING, lưu proof URL, chưa cộng vào tiền đã thanh toán")
+        void recordManualPayment_bankTransfer_statusPending_notCountedAsPaid() {
+            String proofUrl = "/uploads/payments/" + bookingId + "/proof_mb_123.jpg";
+            ManualPaymentRecordRequest req = ManualPaymentRecordRequest.builder()
+                    .bookingId(bookingId)
+                    .paymentType(PaymentType.DEPOSIT)
+                    .paymentMethod("BANK_TRANSFER")
+                    .amount(new BigDecimal("450000.00"))
+                    .referenceCode("MB-FT8921001")
+                    .proofDocumentUrl(proofUrl)
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+            when(paymentRepository.existsByReferenceCodeIgnoreCase("MB-FT8921001")).thenReturn(false);
+            when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            handoverService.recordManualPayment(req);
+
+            verify(paymentRepository).save(argThat(p ->
+                    PaymentStatus.PENDING.equals(p.getStatus())
+                            && "BANK_TRANSFER".equals(p.getPaymentMethod())
+                            && "MB-FT8921001".equals(p.getReferenceCode())
+                            && proofUrl.equals(p.getProofDocumentUrl())
+                            && p.getConfirmedByStaff() == null
+                            && p.getConfirmedAt() == null
+            ));
+            assertThat(testBooking.getDepositPaid()).isEqualByComparingTo("0.00");
+        }
+
+        @Test
+        @DisplayName("11. Chuyển khoản ngân hàng chỉ được tính đã thanh toán sau khi nhân viên đối soát khớp lệnh")
+        void confirmBankTransferPayment_authorizedStaff_setsPaidAndSynchronizesDeposit() {
+            UUID paymentId = UUID.randomUUID();
+            Payment pendingBankPayment = Payment.builder()
+                    .booking(testBooking)
+                    .amount(new BigDecimal("450000.00"))
+                    .paymentType(PaymentType.DEPOSIT)
+                    .paymentMethod("BANK_TRANSFER")
+                    .referenceCode("VCB-FT9921002")
+                    .proofDocumentUrl("/uploads/payments/" + bookingId + "/proof_vcb.png")
+                    .status(PaymentStatus.PENDING)
+                    .build();
+            pendingBankPayment.setId(paymentId);
+
+            testBooking.setDepositPaid(BigDecimal.ZERO);
+
+            when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(pendingBankPayment));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+            when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            handoverService.confirmBankTransferPayment(paymentId, "Đã khớp lệnh tiền nổi tài khoản VCB Boxora");
+
+            assertThat(pendingBankPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
+            assertThat(pendingBankPayment.getConfirmedByStaff()).isEqualTo(testStaff);
+            assertThat(pendingBankPayment.getConfirmedAt()).isNotNull();
+            verify(bookingRepository).save(argThat(b ->
+                    b.getDepositPaid() != null && b.getDepositPaid().compareTo(new BigDecimal("450000.00")) == 0
+            ));
+        }
+
+        @Test
+        @DisplayName("12. Xác nhận trùng chuyển khoản đã PAID -> Ném lỗi PAYMENT_ALREADY_PROCESSED, không cộng tiền 2 lần")
+        void confirmBankTransferPayment_alreadyPaid_throwsPaymentAlreadyProcessed() {
+            UUID paymentId = UUID.randomUUID();
+            Payment alreadyPaidPayment = Payment.builder()
+                    .booking(testBooking)
+                    .amount(new BigDecimal("450000.00"))
+                    .paymentType(PaymentType.DEPOSIT)
+                    .paymentMethod("BANK_TRANSFER")
+                    .status(PaymentStatus.PAID)
+                    .build();
+            alreadyPaidPayment.setId(paymentId);
+
+            when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(alreadyPaidPayment));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.confirmBankTransferPayment(paymentId, "Duyệt lại"));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_ALREADY_PROCESSED);
+        }
+
+        @Test
+        @DisplayName("13. Check-in bị chặn nếu thiếu bất kỳ điều kiện nào trong 4 điều kiện (BR-RULE-005)")
+        void checkIn_missingAnyOfFourConditions_throwsPrerequisitesNotMet() {
+            // Case 13a: Missing Deposit
+            testBooking.setDepositPaid(BigDecimal.ZERO);
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
+
+            HandoverRequest reqNoDeposit = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .staffId(staffId)
+                    .idCardNumber("001092003891")
+                    .identityVerified(true)
+                    .build();
+            AppException ex1 = assertThrows(AppException.class, () -> handoverService.checkIn(reqNoDeposit));
+            assertThat(ex1.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
+
+            // Case 13b: Missing Rent (no rent payment)
+            testBooking.setDepositPaid(new BigDecimal("450000.00"));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of(
+                    Payment.builder().paymentType(PaymentType.DEPOSIT).status(PaymentStatus.PAID).amount(new BigDecimal("450000.00")).build()
+            ));
+            AppException ex2 = assertThrows(AppException.class, () -> handoverService.checkIn(reqNoDeposit));
+            assertThat(ex2.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
+
+            // Case 13c: Missing Verified Contract (e.g. Paper Contract still PENDING_VERIFICATION)
+            RentalContract unverifiedPaper = RentalContract.builder()
+                    .contractCode("HĐ-CHUA-DUYET")
+                    .signingMethod("PAPER")
+                    .status(RentalContractStatus.PENDING_VERIFICATION)
+                    .paperContractUrl("/uploads/contracts/scan.pdf")
+                    .build();
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(unverifiedPaper));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of(
+                    Payment.builder().paymentType(PaymentType.DEPOSIT).status(PaymentStatus.PAID).amount(new BigDecimal("450000.00")).build(),
+                    Payment.builder().paymentType(PaymentType.RENTAL_FEE).status(PaymentStatus.PAID).amount(new BigDecimal("1500000.00")).build()
+            ));
+            AppException ex3 = assertThrows(AppException.class, () -> handoverService.checkIn(reqNoDeposit));
+            assertThat(ex3.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
+
+            // Case 13d: Missing Identity verification
+            testBooking.setDepositPaid(new BigDecimal("450000.00"));
+            testBooking.setIdentityVerifiedAt(null);
+            testBooking.setIdentityVerifiedByStaff(null);
+            testBooking.setIdentityCardNumber(null);
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
+            HandoverRequest reqNoIdentity = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .staffId(staffId)
+                    .identityVerified(false)
+                    .build();
+            AppException ex4 = assertThrows(AppException.class, () -> handoverService.checkIn(reqNoIdentity));
+            assertThat(ex4.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
+        }
+
+        @Test
+        @DisplayName("14. Luồng ký điện tử qua DocuSeal hoàn toàn không bị ảnh hưởng và được công nhận hợp lệ")
+        void docuSealElectronicContract_recognizedAsSigned() {
+            RentalContract docusealContract = RentalContract.builder()
+                    .contractCode("HD-ONLINE-2026")
+                    .booking(testBooking)
+                    .customer(testCustomer)
+                    .unit(testUnit)
+                    .facility(testFacility)
+                    .signingMethod("ONLINE")
+                    .docusealSubmissionId(883921L)
+                    .status(RentalContractStatus.PENDING_ACTIVATION)
+                    .signedAt(LocalDateTime.now())
+                    .build();
+
+            testBooking.setDepositPaid(new BigDecimal("450000.00"));
+
+            Payment rentPayment = Payment.builder()
+                    .paymentType(PaymentType.RENTAL_FEE)
+                    .status(PaymentStatus.PAID)
+                    .amount(new BigDecimal("1500000.00"))
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(docusealContract));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of(rentPayment));
+
+            HandoverPrerequisitesResponse resp = handoverService.getCheckInPrerequisites(bookingId);
+            assertThat(resp.isContractSigned()).isTrue();
+            assertThat(resp.getContractSigningMethod()).isEqualTo("ONLINE");
+            assertThat(resp.getContractStatus()).isEqualTo("ĐÃ_KÝ_ĐIỆN_TỬ");
+            assertThat(resp.isEligibleForCheckIn()).isTrue();
+        }
+
+        @Test
+        @DisplayName("15. Luồng trả kho & quyết toán hoàn tiền (Return/Refund của Khang) không bị ảnh hưởng, khấu trừ đúng khoản REFUNDED")
+        void returnFlowAndRefundCalculation_remainsIntact() {
+            Payment paidDeposit = Payment.builder()
+                    .paymentType(PaymentType.DEPOSIT)
+                    .status(PaymentStatus.PAID)
+                    .amount(new BigDecimal("1500000.00"))
+                    .build();
+            Payment refundedDeposit = Payment.builder()
+                    .paymentType(PaymentType.DEPOSIT)
+                    .status(PaymentStatus.REFUNDED)
+                    .amount(new BigDecimal("500000.00"))
+                    .build();
+            Payment refundPending = Payment.builder()
+                    .paymentType(PaymentType.DEPOSIT)
+                    .status(PaymentStatus.REFUND_PENDING)
+                    .amount(new BigDecimal("200000.00"))
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of(paidDeposit, refundedDeposit, refundPending));
+
+            HandoverPrerequisitesResponse resp = handoverService.getCheckInPrerequisites(bookingId);
+            assertThat(resp.getDepositPaid()).isEqualByComparingTo("1000000.00");
+        }
+
+        @Test
+        @DisplayName("16. Bảo vệ đa cơ sở: Khi facilityAccessGuard từ chối quyền thì tất cả các endpoint Task 13 đều ném FORBIDDEN")
+        void crossFacilityAccess_deniedByGuard_throwsForbidden() {
+            doThrow(new AppException(ErrorCode.FORBIDDEN))
+                    .when(facilityAccessGuard).checkFacilityAccess(testFacility.getId());
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+
+            MultipartFile mockFile = mock(MultipartFile.class);
+            assertThrows(AppException.class, () ->
+                    handoverService.uploadHandoverDocument(bookingId, mockFile, "PAPER_CONTRACT"));
+
+            PaperContractCreateRequest paperReq = PaperContractCreateRequest.builder()
+                    .bookingId(bookingId)
+                    .paperContractUrl("/uploads/contracts/test.pdf")
+                    .build();
+            assertThrows(AppException.class, () ->
+                    handoverService.createOrUploadPaperContract(paperReq));
+
+            assertThrows(AppException.class, () ->
+                    handoverService.verifyPaperContract(bookingId, "Duyệt khác cơ sở"));
+
+            ManualPaymentRecordRequest payReq = ManualPaymentRecordRequest.builder()
+                    .bookingId(bookingId)
+                    .paymentType(PaymentType.DEPOSIT)
+                    .paymentMethod("CASH")
+                    .receiptVoucherCode("PT-CROSS-123")
+                    .amount(new BigDecimal("450000.00"))
+                    .build();
+            assertThrows(AppException.class, () ->
+                    handoverService.recordManualPayment(payReq));
+        }
+
+        @Test
+        @DisplayName("17. Bảo mật tài liệu: Yêu cầu xác thực, từ chối khi chưa đăng nhập")
+        void getAuthorizedHandoverDocumentPath_unauthenticated_throwsForbidden() {
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(requestContext.currentUserId()).thenReturn(null);
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.getAuthorizedHandoverDocumentPath(bookingId, "/uploads/contracts/" + bookingId + "/doc.pdf"));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("18. Bảo mật tài liệu: Khách hàng không thể xem tài liệu đơn đặt kho của khách khác (IDOR)")
+        void getAuthorizedHandoverDocumentPath_otherCustomer_throwsForbidden() {
+            UUID otherCustomerId = UUID.randomUUID();
+            User otherCustomer = User.builder()
+                    .fullName("Người lạ")
+                    .role(Role.builder().name("CUSTOMER").build())
+                    .build();
+            otherCustomer.setId(otherCustomerId);
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(requestContext.currentUserId()).thenReturn(otherCustomerId);
+            when(userRepository.findById(otherCustomerId)).thenReturn(Optional.of(otherCustomer));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.getAuthorizedHandoverDocumentPath(bookingId, "/uploads/contracts/" + bookingId + "/doc.pdf"));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("19. Bảo mật tài liệu: Nhân viên trái cơ sở bị facilityAccessGuard chặn khi xem tệp")
+        void getAuthorizedHandoverDocumentPath_crossFacilityStaff_throwsForbidden() {
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
+            doThrow(new AppException(ErrorCode.FORBIDDEN))
+                    .when(facilityAccessGuard).checkFacilityAccess(testFacility.getId());
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.getAuthorizedHandoverDocumentPath(bookingId, "/uploads/contracts/" + bookingId + "/doc.pdf"));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("20. Bảo mật tài liệu: Chặn truy xuất tệp không thuộc booking (IDOR file tamper)")
+        void getAuthorizedHandoverDocumentPath_idorMismatchedFile_throwsForbidden() {
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.empty());
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.getAuthorizedHandoverDocumentPath(bookingId, "/uploads/contracts/other-booking-id/secret.pdf"));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("21. Bảo mật tài liệu: Nhân viên hợp lệ xem đúng tài liệu của đơn kho thành công")
+        void getAuthorizedHandoverDocumentPath_validAccess_returnsPath() {
+            String validUrl = "/uploads/contracts/" + bookingId + "/paper_contract.pdf";
+            java.nio.file.Path mockPath = java.nio.file.Path.of("uploads", "contracts", bookingId.toString(), "paper_contract.pdf");
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(
+                    RentalContract.builder().paperContractUrl(validUrl).build()
+            ));
+            when(fileStorageService.resolveStoredFilePath(validUrl)).thenReturn(mockPath);
+
+            java.nio.file.Path result = handoverService.getAuthorizedHandoverDocumentPath(bookingId, validUrl);
+            assertThat(result).isEqualTo(mockPath);
+        }
+    }
+
+    @Nested
+    @DisplayName("Bảo vệ luồng gửi lại mã PIN: Chỉ cho phép đơn ACTIVE đã check-in thành công")
+    class HandoverPinEmailGuardTests {
+
+        @Test
+        @DisplayName("Gửi lại PIN: Booking PENDING_PAYMENT bị từ chối với BOOKING_NOT_CHECKED_IN")
+        void sendHandoverPinEmail_PendingPayment_ThrowsException() {
+            testBooking.setStatus(BookingStatus.PENDING_PAYMENT);
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.sendHandoverPinEmail(bookingId, null));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BOOKING_NOT_CHECKED_IN);
+            verify(emailService, never()).sendHandoverPinEmail(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("Gửi lại PIN: Booking CONFIRMED chưa check-in bị từ chối với BOOKING_NOT_CHECKED_IN")
+        void sendHandoverPinEmail_ConfirmedNotActive_ThrowsException() {
+            testBooking.setStatus(BookingStatus.CONFIRMED);
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.sendHandoverPinEmail(bookingId, null));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BOOKING_NOT_CHECKED_IN);
+            verify(emailService, never()).sendHandoverPinEmail(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("Gửi lại PIN: Booking ACTIVE nhưng thiếu accessPin bị từ chối với BOOKING_NOT_CHECKED_IN")
+        void sendHandoverPinEmail_ActiveMissingPin_ThrowsException() {
+            testBooking.setStatus(BookingStatus.ACTIVE);
+            testBooking.setAccessPin(null);
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.sendHandoverPinEmail(bookingId, null));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BOOKING_NOT_CHECKED_IN);
+            verify(emailService, never()).sendHandoverPinEmail(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("Gửi lại PIN: Booking ACTIVE đã check-in gửi lại đúng PIN hiện hữu, không sinh PIN mới")
+        void sendHandoverPinEmail_ActiveCheckedIn_SendsExistingPinSuccessfully() {
+            testBooking.setStatus(BookingStatus.ACTIVE);
+            testBooking.setAccessPin("encrypted-pin-123456");
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(encryptionService.decrypt("encrypted-pin-123456")).thenReturn("123456");
+
+            handoverService.sendHandoverPinEmail(bookingId, null);
+
+            verify(emailService, times(1)).sendHandoverPinEmail(
+                    eq(testCustomer.getEmail()),
+                    eq(testCustomer.getFullName()),
+                    eq(testUnit.getUnitCode()),
+                    eq(testBooking.getBookingCode()),
+                    eq("123456"),
+                    eq(testFacility.getName())
+            );
+            // Verify accessPin is not modified or replaced
+            assertThat(testBooking.getAccessPin()).isEqualTo("encrypted-pin-123456");
+        }
+
+        @Test
+        @DisplayName("Thông báo Web PIN: Booking chưa ACTIVE bị từ chối với BOOKING_NOT_CHECKED_IN")
+        void sendHandoverWebNotification_NotActive_ThrowsException() {
+            testBooking.setStatus(BookingStatus.CONFIRMED);
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.sendHandoverWebNotification(bookingId));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BOOKING_NOT_CHECKED_IN);
+            verify(notificationLogRepository, never()).save(any());
         }
     }
 }
