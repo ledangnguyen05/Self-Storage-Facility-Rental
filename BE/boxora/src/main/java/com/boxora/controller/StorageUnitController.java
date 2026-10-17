@@ -37,14 +37,14 @@ public class StorageUnitController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_CREATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     public ResponseEntity<ApiResponse<StorageUnitResponse>> createUnit(@Valid @RequestBody StorageUnitCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Storage unit created successfully", storageUnitService.createUnit(request)));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     public ResponseEntity<ApiResponse<StorageUnitResponse>> updateUnit(
             @PathVariable UUID id,
             @Valid @RequestBody StorageUnitUpdateRequest request
@@ -53,14 +53,14 @@ public class StorageUnitController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_DELETE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     public ResponseEntity<ApiResponse<Void>> deleteUnit(@PathVariable UUID id) {
         storageUnitService.deleteUnit(id);
         return ResponseEntity.ok(ApiResponse.success("Storage unit deleted successfully", null));
     }
 
     @PatchMapping("/{id}/toggle-maintenance")
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     public ResponseEntity<ApiResponse<StorageUnitResponse>> toggleMaintenance(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success("Unit maintenance toggled successfully", storageUnitService.toggleMaintenance(id)));
     }

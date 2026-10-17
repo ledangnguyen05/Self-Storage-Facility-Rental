@@ -25,6 +25,7 @@ public class BookingResponse {
     private String customerEmail;
     private UUID storageUnitId;
     private String unitCode;
+    private UUID facilityId;
     private String facilityName;
     private String floorLevel;
     private LocalDate startDate;

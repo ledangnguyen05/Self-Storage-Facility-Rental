@@ -113,8 +113,48 @@ public class HandoverController {
     // QUY TRÌNH CHECK-IN ĐỐI SOÁT 4 ĐIỀU KIỆN & NGHIỆM THU HIỆN TRƯỜNG
     // =========================================================================
 
+    @PostMapping(value = "/booking/{bookingId}/upload-document", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @Operation(summary = "Tải lên tệp hợp đồng giấy scan hoặc chứng từ chuyển khoản (PDF, JPG, JPEG, PNG, WEBP, tối đa 10MB)")
+    public ResponseEntity<ApiResponse<com.boxora.dto.response.FileUploadResponse>> uploadHandoverDocument(
+            @PathVariable UUID bookingId,
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam(value = "documentType", required = false, defaultValue = "PAPER_CONTRACT") String documentType) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Tải lên tài liệu thành công",
+                        handoverService.uploadHandoverDocument(bookingId, file, documentType)));
+    }
+
+    @GetMapping("/booking/{bookingId}/documents/view")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @Operation(summary = "Xem / tải tài liệu hợp đồng giấy hoặc chứng từ thanh toán có kiểm tra phân quyền theo cơ sở và chủ sở hữu")
+    public ResponseEntity<org.springframework.core.io.Resource> viewAuthorizedDocument(
+            @PathVariable UUID bookingId,
+            @RequestParam("fileUrl") String fileUrl) {
+        java.nio.file.Path path = handoverService.getAuthorizedHandoverDocumentPath(bookingId, fileUrl);
+        try {
+            org.springframework.core.io.Resource resource = new org.springframework.core.io.UrlResource(path.toUri());
+            String filename = path.getFileName().toString().toLowerCase();
+            org.springframework.http.MediaType contentType = org.springframework.http.MediaType.APPLICATION_OCTET_STREAM;
+            if (filename.endsWith(".pdf")) {
+                contentType = org.springframework.http.MediaType.APPLICATION_PDF;
+            } else if (filename.endsWith(".jpg") || filename.endsWith(".jpeg")) {
+                contentType = org.springframework.http.MediaType.IMAGE_JPEG;
+            } else if (filename.endsWith(".png")) {
+                contentType = org.springframework.http.MediaType.IMAGE_PNG;
+            } else if (filename.endsWith(".webp")) {
+                contentType = org.springframework.http.MediaType.parseMediaType("image/webp");
+            }
+            return ResponseEntity.ok()
+                    .contentType(contentType)
+                    .body(resource);
+        } catch (java.net.MalformedURLException e) {
+            throw new com.boxora.exception.AppException(com.boxora.exception.ErrorCode.RESOURCE_NOT_FOUND);
+        }
+    }
+
     @PostMapping("/contracts/paper")
-    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Điều kiện 1: Khởi tạo hoặc tải lên hồ sơ scan hợp đồng giấy tại kho")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.RentalContractResponse>> createOrUploadPaperContract(
             @Valid @RequestBody com.boxora.dto.request.PaperContractCreateRequest request) {
@@ -124,7 +164,7 @@ public class HandoverController {
     }
 
     @PostMapping("/contracts/paper/verify")
-    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Điều kiện 1: Nhân viên đối chiếu chữ ký và xác nhận hợp đồng giấy")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.RentalContractResponse>> verifyPaperContract(
             @RequestParam UUID bookingId,
@@ -134,7 +174,7 @@ public class HandoverController {
     }
 
     @PostMapping("/payments/manual")
-    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Điều kiện 2 & 3: Ghi nhận thu tiền mặt (phiếu thu) hoặc thông tin chuyển khoản ngân hàng")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.PaymentResponse>> recordManualPayment(
             @Valid @RequestBody com.boxora.dto.request.ManualPaymentRecordRequest request) {
@@ -144,7 +184,7 @@ public class HandoverController {
     }
 
     @PostMapping("/payments/{paymentId}/confirm-bank-transfer")
-    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Điều kiện 2 & 3: Nhân viên có thẩm quyền xác nhận tiền chuyển khoản đã vào tài khoản")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.PaymentResponse>> confirmBankTransferPayment(
             @PathVariable UUID paymentId,
@@ -154,7 +194,7 @@ public class HandoverController {
     }
 
     @PostMapping("/booking/{bookingId}/verify-identity")
-    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Điều kiện 4: Nhân viên tại quầy xác nhận đã đối chiếu giấy tờ tùy thân CCCD/Passport gốc")
     public ResponseEntity<ApiResponse<HandoverPrerequisitesResponse>> verifyIdentity(
             @PathVariable UUID bookingId,
@@ -165,7 +205,7 @@ public class HandoverController {
     }
 
     @PostMapping("/booking/{bookingId}/complete-step-1")
-    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Hoàn tất Bước 1: Kiểm tra đủ 4 điều kiện đối soát và chuyển sang Bước 2 Nghiệm thu hiện trường")
     public ResponseEntity<ApiResponse<Void>> completeCheckInStep1(@PathVariable UUID bookingId) {
         handoverService.completeCheckInStep1(bookingId);
@@ -173,7 +213,7 @@ public class HandoverController {
     }
 
     @PostMapping("/check-in-inspection")
-    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
     @Operation(summary = "Bước 2: Lưu biên bản nghiệm thu 5 tiêu chuẩn hiện trường và ảnh kiểm định")
     public ResponseEntity<ApiResponse<HandoverResponse>> recordCheckInInspection(
             @Valid @RequestBody com.boxora.dto.request.CheckInInspectionRequest request) {
@@ -181,4 +221,3 @@ public class HandoverController {
                 handoverService.recordCheckInInspection(request)));
     }
 }
-

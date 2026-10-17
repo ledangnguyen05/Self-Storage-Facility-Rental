@@ -4,7 +4,7 @@ import QRCode from 'qrcode'
 import { Booking, User } from '../../types'
 import { useAuth } from '../../context/AuthContext'
 import { bookingService } from '../../services/bookingService'
-import { paymentService } from '../../services/paymentService'
+import { paymentService, PaymentItem } from '../../services/paymentService'
 import { pricingService, PricingQuoteResponse } from '../../services/pricingService'
 
 export interface BookingCheckoutUnit {
@@ -23,6 +23,7 @@ interface BookingCheckoutModalProps {
   user: User
   onClose: () => void
   existingBooking?: Booking
+  existingPayments?: PaymentItem[]
 }
 
 type CheckoutStep = 1 | 2 | 3
@@ -40,7 +41,7 @@ const getToday = () => {
   return date.toISOString().slice(0, 10)
 }
 
-export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit, user, onClose, existingBooking }) => {
+export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit, user, onClose, existingBooking, existingPayments = [] }) => {
   const { updateProfile } = useAuth()
   const isExistingUnpaidBooking = Boolean(
     existingBooking && (existingBooking.status === 'PENDING_PAYMENT' || (existingBooking.status === 'CONFIRMED' && existingBooking.paymentStatus !== 'PAID'))
@@ -56,6 +57,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
   )
   const [booking, setBooking] = useState<Booking | null>(existingBooking || null)
   const [paymentUrl, setPaymentUrl] = useState('')
+  const [authoritativePaymentAmount, setAuthoritativePaymentAmount] = useState<number | null>(null)
   const [qrCode, setQrCode] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<'vnpay' | 'qr'>('qr')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -111,7 +113,98 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
     ? booking.totalRentalFee / booking.rentalMonths
     : unit.monthlyPrice)
   const depositAmount = serverQuote?.depositAmount ?? booking?.depositAmount ?? unit.depositAmount ?? unit.monthlyPrice
-  const amountDue = serverQuote?.initialPaymentAmount ?? booking?.initialPaymentAmount ?? (monthlyPrice + depositAmount)
+  const totalInitialObligation = serverQuote?.initialPaymentAmount ?? booking?.initialPaymentAmount ?? (monthlyPrice + depositAmount)
+
+  const allBookingPayments = booking
+    ? existingPayments.filter(
+        p =>
+          ((p.bookingId && (p.bookingId === booking.id || p.bookingId === booking.bookingCode)) ||
+            (p.bookingCode && (p.bookingCode === booking.bookingCode || p.bookingCode === booking.id))) &&
+          (p.paymentType === 'DEPOSIT' || p.paymentType === 'RENTAL_FEE' || p.paymentType === 'BOOKING_PAYMENT') &&
+          Number(p.amount || 0) > 0
+      )
+    : []
+
+  const confirmedBookingPayments = allBookingPayments.filter(
+    p => p.status === 'PAID' || p.status === 'SUCCESS'
+  )
+  // Only confirmed REFUNDED transactions are deducted from held money; REFUND_PENDING is NOT deducted
+  const refundedBookingPayments = allBookingPayments.filter(
+    p => p.status === 'REFUNDED'
+  )
+  const hasRefundedOrRefundPendingDepositTx = allBookingPayments.some(
+    p =>
+      (p.paymentType === 'DEPOSIT' || p.paymentType === 'BOOKING_PAYMENT') &&
+      (p.status === 'REFUNDED' || p.status === 'REFUND_PENDING')
+  )
+
+  const paidDepositTx = confirmedBookingPayments
+    .filter(p => p.paymentType === 'DEPOSIT')
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+  const paidRentTx = confirmedBookingPayments
+    .filter(p => p.paymentType === 'RENTAL_FEE')
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+  const paidBookingTx = confirmedBookingPayments
+    .filter(p => p.paymentType === 'BOOKING_PAYMENT')
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+
+  const refundedDepositTx = refundedBookingPayments
+    .filter(p => p.paymentType === 'DEPOSIT')
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+  const refundedRentTx = refundedBookingPayments
+    .filter(p => p.paymentType === 'RENTAL_FEE')
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+  const refundedBookingTx = refundedBookingPayments
+    .filter(p => p.paymentType === 'BOOKING_PAYMENT')
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+
+  const isBookingCancelledOrRefunded =
+    booking?.status === 'CANCELLED' || String(booking?.paymentStatus || '').toUpperCase() === 'REFUNDED'
+  const canFallbackToBookingDepositField =
+    !isBookingCancelledOrRefunded &&
+    booking?.status !== 'PENDING_PAYMENT' &&
+    !hasRefundedOrRefundPendingDepositTx &&
+    String(booking?.paymentStatus || '').toUpperCase() !== 'UNPAID'
+
+  const baseDepositPaid =
+    paidDepositTx === 0 && paidBookingTx === 0
+      ? canFallbackToBookingDepositField
+        ? Math.max(0, Number(booking?.depositPaid || 0))
+        : 0
+      : paidDepositTx
+  const unpaidDepositBeforeBookingTx = Math.max(0, depositAmount - baseDepositPaid)
+  const allocatedBookingToDeposit = Math.min(paidBookingTx, unpaidDepositBeforeBookingTx)
+  const remainingBookingTxForRent = Math.max(0, paidBookingTx - allocatedBookingToDeposit)
+
+  const grossDepositPaid = isBookingCancelledOrRefunded ? 0 : baseDepositPaid + allocatedBookingToDeposit
+  const grossRentPaid = isBookingCancelledOrRefunded ? 0 : paidRentTx + remainingBookingTxForRent
+
+  const deductDeposit = Math.min(refundedDepositTx, grossDepositPaid)
+  const excessDepositRefund = Math.max(0, refundedDepositTx - deductDeposit)
+  const afterDepositRefund = Math.max(0, grossDepositPaid - deductDeposit)
+  const afterRentRefund = Math.max(0, grossRentPaid - refundedRentTx - excessDepositRefund)
+
+  const deductBookingFromDeposit = Math.min(refundedBookingTx, afterDepositRefund)
+  const remBookingRefund = Math.max(0, refundedBookingTx - deductBookingFromDeposit)
+
+  const alreadyPaidDeposit = Math.max(0, afterDepositRefund - deductBookingFromDeposit)
+  const alreadyPaidRent = Math.max(0, afterRentRefund - remBookingRefund)
+  const alreadyPaidTotal = alreadyPaidDeposit + alreadyPaidRent
+
+  const depositRemaining = Math.max(0, depositAmount - alreadyPaidDeposit)
+  const rentRemaining = Math.max(0, monthlyPrice - alreadyPaidRent)
+  const calculatedRemainingDue = alreadyPaidTotal > 0 ? depositRemaining + rentRemaining : totalInitialObligation
+  const amountDue = authoritativePaymentAmount ?? (calculatedRemainingDue > 0 ? calculatedRemainingDue : totalInitialObligation)
+
+  const effectivePaymentType: 'BOOKING_PAYMENT' | 'RENTAL_FEE' | 'DEPOSIT' =
+    alreadyPaidTotal > 0
+      ? depositRemaining === 0 && rentRemaining > 0
+        ? 'RENTAL_FEE'
+        : rentRemaining === 0 && depositRemaining > 0
+          ? 'DEPOSIT'
+          : 'BOOKING_PAYMENT'
+      : 'BOOKING_PAYMENT'
+
   const isExpired = secondsRemaining !== null && secondsRemaining <= 0
   const formattedCountdown = secondsRemaining === null
     ? ''
@@ -159,10 +252,13 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
     try {
       const payment = await paymentService.createVNPayPayment({
         bookingId: booking.id,
-        paymentType: 'BOOKING_PAYMENT',
-        amount: booking.initialPaymentAmount || amountDue,
+        paymentType: effectivePaymentType,
+        amount: amountDue,
         orderInfo: `Thanh toan booking ${booking.bookingCode}`,
       })
+      if (payment.amount && Number(payment.amount) > 0) {
+        setAuthoritativePaymentAmount(Number(payment.amount))
+      }
       setPaymentUrl(payment.paymentUrl)
     } catch (error) {
       setErrorMessage(getErrorMessage(error))
@@ -386,15 +482,37 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                   <div className="space-y-4 text-center">
                     <span className="material-symbols-outlined text-5xl text-emerald-600">task_alt</span>
                     <h3 className="text-base font-bold text-slate-900">Đơn thuê đã được khởi tạo: #{booking?.bookingCode}</h3>
-                    <p className="text-sm text-slate-600">Bạn có thể tạo liên kết thanh toán cho tiền cọc và tiền thuê đợt đầu.</p>
+                    <p className="text-sm text-slate-600">
+                      {alreadyPaidTotal > 0
+                        ? 'Hệ thống đã đối soát khoản tiền bạn đã nộp và chỉ tạo liên kết cho phần nghĩa vụ còn thiếu.'
+                        : 'Bạn có thể tạo liên kết thanh toán cho tiền cọc và tiền thuê đợt đầu.'}
+                    </p>
                     {secondsRemaining !== null && <p className={`rounded-lg p-3 text-xs font-semibold ${isExpired ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-800'}`}>{isExpired ? 'Thời hạn thanh toán đã hết.' : `Thời hạn giữ kho còn ${formattedCountdown}.`}</p>}
-                    <div className="text-lg font-bold text-cyan-800">Thanh toán ban đầu: {formatVnd(amountDue)}</div>
+                    {alreadyPaidTotal > 0 && (
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-left space-y-1.5">
+                        <div className="flex justify-between text-slate-600">
+                          <span>Tổng nghĩa vụ đợt đầu (cọc + thuê kỳ đầu):</span>
+                          <strong>{formatVnd(totalInitialObligation)}</strong>
+                        </div>
+                        <div className="flex justify-between text-emerald-700">
+                          <span>Đã thanh toán hợp lệ (đã xác nhận):</span>
+                          <strong>-{formatVnd(alreadyPaidTotal)}</strong>
+                        </div>
+                        <div className="flex justify-between border-t border-slate-200 pt-1.5 font-bold text-cyan-800">
+                          <span>Số tiền còn cần thanh toán:</span>
+                          <span>{formatVnd(amountDue)}</span>
+                        </div>
+                      </div>
+                    )}
+                    <div className="text-lg font-bold text-cyan-800">
+                      {alreadyPaidTotal > 0 ? `Cần thanh toán bổ sung: ${formatVnd(amountDue)}` : `Thanh toán ban đầu: ${formatVnd(amountDue)}`}
+                    </div>
                     <button type="button" disabled={isSubmitting || isExpired} onClick={handleCreatePayment} className="w-full rounded-lg bg-cyan-700 py-3 text-sm font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? 'Đang tạo liên kết...' : 'Thanh toán và ký hợp đồng trực tuyến ngay ->'}</button>
                   </div>
                 ) : (
                   <>
                     <div className={`flex items-center justify-between rounded-xl p-3 text-xs font-semibold ${isExpired ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-800'}`}>
-                      <span>{isExpired ? 'Đã hết thời hạn giữ kho' : `Thời hạn giữ kho còn ${formattedCountdown}`}</span><span>{formatVnd(amountDue)}</span>
+                      <span>{isExpired ? 'Đã hết thời hạn giữ kho' : secondsRemaining !== null ? `Thời hạn giữ kho còn ${formattedCountdown}` : 'Số tiền cần thanh toán'}</span><span>{formatVnd(amountDue)}</span>
                     </div>
                     <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1">
                       <button type="button" onClick={() => setPaymentMethod('qr')} className={`rounded-md py-2 text-xs font-bold ${paymentMethod === 'qr' ? 'bg-white text-cyan-800 shadow-sm' : 'text-slate-500'}`}>Quét mã QR</button>

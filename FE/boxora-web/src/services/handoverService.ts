@@ -237,4 +237,34 @@ export const handoverService = {
     const response = await api.post(`/api/v1/handovers/booking/${bookingId}/send-web-notification`)
     return response.data?.data
   },
+
+  async uploadHandoverDocument(
+    bookingId: string,
+    file: File,
+    documentType: 'PAPER_CONTRACT' | 'PAYMENT_PROOF' | 'CHECKIN_EVIDENCE' = 'PAPER_CONTRACT'
+  ) {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('documentType', documentType)
+    const response = await api.post(`/api/v1/handovers/booking/${bookingId}/upload-document`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    return response.data?.data as {
+      fileName: string
+      fileUrl: string
+      fileType: string
+      fileSize: number
+      uploadedAt: string
+    }
+  },
+
+  async viewAuthorizedDocument(bookingId: string, fileUrl: string): Promise<string> {
+    const response = await api.get(`/api/v1/handovers/booking/${bookingId}/documents/view`, {
+      params: { fileUrl },
+      responseType: 'blob'
+    })
+    const contentType = (response.headers['content-type'] as string) || 'application/pdf'
+    const blob = new Blob([response.data], { type: contentType })
+    return URL.createObjectURL(blob)
+  },
 }

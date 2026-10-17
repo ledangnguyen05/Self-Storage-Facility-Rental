@@ -29,9 +29,13 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
 
     Optional<RentalContract> findByBookingId(UUID bookingId);
 
+    Optional<RentalContract> findByContractCodeIgnoreCase(String contractCode);
+
     List<RentalContract> findByStatus(RentalContractStatus status);
 
     boolean existsByUnit_Id(UUID unitId);
+
+    boolean existsByUnit_IdAndStatusIn(UUID unitId, java.util.Collection<RentalContractStatus> statuses);
 
     @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "unit", "facility", "booking"})
     Optional<RentalContract> findFirstByUnit_IdOrderByCreatedAtDesc(UUID unitId);
