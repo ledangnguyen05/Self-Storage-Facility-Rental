@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   supportTicketService,
   SupportTicketRecord,
@@ -19,19 +19,47 @@ export const IncidentTicketsPage: React.FC = () => {
   const isBusinessManager = effectiveRole === 'BUSINESS_MANAGER'
   const isAdmin = effectiveRole === 'ADMIN'
   const isReadOnly = isBusinessManager || isAdmin
-  const canSelectAllFacilities = isAdmin || isBusinessManager || isFacilityManager
+
+  // Task 3: Strictly enforce facility scope.
+  // - Staff is always confined to assigned facility.
+  // - Facility Manager assigned to a facility is strictly confined to that facility.
+  // - "Tất cả cơ sở" option is only available to Admin & BOM (Business Operations Manager).
+  const isFacilityScoped = isStaff || (isFacilityManager && Boolean(user?.facilityId))
+  const canSelectAllFacilities = !isFacilityScoped && (isAdmin || isBusinessManager)
 
   // Tickets & data
   const [tickets, setTickets] = useState<SupportTicketRecord[]>([])
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [stats, setStats] = useState<SupportTicketStats | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(true)
+  const [fetchError, setFetchError] = useState<string | null>(null)
+
+  // Accessible facilities according to role permission
+  const accessibleFacilities = useMemo(() => {
+    if (isFacilityScoped && user?.facilityId) {
+      const matched = facilities.filter(f => f.id === user.facilityId)
+      if (matched.length > 0) return matched
+      if (user?.facilityName) {
+        return [{
+          id: user.facilityId,
+          name: user.facilityName,
+          code: user.facilityCode || 'FAC',
+          address: '',
+          city: '',
+          contactPhone: '',
+          totalUnits: 0,
+          availableUnits: 0,
+        } as Facility]
+      }
+    }
+    return facilities
+  }, [facilities, isFacilityScoped, user?.facilityId, user?.facilityName, user?.facilityCode])
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedFacilityFilter, setSelectedFacilityFilter] = useState<string>(() => {
-    if (isStaff && user?.facilityId) return user.facilityId
-    return 'ALL'
+    if (isFacilityScoped && user?.facilityId) return user.facilityId
+    return canSelectAllFacilities ? 'ALL' : (user?.facilityId || 'ALL')
   })
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL')
   const [priorityFilter, setPriorityFilter] = useState<'ALL' | 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'>('ALL')
@@ -93,12 +121,21 @@ export const IncidentTicketsPage: React.FC = () => {
   const [isSubmittingClose, setIsSubmittingClose] = useState(false)
   const [closeTicketError, setCloseTicketError] = useState<string | null>(null)
 
-  const fetchTicketsAndData = async () => {
+  const fetchTicketsAndData = useCallback(async (facilityIdOverride?: string) => {
     setIsLoading(true)
+    setFetchError(null)
     try {
+      const activeFilter = facilityIdOverride !== undefined ? facilityIdOverride : selectedFacilityFilter
+      let effectiveFacilityId: string | undefined = undefined
+      if (isFacilityScoped && user?.facilityId) {
+        effectiveFacilityId = user.facilityId
+      } else if (activeFilter && activeFilter !== 'ALL') {
+        effectiveFacilityId = activeFilter
+      }
+
       const [queueRes, statsRes, facRes] = await Promise.allSettled([
-        supportTicketService.getQueue(),
-        supportTicketService.getStats(),
+        supportTicketService.getQueue({ facilityId: effectiveFacilityId }),
+        supportTicketService.getStats(effectiveFacilityId),
         facilityService.getFacilities()
       ])
 
@@ -106,6 +143,10 @@ export const IncidentTicketsPage: React.FC = () => {
         setTickets(queueRes.value)
       } else {
         setTickets([])
+        if (queueRes.status === 'rejected') {
+          const err: any = queueRes.reason
+          setFetchError(err?.response?.data?.message || err?.message || 'Không thể tải danh sách sự cố')
+        }
       }
 
       if (statsRes.status === 'fulfilled') {
@@ -115,28 +156,41 @@ export const IncidentTicketsPage: React.FC = () => {
       if (facRes.status === 'fulfilled' && facRes.value?.content) {
         setFacilities(facRes.value.content)
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Failed to load tickets:', err)
+      setFetchError(err?.response?.data?.message || err?.message || 'Lỗi khi tải dữ liệu sự cố')
+      setTickets([])
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [isFacilityScoped, user?.facilityId, selectedFacilityFilter])
 
+  // Initial load and reload whenever selected facility filter changes
   useEffect(() => {
-    fetchTicketsAndData()
-  }, [])
+    fetchTicketsAndData(selectedFacilityFilter)
+  }, [selectedFacilityFilter, fetchTicketsAndData])
 
   // Reset pagination on filter change
   useEffect(() => {
     setCurrentPage(1)
   }, [searchQuery, selectedFacilityFilter, categoryFilter, priorityFilter, statusFilter, overdueOnly, pageSize])
 
-  // Enforce staff facility scope
+  // Enforce facility scope and synchronization
   useEffect(() => {
-    if (isStaff && user?.facilityId && selectedFacilityFilter !== user.facilityId) {
-      setSelectedFacilityFilter(user.facilityId)
+    if (isFacilityScoped && user?.facilityId) {
+      if (selectedFacilityFilter !== user.facilityId) {
+        setSelectedFacilityFilter(user.facilityId)
+      }
+    } else if (!canSelectAllFacilities && user?.facilityId) {
+      if (selectedFacilityFilter !== user.facilityId) {
+        setSelectedFacilityFilter(user.facilityId)
+      }
+    } else if (canSelectAllFacilities && selectedFacilityFilter !== 'ALL') {
+      if (facilities.length > 0 && !facilities.some(f => f.id === selectedFacilityFilter)) {
+        setSelectedFacilityFilter('ALL')
+      }
     }
-  }, [isStaff, user?.facilityId, selectedFacilityFilter])
+  }, [isFacilityScoped, canSelectAllFacilities, user?.facilityId, facilities, selectedFacilityFilter])
 
   // Handle Take Ticket (Staff / FM)
   const handleTakeTicket = async (ticket: SupportTicketRecord) => {
@@ -347,8 +401,8 @@ export const IncidentTicketsPage: React.FC = () => {
   // Filtered Tickets
   const filteredTickets = useMemo(() => {
     return tickets.filter((t) => {
-      // Facility scope enforcement (Staff can strictly only access assigned facility)
-      if (isStaff && user?.facilityId && t.facilityId !== user.facilityId) return false
+      // Facility scope enforcement (Staff & Scoped Manager can strictly only access assigned facility)
+      if (isFacilityScoped && user?.facilityId && t.facilityId !== user.facilityId) return false
 
       // Facility filter
       if (selectedFacilityFilter !== 'ALL' && t.facilityId !== selectedFacilityFilter) return false
@@ -491,7 +545,7 @@ export const IncidentTicketsPage: React.FC = () => {
         <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
-            onClick={fetchTicketsAndData}
+            onClick={() => fetchTicketsAndData()}
             disabled={isLoading}
             className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold border border-slate-200 flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
           >
@@ -614,21 +668,23 @@ export const IncidentTicketsPage: React.FC = () => {
               />
             </div>
 
-            {/* Facility filter (Task 3: 'Tất cả cơ sở' is restricted to Admin & Manager, Staff only sees their facility) */}
+            {/* Facility filter (Task 3: 'Tất cả cơ sở' is restricted to Admin & BOM, Scoped roles locked to assigned facility) */}
             <select
               value={selectedFacilityFilter}
-              onChange={(e) => setSelectedFacilityFilter(e.target.value)}
-              disabled={isStaff}
+              onChange={(e) => {
+                if (isFacilityScoped) return
+                setSelectedFacilityFilter(e.target.value)
+              }}
+              disabled={isFacilityScoped}
+              title={isFacilityScoped ? 'Bạn đang xem dữ liệu cơ sở được phân công' : 'Chọn cơ sở cần lọc'}
               className={`px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none ${
-                isStaff ? 'opacity-80 cursor-not-allowed bg-slate-100' : 'cursor-pointer'
+                isFacilityScoped ? 'opacity-80 cursor-not-allowed bg-slate-100' : 'cursor-pointer'
               }`}
             >
               {canSelectAllFacilities && <option value="ALL">Tất cả cơ sở</option>}
-              {facilities
-                .filter(f => !isStaff || f.id === user?.facilityId)
-                .map(f => (
-                  <option key={f.id} value={f.id}>{f.name}</option>
-                ))}
+              {accessibleFacilities.map(f => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
             </select>
 
             {/* Category filter */}
@@ -703,6 +759,23 @@ export const IncidentTicketsPage: React.FC = () => {
             </select>
           </div>
         </div>
+
+        {/* Error Banner */}
+        {fetchError && (
+          <div role="alert" className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-[18px] text-rose-600">error</span>
+              <span>{fetchError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => fetchTicketsAndData(selectedFacilityFilter)}
+              className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+            >
+              Thử lại
+            </button>
+          </div>
+        )}
 
         {/* Tickets Table */}
         <div className="overflow-x-auto rounded-xl border border-slate-200">

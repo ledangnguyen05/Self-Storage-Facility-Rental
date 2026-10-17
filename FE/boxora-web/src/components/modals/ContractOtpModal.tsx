@@ -115,7 +115,7 @@ export function ContractOtpModal({ contract, onClose, onOpenSimulationSign }: Co
           <p className="font-semibold">Mã xác thực gửi tới email</p>
           <p className="mt-1 font-mono text-cyan-800">{maskEmail(contract.customerEmail)}</p>
           <p className="mt-2 text-xs leading-relaxed text-slate-600">
-            Mã OTP có hiệu lực 5 phút. Sau khi xác thực, bạn sẽ tiếp tục ký điện tử trên DocuSeal.
+            Mã OTP có hiệu lực 5 phút. Sau khi xác thực, bạn sẽ tiếp tục ký hợp đồng điện tử trực tuyến.
           </p>
         </div>
 

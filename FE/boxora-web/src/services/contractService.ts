@@ -61,6 +61,15 @@ export const contractService = {
     return response.data?.data?.signingUrl as string
   },
 
+  async getContractByBookingId(bookingId: string): Promise<RentalContract | null> {
+    try {
+      const response = await api.get(`/api/v1/contracts/booking/${bookingId}`)
+      return response.data?.data as RentalContract
+    } catch {
+      return null
+    }
+  },
+
   async sendForSignature(contractId: string) {
     const response = await api.post(`/api/v1/contracts/${contractId}/send-for-signature`)
     return response.data?.data?.signingUrl as string

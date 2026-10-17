@@ -187,7 +187,7 @@ export const BookingApprovalModal: React.FC<BookingApprovalModalProps> = ({ isOp
                           : 'bg-amber-50 text-amber-800 border border-amber-200'
                       }`}>
                         <span className="material-symbols-outlined text-[13px]">{isOnline ? 'draw' : 'storefront'}</span>
-                        <span>{isOnline ? 'Ký Online DocuSeal' : 'Ký Trực Tiếp Tại Kho'}</span>
+                        <span>{isOnline ? 'Ký Điện Tử Trực Tuyến' : 'Ký Trực Tiếp Tại Kho'}</span>
                       </span>
                     </div>
 
@@ -283,12 +283,12 @@ export const BookingApprovalModal: React.FC<BookingApprovalModalProps> = ({ isOp
                     <strong>
                       {approvingBooking.signingMethod === 'IN_PERSON'
                         ? 'Khách hàng chọn Ký Trực Tiếp Tại Kho'
-                        : 'Khách hàng chọn Ký Online DocuSeal'}
+                        : 'Khách hàng chọn Ký Điện Tử Trực Tuyến'}
                     </strong>
                     <p className="text-[11px] mt-0.5 opacity-90">
                       {approvingBooking.signingMethod === 'IN_PERSON'
                         ? 'Nhân viên được phân công sẽ đón khách, hướng dẫn kiểm tra kho thực tế và chuẩn bị biên bản check-in.'
-                        : 'Sau khi duyệt, khách hàng sẽ thanh toán cọc qua VNPay Sandbox và nhận link ký số DocuSeal.'}
+                        : 'Sau khi duyệt, khách hàng sẽ thanh toán cọc qua cổng thanh toán trực tuyến và hoàn tất ký hợp đồng điện tử.'}
                     </p>
                   </div>
                 </div>

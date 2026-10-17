@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { useOutletContext, Link } from 'react-router-dom'
+import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { storageUnitService } from '../../services/storageUnitService'
 import { facilityService } from '../../services/facilityService'
 import { facilityPolicyService } from '../../services/facilityPolicyService'
@@ -11,7 +11,6 @@ import { useAuth } from '../../context/AuthContext'
 import { Facility, FacilityPolicy, StorageUnit, OverdueDebtItem, Booking } from '../../types'
 import { parseFacilityLayoutConfig } from '../../utils/facilityLayout'
 import { IoTTelemetryModal } from './modals/IoTTelemetryModal'
-import { FacilitySurveyModal } from './modals/FacilitySurveyModal'
 import { BookingDetailReadOnlyModal } from './modals/BookingDetailReadOnlyModal'
 import { DoorAccessHistoryModal } from './modals/DoorAccessHistoryModal'
 import { NoticeDispatcherModal } from './modals/NoticeDispatcherModal'
@@ -39,7 +38,7 @@ interface InspectedUnit {
   facilityName?: string
 }
 
-type ManagerDashboardTab = 'overview' | 'handovers-returns' | 'tickets' | 'performance'
+type ManagerDashboardTab = 'overview' | 'handovers-returns' | 'tickets' | 'performance' | 'policy'
 
 export const ManagerDashboard: React.FC = () => {
   const { t } = useLanguage()
@@ -54,7 +53,33 @@ export const ManagerDashboard: React.FC = () => {
   const assignedFacilityId = user?.facilityId
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<ManagerDashboardTab>('overview')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab') as ManagerDashboardTab | null
+  const [activeTab, setActiveTabState] = useState<ManagerDashboardTab>(
+    tabParam === 'overview' || tabParam === 'handovers-returns' || tabParam === 'tickets' || tabParam === 'performance' || tabParam === 'policy'
+      ? tabParam
+      : 'overview'
+  )
+
+  const setActiveTab = (tab: ManagerDashboardTab) => {
+    setActiveTabState(tab)
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (tab === 'overview') {
+        next.delete('tab')
+      } else {
+        next.set('tab', tab)
+      }
+      return next
+    }, { replace: true })
+  }
+
+  useEffect(() => {
+    const currentTab = searchParams.get('tab') as ManagerDashboardTab | null
+    if (currentTab && (currentTab === 'overview' || currentTab === 'handovers-returns' || currentTab === 'tickets' || currentTab === 'performance' || currentTab === 'policy')) {
+      setActiveTabState(currentTab)
+    }
+  }, [searchParams])
 
   const [facilities, setFacilities] = useState<Facility[]>(contextFacilities || [])
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>(
@@ -82,7 +107,6 @@ export const ManagerDashboard: React.FC = () => {
 
   // Modals state
   const [showIoTModal, setShowIoTModal] = useState(false)
-  const [showSurveyModal, setShowSurveyModal] = useState(false)
   const [showCreateUnitModal, setShowCreateUnitModal] = useState(false)
   const [showReadOnlyBookingModal, setShowReadOnlyBookingModal] = useState(false)
   const [readOnlyTargetBookingId, setReadOnlyTargetBookingId] = useState<string | undefined>(undefined)
@@ -808,6 +832,19 @@ export const ManagerDashboard: React.FC = () => {
           <span className="material-symbols-outlined text-[18px]">trending_up</span>
           <span>4. Hiệu Suất &amp; Ngoại Lệ</span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('policy')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'policy'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">policy</span>
+          <span>5. Chính Sách Vận Hành Cơ Sở</span>
+        </button>
       </div>
 
       {/* ============================================================== */}
@@ -1379,7 +1416,7 @@ export const ManagerDashboard: React.FC = () => {
         <section className="flex flex-col gap-6">
           
           {/* Facility Performance Overview (Summary 6) */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             
             <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs">
               <span className="text-[11px] uppercase font-bold text-slate-500 font-mono block">Tỷ Lệ Lấp Đầy Cơ Sở</span>
@@ -1392,37 +1429,20 @@ export const ManagerDashboard: React.FC = () => {
               </div>
             </div>
 
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs">
-              <span className="text-[11px] uppercase font-bold text-slate-500 font-mono block">Hạ Tầng Mạng IoT LoRaWAN</span>
+            <div 
+              onClick={() => setShowIoTModal(true)}
+              className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs cursor-pointer hover:border-slate-300 transition"
+              title="Xem thông số hạ tầng vi khí hậu & telemetry IoT"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] uppercase font-bold text-slate-500 font-mono block">Hạ Tầng Mạng IoT LoRaWAN</span>
+                <span className="material-symbols-outlined text-slate-400 text-[18px]">sensors</span>
+              </div>
               <div className="mt-3 flex items-baseline gap-1">
                 <span className="text-3xl font-extrabold font-mono text-emerald-600 tabular-nums">99.8%</span>
                 <span className="text-xs text-slate-500">uptime</span>
               </div>
               <span className="text-xs text-emerald-700 font-semibold mt-2 block">Ping: 14ms • 0 khóa ngoại tuyến</span>
-            </div>
-
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
-              <div>
-                <span className="text-[11px] uppercase font-bold text-slate-500 font-mono block">Kiểm Định An Toàn PCCC</span>
-                <p className="text-xs text-slate-700 font-bold mt-1">Đạt chứng nhận an toàn định kỳ</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Khảo sát gần nhất: Tháng này</p>
-              </div>
-              <div className="flex gap-2 mt-3">
-                <button
-                  type="button"
-                  onClick={() => setShowIoTModal(true)}
-                  className="flex-1 py-2 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold transition cursor-pointer"
-                >
-                  Trạm IoT
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowSurveyModal(true)}
-                  className="flex-1 py-2 px-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold transition cursor-pointer shadow-xs"
-                >
-                  Khảo sát
-                </button>
-              </div>
             </div>
 
           </div>
@@ -1439,7 +1459,7 @@ export const ManagerDashboard: React.FC = () => {
               <span className="text-xs text-slate-500">Chỉ dành cho Quản lý cơ sở / BOM</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 max-w-2xl">
               
               {/* Exception 1: Asset Sealing & Delinquency */}
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
@@ -1462,33 +1482,145 @@ export const ManagerDashboard: React.FC = () => {
                 </Link>
               </div>
 
-              {/* Exception 2: Facility Operating Policy */}
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-slate-900 text-xs">Chính Sách Vận Hành Cơ Sở</span>
-                    <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
-                      hasPolicyException ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200 text-slate-700'
-                    }`}>
-                      {hasPolicyException ? 'Có quyền ngoại lệ' : 'Chỉ xem'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Xem các quy định về tỷ lệ cọc, ân hạn nợ, SLA hoàn cọc và áp dụng chính sách ngoại lệ chi nhánh.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsPolicyModalOpen(true)}
-                  className="mt-4 w-full py-2 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer"
-                >
-                  Xem Chi Tiết Chính Sách
-                </button>
-              </div>
-
             </div>
           </div>
 
+        </section>
+      )}
+
+      {/* ============================================================== */}
+      {/* TAB 5: CHÍNH SÁCH VẬN HÀNH CƠ SỞ */}
+      {/* ============================================================== */}
+      {activeTab === 'policy' && (
+        <section className="flex flex-col gap-6">
+          {/* Header Card */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[28px]">policy</span>
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="font-headline text-lg font-bold text-slate-900">
+                    Chính Sách Vận Hành Cơ Sở
+                  </h2>
+                  <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-800 text-xs font-bold border border-blue-200">
+                    {currentFacilityName}
+                  </span>
+                  <span className={`px-2.5 py-0.5 rounded-full font-mono text-[11px] font-bold ${
+                    hasPolicyException ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' : 'bg-slate-100 text-slate-700 border border-slate-200'
+                  }`}>
+                    {hasPolicyException ? 'Có quyền ngoại lệ' : 'Chỉ xem (Read-Only)'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Quy định tỷ lệ tiền cọc, thời gian thuê tối thiểu, ân hạn nợ, SLA hoàn cọc và quy chế niêm phong tại chi nhánh.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start md:self-center">
+              <button
+                type="button"
+                onClick={() => setIsPolicyModalOpen(true)}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px]">tune</span>
+                <span>{hasPolicyException ? 'Điều chỉnh ngoại lệ policy' : 'Xem chi tiết & bảng quy chuẩn'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Policy Detail Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Card 1: Tiền Cọc */}
+            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Tiền Cọc Đảm Bảo</span>
+                  <span className="material-symbols-outlined text-blue-600 text-[20px]">account_balance_wallet</span>
+                </div>
+                <div className="mt-3 flex items-baseline gap-1">
+                  <span className="text-3xl font-extrabold font-mono text-slate-900 tabular-nums">
+                    {facilityPolicy?.depositPercentage ?? facilityPolicy?.depositPercent ?? 100}%
+                  </span>
+                  <span className="text-xs text-slate-500">giá thuê</span>
+                </div>
+                <p className="text-xs text-slate-600 mt-2">
+                  Thuê tối thiểu: <strong className="text-slate-900">{facilityPolicy?.minimumRentalMonths ?? 1} tháng</strong>
+                </p>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
+                Mở gia hạn trước: {facilityPolicy?.renewalWindowDays ?? 3} ngày
+              </div>
+            </div>
+
+            {/* Card 2: Hoàn Cọc & Hủy Booking */}
+            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Chính Sách Hủy &amp; Hoàn</span>
+                  <span className="material-symbols-outlined text-emerald-600 text-[20px]">currency_exchange</span>
+                </div>
+                <div className="mt-3 flex items-baseline gap-1">
+                  <span className="text-3xl font-extrabold font-mono text-emerald-600 tabular-nums">
+                    {facilityPolicy?.cancellationFullRefundHours ?? 48}h
+                  </span>
+                  <span className="text-xs text-slate-500">hoàn 100%</span>
+                </div>
+                <p className="text-xs text-slate-600 mt-2">
+                  Hoàn {facilityPolicy?.cancellationPartialRefundPercent ?? 50}% nếu hủy trước <strong className="text-slate-900">{facilityPolicy?.cancellationPartialRefundHours ?? 24}h</strong>
+                </p>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
+                SLA hoàn tiền cọc: {facilityPolicy?.depositRefundSlaDays ?? 5} ngày
+              </div>
+            </div>
+
+            {/* Card 3: Nghiệm Thu Trả Kho */}
+            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Báo Trước Trả Kho</span>
+                  <span className="material-symbols-outlined text-amber-600 text-[20px]">assignment_return</span>
+                </div>
+                <div className="mt-3 flex items-baseline gap-1">
+                  <span className="text-3xl font-extrabold font-mono text-slate-900 tabular-nums">
+                    {facilityPolicy?.returnNoticeDays ?? 0}
+                  </span>
+                  <span className="text-xs text-slate-500">ngày</span>
+                </div>
+                <p className="text-xs text-slate-600 mt-2">
+                  Kiểm định hiện trường: <strong className="text-slate-900">100% đạt chuẩn</strong>
+                </p>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
+                Khấu trừ nếu hư hỏng chốt hoặc tồn đọng rác
+              </div>
+            </div>
+
+            {/* Card 4: Quá Hạn & Niêm Phong */}
+            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Xử Lý Quá Hạn Nợ</span>
+                  <span className="material-symbols-outlined text-rose-600 text-[20px]">gavel</span>
+                </div>
+                <div className="mt-3 flex items-baseline gap-1">
+                  <span className="text-3xl font-extrabold font-mono text-rose-600 tabular-nums">
+                    {facilityPolicy?.overdueGraceDays ?? 1}
+                  </span>
+                  <span className="text-xs text-slate-500">ngày ân hạn</span>
+                </div>
+                <p className="text-xs text-slate-600 mt-2">
+                  Phạt trễ: <strong className="text-rose-700">{(facilityPolicy?.dailyLateFee ?? 50000).toLocaleString('vi-VN')} đ/ngày</strong>
+                </p>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
+                Khóa PIN: {facilityPolicy?.overdueAccessDisableDays ?? 3} ngày • Niêm phong: {facilityPolicy?.overdueSealingDays ?? 7} ngày
+              </div>
+            </div>
+          </div>
         </section>
       )}
 
@@ -1502,14 +1634,6 @@ export const ManagerDashboard: React.FC = () => {
         onClose={() => setShowIoTModal(false)}
         facilityName={currentFacilityName}
         totalUnits={totalUnitsCount}
-      />
-
-      {/* 2. Facility Survey Modal */}
-      <FacilitySurveyModal
-        isOpen={showSurveyModal}
-        onClose={() => setShowSurveyModal(false)}
-        facilityName={currentFacilityName}
-        onSubmitSurvey={(code) => triggerAction(`Đã tạo và ký phiếu khảo sát kiểm định ${code} thành công!`)}
       />
 
       {/* 3. Create Storage Unit Modal */}

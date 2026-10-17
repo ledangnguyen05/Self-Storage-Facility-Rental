@@ -710,5 +710,27 @@ class BookingServiceTest {
                     () -> bookingService.getById(id)
             );
         }
+
+        @Test
+        @DisplayName("getById: Người chưa đăng nhập cố truy cập booking -> Bị từ chối UNAUTHORIZED (401)")
+        void getById_Unauthenticated_ThrowsUnauthorized() {
+            UUID id = UUID.randomUUID();
+            com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                    .bookingCode("BX-NOAUTH-01")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            booking.setId(id);
+
+            when(bookingRepository.findById(id)).thenReturn(Optional.of(booking));
+            when(requestContext.currentUserId()).thenReturn(null);
+
+            AppException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                    AppException.class,
+                    () -> bookingService.getById(id)
+            );
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.UNAUTHORIZED);
+        }
     }
 }

@@ -303,4 +303,54 @@ class PaymentServiceTest {
         assertThat(mockPayment.getStatus()).isEqualTo(PaymentStatus.REFUND_PENDING);
         assertThat(mockBooking.getStatus()).isEqualTo(BookingStatus.CANCELLED);
     }
+
+    @Test
+    @DisplayName("getByBookingId: Chủ sở hữu booking được phép xem lịch sử thanh toán thành công")
+    void getByBookingId_AuthorizedOwner_ReturnsPayments() {
+        com.boxora.entity.User customer = com.boxora.entity.User.builder().email("customer@boxora.vn").build();
+        customer.setId(UUID.randomUUID());
+        mockBooking.setCustomer(customer);
+
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(mockBooking));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(customer.getId());
+        when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(java.util.List.of(mockPayment));
+        when(paymentMapper.toResponse(mockPayment)).thenReturn(PaymentResponse.builder().id(paymentId).build());
+
+        java.util.List<PaymentResponse> results = paymentService.getByBookingId(bookingId);
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).getId()).isEqualTo(paymentId);
+    }
+
+    @Test
+    @DisplayName("getByBookingId: Khách hàng khác xem thanh toán của người khác -> Bị từ chối FORBIDDEN (403)")
+    void getByBookingId_UnauthorizedCustomer_ThrowsForbidden() {
+        com.boxora.entity.User customer = com.boxora.entity.User.builder().email("customer@boxora.vn").build();
+        customer.setId(UUID.randomUUID());
+        mockBooking.setCustomer(customer);
+
+        UUID attackerId = UUID.randomUUID();
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(mockBooking));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(attackerId);
+
+        assertThrows(AppException.class, () -> paymentService.getByBookingId(bookingId));
+    }
+
+    @Test
+    @DisplayName("getByBookingId: Nhân viên cơ sở khác xem thanh toán ngoài phạm vi -> Bị từ chối FACILITY_ACCESS_DENIED (403)")
+    void getByBookingId_OutOfScopeStaff_ThrowsFacilityAccessDenied() {
+        UUID facilityId = UUID.randomUUID();
+        com.boxora.entity.Facility facility = com.boxora.entity.Facility.builder().name("Chi nhánh A").build();
+        facility.setId(facilityId);
+        com.boxora.entity.StorageUnit unit = com.boxora.entity.StorageUnit.builder().facility(facility).build();
+        mockBooking.setStorageUnit(unit);
+
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(mockBooking));
+        when(facilityAccessGuard.isFacilityScoped()).thenReturn(true);
+        doThrow(new AppException(ErrorCode.FACILITY_ACCESS_DENIED)).when(facilityAccessGuard).checkFacilityAccess(facilityId);
+
+        assertThrows(AppException.class, () -> paymentService.getByBookingId(bookingId));
+    }
 }
