@@ -4,6 +4,8 @@ import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.StaffAssignmentCreateRequest;
 import com.boxora.dto.request.StaffAssignmentStatusUpdateRequest;
 import com.boxora.dto.request.StaffAssignmentUpdateRequest;
+import com.boxora.dto.request.StaffCheckInRequest;
+import com.boxora.dto.request.StaffCheckOutRequest;
 import com.boxora.dto.response.StaffAssignmentResponse;
 import com.boxora.entity.Facility;
 import com.boxora.entity.StaffAssignment;
@@ -95,12 +97,38 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             assignedBy = userRepository.findById(currentUserId).orElse(null);
         }
 
-        // 6. Tạo thực thể phân công ca
+        // 6. Xác định giờ bắt đầu / kết thúc ca (hỗ trợ ca qua đêm)
+        java.time.LocalTime startTime = request.getStartTime();
+        java.time.LocalTime endTime = request.getEndTime();
+        if (startTime == null || endTime == null) {
+            switch (request.getShift()) {
+                case MORNING -> {
+                    startTime = java.time.LocalTime.of(6, 0);
+                    endTime = java.time.LocalTime.of(14, 0);
+                }
+                case AFTERNOON -> {
+                    startTime = java.time.LocalTime.of(14, 0);
+                    endTime = java.time.LocalTime.of(22, 0);
+                }
+                case NIGHT -> {
+                    startTime = java.time.LocalTime.of(22, 0);
+                    endTime = java.time.LocalTime.of(6, 0);
+                }
+                case FULL_DAY -> {
+                    startTime = java.time.LocalTime.of(8, 0);
+                    endTime = java.time.LocalTime.of(17, 0);
+                }
+            }
+        }
+
+        // 7. Tạo thực thể phân công ca
         StaffAssignment assignment = StaffAssignment.builder()
                 .staff(staff)
                 .facility(facility)
                 .assignedDate(request.getAssignedDate())
                 .shift(request.getShift())
+                .startTime(startTime)
+                .endTime(endTime)
                 .assignedZone(request.getAssignedZone())
                 .roleInShift(request.getRoleInShift() != null && !request.getRoleInShift().isBlank()
                         ? request.getRoleInShift() : "PRIMARY_STAFF")
@@ -153,6 +181,14 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             assignment.setShift(request.getShift());
         }
 
+        if (request.getStartTime() != null) {
+            assignment.setStartTime(request.getStartTime());
+        }
+
+        if (request.getEndTime() != null) {
+            assignment.setEndTime(request.getEndTime());
+        }
+
         if (request.getAssignedZone() != null) {
             assignment.setAssignedZone(request.getAssignedZone());
         }
@@ -177,6 +213,96 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
                 "StaffAssignment",
                 updated.getId(),
                 "Cập nhật thông tin phân công ca trực",
+                null,
+                updated.getId().toString()
+        );
+
+        return staffAssignmentMapper.toResponse(updated);
+    }
+
+    @Override
+    public StaffAssignmentResponse checkIn(UUID id, StaffCheckInRequest request) {
+        log.info("Staff check-in for assignment id={}", id);
+
+        StaffAssignment assignment = staffAssignmentRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.STAFF_ASSIGNMENT_NOT_FOUND));
+
+        // Kiểm tra quyền: Chỉ chính nhân viên được phân công HOẶC Quản lý cơ sở mới được check-in
+        UUID currentUserId = requestContext.currentUserId();
+        boolean isSelf = currentUserId != null && currentUserId.equals(assignment.getStaff().getId());
+        if (!isSelf) {
+            facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
+        }
+
+        if (assignment.getStatus() == StaffAssignmentStatus.CHECKED_IN) {
+            throw new AppException(ErrorCode.STAFF_ALREADY_CHECKED_IN);
+        }
+
+        if (assignment.getStatus() == StaffAssignmentStatus.COMPLETED) {
+            throw new AppException(ErrorCode.STAFF_ALREADY_CHECKED_OUT);
+        }
+
+        assignment.setStatus(StaffAssignmentStatus.CHECKED_IN);
+        assignment.setCheckedInAt(java.time.LocalDateTime.now());
+        if (request != null && request.getNotes() != null && !request.getNotes().isBlank()) {
+            assignment.setCheckInNote(request.getNotes());
+        }
+
+        StaffAssignment updated = staffAssignmentRepository.save(assignment);
+
+        activityLogService.record(
+                updated.getFacility().getId(),
+                ActivityAction.STAFF_CHECKIN,
+                "StaffAssignment",
+                updated.getId(),
+                String.format("Nhân viên %s điểm danh vào ca %s ngày %s",
+                        updated.getStaff().getFullName() != null ? updated.getStaff().getFullName() : updated.getStaff().getUsername(),
+                        updated.getShift(),
+                        updated.getAssignedDate()),
+                null,
+                updated.getId().toString()
+        );
+
+        return staffAssignmentMapper.toResponse(updated);
+    }
+
+    @Override
+    public StaffAssignmentResponse checkOut(UUID id, StaffCheckOutRequest request) {
+        log.info("Staff check-out for assignment id={}", id);
+
+        StaffAssignment assignment = staffAssignmentRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.STAFF_ASSIGNMENT_NOT_FOUND));
+
+        UUID currentUserId = requestContext.currentUserId();
+        boolean isSelf = currentUserId != null && currentUserId.equals(assignment.getStaff().getId());
+        if (!isSelf) {
+            facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
+        }
+
+        if (assignment.getStatus() != StaffAssignmentStatus.CHECKED_IN) {
+            if (assignment.getStatus() == StaffAssignmentStatus.COMPLETED) {
+                throw new AppException(ErrorCode.STAFF_ALREADY_CHECKED_OUT);
+            }
+            throw new AppException(ErrorCode.STAFF_NOT_CHECKED_IN);
+        }
+
+        assignment.setStatus(StaffAssignmentStatus.COMPLETED);
+        assignment.setCheckedOutAt(java.time.LocalDateTime.now());
+        if (request != null && request.getNotes() != null && !request.getNotes().isBlank()) {
+            assignment.setCheckOutNote(request.getNotes());
+        }
+
+        StaffAssignment updated = staffAssignmentRepository.save(assignment);
+
+        activityLogService.record(
+                updated.getFacility().getId(),
+                ActivityAction.STAFF_CHECKOUT,
+                "StaffAssignment",
+                updated.getId(),
+                String.format("Nhân viên %s hoàn thành ca trực %s ngày %s",
+                        updated.getStaff().getFullName() != null ? updated.getStaff().getFullName() : updated.getStaff().getUsername(),
+                        updated.getShift(),
+                        updated.getAssignedDate()),
                 null,
                 updated.getId().toString()
         );

@@ -66,6 +66,28 @@ public class StaffAssignmentController {
         return ResponseEntity.ok(ApiResponse.success("Staff assignment status updated successfully", response));
     }
 
+    @PostMapping("/{id}/check-in")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Điểm danh xác nhận vào ca trực (Check-in)")
+    public ResponseEntity<ApiResponse<StaffAssignmentResponse>> checkIn(
+            @PathVariable UUID id,
+            @RequestBody(required = false) com.boxora.dto.request.StaffCheckInRequest request
+    ) {
+        StaffAssignmentResponse response = staffAssignmentService.checkIn(id, request);
+        return ResponseEntity.ok(ApiResponse.success("Staff check-in successful", response));
+    }
+
+    @PostMapping("/{id}/check-out")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Kết thúc ca trực (Check-out)")
+    public ResponseEntity<ApiResponse<StaffAssignmentResponse>> checkOut(
+            @PathVariable UUID id,
+            @RequestBody(required = false) com.boxora.dto.request.StaffCheckOutRequest request
+    ) {
+        StaffAssignmentResponse response = staffAssignmentService.checkOut(id, request);
+        return ResponseEntity.ok(ApiResponse.success("Staff check-out successful", response));
+    }
+
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Xóa hoặc hủy phân công ca trực")

@@ -380,5 +380,108 @@ class StaffAssignmentServiceTest {
             assertThat(board).hasSize(1);
             assertThat(board.get(0).getStatus()).isEqualTo(StaffAssignmentStatus.CHECKED_IN);
         }
+
+        @Test
+        @DisplayName("Điểm danh vào ca trực thành công")
+        void shouldCheckInSuccessfully() {
+            UUID assignmentId = UUID.randomUUID();
+            StaffAssignment assignment = StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(facility)
+                    .assignedDate(LocalDate.now())
+                    .shift(StaffShift.MORNING)
+                    .status(StaffAssignmentStatus.ASSIGNED)
+                    .build();
+            assignment.setId(assignmentId);
+
+            when(staffAssignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(staffAssignmentRepository.save(any(StaffAssignment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            StaffAssignmentResponse resp = StaffAssignmentResponse.builder()
+                    .id(assignmentId)
+                    .status(StaffAssignmentStatus.CHECKED_IN)
+                    .build();
+            when(staffAssignmentMapper.toResponse(any(StaffAssignment.class))).thenReturn(resp);
+
+            StaffAssignmentResponse res = staffAssignmentService.checkIn(assignmentId, new com.boxora.dto.request.StaffCheckInRequest("Vào ca"));
+
+            assertThat(res.getStatus()).isEqualTo(StaffAssignmentStatus.CHECKED_IN);
+            assertThat(assignment.getCheckedInAt()).isNotNull();
+            verify(activityLogService).record(eq(facilityId), eq(ActivityAction.STAFF_CHECKIN), eq("StaffAssignment"), eq(assignmentId), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("Điểm danh vào ca thất bại khi đã điểm danh trước đó")
+        void shouldFailCheckInWhenAlreadyCheckedIn() {
+            UUID assignmentId = UUID.randomUUID();
+            StaffAssignment assignment = StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(facility)
+                    .assignedDate(LocalDate.now())
+                    .shift(StaffShift.MORNING)
+                    .status(StaffAssignmentStatus.CHECKED_IN)
+                    .build();
+            assignment.setId(assignmentId);
+
+            when(staffAssignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    staffAssignmentService.checkIn(assignmentId, new com.boxora.dto.request.StaffCheckInRequest("Vào ca"))
+            );
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.STAFF_ALREADY_CHECKED_IN);
+        }
+
+        @Test
+        @DisplayName("Kết thúc ca trực (Check-out) thành công")
+        void shouldCheckOutSuccessfully() {
+            UUID assignmentId = UUID.randomUUID();
+            StaffAssignment assignment = StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(facility)
+                    .assignedDate(LocalDate.now())
+                    .shift(StaffShift.MORNING)
+                    .status(StaffAssignmentStatus.CHECKED_IN)
+                    .build();
+            assignment.setId(assignmentId);
+
+            when(staffAssignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(staffAssignmentRepository.save(any(StaffAssignment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            StaffAssignmentResponse resp = StaffAssignmentResponse.builder()
+                    .id(assignmentId)
+                    .status(StaffAssignmentStatus.COMPLETED)
+                    .build();
+            when(staffAssignmentMapper.toResponse(any(StaffAssignment.class))).thenReturn(resp);
+
+            StaffAssignmentResponse res = staffAssignmentService.checkOut(assignmentId, new com.boxora.dto.request.StaffCheckOutRequest("Xong ca"));
+
+            assertThat(res.getStatus()).isEqualTo(StaffAssignmentStatus.COMPLETED);
+            assertThat(assignment.getCheckedOutAt()).isNotNull();
+            verify(activityLogService).record(eq(facilityId), eq(ActivityAction.STAFF_CHECKOUT), eq("StaffAssignment"), eq(assignmentId), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("Kết thúc ca thất bại khi chưa điểm danh vào ca")
+        void shouldFailCheckOutWhenNotCheckedIn() {
+            UUID assignmentId = UUID.randomUUID();
+            StaffAssignment assignment = StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(facility)
+                    .assignedDate(LocalDate.now())
+                    .shift(StaffShift.MORNING)
+                    .status(StaffAssignmentStatus.ASSIGNED)
+                    .build();
+
+            when(staffAssignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    staffAssignmentService.checkOut(assignmentId, new com.boxora.dto.request.StaffCheckOutRequest("Xong ca"))
+            );
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.STAFF_NOT_CHECKED_IN);
+        }
     }
 }

@@ -10,9 +10,11 @@ import { storageUnitService } from '../../services/storageUnitService'
 import { Booking, StorageUnit, Facility, FacilityPolicy } from '../../types'
 import { extractFloor, resolveBookingFloor, filterArrivals } from '../../utils/floorUtils'
 import { HandoverCheckInWorkbench } from './components/HandoverCheckInWorkbench'
-import { FacilityStaffStorageDiagram } from './components/FacilityStaffStorageDiagram'
 import { QrCameraCheckInModal } from './components/QrCameraCheckInModal'
 import { StaffPolicyGuideModal } from './components/StaffPolicyGuideModal'
+import { staffAssignmentService, StaffAssignmentResponse } from '../../services/staffAssignmentService'
+import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
+import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
 
 export const StaffDashboard: React.FC = () => {
   const { user } = useAuth()
@@ -20,6 +22,13 @@ export const StaffDashboard: React.FC = () => {
     selectedFacility?: string
     facilities?: Facility[]
   }>() || {}
+
+  // Work Shift & Attendance State
+  const [myTodayAssignment, setMyTodayAssignment] = useState<StaffAssignmentResponse | null>(null)
+  const [isAttendanceLoading, setIsAttendanceLoading] = useState(false)
+  const [showStaffSwapModal, setShowStaffSwapModal] = useState(false)
+  const [showStaffHandoverModal, setShowStaffHandoverModal] = useState(false)
+  const [attendanceSuccessMsg, setAttendanceSuccessMsg] = useState<string | null>(null)
 
   // Facility policy & guide
   const [staffFacilityPolicy, setStaffFacilityPolicy] = useState<FacilityPolicy | null>(null)
@@ -96,13 +105,57 @@ export const StaffDashboard: React.FC = () => {
     return 'Cơ sở được phân công'
   }, [user, facilities, selectedFacility])
 
-  // Current shift identification
-  const currentShiftText = useMemo(() => {
-    const hour = new Date().getHours()
-    if (hour >= 6 && hour < 14) return 'Ca sáng: 06:00 - 14:00'
-    if (hour >= 14 && hour < 22) return 'Ca chiều: 14:00 - 22:00'
-    return 'Ca đêm: 22:00 - 06:00'
-  }, [])
+  // Load today's work shift assignment from database
+  const loadMyAssignment = async () => {
+    if (!user?.id) return
+    try {
+      const today = new Date().toISOString().split('T')[0]
+      const res = await staffAssignmentService.getAllAssignments({
+        staffId: user.id,
+        assignedDate: today
+      })
+      const list = res?.content || res || []
+      if (list.length > 0) {
+        setMyTodayAssignment(list[0])
+      } else {
+        setMyTodayAssignment(null)
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  // Attendance Handlers
+  const handleStaffCheckIn = async () => {
+    if (!myTodayAssignment) return
+    setIsAttendanceLoading(true)
+    try {
+      const updated = await staffAssignmentService.checkIn(myTodayAssignment.id, 'Nhân viên tự xác nhận vào ca trực tại quầy')
+      setMyTodayAssignment(updated)
+      setAttendanceSuccessMsg('Bạn đã điểm danh vào ca trực thành công!')
+      setTimeout(() => setAttendanceSuccessMsg(null), 4000)
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Không thể điểm danh vào ca.')
+    } finally {
+      setIsAttendanceLoading(false)
+    }
+  }
+
+  const handleStaffCheckOut = async () => {
+    if (!myTodayAssignment) return
+    if (!window.confirm('Bạn có chắc chắn muốn hoàn tất và kết thúc ca trực?')) return
+    setIsAttendanceLoading(true)
+    try {
+      const updated = await staffAssignmentService.checkOut(myTodayAssignment.id, 'Hoàn thành ca trực')
+      setMyTodayAssignment(updated)
+      setAttendanceSuccessMsg('Bạn đã hoàn tất ca làm việc!')
+      setTimeout(() => setAttendanceSuccessMsg(null), 4000)
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Không thể kết thúc ca trực.')
+    } finally {
+      setIsAttendanceLoading(false)
+    }
+  }
 
   // Initial data loading
   useEffect(() => {
@@ -113,7 +166,8 @@ export const StaffDashboard: React.FC = () => {
     loadActiveRentals(targetFacility)
     loadRadarUnits(targetFacility)
     loadFacilityPolicy(targetFacility)
-  }, [currentTargetFacility])
+    loadMyAssignment()
+  }, [currentTargetFacility, user?.id])
 
   const loadFacilities = async () => {
     try {
@@ -353,6 +407,14 @@ export const StaffDashboard: React.FC = () => {
   return (
     <div className="flex flex-col gap-6 text-left max-w-7xl mx-auto w-full">
 
+      {/* Toast Alert for Attendance */}
+      {attendanceSuccessMsg && (
+        <div className="fixed top-5 right-5 z-50 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl border border-slate-700 flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
+          <span className="material-symbols-outlined text-emerald-400">check_circle</span>
+          <span className="text-xs font-semibold">{attendanceSuccessMsg}</span>
+        </div>
+      )}
+
       {/* 1. HEADER: BÀN VẬN HÀNH QUẦY & TIẾP ĐÓN */}
       <header className="w-full bg-white border border-slate-200/90 shadow-2xs rounded-2xl p-5 sm:p-6">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -365,22 +427,105 @@ export const StaffDashboard: React.FC = () => {
                 <h1 className="font-headline text-xl font-bold text-slate-900">
                   Bàn Vận Hành Quầy &amp; Tiếp Đón
                 </h1>
-                <span className="px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-mono font-bold uppercase tracking-wider">
-                  {currentShiftText}
-                </span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Đang trực ca
-                </span>
+
+                {/* Real Shift Badge */}
+                {myTodayAssignment ? (
+                  <>
+                    <span className="px-2.5 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[11px] font-mono font-bold uppercase tracking-wider">
+                      {myTodayAssignment.shift === 'MORNING'
+                        ? 'Ca Sáng'
+                        : myTodayAssignment.shift === 'AFTERNOON'
+                        ? 'Ca Chiều'
+                        : myTodayAssignment.shift === 'NIGHT'
+                        ? 'Ca Đêm'
+                        : 'Cả Ngày'}{' '}
+                      ({myTodayAssignment.startTime?.slice(0, 5) || '06:00'} - {myTodayAssignment.endTime?.slice(0, 5) || '14:00'})
+                    </span>
+
+                    {myTodayAssignment.status === 'CHECKED_IN' ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Đang trực ca
+                      </span>
+                    ) : myTodayAssignment.status === 'COMPLETED' ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-semibold">
+                        Đã kết thúc ca
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-semibold">
+                        Chưa vào ca
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-500 text-[11px] font-medium">
+                    Hôm nay không có lịch trực ca
+                  </span>
+                )}
               </div>
               <span className="text-xs text-slate-500 mt-1">
-                Nhân viên trực: <strong className="text-slate-900">{user?.fullName || user?.username || 'Nhân viên trực ca'}</strong> • Cơ sở được phân công: <strong className="text-cyan-800">{assignedFacilityName}</strong>
+                Nhân viên trực: <strong className="text-slate-900">{user?.fullName || user?.username || 'Nhân viên trực ca'}</strong>{' '}
+                {myTodayAssignment?.assignedZone && (
+                  <>• Phân khu: <strong className="text-blue-700">{myTodayAssignment.assignedZone}</strong>{' '}</>
+                )}
+                • Cơ sở: <strong className="text-cyan-800">{assignedFacilityName}</strong>
               </span>
             </div>
           </div>
 
-          {/* Quick Actions */}
+          {/* Quick Actions & Attendance Controls */}
           <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+            {/* Shift Check-in / Check-out Buttons */}
+            {myTodayAssignment?.status === 'ASSIGNED' && (
+              <button
+                type="button"
+                onClick={handleStaffCheckIn}
+                disabled={isAttendanceLoading}
+                className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
+                <span>Check-in Vào ca</span>
+              </button>
+            )}
+
+            {myTodayAssignment?.status === 'CHECKED_IN' && (
+              <button
+                type="button"
+                onClick={handleStaffCheckOut}
+                disabled={isAttendanceLoading}
+                className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px]">logout</span>
+                <span>Check-out Kết thúc ca</span>
+              </button>
+            )}
+
+            {/* Handover Button */}
+            {myTodayAssignment && (
+              <button
+                type="button"
+                onClick={() => setShowStaffHandoverModal(true)}
+                className="px-3 py-2.5 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Lập biên bản bàn giao ca cho đồng nghiệp tiếp theo"
+              >
+                <span className="material-symbols-outlined text-[18px]">assignment_turned_in</span>
+                <span>Bàn giao ca</span>
+              </button>
+            )}
+
+            {/* Shift Swap Button */}
+            {myTodayAssignment && myTodayAssignment.status !== 'COMPLETED' && (
+              <button
+                type="button"
+                onClick={() => setShowStaffSwapModal(true)}
+                className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Gửi yêu cầu xin đổi ca trực"
+              >
+                <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
+                <span>Xin đổi ca</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setIsQrScannerOpen(true)}
@@ -485,7 +630,7 @@ export const StaffDashboard: React.FC = () => {
           </div>
           <div className="mt-3 flex items-center justify-between text-xs">
             <span className="text-slate-600">{tickets.filter(t => t.status !== 'RESOLVED').length} ticket đang mở</span>
-            <Link to="/portal/troubleshoot" className="text-rose-600 hover:text-rose-700 font-bold underline">
+            <Link to="/portal/tickets" className="text-rose-600 hover:text-rose-700 font-bold underline">
               Chi tiết
             </Link>
           </div>
@@ -540,30 +685,138 @@ export const StaffDashboard: React.FC = () => {
         </div>
       </section>
 
-      {/* KHU VỰC VẬN HÀNH THỰC ĐỊA: SƠ ĐỒ KHO CƠ SỞ & BÀN VẬN HÀNH QUẦY */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 mb-8">
-        {/* BÊN TRÁI: SƠ ĐỒ CƠ SỞ KHO & THIẾT BỊ (Col 7) */}
-        <div className="xl:col-span-7 flex flex-col">
-          <FacilityStaffStorageDiagram
-            units={radarUnits}
-            facilityName={assignedFacilityName}
-            facilityId={currentTargetFacility}
-            arrivals={arrivals}
-            activeRentals={activeRentals}
-            tickets={tickets}
-            userRole={user?.role?.name || 'STAFF'}
-            onSelectBookingForHandover={(bookingId) => {
-              setActiveBookingId(bookingId)
-              document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-            }}
-            onUnitMaintenanceToggled={(updatedUnit) => {
-              setRadarUnits(prev => prev.map(u => u.id === updatedUnit.id ? updatedUnit : u))
-            }}
-          />
+      {/* KHU VỰC VẬN HÀNH QUẦY & THỰC ĐỊA TRẠM */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+        {/* BÊN TRÁI: NGHIỆP VỤ QUẦY (LỊCH HẸN NHẬN KHO TRONG CA) (Col 7) */}
+        <div className="xl:col-span-7 flex flex-col gap-4">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-900 font-mono block">
+                  Lịch Hẹn Nhận Kho Trong Ca
+                </span>
+                <span className="text-xs text-slate-500 font-mono">
+                  {filteredArrivals.length} lượt khách đang chờ
+                </span>
+              </div>
+              <Link
+                to="/portal/facility-manager"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200 text-xs font-semibold transition cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px] text-blue-600">apartment</span>
+                <span>Sơ đồ cơ sở kho</span>
+                <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+              </Link>
+            </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider text-[11px]">
+                      <th className="py-2.5 px-3 rounded-l-lg font-semibold">Khách hàng</th>
+                      <th className="py-2.5 px-3 font-semibold">Mã Đặt Chỗ</th>
+                      <th className="py-2.5 px-3 font-semibold">Kho Đăng Ký</th>
+                      <th className="py-2.5 px-3 font-semibold">Ngày Bắt Đầu</th>
+                      <th className="py-2.5 px-3 font-semibold">Trạng Thái</th>
+                      <th className="py-2.5 px-3 font-semibold">Cọc Giữ Chỗ</th>
+                      <th className="py-2.5 px-3 rounded-r-lg text-right font-semibold">Hành động</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {filteredArrivals.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-10 text-center text-slate-400 text-xs">
+                          <div className="flex flex-col items-center justify-center gap-1.5">
+                            <span className="material-symbols-outlined text-3xl text-slate-300">event_available</span>
+                            <span className="font-semibold text-slate-600">Không có khách chờ trong ca trực này</span>
+                            <span className="text-[11px] text-slate-400">Tất cả lịch hẹn tiếp đón đã được phục vụ hoặc chưa có lịch hẹn mới.</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredArrivals.map((b) => {
+                        const isCurrentActive = b.id === activeBookingId || b.bookingCode === activeBookingId
+                        return (
+                          <tr
+                            key={b.id}
+                            className={`transition-colors ${
+                              isCurrentActive
+                                ? 'bg-cyan-50/80 ring-1 ring-cyan-200'
+                                : 'hover:bg-slate-50/70'
+                            }`}
+                          >
+                            <td className="py-3.5 px-3">
+                              <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                                {isCurrentActive && (
+                                  <span className="w-2 h-2 rounded-full bg-cyan-600 animate-pulse"></span>
+                                )}
+                                <span>{b.customerName || 'Khách vãng lai'}</span>
+                              </div>
+                              <div className="text-slate-500 font-mono text-[11px] tabular-nums mt-0.5">{b.customerPhone || 'N/A'}</div>
+                            </td>
+                            <td className="py-3.5 px-3 font-mono font-bold text-slate-900">{b.bookingCode}</td>
+                            <td className="py-3.5 px-3">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-mono font-bold text-cyan-700">Kho #{b.unitCode}</span>
+                                {(() => {
+                                  const fl = resolveBookingFloor(b, unitMapById, unitMapByCodeAndFacility)
+                                  return fl ? (
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200">
+                                      Tầng {fl}
+                                    </span>
+                                  ) : (
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500">
+                                      Chưa rõ tầng
+                                    </span>
+                                  )
+                                })()}
+                              </div>
+                              <span className="text-slate-500 block text-[10px]">{b.facilityName || assignedFacilityName}</span>
+                            </td>
+                            <td className="py-3.5 px-3 font-mono tabular-nums text-slate-700">{b.startDate}</td>
+                            <td className="py-3.5 px-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                b.status === 'CONFIRMED'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`}>
+                                {b.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Chờ cọc'}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-3 font-mono font-bold text-slate-900 tabular-nums">
+                              {(b.depositPaid || b.depositAmount || 0).toLocaleString('vi-VN')}đ
+                            </td>
+                            <td className="py-3.5 px-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveBookingId(b.id)
+                                  document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                                }}
+                                className={`px-3 py-1.5 rounded-lg font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 ml-auto ${
+                                  isCurrentActive
+                                    ? 'bg-cyan-600 text-white shadow-xs'
+                                    : 'bg-blue-50 hover:bg-blue-100 text-blue-700'
+                                }`}
+                              >
+                                <span className="material-symbols-outlined text-[14px]">
+                                  {isCurrentActive ? 'task_alt' : 'touch_app'}
+                                </span>
+                                <span>{isCurrentActive ? 'Đang Xử Lý' : 'Tiếp đón & Đối soát'}</span>
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
         </div>
 
-        {/* BÊN PHẢI: BÀN VẬN HÀNH QUẦY & TIẾP ĐÓN (Col 5) */}
-        <div className="xl:col-span-5 flex flex-col">
+        {/* BÊN PHẢI: BÀN VẬN HÀNH QUẦY & NGHIỆM THU TRẢ KHO (Col 5) */}
+        <div className="xl:col-span-5 flex flex-col gap-6">
           <HandoverCheckInWorkbench
             arrivals={arrivals}
             onOpenQrScanner={() => setIsQrScannerOpen(true)}
@@ -576,134 +829,6 @@ export const StaffDashboard: React.FC = () => {
               loadRadarUnits(currentTargetFacility)
             }}
           />
-        </div>
-      </div>
-
-      {/* KHU VỰC TIẾP ĐÓN KHÁCH HẸN & NGHIỆM THU TRẢ KHO */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-        {/* Left Side: Check-in Queue (Col 8) */}
-        <div className="xl:col-span-8 flex flex-col gap-6">
-
-          {/* LỊCH HẸN NHẬN KHO TRONG CA */}
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-900 font-mono">
-                Lịch Hẹn Nhận Kho Trong Ca
-              </span>
-              <span className="text-xs text-slate-500 font-mono">
-                {filteredArrivals.length} lượt khách đang chờ
-              </span>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider text-[11px]">
-                    <th className="py-2.5 px-3 rounded-l-lg font-semibold">Khách hàng</th>
-                    <th className="py-2.5 px-3 font-semibold">Mã Đặt Chỗ</th>
-                    <th className="py-2.5 px-3 font-semibold">Kho Đăng Ký</th>
-                    <th className="py-2.5 px-3 font-semibold">Ngày Bắt Đầu</th>
-                    <th className="py-2.5 px-3 font-semibold">Trạng Thái</th>
-                    <th className="py-2.5 px-3 font-semibold">Cọc Giữ Chỗ</th>
-                    <th className="py-2.5 px-3 rounded-r-lg text-right font-semibold">Hành động</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium">
-                  {filteredArrivals.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-10 text-center text-slate-400 text-xs">
-                        <div className="flex flex-col items-center justify-center gap-1.5">
-                          <span className="material-symbols-outlined text-3xl text-slate-300">event_available</span>
-                          <span className="font-semibold text-slate-600">Không có khách chờ trong ca trực này</span>
-                          <span className="text-[11px] text-slate-400">Tất cả lịch hẹn tiếp đón đã được phục vụ hoặc chưa có lịch hẹn mới.</span>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredArrivals.map((b) => {
-                      const isCurrentActive = b.id === activeBookingId || b.bookingCode === activeBookingId
-                      return (
-                        <tr
-                          key={b.id}
-                          className={`transition-colors ${
-                            isCurrentActive
-                              ? 'bg-cyan-50/80 ring-1 ring-cyan-200'
-                              : 'hover:bg-slate-50/70'
-                          }`}
-                        >
-                          <td className="py-3.5 px-3">
-                            <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
-                              {isCurrentActive && (
-                                <span className="w-2 h-2 rounded-full bg-cyan-600 animate-pulse"></span>
-                              )}
-                              <span>{b.customerName || 'Khách vãng lai'}</span>
-                            </div>
-                            <div className="text-slate-500 font-mono text-[11px] tabular-nums mt-0.5">{b.customerPhone || 'N/A'}</div>
-                          </td>
-                          <td className="py-3.5 px-3 font-mono font-bold text-slate-900">{b.bookingCode}</td>
-                          <td className="py-3.5 px-3">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-mono font-bold text-cyan-700">Kho #{b.unitCode}</span>
-                              {(() => {
-                                const fl = resolveBookingFloor(b, unitMapById, unitMapByCodeAndFacility)
-                                return fl ? (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200">
-                                    Tầng {fl}
-                                  </span>
-                                ) : (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500">
-                                    Chưa rõ tầng
-                                  </span>
-                                )
-                              })()}
-                            </div>
-                            <span className="text-slate-500 block text-[10px]">{b.facilityName || assignedFacilityName}</span>
-                          </td>
-                          <td className="py-3.5 px-3 font-mono tabular-nums text-slate-700">{b.startDate}</td>
-                          <td className="py-3.5 px-3">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                              b.status === 'CONFIRMED'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-amber-50 text-amber-700 border border-amber-200'
-                            }`}>
-                              {b.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Chờ cọc'}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-3 font-mono font-bold text-slate-900 tabular-nums">
-                            {(b.depositPaid || b.depositAmount || 0).toLocaleString('vi-VN')}đ
-                          </td>
-                          <td className="py-3.5 px-3 text-right">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveBookingId(b.id)
-                                document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-                              }}
-                              className={`px-3 py-1.5 rounded-lg font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 ml-auto ${
-                                isCurrentActive
-                                  ? 'bg-cyan-600 text-white shadow-xs'
-                                  : 'bg-blue-50 hover:bg-blue-100 text-blue-700'
-                              }`}
-                            >
-                              <span className="material-symbols-outlined text-[14px]">
-                                {isCurrentActive ? 'task_alt' : 'touch_app'}
-                              </span>
-                              <span>{isCurrentActive ? 'Đang Xử Lý' : 'Tiếp đón & Đối soát'}</span>
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-          </div>
-        </div>
-
-        {/* Right Side: Nghiệm Thu Trả Kho & Biên Bản Hiện Trường (Col 4) */}
-        <div className="xl:col-span-4 flex flex-col gap-6">
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
@@ -1018,6 +1143,40 @@ export const StaffDashboard: React.FC = () => {
         facilityId={user?.facilityId || selectedFacility}
         facilityName={staffFacilityPolicy?.facilityName || assignedFacilityName}
       />
+
+      {/* MODAL XIN ĐỔI CA TRỰC DÀNH CHO NHÂN VIÊN */}
+      {showStaffSwapModal && myTodayAssignment && (
+        <ShiftSwapModal
+          isOpen={showStaffSwapModal}
+          onClose={() => setShowStaffSwapModal(false)}
+          assignment={myTodayAssignment}
+          facilityId={myTodayAssignment.facilityId}
+          onSuccess={(msg) => {
+            setAttendanceSuccessMsg(msg)
+            setShowStaffSwapModal(false)
+            loadMyAssignment()
+            setTimeout(() => setAttendanceSuccessMsg(null), 5000)
+          }}
+        />
+      )}
+
+      {/* MODAL LẬP BIÊN BÀN BÀN GIAO CA DÀNH CHO NHÂN VIÊN */}
+      {showStaffHandoverModal && myTodayAssignment && (
+        <ShiftHandoverModal
+          isOpen={showStaffHandoverModal}
+          onClose={() => setShowStaffHandoverModal(false)}
+          facilityId={myTodayAssignment.facilityId}
+          facilityName={assignedFacilityName}
+          currentShift={myTodayAssignment.shift}
+          outgoingAssignmentId={myTodayAssignment.id}
+          onSuccess={(msg) => {
+            setAttendanceSuccessMsg(msg)
+            setShowStaffHandoverModal(false)
+            loadMyAssignment()
+            setTimeout(() => setAttendanceSuccessMsg(null), 5000)
+          }}
+        />
+      )}
 
     </div>
   )

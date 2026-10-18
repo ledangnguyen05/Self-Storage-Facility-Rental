@@ -165,6 +165,17 @@ public enum ErrorCode {
     STAFF_ALREADY_ASSIGNED_SHIFT(1703, "Staff member is already assigned to this shift on the specified date", HttpStatus.CONFLICT),
     STAFF_ASSIGNMENT_FACILITY_MISMATCH(1704, "Staff member does not belong to the selected facility", HttpStatus.BAD_REQUEST),
     INVALID_ASSIGNMENT_DATE(1705, "Assignment date cannot be in the past", HttpStatus.BAD_REQUEST),
+    STAFF_ALREADY_CHECKED_IN(1706, "Nhân viên đã thực hiện điểm danh vào ca trực", HttpStatus.BAD_REQUEST),
+    STAFF_NOT_CHECKED_IN(1707, "Nhân viên chưa điểm danh vào ca trực, không thể check-out", HttpStatus.BAD_REQUEST),
+    STAFF_ALREADY_CHECKED_OUT(1708, "Ca làm việc này đã hoàn tất check-out", HttpStatus.BAD_REQUEST),
+    SHIFT_SWAP_REQUEST_NOT_FOUND(1709, "Yêu cầu đổi ca không tồn tại", HttpStatus.NOT_FOUND),
+    SHIFT_SWAP_INVALID_TARGET(1710, "Nhân viên nhận ca không hợp lệ hoặc không cùng cơ sở", HttpStatus.BAD_REQUEST),
+    SHIFT_SWAP_ALREADY_PROCESSED(1711, "Yêu cầu đổi ca đã được phê duyệt hoặc bị hủy", HttpStatus.BAD_REQUEST),
+    SHIFT_SWAP_TARGET_BUSY(1712, "Nhân viên thay thế đã có ca trực vào khung giờ này", HttpStatus.CONFLICT),
+    SHIFT_HANDOVER_NOT_FOUND(1713, "Biên bản bàn giao ca không tồn tại", HttpStatus.NOT_FOUND),
+    SHIFT_HANDOVER_ALREADY_ACKNOWLEDGED(1714, "Biên bản bàn giao ca đã được tiếp nhận xác nhận", HttpStatus.BAD_REQUEST),
+    SHIFT_HANDOVER_CHECKLIST_INCOMPLETE(1715, "Cần hoàn tất danh mục kiểm tra trước khi bàn giao", HttpStatus.BAD_REQUEST),
+    SHIFT_UNAUTHORIZED_ACTION(1716, "Bạn không có quyền thao tác trên ca làm việc này", HttpStatus.FORBIDDEN),
 
     // ========================= SEALING & OVERDUE (BR-RULE-012) (1800 - 1899) =========================
     SEALING_RECORD_NOT_FOUND(1800, "Sealing record not found", HttpStatus.NOT_FOUND),

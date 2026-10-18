@@ -119,13 +119,11 @@ export const FacilityPolicyViewModal: React.FC<FacilityPolicyViewModalProps> = (
                 <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 text-[11px] font-bold border border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-900">
                   {facilityName}
                 </span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
-                  policy?.isActive === false
-                    ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900'
-                    : 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
-                }`}>
-                  {policy?.isActive === false ? 'Ngừng áp dụng' : 'Chỉ xem (Read-Only)'}
-                </span>
+                {policy?.isActive === false && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900">
+                    Ngừng áp dụng
+                  </span>
+                )}
                 {canEdit && policy?.id && !isEditing && (
                   <button
                     type="button"

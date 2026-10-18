@@ -44,6 +44,12 @@ public class StaffAssignmentCreateRequest {
     @Builder.Default
     private String roleInShift = "PRIMARY_STAFF";
 
+    @Schema(description = "Giờ bắt đầu ca trực (nếu tùy chỉnh)", example = "06:00:00")
+    private java.time.LocalTime startTime;
+
+    @Schema(description = "Giờ kết thúc ca trực (hỗ trợ ca qua đêm)", example = "14:00:00")
+    private java.time.LocalTime endTime;
+
     @Schema(description = "Ghi chú công việc trong ca trực", example = "Trực quầy đón tiếp khách check-in và kiểm tra an ninh")
     private String notes;
 }

@@ -26,6 +26,7 @@ import { OverdueManagementPage } from './pages/manager/OverdueManagementPage'
 import { ShiftRosterPage } from './pages/manager/ShiftRosterPage'
 import { checkCustomerPortalAccess } from './utils/rentalAccess'
 import { BoxoraChatWidget } from './components/chat/BoxoraChatWidget'
+import { ErrorBoundary } from './components/common/ErrorBoundary'
 
 // Root redirect handler based on user role
 function RootRedirect() {
@@ -117,11 +118,11 @@ function MainContent() {
               }
             />
 
-            {/* 3. Facility Manager Portal: Facility Manager, Business Manager, Admin */}
+            {/* 3. Facility Manager Portal: Facility Manager, Business Manager, Admin, Staff */}
             <Route
               path="facility-manager"
               element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
+                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN', 'STAFF']}>
                   <ManagerDashboard />
                 </ProtectedRoute>
               }
@@ -214,9 +215,11 @@ function MainContent() {
 export function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <MainContent />
-      </AuthProvider>
+      <ErrorBoundary>
+        <AuthProvider>
+          <MainContent />
+        </AuthProvider>
+      </ErrorBoundary>
     </BrowserRouter>
   )
 }

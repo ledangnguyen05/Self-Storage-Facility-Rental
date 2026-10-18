@@ -19,6 +19,12 @@ public class StaffAssignmentUpdateRequest {
     @Schema(description = "Ca trực thay đổi (MORNING, AFTERNOON, NIGHT, FULL_DAY)", example = "AFTERNOON")
     private StaffShift shift;
 
+    @Schema(description = "Giờ bắt đầu ca", example = "06:00:00")
+    private java.time.LocalTime startTime;
+
+    @Schema(description = "Giờ kết thúc ca", example = "14:00:00")
+    private java.time.LocalTime endTime;
+
     @Size(max = 50, message = "Assigned zone must not exceed 50 characters")
     @Schema(description = "Khu vực trực được giao cập nhật", example = "Zone B - Floor 2")
     private String assignedZone;

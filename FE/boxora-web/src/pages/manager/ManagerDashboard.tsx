@@ -55,10 +55,17 @@ export const ManagerDashboard: React.FC = () => {
   // Tab State
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab') as ManagerDashboardTab | null
+
+  const isTabAllowed = (tab: ManagerDashboardTab | null): boolean => {
+    if (!tab) return false
+    if (role === 'STAFF') {
+      return tab === 'overview' || tab === 'handovers-returns' || tab === 'tickets'
+    }
+    return tab === 'overview' || tab === 'handovers-returns' || tab === 'tickets' || tab === 'performance' || tab === 'policy'
+  }
+
   const [activeTab, setActiveTabState] = useState<ManagerDashboardTab>(
-    tabParam === 'overview' || tabParam === 'handovers-returns' || tabParam === 'tickets' || tabParam === 'performance' || tabParam === 'policy'
-      ? tabParam
-      : 'overview'
+    isTabAllowed(tabParam) ? (tabParam as ManagerDashboardTab) : 'overview'
   )
 
   const setActiveTab = (tab: ManagerDashboardTab) => {
@@ -76,10 +83,12 @@ export const ManagerDashboard: React.FC = () => {
 
   useEffect(() => {
     const currentTab = searchParams.get('tab') as ManagerDashboardTab | null
-    if (currentTab && (currentTab === 'overview' || currentTab === 'handovers-returns' || currentTab === 'tickets' || currentTab === 'performance' || currentTab === 'policy')) {
-      setActiveTabState(currentTab)
+    if (isTabAllowed(currentTab)) {
+      setActiveTabState(currentTab as ManagerDashboardTab)
+    } else if (role === 'STAFF' && (currentTab === 'performance' || currentTab === 'policy')) {
+      setActiveTabState('overview')
     }
-  }, [searchParams])
+  }, [searchParams, role])
 
   const [facilities, setFacilities] = useState<Facility[]>(contextFacilities || [])
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>(
@@ -104,6 +113,20 @@ export const ManagerDashboard: React.FC = () => {
   const [upcomingHandovers, setUpcomingHandovers] = useState<Booking[]>([])
   const [activeRentals, setActiveRentals] = useState<Booking[]>([])
   const [tickets, setTickets] = useState<SupportTicketRecord[]>([])
+
+  // Tickets queue pagination
+  const [ticketCurrentPage, setTicketCurrentPage] = useState<number>(1)
+  const [ticketPageSize, setTicketPageSize] = useState<number>(5)
+
+  useEffect(() => {
+    setTicketCurrentPage(1)
+  }, [selectedFacilityId])
+
+  const totalTicketPages = Math.max(1, Math.ceil(tickets.length / ticketPageSize))
+  const paginatedTickets = useMemo(() => {
+    const start = (ticketCurrentPage - 1) * ticketPageSize
+    return tickets.slice(start, start + ticketPageSize)
+  }, [tickets, ticketCurrentPage, ticketPageSize])
 
   // Modals state
   const [showIoTModal, setShowIoTModal] = useState(false)
@@ -596,7 +619,7 @@ export const ManagerDashboard: React.FC = () => {
         <div className="flex flex-col gap-2 max-w-2xl">
           <div className="flex items-center gap-2.5 flex-wrap">
             <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-slate-100 font-mono text-xs text-slate-800 uppercase tracking-wider font-semibold">
-              <span className="w-2 h-2 rounded-full bg-blue-600"></span> Quản Lý Vận Hành Cơ Sở
+              <span className="w-2 h-2 rounded-full bg-blue-600"></span> {role === 'STAFF' ? 'Sơ Đồ Cơ Sở Kho' : 'Quản Lý Vận Hành Cơ Sở'}
             </span>
             <span className="px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-mono font-bold">
               {currentShiftText}
@@ -604,25 +627,29 @@ export const ManagerDashboard: React.FC = () => {
           </div>
 
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            {currentFacilityName} — Bảng Tổng Quan Quản Lý
+            {currentFacilityName} — {role === 'STAFF' ? 'Sơ Đồ Cơ Sở Kho & Trạng Thái Buồng' : 'Bảng Tổng Quan Quản Lý'}
           </h1>
 
           <p className="text-xs text-slate-500">
-            Giám sát thời gian thực {totalUnitsCount} kho tự quản • Trực ca nhân sự, doanh thu, hợp đồng &amp; ngoại lệ nghiệp vụ.
+            {role === 'STAFF'
+              ? `Giám sát trực quan ${totalUnitsCount} kho tự quản • Trực quan buồng kho, thiết bị IoT & nghiệp vụ trạm.`
+              : `Giám sát thời gian thực ${totalUnitsCount} kho tự quản • Trực ca nhân sự, doanh thu, hợp đồng & ngoại lệ nghiệp vụ.`}
           </p>
         </div>
 
         {/* Manager Actions & Modals */}
         <div className="flex items-center gap-2.5 self-start lg:self-center shrink-0 flex-wrap">
 
-          <button
-            type="button"
-            onClick={() => setShowCreateUnitModal(true)}
-            className="inline-flex items-center gap-2 rounded-xl border border-blue-600 bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[18px]">add</span>
-            <span>Thêm kho mới</span>
-          </button>
+          {role !== 'STAFF' && (
+            <button
+              type="button"
+              onClick={() => setShowCreateUnitModal(true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-blue-600 bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">add</span>
+              <span>Thêm kho mới</span>
+            </button>
+          )}
 
           <button 
             type="button" 
@@ -820,31 +847,35 @@ export const ManagerDashboard: React.FC = () => {
           <span>3. Sự Cố &amp; SLA ({tickets.filter(t => t.status !== 'RESOLVED').length})</span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('performance')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
-            activeTab === 'performance'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[18px]">trending_up</span>
-          <span>4. Hiệu Suất &amp; Ngoại Lệ</span>
-        </button>
+        {role !== 'STAFF' && (
+          <>
+            <button
+              type="button"
+              onClick={() => setActiveTab('performance')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'performance'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[18px]">trending_up</span>
+              <span>4. Hiệu Suất &amp; Ngoại Lệ</span>
+            </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('policy')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
-            activeTab === 'policy'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[18px]">policy</span>
-          <span>5. Chính Sách Vận Hành Cơ Sở</span>
-        </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('policy')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'policy'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[18px]">policy</span>
+              <span>5. Chính Sách Vận Hành Cơ Sở</span>
+            </button>
+          </>
+        )}
       </div>
 
       {/* ============================================================== */}
@@ -1366,6 +1397,7 @@ export const ManagerDashboard: React.FC = () => {
                   <thead>
                     <tr className="bg-slate-50 text-slate-500 font-mono uppercase text-[11px]">
                       <th className="py-2.5 px-3 rounded-l-lg">Mã Ticket</th>
+                      <th className="py-2.5 px-3">Thời Gian</th>
                       <th className="py-2.5 px-3">Tiêu Đề</th>
                       <th className="py-2.5 px-3">Kho</th>
                       <th className="py-2.5 px-3">Phân Loại</th>
@@ -1374,9 +1406,23 @@ export const ManagerDashboard: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {tickets.slice(0, 10).map(t => (
-                      <tr key={t.id} className="hover:bg-slate-50/80">
+                    {paginatedTickets.map(t => (
+                      <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-3 px-3 font-mono font-bold text-slate-900">#{t.ticketCode || t.id.slice(0, 6)}</td>
+                        <td className="py-3 px-3 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+                          {t.createdAt ? (
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-slate-800">
+                                {new Date(t.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                {new Date(t.createdAt).toLocaleDateString('vi-VN')}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
                         <td className="py-3 px-3 font-semibold text-slate-900">{t.title}</td>
                         <td className="py-3 px-3 font-mono font-bold text-cyan-800">#{t.unitCode || 'Chung'}</td>
                         <td className="py-3 px-3 font-mono text-slate-500">{t.category}</td>
@@ -1402,6 +1448,94 @@ export const ManagerDashboard: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {/* Pagination Controls - Centered */}
+            {tickets.length > 0 && (
+              <div className="relative flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 mt-2 border-t border-slate-100 text-xs">
+                {/* Left: Range Info */}
+                <div className="text-[11px] text-slate-500 font-medium">
+                  Hiển thị <span className="font-semibold text-slate-900 font-mono">{tickets.length === 0 ? 0 : (ticketCurrentPage - 1) * ticketPageSize + 1}</span> - <span className="font-semibold text-slate-900 font-mono">{Math.min(ticketCurrentPage * ticketPageSize, tickets.length)}</span> trên tổng số <span className="font-semibold text-slate-900 font-mono">{tickets.length}</span> sự cố
+                </div>
+
+                {/* Center: Pagination Buttons */}
+                <div className="flex items-center justify-center gap-1.5 sm:absolute sm:left-1/2 sm:-translate-x-1/2">
+                  <button
+                    type="button"
+                    onClick={() => setTicketCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={ticketCurrentPage === 1}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-xs font-semibold text-slate-700 transition flex items-center gap-1 shadow-2xs"
+                    title="Trang trước"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+                    <span className="hidden md:inline">Trước</span>
+                  </button>
+
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: totalTicketPages }, (_, i) => i + 1).map(pageNum => {
+                      if (
+                        totalTicketPages > 6 &&
+                        pageNum !== 1 &&
+                        pageNum !== totalTicketPages &&
+                        Math.abs(pageNum - ticketCurrentPage) > 1
+                      ) {
+                        if (pageNum === 2 || pageNum === totalTicketPages - 1) {
+                          return (
+                            <span key={pageNum} className="px-1 text-slate-400 font-mono">
+                              ...
+                            </span>
+                          )
+                        }
+                        return null
+                      }
+                      const isActive = ticketCurrentPage === pageNum
+                      return (
+                        <button
+                          key={pageNum}
+                          type="button"
+                          onClick={() => setTicketCurrentPage(pageNum)}
+                          className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer ${
+                            isActive
+                              ? 'bg-slate-900 text-white shadow-xs'
+                              : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setTicketCurrentPage(p => Math.min(totalTicketPages, p + 1))}
+                    disabled={ticketCurrentPage === totalTicketPages}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-xs font-semibold text-slate-700 transition flex items-center gap-1 shadow-2xs"
+                    title="Trang sau"
+                  >
+                    <span className="hidden md:inline">Sau</span>
+                    <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                  </button>
+                </div>
+
+                {/* Right: Page Size Selector */}
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                  <span>Hiển thị:</span>
+                  <select
+                    value={ticketPageSize}
+                    onChange={(e) => {
+                      setTicketPageSize(Number(e.target.value))
+                      setTicketCurrentPage(1)
+                    }}
+                    className="bg-white border border-slate-200 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer"
+                  >
+                    <option value={5}>5</option>
+                    <option value={10}>10</option>
+                    <option value={15}>15</option>
+                  </select>
+                  <span>/ trang</span>
+                </div>
               </div>
             )}
           </div>
@@ -1507,11 +1641,11 @@ export const ManagerDashboard: React.FC = () => {
                   <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-800 text-xs font-bold border border-blue-200">
                     {currentFacilityName}
                   </span>
-                  <span className={`px-2.5 py-0.5 rounded-full font-mono text-[11px] font-bold ${
-                    hasPolicyException ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' : 'bg-slate-100 text-slate-700 border border-slate-200'
-                  }`}>
-                    {hasPolicyException ? 'Có quyền ngoại lệ' : 'Chỉ xem (Read-Only)'}
-                  </span>
+                  {hasPolicyException && (
+                    <span className="px-2.5 py-0.5 rounded-full font-mono text-[11px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                      Có quyền ngoại lệ
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-slate-500 mt-1">
                   Quy định tỷ lệ tiền cọc, thời gian thuê tối thiểu, ân hạn nợ, SLA hoàn cọc và quy chế niêm phong tại chi nhánh.
