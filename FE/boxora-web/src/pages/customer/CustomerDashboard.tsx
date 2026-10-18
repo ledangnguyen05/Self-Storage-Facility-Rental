@@ -483,6 +483,7 @@ export const CustomerDashboard: React.FC = () => {
         cb => cb.id === booking.id || (cb.bookingCode && cb.bookingCode === booking.bookingCode)
       ) || booking
     const targetCode = fullBooking.bookingCode || fullBooking.id
+    setRequestToPay(null)
     setActiveTab('bookings')
     setBookingStatusFilter('ALL')
     setBookingSearchTerm('')
@@ -495,13 +496,6 @@ export const CustomerDashboard: React.FC = () => {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
     }, 150)
-
-    const info = getBookingNoticeInfo(fullBooking)
-    if (info.scenario === 'UNPAID_IN_PERSON') {
-      handlePayBookingVNPay(fullBooking)
-    } else if (info.scenario === 'PAID_UNSIGNED') {
-      void handleSignContractForBooking(fullBooking, info.matchingContract)
-    }
   }
 
   // IoT Remote Unlock state
