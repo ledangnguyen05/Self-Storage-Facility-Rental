@@ -18,6 +18,7 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
 
   const [allPolicies, setAllPolicies] = useState<FacilityPolicy[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [policyLoadError, setPolicyLoadError] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [toastIsError, setToastIsError] = useState(false)
 
@@ -42,15 +43,21 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
 
   const loadPolicies = async () => {
     setIsLoading(true)
+    setPolicyLoadError(false)
+    setAllPolicies([])
     try {
       const res = await facilityPolicyService.getAll({ size: 100 })
       if (Array.isArray(res)) {
         setAllPolicies(res)
       } else if (res && Array.isArray((res as any).content)) {
         setAllPolicies((res as any).content)
+      } else {
+        setPolicyLoadError(true)
       }
     } catch (err: any) {
       console.warn('Failed to load facility policies:', err)
+      setAllPolicies([])
+      setPolicyLoadError(true)
     } finally {
       setIsLoading(false)
     }
@@ -211,6 +218,12 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
                     Đang tải danh sách chính sách vận hành...
                   </td>
                 </tr>
+              ) : policyLoadError ? (
+                <tr>
+                  <td colSpan={8} className="py-6 text-center text-rose-600">
+                    {t('Không tải được chính sách đã lưu. Vui lòng thử lại.', 'Could not load saved policies. Please try again.')}
+                  </td>
+                </tr>
               ) : facilities.length > 0 ? (
                 facilities.map((fac) => {
                   const policy = allPolicies.find((p) => p.facilityId === fac.id)
@@ -250,10 +263,10 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
                         {hasPolicy ? (
                           <div className="flex flex-col items-center">
                             <span className="font-bold text-slate-900">
-                              {policy?.depositPercentage ?? policy?.depositPercent ?? 100}%
+                              {policy?.depositPercentage ?? policy?.depositPercent ?? '—'}%
                             </span>
                             <span className="text-[10px] text-slate-500">
-                              Tối thiểu {policy?.minimumRentalMonths ?? 1} tháng
+                              {t('Tối thiểu', 'Minimum')} {policy?.minimumRentalMonths ?? '—'} {t('tháng')}
                             </span>
                           </div>
                         ) : (
@@ -264,10 +277,10 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
                         {hasPolicy ? (
                           <div className="flex flex-col items-center">
                             <span className="font-medium text-slate-800">
-                              Mở trước {policy?.renewalWindowDays ?? 7} ngày
+                              {t('Mở trước', 'Opens')} {policy?.renewalWindowDays ?? '—'} {t('ngày')}
                             </span>
                             <span className="text-[10px] text-slate-500">
-                              Báo trả: {policy?.returnNoticeDays ?? 3} ngày
+                              {t('Báo trả:', 'Move-out notice:')} {policy?.returnNoticeDays ?? '—'} {t('ngày')}
                             </span>
                           </div>
                         ) : (
@@ -281,7 +294,7 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
                               100% (≥ {policy?.cancellationFullRefundHours ?? 48}h)
                             </span>
                             <span className="text-[10px] text-amber-600">
-                              {policy?.cancellationPartialRefundPercent ?? 50}% (≥ {policy?.cancellationPartialRefundHours ?? 24}h)
+                              {policy?.cancellationPartialRefundPercent ?? '—'}% (≥ {policy?.cancellationPartialRefundHours ?? '—'}h)
                             </span>
                           </div>
                         ) : (
@@ -291,7 +304,7 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
                       <td className="py-3.5 px-3 text-center">
                         {hasPolicy ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold text-xs border border-blue-200">
-                            {policy?.depositRefundSlaDays ?? 3} ngày làm việc
+                            {policy?.depositRefundSlaDays ?? '—'} {t('ngày làm việc')}
                           </span>
                         ) : (
                           <span className="text-slate-400">—</span>
@@ -304,7 +317,7 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
                               {formatCurrency(policy?.dailyLateFee ?? policy?.lateFeePerDay)} đ/ngày
                             </span>
                             <span className="text-[10px] text-slate-500">
-                              Ân hạn {policy?.overdueGraceDays ?? 3}d • Khóa {policy?.overdueAccessDisableDays ?? 5}d • Niêm phong {policy?.overdueSealingDays ?? 7}d
+                              {t('Ân hạn', 'Grace')} {policy?.overdueGraceDays ?? '—'}d • {t('Khóa', 'Disable')} {policy?.overdueAccessDisableDays ?? '—'}d • {t('Niêm phong', 'Seal')} {policy?.overdueSealingDays ?? '—'}d
                             </span>
                           </div>
                         ) : (

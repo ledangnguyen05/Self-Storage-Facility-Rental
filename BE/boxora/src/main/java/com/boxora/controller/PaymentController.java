@@ -41,7 +41,7 @@ public class PaymentController {
     private String frontendUrl;
 
     @PostMapping("vnpay/create")
-    @PreAuthorize("hasAuthority('PAYMENT_CREATE') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('PAYMENT_CREATE')")
     @Operation(summary = "Khởi tạo thanh toán qua cổng VNPay Sandbox và lấy paymentUrl")
     public ResponseEntity<ApiResponse<VNPayPaymentResponse>> createVNPayPayment(
             @Valid @RequestBody PaymentCreateRequest request,
@@ -83,7 +83,7 @@ public class PaymentController {
     @GetMapping("vnpay-ipn")
     @Operation(summary = "Webhook IPN nhận kết quả thanh toán bất đồng bộ từ hệ thống VNPay")
     public ResponseEntity<VNPayIpnResponse> handleVNPayIPN(@RequestParam Map<String, String> allParams) {
-        log.info("Received VNPay IPN webhook: {}", allParams);
+        log.info("Received VNPay IPN callback");
         VNPayIpnResponse response = paymentService.processVNPayIPN(allParams);
         return ResponseEntity.ok(response);
     }
@@ -96,7 +96,7 @@ public class PaymentController {
     }
 
     @GetMapping("{id}")
-    @PreAuthorize("hasAuthority('PAYMENT_VIEW') or hasAnyRole('ADMIN', 'STAFF', 'CUSTOMER', 'FACILITY_MANAGER', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('PAYMENT_VIEW')")
     @Operation(summary = "Lấy chi tiết thanh toán theo Payment ID")
     public ResponseEntity<ApiResponse<PaymentResponse>> getById(@PathVariable UUID id) {
         PaymentResponse response = paymentService.getById(id);
@@ -104,7 +104,7 @@ public class PaymentController {
     }
 
     @GetMapping("transaction/{transactionId}")
-    @PreAuthorize("hasAuthority('PAYMENT_VIEW') or hasAnyRole('ADMIN', 'STAFF', 'CUSTOMER', 'FACILITY_MANAGER', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('PAYMENT_VIEW')")
     @Operation(summary = "Lấy chi tiết thanh toán theo mã giao dịch VNPay (transactionId / txnRef)")
     public ResponseEntity<ApiResponse<PaymentResponse>> getByTransactionId(@PathVariable String transactionId) {
         PaymentResponse response = paymentService.getByTransactionId(transactionId);
@@ -112,7 +112,7 @@ public class PaymentController {
     }
 
     @GetMapping("booking/{bookingId}")
-    @PreAuthorize("hasAuthority('PAYMENT_VIEW') or hasAnyRole('ADMIN', 'STAFF', 'CUSTOMER', 'FACILITY_MANAGER', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('PAYMENT_VIEW')")
     @Operation(summary = "Lấy lịch sử thanh toán của một Booking")
     public ResponseEntity<ApiResponse<List<PaymentResponse>>> getByBookingId(@PathVariable UUID bookingId) {
         List<PaymentResponse> response = paymentService.getByBookingId(bookingId);
@@ -128,7 +128,7 @@ public class PaymentController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('PAYMENT_VIEW') or hasAnyRole('ADMIN', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'STAFF', 'CUSTOMER')")
+    @PreAuthorize("hasAuthority('PAYMENT_VIEW')")
     @Operation(summary = "Lấy danh sách thanh toán phân trang và lọc theo tiêu chí")
     public ResponseEntity<ApiResponse<PageResponse<PaymentResponse>>> getAll(
             @RequestParam(required = false) UUID bookingId,

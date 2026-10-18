@@ -78,6 +78,7 @@ public class ChatbotServiceImpl implements ChatbotService {
                - [Quy định & Tiêu chuẩn](/terms)
                - [Cổng khách hàng](/customer)
             3. Nếu người dùng hỏi ngoài phạm vi Boxora (kho bãi, lưu trữ, check-in, thanh toán, hợp đồng), nhẹ nhàng chuyển hướng về các tiện ích của Boxora.
+            Do not claim that Boxora has working IoT, SmartLock, QR auto-unlock, or remote lock control. The backend does not confirm physical device commands; describe physical lock state as unverified.
             """;
 
     public ChatbotServiceImpl(
@@ -100,8 +101,10 @@ public class ChatbotServiceImpl implements ChatbotService {
     @Override
     public ChatbotResponse chat(ChatbotRequest request) {
         if (apiKeys.length == 0) {
+            log.error("Chatbot unavailable: no Gemini provider credentials are configured");
             return ChatbotResponse.builder()
-                    .reply("Dạ chào bạn! Hệ thống Boxora AI chưa được cấu hình GEMINI_API_KEYS trong file .env máy chủ.")
+                    .status("UNAVAILABLE")
+                    .reply("Boxora AI is temporarily unavailable. Please try again later.")
                     .build();
         }
 
@@ -140,21 +143,26 @@ public class ChatbotServiceImpl implements ChatbotService {
                         if (reply != null && !reply.isBlank()) {
                             lastWorkingKeyIdx.set(keyIndex);
                             lastWorkingModelIdx.set(modelIndex);
-                            return ChatbotResponse.builder().reply(reply).build();
+                            return ChatbotResponse.builder()
+                                    .status("AVAILABLE")
+                                    .reply(reply)
+                                    .build();
                         }
                     }
                 } catch (HttpClientErrorException | HttpServerErrorException e) {
-                    log.warn("Gemini API call failed [{}] with status {}: {}", model, e.getStatusCode(), e.getMessage());
+                    log.warn("Gemini provider request failed (model={}, status={})", model, e.getStatusCode());
                     keyCooldowns.put(matrixKey, System.currentTimeMillis() + 60000);
                 } catch (Exception e) {
-                    log.warn("Error calling Gemini API [{}]: {}", model, e.getMessage());
+                    log.warn("Gemini provider request failed (model={}, errorType={})", model, e.getClass().getSimpleName());
                     keyCooldowns.put(matrixKey, System.currentTimeMillis() + 30000);
                 }
             }
         }
 
+        log.warn("Chatbot unavailable after retrying configured Gemini providers");
         return ChatbotResponse.builder()
-                .reply("Dạ chào bạn! Hiện tại hệ sinh thái Boxora AI đang xử lý lượng yêu cầu cao. Bạn có thể tham khảo nhanh bảng giá và đặt kho tự động tại 👉 [Khám phá kho](/units) hoặc xem [Quy định & Tiêu chuẩn](/terms) để được hỗ trợ tức thì nhé!")
+                .status("UNAVAILABLE")
+                .reply("Boxora AI is temporarily unavailable. Please try again later or browse storage options at /units.")
                 .build();
     }
 

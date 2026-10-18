@@ -33,6 +33,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
@@ -41,6 +42,8 @@ import java.util.UUID;
 @Slf4j
 @Transactional
 public class StaffAssignmentServiceImpl implements StaffAssignmentService {
+
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
     private final StaffAssignmentRepository staffAssignmentRepository;
     private final UserRepository userRepository;
@@ -56,7 +59,7 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
                 request.getStaffId(), request.getFacilityId(), request.getAssignedDate(), request.getShift());
 
         // 1. Kiểm tra ngày phân công (không được phân công cho ngày trong quá khứ)
-        if (request.getAssignedDate().isBefore(LocalDate.now())) {
+        if (request.getAssignedDate().isBefore(LocalDate.now(BUSINESS_ZONE))) {
             throw new AppException(ErrorCode.INVALID_ASSIGNMENT_DATE);
         }
 
@@ -100,6 +103,9 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
         // 6. Xác định giờ bắt đầu / kết thúc ca (hỗ trợ ca qua đêm)
         java.time.LocalTime startTime = request.getStartTime();
         java.time.LocalTime endTime = request.getEndTime();
+        if ((startTime == null) != (endTime == null)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Both shift start and end times must be provided together");
+        }
         if (startTime == null || endTime == null) {
             switch (request.getShift()) {
                 case MORNING -> {
@@ -120,6 +126,7 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
                 }
             }
         }
+        ensureNoOverlappingAssignment(staff.getId(), request.getAssignedDate(), startTime, endTime, null);
 
         // 7. Tạo thực thể phân công ca
         StaffAssignment assignment = StaffAssignment.builder()
@@ -166,6 +173,29 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
 
         // Kiểm tra quyền cơ sở
         facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
+        if (assignment.getStatus() != StaffAssignmentStatus.ASSIGNED) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    "Attendance records cannot be edited as a schedule");
+        }
+
+        StaffShift effectiveShift = request.getShift() != null ? request.getShift() : assignment.getShift();
+        java.time.LocalTime effectiveStartTime = request.getStartTime() != null
+                ? request.getStartTime() : assignment.getStartTime();
+        java.time.LocalTime effectiveEndTime = request.getEndTime() != null
+                ? request.getEndTime() : assignment.getEndTime();
+        if (request.getShift() != null && request.getShift() != assignment.getShift()
+                && request.getStartTime() == null && request.getEndTime() == null) {
+            java.time.LocalTime[] times = defaultShiftTimes(effectiveShift);
+            effectiveStartTime = times[0];
+            effectiveEndTime = times[1];
+        }
+
+        if ((request.getShift() != null && request.getShift() != assignment.getShift())
+                || request.getStartTime() != null || request.getEndTime() != null) {
+            ensureNoOverlappingAssignment(
+                    assignment.getStaff().getId(), assignment.getAssignedDate(),
+                    effectiveStartTime, effectiveEndTime, assignment.getId());
+        }
 
         // Kiểm tra trùng ca nếu có thay đổi shift
         if (request.getShift() != null && request.getShift() != assignment.getShift()) {
@@ -181,13 +211,8 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             assignment.setShift(request.getShift());
         }
 
-        if (request.getStartTime() != null) {
-            assignment.setStartTime(request.getStartTime());
-        }
-
-        if (request.getEndTime() != null) {
-            assignment.setEndTime(request.getEndTime());
-        }
+        assignment.setStartTime(effectiveStartTime);
+        assignment.setEndTime(effectiveEndTime);
 
         if (request.getAssignedZone() != null) {
             assignment.setAssignedZone(request.getAssignedZone());
@@ -195,10 +220,6 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
 
         if (request.getRoleInShift() != null && !request.getRoleInShift().isBlank()) {
             assignment.setRoleInShift(request.getRoleInShift());
-        }
-
-        if (request.getStatus() != null) {
-            assignment.setStatus(request.getStatus());
         }
 
         if (request.getNotes() != null) {
@@ -227,11 +248,11 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
         StaffAssignment assignment = staffAssignmentRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.STAFF_ASSIGNMENT_NOT_FOUND));
 
-        // Kiểm tra quyền: Chỉ chính nhân viên được phân công HOẶC Quản lý cơ sở mới được check-in
         UUID currentUserId = requestContext.currentUserId();
         boolean isSelf = currentUserId != null && currentUserId.equals(assignment.getStaff().getId());
-        if (!isSelf) {
-            facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
+        facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
+        if ("STAFF".equalsIgnoreCase(requestContext.currentUserRole()) && !isSelf) {
+            throw new AppException(ErrorCode.FORBIDDEN);
         }
 
         if (assignment.getStatus() == StaffAssignmentStatus.CHECKED_IN) {
@@ -242,8 +263,26 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             throw new AppException(ErrorCode.STAFF_ALREADY_CHECKED_OUT);
         }
 
+        if (assignment.getStatus() != StaffAssignmentStatus.ASSIGNED) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Only an assigned shift can be checked in");
+        }
+
+        if (assignment.getStartTime() == null || assignment.getEndTime() == null
+                || assignment.getStartTime().equals(assignment.getEndTime())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "The assigned shift has no valid check-in window");
+        }
+        java.time.LocalDateTime shiftStart = assignment.getAssignedDate().atTime(assignment.getStartTime());
+        java.time.LocalDateTime shiftEnd = assignment.getAssignedDate().atTime(assignment.getEndTime());
+        if (!assignment.getEndTime().isAfter(assignment.getStartTime())) {
+            shiftEnd = shiftEnd.plusDays(1);
+        }
+        java.time.LocalDateTime now = java.time.LocalDateTime.now(BUSINESS_ZONE);
+        if (now.isBefore(shiftStart) || !now.isBefore(shiftEnd)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Check-in is only available during the assigned shift window");
+        }
+
         assignment.setStatus(StaffAssignmentStatus.CHECKED_IN);
-        assignment.setCheckedInAt(java.time.LocalDateTime.now());
+        assignment.setCheckedInAt(now);
         if (request != null && request.getNotes() != null && !request.getNotes().isBlank()) {
             assignment.setCheckInNote(request.getNotes());
         }
@@ -275,8 +314,9 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
 
         UUID currentUserId = requestContext.currentUserId();
         boolean isSelf = currentUserId != null && currentUserId.equals(assignment.getStaff().getId());
-        if (!isSelf) {
-            facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
+        facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
+        if ("STAFF".equalsIgnoreCase(requestContext.currentUserRole()) && !isSelf) {
+            throw new AppException(ErrorCode.FORBIDDEN);
         }
 
         if (assignment.getStatus() != StaffAssignmentStatus.CHECKED_IN) {
@@ -287,7 +327,7 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
         }
 
         assignment.setStatus(StaffAssignmentStatus.COMPLETED);
-        assignment.setCheckedOutAt(java.time.LocalDateTime.now());
+        assignment.setCheckedOutAt(java.time.LocalDateTime.now(BUSINESS_ZONE));
         if (request != null && request.getNotes() != null && !request.getNotes().isBlank()) {
             assignment.setCheckOutNote(request.getNotes());
         }
@@ -314,15 +354,22 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
     public StaffAssignmentResponse updateStatus(UUID id, StaffAssignmentStatusUpdateRequest request) {
         log.info("Updating status for staff assignment id={} to status={}", id, request.getStatus());
 
+        String currentRole = requestContext.currentUserRole();
+        if (request.getStatus() == StaffAssignmentStatus.CHECKED_IN) {
+            return checkIn(id, new StaffCheckInRequest(request.getNotes()));
+        }
+        if (request.getStatus() == StaffAssignmentStatus.COMPLETED) {
+            return checkOut(id, new com.boxora.dto.request.StaffCheckOutRequest(request.getNotes()));
+        }
+        if (!"FACILITY_MANAGER".equalsIgnoreCase(currentRole)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
         StaffAssignment assignment = staffAssignmentRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.STAFF_ASSIGNMENT_NOT_FOUND));
 
         // Cho phép quản lý cơ sở HOẶC chính nhân viên được phân công tự cập nhật trạng thái (check-in/hoàn thành)
-        UUID currentUserId = requestContext.currentUserId();
-        boolean isSelf = currentUserId != null && currentUserId.equals(assignment.getStaff().getId());
-        if (!isSelf) {
-            facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
-        }
+        facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
 
         assignment.setStatus(request.getStatus());
         if (request.getNotes() != null && !request.getNotes().isBlank()) {
@@ -353,8 +400,17 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
                 .orElseThrow(() -> new AppException(ErrorCode.STAFF_ASSIGNMENT_NOT_FOUND));
 
         facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
+        if (!"FACILITY_MANAGER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
 
-        staffAssignmentRepository.delete(assignment);
+        if (assignment.getStatus() != StaffAssignmentStatus.ASSIGNED) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    "Attendance history cannot be deleted or cancelled");
+        }
+
+        assignment.setStatus(StaffAssignmentStatus.CANCELLED);
+        staffAssignmentRepository.save(assignment);
 
         activityLogService.record(
                 assignment.getFacility().getId(),
@@ -365,8 +421,8 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
                         assignment.getStaff().getFullName(),
                         assignment.getAssignedDate(),
                         assignment.getShift()),
-                assignment.getId().toString(),
-                null
+                StaffAssignmentStatus.ASSIGNED.name(),
+                StaffAssignmentStatus.CANCELLED.name()
         );
     }
 
@@ -377,6 +433,10 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
                 .orElseThrow(() -> new AppException(ErrorCode.STAFF_ASSIGNMENT_NOT_FOUND));
 
         facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
+        if ("STAFF".equalsIgnoreCase(requestContext.currentUserRole())
+                && !assignment.getStaff().getId().equals(requestContext.currentUserId())) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
 
         return staffAssignmentMapper.toResponse(assignment);
     }
@@ -400,6 +460,14 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
                 ? facilityAccessGuard.scopedFacilityIdOrNull()
                 : facilityId;
 
+        UUID effectiveStaffId = staffId;
+        if ("STAFF".equalsIgnoreCase(requestContext.currentUserRole())) {
+            effectiveStaffId = requestContext.currentUserId();
+            if (effectiveStaffId == null) {
+                throw new AppException(ErrorCode.UNAUTHORIZED);
+            }
+        }
+
         Sort sort = "asc".equalsIgnoreCase(sortDir)
                 ? Sort.by(sortBy).ascending()
                 : Sort.by(sortBy).descending();
@@ -408,7 +476,7 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
 
         Page<StaffAssignmentResponse> result = staffAssignmentRepository.findAllWithFilters(
                 scopedFacilityId,
-                staffId,
+                effectiveStaffId,
                 assignedDate,
                 shift,
                 status,
@@ -433,13 +501,77 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
 
         facilityAccessGuard.checkFacilityAccess(targetFacilityId);
 
-        LocalDate targetDate = (date != null) ? date : LocalDate.now();
+        LocalDate targetDate = (date != null) ? date : LocalDate.now(BUSINESS_ZONE);
 
         List<StaffAssignment> list = staffAssignmentRepository
                 .findByFacility_IdAndAssignedDateOrderByShiftAscCreatedAtAsc(targetFacilityId, targetDate);
+        if ("STAFF".equalsIgnoreCase(requestContext.currentUserRole())) {
+            list = staffAssignmentRepository.findByStaff_IdAndAssignedDate(requestContext.currentUserId(), targetDate)
+                    .stream()
+                    .filter(assignment -> assignment.getFacility() != null
+                            && targetFacilityId.equals(assignment.getFacility().getId()))
+                    .toList();
+        }
 
         return list.stream()
                 .map(staffAssignmentMapper::toResponse)
                 .toList();
+    }
+
+    private void ensureNoOverlappingAssignment(
+            UUID staffId,
+            LocalDate assignedDate,
+            java.time.LocalTime startTime,
+            java.time.LocalTime endTime,
+            UUID excludedAssignmentId
+    ) {
+        if (startTime == null || endTime == null || startTime.equals(endTime)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Shift start and end times must define a non-empty interval");
+        }
+
+        java.time.LocalDateTime candidateStart = assignedDate.atTime(startTime);
+        java.time.LocalDateTime candidateEnd = assignedDate.atTime(endTime);
+        if (!endTime.isAfter(startTime)) {
+            candidateEnd = candidateEnd.plusDays(1);
+        }
+
+        List<StaffAssignment> nearbyAssignments = staffAssignmentRepository.findByStaff_IdAndAssignedDateBetween(
+                staffId, assignedDate.minusDays(1), assignedDate.plusDays(1));
+        for (StaffAssignment existing : nearbyAssignments) {
+            if (java.util.Objects.equals(existing.getId(), excludedAssignmentId)
+                    || existing.getStatus() == StaffAssignmentStatus.CANCELLED) {
+                continue;
+            }
+
+            java.time.LocalTime existingStartTime = existing.getStartTime();
+            java.time.LocalTime existingEndTime = existing.getEndTime();
+            if (existingStartTime == null || existingEndTime == null) {
+                java.time.LocalTime[] times = defaultShiftTimes(existing.getShift());
+                existingStartTime = times[0];
+                existingEndTime = times[1];
+            }
+            if (existingStartTime.equals(existingEndTime)) {
+                throw new AppException(ErrorCode.STAFF_ALREADY_ASSIGNED_SHIFT);
+            }
+
+            java.time.LocalDateTime existingStart = existing.getAssignedDate().atTime(existingStartTime);
+            java.time.LocalDateTime existingEnd = existing.getAssignedDate().atTime(existingEndTime);
+            if (!existingEndTime.isAfter(existingStartTime)) {
+                existingEnd = existingEnd.plusDays(1);
+            }
+
+            if (candidateStart.isBefore(existingEnd) && existingStart.isBefore(candidateEnd)) {
+                throw new AppException(ErrorCode.STAFF_ALREADY_ASSIGNED_SHIFT);
+            }
+        }
+    }
+
+    private java.time.LocalTime[] defaultShiftTimes(StaffShift shift) {
+        return switch (shift) {
+            case MORNING -> new java.time.LocalTime[]{java.time.LocalTime.of(6, 0), java.time.LocalTime.of(14, 0)};
+            case AFTERNOON -> new java.time.LocalTime[]{java.time.LocalTime.of(14, 0), java.time.LocalTime.of(22, 0)};
+            case NIGHT -> new java.time.LocalTime[]{java.time.LocalTime.of(22, 0), java.time.LocalTime.of(6, 0)};
+            case FULL_DAY -> new java.time.LocalTime[]{java.time.LocalTime.of(8, 0), java.time.LocalTime.of(17, 0)};
+        };
     }
 }

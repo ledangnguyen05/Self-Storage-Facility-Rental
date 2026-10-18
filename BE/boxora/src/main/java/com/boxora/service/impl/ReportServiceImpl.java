@@ -38,6 +38,7 @@ public class ReportServiceImpl implements ReportService {
 
     private final PaymentRepository paymentRepository;
     private final StorageUnitRepository storageUnitRepository;
+    private final FacilityRepository facilityRepository;
     private final RentalContractRepository rentalContractRepository;
     private final FacilityPolicyRepository facilityPolicyRepository;
     private final BookingRepository bookingRepository;
@@ -73,16 +74,64 @@ public class ReportServiceImpl implements ReportService {
                     .rentalFeeRevenue(BigDecimal.ZERO)
                     .renewalFeeRevenue(BigDecimal.ZERO)
                     .extraChargeRevenue(BigDecimal.ZERO)
+                    .bookingPaymentRevenue(BigDecimal.ZERO)
                     .paymentCount(0L)
                     .build();
         }
+
+        List<RevenueMonthSummaryResponse> monthlyRevenue = Optional.ofNullable(
+                        paymentRepository.sumRevenueByMonth(from, to, effectiveFacilityId))
+                .orElseGet(List::of)
+                .stream()
+                .map(this::toMonthlySummary)
+                .toList();
+        List<PaymentMethodSummaryResponse> paymentsByMethod = Optional.ofNullable(
+                        paymentRepository.countPaidPaymentsByMethod(from, to, effectiveFacilityId))
+                .orElseGet(List::of)
+                .stream()
+                .map(this::toPaymentMethodSummary)
+                .toList();
 
         return RevenueReportResponse.builder()
                 .fromDate(fromDate)
                 .toDate(toDate)
                 .systemSummary(systemSummary)
                 .byFacility(byFacility)
+                .monthlyRevenue(monthlyRevenue)
+                .paymentsByMethod(paymentsByMethod)
                 .build();
+    }
+
+    private RevenueMonthSummaryResponse toMonthlySummary(Object[] row) {
+        Number year = (Number) row[0];
+        Number month = (Number) row[1];
+        String monthKey = year == null || month == null
+                ? null
+                : String.format(Locale.ROOT, "%04d-%02d", year.intValue(), month.intValue());
+
+        return RevenueMonthSummaryResponse.builder()
+                .month(monthKey)
+                .rentalFeeRevenue(toBigDecimal(row[2]))
+                .depositRevenue(toBigDecimal(row[3]))
+                .renewalFeeRevenue(toBigDecimal(row[4]))
+                .extraChargeRevenue(toBigDecimal(row[5]))
+                .bookingPaymentRevenue(toBigDecimal(row[6]))
+                .totalRevenue(toBigDecimal(row[7]))
+                .paymentCount(((Number) row[8]).longValue())
+                .build();
+    }
+
+    private PaymentMethodSummaryResponse toPaymentMethodSummary(Object[] row) {
+        return PaymentMethodSummaryResponse.builder()
+                .paymentMethod((String) row[0])
+                .paymentCount(((Number) row[1]).longValue())
+                .build();
+    }
+
+    private BigDecimal toBigDecimal(Object value) {
+        if (value instanceof BigDecimal amount) return amount;
+        if (value instanceof Number amount) return new BigDecimal(amount.toString());
+        return BigDecimal.ZERO;
     }
 
     @Override
@@ -102,6 +151,13 @@ public class ReportServiceImpl implements ReportService {
         Map<UUID, String> facilityNames = new LinkedHashMap<>();
         // bucket layout per facility: [total, occupied, available, reserved, maintenance]
         Map<UUID, long[]> counts = new LinkedHashMap<>();
+
+        facilityRepository.findAll().forEach(facility -> {
+            if (facility != null && facility.getId() != null) {
+                facilityNames.putIfAbsent(facility.getId(), facility.getName());
+                counts.computeIfAbsent(facility.getId(), ignored -> new long[5]);
+            }
+        });
 
         for (Object[] row : rows) {
             UUID fId = (UUID) row[0];
@@ -184,17 +240,28 @@ public class ReportServiceImpl implements ReportService {
         }
         final UUID targetFacilityId = effectiveFacilityId;
 
-        // 1. Fetch overdue contracts (endDate < today and status in ACTIVE, EXPIRED)
+        // Include linked booking IDs from every contract to avoid counting a linked booking a second time.
         List<RentalContract> allContracts = rentalContractRepository.findAll();
+        Set<UUID> accountedBookingIds = allContracts.stream()
+                .map(RentalContract::getBooking)
+                .filter(Objects::nonNull)
+                .map(Booking::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
         List<RentalContract> overdueContracts = allContracts.stream()
-                .filter(c -> (c.getStatus() == RentalContractStatus.ACTIVE || c.getStatus() == RentalContractStatus.EXPIRED)
+                .filter(c -> (c.getStatus() == RentalContractStatus.ACTIVE
+                        || c.getStatus() == RentalContractStatus.OVERDUE
+                        || c.getStatus() == RentalContractStatus.EXPIRED)
                         && c.getEndDate() != null && c.getEndDate().isBefore(today))
+                .filter(c -> c.getBooking() == null
+                        || (c.getBooking().getStatus() != BookingStatus.CANCELLED
+                        && !"REFUNDED".equalsIgnoreCase(c.getBooking().getPaymentStatus())))
                 .filter(c -> targetFacilityId == null || (c.getFacility() != null && targetFacilityId.equals(c.getFacility().getId())))
                 .toList();
 
         Map<UUID, FacilityPolicy> policyCache = new HashMap<>();
         List<OverdueDebtItemResponse> overdueItems = new ArrayList<>();
-        Set<UUID> accountedBookingIds = new HashSet<>();
 
         for (RentalContract contract : overdueContracts) {
             Facility facility = contract.getFacility();
@@ -205,35 +272,13 @@ public class ReportServiceImpl implements ReportService {
                 policy = policyCache.computeIfAbsent(facilityId, id -> facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(id).orElse(null));
             }
 
-            int graceDays = (policy != null && policy.getOverdueGraceDays() != null) ? policy.getOverdueGraceDays() : 1;
-            int accessDisableDays = (policy != null && policy.getOverdueAccessDisableDays() != null) ? policy.getOverdueAccessDisableDays() : 3;
-            int sealingDays = (policy != null && policy.getOverdueSealingDays() != null) ? policy.getOverdueSealingDays() : 7;
-            BigDecimal dailyLateFee = (policy != null && policy.getDailyLateFee() != null) ? policy.getDailyLateFee() : new BigDecimal("50000");
-
             long daysOverdue = ChronoUnit.DAYS.between(contract.getEndDate(), today);
-            BigDecimal unpaidRent = contract.getMonthlyFee() != null ? contract.getMonthlyFee() : BigDecimal.ZERO;
-            BigDecimal totalLateFee = daysOverdue > graceDays ? dailyLateFee.multiply(BigDecimal.valueOf(daysOverdue)) : BigDecimal.ZERO;
-            BigDecimal totalDebt = unpaidRent.add(totalLateFee);
-
-            String overdueStage;
-            String smartLockStatus;
-            if (daysOverdue <= graceDays) {
-                overdueStage = "GRACE_PERIOD";
-                smartLockStatus = "NORMAL";
-            } else if (daysOverdue <= accessDisableDays) {
-                overdueStage = "WARNING";
-                smartLockStatus = "WARNING";
-            } else if (daysOverdue < sealingDays) {
-                overdueStage = "ACCESS_BLOCKED";
-                smartLockStatus = "TEMP_LOCKED";
-            } else {
-                overdueStage = "ELIGIBLE_FOR_SEALING";
-                smartLockStatus = "SEALED";
-            }
-
-            if (contract.getBooking() != null) {
-                accountedBookingIds.add(contract.getBooking().getId());
-            }
+            // RentalContract has no recurring invoice/payment ledger, so monthlyFee cannot be called unpaid rent.
+            BigDecimal unpaidRent = null;
+            BigDecimal dailyLateFee = configuredDailyLateFee(policy);
+            BigDecimal totalLateFee = calculateLateFee(daysOverdue, policy);
+            BigDecimal totalDebt = addIfKnown(unpaidRent, totalLateFee);
+            String overdueStage = resolveOverdueStage(daysOverdue, policy);
 
             overdueItems.add(OverdueDebtItemResponse.builder()
                     .contractId(contract.getId())
@@ -241,13 +286,13 @@ public class ReportServiceImpl implements ReportService {
                     .bookingId(contract.getBooking() != null ? contract.getBooking().getId() : null)
                     .bookingCode(contract.getBooking() != null ? contract.getBooking().getBookingCode() : null)
                     .customerId(contract.getCustomer() != null ? contract.getCustomer().getId() : null)
-                    .customerName(contract.getCustomer() != null ? contract.getCustomer().getFullName() : "N/A")
-                    .customerPhone(contract.getCustomer() != null ? contract.getCustomer().getPhone() : "N/A")
-                    .customerEmail(contract.getCustomer() != null ? contract.getCustomer().getEmail() : "N/A")
+                    .customerName(contract.getCustomer() != null ? contract.getCustomer().getFullName() : null)
+                    .customerPhone(contract.getCustomer() != null ? contract.getCustomer().getPhone() : null)
+                    .customerEmail(contract.getCustomer() != null ? contract.getCustomer().getEmail() : null)
                     .unitId(contract.getUnit() != null ? contract.getUnit().getId() : null)
                     .unitCode(contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A")
                     .facilityId(facilityId)
-                    .facilityName(facility != null ? facility.getName() : "N/A")
+                    .facilityName(facility != null ? facility.getName() : null)
                     .startDate(contract.getStartDate())
                     .dueDate(contract.getEndDate())
                     .daysOverdue(daysOverdue)
@@ -256,7 +301,7 @@ public class ReportServiceImpl implements ReportService {
                     .totalLateFee(totalLateFee)
                     .totalDebt(totalDebt)
                     .overdueStage(overdueStage)
-                    .smartLockStatus(smartLockStatus)
+                    .smartLockStatus("UNVERIFIED")
                     .build());
         }
 
@@ -265,6 +310,7 @@ public class ReportServiceImpl implements ReportService {
                 .filter(b -> (b.getStatus() == BookingStatus.ACTIVE || b.getStatus() == BookingStatus.CONFIRMED)
                         && b.getEndDate() != null && b.getEndDate().isBefore(today))
                 .filter(b -> !accountedBookingIds.contains(b.getId()))
+                .filter(b -> !"REFUNDED".equalsIgnoreCase(b.getPaymentStatus()))
                 .filter(b -> {
                     if (targetFacilityId == null) return true;
                     return b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null
@@ -281,45 +327,26 @@ public class ReportServiceImpl implements ReportService {
                 policy = policyCache.computeIfAbsent(facilityId, id -> facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(id).orElse(null));
             }
 
-            int graceDays = (policy != null && policy.getOverdueGraceDays() != null) ? policy.getOverdueGraceDays() : 1;
-            int accessDisableDays = (policy != null && policy.getOverdueAccessDisableDays() != null) ? policy.getOverdueAccessDisableDays() : 3;
-            int sealingDays = (policy != null && policy.getOverdueSealingDays() != null) ? policy.getOverdueSealingDays() : 7;
-            BigDecimal dailyLateFee = (policy != null && policy.getDailyLateFee() != null) ? policy.getDailyLateFee() : new BigDecimal("50000");
-
             long daysOverdue = ChronoUnit.DAYS.between(booking.getEndDate(), today);
-            BigDecimal unpaidRent = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : new BigDecimal("1450000");
-            BigDecimal totalLateFee = daysOverdue > graceDays ? dailyLateFee.multiply(BigDecimal.valueOf(daysOverdue)) : BigDecimal.ZERO;
-            BigDecimal totalDebt = unpaidRent.add(totalLateFee);
-
-            String overdueStage;
-            String smartLockStatus;
-            if (daysOverdue <= graceDays) {
-                overdueStage = "GRACE_PERIOD";
-                smartLockStatus = "NORMAL";
-            } else if (daysOverdue <= accessDisableDays) {
-                overdueStage = "WARNING";
-                smartLockStatus = "WARNING";
-            } else if (daysOverdue < sealingDays) {
-                overdueStage = "ACCESS_BLOCKED";
-                smartLockStatus = "TEMP_LOCKED";
-            } else {
-                overdueStage = "ELIGIBLE_FOR_SEALING";
-                smartLockStatus = "SEALED";
-            }
+            BigDecimal unpaidRent = resolveUnpaidBookingRent(booking);
+            BigDecimal dailyLateFee = configuredDailyLateFee(policy);
+            BigDecimal totalLateFee = calculateLateFee(daysOverdue, policy);
+            BigDecimal totalDebt = addIfKnown(unpaidRent, totalLateFee);
+            String overdueStage = resolveOverdueStage(daysOverdue, policy);
 
             overdueItems.add(OverdueDebtItemResponse.builder()
                     .contractId(null)
-                    .contractCode("HĐ-TẠM-" + booking.getBookingCode())
+                    .contractCode(null)
                     .bookingId(booking.getId())
                     .bookingCode(booking.getBookingCode())
                     .customerId(booking.getCustomer() != null ? booking.getCustomer().getId() : null)
-                    .customerName(booking.getCustomer() != null ? booking.getCustomer().getFullName() : "Khách hàng Boxora")
-                    .customerPhone(booking.getCustomer() != null ? booking.getCustomer().getPhone() : "0900000000")
-                    .customerEmail(booking.getCustomer() != null ? booking.getCustomer().getEmail() : "customer@boxora.vn")
+                    .customerName(booking.getCustomer() != null ? booking.getCustomer().getFullName() : null)
+                    .customerPhone(booking.getCustomer() != null ? booking.getCustomer().getPhone() : null)
+                    .customerEmail(booking.getCustomer() != null ? booking.getCustomer().getEmail() : null)
                     .unitId(booking.getStorageUnit() != null ? booking.getStorageUnit().getId() : null)
                     .unitCode(booking.getStorageUnit() != null ? booking.getStorageUnit().getUnitCode() : "N/A")
                     .facilityId(facilityId)
-                    .facilityName(facility != null ? facility.getName() : "Cơ sở Tân Bình")
+                    .facilityName(facility != null ? facility.getName() : null)
                     .startDate(booking.getStartDate())
                     .dueDate(booking.getEndDate())
                     .daysOverdue(daysOverdue)
@@ -328,7 +355,7 @@ public class ReportServiceImpl implements ReportService {
                     .totalLateFee(totalLateFee)
                     .totalDebt(totalDebt)
                     .overdueStage(overdueStage)
-                    .smartLockStatus(smartLockStatus)
+                    .smartLockStatus("UNVERIFIED")
                     .build());
         }
 
@@ -344,12 +371,20 @@ public class ReportServiceImpl implements ReportService {
         long warningCount = 0;
         long blockedCount = 0;
         long sealingCount = 0;
+        long policyUnconfiguredCount = 0;
 
         for (OverdueDebtItemResponse item : overdueItems) {
             long days = item.getDaysOverdue();
-            BigDecimal debt = item.getTotalDebt() != null ? item.getTotalDebt() : BigDecimal.ZERO;
+            BigDecimal debt = item.getTotalDebt();
 
-            if (days <= 3) {
+            if (debt == null) {
+                aging1To3 = null;
+                aging4To7 = null;
+                aging8To14 = null;
+                aging15Plus = null;
+            } else if (aging1To3 == null) {
+                // Keep all aging totals unavailable if any item lacks a configured debt calculation.
+            } else if (days <= 3) {
                 aging1To3 = aging1To3.add(debt);
             } else if (days <= 7) {
                 aging4To7 = aging4To7.add(debt);
@@ -365,8 +400,10 @@ public class ReportServiceImpl implements ReportService {
                 warningCount++;
             } else if ("ACCESS_BLOCKED".equals(item.getOverdueStage())) {
                 blockedCount++;
-            } else {
+            } else if ("ELIGIBLE_FOR_SEALING".equals(item.getOverdueStage())) {
                 sealingCount++;
+            } else if ("POLICY_UNCONFIGURED".equals(item.getOverdueStage())) {
+                policyUnconfiguredCount++;
             }
         }
 
@@ -378,10 +415,10 @@ public class ReportServiceImpl implements ReportService {
         List<FacilityOverdueDebtResponse> byFacilitySummary = new ArrayList<>();
         for (Map.Entry<UUID, List<OverdueDebtItemResponse>> entry : byFacilityMap.entrySet()) {
             List<OverdueDebtItemResponse> items = entry.getValue();
-            String fName = items.isEmpty() ? "N/A" : items.get(0).getFacilityName();
-            BigDecimal fUnpaid = items.stream().map(OverdueDebtItemResponse::getUnpaidRent).reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal fLate = items.stream().map(OverdueDebtItemResponse::getTotalLateFee).reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal fTotal = fUnpaid.add(fLate);
+            String fName = items.isEmpty() ? null : items.get(0).getFacilityName();
+            BigDecimal fUnpaid = sumIfKnown(items.stream().map(OverdueDebtItemResponse::getUnpaidRent).toList());
+            BigDecimal fLate = sumIfKnown(items.stream().map(OverdueDebtItemResponse::getTotalLateFee).toList());
+            BigDecimal fTotal = sumIfKnown(items.stream().map(OverdueDebtItemResponse::getTotalDebt).toList());
 
             byFacilitySummary.add(FacilityOverdueDebtResponse.builder()
                     .facilityId(entry.getKey())
@@ -394,9 +431,9 @@ public class ReportServiceImpl implements ReportService {
         }
 
         long totalOverdueCount = overdueItems.size();
-        BigDecimal totalUnpaid = overdueItems.stream().map(OverdueDebtItemResponse::getUnpaidRent).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalLate = overdueItems.stream().map(OverdueDebtItemResponse::getTotalLateFee).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalDebt = totalUnpaid.add(totalLate);
+        BigDecimal totalUnpaid = sumIfKnown(overdueItems.stream().map(OverdueDebtItemResponse::getUnpaidRent).toList());
+        BigDecimal totalLate = sumIfKnown(overdueItems.stream().map(OverdueDebtItemResponse::getTotalLateFee).toList());
+        BigDecimal totalDebt = sumIfKnown(overdueItems.stream().map(OverdueDebtItemResponse::getTotalDebt).toList());
 
         return OverdueDebtReportResponse.builder()
                 .asOfDate(today)
@@ -408,6 +445,7 @@ public class ReportServiceImpl implements ReportService {
                 .warningCount(warningCount)
                 .accessBlockedCount(blockedCount)
                 .eligibleForSealingCount(sealingCount)
+                .policyUnconfiguredCount(policyUnconfiguredCount)
                 .aging1To3DaysDebt(aging1To3)
                 .aging4To7DaysDebt(aging4To7)
                 .aging8To14DaysDebt(aging8To14)
@@ -423,32 +461,29 @@ public class ReportServiceImpl implements ReportService {
         RentalContract contract = rentalContractRepository.findById(contractId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
 
-        if (facilityAccessGuard.isFacilityScoped() && contract.getFacility() != null) {
-            facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
+        if (contract.getFacility() == null) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
         }
+        facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
 
         LocalDate today = LocalDate.now();
         if (contract.getEndDate() == null || !contract.getEndDate().isBefore(today)) {
             throw new AppException(ErrorCode.INVALID_REQUEST);
         }
 
-        FacilityPolicy policy = (contract.getFacility() != null)
-                ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(contract.getFacility().getId()).orElse(null)
-                : null;
+        FacilityPolicy policy = facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(contract.getFacility().getId()).orElse(null);
 
-        int graceDays = (policy != null && policy.getOverdueGraceDays() != null) ? policy.getOverdueGraceDays() : 1;
-        int accessDisableDays = (policy != null && policy.getOverdueAccessDisableDays() != null) ? policy.getOverdueAccessDisableDays() : 3;
-        int sealingDays = (policy != null && policy.getOverdueSealingDays() != null) ? policy.getOverdueSealingDays() : 7;
-        BigDecimal dailyLateFee = (policy != null && policy.getDailyLateFee() != null) ? policy.getDailyLateFee() : new BigDecimal("50000");
+        if (policy == null || policy.getOverdueGraceDays() == null || policy.getOverdueGraceDays() < 0
+                || configuredDailyLateFee(policy) == null) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "An active facility overdue policy is required to calculate this reminder");
+        }
 
         long daysOverdue = ChronoUnit.DAYS.between(contract.getEndDate(), today);
-        BigDecimal unpaidRent = contract.getMonthlyFee() != null ? contract.getMonthlyFee() : BigDecimal.ZERO;
-        BigDecimal totalLateFee = daysOverdue > graceDays ? dailyLateFee.multiply(BigDecimal.valueOf(daysOverdue)) : BigDecimal.ZERO;
-        BigDecimal totalDebt = unpaidRent.add(totalLateFee);
-
-        String overdueStage = (daysOverdue <= graceDays) ? "GRACE_PERIOD"
-                : (daysOverdue <= accessDisableDays) ? "WARNING"
-                : (daysOverdue < sealingDays) ? "ACCESS_BLOCKED" : "ELIGIBLE_FOR_SEALING";
+        // The contract model has no recurring invoice ledger, so monthlyFee is not an authoritative unpaid balance.
+        BigDecimal unpaidRent = null;
+        BigDecimal totalLateFee = calculateLateFee(daysOverdue, policy);
+        BigDecimal totalDebt = addIfKnown(unpaidRent, totalLateFee);
+        String overdueStage = resolveOverdueStage(daysOverdue, policy);
 
         User customer = contract.getCustomer();
         if (customer != null && customer.getEmail() != null) {
@@ -466,10 +501,11 @@ public class ReportServiceImpl implements ReportService {
         UUID facilityId = contract.getFacility() != null ? contract.getFacility().getId() : null;
         activityLogService.record(
                 facilityId,
-                ActivityAction.OVERDUE_DETECTED,
+                ActivityAction.OVERDUE_REMINDER_SENT,
                 "RentalContract",
                 contract.getId(),
-                "Da gui email thong bao nhac no qua han cho khach hang " + (customer != null ? customer.getEmail() : "N/A") + " - So ngay qua han: " + daysOverdue + ", tong no: " + totalDebt,
+                "Sent an overdue reminder to " + (customer != null ? customer.getEmail() : "N/A")
+                        + " for " + daysOverdue + " days overdue; the outstanding balance is not reconciled.",
                 null,
                 contract.getContractCode()
         );
@@ -477,5 +513,58 @@ public class ReportServiceImpl implements ReportService {
 
     private double round2(double value) {
         return Math.round(value * 100.0) / 100.0;
+    }
+
+    private BigDecimal configuredDailyLateFee(FacilityPolicy policy) {
+        return policy != null && policy.getDailyLateFee() != null
+                && policy.getDailyLateFee().compareTo(BigDecimal.ZERO) >= 0
+                ? policy.getDailyLateFee()
+                : null;
+    }
+
+    private BigDecimal calculateLateFee(long daysOverdue, FacilityPolicy policy) {
+        if (policy == null || policy.getOverdueGraceDays() == null || policy.getOverdueGraceDays() < 0
+                || configuredDailyLateFee(policy) == null) {
+            return null;
+        }
+        long billableDays = Math.max(0, daysOverdue - policy.getOverdueGraceDays());
+        return configuredDailyLateFee(policy).multiply(BigDecimal.valueOf(billableDays));
+    }
+
+    private String resolveOverdueStage(long daysOverdue, FacilityPolicy policy) {
+        if (policy == null || policy.getOverdueGraceDays() == null || policy.getOverdueGraceDays() < 0
+                || policy.getOverdueAccessDisableDays() == null || policy.getOverdueAccessDisableDays() < 0
+                || policy.getOverdueSealingDays() == null || policy.getOverdueSealingDays() < 0
+                || configuredDailyLateFee(policy) == null) {
+            return "POLICY_UNCONFIGURED";
+        }
+        if (daysOverdue <= policy.getOverdueGraceDays()) return "GRACE_PERIOD";
+        if (daysOverdue < policy.getOverdueAccessDisableDays()) return "WARNING";
+        if (daysOverdue < policy.getOverdueSealingDays()) return "ACCESS_BLOCKED";
+        return "ELIGIBLE_FOR_SEALING";
+    }
+
+    private BigDecimal addIfKnown(BigDecimal left, BigDecimal right) {
+        return left == null || right == null ? null : left.add(right);
+    }
+
+    private BigDecimal resolveUnpaidBookingRent(Booking booking) {
+        if (booking.getTotalRentalFee() == null || booking.getTotalRentalFee().compareTo(BigDecimal.ZERO) < 0) {
+            return null;
+        }
+        String paymentStatus = booking.getPaymentStatus();
+        if ("PAID".equalsIgnoreCase(paymentStatus)) {
+            return BigDecimal.ZERO;
+        }
+        if ("UNPAID".equalsIgnoreCase(paymentStatus)) {
+            return booking.getTotalRentalFee();
+        }
+        // Partial payments, pending refunds, and unknown legacy statuses need ledger reconciliation.
+        return null;
+    }
+
+    private BigDecimal sumIfKnown(List<BigDecimal> amounts) {
+        if (amounts.stream().anyMatch(Objects::isNull)) return null;
+        return amounts.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 }

@@ -34,9 +34,9 @@ export const NoticeDispatcherModal: React.FC<NoticeDispatcherModalProps> = ({
   const getMessageContent = () => {
     switch (templateType) {
       case 'REMINDER':
-        return `[BOXORA BILLING] Kính gửi ${noticeData.tenantName}, tiền thuê kho #${noticeData.unitCode} (HĐ ${noticeData.contractCode}) đã quá hạn ${noticeData.daysOverdue} ngày. Tổng nợ cần thanh toán: ${noticeData.totalDebt}. Quý khách vui lòng thanh toán để duy trì quyền mở khóa SmartLock. Cổng thanh toán: boxora.vn/pay/${noticeData.contractCode}. Hotline: 1900-BOXORA.`
+        return `[BOXORA BILLING] Kính gửi ${noticeData.tenantName}, tiền thuê kho #${noticeData.unitCode} (HĐ ${noticeData.contractCode}) đã quá hạn ${noticeData.daysOverdue} ngày. Tổng nợ cần thanh toán: ${noticeData.totalDebt}. Quý khách vui lòng thanh toán hoặc liên hệ cơ sở để xác nhận trạng thái PIN/QR trong Boxora và quyền truy cập thực tế. Cổng thanh toán: boxora.vn/pay/${noticeData.contractCode}. Hotline: 1900-BOXORA.`
       case 'LOCKOUT_WARNING':
-        return `[BOXORA AN NINH] CẢNH BÁO: Kho #${noticeData.unitCode} của ${noticeData.tenantName} quá hạn ${noticeData.daysOverdue} ngày (Nợ ${noticeData.totalDebt}). Hệ thống sẽ tạm khóa quyền mở SmartLock sau 18:00 hôm nay nếu chưa thanh toán. Vui lòng thanh toán ngay tại boxora.vn/pay/${noticeData.contractCode}.`
+        return `[BOXORA AN NINH] CẢNH BÁO: Kho #${noticeData.unitCode} của ${noticeData.tenantName} quá hạn ${noticeData.daysOverdue} ngày (Nợ ${noticeData.totalDebt}). Boxora có thể thu hồi PIN/QR lưu trong hệ thống theo chính sách quá hạn; trạng thái khóa vật lý chưa được xác minh. Vui lòng thanh toán hoặc liên hệ cơ sở: boxora.vn/pay/${noticeData.contractCode}.`
       case 'SEAL_WARNING':
         return `[BOXORA PHÁP CHẾ] THÔNG BÁO NIÊM PHONG: HĐ ${noticeData.contractCode} (Kho #${noticeData.unitCode}) của ${noticeData.tenantName} vi phạm quá hạn ${noticeData.daysOverdue} ngày (Nợ ${noticeData.totalDebt}). Ban Quản Lý sẽ tiến hành lập Biên Bản Niêm Phong & kê biên tài sản theo Điều 8 Hợp đồng. Hotline giải quyết khẩn: 0988-BOXORA.`
     }

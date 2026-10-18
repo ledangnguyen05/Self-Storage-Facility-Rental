@@ -124,6 +124,8 @@ export const IncidentTicketsPage: React.FC = () => {
   const fetchTicketsAndData = useCallback(async (facilityIdOverride?: string) => {
     setIsLoading(true)
     setFetchError(null)
+    setTickets([])
+    setStats(null)
     try {
       const activeFilter = facilityIdOverride !== undefined ? facilityIdOverride : selectedFacilityFilter
       let effectiveFacilityId: string | undefined = undefined
@@ -151,6 +153,8 @@ export const IncidentTicketsPage: React.FC = () => {
 
       if (statsRes.status === 'fulfilled') {
         setStats(statsRes.value)
+      } else {
+        setStats(null)
       }
 
       if (facRes.status === 'fulfilled' && facRes.value?.content) {
@@ -591,17 +595,19 @@ export const IncidentTicketsPage: React.FC = () => {
         {/* Card 2: Đang xử lý */}
         <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Đang xử lý</span>
+            <span>Chưa hoàn tất</span>
             <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600">
               <span className="material-symbols-outlined text-[18px]">pending_actions</span>
             </div>
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold text-blue-700 tracking-tight">
-              {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : (stats?.inProgressTickets ?? tickets.filter(t => t.status === 'IN_PROGRESS' || t.status === 'OPEN').length)}
+              {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : (stats
+                ? stats.openTickets + stats.inProgressTickets + stats.reopenedTickets
+                : tickets.filter(t => t.status === 'IN_PROGRESS' || t.status === 'OPEN' || t.status === 'REOPENED').length)}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Cần nhân viên kiểm tra hiện trường
+              OPEN, IN_PROGRESS và REOPENED
             </div>
           </div>
         </div>
@@ -609,7 +615,7 @@ export const IncidentTicketsPage: React.FC = () => {
         {/* Card 3: Quá SLA */}
         <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Quá hạn SLA 24h</span>
+            <span>Quá hạn SLA</span>
             <div className="p-1.5 rounded-lg bg-rose-50 text-rose-600">
               <span className="material-symbols-outlined text-[18px]">alarm_on</span>
             </div>
@@ -619,7 +625,7 @@ export const IncidentTicketsPage: React.FC = () => {
               {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : ((stats?.overdueTickets ?? stats?.overdueSlaTickets) ?? tickets.filter(t => t.isOverdue || t.isOverdueSla).length)}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Cần ưu tiên xử lý khẩn cấp
+              Nhóm này có thể giao với ticket chưa hoàn tất
             </div>
           </div>
         </div>
@@ -634,10 +640,12 @@ export const IncidentTicketsPage: React.FC = () => {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold text-emerald-700 tracking-tight">
-              {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : (stats?.resolvedTickets ?? tickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED').length)}
+              {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : (stats
+                ? stats.resolvedTickets + stats.closedTickets
+                : tickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED').length)}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Khôi phục an toàn cơ sở
+              RESOLVED và CLOSED
             </div>
           </div>
         </div>
@@ -825,7 +833,7 @@ export const IncidentTicketsPage: React.FC = () => {
                         <div className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{t.description}</div>
                       </td>
                       <td className="py-3 px-3.5">
-                        <div className="text-slate-800 font-medium text-xs">{t.facilityName || 'Boxora Facility'}</div>
+                        <div className="text-slate-800 font-medium text-xs">{t.facilityName || 'N/A'}</div>
                         <div className="text-slate-500 text-[11px] mt-0.5">
                           {t.unitCode ? `Kho #${t.unitCode}` : 'Khu vực chung'}
                         </div>
@@ -851,14 +859,14 @@ export const IncidentTicketsPage: React.FC = () => {
                         )}
                       </td>
                       <td className="py-3 px-3.5 text-slate-500 text-[11px] whitespace-nowrap">
-                        <div>{t.createdAt ? new Date(t.createdAt).toLocaleDateString('vi-VN') : 'Hôm nay'}</div>
+                        <div>{t.createdAt ? new Date(t.createdAt).toLocaleDateString('vi-VN') : 'N/A'}</div>
                         {t.isOverdue || t.isOverdueSla ? (
                           <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 bg-rose-100 text-rose-700 border border-rose-300 rounded text-[9px] font-bold mt-0.5">
                             <span className="material-symbols-outlined text-[10px]">alarm</span>
-                            <span>Quá SLA 24h</span>
+                            <span>SLA overdue</span>
                           </span>
                         ) : (
-                          <span className="text-[10px] text-slate-400">Trong SLA</span>
+                          <span className="text-[10px] text-slate-400">{t.slaDueAt ? `Due ${new Date(t.slaDueAt).toLocaleString('vi-VN')}` : 'SLA not set'}</span>
                         )}
                       </td>
                       <td className="py-3 px-3.5 text-center">

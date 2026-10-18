@@ -114,6 +114,9 @@ public class Booking extends BaseEntity {
     @Column(name = "identity_verification_notes", columnDefinition = "TEXT")
     private String identityVerificationNotes;
 
+    @Column(name = "identity_original_document_seen")
+    private Boolean identityOriginalDocumentSeen;
+
     @Column(name = "step_transition_history", columnDefinition = "TEXT")
     private String stepTransitionHistory;
 

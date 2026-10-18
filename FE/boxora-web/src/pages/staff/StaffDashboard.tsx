@@ -15,7 +15,32 @@ import { StaffPolicyGuideModal } from './components/StaffPolicyGuideModal'
 import { staffAssignmentService, StaffAssignmentResponse } from '../../services/staffAssignmentService'
 import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
 import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
-import { FacilityStaffStorageDiagram } from './components/FacilityStaffStorageDiagram'
+
+const localDateString = (date: Date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const assignmentWindow = (assignment: StaffAssignmentResponse) => {
+  if (!assignment.startTime || !assignment.endTime) return null
+  const start = new Date(`${assignment.assignedDate}T${assignment.startTime}`)
+  const end = new Date(`${assignment.assignedDate}T${assignment.endTime}`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
+  if (end <= start) end.setDate(end.getDate() + 1)
+  return { start, end }
+}
+
+const isWithinAssignmentWindow = (assignment: StaffAssignmentResponse, now = new Date()) => {
+  const window = assignmentWindow(assignment)
+  return Boolean(window && now >= window.start && now < window.end)
+}
+
+const isAssignmentOnDuty = (assignment: StaffAssignmentResponse | null, now = new Date()) => {
+  if (!assignment || assignment.status !== 'CHECKED_IN' || !assignment.checkedInAt || assignment.checkedOutAt) return false
+  return isWithinAssignmentWindow(assignment, now)
+}
 
 export const StaffDashboard: React.FC = () => {
   const { user } = useAuth()
@@ -30,6 +55,7 @@ export const StaffDashboard: React.FC = () => {
   const [showStaffSwapModal, setShowStaffSwapModal] = useState(false)
   const [showStaffHandoverModal, setShowStaffHandoverModal] = useState(false)
   const [attendanceSuccessMsg, setAttendanceSuccessMsg] = useState<string | null>(null)
+  const isActuallyOnDuty = useMemo(() => isAssignmentOnDuty(myTodayAssignment), [myTodayAssignment])
 
   // Facility policy & guide
   const [staffFacilityPolicy, setStaffFacilityPolicy] = useState<FacilityPolicy | null>(null)
@@ -47,19 +73,18 @@ export const StaffDashboard: React.FC = () => {
   // Selection states
   const [activeBookingId, setActiveBookingId] = useState<string>('')
   const [selectedReturnBookingId, setSelectedReturnBookingId] = useState<string>('')
-  const [checkInSuccessMsg, setCheckInSuccessMsg] = useState<string | null>(null)
 
   // Filter & Search states
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedFloor, setSelectedFloor] = useState<string>('all')
   const [selectedShiftFilter, setSelectedShiftFilter] = useState<'current' | 'today' | 'all'>('current')
-  const [showDiagram, setShowDiagram] = useState<boolean>(false)
 
   // Return Inspection Checklist state (Interactive)
   const [inspectionRollDoor, setInspectionRollDoor] = useState<'GOOD' | 'MINOR_DAMAGE' | 'BLOCKED'>('GOOD')
   const [inspectionCleanliness, setInspectionCleanliness] = useState<'CLEAN' | 'NEEDS_CLEANING' | 'DIRTY'>('CLEAN')
   const [inspectionLock, setInspectionLock] = useState<'NORMAL' | 'LATCH_DAMAGED' | 'FAULTY'>('NORMAL')
   const [inspectionCondition, setInspectionCondition] = useState<'GOOD' | 'NEEDS_MAINTENANCE' | 'ALERT'>('GOOD')
+  const [inspectionWallStructure, setInspectionWallStructure] = useState<'GOOD' | 'DAMAGED'>('GOOD')
   const [inspectionNotes, setInspectionNotes] = useState('')
 
   // Real photos uploaded by staff (NO Unsplash)
@@ -73,7 +98,9 @@ export const StaffDashboard: React.FC = () => {
   const [deductionReason, setDeductionReason] = useState<string>('')
   const [isSettlingReturn, setIsSettlingReturn] = useState(false)
   const [returnConfirmed, setReturnConfirmed] = useState(false)
+  const [returnInspectionSaved, setReturnInspectionSaved] = useState(false)
   const [settlementSuccessMsg, setSettlementSuccessMsg] = useState<string | null>(null)
+  const [settlementErrorMsg, setSettlementErrorMsg] = useState<string | null>(null)
 
   // Tickets state
   const [tickets, setTickets] = useState<Array<{
@@ -92,6 +119,7 @@ export const StaffDashboard: React.FC = () => {
 
   // Assigned facility identification
   const assignedFacilityName = useMemo(() => {
+    if (myTodayAssignment?.facilityName) return myTodayAssignment.facilityName
     if (user?.facilityName) return user.facilityName
     if (user?.facilityId) {
       const f = facilities.find(fac => fac.id === user.facilityId)
@@ -101,29 +129,44 @@ export const StaffDashboard: React.FC = () => {
       const f = facilities.find(fac => fac.id === selectedFacility)
       if (f) return f.name
     }
-    if (facilities.length > 0) {
-      return facilities[0].name
-    }
-    return 'Cơ sở được phân công'
-  }, [user, facilities, selectedFacility])
+    return 'Cơ sở chưa được xác nhận'
+  }, [user, facilities, selectedFacility, myTodayAssignment?.facilityName])
 
   // Load today's work shift assignment from database
   const loadMyAssignment = async () => {
     if (!user?.id) return
+    setMyTodayAssignment(null)
     try {
-      const today = new Date().toISOString().split('T')[0]
+      const now = new Date()
+      const today = localDateString(now)
+      const yesterdayDate = new Date(now)
+      yesterdayDate.setDate(yesterdayDate.getDate() - 1)
       const res = await staffAssignmentService.getAllAssignments({
         staffId: user.id,
-        assignedDate: today
+        fromDate: localDateString(yesterdayDate),
+        toDate: today,
+        size: 100
       })
-      const list = res?.content || res || []
-      if (list.length > 0) {
-        setMyTodayAssignment(list[0])
-      } else {
-        setMyTodayAssignment(null)
-      }
+      const list: StaffAssignmentResponse[] = res?.content || res || []
+      const candidates = list.filter(a => a.status !== 'CANCELLED')
+      const onDuty = candidates.find(a => isAssignmentOnDuty(a, now))
+      const checkedInForCheckout = candidates
+        .filter(a => a.status === 'CHECKED_IN')
+        .sort((a, b) => `${b.assignedDate}T${b.startTime || ''}`.localeCompare(`${a.assignedDate}T${a.startTime || ''}`))[0]
+      const currentAssignedShift = candidates.find(a => a.status === 'ASSIGNED' && isWithinAssignmentWindow(a, now))
+      const upcomingToday = candidates
+        .filter(a => a.assignedDate === today && a.status === 'ASSIGNED')
+        .filter(a => {
+          const window = assignmentWindow(a)
+          return window && window.start > now
+        })
+        .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''))[0]
+      const latestToday = candidates
+        .filter(a => a.assignedDate === today)
+        .sort((a, b) => (b.startTime || '').localeCompare(a.startTime || ''))[0]
+      setMyTodayAssignment(onDuty || checkedInForCheckout || currentAssignedShift || upcomingToday || latestToday || null)
     } catch {
-      // fallback
+      setMyTodayAssignment(null)
     }
   }
 
@@ -193,10 +236,7 @@ export const StaffDashboard: React.FC = () => {
         const pol = await facilityPolicyService.getByFacilityId(facId)
         setStaffFacilityPolicy(pol)
       } else {
-        const all = await facilityPolicyService.getAll({ size: 1 })
-        if (all?.content?.[0]) {
-          setStaffFacilityPolicy(all.content[0])
-        }
+        setStaffFacilityPolicy(null)
       }
     } catch {
       setStaffFacilityPolicy(null)
@@ -315,7 +355,7 @@ export const StaffDashboard: React.FC = () => {
 
   // Discover all distinct floors available in current facility
   const availableFloors = useMemo(() => {
-    const floorSet = new Set<string>(['1', '2', '3'])
+    const floorSet = new Set<string>()
     arrivals.forEach((b) => {
       const f = resolveBookingFloor(b, unitMapById, unitMapByCodeAndFacility)
       if (f) floorSet.add(f)
@@ -349,6 +389,15 @@ export const StaffDashboard: React.FC = () => {
     return activeRentals.find(r => r.id === (selectedReturnBookingId || activeRentals[0]?.id)) || activeRentals[0]
   }, [activeRentals, selectedReturnBookingId])
 
+  useEffect(() => {
+    setReturnInspectionSaved(false)
+    setReturnConfirmed(false)
+    setSettlementSuccessMsg(null)
+    setSettlementErrorMsg(null)
+    setPhotoPanoramic(null)
+    setPhotoLock(null)
+  }, [currentReturnBooking?.id])
+
   const returnDepositAmt = useMemo(() => {
     if (!currentReturnBooking) return 0
     return currentReturnBooking.depositPaid || currentReturnBooking.depositAmount || 0
@@ -358,54 +407,86 @@ export const StaffDashboard: React.FC = () => {
     return Math.max(0, returnDepositAmt - (deductionAmount || 0))
   }, [returnDepositAmt, deductionAmount])
 
-  // Handle file photo selection
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'panoramic' | 'lock') => {
+  // Upload return inspection evidence before saving the inspection.
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'panoramic' | 'lock') => {
     const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          if (type === 'panoramic') setPhotoPanoramic(reader.result)
-          else setPhotoLock(reader.result)
-        }
-      }
-      reader.readAsDataURL(file)
+    if (!file || !currentReturnBooking) return
+    const input = e.target
+    setSettlementErrorMsg(null)
+    try {
+      const stored = await handoverService.uploadHandoverDocument(currentReturnBooking.id, file, 'CHECKIN_EVIDENCE')
+      if (!stored?.fileUrl) throw new Error('Upload completed without a stored file URL.')
+      if (type === 'panoramic') setPhotoPanoramic(stored.fileUrl)
+      else setPhotoLock(stored.fileUrl)
+    } catch (err: any) {
+      setSettlementErrorMsg(err?.response?.data?.message || err?.message || 'Could not upload return evidence photo.')
+    } finally {
+      input.value = ''
     }
   }
 
-  // Handle return settlement
-  const handleProcessReturnSettlement = async () => {
-    if (!currentReturnBooking) {
-      setSettlementSuccessMsg('Vui lòng chọn một hợp đồng đang hiệu lực để nghiệm thu trả kho.')
+  const handleSaveReturnInspection = async () => {
+    if (!currentReturnBooking) return
+    if (!photoPanoramic || !photoLock) {
+      setSettlementErrorMsg('Upload both return inspection photos before saving the inspection.')
       return
     }
     setIsSettlingReturn(true)
+    setSettlementErrorMsg(null)
+    setSettlementSuccessMsg(null)
     try {
-      await handoverService.processReturnSettlement({
+      await handoverService.performInspection({
         bookingId: currentReturnBooking.id,
         recordType: 'RETURN',
         doorConditionPassed: inspectionRollDoor === 'GOOD',
         cleanlinessPassed: inspectionCleanliness === 'CLEAN',
         smartLockPassed: inspectionLock === 'NORMAL',
         sensorPassed: inspectionCondition === 'GOOD',
-        wallStructurePassed: true,
-        depositSettled: returnDepositAmt,
-        deductionAmount: deductionAmount || 0,
-        refundMethod: 'VNPAY_REFUND',
-        notes: `Nghiệm thu thực địa trả kho: Cửa cuốn: ${inspectionRollDoor}, Vệ sinh: ${inspectionCleanliness}, Khóa: ${inspectionLock}, Tình trạng: ${inspectionCondition}. Khấu trừ đề xuất: ${deductionAmount.toLocaleString('vi-VN')}đ (Lý do: ${deductionReason || 'Không có'}). Dự kiến hoàn: ${expectedRefundAmt.toLocaleString('vi-VN')}đ. Ghi chú thêm: ${inspectionNotes || 'Không có'}.`
+        wallStructurePassed: inspectionWallStructure === 'GOOD',
+        evidencePhotos: [photoPanoramic, photoLock],
+        unitCondition: `Door: ${inspectionRollDoor}; cleanliness: ${inspectionCleanliness}; lock: ${inspectionLock}; environment: ${inspectionCondition}; wall: ${inspectionWallStructure}`,
+        notes: inspectionNotes
       })
-      setReturnConfirmed(true)
-      setSettlementSuccessMsg(`Đã lập biên bản nghiệm thu trả kho #${currentReturnBooking.unitCode}. Đề xuất hoàn cọc ${expectedRefundAmt.toLocaleString('vi-VN')}đ đã được chuyển sang Quản lý cơ sở / Kế toán phê duyệt.`)
-      fetchArrivals()
-      loadActiveRentals()
+      setReturnInspectionSaved(true)
+      setSettlementSuccessMsg('Return inspection and evidence saved. Review the proposed deductions in the next step.')
     } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Có lỗi xảy ra khi nghiệm thu trả kho'
-      setSettlementSuccessMsg(`Lỗi nghiệm thu: ${msg}`)
+      setSettlementErrorMsg(err?.response?.data?.message || err?.message || 'Could not save the return inspection.')
     } finally {
       setIsSettlingReturn(false)
     }
   }
 
+  const handleProcessReturnSettlement = async () => {
+    if (!currentReturnBooking) {
+      setSettlementErrorMsg('Select an active booking before preparing a return proposal.')
+      return
+    }
+    if (!returnInspectionSaved) {
+      setSettlementErrorMsg('Save the return inspection before preparing its settlement proposal.')
+      return
+    }
+    setIsSettlingReturn(true)
+    setSettlementSuccessMsg(null)
+    setSettlementErrorMsg(null)
+    try {
+      const result = await handoverService.processReturnSettlement({
+        bookingId: currentReturnBooking.id,
+        recordType: 'RETURN',
+        deductionAmount: deductionAmount || 0,
+        damageNotes: deductionReason || undefined,
+        refundMethod: 'BANK_TRANSFER',
+        notes: `Return settlement proposal. Additional notes: ${inspectionNotes || 'None'}.`
+      })
+      setReturnConfirmed(true)
+      setSettlementSuccessMsg(`Proposal recorded. Proposed refund: ${(result.netRefundAmount || 0).toLocaleString('vi-VN')} VND; review status: ${result.reviewStatus || 'pending review'}. No refund transfer was made.`)
+      fetchArrivals()
+      loadActiveRentals()
+    } catch (err: any) {
+      setSettlementErrorMsg(err?.response?.data?.message || err?.message || 'Could not prepare the return settlement proposal.')
+    } finally {
+      setIsSettlingReturn(false)
+    }
+  }
   return (
     <div className="flex flex-col gap-6 text-left max-w-7xl mx-auto w-full">
 
@@ -444,7 +525,7 @@ export const StaffDashboard: React.FC = () => {
                       ({myTodayAssignment.startTime?.slice(0, 5) || '06:00'} - {myTodayAssignment.endTime?.slice(0, 5) || '14:00'})
                     </span>
 
-                    {myTodayAssignment.status === 'CHECKED_IN' ? (
+                    {isActuallyOnDuty ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                         Đang trực ca
@@ -466,7 +547,7 @@ export const StaffDashboard: React.FC = () => {
                 )}
               </div>
               <span className="text-xs text-slate-500 mt-1">
-                Nhân viên trực: <strong className="text-slate-900">{user?.fullName || user?.username || 'Nhân viên trực ca'}</strong>{' '}
+                Tài khoản đăng nhập: <strong className="text-slate-900">{user?.fullName || user?.username || 'Nhân viên'}</strong>{' '}
                 {myTodayAssignment?.assignedZone && (
                   <>• Phân khu: <strong className="text-blue-700">{myTodayAssignment.assignedZone}</strong>{' '}</>
                 )}
@@ -478,7 +559,7 @@ export const StaffDashboard: React.FC = () => {
           {/* Quick Actions & Attendance Controls */}
           <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
             {/* Shift Check-in / Check-out Buttons */}
-            {myTodayAssignment?.status === 'ASSIGNED' && (
+            {myTodayAssignment?.status === 'ASSIGNED' && isWithinAssignmentWindow(myTodayAssignment) && (
               <button
                 type="button"
                 onClick={handleStaffCheckIn}
@@ -534,7 +615,7 @@ export const StaffDashboard: React.FC = () => {
               className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">qr_code_scanner</span>
-              <span>Quét QR Check-in</span>
+              <span>Tra cứu booking</span>
             </button>
             <button
               type="button"
@@ -568,7 +649,7 @@ export const StaffDashboard: React.FC = () => {
           </div>
           <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-700 font-semibold">
             <span className="h-2 w-2 rounded-full bg-blue-600"></span>
-            <span>{arrivals.filter(a => a.status === 'CONFIRMED' || (a.depositPaid || 0) > 0).length} khách đã cọc giữ chỗ</span>
+            <span>{arrivals.filter(a => (a.depositPaid || 0) > 0).length} khách đã thanh toán tiền cọc</span>
           </div>
         </div>
 
@@ -586,10 +667,10 @@ export const StaffDashboard: React.FC = () => {
             <span className="font-headline text-3xl font-extrabold text-cyan-700 tabular-nums">
               {arrivals.filter(a => a.status === 'CONFIRMED' || a.status === 'PENDING_PAYMENT').length}
             </span>
-            <span className="text-xs text-slate-500">đơn sẵn sàng</span>
+            <span className="text-xs text-slate-500">đơn cần kiểm tra điều kiện</span>
           </div>
           <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-500">
-            <span>Sẵn sàng đối soát hồ sơ &amp; cấp mã PIN</span>
+            <span>Đối soát hợp đồng, thanh toán và giấy tờ trước bàn giao</span>
           </div>
         </div>
 
@@ -699,7 +780,6 @@ export const StaffDashboard: React.FC = () => {
             activeBookingId={activeBookingId}
             onSelectBooking={setActiveBookingId}
             onHandoverComplete={(bookingId) => {
-              setCheckInSuccessMsg(`Hoàn tất quy trình check-in bàn giao buồng kho cho đơn #${bookingId}`)
               fetchArrivals(currentTargetFacility)
               loadActiveRentals(currentTargetFacility)
               loadRadarUnits(currentTargetFacility)
@@ -840,7 +920,17 @@ export const StaffDashboard: React.FC = () => {
                       <option value="ALERT">Có dấu hiệu ẩm ướt</option>
                     </select>
                   </div>
-                  <input
+                  <div className="mt-2 flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-900">5. Wall and structural condition</span>
+                    <select
+                      value={inspectionWallStructure}
+                      onChange={(e) => setInspectionWallStructure(e.target.value as 'GOOD' | 'DAMAGED')}
+                      className="px-2 py-0.5 rounded bg-white border border-slate-200 font-bold text-[11px] focus:outline-none cursor-pointer"
+                    >
+                      <option value="GOOD">No visible damage</option>
+                      <option value="DAMAGED">Visible damage</option>
+                    </select>
+                  </div>                  <input
                     type="text"
                     value={inspectionNotes}
                     onChange={(e) => setInspectionNotes(e.target.value)}
@@ -980,10 +1070,25 @@ export const StaffDashboard: React.FC = () => {
               </div>
             )}
 
+            {settlementErrorMsg && (
+              <div role="alert" className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-semibold">
+                {settlementErrorMsg}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleSaveReturnInspection}
+              disabled={returnInspectionSaved || isSettlingReturn || !currentReturnBooking || !photoPanoramic || !photoLock}
+              className="mt-4 w-full py-2.5 px-4 rounded-xl text-xs font-bold bg-blue-700 hover:bg-blue-800 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {returnInspectionSaved ? 'Return inspection saved' : isSettlingReturn ? 'Saving inspection…' : 'Save return inspection'}
+            </button>
+
             <button
               type="button"
               onClick={handleProcessReturnSettlement}
-              disabled={returnConfirmed || isSettlingReturn || !currentReturnBooking}
+              disabled={returnConfirmed || isSettlingReturn || !currentReturnBooking || !returnInspectionSaved}
               className={`mt-4 w-full py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                 returnConfirmed
                   ? 'bg-emerald-600 text-white'
@@ -1005,10 +1110,10 @@ export const StaffDashboard: React.FC = () => {
       </div>
 
       {/* ============================================================== */}
-      {/* PHẦN 4: LỊCH HẸN NHẬN KHO TRONG CA & SƠ ĐỒ CƠ SỞ KHO (FULL WIDTH) */}
+      {/* PHẦN 4: LỊCH HẸN NHẬN KHO TRONG CA (FULL WIDTH) */}
       {/* ============================================================== */}
       <section className="w-full bg-white border border-slate-200/90 rounded-2xl shadow-sm p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 mb-4 border-b border-slate-100 gap-3">
+        <div className="pb-4 mb-4 border-b border-slate-100">
           <div>
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-blue-600 text-[22px]">calendar_today</span>
@@ -1024,36 +1129,9 @@ export const StaffDashboard: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowDiagram(false)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                !showDiagram
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[16px]">list_alt</span>
-              <span>Danh Sách Lịch Hẹn</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowDiagram(true)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                showDiagram
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[16px]">apartment</span>
-              <span>Sơ đồ cơ sở kho</span>
-            </button>
-          </div>
         </div>
 
-        {!showDiagram ? (
-          <div className="overflow-x-auto">
+        <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider text-[11px]">
@@ -1155,35 +1233,17 @@ export const StaffDashboard: React.FC = () => {
                 )}
               </tbody>
             </table>
-          </div>
-        ) : (
-          <FacilityStaffStorageDiagram
-            units={radarUnits}
-            facilityName={assignedFacilityName}
-            facilityId={currentTargetFacility}
-            arrivals={arrivals}
-            activeRentals={activeRentals}
-            tickets={tickets}
-            userRole={user?.role?.name || user?.roleName || 'STAFF'}
-            onSelectBookingForHandover={(bookingId) => {
-              setActiveBookingId(bookingId)
-              setShowDiagram(false)
-              document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-            }}
-          />
-        )}
+        </div>
       </section>
 
       {/* MODAL QUÉT QR CHECK-IN QUA CAMERA */}
       <QrCameraCheckInModal
         isOpen={isQrScannerOpen}
         onClose={() => setIsQrScannerOpen(false)}
-        onCheckInSuccess={(bookingId, result) => {
-          setActiveBookingId(bookingId)
-          setCheckInSuccessMsg(`Check-in qua QR Camera thành công! PIN cấp: ${result.accessPin} (Thẻ: ${result.rfidCard})`)
-        }}
+        facilityId={user?.facilityId}
         onSelectBookingForWorkbench={(bookingId) => {
           setActiveBookingId(bookingId)
+          window.setTimeout(() => document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' }), 0)
         }}
       />
       {/* MODAL HƯỚNG DẪN NGHIỆP VỤ DÀNH CHO NHÂN VIÊN (CHẾ ĐỘ XEM TẬP TRUNG) */}

@@ -13,4 +13,6 @@ public class RevenueReportResponse {
     private LocalDate toDate;
     private SystemRevenueSummaryResponse systemSummary;
     private List<FacilityRevenueResponse> byFacility;
+    private List<RevenueMonthSummaryResponse> monthlyRevenue;
+    private List<PaymentMethodSummaryResponse> paymentsByMethod;
 }

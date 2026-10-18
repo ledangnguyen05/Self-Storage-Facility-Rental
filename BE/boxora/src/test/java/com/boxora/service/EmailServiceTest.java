@@ -101,7 +101,7 @@ class EmailServiceTest {
         verify(mailSender, times(1)).send(captor.capture());
 
         MimeMessage msg = captor.getValue();
-        assertThat(msg.getSubject()).contains("A-102").contains("Bàn giao kho thành công");
+        assertThat(msg.getSubject()).contains("A-102").contains("Ghi nhận bàn giao");
 
         String html = extractHtml(msg);
         assertThat(html).contains("Nguyễn Văn An");
@@ -109,11 +109,13 @@ class EmailServiceTest {
         assertThat(html).contains("BK-2026-001");
         assertThat(html).contains("Boxora Tân Bình");
         assertThat(html).contains("987654");
+        assertThat(html).contains("chưa được đồng bộ hoặc xác nhận với khóa SmartLock vật lý");
         assertThat(html).contains("BOXORA");
 
         String text = extractPlainText(msg);
         assertThat(text).contains("BK-2026-001");
         assertThat(text).contains("987654");
+        assertThat(text).contains("chưa được đồng bộ hoặc xác nhận với khóa SmartLock vật lý");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -145,6 +147,17 @@ class EmailServiceTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    void overdueNoticeShowsUnreconciledBalanceInsteadOfZero() throws Exception {
+        emailService.sendOverdueNoticeEmail("customer@boxora.vn", "Customer", "RC-1", "A-1", 4, null, "WARNING");
+
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(captor.capture());
+        String html = extractHtml(captor.getValue());
+
+        assertThat(html).contains("Chưa đối soát");
+        assertThat(html).doesNotContain("0 VND");
+    }
     // 3. Contract Signed Confirmation Email
     // ─────────────────────────────────────────────────────────────────────────
     @Test
@@ -484,7 +497,8 @@ class EmailServiceTest {
         assertThat(htmlSeal).contains("SEAL-998822");
         assertThat(htmlSeal).contains("4.200.000 VND");
         assertThat(htmlSeal).contains("15 ngày");
-        assertThat(htmlSeal).containsIgnoringCase("cưỡng chế");
+        assertThat(htmlSeal).containsIgnoringCase("PIN/QR đã bị thu hồi trong Boxora");
+        assertThat(htmlSeal).containsIgnoringCase("trạng thái khóa vật lý chưa được xác minh");
 
         // Unsealing
         reset(mailSender);

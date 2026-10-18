@@ -53,7 +53,7 @@ public class FeeTypeController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Tạo mới một loại biểu phí (ADMIN, BUSINESS_MANAGER)")
     public ResponseEntity<ApiResponse<FeeTypeResponse>> createFeeType(
             @Valid @RequestBody FeeTypeCreateRequest request
@@ -64,7 +64,7 @@ public class FeeTypeController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Cập nhật loại biểu phí (ADMIN, BUSINESS_MANAGER)")
     public ResponseEntity<ApiResponse<FeeTypeResponse>> updateFeeType(
             @PathVariable UUID id,
@@ -75,7 +75,7 @@ public class FeeTypeController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Vô hiệu hóa loại biểu phí (ADMIN, BUSINESS_MANAGER)")
     public ResponseEntity<ApiResponse<Void>> deleteFeeType(@PathVariable UUID id) {
         feeTypeService.deleteFeeType(id);

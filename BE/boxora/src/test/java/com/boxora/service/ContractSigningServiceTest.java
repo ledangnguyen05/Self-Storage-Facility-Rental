@@ -5,11 +5,13 @@ import com.boxora.config.DocuSealConfig;
 import com.boxora.dto.request.DocuSealSubmissionRequest;
 import com.boxora.dto.response.DocuSealSubmitterResponse;
 import com.boxora.entity.Facility;
+import com.boxora.entity.Booking;
 import com.boxora.entity.RentalContract;
 import com.boxora.entity.StorageUnit;
 import com.boxora.entity.User;
 import com.boxora.enums.ActivityAction;
 import com.boxora.enums.RentalContractStatus;
+import com.boxora.enums.BookingStatus;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.RentalContractMapper;
@@ -170,14 +172,39 @@ class ContractSigningServiceTest {
     }
 
     @Test
+    @DisplayName("Online booking never creates a simulated DocuSeal signing request")
+    void onlineBookingCannotUseMockSigningProvider() {
+        com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                .bookingCode("BX-2026-7788")
+                .customer(mockUser)
+                .storageUnit(mockUnit)
+                .startDate(LocalDate.of(2026, 11, 1))
+                .endDate(LocalDate.of(2026, 12, 1))
+                .signingMethod("ONLINE")
+                .build();
+        booking.setId(UUID.randomUUID());
+        mockContract.setBooking(booking);
+        when(docuSealConfig.isMockActive()).thenReturn(true);
+
+        AppException exception = assertThrows(AppException.class,
+                () -> contractSigningService.createSigningRequest(mockContract));
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_SIGNING_FAILED);
+        verifyNoInteractions(docuSealClient);
+        verify(rentalContractRepository, never()).save(any(RentalContract.class));
+    }
+
+    @Test
     @DisplayName("handleWebhook should mark contract as ACTIVE and set documentUrl on form.completed")
     void testHandleWebhookContractCompleted() {
-        when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(mockContract));
+        mockContract.setDocusealSubmissionId(9999L);
+        when(rentalContractRepository.findByIdForUpdate(contractId)).thenReturn(Optional.of(mockContract));
 
         Map<String, Object> payload = Map.of(
                 "event_type", "form.completed",
                 "data", Map.of(
                         "external_id", contractId.toString(),
+                        "submission_id", 9999L,
                         "documents", List.of(Map.of("url", "https://docuseal.com/docs/contract-signed.pdf"))
                 )
         );
@@ -190,6 +217,88 @@ class ContractSigningServiceTest {
 
         verify(rentalContractRepository).save(mockContract);
         verify(activityLogService).recordSystem(any(UUID.class), eq(ActivityAction.CONTRACT_SIGNED), anyString(), any(), anyString());
+    }
+
+    @Test
+    @DisplayName("handleWebhook does not invent a signed document URL when DocuSeal omits it")
+    void handleWebhookWithoutDocumentUrlDoesNotInventOne() {
+        mockContract.setDocusealSubmissionId(9999L);
+        when(rentalContractRepository.findByIdForUpdate(contractId)).thenReturn(Optional.of(mockContract));
+
+        Map<String, Object> payload = Map.of(
+                "event_type", "form.completed",
+                "data", Map.of(
+                        "external_id", contractId.toString(),
+                        "submission_id", 9999L
+                )
+        );
+
+        contractSigningService.handleWebhook(payload);
+
+        assertThat(mockContract.getSignedAt()).isNotNull();
+        assertThat(mockContract.getSignedDocumentUrl()).isNull();
+    }
+
+    @Test
+    @DisplayName("handleWebhook ignores duplicate completion and does not process a different DocuSeal submission")
+    void handleWebhookIsIdempotentAndMatchesSubmission() {
+        mockContract.setDocusealSubmissionId(9999L);
+        when(rentalContractRepository.findByIdForUpdate(contractId)).thenReturn(Optional.of(mockContract));
+
+        Map<String, Object> wrongSubmission = Map.of(
+                "event_type", "form.completed",
+                "data", Map.of("external_id", contractId.toString(), "submission_id", 10000L)
+        );
+        contractSigningService.handleWebhook(wrongSubmission);
+        assertThat(mockContract.getSignedAt()).isNull();
+        verify(rentalContractRepository, never()).save(any(RentalContract.class));
+
+        Map<String, Object> completion = Map.of(
+                "event_type", "form.completed",
+                "data", Map.of(
+                        "external_id", contractId.toString(),
+                        "submission_id", 9999L,
+                        "documents", List.of(Map.of("url", "https://docuseal.com/docs/contract-signed.pdf"))
+                )
+        );
+        contractSigningService.handleWebhook(completion);
+        contractSigningService.handleWebhook(completion);
+
+        assertThat(mockContract.getSignedAt()).isNotNull();
+        verify(rentalContractRepository, times(1)).save(mockContract);
+    }
+
+    @Test
+    @DisplayName("ensureContractForBooking creates one unpaid draft using the confirmed discounted booking amounts")
+    void ensureContractForBookingCreatesDraftFromBookingSnapshot() {
+        UUID bookingId = UUID.randomUUID();
+        Booking booking = Booking.builder()
+                .bookingCode("BX-2026-1122")
+                .customer(mockUser)
+                .storageUnit(mockUnit)
+                .startDate(LocalDate.of(2026, 11, 1))
+                .endDate(LocalDate.of(2027, 2, 1))
+                .rentalMonths(3)
+                .totalRentalFee(new BigDecimal("2700000"))
+                .depositAmount(new BigDecimal("500000"))
+                .depositPaid(BigDecimal.ZERO)
+                .signingMethod("ONLINE")
+                .status(BookingStatus.PENDING_PAYMENT)
+                .build();
+        booking.setId(bookingId);
+
+        when(bookingRepository.findByIdForUpdate(bookingId)).thenReturn(Optional.of(booking));
+        when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.empty());
+        when(rentalContractRepository.save(any(RentalContract.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        RentalContract draft = contractSigningService.ensureContractForBooking(booking);
+
+        assertThat(draft.getStatus()).isEqualTo(RentalContractStatus.PENDING_SIGNATURE);
+        assertThat(draft.getSigningMethod()).isEqualTo("ONLINE");
+        assertThat(draft.getMonthlyFee()).isEqualByComparingTo("900000");
+        assertThat(draft.getDepositHeld()).isEqualByComparingTo("0");
+        assertThat(draft.getBooking()).isSameAs(booking);
+        verify(bookingRepository).findByIdForUpdate(bookingId);
     }
 
     @Test
@@ -290,7 +399,7 @@ class ContractSigningServiceTest {
     }
 
     @Test
-    @DisplayName("Task 09 Case 2 & 8: mockSign when booking is unpaid or only DEPOSIT (PARTIALLY_PAID) is rejected and does NOT auto-confirm PENDING_PAYMENT booking")
+    @DisplayName("Online bookings reject simulated signatures regardless of payment state")
     void testTask09_Case2_And_8_MockSignWhenBookingUnpaidOrPartiallyPaid_Rejected() {
         com.boxora.entity.Booking unpaidBooking = com.boxora.entity.Booking.builder()
                 .bookingCode("BK-UNPAID-01")
@@ -326,15 +435,15 @@ class ContractSigningServiceTest {
                 .status(com.boxora.enums.PaymentStatus.PAID)
                 .amount(new BigDecimal("500000"))
                 .build();
-        when(paymentRepository.findAllByBooking_Id(unpaidBooking.getId())).thenReturn(List.of(depositOnlyTx));
-
+        // Online signatures must come from a verified DocuSeal webhook, including when a payment exists.
         AppException exPartial = assertThrows(AppException.class, () -> contractSigningService.mockSign(contractId, validSig));
         assertThat(exPartial.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
         assertThat(mockContract.getStatus()).isEqualTo(RentalContractStatus.PENDING_SIGNATURE);
+        assertThat(mockContract.getSignedAt()).isNull();
     }
 
     @Test
-    @DisplayName("Task 09 Case 4 & 14: mockSign succeeds when BOOKING_PAYMENT is fully PAID, sets PENDING_ACTIVATION, and does NOT decrypt/expose PIN before check-in")
+    @DisplayName("Online bookings reject simulated signatures even when the booking payment is paid")
     void testTask09_Case4_And_14_MockSignWhenBookingFullyPaid_SucceedsWithoutPinBeforeCheckIn() {
         com.boxora.entity.Booking paidBooking = com.boxora.entity.Booking.builder()
                 .bookingCode("BK-PAID-01")
@@ -361,15 +470,14 @@ class ContractSigningServiceTest {
         when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
         when(requestContext.currentUserId()).thenReturn(mockUser.getId());
         when(docuSealConfig.isMockActive()).thenReturn(true);
-        when(paymentRepository.findAllByBooking_Id(paidBooking.getId())).thenReturn(List.of(fullBookingPayment));
-
         String validSig = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
-        contractSigningService.mockSign(contractId, validSig);
+        AppException exception = assertThrows(AppException.class,
+                () -> contractSigningService.mockSign(contractId, validSig));
 
-        assertThat(mockContract.getStatus()).isEqualTo(RentalContractStatus.PENDING_ACTIVATION);
-        assertThat(mockContract.getSignedAt()).isNotNull();
-        assertThat(mockContract.getSignatureData()).isEqualTo(validSig);
-        // Must NOT decrypt or expose accessPin while booking is CONFIRMED (awaiting check-in)
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+        assertThat(mockContract.getStatus()).isEqualTo(RentalContractStatus.PENDING_SIGNATURE);
+        assertThat(mockContract.getSignedAt()).isNull();
+        // Payment does not substitute for the provider's signature confirmation.
         verify(encryptionService, never()).decrypt(anyString());
     }
 
@@ -399,7 +507,8 @@ class ContractSigningServiceTest {
                 .bookingCode("BK-REFUND-01")
                 .status(com.boxora.enums.BookingStatus.CONFIRMED)
                 .paymentStatus("PAID")
-                .signingMethod("ONLINE")
+                // Legacy electronic contracts still enforce refund reconciliation before signing.
+                .signingMethod("ELECTRONIC")
                 .depositAmount(new BigDecimal("500000"))
                 .depositPaid(new BigDecimal("500000"))
                 .totalRentalFee(new BigDecimal("1000000"))
@@ -442,7 +551,7 @@ class ContractSigningServiceTest {
                 .bookingCode("BK-REFUND-PENDING-01")
                 .status(com.boxora.enums.BookingStatus.CONFIRMED)
                 .paymentStatus("PAID")
-                .signingMethod("ONLINE")
+                .signingMethod("IN_PERSON")
                 .depositAmount(new BigDecimal("500000"))
                 .depositPaid(new BigDecimal("500000"))
                 .totalRentalFee(new BigDecimal("1000000"))

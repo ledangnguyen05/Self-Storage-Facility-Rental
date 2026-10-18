@@ -22,6 +22,7 @@ public class OverdueDebtReportResponse {
     private long warningCount;
     private long accessBlockedCount;
     private long eligibleForSealingCount;
+    private long policyUnconfiguredCount;
 
     private BigDecimal aging1To3DaysDebt;
     private BigDecimal aging4To7DaysDebt;

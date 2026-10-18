@@ -20,5 +20,8 @@ public class IdentityVerifyRequest {
     @NotBlank(message = "Số CCCD hoặc Passport không được để trống")
     private String idCardNumber;
 
+    @NotNull(message = "Nhân viên phải xác nhận đã trực tiếp xem giấy tờ gốc")
+    private Boolean originalDocumentSeen;
+
     private String notes;
 }

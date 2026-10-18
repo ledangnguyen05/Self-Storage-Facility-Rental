@@ -77,6 +77,15 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         User currentStaffOrManager = null;
         if (isStaffOrManager) {
             currentStaffOrManager = currentUserId != null ? userRepository.findById(currentUserId).orElse(null) : null;
+            if (currentStaffOrManager == null || currentStaffOrManager.getFacility() == null) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Staff and facility managers must have an assigned facility to create tickets");
+            }
+            if (request.getFacilityId() != null
+                    && !request.getFacilityId().equals(currentStaffOrManager.getFacility().getId())) {
+                log.warn("[SECURITY] {} {} attempted to create ticket for non-assigned facility {}",
+                        currentUserRole, currentUserId, request.getFacilityId());
+                throw new AppException(ErrorCode.TICKET_FACILITY_MISMATCH);
+            }
             if (request.getCustomerId() != null) {
                 customer = userRepository.findById(request.getCustomerId())
                         .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
@@ -118,25 +127,23 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             if (booking.getStorageUnit() != null) {
                 facility = booking.getStorageUnit().getFacility();
             }
+            if (isStaffOrManager && (facility == null
+                    || !facility.getId().equals(currentStaffOrManager.getFacility().getId()))) {
+                log.warn("[SECURITY] {} {} attempted to create ticket for booking {} outside assigned facility",
+                        currentUserRole, currentUserId, booking.getId());
+                throw new AppException(ErrorCode.TICKET_FACILITY_MISMATCH);
+            }
         }
 
         // If facility not resolved from booking, attempt to resolve from request or user
         if (facility == null && request.getFacilityId() != null) {
             facility = facilityRepository.findById(request.getFacilityId()).orElse(null);
         }
-        if (facility == null && isStaffOrManager && currentStaffOrManager != null) {
+        if (isStaffOrManager) {
             facility = currentStaffOrManager.getFacility();
         }
-        if (facility == null) {
+        if (facility == null && !isStaffOrManager) {
             facility = facilityRepository.findAllByOrderByCreatedAtAsc().stream().findFirst().orElse(null);
-        }
-
-        // Staff can only create tickets within their assigned facility
-        if ("STAFF".equalsIgnoreCase(currentUserRole) && currentStaffOrManager != null && currentStaffOrManager.getFacility() != null) {
-            if (facility != null && !facility.getId().equals(currentStaffOrManager.getFacility().getId())) {
-                log.warn("[SECURITY] Staff {} attempted to create ticket for non-assigned facility {}", currentUserId, facility.getId());
-                throw new AppException(ErrorCode.TICKET_FACILITY_MISMATCH);
-            }
         }
 
         String ticketCode = generateUniqueTicketCode();
@@ -236,16 +243,13 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         } else if ("STAFF".equalsIgnoreCase(currentUserRole)) {
             // Staff only sees tickets in their assigned facility or assigned to them
             if (currentUser == null || currentUser.getFacility() == null) {
-                if (facilityId != null) {
-                    throw new AppException(ErrorCode.FORBIDDEN, "Nhân viên chưa được phân công cơ sở");
-                }
-                rawList = supportTicketRepository.findByAssignedStaff_Id(currentUserId);
+                throw new AppException(ErrorCode.FORBIDDEN, "Nhân viên chưa được phân công cơ sở");
             } else {
                 if (facilityId != null && !facilityId.equals(currentUser.getFacility().getId())) {
                     log.warn("[SECURITY] Staff {} attempted to access tickets of facility {}", currentUserId, facilityId);
                     throw new AppException(ErrorCode.FORBIDDEN, "Nhân viên không có quyền truy cập dữ liệu của cơ sở khác");
                 }
-                rawList = supportTicketRepository.findByFacility_IdOrAssignedStaff_Id(currentUser.getFacility().getId(), currentUserId);
+                rawList = supportTicketRepository.findByFacility_Id(currentUser.getFacility().getId());
             }
         } else if ("FACILITY_MANAGER".equalsIgnoreCase(currentUserRole)) {
             // Facility manager only sees tickets in their facility
@@ -335,6 +339,18 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         List<SupportTicket> list = (targetCustomerId != null)
                 ? supportTicketRepository.findByCustomer_Id(targetCustomerId)
                 : supportTicketRepository.findAll();
+
+        if ("STAFF".equalsIgnoreCase(currentUserRole) || "FACILITY_MANAGER".equalsIgnoreCase(currentUserRole)) {
+            User currentUser = currentUserId != null ? userRepository.findById(currentUserId).orElse(null) : null;
+            if (currentUser == null || currentUser.getFacility() == null) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Người dùng chưa được phân công cơ sở");
+            }
+            UUID assignedFacilityId = currentUser.getFacility().getId();
+            list = list.stream()
+                    .filter(ticket -> ticket.getFacility() != null
+                            && assignedFacilityId.equals(ticket.getFacility().getId()))
+                    .toList();
+        }
 
         return list.stream()
                 .sorted((t1, t2) -> {
@@ -709,24 +725,15 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         User currentUser = userRepository.findById(currentUserId).orElse(null);
 
         UUID targetFacilityId = facilityId;
-        if ("STAFF".equalsIgnoreCase(currentUserRole)) {
-            if (currentUser != null && currentUser.getFacility() != null) {
-                if (facilityId != null && !facilityId.equals(currentUser.getFacility().getId())) {
-                    throw new AppException(ErrorCode.FORBIDDEN, "Nhân viên không có quyền xem thống kê của cơ sở khác");
-                }
-                targetFacilityId = currentUser.getFacility().getId();
-            } else if (facilityId != null) {
-                throw new AppException(ErrorCode.FORBIDDEN, "Nhân viên chưa được phân công cơ sở");
+        if ("STAFF".equalsIgnoreCase(currentUserRole) || "FACILITY_MANAGER".equalsIgnoreCase(currentUserRole)) {
+            if (currentUser == null || currentUser.getFacility() == null) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Người dùng chưa được phân công cơ sở");
             }
-        } else if ("FACILITY_MANAGER".equalsIgnoreCase(currentUserRole)) {
-            if (currentUser != null && currentUser.getFacility() != null) {
-                if (facilityId != null && !facilityId.equals(currentUser.getFacility().getId())) {
-                    throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở không có quyền xem thống kê của cơ sở khác");
-                }
-                targetFacilityId = currentUser.getFacility().getId();
-            } else if (facilityId != null) {
-                throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở chưa được phân công cơ sở");
+            UUID assignedFacilityId = currentUser.getFacility().getId();
+            if (facilityId != null && !facilityId.equals(assignedFacilityId)) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Người dùng không có quyền xem thống kê của cơ sở khác");
             }
+            targetFacilityId = assignedFacilityId;
         }
 
         List<SupportTicket> list = (targetFacilityId != null)
@@ -747,6 +754,13 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         }).count();
 
         double slaCompliance = (total > 0) ? Math.max(0, Math.min(100.0, ((double) (total - overdue) / total) * 100.0)) : 100.0;
+
+        double avgResolutionMinutes = list.stream()
+                .filter(t -> t.getCreatedAt() != null && t.getResolvedAt() != null
+                        && !t.getResolvedAt().isBefore(t.getCreatedAt()))
+                .mapToLong(t -> java.time.Duration.between(t.getCreatedAt(), t.getResolvedAt()).toMinutes())
+                .average()
+                .orElse(0.0);
 
         Map<String, Long> countByFacility = list.stream()
                 .filter(t -> t.getFacility() != null)
@@ -769,7 +783,7 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .reopenedTickets(reopened)
                 .overdueTickets(overdue)
                 .slaCompliancePercent(Math.round(slaCompliance * 10.0) / 10.0)
-                .avgResolutionMinutes(18.0) // Average benchmark from facility SLA telemetry
+                .avgResolutionMinutes(Math.round(avgResolutionMinutes * 10.0) / 10.0)
                 .countByFacility(countByFacility)
                 .countByCategory(countByCategory)
                 .countByPriority(countByPriority)
@@ -797,7 +811,7 @@ public class SupportTicketServiceImpl implements SupportTicketService {
 
     private void validateFacilityScope(SupportTicket ticket, User user) {
         if (ticket.getFacility() == null || user.getFacility() == null) {
-            return;
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
         }
         if (!ticket.getFacility().getId().equals(user.getFacility().getId())) {
             log.warn("[SECURITY] User {} (facility {}) attempted operation on ticket {} in facility {}",
@@ -822,10 +836,11 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         }
 
         User currentUser = currentUserId != null ? userRepository.findById(currentUserId).orElse(null) : null;
-        if (currentUser != null && currentUser.getFacility() != null && ticket.getFacility() != null) {
-            if (!ticket.getFacility().getId().equals(currentUser.getFacility().getId())) {
-                throw new AppException(ErrorCode.TICKET_FACILITY_MISMATCH);
-            }
+        if (currentUser == null || currentUser.getFacility() == null || ticket.getFacility() == null) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
+        }
+        if (!ticket.getFacility().getId().equals(currentUser.getFacility().getId())) {
+            throw new AppException(ErrorCode.TICKET_FACILITY_MISMATCH);
         }
     }
 
@@ -943,7 +958,7 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .isOverdue(isOverdue)
                 .resolvedAt(t.getResolvedAt())
                 .closedAt(t.getClosedAt())
-                .createdAt(t.getCreatedAt() != null ? t.getCreatedAt() : LocalDateTime.now())
+                .createdAt(t.getCreatedAt())
                 .build();
     }
 

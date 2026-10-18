@@ -109,6 +109,8 @@ class SealingServiceTest {
 
         mockPerformer = User.builder()
                 .username("staff_user")
+                .role(Role.builder().name("FACILITY_MANAGER").build())
+                .facility(mockFacility)
                 .fullName("Nhân Viên A")
                 .isActive(true)
                 .build();
@@ -116,6 +118,8 @@ class SealingServiceTest {
 
         mockWitness = User.builder()
                 .username("witness_user")
+                .role(Role.builder().name("STAFF").build())
+                .facility(mockFacility)
                 .fullName("Bảo Vệ B")
                 .isActive(true)
                 .build();
@@ -132,6 +136,14 @@ class SealingServiceTest {
                 .endDate(LocalDate.now().minusDays(15)) // 15 ngày quá hạn
                 .build();
         mockContract.setId(contractId);
+        lenient().when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facilityId)).thenReturn(Optional.of(
+                FacilityPolicy.builder()
+                        .facility(mockFacility)
+                        .overdueGraceDays(1)
+                        .overdueSealingDays(7)
+                        .dailyLateFee(new BigDecimal("50000"))
+                        .build()
+        ));
     }
 
     @Test
@@ -151,7 +163,6 @@ class SealingServiceTest {
         when(requestContext.currentUserId()).thenReturn(performerId);
         when(userRepository.findById(performerId)).thenReturn(Optional.of(mockPerformer));
         when(userRepository.findById(witnessId)).thenReturn(Optional.of(mockWitness));
-        when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facilityId)).thenReturn(Optional.empty());
         when(sealingRecordRepository.save(any(SealingRecord.class))).thenAnswer(inv -> inv.getArgument(0));
 
         SealingRecordResponse response = sealingService.createSealing(request);
@@ -160,12 +171,31 @@ class SealingServiceTest {
         assertThat(response.getSealTagNumber()).isEqualTo("SEAL-TAG-9999");
         assertThat(response.getStatus()).isEqualTo(SealingStatus.SEALED);
         assertThat(response.getOverdueDays()).isEqualTo(15L);
+        assertThat(response.getTotalDebtAmount()).isEqualByComparingTo("2200000.00");
         assertThat(mockUnit.getStatus()).isEqualTo(UnitStatus.OVERDUE_LOCKED);
         assertThat(mockContract.getStatus()).isEqualTo(RentalContractStatus.OVERDUE_LOCKED);
 
         verify(storageUnitRepository).save(mockUnit);
         verify(rentalContractRepository).save(mockContract);
         verify(emailService).sendSealingNoticeEmail(anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyLong(), any(), anyString());
+    }
+
+    @Test
+    void createSealingRejectsBeforeFacilityPolicyThreshold() {
+        mockContract.setEndDate(LocalDate.now().minusDays(6));
+        SealingCreateRequest request = SealingCreateRequest.builder()
+                .contractId(contractId)
+                .witnessId(witnessId)
+                .sealTagNumber("SEAL-TAG-1000")
+                .reason("Overdue case")
+                .build();
+        when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(mockContract));
+
+        AppException ex = assertThrows(AppException.class, () -> sealingService.createSealing(request));
+
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+        verify(sealingRecordRepository, never()).save(any(SealingRecord.class));
+        verify(storageUnitRepository, never()).save(any());
     }
 
     @Test
@@ -202,6 +232,51 @@ class SealingServiceTest {
 
         AppException ex = assertThrows(AppException.class, () -> sealingService.createSealing(request));
         assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.SEALING_WITNESS_REQUIRED);
+    }
+
+    @Test
+    void customerCannotReadAnotherContractsSealingRecord() {
+        SealingRecord record = SealingRecord.builder()
+                .contract(mockContract)
+                .unit(mockUnit)
+                .facility(mockFacility)
+                .sealTagNumber("SEAL-TAG-READ")
+                .reason("Overdue")
+                .performedBy(mockPerformer)
+                .witness(mockWitness)
+                .status(SealingStatus.SEALED)
+                .build();
+        when(sealingRecordRepository.findFirstByContractIdAndStatusOrderByCreatedAtDesc(contractId, SealingStatus.SEALED))
+                .thenReturn(Optional.of(record));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(UUID.randomUUID());
+
+        AppException ex = assertThrows(AppException.class,
+                () -> sealingService.getActiveSealingByContractId(contractId));
+
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FACILITY_ACCESS_DENIED);
+    }
+
+    @Test
+    void customerCanReadOwnContractsSealingRecord() {
+        SealingRecord record = SealingRecord.builder()
+                .contract(mockContract)
+                .unit(mockUnit)
+                .facility(mockFacility)
+                .sealTagNumber("SEAL-TAG-OWN")
+                .reason("Overdue")
+                .performedBy(mockPerformer)
+                .witness(mockWitness)
+                .status(SealingStatus.SEALED)
+                .build();
+        when(sealingRecordRepository.findFirstByContractIdAndStatusOrderByCreatedAtDesc(contractId, SealingStatus.SEALED))
+                .thenReturn(Optional.of(record));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(mockCustomer.getId());
+
+        SealingRecordResponse response = sealingService.getActiveSealingByContractId(contractId);
+
+        assertThat(response.getCustomerId()).isEqualTo(mockCustomer.getId());
     }
 
     @Test

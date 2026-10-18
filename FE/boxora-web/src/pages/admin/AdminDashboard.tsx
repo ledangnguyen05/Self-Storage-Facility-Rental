@@ -213,10 +213,10 @@ export const AdminDashboard: React.FC = () => {
       if (rolePerms && Array.isArray(rolePerms)) {
         setAssignedPermIds(rolePerms.map(rp => rp.permissionId))
       } else {
-        setAssignedPermIds(role.name === 'ADMIN' ? availablePermissions.map(p => p.id) : ['p-1', 'p-4'])
+        setAssignedPermIds([])
       }
     } catch {
-      setAssignedPermIds(role.name === 'ADMIN' ? availablePermissions.map(p => p.id) : ['p-1', 'p-4'])
+      setAssignedPermIds([])
     }
   }
 

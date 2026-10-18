@@ -1,7 +1,7 @@
 /**
  * Boxora Smart Storage AI Assistant Service
  * Secure Backend-proxied client communicating with Spring Boot /api/v1/chatbot/chat
- * All 26 Google Gemini API keys remain safe in backend server .env!
+ * Gemini credentials are used only by the backend.
  */
 
 import { api } from '../lib/axios'
@@ -22,7 +22,8 @@ export const QUICK_SUGGESTIONS = [
 
 export async function sendChatMessage(
   messages: ChatMessage[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  unavailableMessage = 'Boxora AI is temporarily unavailable. Please try again later or browse storage options at /units.'
 ): Promise<string> {
   const lastMessage = messages[messages.length - 1]?.content || ''
   const history = messages.slice(0, messages.length - 1).map(msg => ({
@@ -40,6 +41,11 @@ export async function sendChatMessage(
       { signal }
     )
 
+    const status = response.data?.data?.status
+    if (status === 'UNAVAILABLE' || status === 'CONFIGURATION_ERROR') {
+      return unavailableMessage
+    }
+
     const reply = response.data?.data?.reply
     if (reply) {
       return reply
@@ -48,9 +54,9 @@ export async function sendChatMessage(
     if ((err as Error)?.name === 'AbortError') {
       throw err
     }
-    console.warn('Backend chatbot endpoint error, fallback to graceful response:', err)
+    console.warn('Boxora AI backend is unavailable')
   }
 
   // Graceful fallback response if backend encounters high load
-  return `Dạ chào bạn! Hiện tại trợ lý ảo Boxora AI đang xử lý lượng yêu cầu cao. Bạn có thể tham khảo nhanh bảng giá và đặt kho tự động tại 👉 [Khám phá kho](/units) hoặc xem [Quy định & Tiêu chuẩn](/terms) để được hỗ trợ tức thì nhé!`
+  return unavailableMessage
 }

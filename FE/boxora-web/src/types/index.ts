@@ -456,6 +456,7 @@ export interface RevenueReport {
     depositRevenue: number
     renewalFeeRevenue?: number
     extraChargeRevenue?: number
+    bookingPaymentRevenue?: number
     paymentCount: number
   }
   byFacility?: Array<{
@@ -466,20 +467,36 @@ export interface RevenueReport {
     depositRevenue: number
     renewalFeeRevenue?: number
     extraChargeRevenue?: number
+    bookingPaymentRevenue?: number
     paymentCount?: number
   }>
+    monthlyRevenue?: Array<{
+      month: string | null
+      totalRevenue: number
+      rentalFeeRevenue: number
+      depositRevenue: number
+      renewalFeeRevenue: number
+      extraChargeRevenue: number
+      bookingPaymentRevenue: number
+      paymentCount: number
+    }>
+    paymentsByMethod?: Array<{
+      paymentMethod: string | null
+      paymentCount: number
+    }>
 }
 
 export interface OverdueDebtReport {
   asOfDate?: string
   totalOverdueCount: number
-  totalDebtAmount: number
-  totalUnpaidRent: number
-  totalLateFees: number
+  totalDebtAmount?: number | null
+  totalUnpaidRent?: number | null
+  totalLateFees?: number | null
   gracePeriodCount: number
   warningCount: number
   accessBlockedCount: number
   eligibleForSealingCount: number
+  policyUnconfiguredCount: number
   aging1To3DaysDebt?: number
   aging4To7DaysDebt?: number
   aging8To14DaysDebt?: number
@@ -488,8 +505,8 @@ export interface OverdueDebtReport {
 }
 
 export interface OverdueDebtItem {
-  contractId: string
-  contractCode: string
+  contractId?: string | null
+  contractCode?: string | null
   bookingId?: string
   bookingCode?: string
   customerId?: string
@@ -503,10 +520,10 @@ export interface OverdueDebtItem {
   startDate?: string
   dueDate?: string
   daysOverdue: number
-  unpaidRent: number
-  dailyLateFee: number
-  totalLateFee: number
-  totalDebt: number
+  unpaidRent?: number | null
+  dailyLateFee?: number | null
+  totalLateFee?: number | null
+  totalDebt?: number | null
   debtAmount?: number
   overdueStage?: string
   smartLockStatus?: string
@@ -527,6 +544,8 @@ export interface OccupancyReport {
     totalUnits: number
     occupiedUnits: number
     availableUnits: number
+    reservedUnits: number
+    maintenanceUnits: number
     occupancyRate: number
   }>
 }

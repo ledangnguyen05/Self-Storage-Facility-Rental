@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useLanguage } from '../../context/LanguageContext'
 import {
   MessageSquare,
   X,
@@ -39,6 +40,7 @@ export const BoxoraChatWidget: React.FC = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const navigate = useNavigate()
+  const { t } = useLanguage()
 
   // Save history on change
   useEffect(() => {
@@ -101,7 +103,11 @@ export const BoxoraChatWidget: React.FC = () => {
       abortControllerRef.current = abortCtrl
 
       try {
-        const reply = await sendChatMessage(updatedMessages, abortCtrl.signal)
+        const reply = await sendChatMessage(
+          updatedMessages,
+          abortCtrl.signal,
+          t('Xin lỗi, trợ lý Boxora hiện tạm thời không khả dụng. Vui lòng thử lại sau.', 'Sorry, Boxora AI is temporarily unavailable. Please try again later.')
+        )
         const botMessage: ChatMessage = {
           role: 'assistant',
           content: reply,
@@ -128,7 +134,7 @@ export const BoxoraChatWidget: React.FC = () => {
         abortControllerRef.current = null
       }
     },
-    [input, isLoading, messages, isOpen]
+    [input, isLoading, messages, isOpen, t]
   )
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -289,9 +295,8 @@ export const BoxoraChatWidget: React.FC = () => {
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="text-[13.5px] font-semibold text-slate-900 tracking-tight">Boxora AI</span>
-                <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 font-medium">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Trực tuyến
+                <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 font-medium">
+                  {t('Trợ lý ảo', 'Assistant')}
                 </span>
               </div>
               <p className="text-[11px] text-slate-400">Trợ lý hỗ trợ tự động 24/7</p>

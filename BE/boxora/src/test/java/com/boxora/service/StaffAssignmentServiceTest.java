@@ -33,6 +33,9 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -239,6 +242,39 @@ class StaffAssignmentServiceTest {
                     () -> staffAssignmentService.createAssignment(request));
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.STAFF_ALREADY_ASSIGNED_SHIFT);
         }
+
+        @Test
+        @DisplayName("Rejects overlapping custom shift times even when shift labels differ")
+        void shouldThrowWhenCustomShiftTimesOverlap() {
+            LocalDate tomorrow = LocalDate.now().plusDays(1);
+            StaffAssignmentCreateRequest request = StaffAssignmentCreateRequest.builder()
+                    .staffId(staffId)
+                    .facilityId(facilityId)
+                    .assignedDate(tomorrow)
+                    .shift(StaffShift.MORNING)
+                    .build();
+            StaffAssignment existing = StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(facility)
+                    .assignedDate(tomorrow)
+                    .shift(StaffShift.FULL_DAY)
+                    .startTime(java.time.LocalTime.of(10, 0))
+                    .endTime(java.time.LocalTime.of(18, 0))
+                    .status(StaffAssignmentStatus.ASSIGNED)
+                    .build();
+            existing.setId(UUID.randomUUID());
+
+            when(facilityRepository.findById(facilityId)).thenReturn(Optional.of(facility));
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(staffAssignmentRepository.findByStaff_IdAndAssignedDateBetween(
+                    staffId, tomorrow.minusDays(1), tomorrow.plusDays(1))).thenReturn(List.of(existing));
+
+            AppException ex = assertThrows(AppException.class,
+                    () -> staffAssignmentService.createAssignment(request));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.STAFF_ALREADY_ASSIGNED_SHIFT);
+            verify(staffAssignmentRepository, never()).save(any());
+        }
     }
 
     @Nested
@@ -295,11 +331,15 @@ class StaffAssignmentServiceTest {
         @DisplayName("Cập nhật trạng thái CHECKED_IN thành công")
         void shouldUpdateStatusToCheckedIn() {
             UUID assignmentId = UUID.randomUUID();
+            LocalDateTime windowStart = LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusMinutes(2);
+            LocalDateTime windowEnd = LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh")).plusMinutes(2);
             StaffAssignment assignment = StaffAssignment.builder()
                     .staff(staffUser)
                     .facility(facility)
-                    .assignedDate(LocalDate.now())
+                    .assignedDate(windowStart.toLocalDate())
                     .shift(StaffShift.MORNING)
+                    .startTime(windowStart.toLocalTime())
+                    .endTime(windowEnd.toLocalTime())
                     .status(StaffAssignmentStatus.ASSIGNED)
                     .build();
             assignment.setId(assignmentId);
@@ -322,7 +362,50 @@ class StaffAssignmentServiceTest {
             StaffAssignmentResponse result = staffAssignmentService.updateStatus(assignmentId, statusRequest);
 
             assertThat(result.getStatus()).isEqualTo(StaffAssignmentStatus.CHECKED_IN);
+            assertThat(assignment.getCheckedInAt()).isNotNull();
             verify(staffAssignmentRepository).save(assignment);
+        }
+
+        @Test
+        @DisplayName("Staff cannot set an arbitrary attendance state such as ABSENT")
+        void staffCannotSetArbitraryAttendanceState() {
+            UUID assignmentId = UUID.randomUUID();
+            StaffAssignmentStatusUpdateRequest request = StaffAssignmentStatusUpdateRequest.builder()
+                    .status(StaffAssignmentStatus.ABSENT)
+                    .notes("manual override")
+                    .build();
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+
+            AppException ex = assertThrows(AppException.class,
+                    () -> staffAssignmentService.updateStatus(assignmentId, request));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+            verify(staffAssignmentRepository, never()).findById(any());
+            verify(staffAssignmentRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Attendance history cannot be removed through schedule cancellation")
+        void checkedInAssignmentCannotBeCancelled() {
+            UUID assignmentId = UUID.randomUUID();
+            StaffAssignment assignment = StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(facility)
+                    .assignedDate(LocalDate.now())
+                    .shift(StaffShift.MORNING)
+                    .status(StaffAssignmentStatus.CHECKED_IN)
+                    .build();
+            assignment.setId(assignmentId);
+            when(staffAssignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+            when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
+
+            AppException ex = assertThrows(AppException.class,
+                    () -> staffAssignmentService.deleteAssignment(assignmentId));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+            assertThat(assignment.getStatus()).isEqualTo(StaffAssignmentStatus.CHECKED_IN);
+            verify(staffAssignmentRepository, never()).delete(any());
+            verify(staffAssignmentRepository, never()).save(any());
         }
     }
 
@@ -337,19 +420,23 @@ class StaffAssignmentServiceTest {
             StaffAssignment assignment = StaffAssignment.builder()
                     .staff(staffUser)
                     .facility(facility)
-                    .assignedDate(LocalDate.now().plusDays(1))
+                    .assignedDate(LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).plusDays(1))
                     .shift(StaffShift.MORNING)
                     .build();
             assignment.setId(assignmentId);
 
             when(staffAssignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+            when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
 
             staffAssignmentService.deleteAssignment(assignmentId);
 
             verify(facilityAccessGuard).checkFacilityAccess(facilityId);
-            verify(staffAssignmentRepository).delete(assignment);
+            assertThat(assignment.getStatus()).isEqualTo(StaffAssignmentStatus.CANCELLED);
+            verify(staffAssignmentRepository).save(assignment);
+            verify(staffAssignmentRepository, never()).delete(any());
             verify(activityLogService).record(eq(facilityId), eq(ActivityAction.STAFF_ASSIGNMENT_REMOVE),
-                    eq("StaffAssignment"), eq(assignmentId), any(), any(), isNull());
+                    eq("StaffAssignment"), eq(assignmentId), any(),
+                    eq(StaffAssignmentStatus.ASSIGNED.name()), eq(StaffAssignmentStatus.CANCELLED.name()));
         }
 
         @Test
@@ -385,11 +472,15 @@ class StaffAssignmentServiceTest {
         @DisplayName("Điểm danh vào ca trực thành công")
         void shouldCheckInSuccessfully() {
             UUID assignmentId = UUID.randomUUID();
+            LocalDateTime windowStart = LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusMinutes(2);
+            LocalDateTime windowEnd = LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh")).plusMinutes(2);
             StaffAssignment assignment = StaffAssignment.builder()
                     .staff(staffUser)
                     .facility(facility)
-                    .assignedDate(LocalDate.now())
+                    .assignedDate(windowStart.toLocalDate())
                     .shift(StaffShift.MORNING)
+                    .startTime(windowStart.toLocalTime())
+                    .endTime(windowEnd.toLocalTime())
                     .status(StaffAssignmentStatus.ASSIGNED)
                     .build();
             assignment.setId(assignmentId);
@@ -409,6 +500,33 @@ class StaffAssignmentServiceTest {
             assertThat(res.getStatus()).isEqualTo(StaffAssignmentStatus.CHECKED_IN);
             assertThat(assignment.getCheckedInAt()).isNotNull();
             verify(activityLogService).record(eq(facilityId), eq(ActivityAction.STAFF_CHECKIN), eq("StaffAssignment"), eq(assignmentId), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("Staff cannot check in before the assigned shift window")
+        void shouldRejectCheckInOutsideAssignedWindow() {
+            UUID assignmentId = UUID.randomUUID();
+            StaffAssignment assignment = StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(facility)
+                    .assignedDate(LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).plusDays(1))
+                    .shift(StaffShift.MORNING)
+                    .startTime(LocalTime.of(6, 0))
+                    .endTime(LocalTime.of(14, 0))
+                    .status(StaffAssignmentStatus.ASSIGNED)
+                    .build();
+            assignment.setId(assignmentId);
+
+            when(staffAssignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+
+            AppException exception = assertThrows(AppException.class,
+                    () -> staffAssignmentService.checkIn(assignmentId,
+                            new com.boxora.dto.request.StaffCheckInRequest("Too early")));
+
+            assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+            verify(staffAssignmentRepository, never()).save(any());
+            verify(activityLogService, never()).record(any(), any(), any(), any(), any(), any(), any());
         }
 
         @Test

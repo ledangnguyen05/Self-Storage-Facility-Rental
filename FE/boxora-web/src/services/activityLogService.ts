@@ -12,6 +12,8 @@ export const activityLogService = {
     isCriticalOnly?: boolean
     resourceType?: string
     search?: string
+    fromDate?: string
+    toDate?: string
     page?: number
     size?: number
     sortBy?: string
