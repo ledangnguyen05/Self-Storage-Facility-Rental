@@ -70,6 +70,10 @@ export const IncidentTicketsPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<number>(1)
   const pageSize = 10
 
+  const currentEffectiveFacilityId = isFacilityScoped && user?.facilityId
+    ? user.facilityId
+    : (selectedFacilityFilter && selectedFacilityFilter !== 'ALL' ? selectedFacilityFilter : undefined)
+
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [newTitle, setNewTitle] = useState('')
@@ -529,6 +533,9 @@ export const IncidentTicketsPage: React.FC = () => {
               <h1 className="text-xl font-bold text-slate-900 tracking-tight">
                 Quản Lý &amp; Xử Lý Sự Cố Boxora
               </h1>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-slate-100 text-slate-700 border-slate-200">
+                {currentEffectiveFacilityId ? `Cơ sở: ${facilities.find(f => f.id === currentEffectiveFacilityId)?.name || 'Chi nhánh phân quyền'}` : 'Toàn hệ thống (Tất cả chi nhánh)'}
+              </span>
             </div>
             <p className="text-xs text-slate-500 mt-1">
               {isFacilityManager
@@ -587,7 +594,7 @@ export const IncidentTicketsPage: React.FC = () => {
               {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : (stats?.totalTickets ?? tickets.length)}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Toàn bộ sự cố được phân quyền
+              Đang xử lý: <strong className="text-blue-700">{stats ? (stats.openTickets ?? 0) + (stats.inProgressTickets ?? 0) + (stats.reopenedTickets ?? 0) : tickets.filter(t => t.status === 'IN_PROGRESS' || t.status === 'OPEN' || t.status === 'REOPENED').length}</strong> · Đã xong: <strong className="text-emerald-700">{stats ? (stats.resolvedTickets ?? 0) + (stats.closedTickets ?? 0) : tickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED').length}</strong>
             </div>
           </div>
         </div>
@@ -622,7 +629,11 @@ export const IncidentTicketsPage: React.FC = () => {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold text-rose-700 tracking-tight">
-              {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : ((stats?.overdueTickets ?? stats?.overdueSlaTickets) ?? tickets.filter(t => t.isOverdue || t.isOverdueSla).length)}
+              {isLoading ? (
+                <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span>
+              ) : (
+                ((stats?.overdueTickets ?? stats?.overdueSlaTickets) ?? tickets.filter(t => t.isOverdue || t.isOverdueSla).length)
+              )}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
               Nhóm này có thể giao với ticket chưa hoàn tất

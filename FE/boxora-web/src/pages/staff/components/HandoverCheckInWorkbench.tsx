@@ -87,6 +87,7 @@ interface HandoverCheckInWorkbenchProps {
   onOpenQrScanner?: () => void
   activeBookingId?: string
   onSelectBooking?: (bookingId: string) => void
+  facilityId?: string
 }
 
 export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> = ({
@@ -95,7 +96,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   onHandoverComplete,
   onOpenQrScanner,
   activeBookingId,
-  onSelectBooking
+  onSelectBooking,
+  facilityId
 }) => {
   const [internalArrivals, setInternalArrivals] = useState<Booking[]>([])
   const [selectedBookingId, setSelectedBookingId] = useState<string>('')
@@ -153,31 +155,39 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const interiorInputRef = useRef<HTMLInputElement | null>(null)
 
   // Resolve arrivals list
-  const arrivalsList = (propArrivals && propArrivals.length > 0) ? propArrivals : internalArrivals
+  const arrivalsList = propArrivals !== undefined ? propArrivals : internalArrivals
 
   // Load arrivals if not provided via props
   useEffect(() => {
-    if (propArrivals && propArrivals.length > 0) {
+    if (propArrivals !== undefined) {
       setInternalArrivals(propArrivals)
-      if (!selectedBookingId && !activeBookingId) {
-        setSelectedBookingId(propArrivals[0].id)
+      if (propArrivals.length > 0) {
+        if (!selectedBookingId && !activeBookingId) {
+          setSelectedBookingId(propArrivals[0].id)
+        }
+      } else {
+        setSelectedBookingId('')
       }
     } else {
-      loadArrivals()
+      loadArrivals(facilityId)
     }
-  }, [propArrivals])
+  }, [propArrivals, facilityId])
 
-  const loadArrivals = async () => {
+  const loadArrivals = async (targetFacId?: string) => {
     try {
-      const data = await bookingService.getUpcomingArrivals()
+      const data = await bookingService.getUpcomingArrivals(targetFacId || facilityId)
       if (data && data.length > 0) {
         setInternalArrivals(data)
         if (!selectedBookingId && !activeBookingId) {
           setSelectedBookingId(data[0].id)
         }
+      } else {
+        setInternalArrivals([])
+        setSelectedBookingId('')
       }
     } catch (err) {
       console.warn('Failed to load arrivals for workbench:', err)
+      setInternalArrivals([])
     }
   }
 

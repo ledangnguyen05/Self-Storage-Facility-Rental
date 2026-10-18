@@ -736,10 +736,6 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             targetFacilityId = assignedFacilityId;
         }
 
-        List<SupportTicket> list = (targetFacilityId != null)
-                ? supportTicketRepository.findByFacility_Id(targetFacilityId)
-                : supportTicketRepository.findAll();
-
         long total = list.size();
         long open = list.stream().filter(t -> t.getStatus() == TicketStatus.OPEN).count();
         long inProgress = list.stream().filter(t -> t.getStatus() == TicketStatus.IN_PROGRESS).count();

@@ -569,7 +569,7 @@ export const OperationsDashboard: React.FC = () => {
 
       {/* 4 EXECUTIVE SUMMARY KPI CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {/* Metric 1 */}
+        {/* Metric 1: Doanh thu thuần */}
         <div className="relative overflow-hidden rounded-xl bg-white p-5 shadow-sm border border-slate-200 flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="flex flex-col">
