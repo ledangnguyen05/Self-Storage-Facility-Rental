@@ -377,8 +377,12 @@ export const CashierJournalPage: React.FC = () => {
                   return (
                     <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3 px-3.5">
-                        <div className="font-mono font-medium text-slate-900" title={p.transactionId || p.id}>
-                          {p.transactionId || p.id}
+                        <div className="font-mono font-medium text-slate-900" title={p.transactionId ? `Cổng TT: ${p.transactionId} | Mã hệ thống: ${p.id}` : `Mã nội bộ: ${p.id}`}>
+                          {p.transactionId ? (
+                            <span>{p.transactionId}</span>
+                          ) : (
+                            <span className="text-slate-600 font-mono text-xs">Mã nội bộ: {p.id}</span>
+                          )}
                         </div>
                         <div className="text-[11px] text-slate-400 font-mono">
                           {p.paymentTime

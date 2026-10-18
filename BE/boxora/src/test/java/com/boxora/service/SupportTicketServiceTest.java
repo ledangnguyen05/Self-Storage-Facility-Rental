@@ -806,5 +806,94 @@ class SupportTicketServiceTest {
 
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
         }
+
+        @Test
+        @DisplayName("Staff without assigned facility queries stats -> throws FORBIDDEN (deny-by-default)")
+        void staffQueriesStatsWithoutAssignedFacility_throwsForbidden() {
+            UUID staffId = UUID.randomUUID();
+            User unassignedStaff = User.builder().fullName("Staff Unassigned").facility(null).build();
+            unassignedStaff.setId(staffId);
+
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(unassignedStaff));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    supportTicketService.getStats(null));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("getStats: Formula 5 statuses = totalTickets and real avgResolutionMinutes calculation")
+        void getStats_CalculatesRealAvgResolutionMinutes_AndStatusConsistency() {
+            UUID adminId = UUID.randomUUID();
+            User admin = User.builder().fullName("Admin Sys").build();
+            admin.setId(adminId);
+
+            LocalDateTime now = LocalDateTime.now();
+
+            SupportTicket t1 = SupportTicket.builder().title("T1").facility(testFacility).status(TicketStatus.OPEN).build();
+            t1.setCreatedAt(now.minusHours(2));
+
+            SupportTicket t2 = SupportTicket.builder().title("T2").facility(testFacility).status(TicketStatus.IN_PROGRESS).build();
+            t2.setCreatedAt(now.minusHours(3));
+
+            SupportTicket t3 = SupportTicket.builder().title("T3").facility(testFacility).status(TicketStatus.REOPENED).build();
+            t3.setCreatedAt(now.minusHours(4));
+
+            SupportTicket t4 = SupportTicket.builder().title("T4").facility(testFacility).status(TicketStatus.RESOLVED)
+                    .resolvedAt(now).build(); // 60 mins
+            t4.setCreatedAt(now.minusMinutes(60));
+
+            SupportTicket t5 = SupportTicket.builder().title("T5").facility(testFacility).status(TicketStatus.CLOSED)
+                    .resolvedAt(now).build(); // 120 mins
+            t5.setCreatedAt(now.minusMinutes(120));
+
+            when(requestContext.currentUserId()).thenReturn(adminId);
+            when(requestContext.currentUserRole()).thenReturn("ADMIN");
+            when(userRepository.findById(adminId)).thenReturn(Optional.of(admin));
+            when(supportTicketRepository.findAll()).thenReturn(List.of(t1, t2, t3, t4, t5));
+
+            SupportTicketStatsResponse stats = supportTicketService.getStats(null);
+
+            assertThat(stats.getTotalTickets()).isEqualTo(5);
+            assertThat(stats.getOpenTickets()).isEqualTo(1);
+            assertThat(stats.getInProgressTickets()).isEqualTo(1);
+            assertThat(stats.getReopenedTickets()).isEqualTo(1);
+            assertThat(stats.getResolvedTickets()).isEqualTo(1);
+            assertThat(stats.getClosedTickets()).isEqualTo(1);
+
+            // Consistency verification
+            long sumStatuses = stats.getOpenTickets() + stats.getInProgressTickets() + stats.getReopenedTickets()
+                    + stats.getResolvedTickets() + stats.getClosedTickets();
+            assertThat(sumStatuses).isEqualTo(stats.getTotalTickets());
+
+            // Real avg calculation: (60 + 120) / 2 = 90.0 minutes
+            assertThat(stats.getAvgResolutionMinutes()).isNotNull();
+            assertThat(stats.getAvgResolutionMinutes()).isEqualTo(90.0);
+        }
+
+        @Test
+        @DisplayName("getStats: avgResolutionMinutes is null when no resolved tickets exist (no fake 18.0)")
+        void getStats_AvgResolutionMinutesNullWhenNoResolvedTickets() {
+            UUID adminId = UUID.randomUUID();
+            User admin = User.builder().fullName("Admin Sys").build();
+            admin.setId(adminId);
+
+            LocalDateTime now = LocalDateTime.now();
+            SupportTicket t1 = SupportTicket.builder().title("T1").facility(testFacility).status(TicketStatus.OPEN).build();
+            t1.setCreatedAt(now);
+
+            when(requestContext.currentUserId()).thenReturn(adminId);
+            when(requestContext.currentUserRole()).thenReturn("ADMIN");
+            when(userRepository.findById(adminId)).thenReturn(Optional.of(admin));
+            when(supportTicketRepository.findAll()).thenReturn(List.of(t1));
+
+            SupportTicketStatsResponse stats = supportTicketService.getStats(null);
+
+            assertThat(stats.getTotalTickets()).isEqualTo(1);
+            assertThat(stats.getAvgResolutionMinutes()).isNull();
+        }
     }
 }

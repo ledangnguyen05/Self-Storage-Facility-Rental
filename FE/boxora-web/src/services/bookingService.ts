@@ -94,7 +94,7 @@ export const bookingService = {
     return response.data?.data as { accessPin: string; qrAccessToken: string }
   },
 
-  async getAll(params?: { customerId?: string; status?: string; page?: number; size?: number }) {
+  async getAll(params?: { customerId?: string; facilityId?: string; status?: string; page?: number; size?: number }) {
     const response = await api.get('/api/v1/bookings', { params })
     const data = response.data?.data
     if (Array.isArray(data)) {

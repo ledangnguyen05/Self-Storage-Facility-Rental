@@ -76,14 +76,18 @@ public class BookingController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF', 'BUSINESS_MANAGER')")
     @Operation(summary = "Truy vấn danh sách đơn đặt kho")
     public ResponseEntity<ApiResponse<List<BookingResponse>>> getAll(
             @RequestParam(required = false) UUID customerId,
+            @RequestParam(required = false) UUID facilityId,
             @RequestParam(required = false) com.boxora.enums.BookingStatus status) {
         List<BookingResponse> list = bookingService.getMyBookings(customerId);
         if (status != null) {
             list = list.stream().filter(b -> b.getStatus() == status).toList();
+        }
+        if (facilityId != null) {
+            list = list.stream().filter(b -> facilityId.equals(b.getFacilityId())).toList();
         }
         return ResponseEntity.ok(ApiResponse.success(list));
     }

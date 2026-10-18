@@ -450,19 +450,32 @@ public class BookingServiceImpl implements BookingService {
         }
 
         UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
+        String role = requestContext != null ? requestContext.currentUserRole() : null;
+        boolean isStaffOrManagerOrAdmin = "ADMIN".equalsIgnoreCase(role) || "FACILITY_MANAGER".equalsIgnoreCase(role) || "STAFF".equalsIgnoreCase(role) || "BUSINESS_MANAGER".equalsIgnoreCase(role) || "SYSTEM_ADMIN".equalsIgnoreCase(role);
         if (currentUserId != null && customerId != null && !currentUserId.equals(customerId)) {
-            String role = requestContext.currentUserRole();
-            if (!"ADMIN".equalsIgnoreCase(role) && !"FACILITY_MANAGER".equalsIgnoreCase(role) && !"STAFF".equalsIgnoreCase(role)) {
+            if (!isStaffOrManagerOrAdmin) {
                 throw new AppException(ErrorCode.FORBIDDEN);
             }
         }
-        UUID targetCustomerId = customerId != null ? customerId : currentUserId;
+        UUID targetCustomerId = customerId != null ? customerId : (isStaffOrManagerOrAdmin ? null : currentUserId);
         List<Booking> bookings;
         if (targetCustomerId != null) {
             bookings = bookingRepository.findByCustomer_Id(targetCustomerId);
         } else {
             bookings = bookingRepository.findAll();
         }
+
+        if (facilityAccessGuard.isFacilityScoped()) {
+            UUID scopedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+            if (scopedFacilityId != null) {
+                bookings = bookings.stream()
+                        .filter(b -> b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null && scopedFacilityId.equals(b.getStorageUnit().getFacility().getId()))
+                        .collect(Collectors.toList());
+            } else {
+                bookings = List.of();
+            }
+        }
+
         return bookings.stream()
                 .sorted((b1, b2) -> {
                     if (b1.getCreatedAt() != null && b2.getCreatedAt() != null) {
@@ -514,8 +527,13 @@ public class BookingServiceImpl implements BookingService {
         UUID effectiveFacilityId = facilityId;
         if (facilityAccessGuard.isFacilityScoped()) {
             UUID scopedId = facilityAccessGuard.scopedFacilityIdOrNull();
+            if (scopedId == null) {
+                log.warn("[FACILITY_GUARD] Scoped user without assigned facility attempted to access arrivals");
+                throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED, "Tài khoản nhân sự chưa được phân công cơ sở");
+            }
             if (facilityId != null && !facilityId.equals(scopedId)) {
-                throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
+                log.warn("[FACILITY_GUARD] Scoped user with facility {} attempted access to facility {}", scopedId, facilityId);
+                throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED, "Không có quyền truy cập cơ sở này");
             }
             effectiveFacilityId = scopedId;
         }

@@ -20,7 +20,7 @@ public class SupportTicketStatsResponse {
     private long reopenedTickets;
     private long overdueTickets;
     private double slaCompliancePercent;
-    private double avgResolutionMinutes;
+    private Double avgResolutionMinutes;
     private Map<String, Long> countByFacility;
     private Map<String, Long> countByCategory;
     private Map<String, Long> countByPriority;

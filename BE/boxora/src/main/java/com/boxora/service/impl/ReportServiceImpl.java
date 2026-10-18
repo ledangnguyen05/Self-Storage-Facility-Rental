@@ -30,6 +30,9 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import com.boxora.entity.Payment;
+import com.boxora.enums.PaymentType;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -77,11 +80,64 @@ public class ReportServiceImpl implements ReportService {
                     .build();
         }
 
+        List<Payment> periodPayments = paymentRepository.findSuccessfulPaymentsInPeriod(from, to, effectiveFacilityId);
+        BigDecimal refundedAmount = paymentRepository.sumRefundedAmount(from, to, effectiveFacilityId);
+
+        // Group periodPayments by Year-Month (e.g. 2026-03)
+        Map<String, List<Payment>> byMonth = periodPayments.stream()
+                .filter(p -> p.getPaymentTime() != null)
+                .collect(Collectors.groupingBy(p -> {
+                    LocalDateTime pt = p.getPaymentTime();
+                    return pt.getYear() + "-" + String.format("%02d", pt.getMonthValue());
+                }, TreeMap::new, Collectors.toList()));
+
+        List<MonthlyRevenueResponse> monthlyBreakdown = byMonth.entrySet().stream()
+                .map(entry -> {
+                    String mKey = entry.getKey();
+                    String[] parts = mKey.split("-");
+                    String label = "T" + parts[1] + "/" + parts[0].substring(2);
+
+                    BigDecimal rent = entry.getValue().stream()
+                            .filter(p -> p.getPaymentType() == PaymentType.RENTAL_FEE)
+                            .map(Payment::getAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                    BigDecimal dep = entry.getValue().stream()
+                            .filter(p -> p.getPaymentType() == PaymentType.DEPOSIT)
+                            .map(Payment::getAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                    BigDecimal renewal = entry.getValue().stream()
+                            .filter(p -> p.getPaymentType() == PaymentType.RENEWAL_FEE)
+                            .map(Payment::getAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                    BigDecimal extra = entry.getValue().stream()
+                            .filter(p -> p.getPaymentType() == PaymentType.EXTRA_CHARGE)
+                            .map(Payment::getAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                    BigDecimal netTotal = rent.add(renewal).add(extra);
+
+                    return MonthlyRevenueResponse.builder()
+                            .monthKey(mKey)
+                            .label(label)
+                            .rentalFee(rent)
+                            .deposit(dep)
+                            .renewalFee(renewal)
+                            .extraCharge(extra)
+                            .total(netTotal)
+                            .build();
+                })
+                .collect(Collectors.toList());
+
         return RevenueReportResponse.builder()
                 .fromDate(fromDate)
                 .toDate(toDate)
                 .systemSummary(systemSummary)
                 .byFacility(byFacility)
+                .monthlyBreakdown(monthlyBreakdown)
+                .refundedAmount(refundedAmount)
                 .build();
     }
 
