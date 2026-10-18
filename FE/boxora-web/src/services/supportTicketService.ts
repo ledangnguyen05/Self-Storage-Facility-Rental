@@ -42,7 +42,7 @@ export interface SupportTicketRecord {
   resolvedAt?: string
   closedAt?: string
   contactLogCount?: number
-  createdAt: string
+  createdAt?: string
   updatedAt?: string
 }
 

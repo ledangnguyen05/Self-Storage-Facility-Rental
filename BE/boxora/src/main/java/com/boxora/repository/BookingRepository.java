@@ -28,6 +28,12 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     List<Booking> findByCustomer_Id(UUID customerId);
 
     @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "storageUnit", "storageUnit.facility"})
+    List<Booking> findByStorageUnit_Facility_Id(UUID facilityId);
+
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "storageUnit", "storageUnit.facility"})
+    List<Booking> findByCustomer_IdAndStorageUnit_Facility_Id(UUID customerId, UUID facilityId);
+
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "storageUnit", "storageUnit.facility"})
     List<Booking> findByStatusOrderByCreatedAtAsc(BookingStatus status);
 
     boolean existsByStorageUnit_IdAndStatusInAndIdNot(UUID storageUnitId, Collection<BookingStatus> statuses, UUID excludedBookingId);
@@ -57,8 +63,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     @Query("SELECT b FROM Booking b WHERE b.status IN :statuses AND b.handoverTime IS NULL AND ("
             + "(b.holdExpiresAt IS NOT NULL AND b.holdExpiresAt < :now) OR "
             + "(b.paymentExpiresAt IS NOT NULL AND b.paymentExpiresAt < :now) OR "
-            + "(b.holdExpiresAt IS NULL AND b.expectedCheckInAt IS NOT NULL AND b.expectedCheckInAt < :checkInThreshold) OR "
-            + "(b.holdExpiresAt IS NULL AND b.expectedCheckInAt IS NULL AND b.startDate < :todayThreshold))")
+            + "(b.holdExpiresAt IS NULL AND b.expectedCheckInAt IS NOT NULL AND b.expectedCheckInAt < :checkInThreshold))")
     List<Booking> findExpiredHoldCandidates(
             @Param("statuses") Collection<BookingStatus> statuses,
             @Param("now") Instant now,

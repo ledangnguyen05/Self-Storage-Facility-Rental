@@ -50,6 +50,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -63,6 +64,8 @@ import java.util.stream.Collectors;
 @Transactional
 @Slf4j
 public class BookingServiceImpl implements BookingService {
+
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
     private final BookingRepository bookingRepository;
     private final StorageUnitRepository storageUnitRepository;
@@ -126,8 +129,8 @@ public class BookingServiceImpl implements BookingService {
         }
 
         // 4. Validation ngày bắt đầu (< 30 ngày so với hôm nay và >= hôm nay)
-        LocalDate startDate = request.getStartDate() != null ? request.getStartDate() : LocalDate.now();
-        LocalDate today = LocalDate.now();
+        LocalDate startDate = request.getStartDate() != null ? request.getStartDate() : LocalDate.now(BUSINESS_ZONE);
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
 
         if (startDate.isBefore(today)) {
             throw new AppException(ErrorCode.BOOKING_START_DATE_PAST);
@@ -191,18 +194,12 @@ public class BookingServiceImpl implements BookingService {
 
         // 9. Xác định ngày/giờ nhận kho dự kiến (expectedCheckInAt)
         LocalDateTime expectedCheckInAt = request.getExpectedCheckInAt();
-        if (expectedCheckInAt == null) {
-            if (request.getCheckInTime() != null && !request.getCheckInTime().isBlank()) {
-                try {
-                    String[] parts = request.getCheckInTime().trim().split(":");
-                    int hour = Integer.parseInt(parts[0]);
-                    int minute = parts.length > 1 ? Integer.parseInt(parts[1]) : 0;
-                    expectedCheckInAt = startDate.atTime(hour, minute);
-                } catch (Exception ex) {
-                    expectedCheckInAt = startDate.atTime(14, 0);
-                }
-            } else {
-                expectedCheckInAt = startDate.atTime(14, 0);
+        if (expectedCheckInAt == null && request.getCheckInTime() != null && !request.getCheckInTime().isBlank()) {
+            try {
+                java.time.LocalTime checkInTime = java.time.LocalTime.parse(request.getCheckInTime().trim());
+                expectedCheckInAt = startDate.atTime(checkInTime);
+            } catch (java.time.format.DateTimeParseException ex) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Check-in appointment time must use HH:mm or HH:mm:ss.");
             }
         }
 
@@ -225,7 +222,9 @@ public class BookingServiceImpl implements BookingService {
 
         if (isDirect) {
             // Giữ chỗ miễn phí theo lịch hẹn: giữ đến giờ hẹn cộng khoảng gia hạn chính sách
-            Instant appointmentInstant = expectedCheckInAt.atZone(java.time.ZoneId.systemDefault()).toInstant();
+            Instant appointmentInstant = expectedCheckInAt != null
+                    ? expectedCheckInAt.atZone(BUSINESS_ZONE).toInstant()
+                    : now;
             holdExpiresAt = appointmentInstant.plus(java.time.Duration.ofHours(holdGraceHours));
             // Đảm bảo giữ tối thiểu 24h từ lúc tạo (đặc biệt khi khách đặt nhận trong ngày)
             if (holdExpiresAt.isBefore(now.plus(java.time.Duration.ofHours(24)))) {
@@ -278,6 +277,14 @@ public class BookingServiceImpl implements BookingService {
             } catch (Exception ex) {
                 log.warn("Could not auto-ensure contract for direct booking {}: {}", booking.getBookingCode(), ex.getMessage());
             }
+        } else if ("ONLINE".equalsIgnoreCase(resolvedSigningMethod)) {
+            // Online bookings must have a contract draft ready before the customer can proceed to signing.
+            // Do this in the booking transaction so a failed contract draft does not leave a reserved orphan booking.
+            var contractService = contractSigningServiceProvider.getIfAvailable();
+            if (contractService == null) {
+                throw new AppException(ErrorCode.CONTRACT_SIGNING_FAILED);
+            }
+            contractService.ensureContractForBooking(booking);
         }
 
         // 12. Thực hiện Soft-lock trên Redis cho ngăn kho theo thời hạn giữ chỗ
@@ -464,18 +471,7 @@ public class BookingServiceImpl implements BookingService {
         } else {
             bookings = bookingRepository.findAll();
         }
-
-        if (facilityAccessGuard.isFacilityScoped()) {
-            UUID scopedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
-            if (scopedFacilityId != null) {
-                bookings = bookings.stream()
-                        .filter(b -> b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null && scopedFacilityId.equals(b.getStorageUnit().getFacility().getId()))
-                        .collect(Collectors.toList());
-            } else {
-                bookings = List.of();
-            }
-        }
-
+        bookings = restrictBookingsToCurrentFacility(bookings);
         return bookings.stream()
                 .sorted((b1, b2) -> {
                     if (b1.getCreatedAt() != null && b2.getCreatedAt() != null) {
@@ -504,6 +500,7 @@ public class BookingServiceImpl implements BookingService {
         } else {
             bookings = bookingRepository.findAll();
         }
+        bookings = restrictBookingsToCurrentFacility(bookings);
         return bookings.stream()
                 .filter(b -> b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.ACTIVE || b.getStatus() == BookingStatus.OVERDUE)
                 .map(b -> {
@@ -526,24 +523,92 @@ public class BookingServiceImpl implements BookingService {
     public List<BookingResponse> getUpcomingArrivals(UUID facilityId) {
         UUID effectiveFacilityId = facilityId;
         if (facilityAccessGuard.isFacilityScoped()) {
-            UUID scopedId = facilityAccessGuard.scopedFacilityIdOrNull();
-            if (scopedId == null) {
-                log.warn("[FACILITY_GUARD] Scoped user without assigned facility attempted to access arrivals");
-                throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED, "Tài khoản nhân sự chưa được phân công cơ sở");
+            UUID assignedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+            if (effectiveFacilityId != null) {
+                facilityAccessGuard.checkFacilityAccess(effectiveFacilityId);
             }
-            if (facilityId != null && !facilityId.equals(scopedId)) {
-                log.warn("[FACILITY_GUARD] Scoped user with facility {} attempted access to facility {}", scopedId, facilityId);
-                throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED, "Không có quyền truy cập cơ sở này");
-            }
-            effectiveFacilityId = scopedId;
+            effectiveFacilityId = assignedFacilityId;
         }
 
-        UUID finalFacilityId = effectiveFacilityId;
-        List<Booking> list = bookingRepository.findAll().stream()
+        List<Booking> source = effectiveFacilityId == null
+                ? bookingRepository.findAll()
+                : bookingRepository.findByStorageUnit_Facility_Id(effectiveFacilityId);
+        return source.stream()
                 .filter(b -> b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.PENDING_PAYMENT)
-                .filter(b -> finalFacilityId == null || (b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null && finalFacilityId.equals(b.getStorageUnit().getFacility().getId())))
+                .filter(b -> b.getExpectedCheckInAt() != null)
+                .sorted(java.util.Comparator.comparing(Booking::getExpectedCheckInAt))
+                .map(this::mapOperationalBookingResponse)
                 .collect(Collectors.toList());
-        return list.stream().map(this::mapToResponse).collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<BookingResponse> getBookings(UUID customerId, BookingStatus status, UUID facilityId) {
+        UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
+        if (currentUserId == null) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
+
+        String role = requestContext.currentUserRole();
+        UUID effectiveCustomerId = customerId;
+        UUID effectiveFacilityId = facilityId;
+
+        if ("CUSTOMER".equalsIgnoreCase(role)) {
+            if (customerId != null && !currentUserId.equals(customerId)) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+            effectiveCustomerId = currentUserId;
+        }
+
+        if (facilityAccessGuard.isFacilityScoped()) {
+            UUID assignedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+            if (effectiveFacilityId != null) {
+                facilityAccessGuard.checkFacilityAccess(effectiveFacilityId);
+            }
+            effectiveFacilityId = assignedFacilityId;
+        }
+
+        List<Booking> source;
+        if (effectiveCustomerId != null && effectiveFacilityId != null) {
+            source = bookingRepository.findByCustomer_IdAndStorageUnit_Facility_Id(
+                    effectiveCustomerId, effectiveFacilityId);
+        } else if (effectiveCustomerId != null) {
+            source = bookingRepository.findByCustomer_Id(effectiveCustomerId);
+        } else if (effectiveFacilityId != null) {
+            source = bookingRepository.findByStorageUnit_Facility_Id(effectiveFacilityId);
+        } else {
+            source = bookingRepository.findAll();
+        }
+
+        return source.stream()
+                .filter(booking -> status == null || booking.getStatus() == status)
+                .sorted((left, right) -> {
+                    if (left.getCreatedAt() != null && right.getCreatedAt() != null) {
+                        return right.getCreatedAt().compareTo(left.getCreatedAt());
+                    }
+                    return 0;
+                })
+                .map(this::mapOperationalBookingResponse)
+                .collect(Collectors.toList());
+    }
+
+    private List<Booking> restrictBookingsToCurrentFacility(List<Booking> bookings) {
+        if (!facilityAccessGuard.isFacilityScoped()) {
+            return bookings;
+        }
+        UUID assignedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+        return bookings.stream()
+                .filter(booking -> booking.getStorageUnit() != null
+                        && booking.getStorageUnit().getFacility() != null
+                        && assignedFacilityId.equals(booking.getStorageUnit().getFacility().getId()))
+                .collect(Collectors.toList());
+    }
+
+    private BookingResponse mapOperationalBookingResponse(Booking booking) {
+        BookingResponse response = mapToResponse(booking);
+        response.setAccessPin(null);
+        response.setQrAccessToken(null);
+        return response;
     }
 
     @Override
@@ -551,7 +616,7 @@ public class BookingServiceImpl implements BookingService {
         Booking booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
-        LocalDate currentEnd = booking.getEndDate() != null ? booking.getEndDate() : LocalDate.now();
+        LocalDate currentEnd = booking.getEndDate() != null ? booking.getEndDate() : LocalDate.now(BUSINESS_ZONE);
         booking.setEndDate(currentEnd.plusMonths(extraMonths));
         booking.setRentalMonths((booking.getRentalMonths() != null ? booking.getRentalMonths() : 0) + extraMonths);
         booking = bookingRepository.save(booking);
@@ -561,15 +626,7 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     public BookingResponse remoteUnlock(UUID id) {
-        Booking booking = bookingRepository.findById(id)
-                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
-
-        if (booking.getStorageUnit() != null && booking.getStorageUnit().getStatus() == UnitStatus.OVERDUE_LOCKED) {
-            throw new AppException(ErrorCode.UNIT_OVERDUE_LOCKED);
-        }
-
-        // Trigger IoT signal simulation
-        return mapToResponse(booking);
+        throw new AppException(ErrorCode.SMARTLOCK_INTEGRATION_UNAVAILABLE);
     }
 
     @Override
@@ -654,7 +711,7 @@ public class BookingServiceImpl implements BookingService {
         // Encrypt new PIN with AES-256-GCM
         String encryptedPin = encryptionService.encrypt(request.getNewPin());
         booking.setAccessPin(encryptedPin);
-        booking.setPinUpdatedAt(LocalDateTime.now());
+        booking.setPinUpdatedAt(LocalDateTime.now(BUSINESS_ZONE));
         bookingRepository.save(booking);
 
         if (currentUser != null) {
@@ -785,7 +842,7 @@ public class BookingServiceImpl implements BookingService {
 
         int maxDays = (policy != null && policy.getMaxHoldDays() != null) ? policy.getMaxHoldDays() : maxAdvanceDays;
         int holdGraceHours = (policy != null && policy.getHoldGraceHours() != null) ? policy.getHoldGraceHours() : 24;
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
         LocalDate allowedMinDate = today;
         LocalDate allowedMaxDate = today.plusDays(maxDays);
 
@@ -801,9 +858,7 @@ public class BookingServiceImpl implements BookingService {
             restrictions.add("Hợp đồng đã ký điện tử sẽ được bảo lưu trọn vẹn giá trị pháp lý và chữ ký. Ngày hiệu lực tính phí thuê sẽ kích hoạt tại thời điểm bàn giao thực tế tại cơ sở.");
         }
 
-        LocalDateTime currentAppointmentAt = booking.getExpectedCheckInAt() != null
-                ? booking.getExpectedCheckInAt()
-                : (booking.getStartDate() != null ? booking.getStartDate().atTime(9, 0) : LocalDateTime.now());
+        LocalDateTime currentAppointmentAt = booking.getExpectedCheckInAt();
 
         BigDecimal monthlyFee = booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
                 ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, RoundingMode.HALF_UP)
@@ -862,7 +917,7 @@ public class BookingServiceImpl implements BookingService {
             throw new AppException(ErrorCode.INVALID_REQUEST);
         }
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
         if (newStartDate.isBefore(today)) {
             throw new AppException(ErrorCode.BOOKING_START_DATE_PAST);
         }
@@ -883,14 +938,15 @@ public class BookingServiceImpl implements BookingService {
             if (request.getNewCheckInTime() != null && !request.getNewCheckInTime().isBlank()) {
                 try {
                     String[] parts = request.getNewCheckInTime().trim().split(":");
+                    if (parts.length > 2) throw new IllegalArgumentException("Invalid time format");
                     int hour = Integer.parseInt(parts[0]);
                     int minute = parts.length > 1 ? Integer.parseInt(parts[1]) : 0;
                     newExpectedCheckIn = newStartDate.atTime(hour, minute);
                 } catch (Exception e) {
-                    newExpectedCheckIn = newStartDate.atTime(9, 0);
+                    throw new AppException(ErrorCode.INVALID_REQUEST, "A valid check-in appointment time is required");
                 }
             } else {
-                newExpectedCheckIn = newStartDate.atTime(9, 0);
+                throw new AppException(ErrorCode.INVALID_REQUEST, "A check-in appointment time is required");
             }
         }
 
@@ -914,7 +970,7 @@ public class BookingServiceImpl implements BookingService {
 
         int holdGraceHours = (policy != null && policy.getHoldGraceHours() != null) ? policy.getHoldGraceHours() : 24;
         Instant now = Instant.now();
-        Instant appointmentInstant = newExpectedCheckIn.atZone(java.time.ZoneId.systemDefault()).toInstant();
+        Instant appointmentInstant = newExpectedCheckIn.atZone(BUSINESS_ZONE).toInstant();
         Instant newHoldExpiresAt = appointmentInstant.plus(java.time.Duration.ofHours(holdGraceHours));
         if (newHoldExpiresAt.isBefore(now.plus(java.time.Duration.ofHours(24)))) {
             newHoldExpiresAt = now.plus(java.time.Duration.ofHours(24));
@@ -924,9 +980,7 @@ public class BookingServiceImpl implements BookingService {
             newHoldExpiresAt = maxHoldLimit;
         }
 
-        LocalDateTime prevAppt = booking.getExpectedCheckInAt() != null
-                ? booking.getExpectedCheckInAt()
-                : (booking.getStartDate() != null ? booking.getStartDate().atTime(9, 0) : LocalDateTime.now());
+        LocalDateTime prevAppt = booking.getExpectedCheckInAt();
         LocalDate prevStartDate = booking.getStartDate() != null ? booking.getStartDate() : newStartDate;
         LocalDate prevEndDate = booking.getEndDate() != null ? booking.getEndDate() : newStartDate.plusMonths(1);
         Instant prevHoldExpiresAt = booking.getHoldExpiresAt();
@@ -975,11 +1029,11 @@ public class BookingServiceImpl implements BookingService {
                 .newHoldExpiresAt(newHoldExpiresAt)
                 .requester(requesterUser)
                 .requesterRole(requesterRole != null ? requesterRole : "CUSTOMER")
-                .requestTimestamp(LocalDateTime.now())
+                .requestTimestamp(LocalDateTime.now(BUSINESS_ZONE))
                 .reason(request.getReason() != null && !request.getReason().isBlank() ? request.getReason() : "Khách hàng đổi lịch hẹn nhận kho")
                 .processor(requesterUser)
                 .processorRole(requesterRole != null ? requesterRole : "SYSTEM")
-                .processedAt(LocalDateTime.now())
+                .processedAt(LocalDateTime.now(BUSINESS_ZONE))
                 .outcome("CONFIRMED")
                 .previousBookingStatus(booking.getStatus().name())
                 .resultingBookingStatus(booking.getStatus().name())
@@ -998,6 +1052,9 @@ public class BookingServiceImpl implements BookingService {
         }
 
         UUID facilityId = (unit != null && unit.getFacility() != null) ? unit.getFacility().getId() : null;
+        String previousAppointmentText = prevAppt == null
+                ? "not recorded"
+                : prevAppt.format(DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy"));
         activityLogService.record(
                 facilityId,
                 ActivityAction.CHECKIN_RESCHEDULE,
@@ -1005,7 +1062,7 @@ public class BookingServiceImpl implements BookingService {
                 booking.getId(),
                 String.format("Đổi lịch hẹn nhận kho %s từ %s sang %s. Hạn giữ chỗ mới: %s. Lý do: %s",
                         booking.getBookingCode(),
-                        prevAppt.format(DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy")),
+                        previousAppointmentText,
                         newExpectedCheckIn.format(DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy")),
                         newHoldExpiresAt,
                         request.getReason() != null ? request.getReason() : "N/A"),
@@ -1087,8 +1144,8 @@ public class BookingServiceImpl implements BookingService {
     @Transactional
     public void expireUnpaidBookings() {
         Instant now = Instant.now();
-        LocalDateTime checkInThreshold = LocalDateTime.now();
-        LocalDate todayThreshold = LocalDate.now();
+        LocalDateTime checkInThreshold = LocalDateTime.now(BUSINESS_ZONE);
+        LocalDate todayThreshold = LocalDate.now(BUSINESS_ZONE);
         List<Booking> candidates = bookingRepository.findExpiredHoldCandidates(
                 List.of(BookingStatus.PENDING_APPROVAL, BookingStatus.PENDING_PAYMENT, BookingStatus.CONFIRMED),
                 now,
@@ -1127,7 +1184,7 @@ public class BookingServiceImpl implements BookingService {
                             .orElse(24);
                 }
                 holdDeadline = booking.getExpectedCheckInAt()
-                        .atZone(java.time.ZoneId.systemDefault())
+                        .atZone(BUSINESS_ZONE)
                         .toInstant()
                         .plus(java.time.Duration.ofHours(graceHours));
                 isCheckInExpired = holdDeadline.isBefore(now);
@@ -1138,7 +1195,7 @@ public class BookingServiceImpl implements BookingService {
                 }
             } else if (booking.getStartDate() != null) {
                 isCheckInExpired = booking.getStartDate().isBefore(todayThreshold);
-                holdDeadline = booking.getStartDate().atTime(23, 59, 59).atZone(java.time.ZoneId.systemDefault()).toInstant();
+                holdDeadline = booking.getStartDate().atTime(23, 59, 59).atZone(BUSINESS_ZONE).toInstant();
             } else if (booking.getPaymentExpiresAt() != null) {
                 isCheckInExpired = booking.getPaymentExpiresAt().isBefore(now);
             }
@@ -1392,7 +1449,7 @@ public class BookingServiceImpl implements BookingService {
                 .paymentExpiresAt(b.getPaymentExpiresAt())
                 .holdStartedAt(b.getHoldStartedAt())
                 .holdExpiresAt(b.getHoldExpiresAt() != null ? b.getHoldExpiresAt() : b.getPaymentExpiresAt())
-                .expectedCheckInAt(b.getExpectedCheckInAt() != null ? b.getExpectedCheckInAt() : (b.getStartDate() != null ? b.getStartDate().atTime(9, 0) : null))
+                .expectedCheckInAt(b.getExpectedCheckInAt())
                 .paymentStatus(paymentStatus)
                 .holdGraceHours(policyHoldGraceHours != null ? policyHoldGraceHours : 24)
                 .status(b.getStatus() != null ? b.getStatus() : BookingStatus.PENDING_PAYMENT)

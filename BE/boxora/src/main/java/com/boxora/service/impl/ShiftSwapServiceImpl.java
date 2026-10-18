@@ -62,10 +62,10 @@ public class ShiftSwapServiceImpl implements ShiftSwapService {
         User requester = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
 
-        // Nhân viên chỉ được tạo đơn đổi ca cho chính mình (trừ khi Quản lý tạo hộ)
-        boolean isManager = facilityAccessGuard.isFacilityScoped() || !facilityAccessGuard.isFacilityScoped();
-        if (!requester.getId().equals(assignment.getStaff().getId())) {
-            facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
+        facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
+        if ("STAFF".equalsIgnoreCase(requestContext.currentUserRole())
+                && !requester.getId().equals(assignment.getStaff().getId())) {
+            throw new AppException(ErrorCode.FORBIDDEN);
         }
 
         if (request.getTargetStaffId().equals(assignment.getStaff().getId())) {
@@ -78,19 +78,38 @@ public class ShiftSwapServiceImpl implements ShiftSwapService {
         if (!Boolean.TRUE.equals(targetStaff.getIsActive())) {
             throw new AppException(ErrorCode.USER_NOT_FOUND);
         }
-
-        // Kiểm tra nhân viên thay thế có bị trùng ca vào ngày đó không
-        boolean targetBusy = staffAssignmentRepository.existsByStaff_IdAndAssignedDateAndShift(
-                targetStaff.getId(), assignment.getAssignedDate(), assignment.getShift()
-        );
-        if (targetBusy) {
-            throw new AppException(ErrorCode.SHIFT_SWAP_TARGET_BUSY);
+        if (targetStaff.getRole() == null || !"STAFF".equalsIgnoreCase(targetStaff.getRole().getName())
+                || targetStaff.getFacility() == null
+                || !assignment.getFacility().getId().equals(targetStaff.getFacility().getId())) {
+            throw new AppException(ErrorCode.STAFF_ASSIGNMENT_FACILITY_MISMATCH);
         }
 
         StaffAssignment targetAssignment = null;
         if (request.getTargetAssignmentId() != null) {
             targetAssignment = staffAssignmentRepository.findById(request.getTargetAssignmentId())
-                    .orElse(null);
+                    .orElseThrow(() -> new AppException(ErrorCode.STAFF_ASSIGNMENT_NOT_FOUND));
+            if (targetAssignment == null
+                    || targetAssignment.getStaff() == null
+                    || !targetAssignment.getStaff().getId().equals(targetStaff.getId())
+                    || targetAssignment.getFacility() == null
+                    || !targetAssignment.getFacility().getId().equals(assignment.getFacility().getId())
+                    || targetAssignment.getStatus() == StaffAssignmentStatus.COMPLETED
+                    || targetAssignment.getStatus() == StaffAssignmentStatus.CANCELLED) {
+                throw new AppException(ErrorCode.SHIFT_SWAP_INVALID_TARGET);
+            }
+        }
+
+        // Do not treat the target's own assignment as a conflict when it is the shift being exchanged.
+        boolean exchangingExistingShift = targetAssignment != null
+                && targetAssignment.getAssignedDate().equals(assignment.getAssignedDate())
+                && targetAssignment.getShift() == assignment.getShift();
+        boolean targetBusy = exchangingExistingShift
+                ? staffAssignmentRepository.existsByStaff_IdAndAssignedDateAndShiftAndIdNot(
+                        targetStaff.getId(), assignment.getAssignedDate(), assignment.getShift(), targetAssignment.getId())
+                : staffAssignmentRepository.existsByStaff_IdAndAssignedDateAndShift(
+                        targetStaff.getId(), assignment.getAssignedDate(), assignment.getShift());
+        if (targetBusy) {
+            throw new AppException(ErrorCode.SHIFT_SWAP_TARGET_BUSY);
         }
 
         ShiftSwapRequest swap = ShiftSwapRequest.builder()
@@ -197,8 +216,9 @@ public class ShiftSwapServiceImpl implements ShiftSwapService {
 
         UUID currentUserId = requestContext.currentUserId();
         boolean isRequester = currentUserId != null && currentUserId.equals(swap.getRequester().getId());
-        if (!isRequester) {
-            facilityAccessGuard.checkFacilityAccess(swap.getFacility().getId());
+        facilityAccessGuard.checkFacilityAccess(swap.getFacility().getId());
+        if ("STAFF".equalsIgnoreCase(requestContext.currentUserRole()) && !isRequester) {
+            throw new AppException(ErrorCode.FORBIDDEN);
         }
 
         if (swap.getStatus() != ShiftSwapStatus.PENDING) {
@@ -217,6 +237,15 @@ public class ShiftSwapServiceImpl implements ShiftSwapService {
                 .orElseThrow(() -> new AppException(ErrorCode.SHIFT_SWAP_REQUEST_NOT_FOUND));
 
         facilityAccessGuard.checkFacilityAccess(swap.getFacility().getId());
+        if ("STAFF".equalsIgnoreCase(requestContext.currentUserRole())) {
+            UUID currentUserId = requestContext.currentUserId();
+            boolean isInvolved = currentUserId != null
+                    && (currentUserId.equals(swap.getRequester().getId())
+                    || currentUserId.equals(swap.getTargetStaff().getId()));
+            if (!isInvolved) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        }
         return shiftSwapMapper.toResponse(swap);
     }
 

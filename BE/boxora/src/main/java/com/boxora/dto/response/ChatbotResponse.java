@@ -9,4 +9,5 @@ import lombok.*;
 @Builder
 public class ChatbotResponse {
     private String reply;
+    private String status;
 }

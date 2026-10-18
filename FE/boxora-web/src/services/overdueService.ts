@@ -10,6 +10,7 @@ export interface LockoutResponse {
   reason?: string
   lockedAt?: string
   pinRevoked: boolean
+  physicalLockState: 'UNVERIFIED' | string
 }
 
 export const overdueService = {

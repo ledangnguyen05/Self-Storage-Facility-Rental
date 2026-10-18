@@ -29,7 +29,7 @@ public class SealingController {
     private final SealingService sealingService;
 
     @PostMapping({"", "seal"})
-    @PreAuthorize("hasAuthority('OVERDUE_PROCESS') or hasAnyRole('ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('OVERDUE_PROCESS')")
     @Operation(summary = "Lập biên bản niêm phong kho và chuyển trạng thái OVERDUE_LOCKED")
     public ResponseEntity<ApiResponse<SealingRecordResponse>> createSealing(
             @Valid @RequestBody SealingCreateRequest request) {
@@ -39,7 +39,7 @@ public class SealingController {
     }
 
     @PostMapping("{id}/unseal")
-    @PreAuthorize("hasAuthority('OVERDUE_PROCESS') or hasAnyRole('ADMIN', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAuthority('OVERDUE_PROCESS')")
     @Operation(summary = "Mở niêm phong kho sau khi xử lý nợ hoặc quyết định của BGĐ")
     public ResponseEntity<ApiResponse<SealingRecordResponse>> unseal(
             @PathVariable UUID id,
@@ -49,7 +49,7 @@ public class SealingController {
     }
 
     @GetMapping("{id}")
-    @PreAuthorize("hasAuthority('OVERDUE_VIEW') or hasAnyRole('ADMIN', 'FACILITY_MANAGER', 'STAFF', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('OVERDUE_VIEW')")
     @Operation(summary = "Lấy chi tiết biên bản niêm phong theo ID")
     public ResponseEntity<ApiResponse<SealingRecordResponse>> getById(@PathVariable UUID id) {
         SealingRecordResponse response = sealingService.getById(id);
@@ -57,7 +57,7 @@ public class SealingController {
     }
 
     @GetMapping("contract/{contractId}")
-    @PreAuthorize("hasAuthority('OVERDUE_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('OVERDUE_VIEW') or hasRole('CUSTOMER')")
     @Operation(summary = "Lấy biên bản niêm phong đang áp dụng của một hợp đồng")
     public ResponseEntity<ApiResponse<SealingRecordResponse>> getActiveSealingByContractId(
             @PathVariable UUID contractId) {
@@ -66,7 +66,7 @@ public class SealingController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('OVERDUE_VIEW') or hasAnyRole('ADMIN', 'FACILITY_MANAGER', 'STAFF', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('OVERDUE_VIEW')")
     @Operation(summary = "Lấy danh sách biên bản niêm phong phân trang theo bộ lọc")
     public ResponseEntity<ApiResponse<PageResponse<SealingRecordResponse>>> getAll(
             @RequestParam(required = false) UUID facilityId,

@@ -92,13 +92,19 @@ export interface ReturnSettlementPreview {
 }
 
 export interface ReturnSettlementResponse {
-  handoverId: string
+  handoverRecordId: string
   bookingId: string
-  depositSettled: number
-  deductionAmount: number
-  refundAmount: number
-  status: string
-  settledAt: string
+  depositPaid: number
+  totalDeduction: number
+  netRefundAmount: number
+  reviewStatus: string
+  depositRefundSlaDays: number
+  refundTransactionId?: string | null
+  checklistAllPassed: boolean
+  checklistSummary: string
+  evidencePhotoCount: number
+  evidencePhotos: string[]
+  recordedAt: string
 }
 
 export interface PaperContractPayload {
@@ -123,6 +129,7 @@ export interface ManualPaymentPayload {
 export interface IdentityVerifyPayload {
   idCardType?: string
   idCardNumber: string
+  originalDocumentSeen: boolean
   notes?: string
 }
 

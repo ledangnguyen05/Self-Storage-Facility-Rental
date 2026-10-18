@@ -41,6 +41,7 @@ public class OverdueContractDetail {
 
     // Mốc +7 ngày: Niêm phong kho BR-RULE-012
     private Boolean unitSealed;
+    private String physicalLockState;
     private String sealTagNumber;
 
     private String actionSummary;

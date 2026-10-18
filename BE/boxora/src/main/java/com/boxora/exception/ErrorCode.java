@@ -215,7 +215,8 @@ public enum ErrorCode {
     NOTIFICATION_NOT_FOUND(2100, "Bản ghi thông báo không tồn tại", HttpStatus.NOT_FOUND),
     CONTRACT_NOT_SIGNED(1516, "Hợp đồng chưa được ký hoặc chưa có hồ sơ scan giấy", HttpStatus.BAD_REQUEST),
     INVALID_PAYMENT_METHOD(756, "Phương thức thanh toán không hợp lệ (chỉ chấp nhận CASH hoặc BANK_TRANSFER)", HttpStatus.BAD_REQUEST),
-    CHECKIN_STEP_NOT_SATISFIED(729, "Chưa thỏa mãn đầy đủ 4 điều kiện đối soát để chuyển bước", HttpStatus.BAD_REQUEST);
+    CHECKIN_STEP_NOT_SATISFIED(729, "Chưa thỏa mãn đầy đủ 4 điều kiện đối soát để chuyển bước", HttpStatus.BAD_REQUEST),
+    SMARTLOCK_INTEGRATION_UNAVAILABLE(2200, "SmartLock integration is unavailable; no device command was sent", HttpStatus.SERVICE_UNAVAILABLE);
 
 
 

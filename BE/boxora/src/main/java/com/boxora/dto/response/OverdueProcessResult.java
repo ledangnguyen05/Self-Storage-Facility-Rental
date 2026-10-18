@@ -14,7 +14,7 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Schema(description = "Kết quả thực thi quy trình quét và xử lý hợp đồng quá hạn (+1 phạt 5%, +3 khóa PIN, +7 niêm phong)")
+@Schema(description = "Overdue scan results; credential revocation is recorded in Boxora and sealing remains a witnessed on-site action")
 public class OverdueProcessResult {
 
     @Schema(description = "Thời điểm quét", example = "2026-10-07T01:00:00")
@@ -29,8 +29,11 @@ public class OverdueProcessResult {
     @Schema(description = "Số trường hợp bị khóa mã PIN truy cập (+3 ngày)", example = "3")
     private int pinDisabledCount;
 
-    @Schema(description = "Số trường hợp lập biên bản niêm phong kho BR-RULE-012 (+7 ngày)", example = "1")
+    @Schema(description = "Physical sealing records created by this scan; the scan itself does not seal units", example = "0")
     private int sealedUnitsCount;
+
+    @Schema(description = "Cases eligible for a witnessed on-site sealing workflow under facility policy", example = "1")
+    private int sealingEligibleCount;
 
     @Schema(description = "Danh sách chi tiết từng ca xử lý quá hạn")
     @Builder.Default

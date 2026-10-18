@@ -1,129 +1,17 @@
 import React from 'react'
-import { RentalContract } from '../../types'
+import { Booking, RentalContract } from '../../types'
 
 interface ContractDocumentModalProps {
   contract: RentalContract | null
+  booking?: Booking | null
   onClose: () => void
   onSignNow?: (contract: RentalContract) => void
   isSigning?: boolean
 }
 
-// Authentic mouse-drawn handwritten vector signature
-function MouseDrawnSignature({ name }: { name?: string }) {
-  const normalized = (name || 'nguyen').toLowerCase().trim()
-
-  // Authentic mouse-drawn signature for Nguyen
-  if (normalized.includes('nguyen')) {
-    return (
-      <svg
-        viewBox="0 0 260 85"
-        className="w-full h-full max-h-20 select-none filter drop-shadow-sm"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path
-          d="M 26 55 C 30 38 36 20 44 15 C 50 11 55 18 58 32 C 63 50 69 58 75 38 C 79 26 85 22 91 30 C 97 38 101 52 108 48 C 114 44 118 32 123 30 C 129 28 131 42 135 48 C 139 54 144 48 148 38 C 152 26 156 22 160 34 C 164 46 170 76 158 84 C 146 91 140 78 148 64 C 158 48 168 40 178 38 C 186 36 191 44 196 46 C 203 48 210 36 217 34 C 224 32 228 42 234 40 C 240 38 244 32 248 34"
-          fill="none"
-          stroke="#1e3a8a"
-          strokeWidth="2.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <circle cx="218" cy="23" r="2.2" fill="#1e3a8a" />
-        <path
-          d="M 34 68 C 74 65 132 67 198 59 C 220 56 236 55 248 57"
-          fill="none"
-          stroke="#2563eb"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-        />
-      </svg>
-    )
-  }
-
-  // Authentic mouse-drawn signature for Minh
-  if (normalized.includes('minh') || normalized.includes('mai')) {
-    return (
-      <svg
-        viewBox="0 0 260 85"
-        className="w-full h-full max-h-20 select-none filter drop-shadow-sm"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path
-          d="M 28 58 C 32 40 36 22 45 16 C 52 12 58 20 62 38 C 66 54 72 56 78 36 C 82 24 88 20 94 36 C 98 52 104 56 110 38 C 114 26 120 28 126 44 C 132 60 138 60 144 42 C 148 30 154 28 158 38 C 162 48 166 74 172 16 C 174 12 178 14 180 24 C 182 38 188 56 196 48 C 204 40 210 34 218 36"
-          fill="none"
-          stroke="#1e3a8a"
-          strokeWidth="2.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <circle cx="127" cy="20" r="2.2" fill="#1e3a8a" />
-        <path
-          d="M 32 70 C 72 68 135 69 205 60 C 226 57 242 56 250 58"
-          fill="none"
-          stroke="#2563eb"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-        />
-      </svg>
-    )
-  }
-
-  // Authentic mouse-drawn signature for Lan / Yen / Le
-  if (normalized.includes('lan') || normalized.includes('yen') || normalized.includes('le')) {
-    return (
-      <svg
-        viewBox="0 0 260 85"
-        className="w-full h-full max-h-20 select-none filter drop-shadow-sm"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path
-          d="M 40 18 C 32 24 28 42 34 58 C 38 68 48 70 56 64 C 64 56 62 46 54 44 C 44 42 42 56 50 62 C 60 70 82 66 98 52 C 108 42 116 38 126 46 C 136 54 142 58 152 46 C 160 36 168 34 176 44 C 184 54 192 56 200 44 C 208 34 216 32 226 38"
-          fill="none"
-          stroke="#1e3a8a"
-          strokeWidth="2.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M 48 72 C 88 70 148 68 215 62 C 235 60 248 58 254 60"
-          fill="none"
-          stroke="#2563eb"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-        />
-      </svg>
-    )
-  }
-
-  // Generic natural mouse-drawn signature with dynamic curves and flourish
-  return (
-    <svg
-      viewBox="0 0 260 85"
-      className="w-full h-full max-h-20 select-none filter drop-shadow-sm"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        d="M 26 55 C 30 38 36 20 44 15 C 50 11 55 18 58 32 C 63 50 69 58 75 38 C 79 26 85 22 91 30 C 97 38 101 52 108 48 C 114 44 118 32 123 30 C 129 28 131 42 135 48 C 139 54 144 48 148 38 C 152 26 156 22 160 34 C 164 46 170 76 158 84 C 146 91 140 78 148 64 C 158 48 168 40 178 38 C 186 36 191 44 196 46 C 203 48 210 36 217 34 C 224 32 228 42 234 40 C 240 38 244 32 248 34"
-        fill="none"
-        stroke="#1e3a8a"
-        strokeWidth="2.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx="218" cy="23" r="2.2" fill="#1e3a8a" />
-      <path
-        d="M 34 68 C 74 65 132 67 198 59 C 220 56 236 55 248 57"
-        fill="none"
-        stroke="#2563eb"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
 export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
   contract,
+  booking,
   onClose,
   onSignNow,
   isSigning = false,
@@ -132,8 +20,8 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
 
   const isPendingSignature = contract.status === 'PENDING_SIGNATURE'
   const isPendingActivation = contract.status === 'PENDING_ACTIVATION'
-  const isActive = contract.status === 'ACTIVE'
-  const isSigned = isActive || isPendingActivation || Boolean(contract.signedAt)
+  const isActive = contract.status === 'ACTIVE' && Boolean(contract.signedAt)
+  const isSigned = Boolean(contract.signedAt)
 
   const handlePrint = () => {
     window.print()
@@ -164,7 +52,7 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
                   {isActive
                     ? 'ĐANG HIỆU LỰC (ACTIVE)'
                     : isPendingActivation
-                    ? 'ĐÃ KÝ • CHỜ KÍCH HOẠT NHẬN KHO'
+                    ? isSigned ? 'ĐÃ KÝ • CHỜ KÍCH HOẠT NHẬN KHO' : 'CHỜ XÁC MINH CHỮ KÝ'
                     : isPendingSignature
                     ? 'CHỜ KÝ SỐ (PENDING)'
                     : contract.status}
@@ -232,6 +120,13 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
               <div className="inline-block mt-3 px-3 py-1 bg-slate-100 rounded-md font-mono text-xs font-bold text-slate-700">
                 Số HĐ: {contract.contractCode} &bull; Hệ thống mã hóa Boxora Cloud
               </div>
+              {booking && (
+                <div className="mt-2 text-xs text-slate-600">
+                  Mã đặt thuê: <strong className="font-mono">{booking.bookingCode}</strong>
+                  {' · '}Kỳ hạn: <strong>{booking.rentalMonths} tháng</strong>
+                  {' · '}Tiền thuê kỳ hạn: <strong>{Number(booking.totalRentalFee || 0).toLocaleString('vi-VN')} ₫</strong>
+                </div>
+              )}
             </div>
           </div>
 
@@ -314,7 +209,7 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
                   <span className="text-slate-500 block text-[11px]">Tiền đặt cọc lưu ký bảo chứng:</span>
                   <strong className="text-slate-900 text-sm font-mono">
-                    {Number(contract.depositHeld || 0).toLocaleString('vi-VN')} ₫
+                    {Number(booking?.depositAmount ?? contract.depositHeld ?? 0).toLocaleString('vi-VN')} ₫
                   </strong>
                 </div>
               </div>
@@ -362,21 +257,8 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
               {/* Representative Party A */}
               <div className="flex flex-col items-center">
                 <span className="font-bold uppercase text-slate-900">ĐẠI DIỆN BÊN CHO THUÊ (BÊN A)</span>
-                <span className="text-[11px] text-slate-500 italic mt-0.5">Ký tên, đóng dấu điện tử</span>
-
-                {/* Digital Stamp of Boxora */}
-                <div className="my-4 relative w-36 h-36 rounded-full border-4 border-dashed border-red-600 flex flex-col items-center justify-center text-red-600 p-2 shadow-inner select-none rotate-[-6deg]">
-                  <div className="w-full text-center text-[8px] font-black uppercase tracking-tighter">
-                    CÔNG TY CP BOXORA
-                  </div>
-                  <div className="material-symbols-outlined text-2xl my-0.5">verified_user</div>
-                  <div className="text-[9px] font-extrabold uppercase">DOCUSEAL VERIFIED</div>
-                  <div className="text-[7px] font-mono tracking-widest text-red-500">PKI #SHA256</div>
-                  <div className="text-[7px] text-red-700 font-bold mt-0.5">BOXORA CLOUD</div>
-                </div>
-
-                <span className="font-bold text-slate-900">BOXORA FACILITY AUTHORITY</span>
-                <span className="text-[10px] text-slate-500 font-mono">Đã chứng thực điện tử</span>
+                <span className="text-[11px] text-slate-500 italic mt-0.5">Ký tên, đóng dấu điện tử</span><span className="font-bold text-slate-900">ĐẠI DIỆN BÊN CHO THUÊ</span>
+                <span className="text-[10px] text-slate-500 font-mono">Bản ký điện tử được lưu cùng hồ sơ hợp đồng.</span>
               </div>
 
               {/* Representative Party B */}
@@ -416,7 +298,14 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
                               dangerouslySetInnerHTML={{ __html: actualSignature }}
                             />
                           ) : (
-                            <MouseDrawnSignature name={contract.customerName || 'nguyen'} />
+                            <div className="px-2 text-center text-[11px] font-semibold leading-relaxed text-emerald-700">
+                              Chữ ký đã được backend xác nhận.
+                              {contract.signedDocumentUrl && (
+                                <a href={contract.signedDocumentUrl} target="_blank" rel="noreferrer" className="mt-2 block underline">
+                                  Mở bản hợp đồng điện tử đã ký
+                                </a>
+                              )}
+                            </div>
                           )}
                         </div>
                         <div className="w-full pt-1.5 border-t border-slate-200 flex flex-col items-center">

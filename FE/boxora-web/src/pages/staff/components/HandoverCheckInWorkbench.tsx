@@ -22,7 +22,6 @@ export interface BookingWorkbenchSession {
   emailSent: boolean
   webPushSent: boolean
   handoverNotes: string
-  idCardNumber: string
   identityVerified: boolean
   isCompleted: boolean
   completedAt?: string
@@ -43,7 +42,11 @@ export const loadPersistedSessions = (): Record<string, BookingWorkbenchSession>
     const raw = sessionStorage.getItem(STORAGE_KEY)
     if (!raw) return {}
     const parsed = JSON.parse(raw)
-    return typeof parsed === 'object' && parsed !== null ? parsed : {}
+    if (typeof parsed !== 'object' || parsed === null) return {}
+    Object.values(parsed).forEach((session: any) => {
+      if (session && typeof session === 'object') delete session.idCardNumber
+    })
+    return parsed
   } catch (err) {
     console.warn('Failed to parse persisted handover sessions', err)
     return {}
@@ -60,7 +63,6 @@ export const persistSessions = (sessions: Record<string, BookingWorkbenchSession
 
 export const createInitialSession = (
   bookingId: string,
-  initialPhone = '',
   isAlreadyActive = false,
   existingPin = ''
 ): BookingWorkbenchSession => ({
@@ -74,7 +76,6 @@ export const createInitialSession = (
   emailSent: false,
   webPushSent: false,
   handoverNotes: 'Đã đối soát đầy đủ hồ sơ tại quầy tiếp đón.',
-  idCardNumber: initialPhone,
   identityVerified: false,
   isCompleted: isAlreadyActive
 })
@@ -124,7 +125,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const [showPdfModal, setShowPdfModal] = useState(false)
 
   // Modals for Step 1 Actions
-  const [activeModal, setActiveModal] = useState<'PAPER_CONTRACT' | 'DEPOSIT_PAYMENT' | 'RENT_PAYMENT' | null>(null)
+  const [activeModal, setActiveModal] = useState<'PAPER_CONTRACT' | null>(null)
   const [modalFeedback, setModalFeedback] = useState<{ text: string; isError?: boolean } | null>(null)
 
   // Paper Contract Form States
@@ -138,21 +139,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const [isVerifyingPaperContract, setIsVerifyingPaperContract] = useState(false)
   const paperFileInputRef = useRef<HTMLInputElement | null>(null)
 
-  // Payment Form States (Deposit / Rent)
-  const [paymentType, setPaymentType] = useState<'DEPOSIT' | 'RENTAL_FEE'>('DEPOSIT')
-  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'BANK_TRANSFER'>('CASH')
-  const [paymentAmount, setPaymentAmount] = useState<number>(0)
-  const [receiptVoucherCode, setReceiptVoucherCode] = useState('')
-  const [referenceCode, setReferenceCode] = useState('')
-  const [proofDocumentUrl, setProofDocumentUrl] = useState('')
-  const [proofFileName, setProofFileName] = useState('')
-  const [isUploadingProofFile, setIsUploadingProofFile] = useState(false)
-  const [paymentNotes, setPaymentNotes] = useState('')
-  const [isSavingPayment, setIsSavingPayment] = useState(false)
-  const [confirmingBankPaymentId, setConfirmingBankPaymentId] = useState<string | null>(null)
   const [openingDocumentUrl, setOpeningDocumentUrl] = useState<string | null>(null)
-  const proofFileInputRef = useRef<HTMLInputElement | null>(null)
-
   // Identity Form States
   const [idCardType, setIdCardType] = useState<string>('CCCD')
   const [idCardInputNumber, setIdCardInputNumber] = useState<string>('')
@@ -252,14 +239,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
     return (
       sessions[selectedBookingId] ||
-      createInitialSession(
-        selectedBookingId,
-        currentBooking?.customerPhone || '',
-        currentBooking?.status === 'ACTIVE',
-        currentBooking?.accessPin || ''
-      )
+      createInitialSession(selectedBookingId, currentBooking?.status === 'ACTIVE', currentBooking?.accessPin || '')
     )
-  }, [sessions, selectedBookingId, currentBooking?.customerPhone, currentBooking?.status, currentBooking?.accessPin])
+  }, [sessions, selectedBookingId, currentBooking?.status, currentBooking?.accessPin])
 
   // Helper to update current session and persist to sessionStorage
   const updateCurrentSession = useCallback(
@@ -272,12 +254,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       setSessions((prev) => {
         const existing =
           prev[selectedBookingId] ||
-          createInitialSession(
-            selectedBookingId,
-            currentBooking?.customerPhone || '',
-            currentBooking?.status === 'ACTIVE',
-            currentBooking?.accessPin || ''
-          )
+          createInitialSession(selectedBookingId, currentBooking?.status === 'ACTIVE', currentBooking?.accessPin || '')
         const partial = typeof updater === 'function' ? updater(existing) : updater
         const updated = { ...existing, ...partial }
         const next = { ...prev, [selectedBookingId]: updated }
@@ -285,7 +262,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         return next
       })
     },
-    [selectedBookingId, currentBooking?.customerPhone, currentBooking?.status, currentBooking?.accessPin]
+    [selectedBookingId, currentBooking?.status, currentBooking?.accessPin]
   )
 
   // Fetch prerequisites from official backend with strict race condition & error handling
@@ -304,20 +281,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       // Always save to cache for this bookingId
       setPrerequisitesCache((prev) => ({ ...prev, [bookingId]: data }))
 
-      // Update session identity fields if staff hasn't manually entered them yet
       setSessions((prev) => {
-        const existing =
-          prev[bookingId] ||
-          createInitialSession(bookingId, data.idCardNumber || data.customerPhone || '')
-        if (!existing.idCardNumber && (data.idCardNumber || data.customerPhone)) {
-          const next = {
-            ...prev,
-            [bookingId]: {
-              ...existing,
-              idCardNumber: data.idCardNumber || data.customerPhone || '',
-              identityVerified: existing.identityVerified || data.identityVerified || false
-            }
-          }
+        const existing = prev[bookingId] || createInitialSession(bookingId)
+        const identityVerified = Boolean(data.identityVerified)
+        if (existing.identityVerified !== identityVerified) {
+          const next = { ...prev, [bookingId]: { ...existing, identityVerified } }
           persistSessions(next)
           return next
         }
@@ -369,7 +337,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     currentBooking?.customerEmail ||
     (currentBooking as any)?.customer?.email ||
     currentPrerequisites?.customerEmail ||
-    'customer@boxora.com'
+    ''
   const unitDisplayCode =
     currentBooking?.unitCode ||
     currentPrerequisites?.unitCode ||
@@ -383,72 +351,42 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     currentPrerequisites?.facilityName ||
     'Boxora Facility'
 
-  // Notification triggering with correct booking and recipient info
-  const triggerWebNotification = (pinToUse?: string) => {
-    const pin = pinToUse || (currentSession.accessPin && currentSession.accessPin !== '------' ? currentSession.accessPin : '888888')
-    const notif = {
-      id: 'web-notif-' + Date.now(),
-      recipientId: currentBooking?.customerId,
-      recipientEmail: customerDisplayEmail,
-      recipientName: customerDisplayName,
-      facilityName: facilityDisplayName,
-      unitCode: unitDisplayCode,
-      channel: 'IN_APP',
-      notificationType: 'HANDOVER_PIN',
-      title: `Cấp mã PIN mở kho & Bàn giao kho [${unitDisplayCode}]`,
-      content: `Kính gửi ${customerDisplayName}, quy trình bàn giao nhận kho ${unitDisplayCode} tại cơ sở ${facilityDisplayName} đã hoàn tất. Mã PIN SmartLock bảo mật mở kho của bạn là: ${pin}. Vui lòng bảo mật thông tin này.`,
-      status: 'SENT',
-      createdAt: new Date().toISOString()
-    }
-
-    try {
-      const existingRaw = localStorage.getItem('boxora_in_app_notifications')
-      const existing = existingRaw ? JSON.parse(existingRaw) : []
-      const updated = [notif, ...(Array.isArray(existing) ? existing : [])]
-      localStorage.setItem('boxora_in_app_notifications', JSON.stringify(updated))
-    } catch (e) {
-      console.warn('Could not save in-app notification to localStorage', e)
-    }
-
-    window.dispatchEvent(new CustomEvent('boxora_notification_pushed', { detail: notif }))
-  }
-
   const handleSendEmail = async () => {
     if (!currentBooking) return
+    if (!customerDisplayEmail) {
+      setDispatchFeedback({ text: 'No verified customer email is available.', isError: true })
+      return
+    }
     setIsSendingEmail(true)
     setDispatchFeedback(null)
     try {
-      await handoverService.sendPinEmail(currentBooking.id, customerDisplayEmail)
+      await handoverService.sendPinEmail(currentBooking.id)
       updateCurrentSession({ emailSent: true })
-      setDispatchFeedback({ text: `Đã gửi mã PIN và thông tin bàn giao tới email ${customerDisplayEmail}!` })
-    } catch {
-      updateCurrentSession({ emailSent: true })
-      setDispatchFeedback({ text: `Đã gửi thông tin bàn giao tới email ${customerDisplayEmail}!` })
+      setDispatchFeedback({ text: `PIN email sent to ${customerDisplayEmail}.` })
+    } catch (err: any) {
+      updateCurrentSession({ emailSent: false })
+      setDispatchFeedback({ text: err?.response?.data?.message || err?.message || 'Could not send PIN email.', isError: true })
     } finally {
       setIsSendingEmail(false)
       setTimeout(() => setDispatchFeedback(null), 4000)
     }
   }
-
   const handleSendWebPush = async () => {
     if (!currentBooking) return
     setIsSendingWebPush(true)
     setDispatchFeedback(null)
     try {
-      triggerWebNotification()
       await handoverService.sendWebNotification(currentBooking.id)
       updateCurrentSession({ webPushSent: true })
-      setDispatchFeedback({ text: `Đã bắn thông báo web thành công lên chuông thông báo gần profile!` })
-    } catch {
-      triggerWebNotification()
-      updateCurrentSession({ webPushSent: true })
-      setDispatchFeedback({ text: `Đã bắn thông báo web thành công lên chuông thông báo gần profile!` })
+      setDispatchFeedback({ text: 'In-app notification saved by the server.' })
+    } catch (err: any) {
+      updateCurrentSession({ webPushSent: false })
+      setDispatchFeedback({ text: err?.response?.data?.message || err?.message || 'Could not save the in-app notification.', isError: true })
     } finally {
       setIsSendingWebPush(false)
       setTimeout(() => setDispatchFeedback(null), 4000)
     }
   }
-
   const handleCopyPin = () => {
     if (currentSession.accessPin && currentSession.accessPin !== '------') {
       navigator.clipboard.writeText(currentSession.accessPin)
@@ -482,23 +420,25 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const checklistCount = Object.values(currentSession.checklist).filter(Boolean).length
   const isAllChecklistPassed = checklistCount === 5
 
-  // Evidence Photos file handler with base64 conversion for persistent session recovery
-  const handlePhotoFileChange = (type: 'door' | 'interior', e: React.ChangeEvent<HTMLInputElement>) => {
+  // Upload evidence to the backend; session state stores only its persisted URL.
+  const handlePhotoFileChange = async (type: 'door' | 'interior', e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = reader.result as string
-      if (type === 'door') {
-        updateCurrentSession({ photoDoor: dataUrl })
-      } else {
-        updateCurrentSession({ photoInterior: dataUrl })
-      }
+    const input = e.target
+    try {
+      if (!selectedBookingId) throw new Error('Select a booking before uploading evidence.')
+      const stored = await handoverService.uploadHandoverDocument(selectedBookingId, file, 'CHECKIN_EVIDENCE')
+      const fileUrl = stored?.fileUrl
+      if (!fileUrl) throw new Error('Upload completed without a stored file URL.')
+      if (type === 'door') updateCurrentSession({ photoDoor: fileUrl })
+      else updateCurrentSession({ photoInterior: fileUrl })
+      setDispatchFeedback({ text: 'Inspection photo uploaded and saved.' })
+    } catch (err: any) {
+      setCheckInError(err?.response?.data?.message || err?.message || 'Could not upload inspection photo.')
+    } finally {
+      input.value = ''
     }
-    reader.readAsDataURL(file)
-    e.target.value = ''
   }
-
   // Overall check-in readiness (P0-02 & BR-RULE-005: Backend là nguồn chân lý duy nhất)
   const isDepositMet = currentPrerequisites ? currentPrerequisites.depositSatisfied : false
   const isRentMet = currentPrerequisites ? currentPrerequisites.firstMonthRentSatisfied : false
@@ -509,17 +449,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   // Sync identity input with loaded prerequisites
   useEffect(() => {
     if (currentPrerequisites) {
-      if (currentPrerequisites.idCardNumber) {
-        setIdCardInputNumber(currentPrerequisites.idCardNumber)
-      } else if (currentSession.idCardNumber) {
-        setIdCardInputNumber(currentSession.idCardNumber)
-      }
-      if (currentPrerequisites.idCardType) {
-        setIdCardType(currentPrerequisites.idCardType)
-      }
-      if (currentPrerequisites.identityVerified) {
-        setIdOriginalSeen(true)
-      }
+      setIdCardInputNumber(currentPrerequisites.idCardNumber || '')
+      setIdCardType(currentPrerequisites.idCardType || 'CCCD')
+      setIdOriginalSeen(Boolean(currentPrerequisites.identityVerified))
+    } else {
+      setIdCardInputNumber('')
+      setIdOriginalSeen(false)
     }
   }, [selectedBookingId, currentPrerequisites])
 
@@ -642,125 +577,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
   }
 
-  // --- PAYMENT HANDLERS (DEPOSIT / RENT) ---
-  const handleOpenPaymentModal = (type: 'DEPOSIT' | 'RENTAL_FEE') => {
-    setModalFeedback(null)
-    setPaymentType(type)
-    setPaymentMethod('CASH')
-    const remaining = type === 'DEPOSIT'
-      ? (currentPrerequisites?.depositRemaining ?? (currentPrerequisites?.requiredDeposit ?? 0))
-      : (currentPrerequisites?.firstMonthRentRemaining ?? (currentPrerequisites?.requiredFirstMonthRent ?? 0))
-    setPaymentAmount(remaining > 0 ? remaining : 0)
-    const randomSuffix = Math.floor(Math.random() * 900 + 100)
-    setReceiptVoucherCode(type === 'DEPOSIT' ? `PT-COC-${bookingDisplayCode}-${randomSuffix}` : `PT-THUE-${bookingDisplayCode}-${randomSuffix}`)
-    setReferenceCode(`BANK-${bookingDisplayCode}-${randomSuffix}`)
-    setProofDocumentUrl('')
-    setProofFileName('')
-    setPaymentNotes('')
-    setActiveModal(type === 'DEPOSIT' ? 'DEPOSIT_PAYMENT' : 'RENT_PAYMENT')
-  }
-
-  const handleProofFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (!selectedBookingId) {
-      setModalFeedback({ text: 'Vui lòng chọn lượt đặt kho trước khi tải tệp.', isError: true })
-      return
-    }
-
-    const MAX_SIZE = 10 * 1024 * 1024
-    if (file.size > MAX_SIZE) {
-      setModalFeedback({ text: 'Dung lượng tệp vượt quá giới hạn cho phép (10MB).', isError: true })
-      return
-    }
-    const ext = file.name.split('.').pop()?.toLowerCase() || ''
-    if (!['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
-      setModalFeedback({ text: 'Chỉ chấp nhận tệp định dạng PDF, JPG, JPEG, PNG, WEBP.', isError: true })
-      return
-    }
-
-    setIsUploadingProofFile(true)
-    setModalFeedback(null)
-    try {
-      const res = await handoverService.uploadHandoverDocument(selectedBookingId, file, 'PAYMENT_PROOF')
-      if (res?.fileUrl) {
-        setProofDocumentUrl(res.fileUrl)
-        setProofFileName(file.name)
-        setModalFeedback({ text: `Đã tải lên tệp ${file.name} thành công!`, isError: false })
-      }
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Tải lên chứng từ thất bại.'
-      setModalFeedback({ text: msg, isError: true })
-    } finally {
-      setIsUploadingProofFile(false)
-      e.target.value = ''
-    }
-  }
-
-  const handleSubmitPayment = async () => {
-    if (!selectedBookingId) return
-    if (paymentAmount <= 0) {
-      setModalFeedback({ text: 'Số tiền thanh toán phải lớn hơn 0 VND.', isError: true })
-      return
-    }
-    if (paymentMethod === 'CASH' && !receiptVoucherCode.trim()) {
-      setModalFeedback({ text: 'Vui lòng nhập Mã chứng từ / Phiếu thu tiền mặt.', isError: true })
-      return
-    }
-    if (paymentMethod === 'BANK_TRANSFER' && !referenceCode.trim()) {
-      setModalFeedback({ text: 'Vui lòng nhập Mã tham chiếu ngân hàng (Ref Code).', isError: true })
-      return
-    }
-    if (paymentMethod === 'BANK_TRANSFER' && !proofDocumentUrl.trim()) {
-      setModalFeedback({ text: 'Vui lòng tải lên ảnh chụp biên lai chuyển khoản / ủy nhiệm chi.', isError: true })
-      return
-    }
-
-    setIsSavingPayment(true)
-    setModalFeedback(null)
-    try {
-      await handoverService.recordManualPayment({
-        bookingId: selectedBookingId,
-        paymentType,
-        paymentMethod,
-        amount: paymentAmount,
-        receiptVoucherCode: paymentMethod === 'CASH' ? receiptVoucherCode.trim() : undefined,
-        referenceCode: paymentMethod === 'BANK_TRANSFER' ? referenceCode.trim() : undefined,
-        proofDocumentUrl: paymentMethod === 'BANK_TRANSFER' ? (proofDocumentUrl.trim() || undefined) : undefined,
-        notes: paymentNotes.trim() || undefined
-      })
-      await fetchPrerequisitesForBooking(selectedBookingId)
-      setActiveModal(null)
-      const label = paymentType === 'DEPOSIT' ? 'tiền cọc' : 'tiền thuê tháng đầu'
-      setDispatchFeedback({
-        text: paymentMethod === 'CASH'
-          ? `Đã xác nhận thu tiền mặt ${paymentAmount.toLocaleString('vi-VN')}đ cho ${label}!`
-          : `Đã ghi nhận giao dịch chuyển khoản ${paymentAmount.toLocaleString('vi-VN')}đ cho ${label} (Chờ đối soát TK)!`
-      })
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Lỗi khi ghi nhận khoản thu.'
-      setModalFeedback({ text: msg, isError: true })
-    } finally {
-      setIsSavingPayment(false)
-    }
-  }
-
-
-  const handleConfirmBankPayment = async (paymentId: string) => {
-    setConfirmingBankPaymentId(paymentId)
-    setCheckInError(null)
-    try {
-      await handoverService.confirmBankTransferPayment(paymentId, 'Nhân viên kế toán / quản lý đã đối chiếu tiền nổi trong tài khoản.')
-      await fetchPrerequisitesForBooking(selectedBookingId)
-      setDispatchFeedback({ text: 'Đã xác nhận tiền chuyển khoản đã vào tài khoản!' })
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Lỗi khi xác nhận giao dịch chuyển khoản.'
-      setCheckInError(msg)
-    } finally {
-      setConfirmingBankPaymentId(null)
-    }
-  }
-
   // --- IDENTITY VERIFICATION HANDLER ---
   const handleVerifyIdentity = async () => {
     if (!selectedBookingId) return
@@ -780,9 +596,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       const updatedPrereq = await handoverService.verifyIdentity(selectedBookingId, {
         idCardType,
         idCardNumber: num,
+        originalDocumentSeen: idOriginalSeen,
         notes: idNotes.trim() || 'Nhân viên đã kiểm tra thẻ căn cước / hộ chiếu gốc tại quầy giao dịch.'
       })
-      updateCurrentSession({ idCardNumber: num, identityVerified: true })
+      updateCurrentSession({ identityVerified: true })
       setPrerequisitesCache((prev) => ({ ...prev, [selectedBookingId]: updatedPrereq }))
       setDispatchFeedback({ text: `Đã xác minh thành công giấy tờ gốc ${idCardType} số ${num}!` })
     } catch (err: any) {
@@ -865,29 +682,20 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       const res = await handoverService.checkIn({
         bookingId: currentBooking.id,
         recordType: 'CHECK_IN',
-        idCardNumber: currentSession.idCardNumber.trim(),
-        identityVerified: currentSession.identityVerified,
         rfidCardNumber: currentSession.rfidCard.trim() || undefined,
-        doorConditionPassed: currentSession.checklist.doorRoll,
-        cleanlinessPassed: currentSession.checklist.cleanliness,
-        smartLockPassed: currentSession.checklist.lighting,
-        sensorPassed: currentSession.checklist.fireSafety,
-        wallStructurePassed: currentSession.checklist.sealPlate,
-        evidencePhotos: [currentSession.photoDoor, currentSession.photoInterior],
-        unitCondition: `${checklistCount}/5 tiêu chuẩn nghiệm thu đạt chuẩn (Ảnh cửa & trong kho đã lưu vết)`,
         notes: currentSession.handoverNotes
       })
 
-      const generatedPin = res?.accessPin || '888888'
+      const generatedPin = res?.accessPin
+      if (!generatedPin) throw new Error('Check-in completed without an access PIN in the server response.')
       updateCurrentSession({
         accessPin: generatedPin,
         isCompleted: true,
         completedAt: new Date().toISOString(),
-        emailSent: true,
-        webPushSent: true
+        emailSent: false,
+        webPushSent: false
       })
 
-      triggerWebNotification(generatedPin)
       if (onHandoverComplete) {
         onHandoverComplete(currentBooking.id)
       }
@@ -944,9 +752,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <h2 className="font-headline text-lg font-bold text-slate-900">
                 Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
               </h2>
-              <span className="px-2.5 py-0.5 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-800 font-mono text-[11px] font-bold uppercase tracking-wider">
-                SLA &lt; 5 Phút
-              </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
               Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
@@ -1345,39 +1150,16 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                                   <span>{openingDocumentUrl === p.proofDocumentUrl ? '...' : 'Xem UNC'}</span>
                                 </button>
                               )}
-                              <span className={`px-1.5 py-0.2 rounded font-bold ${p.status === 'PAID' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                                {p.status === 'PAID' ? 'Đã xác nhận' : 'Chờ xác minh TK'}
+                              <span className={`px-1.5 py-0.2 rounded font-bold ${p.status === 'PAID' ? 'bg-emerald-100 text-emerald-800' : p.status === 'PENDING' || p.status === 'REFUND_PENDING' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-700'}`}>
+                                {p.status === 'PAID' ? 'Đã xác nhận' : p.status === 'PENDING' ? 'Chờ xác minh' : p.status === 'REFUND_PENDING' ? 'Chờ hoàn tiền' : p.status === 'REFUNDED' ? 'Đã hoàn tiền' : p.status}
                               </span>
-                              {p.status === 'PENDING' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleConfirmBankPayment(p.id)}
-                                  disabled={confirmingBankPaymentId === p.id}
-                                  className="px-1.5 py-0.5 bg-cyan-700 hover:bg-cyan-800 text-white rounded font-bold cursor-pointer"
-                                  title="Xác nhận tiền đã vào tài khoản ngân hàng"
-                                >
-                                  {confirmingBankPaymentId === p.id ? '...' : 'Khớp lệnh'}
-                                </button>
-                              )}
                             </div>
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
-
-                  {/* Actions for Deposit */}
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenPaymentModal('DEPOSIT')}
-                      className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[15px]">add_card</span>
-                      <span>Ghi Nhận Thu Cọc</span>
-                    </button>
-                    <span className="text-[11px] text-slate-400 font-mono">Tiền mặt / CK</span>
-                  </div>
+                  <p className="pt-2 border-t border-slate-100 text-[11px] text-slate-500">Payment records are managed through the authorized cashier workflow.</p>
                 </div>
 
                 {/* Điều kiện 3: Tiền Thuê Tháng Đầu (First Month Rent) */}
@@ -1450,39 +1232,16 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                                   <span>{openingDocumentUrl === p.proofDocumentUrl ? '...' : 'Xem UNC'}</span>
                                 </button>
                               )}
-                              <span className={`px-1.5 py-0.2 rounded font-bold ${p.status === 'PAID' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                                {p.status === 'PAID' ? 'Đã xác nhận' : 'Chờ xác minh TK'}
+                              <span className={`px-1.5 py-0.2 rounded font-bold ${p.status === 'PAID' ? 'bg-emerald-100 text-emerald-800' : p.status === 'PENDING' || p.status === 'REFUND_PENDING' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-700'}`}>
+                                {p.status === 'PAID' ? 'Đã xác nhận' : p.status === 'PENDING' ? 'Chờ xác minh' : p.status === 'REFUND_PENDING' ? 'Chờ hoàn tiền' : p.status === 'REFUNDED' ? 'Đã hoàn tiền' : p.status}
                               </span>
-                              {p.status === 'PENDING' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleConfirmBankPayment(p.id)}
-                                  disabled={confirmingBankPaymentId === p.id}
-                                  className="px-1.5 py-0.5 bg-cyan-700 hover:bg-cyan-800 text-white rounded font-bold cursor-pointer"
-                                  title="Xác nhận tiền đã vào tài khoản ngân hàng"
-                                >
-                                  {confirmingBankPaymentId === p.id ? '...' : 'Khớp lệnh'}
-                                </button>
-                              )}
                             </div>
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
-
-                  {/* Actions for Rent */}
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenPaymentModal('RENTAL_FEE')}
-                      className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[15px]">add_card</span>
-                      <span>Ghi Nhận Thu Tiền Thuê</span>
-                    </button>
-                    <span className="text-[11px] text-slate-400 font-mono">Tiền mặt / CK</span>
-                  </div>
+                  <p className="pt-2 border-t border-slate-100 text-[11px] text-slate-500">Payment records are managed through the authorized cashier workflow.</p>
                 </div>
 
                 {/* Điều kiện 4: Đối Chiếu CCCD / Passport Gốc */}
@@ -2139,7 +1898,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <div className="text-xs text-slate-500">
                 Khách hàng: <strong className="text-slate-800">{customerDisplayName}</strong> • CCCD:{' '}
                 <strong className="font-mono text-slate-800">
-                  {currentSession.idCardNumber || customerDisplayPhone}
+                  {currentPrerequisites?.idCardNumber || 'Not recorded'}
                 </strong>
               </div>
 
@@ -2388,242 +2147,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         </div>
       )}
 
-      {/* Manual Payment Modal (Deposit / Rent) */}
-      {(activeModal === 'DEPOSIT_PAYMENT' || activeModal === 'RENT_PAYMENT') && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto text-slate-900">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-cyan-50 text-cyan-700 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-[20px]">payments</span>
-                </div>
-                <div>
-                  <h3 className="font-headline text-sm font-bold text-slate-900">
-                    {paymentType === 'DEPOSIT' ? 'Ghi Nhận Thu Tiền Cọc' : 'Ghi Nhận Thu Tiền Thuê Tháng Đầu'}
-                  </h3>
-                  <span className="text-[11px] text-slate-500 font-mono">
-                    Đơn: #{bookingDisplayCode} • Khách hàng: {customerDisplayName}
-                  </span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveModal(null)}
-                className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[18px]">close</span>
-              </button>
-            </div>
-
-            {modalFeedback && (
-              <div
-                className={`my-3 p-3 rounded-lg text-xs flex items-center gap-2 ${
-                  modalFeedback.isError ? 'bg-rose-50 text-rose-800 border border-rose-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[16px]">
-                  {modalFeedback.isError ? 'error' : 'check_circle'}
-                </span>
-                <span>{modalFeedback.text}</span>
-              </div>
-            )}
-
-            <div className="my-4 space-y-3.5 text-xs">
-              {/* Payment Method Switch Tabs */}
-              <div>
-                <label className="block font-bold text-slate-700 mb-1.5">Hình thức thu tiền</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPaymentMethod('CASH')
-                      setProofDocumentUrl('')
-                      setProofFileName('')
-                    }}
-                    className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 font-bold text-xs transition-all cursor-pointer ${
-                      paymentMethod === 'CASH'
-                        ? 'bg-cyan-600 text-white border-cyan-600 shadow-xs'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
-                    <span>Tiền Mặt Tại Quầy</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod('BANK_TRANSFER')}
-                    className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 font-bold text-xs transition-all cursor-pointer ${
-                      paymentMethod === 'BANK_TRANSFER'
-                        ? 'bg-cyan-600 text-white border-cyan-600 shadow-xs'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">account_balance</span>
-                    <span>Chuyển Khoản Ngân Hàng</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Amount input */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="font-bold text-slate-700">Số tiền thu thực tế (VND) <span className="text-rose-500">*</span></label>
-                  <span className="text-[11px] text-slate-400 font-mono">
-                    Còn thiếu: {(paymentType === 'DEPOSIT' ? (currentPrerequisites?.depositRemaining ?? 0) : (currentPrerequisites?.firstMonthRentRemaining ?? 0)).toLocaleString('vi-VN')}đ
-                  </span>
-                </div>
-                <input
-                  type="number"
-                  min={1000}
-                  step={1000}
-                  value={paymentAmount || ''}
-                  onChange={(e) => setPaymentAmount(Number(e.target.value))}
-                  placeholder="Nhập số tiền..."
-                  className="w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 font-mono text-sm font-bold text-slate-900 focus:outline-none focus:border-cyan-600 focus:bg-white"
-                />
-              </div>
-
-              {/* Cash specific: Receipt Voucher Code */}
-              {paymentMethod === 'CASH' && (
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Mã chứng từ / Số phiếu thu tiền mặt <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={receiptVoucherCode}
-                    onChange={(e) => setReceiptVoucherCode(e.target.value)}
-                    placeholder="Ví dụ: PT-2026-00891"
-                    className="w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 font-mono text-xs focus:outline-none focus:border-cyan-600 focus:bg-white"
-                  />
-                  <span className="text-[11px] text-slate-400 mt-0.5 block">
-                    Ghi mã phiếu thu vật lý đã cấp cho khách hàng. Khoản tiền mặt sẽ được ghi nhận và xác nhận ngay lập tức.
-                  </span>
-                </div>
-              )}
-
-              {/* Bank Transfer specific: Reference Code & Proof Upload */}
-              {paymentMethod === 'BANK_TRANSFER' && (
-                <>
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Mã tham chiếu ngân hàng (Ref Code / Transaction Code) <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={referenceCode}
-                      onChange={(e) => setReferenceCode(e.target.value)}
-                      placeholder="Ví dụ: FT2610138902 hoặc FT881726"
-                      className="w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 font-mono text-xs focus:outline-none focus:border-cyan-600 focus:bg-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Ảnh chụp biên lai chuyển khoản / Ủy nhiệm chi <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="file"
-                      ref={proofFileInputRef}
-                      accept="image/*,.pdf"
-                      className="hidden"
-                      onChange={handleProofFileChange}
-                    />
-                    {isUploadingProofFile ? (
-                      <div className="p-3.5 rounded-xl border border-cyan-200 bg-cyan-50/50 flex items-center justify-center gap-2 text-cyan-800 text-xs">
-                        <span className="material-symbols-outlined text-[20px] animate-spin">sync</span>
-                        <span className="font-bold">Đang tải chứng từ lên hệ thống...</span>
-                      </div>
-                    ) : proofDocumentUrl ? (
-                      <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/50 flex items-center justify-between">
-                        <div className="flex items-center gap-2 truncate">
-                          <span className="material-symbols-outlined text-emerald-600 text-[20px]">task_alt</span>
-                          <div className="truncate">
-                            <span className="text-[11px] text-emerald-900 font-bold block truncate">
-                              {proofFileName || 'Đã đính kèm ảnh ủy nhiệm chi'}
-                            </span>
-                            <span className="text-[10px] text-emerald-700 font-mono truncate block">
-                              {proofDocumentUrl}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => proofFileInputRef.current?.click()}
-                            className="px-2 py-1 rounded bg-white hover:bg-slate-100 text-slate-700 font-bold text-[11px] border border-slate-200 cursor-pointer"
-                          >
-                            Đổi file
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setProofDocumentUrl('')
-                              setProofFileName('')
-                            }}
-                            className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] cursor-pointer"
-                          >
-                            Xóa
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => proofFileInputRef.current?.click()}
-                        className="w-full p-3.5 rounded-xl border-2 border-dashed border-slate-200 hover:border-cyan-500 bg-slate-50 hover:bg-cyan-50/30 text-slate-500 flex flex-col items-center justify-center gap-1 transition-all cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[22px] text-cyan-700">receipt_long</span>
-                        <span className="font-bold text-xs text-slate-800">Tải ảnh chụp giao dịch ngân hàng</span>
-                        <span className="text-[10px] text-slate-400">Định dạng JPG, PNG hoặc PDF (tối đa 10MB)</span>
-                      </button>
-                    )}
-                  </div>
-
-
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] flex items-start gap-2">
-                    <span className="material-symbols-outlined text-[16px] text-amber-700 mt-0.5">info</span>
-                    <span>
-                      Giao dịch chuyển khoản mới tạo sẽ có trạng thái <strong>Chờ xác minh</strong>. Nhân viên cần đối chiếu số dư tài khoản ngân hàng thực tế và bấm nút <strong>Khớp lệnh</strong> để tính vào số tiền đã thu.
-                    </span>
-                  </div>
-                </>
-              )}
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Ghi chú giao dịch</label>
-                <input
-                  type="text"
-                  value={paymentNotes}
-                  onChange={(e) => setPaymentNotes(e.target.value)}
-                  placeholder="Ghi chú người nộp, ngân hàng gửi..."
-                  className="w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs focus:outline-none focus:border-cyan-600 focus:bg-white"
-                />
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setActiveModal(null)}
-                className="px-4 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs cursor-pointer"
-              >
-                Hủy
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmitPayment}
-                disabled={isSavingPayment}
-                className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-              >
-                <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                <span>{isSavingPayment ? 'Đang ghi nhận...' : 'Xác Nhận & Ghi Nhận'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 4. PDF Preview Modal */}
       {showPdfModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -2670,7 +2193,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">BÊN NHẬN (KHÁCH HÀNG)</span>
                   <span className="font-bold text-slate-900 block mt-0.5">{customerDisplayName}</span>
-                  <span className="text-slate-600 block">CCCD: {currentSession.idCardNumber || 'Đã đối chiếu'}</span>
+                  <span className="text-slate-600 block">CCCD: {currentPrerequisites?.identityVerified ? 'Đã đối chiếu giấy tờ gốc' : 'N/A'}</span>
                   <span className="text-slate-600 block">SĐT: {customerDisplayPhone}</span>
                 </div>
               </div>

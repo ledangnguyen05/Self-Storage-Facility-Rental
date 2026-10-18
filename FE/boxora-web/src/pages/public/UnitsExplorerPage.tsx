@@ -16,8 +16,8 @@ import { WebSettingsModal } from '../../components/common/WebSettingsModal'
 import { UserAvatarDropdown } from '../../components/common/UserAvatarDropdown'
 import { useLanguage } from '../../context/LanguageContext'
 import { Facility, StorageUnit } from '../../types'
-import { BookingCheckoutModal, BookingCheckoutUnit } from '../../components/modals/BookingCheckoutModal'
 import { UnitDetailModal } from '../../components/modals/UnitDetailModal'
+import { PortalBookingReservationModal, PortalBookingUnitData } from '../../components/booking/PortalBookingReservationModal'
 import { geocodeAddressWithNominatim, getNominatimErrorMessage } from '../../services/nominatimGeocodingService'
 
 interface CustomerCoordinates {
@@ -64,7 +64,7 @@ const getCategoryDisplayName = (category: StorageUnitType['category']) => {
 
 export const UnitsExplorerPage: React.FC = () => {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { isAuthenticated, user, logout } = useAuth()
   const { t, language, setLanguage } = useLanguage()
 
@@ -73,7 +73,7 @@ export const UnitsExplorerPage: React.FC = () => {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
   const [inspectingUnit, setInspectingUnit] = useState<StorageUnitType | null>(null)
-  const [checkoutUnit, setCheckoutUnit] = useState<BookingCheckoutUnit | null>(null)
+  const [selectedBookingUnit, setSelectedBookingUnit] = useState<PortalBookingUnitData | null>(null)
 
   // Real Database Data State
   const [dbFacilities, setDbFacilities] = useState<Facility[]>([])
@@ -100,7 +100,7 @@ export const UnitsExplorerPage: React.FC = () => {
   const [selectedFacilityFilter, setSelectedFacilityFilter] = useState<string>('all')
   const [selectedFloorFilter, setSelectedFloorFilter] = useState<string>('all')
   // 3. Loại kho: categoryFilter ('all' | 'personal' | 'standard' | 'business' | 'climate')
-  const [categoryFilter, setCategoryFilter] = useState<'all' | 'personal' | 'business' | 'special'>('all')
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'mini' | 'personal' | 'business' | 'special'>('all')
   // 4. Diện tích: sizeFilter
   const [sizeFilter, setSizeFilter] = useState<'all' | 'under3' | '3to8' | '8to15' | '15plus'>('all')
   // 5. Giá thuê: priceFilter
@@ -108,11 +108,28 @@ export const UnitsExplorerPage: React.FC = () => {
   // 6. Sắp xếp: sortOption
   const [sortOption, setSortOption] = useState<'price_asc' | 'price_desc' | 'distance' | 'area_desc'>('price_asc')
   // 7. Tình trạng kho: statusFilter
-  const [statusFilter, setStatusFilter] = useState<'all' | 'available'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'available'>('available')
   // 8. Từ khóa tìm kiếm: searchQuery
   const [searchQuery, setSearchQuery] = useState('')
   // View mode
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+
+  // Apply the storage tier selected from the public landing page.
+  useEffect(() => {
+    const tier = searchParams.get('type')?.toUpperCase()
+    const landingTierFilters: Record<string, { category: typeof categoryFilter; size: typeof sizeFilter }> = {
+      LOCKER: { category: 'mini', size: 'under3' },
+      STANDARD: { category: 'personal', size: '3to8' },
+      LARGE: { category: 'all', size: '8to15' },
+      ENTERPRISE: { category: 'business', size: '15plus' },
+    }
+    const tierFilters = tier ? landingTierFilters[tier] : undefined
+    if (tierFilters) {
+      setCategoryFilter(tierFilters.category)
+      setSizeFilter(tierFilters.size)
+      setStatusFilter('available')
+    }
+  }, [searchParams])
 
   // Fetch real data from backend
   useEffect(() => {
@@ -295,12 +312,33 @@ export const UnitsExplorerPage: React.FC = () => {
   // Check URL query for default unit
   useEffect(() => {
     const unitParam = searchParams.get('unit')
-    if (unitParam) {
+    if (unitParam && searchParams.get('book') !== '1') {
       const match = effectiveUnits.find(
         (u) => u.id === unitParam || u.unitCode === unitParam || u.name.includes(unitParam)
       )
       if (match) setInspectingUnit(match)
     }
+  }, [searchParams, effectiveUnits])
+
+  // Reopen the selected unit's reservation dashboard after authentication.
+  useEffect(() => {
+    if (searchParams.get('book') !== '1') return
+    const unitParam = searchParams.get('unit')
+    if (!unitParam) return
+    const unit = effectiveUnits.find(candidate => candidate.backendId === unitParam || candidate.id === unitParam || candidate.unitCode === unitParam)
+    if (!unit?.backendId || !unit.isAvailable) return
+    setInspectingUnit(null)
+    setSelectedBookingUnit({
+      id: unit.backendId,
+      unitCode: unit.unitCode,
+      name: unit.unitTypeName || unit.name,
+      facilityName: unit.facilityName || '',
+      priceFormatted: unit.monthlyPrice,
+      priceNumber: unit.monthlyPriceNumeric || 1250000,
+      depositNumber: unit.depositAmountNumeric || unit.monthlyPriceNumeric || 1250000,
+      areaSqMeters: unit.areaSqMeters,
+      floorLevel: unit.floorLocation || (language === 'vi' ? 'Tầng 1' : 'Floor 1'),
+    })
   }, [searchParams, effectiveUnits])
 
   // Listen to rental update events
@@ -422,10 +460,10 @@ export const UnitsExplorerPage: React.FC = () => {
       const area = unit.areaSqMeters
       const matchSize =
         sizeFilter === 'all' ||
-        (area != null && sizeFilter === 'under3' && area < 3) ||
-        (area != null && sizeFilter === '3to8' && area >= 3 && area <= 8) ||
-        (area != null && sizeFilter === '8to15' && area > 8 && area <= 15) ||
-        (area != null && sizeFilter === '15plus' && area > 15)
+        (area != null && sizeFilter === 'under3' && area <= 3) ||
+        (area != null && sizeFilter === '3to8' && area > 3 && area < 8) ||
+        (area != null && sizeFilter === '8to15' && area >= 8 && area <= 15) ||
+        (area != null && sizeFilter === '15plus' && area >= 15)
 
       // 4. Giá thuê
       const price = unit.monthlyPriceNumeric
@@ -494,32 +532,46 @@ export const UnitsExplorerPage: React.FC = () => {
     sortOption,
   ])
 
-  // Rent click handler
+  // Open the portal's reservation dashboard directly on the landing search page.
   const handleRentUnitClick = (unit: StorageUnitType) => {
     if (!unit.isAvailable || !unit.backendId) return
     if (!isAuthenticated) {
-      navigate(`/login?redirect=${encodeURIComponent(`/units?unit=${unit.backendId}`)}`)
+      const landingBookingPath = `/units?unit=${encodeURIComponent(unit.backendId)}&book=1`
+      navigate(`/login?redirect=${encodeURIComponent(landingBookingPath)}`)
       return
     }
-    setCheckoutUnit({
-      backendId: unit.backendId,
-      code: unit.unitCode,
-      name: unit.name,
-      facilityName: unit.facilityName,
-      monthlyPrice: unit.monthlyPriceNumeric,
-      depositAmount: unit.depositAmountNumeric ?? unit.monthlyPriceNumeric,
-      size: unit.areaSqMeters == null ? 'Chưa cập nhật' : `${unit.areaSqMeters} m²`,
-      address: unit.facilityAddress,
+
+    setSelectedBookingUnit({
+      id: unit.backendId,
+      unitCode: unit.unitCode,
+      name: unit.unitTypeName || unit.name,
+      facilityName: unit.facilityName || '',
+      priceFormatted: unit.monthlyPrice,
+      priceNumber: unit.monthlyPriceNumeric || 1250000,
+      depositNumber: unit.depositAmountNumeric || unit.monthlyPriceNumeric || 1250000,
+      areaSqMeters: unit.areaSqMeters,
+      floorLevel: unit.floorLocation || (language === 'vi' ? 'Tầng 1' : 'Floor 1'),
     })
+  }
+
+  const closeBookingModal = () => {
+    setSelectedBookingUnit(null)
+    if (searchParams.get('book') === '1') {
+      const nextParams = new URLSearchParams(searchParams)
+      nextParams.delete('book')
+      nextParams.delete('unit')
+      setSearchParams(nextParams, { replace: true })
+    }
   }
 
   // Reset all filters
   const handleResetFilters = () => {
     setSelectedFacilityFilter('all')
+    setSelectedFloorFilter('all')
     setCategoryFilter('all')
     setSizeFilter('all')
     setPriceFilter('all')
-    setStatusFilter('all')
+    setStatusFilter('available')
     setSearchQuery('')
     setSortOption('price_asc')
     setCustomerLocation(null)
@@ -881,10 +933,10 @@ export const UnitsExplorerPage: React.FC = () => {
                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 shadow-2xs"
               >
                 <option value="all">Mọi diện tích</option>
-                <option value="under3">Dưới 3 m² (Nhỏ gọn)</option>
-                <option value="3to8">3 – 8 m² (Vừa - Đồ gia đình)</option>
+                <option value="under3">Đến 3 m² (Nhỏ gọn)</option>
+                <option value="3to8">Trên 3 đến dưới 8 m² (Đồ gia đình)</option>
                 <option value="8to15">8 – 15 m² (Lớn - Nhiều đồ)</option>
-                <option value="15plus">Trên 15 m² (Doanh nghiệp &amp; pallet)</option>
+                <option value="15plus">Từ 15 m² (Doanh nghiệp &amp; pallet)</option>
               </select>
 
               <p className="text-[10px] text-slate-500">
@@ -1016,6 +1068,7 @@ export const UnitsExplorerPage: React.FC = () => {
           </div>
 
           {(selectedFacilityFilter !== 'all' ||
+            selectedFloorFilter !== 'all' ||
             categoryFilter !== 'all' ||
             sizeFilter !== 'all' ||
             priceFilter !== 'all' ||
@@ -1189,7 +1242,7 @@ export const UnitsExplorerPage: React.FC = () => {
                           onClick={() => handleRentUnitClick(unit)}
                           className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                         >
-                          <span>Đặt thuê ngay</span>
+                          <span>Đặt giữ chỗ kho</span>
                           <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
                         </button>
                       ) : (
@@ -1293,7 +1346,7 @@ export const UnitsExplorerPage: React.FC = () => {
                           onClick={() => handleRentUnitClick(unit)}
                           className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                         >
-                          <span>Đặt thuê</span>
+                          <span>Đặt giữ chỗ</span>
                           <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
                         </button>
                       ) : (
@@ -1317,6 +1370,21 @@ export const UnitsExplorerPage: React.FC = () => {
       {/* ============================================================ */}
       {/* 5. MODALS                                                    */}
       {/* ============================================================ */}
+      {selectedBookingUnit && (
+        <PortalBookingReservationModal
+          unit={selectedBookingUnit}
+          onClose={closeBookingModal}
+          onRefresh={async () => {
+            try {
+              const units = await storageUnitService.getUnits()
+              if (Array.isArray(units)) setRawUnits(units)
+            } catch (error) {
+              console.error('Unable to refresh units after booking:', error)
+            }
+          }}
+        />
+      )}
+
       {/* Unit Detail Modal (Specifications & Rental Conditions) */}
       <UnitDetailModal
         unit={inspectingUnit}
@@ -1324,15 +1392,6 @@ export const UnitsExplorerPage: React.FC = () => {
         onClose={() => setInspectingUnit(null)}
         onRent={(unit) => handleRentUnitClick(unit)}
       />
-
-      {/* Booking Checkout Modal (Rental Duration, Quote, Auth, & Payment) */}
-      {checkoutUnit && user && (
-        <BookingCheckoutModal
-          unit={checkoutUnit}
-          user={user}
-          onClose={() => setCheckoutUnit(null)}
-        />
-      )}
 
       {/* Floating Action Speed-Dial Widget */}
       <FloatingContactWidget />

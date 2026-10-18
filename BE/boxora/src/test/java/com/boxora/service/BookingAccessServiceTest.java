@@ -8,6 +8,7 @@ import com.boxora.exception.ErrorCode;
 import com.boxora.repository.BookingRepository;
 import com.boxora.repository.StorageUnitRepository;
 import com.boxora.repository.UserRepository;
+import com.boxora.security.FacilityAccessGuard;
 import com.boxora.security.RequestContext;
 import com.boxora.service.impl.BookingServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +40,9 @@ class BookingAccessServiceTest {
 
     @Mock
     private RequestContext requestContext;
+
+    @Mock
+    private FacilityAccessGuard facilityAccessGuard;
 
     @InjectMocks
     private BookingServiceImpl bookingService;

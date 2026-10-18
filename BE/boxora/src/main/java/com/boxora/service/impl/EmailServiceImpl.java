@@ -477,12 +477,12 @@ public class EmailServiceImpl implements EmailService {
         String safeName = escape(fullName != null ? fullName : "Quý khách");
         String safeCode = escape(contractCode != null ? contractCode : "N/A");
         String safeUnit = escape(unitCode != null ? unitCode : "N/A");
-        String formattedDebt = formatVnd(totalDebt);
+        String formattedDebt = totalDebt != null ? formatVnd(totalDebt) : "Chưa đối soát";
 
         String stageDesc = switch (overdueStage != null ? overdueStage : "") {
             case "GRACE_PERIOD" -> "Thời gian gia hạn miễn phạt (Grace Period)";
             case "WARNING" -> "Cảnh báo nợ quá hạn - Bắt đầu áp dụng phí phạt trễ";
-            case "ACCESS_BLOCKED" -> "Tạm khóa quyền truy cập SmartLock";
+            case "ACCESS_BLOCKED" -> "Đã đến ngưỡng chính sách thu hồi PIN/QR trong Boxora; trạng thái khóa vật lý chưa được xác minh";
             case "ELIGIBLE_FOR_SEALING" -> "Nguy cơ niêm phong và xử lý tài sản theo hợp đồng";
             default -> escape(overdueStage);
         };
@@ -496,7 +496,7 @@ public class EmailServiceImpl implements EmailService {
         );
 
         String highlightBox = renderHighlightBox(
-                "TỔNG CÔNG NỢ CẦN THANH TOÁN",
+                totalDebt != null ? "TỔNG CÔNG NỢ CẦN THANH TOÁN" : "SỐ DƯ CHƯA ĐỐI SOÁT",
                 formattedDebt,
                 "#fef2f2",
                 "#b91c1c",
@@ -512,7 +512,7 @@ public class EmailServiceImpl implements EmailService {
 
         String alert = renderAlertBox(
                 "Hướng dẫn xử lý",
-                "Quý khách vui lòng đăng nhập ứng dụng hoặc cổng thông tin Boxora để thanh toán ngay nhằm duy trì hoặc khôi phục quyền mở khóa SmartLock.",
+                "Quý khách vui lòng đăng nhập Boxora để thanh toán hoặc liên hệ cơ sở nhằm xác nhận trạng thái PIN/QR lưu trong hệ thống và quyền truy cập thực tế. Trạng thái khóa vật lý chưa được Boxora xác minh.",
                 "#fef2f2",
                 "#b91c1c",
                 "#f87171"
@@ -585,8 +585,8 @@ public class EmailServiceImpl implements EmailService {
                 + "</table>";
 
         String alert = renderAlertBox(
-                "CẢNH BÁO: QUYỀN TRUY CẬP ĐÃ BỊ KHÓA CƯỠNG CHẾ",
-                "Quyền mở khóa SmartLock đã bị tạm dừng. Quý khách vui lòng thanh toán toàn bộ công nợ hoặc liên hệ Ban Quản Lý cơ sở trong vòng <strong>15 ngày</strong> để tiến hành thủ tục mở niêm phong và tránh các chế tài thanh lý tài sản theo hợp đồng.",
+                "CẢNH BÁO: PIN/QR ĐÃ BỊ THU HỒI TRONG BOXORA",
+                "PIN/QR lưu trong Boxora đã bị thu hồi. Trạng thái khóa vật lý chưa được xác minh. Quý khách vui lòng thanh toán toàn bộ công nợ hoặc liên hệ Ban Quản Lý cơ sở trong vòng <strong>15 ngày</strong> để được hướng dẫn về hồ sơ niêm phong và các điều khoản hợp đồng.",
                 "#fef2f2",
                 "#991b1b",
                 "#ef4444"
@@ -619,7 +619,7 @@ public class EmailServiceImpl implements EmailService {
                 - Lý do: %s
                 - Tổng công nợ: %s
 
-                Khóa SmartLock đã bị khóa cưỡng chế. Vui lòng thanh toán hoặc liên hệ Ban Quản Lý trong vòng 15 ngày để mở niêm phong.
+                PIN/QR lưu trong Boxora đã bị thu hồi. Trạng thái khóa vật lý chưa được xác minh. Vui lòng thanh toán hoặc liên hệ Ban Quản Lý trong vòng 15 ngày để được hướng dẫn.
 
                 Trân trọng,
                 Bộ phận An ninh & Pháp chế Boxora
@@ -661,7 +661,7 @@ public class EmailServiceImpl implements EmailService {
 
         String alert = renderAlertBox(
                 "Khôi phục quyền truy cập",
-                "Quyền mở khóa SmartLock của quý khách đã được khôi phục trạng thái hoạt động bình thường. Quý khách có thể sử dụng mã PIN hiện tại để ra vào kho.",
+                "Hồ sơ niêm phong đã được cập nhật trong Boxora. Trạng thái khóa vật lý và quyền sử dụng mã PIN chưa được xác minh; vui lòng liên hệ cơ sở trước khi sử dụng kho.",
                 "#f0fdf4",
                 "#15803d",
                 "#86efac"
@@ -694,7 +694,7 @@ public class EmailServiceImpl implements EmailService {
                 - Lý do: %s
                 - Thời gian: %s
 
-                Quyền mở khóa SmartLock đã được khôi phục bình thường.
+                Hồ sơ niêm phong đã được cập nhật trong Boxora. Trạng thái khóa vật lý và PIN chưa được xác minh; vui lòng xác nhận với cơ sở trước khi sử dụng kho.
 
                 Trân trọng,
                 Ban Quản Lý Vận Hành Boxora
@@ -919,7 +919,7 @@ public class EmailServiceImpl implements EmailService {
         String safeFacility = escape(facilityName != null && !facilityName.isBlank() ? facilityName : "Boxora Facility");
         String safePin = escape(accessPin != null ? accessPin : "");
 
-        String subject = String.format("[Boxora] Bàn giao kho thành công & Mã PIN mở kho %s", safeUnit);
+        String subject = String.format("[Boxora] Ghi nhận bàn giao & mã PIN phần mềm %s", safeUnit);
 
         String badge = renderBadge("BÀN GIAO THÀNH CÔNG", "#ecfdf5", "#047857");
         String intro = String.format(
@@ -936,7 +936,7 @@ public class EmailServiceImpl implements EmailService {
         String highlightBox = "";
         if (!safePin.isBlank()) {
             highlightBox = renderHighlightBox(
-                    "MÃ PIN MỞ KHO SMARTLOCK",
+                "MÃ PIN PHẦN MỀM (CHƯA ĐỒNG BỘ KHÓA VẬT LÝ)",
                     safePin,
                     "#f0f9ff",
                     "#0284c7",
@@ -946,7 +946,7 @@ public class EmailServiceImpl implements EmailService {
 
         String alert = renderAlertBox(
                 "Bảo mật thông tin mở kho",
-                "Quý khách vui lòng bảo mật mã PIN này. Quý khách có thể quản lý, cấp quyền truy cập tạm thời hoặc đổi mã PIN bất kỳ lúc nào trên ứng dụng Boxora.",
+                "Boxora đã ghi nhận biên bản bàn giao và tạo mã PIN trong phần mềm. Mã này chưa được đồng bộ hoặc xác nhận với khóa SmartLock vật lý. Vui lòng chỉ sử dụng sau khi nhân viên xác nhận đã cài đặt mã tại cơ sở.",
                 "#f0fdf4",
                 "#15803d",
                 "#86efac"
@@ -975,9 +975,9 @@ public class EmailServiceImpl implements EmailService {
 
                 Đơn đặt chỗ %s tại cơ sở %s đã bàn giao thành công.
                 - Vị trí kho: %s
-                - Mã PIN SmartLock: %s
+                - Mã PIN phần mềm (chưa xác nhận trên khóa vật lý): %s
 
-                Vui lòng bảo mật mã PIN. Bạn có thể đổi mã PIN trên ứng dụng Boxora.
+                Boxora đã ghi nhận bàn giao và tạo mã PIN trong phần mềm. Mã chưa được đồng bộ hoặc xác nhận với khóa SmartLock vật lý. Chỉ sử dụng sau khi nhân viên xác nhận đã cài đặt mã tại cơ sở.
 
                 Trân trọng,
                 Đội ngũ Boxora Self-Storage

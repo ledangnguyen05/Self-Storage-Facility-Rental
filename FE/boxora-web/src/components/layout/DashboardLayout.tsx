@@ -22,6 +22,7 @@ export const DashboardLayout: React.FC = () => {
   const assignedFacilityId = user?.facilityId
 
   const [facilities, setFacilities] = useState<Facility[]>([])
+  const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking')
   const [selectedFacility, setSelectedFacility] = useState<string>(
     isFacilityScopedRole && assignedFacilityId ? assignedFacilityId : 'ALL'
   )
@@ -34,8 +35,11 @@ export const DashboardLayout: React.FC = () => {
   const isFacilityManagerPage = location.pathname.includes('/facility-manager')
 
   useEffect(() => {
-    facilityService.getFacilities()
-      .then(res => {
+    let isActive = true
+    const checkBackend = async () => {
+      try {
+        const res = await facilityService.getFacilities()
+        if (!isActive) return
         let list = res?.content || []
         if (isFacilityScopedRole && assignedFacilityId) {
           const matched = list.filter(f => f.id === assignedFacilityId)
@@ -55,6 +59,7 @@ export const DashboardLayout: React.FC = () => {
           }
         }
         setFacilities(list)
+        setBackendStatus('online')
 
         if (isFacilityScopedRole && assignedFacilityId) {
           setSelectedFacility(assignedFacilityId)
@@ -68,10 +73,21 @@ export const DashboardLayout: React.FC = () => {
             return 'ALL'
           })
         }
-      })
-      .catch(err => {
+      } catch (err) {
+        if (!isActive) return
+        setFacilities([])
+        setBackendStatus('offline')
         console.warn('Failed to load facilities in DashboardLayout:', err)
-      })
+      }
+    }
+
+    setBackendStatus('checking')
+    void checkBackend()
+    const intervalId = window.setInterval(() => void checkBackend(), 60_000)
+    return () => {
+      isActive = false
+      window.clearInterval(intervalId)
+    }
   }, [location.pathname, isFacilityScopedRole, assignedFacilityId, user?.facilityName, user?.facilityCode])
 
   useEffect(() => {
@@ -563,7 +579,7 @@ export const DashboardLayout: React.FC = () => {
               <div>
                 <div className="px-3 pb-2">
                   <span className="text-[11px] font-semibold tracking-wide text-slate-400">
-                    Quản trị &amp; Kiểm toán hệ thống
+                    {t('System administration', 'System administration')}
                   </span>
                 </div>
                 <nav className="flex flex-col gap-1 text-left">
@@ -576,7 +592,7 @@ export const DashboardLayout: React.FC = () => {
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">domain</span>
-                    <span>{t('Cấu hình chi nhánh', 'Branch configuration')}</span>
+                    <span>{t('Branches (read only)', 'Branches (read only)')}</span>
                   </Link>
                   <Link
                     to="/portal/admin?tab=users"
@@ -587,7 +603,7 @@ export const DashboardLayout: React.FC = () => {
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">admin_panel_settings</span>
-                    <span>{t('Phân quyền RBAC & người dùng')}</span>
+                    <span>{t('Users, roles and permissions', 'Users, roles and permissions')}</span>
                   </Link>
                   <Link
                     to="/portal/admin?tab=logs"
@@ -606,7 +622,7 @@ export const DashboardLayout: React.FC = () => {
               <div>
                 <div className="px-3 pb-2 pt-2 border-t border-slate-100">
                   <span className="text-[11px] font-semibold tracking-wide text-slate-400">
-                    Giám sát &amp; Báo cáo vĩ mô
+                    {t('Authorized oversight', 'Authorized oversight')}
                   </span>
                 </div>
                 <nav className="flex flex-col gap-1 text-left">
@@ -619,29 +635,7 @@ export const DashboardLayout: React.FC = () => {
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">query_stats</span>
-                    <span>{t('Báo cáo doanh thu toàn chuỗi')}</span>
-                  </Link>
-                  <Link
-                    to="/portal/facility-manager"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/facility-manager')
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">grid_view</span>
-                    <span>{t('Giám sát sơ đồ & phòng kho')}</span>
-                  </Link>
-                  <Link
-                    to="/portal/tickets"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/tickets')
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">build_circle</span>
-                    <span>{t('Giám sát sự cố & SLA')}</span>
+                    <span>{t('Business reports', 'Business reports')}</span>
                   </Link>
                   <Link
                     to="/portal/cashier"
@@ -651,8 +645,19 @@ export const DashboardLayout: React.FC = () => {
                         : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
-                    <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
-                    <span>{t('Sổ nhật ký giao dịch')}</span>
+                    <span className="material-symbols-outlined text-[18px]">receipt_long</span>
+                    <span>{t('Transaction journal (read only)', 'Transaction journal (read only)')}</span>
+                  </Link>
+                  <Link
+                    to="/portal/tickets"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                      isCurrentPath('/portal/tickets')
+                        ? 'bg-slate-100 text-slate-900 font-semibold'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">troubleshoot</span>
+                    <span>{t('Ticket oversight (read only)', 'Ticket oversight (read only)')}</span>
                   </Link>
                 </nav>
               </div>
@@ -666,15 +671,21 @@ export const DashboardLayout: React.FC = () => {
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-1 text-left">
             <div className="flex items-center justify-between">
               <span className="font-mono text-[10px] text-slate-500 font-bold uppercase">
-                {role === 'CUSTOMER' ? t('An Ninh Kho') : t('Trạng Thái Hệ Thống')}
+                {role === 'CUSTOMER' ? t('Phiên tài khoản', 'Account session') : t('Trạng Thái Hệ Thống', 'System status')}
               </span>
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className={`h-2 w-2 rounded-full ${role === 'CUSTOMER' || backendStatus === 'online' ? 'bg-emerald-500' : backendStatus === 'checking' ? 'bg-amber-400 animate-pulse' : 'bg-rose-500'}`}></span>
             </div>
             <span className="font-unit-code text-xs text-slate-900 font-bold">
-              {role === 'CUSTOMER' ? t('Khóa bảo mật: Hoạt động') : t('Hệ thống trực tuyến')}
+              {role === 'CUSTOMER'
+                ? t('Phiên đăng nhập đang hoạt động', 'Signed-in session active')
+                : backendStatus === 'online'
+                  ? t('API và dữ liệu cơ sở sẵn sàng', 'Facility API and data available')
+                  : backendStatus === 'checking'
+                    ? t('Đang kiểm tra kết nối', 'Checking connection')
+                    : t('Không kết nối được API', 'Facility API unavailable')}
             </span>
             <span className="text-[11px] text-slate-500">
-              {role === 'CUSTOMER' ? t('Hỗ trợ khách: 1900 6828') : t('Kết nối máy chủ ổn định')}
+              {role === 'CUSTOMER' ? t('Hỗ trợ khách: 1900 6828') : t('Kiểm tra từ API cơ sở mỗi 60 giây', 'Checked through the facility API every 60 seconds')}
             </span>
           </div>
         </div>

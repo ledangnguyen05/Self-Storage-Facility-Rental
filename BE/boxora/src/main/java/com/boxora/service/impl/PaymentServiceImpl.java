@@ -17,6 +17,7 @@ import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.PaymentMapper;
 import com.boxora.repository.BookingRepository;
 import com.boxora.repository.PaymentRepository;
+import com.boxora.repository.RentalContractRepository;
 import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
 import com.boxora.service.ContractRenewalService;
@@ -53,6 +54,7 @@ public class PaymentServiceImpl implements PaymentService {
     private static final java.security.SecureRandom SECURE_RANDOM = new java.security.SecureRandom();
 
     private final PaymentRepository paymentRepository;
+    private final RentalContractRepository rentalContractRepository;
     private final BookingRepository bookingRepository;
     private final PaymentMapper paymentMapper;
     private final VNPayService vnPayService;
@@ -389,8 +391,11 @@ public class PaymentServiceImpl implements PaymentService {
 
         if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
             UUID currentUserId = requestContext.currentUserId();
-            if (currentUserId != null && booking.getCustomer() != null && booking.getCustomer().getId() != null
-                    && !currentUserId.equals(booking.getCustomer().getId())) {
+            if (currentUserId == null) {
+                throw new AppException(ErrorCode.UNAUTHORIZED);
+            }
+            if (booking.getCustomer() == null || booking.getCustomer().getId() == null
+                    || !currentUserId.equals(booking.getCustomer().getId())) {
                 throw new AppException(ErrorCode.FORBIDDEN);
             }
         }
@@ -417,7 +422,22 @@ public class PaymentServiceImpl implements PaymentService {
         PaymentType effectivePaymentType = request.getPaymentType();
         BigDecimal authoritativeAmount;
 
+        if ("ONLINE".equalsIgnoreCase(booking.getSigningMethod())) {
+            RentalContract contract = rentalContractRepository.findByBookingIdForUpdate(booking.getId())
+                    .orElseThrow(() -> new AppException(ErrorCode.INVALID_REQUEST,
+                            "Hợp đồng điện tử chưa được tạo cho đơn đặt kho này."));
+            boolean contractSigned = contract.getSignedAt() != null
+                    && contract.getSignatureData() == null
+                    && (contract.getStatus() == com.boxora.enums.RentalContractStatus.PENDING_ACTIVATION
+                            || contract.getStatus() == com.boxora.enums.RentalContractStatus.ACTIVE);
+            if (!contractSigned) {
+                throw new AppException(ErrorCode.INVALID_REQUEST,
+                        "Chỉ có thể thanh toán sau khi Boxora xác nhận hợp đồng đã ký điện tử.");
+            }
+        }
+
         if (request.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
+
             boolean isPayableStatus = booking.getStatus() == BookingStatus.PENDING_PAYMENT
                     || booking.getStatus() == BookingStatus.PENDING_APPROVAL
                     || booking.getStatus() == BookingStatus.CONFIRMED;
@@ -603,24 +623,25 @@ public class PaymentServiceImpl implements PaymentService {
         // 1. Verify digital signature
         boolean isValid = vnPayService.verifySignature(params);
         if (!isValid) {
-            log.warn("VNPay return callback signature invalid: {}", params);
+            log.warn("VNPay return callback signature invalid");
             throw new AppException(ErrorCode.INVALID_PAYMENT_SIGNATURE);
         }
 
         String txnRef = params.get("vnp_TxnRef");
-        Payment payment = paymentRepository.findByTransactionId(txnRef)
+        Payment payment = paymentRepository.findByTransactionIdForUpdate(txnRef)
                 .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND));
 
         String amountStr = params.get("vnp_Amount");
-        if (amountStr != null && !amountStr.isBlank()) {
-            try {
-                BigDecimal vnpAmount = new BigDecimal(amountStr).divide(BigDecimal.valueOf(100));
-                if (payment.getAmount().compareTo(vnpAmount) != 0) {
-                    throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
-                }
-            } catch (NumberFormatException e) {
+        if (amountStr == null || amountStr.isBlank()) {
+            throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
+        }
+        try {
+            BigDecimal vnpAmount = new BigDecimal(amountStr).divide(BigDecimal.valueOf(100));
+            if (payment.getAmount().compareTo(vnpAmount) != 0) {
                 throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
             }
+        } catch (NumberFormatException e) {
+            throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
         }
 
         // 2. Idempotency check: if already confirmed as PAID, return existing
@@ -641,7 +662,7 @@ public class PaymentServiceImpl implements PaymentService {
             }
         }
 
-        boolean isSuccess = "00".equals(responseCode) && ("00".equals(transactionStatus) || transactionStatus == null);
+        boolean isSuccess = "00".equals(responseCode) && "00".equals(transactionStatus);
 
         if (isSuccess) {
             payment.setStatus(PaymentStatus.PAID);
@@ -726,12 +747,12 @@ public class PaymentServiceImpl implements PaymentService {
     public VNPayIpnResponse processVNPayIPN(Map<String, String> params) {
         // 1. Verify Checksum
         if (!vnPayService.verifySignature(params)) {
-            log.warn("VNPay IPN checksum verification failed for params: {}", params);
+            log.warn("VNPay IPN checksum verification failed");
             return VNPayIpnResponse.invalidSignature();
         }
 
         String txnRef = params.get("vnp_TxnRef");
-        Optional<Payment> optPayment = paymentRepository.findByTransactionId(txnRef);
+        Optional<Payment> optPayment = paymentRepository.findByTransactionIdForUpdate(txnRef);
         if (optPayment.isEmpty()) {
             log.warn("VNPay IPN order not found: txnRef={}", txnRef);
             return VNPayIpnResponse.orderNotFound();
@@ -741,18 +762,18 @@ public class PaymentServiceImpl implements PaymentService {
 
         // 2. Check Amount
         String amountStr = params.get("vnp_Amount");
-        if (amountStr != null && !amountStr.isBlank()) {
-            try {
-                BigDecimal vnpAmount = new BigDecimal(amountStr).divide(BigDecimal.valueOf(100));
-                if (payment.getAmount().compareTo(vnpAmount) != 0) {
-                    log.warn("VNPay IPN amount mismatch for txnRef={}. DB={}, VNPay={}",
-                            txnRef, payment.getAmount(), vnpAmount);
-                    return VNPayIpnResponse.invalidAmount();
-                }
-            } catch (Exception e) {
-                log.error("Failed to parse VNPay IPN amount: {}", amountStr, e);
+        if (amountStr == null || amountStr.isBlank()) {
+            return VNPayIpnResponse.invalidAmount();
+        }
+        try {
+            BigDecimal vnpAmount = new BigDecimal(amountStr).divide(BigDecimal.valueOf(100));
+            if (payment.getAmount().compareTo(vnpAmount) != 0) {
+                log.warn("VNPay IPN amount mismatch for txnRef={}", txnRef);
                 return VNPayIpnResponse.invalidAmount();
             }
+        } catch (Exception e) {
+            log.warn("Failed to parse VNPay IPN amount for txnRef={}", txnRef);
+            return VNPayIpnResponse.invalidAmount();
         }
 
         // 3. Check if already confirmed
@@ -763,7 +784,7 @@ public class PaymentServiceImpl implements PaymentService {
         // 4. Update status
         String responseCode = params.get("vnp_ResponseCode");
         String transactionStatus = params.get("vnp_TransactionStatus");
-        boolean isSuccess = "00".equals(responseCode) && ("00".equals(transactionStatus) || transactionStatus == null);
+        boolean isSuccess = "00".equals(responseCode) && "00".equals(transactionStatus);
 
         String payDateStr = params.get("vnp_PayDate");
         if (payDateStr != null && payDateStr.length() == 14) {

@@ -27,6 +27,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -44,7 +46,7 @@ public class ContractSigningController {
     private final DocuSealConfig docuSealConfig;
 
     @PostMapping
-    @PreAuthorize("hasAuthority('CONTRACT_CREATE') or hasAnyRole('ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('CONTRACT_CREATE')")
     @Operation(summary = "Tạo hợp đồng thuê mới")
     public ResponseEntity<ApiResponse<RentalContractResponse>> createContract(
             @Valid @RequestBody ContractCreateRequest request) {
@@ -54,7 +56,7 @@ public class ContractSigningController {
     }
 
     @GetMapping("{contractId}")
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW')")
     @Operation(summary = "Lấy thông tin chi tiết hợp đồng theo ID")
     public ResponseEntity<ApiResponse<RentalContractResponse>> getContractById(
             @PathVariable UUID contractId) {
@@ -63,7 +65,7 @@ public class ContractSigningController {
     }
 
     @GetMapping("booking/{bookingId}")
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW')")
     @Operation(summary = "Lấy hợp đồng thuê theo Booking ID")
     public ResponseEntity<ApiResponse<RentalContractResponse>> getContractByBookingId(
             @PathVariable UUID bookingId) {
@@ -72,7 +74,7 @@ public class ContractSigningController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW')")
     @Operation(summary = "Lấy danh sách hợp đồng phân trang theo bộ lọc")
     public ResponseEntity<ApiResponse<PageResponse<RentalContractResponse>>> getAllContracts(
             @RequestParam(required = false) UUID customerId,
@@ -88,7 +90,7 @@ public class ContractSigningController {
     }
 
     @PostMapping("{contractId}/send-for-signature")
-    @PreAuthorize("hasAuthority('CONTRACT_CREATE') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('CONTRACT_CREATE') or hasRole('CUSTOMER')")
     @Operation(summary = "Gửi hợp đồng sang DocuSeal để khách ký, trả về link ký")
     public ResponseEntity<ApiResponse<Map<String, String>>> sendForSignature(
             @PathVariable UUID contractId) {
@@ -98,7 +100,7 @@ public class ContractSigningController {
     }
 
     @GetMapping("{contractId}/signing-url")
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW')")
     @Operation(summary = "Lấy link ký DocuSeal của hợp đồng")
     public ResponseEntity<ApiResponse<Map<String, String>>> getSigningUrl(
             @PathVariable UUID contractId) {
@@ -108,7 +110,7 @@ public class ContractSigningController {
     }
 
     @PostMapping("{contractId}/otp/send")
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW')")
     @Operation(summary = "Gửi OTP email để xác thực trước khi ký hợp đồng")
     public ResponseEntity<ApiResponse<ContractOtpResponse>> sendContractOtp(
             @PathVariable UUID contractId) {
@@ -118,7 +120,7 @@ public class ContractSigningController {
     }
 
     @PostMapping("{contractId}/otp/resend")
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW')")
     @Operation(summary = "Gửi lại OTP xác thực ký hợp đồng")
     public ResponseEntity<ApiResponse<ContractOtpResponse>> resendContractOtp(
             @PathVariable UUID contractId) {
@@ -128,7 +130,7 @@ public class ContractSigningController {
     }
 
     @PostMapping("{contractId}/otp/verify")
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW')")
     @Operation(summary = "Xác thực OTP và lấy liên kết ký DocuSeal")
     public ResponseEntity<ApiResponse<ContractOtpResponse>> verifyContractOtp(
             @PathVariable UUID contractId,
@@ -143,7 +145,7 @@ public class ContractSigningController {
     // =========================================================================
 
     @PostMapping("{contractId}/renew")
-    @PreAuthorize("hasAuthority('RENEWAL_CREATE') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('RENEWAL_CREATE')")
     @Operation(summary = "Yêu cầu gia hạn hợp đồng, tạo phụ lục và gửi link ký qua DocuSeal")
     public ResponseEntity<ApiResponse<ContractRenewalResponse>> requestRenewal(
             @PathVariable UUID contractId,
@@ -154,7 +156,7 @@ public class ContractSigningController {
     }
 
     @GetMapping("{contractId}/renewals")
-    @PreAuthorize("hasAuthority('RENEWAL_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('RENEWAL_VIEW')")
     @Operation(summary = "Lấy lịch sử gia hạn của một hợp đồng")
     public ResponseEntity<ApiResponse<List<ContractRenewalResponse>>> getRenewalsByContractId(
             @PathVariable UUID contractId) {
@@ -163,7 +165,7 @@ public class ContractSigningController {
     }
 
     @GetMapping("renewals/{renewalId}")
-    @PreAuthorize("hasAuthority('RENEWAL_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('RENEWAL_VIEW')")
     @Operation(summary = "Lấy chi tiết yêu cầu gia hạn")
     public ResponseEntity<ApiResponse<ContractRenewalResponse>> getRenewalById(
             @PathVariable UUID renewalId) {
@@ -172,7 +174,7 @@ public class ContractSigningController {
     }
 
     @GetMapping("renewals/{renewalId}/signing-url")
-    @PreAuthorize("hasAuthority('RENEWAL_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('RENEWAL_VIEW')")
     @Operation(summary = "Lấy link ký phụ lục gia hạn DocuSeal")
     public ResponseEntity<ApiResponse<Map<String, String>>> getRenewalSigningUrl(
             @PathVariable UUID renewalId) {
@@ -181,7 +183,7 @@ public class ContractSigningController {
     }
 
     @PostMapping("renewals/{renewalId}/payment")
-    @PreAuthorize("hasAuthority('PAYMENT_CREATE') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('PAYMENT_CREATE')")
     @Operation(summary = "Khởi tạo thanh toán phí gia hạn qua cổng VNPay Sandbox")
     public ResponseEntity<ApiResponse<VNPayPaymentResponse>> createRenewalPayment(
             @PathVariable UUID renewalId,
@@ -192,7 +194,7 @@ public class ContractSigningController {
     }
 
     @GetMapping("renewals")
-    @PreAuthorize("hasAuthority('RENEWAL_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('RENEWAL_VIEW')")
     @Operation(summary = "Lấy danh sách tất cả yêu cầu gia hạn phân trang theo bộ lọc")
     public ResponseEntity<ApiResponse<PageResponse<ContractRenewalResponse>>> getAllRenewals(
             @RequestParam(required = false) UUID contractId,
@@ -212,7 +214,7 @@ public class ContractSigningController {
     // =========================================================================
 
     @PostMapping("{contractId}/mock-sign")
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW')")
     @Operation(summary = "Ký xác nhận hợp đồng điện tử ở chế độ mô phỏng / local development kèm chữ ký tay")
     public ResponseEntity<ApiResponse<RentalContractResponse>> mockSign(
             @PathVariable UUID contractId,
@@ -235,11 +237,14 @@ public class ContractSigningController {
             @RequestBody Map<String, Object> payload) {
         String expectedToken = docuSealConfig.getWebhookToken();
         String actualToken = webhookToken != null ? webhookToken : (headerToken != null ? headerToken : queryToken);
-        if (expectedToken != null && !expectedToken.isBlank()) {
-            if (actualToken == null || !expectedToken.equals(actualToken)) {
-                log.warn("Unauthorized DocuSeal webhook call attempt. Received token: {}", actualToken);
-                throw new AppException(ErrorCode.CONTRACT_SIGNING_INVALID_WEBHOOK_TOKEN);
-            }
+        boolean tokenMatches = expectedToken != null && !expectedToken.isBlank()
+                && actualToken != null
+                && MessageDigest.isEqual(
+                        expectedToken.getBytes(StandardCharsets.UTF_8),
+                        actualToken.getBytes(StandardCharsets.UTF_8));
+        if (!tokenMatches) {
+            log.warn("Rejected DocuSeal webhook because token validation failed or no webhook token is configured");
+            throw new AppException(ErrorCode.CONTRACT_SIGNING_INVALID_WEBHOOK_TOKEN);
         }
         contractSigningService.handleWebhook(payload);
         return ResponseEntity.ok().build();
