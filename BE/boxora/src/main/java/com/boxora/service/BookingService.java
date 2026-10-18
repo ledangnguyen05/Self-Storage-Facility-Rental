@@ -3,6 +3,7 @@ package com.boxora.service;
 import com.boxora.dto.request.BookingCreateRequest;
 import com.boxora.dto.response.BookingResponse;
 import com.boxora.dto.response.BookingAccessCredentialsResponse;
+import com.boxora.enums.BookingStatus;
 
 import java.util.List;
 import java.util.UUID;
@@ -16,6 +17,8 @@ public interface BookingService {
     List<BookingResponse> getMyBookings(UUID customerId);
     List<BookingResponse> getMyActiveBookings(UUID customerId);
     List<BookingResponse> getUpcomingArrivals();
+    List<BookingResponse> getUpcomingArrivals(UUID facilityId);
+    List<BookingResponse> getBookings(UUID customerId, BookingStatus status, UUID facilityId);
     BookingResponse renewBooking(UUID id, int extraMonths);
     BookingResponse remoteUnlock(UUID id);
     BookingResponse getById(UUID id);

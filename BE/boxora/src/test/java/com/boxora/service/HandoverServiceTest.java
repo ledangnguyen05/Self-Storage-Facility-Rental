@@ -145,6 +145,7 @@ class HandoverServiceTest {
                 .status(BookingStatus.CONFIRMED)
                 .identityVerifiedByStaff(testStaff)
                 .identityVerifiedAt(LocalDateTime.now())
+                .identityOriginalDocumentSeen(true)
                 .identityCardNumber("001092003891")
                 .build();
         testBooking.setId(bookingId);
@@ -179,6 +180,42 @@ class HandoverServiceTest {
 
         lenient().when(requestContext.currentUserId()).thenReturn(staffId);
         lenient().when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
+        lenient().when(bookingRepository.findByIdForUpdate(any(UUID.class)))
+                .thenAnswer(invocation -> bookingRepository.findById(invocation.getArgument(0)));
+
+        HandoverRecord inboundInspection = HandoverRecord.builder()
+                .booking(testBooking)
+                .recordType("CHECK_IN_INSPECTION")
+                .doorConditionPassed(true)
+                .cleanlinessPassed(true)
+                .smartLockPassed(true)
+                .sensorPassed(true)
+                .wallStructurePassed(true)
+                .evidencePhotos("/uploads/door.jpg;/uploads/interior.jpg")
+                .recordedAt(LocalDateTime.now())
+                .build();
+        HandoverRecord returnInspection = HandoverRecord.builder()
+                .booking(testBooking)
+                .recordType("INSPECTION")
+                .doorConditionPassed(true)
+                .cleanlinessPassed(true)
+                .smartLockPassed(true)
+                .sensorPassed(true)
+                .wallStructurePassed(true)
+                .evidencePhotos("/uploads/return-door.jpg;/uploads/return-interior.jpg")
+                .recordedAt(LocalDateTime.now())
+                .build();
+        lenient().when(handoverRecordRepository.findByBooking_Id(any(UUID.class)))
+                .thenReturn(List.of(inboundInspection, returnInspection));
+
+        FacilityPolicy policy = FacilityPolicy.builder()
+                .facility(testFacility)
+                .depositRefundSlaDays(5)
+                .overdueGraceDays(1)
+                .dailyLateFee(new BigDecimal("100000.00"))
+                .build();
+        lenient().when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(any(UUID.class)))
+                .thenReturn(Optional.of(policy));
     }
 
     @Nested
@@ -293,8 +330,31 @@ class HandoverServiceTest {
         }
 
         @Test
+        @DisplayName("Client checklist and photo URLs cannot bypass a missing persisted inspection")
+        void checkIn_ClientInspectionPayloadCannotBypassPersistedInspection() {
+            HandoverRequest request = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .identityVerified(true)
+                    .doorConditionPassed(true)
+                    .cleanlinessPassed(true)
+                    .smartLockPassed(true)
+                    .sensorPassed(true)
+                    .wallStructurePassed(true)
+                    .evidencePhotos(List.of("/uploads/client-door.jpg", "/uploads/client-interior.jpg"))
+                    .build();
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(handoverRecordRepository.findByBooking_Id(bookingId)).thenReturn(List.of());
+
+            AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.RETURN_INSPECTION_CHECKLIST_INCOMPLETE);
+            verify(handoverRecordRepository, never()).save(any(HandoverRecord.class));
+        }
+
+        @Test
         @DisplayName("Thiếu đối soát CCCD: Ném HANDOVER_PREREQUISITES_NOT_MET")
         void checkIn_MissingIdCard_ThrowsException() {
+            testBooking.setIdentityOriginalDocumentSeen(false);
             HandoverRequest request = HandoverRequest.builder()
                     .bookingId(bookingId)
                     .firstMonthRentConfirmed(true)
@@ -363,6 +423,7 @@ class HandoverServiceTest {
 
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
             when(userRepository.findById(custOpId)).thenReturn(Optional.of(customerOperator));
+            when(requestContext.currentUserId()).thenReturn(custOpId);
 
             AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
@@ -380,7 +441,6 @@ class HandoverServiceTest {
                     .build();
 
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(userRepository.findById(unknownStaffId)).thenReturn(Optional.empty());
             when(requestContext.currentUserId()).thenReturn(null);
 
             AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
@@ -390,6 +450,9 @@ class HandoverServiceTest {
         @Test
         @DisplayName("Số CCCD sai định dạng (không phải 9-12 chữ số) -> Ném HANDOVER_PREREQUISITES_NOT_MET")
         void checkIn_InvalidCccdFormat_ThrowsPrerequisitesNotMet() {
+            testBooking.setIdentityOriginalDocumentSeen(false);
+            testBooking.setIdentityVerifiedAt(null);
+            testBooking.setIdentityVerifiedByStaff(null);
             HandoverRequest request = HandoverRequest.builder()
                     .bookingId(bookingId)
                     .staffId(staffId)
@@ -408,6 +471,9 @@ class HandoverServiceTest {
         @Test
         @DisplayName("Nhân viên chưa đối soát thực tế (identityVerified = false) -> Ném HANDOVER_PREREQUISITES_NOT_MET")
         void checkIn_StaffDidNotAttestIdentity_ThrowsPrerequisitesNotMet() {
+            testBooking.setIdentityOriginalDocumentSeen(false);
+            testBooking.setIdentityVerifiedAt(null);
+            testBooking.setIdentityVerifiedByStaff(null);
             HandoverRequest request = HandoverRequest.builder()
                     .bookingId(bookingId)
                     .staffId(staffId)
@@ -496,6 +562,8 @@ class HandoverServiceTest {
             FacilityPolicy policy = FacilityPolicy.builder()
                     .facility(testFacility)
                     .depositRefundSlaDays(5)
+                    .dailyLateFee(new BigDecimal("100000.00"))
+                    .overdueGraceDays(1)
                     .build();
 
             HandoverRequest request = HandoverRequest.builder()
@@ -535,11 +603,7 @@ class HandoverServiceTest {
             assertThat(testContract.getStatus()).isEqualTo(RentalContractStatus.TERMINATED); // Contract terminated
 
             // Verify Payment created with REFUND_PENDING status
-            verify(paymentRepository).save(argThat(payment ->
-                    payment.getAmount().compareTo(new BigDecimal("1500000.00")) == 0
-                            && payment.getPaymentType() == PaymentType.DEPOSIT
-                            && payment.getStatus() == PaymentStatus.REFUND_PENDING
-            ));
+            verify(paymentRepository, never()).save(any(Payment.class));
 
             // Verify Activity Logs
             verify(activityLogService).record(
@@ -580,6 +644,20 @@ class HandoverServiceTest {
             FacilityPolicy policy = FacilityPolicy.builder()
                     .facility(testFacility)
                     .depositRefundSlaDays(5)
+                    .dailyLateFee(new BigDecimal("100000.00"))
+                    .overdueGraceDays(1)
+                    .build();
+
+            HandoverRecord damagedInspection = HandoverRecord.builder()
+                    .booking(testBooking)
+                    .recordType("INSPECTION")
+                    .doorConditionPassed(true)
+                    .cleanlinessPassed(false)
+                    .smartLockPassed(true)
+                    .sensorPassed(true)
+                    .wallStructurePassed(false)
+                    .evidencePhotos("/uploads/return-door.jpg;/uploads/return-interior.jpg")
+                    .recordedAt(LocalDateTime.now())
                     .build();
 
             HandoverRequest request = HandoverRequest.builder()
@@ -599,6 +677,7 @@ class HandoverServiceTest {
             when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
             when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(policy));
             when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
+            when(handoverRecordRepository.findByBooking_Id(bookingId)).thenReturn(List.of(damagedInspection));
             when(handoverRecordRepository.save(any(HandoverRecord.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -610,12 +689,8 @@ class HandoverServiceTest {
             // 1,500,000 - 500,000 = 1,000,000
             assertThat(response.getRefundAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
 
-            // Verify Payment created with REFUND_PENDING status for accounting review
-            verify(paymentRepository).save(argThat(payment ->
-                    payment.getAmount().compareTo(new BigDecimal("1000000.00")) == 0
-                            && payment.getPaymentType() == PaymentType.DEPOSIT
-                            && payment.getStatus() == PaymentStatus.REFUND_PENDING
-            ));
+            // A proposal creates no payment transaction before finance records an actual payout.
+            verify(paymentRepository, never()).save(any(Payment.class));
 
             // Verify DAMAGE_FEE_RECORDED activity log
             verify(activityLogService).record(
@@ -653,6 +728,8 @@ class HandoverServiceTest {
             FacilityPolicy policy = FacilityPolicy.builder()
                     .facility(testFacility)
                     .depositRefundSlaDays(5)
+                    .dailyLateFee(new BigDecimal("100000.00"))
+                    .overdueGraceDays(1)
                     .build();
 
             HandoverRequest request = HandoverRequest.builder()
@@ -695,6 +772,8 @@ class HandoverServiceTest {
             FacilityPolicy policy = FacilityPolicy.builder()
                     .facility(testFacility)
                     .depositRefundSlaDays(7)
+                    .dailyLateFee(new BigDecimal("100000.00"))
+                    .overdueGraceDays(1)
                     .build();
 
             // Cọc: 1,500,000. Phạt hư hại: 2,000,000 -> Âm 500,000
@@ -760,6 +839,7 @@ class HandoverServiceTest {
                     .status(BookingStatus.CONFIRMED)
                     .identityVerifiedByStaff(testStaff)
                     .identityVerifiedAt(LocalDateTime.now())
+                    .identityOriginalDocumentSeen(true)
                     .identityCardNumber("079090123456")
                     .build();
             booking1.setId(booking1Id);

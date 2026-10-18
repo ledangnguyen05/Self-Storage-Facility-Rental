@@ -22,10 +22,17 @@ export interface PaymentItem {
   customerName?: string
   amount: number
   paymentType: PaymentType | string
-  status: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED' | string
+  status: 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED' | 'REFUND_PENDING' | 'REFUNDED' | string
   paymentMethod?: 'VNPAY' | 'BANK_TRANSFER' | 'MOMO' | string
   paymentTime?: string
   createdAt?: string
+}
+
+export interface PaymentPage {
+  content: PaymentItem[]
+  page: number
+  totalPages: number
+  totalElements: number
 }
 
 export const paymentService = {
@@ -44,6 +51,20 @@ export const paymentService = {
       params: { size: 100, status: 'PAID', ...params },
     })
     return (response.data?.data?.content || []) as PaymentItem[]
+  },
+
+  async getPaymentsPage(params?: {
+    status?: string
+    paymentType?: PaymentType
+    fromDate?: string
+    toDate?: string
+    size?: number
+    page?: number
+    facilityId?: string
+    customerId?: string
+  }) {
+    const response = await api.get('/api/v1/payments', { params })
+    return response.data?.data as PaymentPage
   },
 
   async getByBookingId(bookingId: string) {

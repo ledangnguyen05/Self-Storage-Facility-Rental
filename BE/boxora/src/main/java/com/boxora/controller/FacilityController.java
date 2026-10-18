@@ -63,7 +63,7 @@ public class FacilityController {
     @Operation(summary = "Delete a facility")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         facilityService.delete(id);
-        return ResponseEntity.ok(ApiResponse.success("Deleted facility successfully.", null));
+        return ResponseEntity.ok(ApiResponse.success("Facility deactivated successfully.", null));
     }
 
     @GetMapping

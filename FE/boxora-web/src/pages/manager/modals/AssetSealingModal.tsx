@@ -30,11 +30,10 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
   totalDebt,
   onCompleteSealing
 }) => {
-  const [sealReportCode] = useState(() => `BB-NP-${new Date().getFullYear()}${Date.now().toString().slice(-4)}`)
-  const [sealStickerCode, setSealStickerCode] = useState(() => `TEM-BOXORA-${Date.now().toString().slice(-5)}`)
+  const [sealStickerCode, setSealStickerCode] = useState('')
   const [witnesses, setWitnesses] = useState<User[]>([])
   const [selectedWitnessId, setSelectedWitnessId] = useState<string>('')
-  const [reason, setReason] = useState('Khách hàng vi phạm nghĩa vụ thanh toán quá hạn trên 7 ngày theo quy định BR-RULE-012. Tiến hành niêm phong bảo toàn tài sản.')
+  const [reason, setReason] = useState("Kho quá hạn theo chính sách cơ sở; đề nghị lập biên bản niêm phong.")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -47,7 +46,12 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
   const loadWitnesses = async () => {
     try {
       const res = await userService.getAllUsers({ facilityId })
-      const users = res?.data || []
+      const users = (res?.data || []).filter((user: User) => {
+        const roleName = user.role?.name?.toUpperCase()
+        const eligibleRole = roleName === "STAFF" || roleName === "FACILITY_MANAGER"
+        const sameFacility = !facilityId || user.facilityId === facilityId
+        return Boolean(user.isActive) && eligibleRole && sameFacility
+      })
       setWitnesses(users)
       if (users.length > 0) {
         setSelectedWitnessId(users[0].id)
@@ -67,14 +71,14 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
       const res = await sealingService.createSealing({
         contractId: contractId || undefined,
         unitId: unitId || undefined,
-        sealTagNumber: sealStickerCode,
+        sealTagNumber: sealStickerCode.trim(),
         witnessId: selectedWitnessId || undefined,
         reason: reason,
         notes: `Niêm phong kho #${unitCode} do quá hạn ${overdueDays} ngày. Tổng nợ ${totalDebt}.`
       })
 
-      const protocol = res?.protocolNumber || sealReportCode
-      onCompleteSealing(`Đã hoàn tất lập biên bản niêm phong ${protocol} và chuyển trạng thái kho #${unitCode} sang SEALED / OVERDUE_LOCKED!`)
+      const protocol = res?.protocolNumber
+      onCompleteSealing("Đã lưu biên bản niêm phong" + (protocol ? " " + protocol : "") + " cho kho #" + unitCode + ". Boxora đã cập nhật trạng thái hồ sơ; trạng thái khóa vật lý chưa được xác minh.")
       onClose()
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Lỗi khi gọi API niêm phong kho'
@@ -83,9 +87,6 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
       setIsSubmitting(false)
     }
   }
-
-  const selectedWitness = witnesses.find(w => w.id === selectedWitnessId)
-  const witnessName = selectedWitness ? (selectedWitness.fullName || selectedWitness.username) : 'Nhân chứng hiện trường trạm'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200">
@@ -100,11 +101,11 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-slate-900">Biên Bản Niêm Phong &amp; Kê Biên Kho</h2>
                 <span className="px-2 py-0.5 rounded-md bg-slate-100 font-mono text-xs font-bold text-slate-800 border border-slate-200">
-                  {sealReportCode}
+                  Lập biên bản
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Kết nối API POST /api/v1/sealing &mdash; Chuyển trạng thái kho sang SEALED
+                API lưu biên bản và cập nhật trạng thái nghiệp vụ trong Boxora; không điều khiển khóa vật lý.
               </p>
             </div>
           </div>
@@ -137,7 +138,7 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
               BIÊN BẢN NIÊM PHONG KHO HÀNG &amp; KÊ BIÊN TÀI SẢN
             </h3>
             <p className="text-[10px] text-slate-500 mt-0.5 italic">
-              (Do vi phạm nghĩa vụ thanh toán cước thuê kho vượt quá thời hạn cam kết BR-RULE-012)
+              (Theo ngưỡng quá hạn trong chính sách của cơ sở)
             </p>
           </div>
 
@@ -184,7 +185,7 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
                 </select>
               ) : (
                 <p className="text-[11px] text-slate-700 italic">
-                  Đại diện Ban Quản Lý &amp; Cán bộ phụ trách Kỹ thuật tại trạm: <strong>{witnessName}</strong>
+                  No active staff member or facility manager is available as a same-facility witness.
                 </p>
               )}
             </div>
@@ -223,9 +224,9 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
               4. Biện pháp cưỡng chế áp dụng
             </span>
             <div className="text-[11px] text-slate-700 flex flex-col gap-1">
-              <p>&bull; Ngắt kết nối mã PIN cá nhân trên SmartLock, đổi trạng thái kho sang <strong className="text-rose-700">OVERDUE_LOCKED / SEALED</strong>.</p>
-              <p>&bull; Dán tem an ninh <strong className="font-mono text-orange-700">{sealStickerCode}</strong> tại chốt cửa ngoài.</p>
-              <p>&bull; Hệ thống tự động gửi Email thông báo khẩn cấp và biểu mẫu công nợ cho khách hàng.</p>
+              <p>&bull; Boxora records the sealing decision and updates the unit and contract workflow status. SmartLock status remains unverified.</p>
+              <p>&bull; Staff must physically apply seal tag <strong className="font-mono text-orange-700">{sealStickerCode || "Enter the tag used on site"}</strong> and record the completed action.</p>
+              <p>&bull; Boxora attempts to send an email notice after saving the record.</p>
             </div>
           </div>
         </div>
@@ -252,7 +253,7 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
             <button
               type="button"
               onClick={handleConfirm}
-              disabled={isSubmitting}
+              disabled={isSubmitting || !contractId || !selectedWitnessId || !sealStickerCode.trim()}
               className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-all shadow-sm cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
             >
               <span className={`material-symbols-outlined text-[16px] ${isSubmitting ? 'animate-spin' : ''}`}>

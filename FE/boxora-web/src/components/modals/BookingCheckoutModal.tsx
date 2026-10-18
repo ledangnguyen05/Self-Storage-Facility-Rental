@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import QRCode from 'qrcode'
 import { Booking, User } from '../../types'
@@ -43,6 +44,7 @@ const getToday = () => {
 
 export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit, user, onClose, existingBooking, existingPayments = [] }) => {
   const { updateProfile } = useAuth()
+  const navigate = useNavigate()
   const isExistingUnpaidBooking = Boolean(
     existingBooking && (existingBooking.status === 'PENDING_PAYMENT' || (existingBooking.status === 'CONFIRMED' && existingBooking.paymentStatus !== 'PAID'))
   )
@@ -237,6 +239,11 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
       })
       setBooking(created)
       setApprovalRejected(false)
+      if (signingMethod === 'ONLINE') {
+        navigate(`/online-booking-contract?bookingId=${encodeURIComponent(created.id)}`)
+        onClose()
+        return
+      }
       setStep(3)
     } catch (error) {
       setErrorMessage(getErrorMessage(error))
@@ -247,6 +254,11 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
 
   const handleCreatePayment = async () => {
     if (!booking || (booking.status !== 'PENDING_PAYMENT' && !(booking.status === 'CONFIRMED' && booking.paymentStatus !== 'PAID'))) return
+    if (booking.signingMethod === 'ONLINE') {
+      navigate(`/online-booking-contract?bookingId=${encodeURIComponent(booking.id)}`)
+      onClose()
+      return
+    }
     setIsSubmitting(true)
     setErrorMessage('')
     try {
@@ -271,7 +283,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
     if (paymentUrl && !isExpired) window.open(paymentUrl, '_blank', 'noopener,noreferrer')
   }
 
-  const steps = ['Thông tin', 'Xác nhận', signingMethod === 'ONLINE' ? 'Thanh toán trực tuyến' : 'Hoàn tất đặt chỗ']
+  const steps = ['Thông tin', 'Xác nhận', signingMethod === 'ONLINE' ? 'Ký hợp đồng điện tử' : 'Hoàn tất đặt chỗ']
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
@@ -369,7 +381,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                       <span className="text-xs font-bold text-slate-900">Ký hợp đồng trực tuyến</span>
                     </div>
                     <p className="text-[11px] text-slate-600 leading-relaxed">
-                      Thanh toán trực tuyến, sau đó ký hợp đồng điện tử. Mã PIN chỉ được kích hoạt sau khi hệ thống xác nhận đủ điều kiện bàn giao.
+                      Xem và ký hợp đồng điện tử trước; sau khi Boxora xác nhận chữ ký mới thanh toán trực tuyến. Mã PIN chỉ được cấp theo quy trình bàn giao.
                     </p>
                   </div>
 
@@ -425,7 +437,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
               </div>
               <p className="rounded-lg bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">
                 {signingMethod === 'ONLINE'
-                  ? 'Tạo yêu cầu thuê kho và tiến hành thanh toán trực tuyến. Hệ thống chỉ xác nhận thanh toán và chữ ký sau khi nhận kết quả từ máy chủ.'
+                  ? 'Tạo yêu cầu thuê kho, xem và ký hợp đồng điện tử trước. Chỉ sau khi backend xác nhận hợp đồng đã ký, bạn mới chuyển sang thanh toán trực tuyến.'
                   : 'Tạo yêu cầu giữ chỗ thành công ngay. Kho được bảo lưu đến sau lịch hẹn của bạn kèm thời gian gia hạn theo chính sách. Quý khách thanh toán tại quầy cơ sở khi đến nhận kho.'}
               </p>
               <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-700">

@@ -28,7 +28,7 @@ public class StorageUnitPriceHistoryController {
     private final StorageUnitPriceHistoryService storageUnitPriceHistoryService;
 
     @PostMapping("/storage-units/{unitId}/price-adjustment")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAuthority('UNIT_TYPE_UPDATE')")
     @Operation(summary = "Điều chỉnh đơn giá kho theo BR-RULE-011 (bắt buộc lý do, lưu lịch sử và bảo lưu giá hợp đồng cũ)")
     public ResponseEntity<ApiResponse<StorageUnitPriceHistoryResponse>> adjustUnitPrice(
             @PathVariable UUID unitId,
@@ -40,7 +40,7 @@ public class StorageUnitPriceHistoryController {
     }
 
     @GetMapping("/storage-units/{unitId}/price-history")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('UNIT_TYPE_VIEW')")
     @Operation(summary = "Xem lịch sử thay đổi đơn giá của một kho lưu trữ")
     public ResponseEntity<ApiResponse<List<StorageUnitPriceHistoryResponse>>> getPriceHistoryByUnit(
             @PathVariable UUID unitId
@@ -50,7 +50,7 @@ public class StorageUnitPriceHistoryController {
     }
 
     @GetMapping("/price-histories")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAuthority('UNIT_TYPE_VIEW')")
     @Operation(summary = "Tra cứu toàn bộ lịch sử biến động giá (phân trang, lọc theo cơ sở/kho/loại kho)")
     public ResponseEntity<ApiResponse<PageResponse<StorageUnitPriceHistoryResponse>>> getAllPriceHistories(
             @RequestParam(required = false) UUID facilityId,

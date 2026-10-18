@@ -30,7 +30,7 @@ public class ReportController {
     private final ReportService reportService;
 
     @GetMapping("/revenue")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('REPORT_VIEW')")
     @Operation(summary = "Lấy báo cáo doanh thu toàn hệ thống hoặc theo cơ sở")
     public ResponseEntity<ApiResponse<RevenueReportResponse>> getRevenueReport(
             @RequestParam(required = false)
@@ -51,7 +51,7 @@ public class ReportController {
     }
 
     @GetMapping("/occupancy")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAuthority('REPORT_VIEW')")
     @Operation(summary = "Lấy báo cáo tỷ lệ lấp đầy kho toàn hệ thống hoặc theo cơ sở")
     public ResponseEntity<ApiResponse<OccupancyReportResponse>> getOccupancyReport(
             @RequestParam(required = false)
@@ -63,7 +63,7 @@ public class ReportController {
     }
 
     @GetMapping("/overdue-debt")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAuthority('REPORT_VIEW')")
     @Operation(summary = "Lấy báo cáo chi tiết và tổng hợp nợ cước quá hạn (Overdue Debt & Delinquency)")
     public ResponseEntity<ApiResponse<OverdueDebtReportResponse>> getOverdueDebtReport(
             @RequestParam(required = false) UUID facilityId
@@ -73,7 +73,7 @@ public class ReportController {
     }
 
     @PostMapping("/overdue-debt/{contractId}/send-reminder")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Gửi email thông báo nhắc nợ quá hạn và chi tiết tiền phạt trễ hạn tới khách hàng")
     public ResponseEntity<ApiResponse<Void>> sendOverdueReminder(@PathVariable UUID contractId) {
         reportService.sendOverdueReminder(contractId);

@@ -12,7 +12,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -20,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @Profile("!prod & !production")
-@ConditionalOnProperty(name = "boxora.seed.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "boxora.seed.enabled", havingValue = "true")
 @Slf4j
 public class SeedConfig implements ApplicationRunner {
 
@@ -58,22 +57,18 @@ public class SeedConfig implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        log.info("Running non-production seed fixtures check...");
+        log.info("Checking opt-in non-production seed fixtures...");
         seedUsers();
-        distributeCustomersToFacilities();
     }
 
     private void seedUsers() {
-        Facility facilityD1 = facilityRepository.findByCode("HCM-D1").orElse(null);
-        Facility facilityD7 = facilityRepository.findByCode("HCM-D7").orElse(null);
-
-        // Neu DB da co user, kiem tra va gan bo sung facility neu chua co
         if (userRepository.count() > 0) {
-            backfillUserFacilities(facilityD1, facilityD7);
-            distributeCustomersToFacilities();
-            log.info("Users already seeded — skipping");
+            log.info("Users already exist — skipping seed fixtures without modifying existing assignments");
             return;
         }
+
+        Facility facilityD1 = facilityRepository.findByCode("HCM-D1").orElse(null);
+        Facility facilityD7 = facilityRepository.findByCode("HCM-D7").orElse(null);
 
         log.info("Seeding default users...");
 
@@ -146,38 +141,6 @@ public class SeedConfig implements ApplicationRunner {
         log.info("Default users seeded successfully");
     }
 
-    private void backfillUserFacilities(Facility facilityD1, Facility facilityD7) {
-        if (facilityD1 != null) {
-            userRepository.findByUsername("facility_manager").ifPresent(fm -> {
-                if (fm.getFacility() == null) {
-                    fm.setFacility(facilityD1);
-                    userRepository.save(fm);
-                    facilityD1.setManager(fm);
-                    facilityRepository.save(facilityD1);
-                    log.info("Backfilled facility for user facility_manager -> {}", facilityD1.getName());
-                }
-            });
-
-            userRepository.findByUsername("staff").ifPresent(st -> {
-                if (st.getFacility() == null) {
-                    st.setFacility(facilityD1);
-                    userRepository.save(st);
-                    log.info("Backfilled facility for user staff -> {}", facilityD1.getName());
-                }
-            });
-        }
-
-        if (facilityD7 != null) {
-            userRepository.findByUsername("staff_d7").ifPresent(st -> {
-                if (st.getFacility() == null) {
-                    st.setFacility(facilityD7);
-                    userRepository.save(st);
-                    log.info("Backfilled facility for user staff_d7 -> {}", facilityD7.getName());
-                }
-            });
-        }
-    }
-
     private User createUser(
             String username,
             String email,
@@ -210,37 +173,4 @@ public class SeedConfig implements ApplicationRunner {
         return saved;
     }
 
-    private void distributeCustomersToFacilities() {
-        List<Facility> facilities = facilityRepository.findAll().stream()
-                .filter(f -> f.getStatus() == com.boxora.enums.FacilityStatus.ACTIVE)
-                .sorted((a, b) -> a.getCode().compareTo(b.getCode()))
-                .toList();
-
-        if (facilities.isEmpty()) {
-            return;
-        }
-
-        List<User> customers = userRepository.findAll().stream()
-                .filter(u -> u.getRole() != null && "CUSTOMER".equalsIgnoreCase(u.getRole().getName()))
-                .sorted((a, b) -> {
-                    if (a.getCreatedAt() != null && b.getCreatedAt() != null) {
-                        return a.getCreatedAt().compareTo(b.getCreatedAt());
-                    }
-                    return a.getUsername().compareTo(b.getUsername());
-                })
-                .toList();
-
-        if (customers.isEmpty()) {
-            return;
-        }
-
-        for (int i = 0; i < customers.size(); i++) {
-            User customer = customers.get(i);
-            Facility targetFacility = facilities.get(i % facilities.size());
-            customer.setFacility(targetFacility);
-            userRepository.save(customer);
-        }
-        log.info("SeedConfig: Successfully distributed {} customers evenly across {} facilities",
-                customers.size(), facilities.size());
-    }
 }

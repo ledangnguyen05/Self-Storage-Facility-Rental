@@ -6,7 +6,6 @@ import { facilityService } from '../../services/facilityService'
 import { getNominatimErrorMessage, geocodeAddressWithNominatim } from '../../services/nominatimGeocodingService'
 import { Facility, FacilityLayoutConfig, FacilityPolicy } from '../../types'
 import { DEFAULT_FACILITY_LAYOUT_CONFIG, parseFacilityLayoutConfig } from '../../utils/facilityLayout'
-import { createDefaultFacilityPolicy } from '../../utils/facilityPolicyDefaults'
 import { FacilityPolicyViewModal } from '../manager/modals/FacilityPolicyViewModal'
 import { FacilityOperatingPoliciesPanel } from './FacilityOperatingPoliciesPanel'
 import { DynamicPricingMatrixPanel } from './DynamicPricingMatrixPanel'
@@ -153,6 +152,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   // Policy view state for branch cards
   const [expandedPolicyFacilityId, setExpandedPolicyFacilityId] = useState<string | null>(null)
   const [facilityPoliciesMap, setFacilityPoliciesMap] = useState<Record<string, FacilityPolicy>>({})
+  const [facilityPolicyErrors, setFacilityPolicyErrors] = useState<Record<string, 'missing' | 'error'>>({})
   const [loadingPolicyFacilityId, setLoadingPolicyFacilityId] = useState<string | null>(null)
   const [modalPolicyFacility, setModalPolicyFacility] = useState<Facility | null>(null)
 
@@ -164,15 +164,26 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
     setExpandedPolicyFacilityId(facility.id)
     if (!facilityPoliciesMap[facility.id]) {
       setLoadingPolicyFacilityId(facility.id)
+      setFacilityPolicyErrors((previous) => {
+        const next = { ...previous }
+        delete next[facility.id]
+        return next
+      })
       try {
         const pol = await facilityService.getPolicyByFacilityId(facility.id)
         if (pol) {
           setFacilityPoliciesMap(prev => ({ ...prev, [facility.id]: pol }))
         } else {
-          setFacilityPoliciesMap(prev => ({ ...prev, [facility.id]: createDefaultFacilityPolicy(facility.id) }))
+          setFacilityPolicyErrors((previous) => ({ ...previous, [facility.id]: 'missing' }))
         }
-      } catch {
-        setFacilityPoliciesMap(prev => ({ ...prev, [facility.id]: createDefaultFacilityPolicy(facility.id) }))
+      } catch (error: unknown) {
+        const status = typeof error === 'object' && error !== null && 'response' in error
+          ? (error as { response?: { status?: number } }).response?.status
+          : undefined
+        setFacilityPolicyErrors((previous) => ({
+          ...previous,
+          [facility.id]: status === 404 ? 'missing' : 'error',
+        }))
       } finally {
         setLoadingPolicyFacilityId(null)
       }
@@ -509,9 +520,13 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${
                           facilityPoliciesMap[facility.id]?.isActive === false
                             ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900'
-                            : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900'
+                            : facilityPoliciesMap[facility.id]
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900'
+                              : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
                         }`}>
-                          {facilityPoliciesMap[facility.id]?.isActive === false ? t('Ngừng áp dụng', 'Inactive') : t('Đang áp dụng', 'Active')}
+                          {facilityPoliciesMap[facility.id]
+                            ? facilityPoliciesMap[facility.id].isActive === false ? t('Ngừng áp dụng', 'Inactive') : t('Đang áp dụng', 'Active')
+                            : t('Chưa xác minh', 'Unverified')}
                         </span>
                       </div>
 
@@ -520,46 +535,54 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                           <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-cyan-600 border-t-transparent" />
                           {t('Đang tải chính sách...', 'Loading policy...')}
                         </div>
-                      ) : (
+                      ) : facilityPolicyErrors[facility.id] === 'missing' ? (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                          {t('Chưa có chính sách được lưu cho cơ sở này. Hãy kiểm tra mục Chính sách vận hành.', 'No saved policy was found for this facility. Check Operating Policies.')}
+                        </div>
+                      ) : facilityPolicyErrors[facility.id] === 'error' ? (
+                        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
+                          {t('Không tải được chính sách đã lưu. Hãy thử lại.', 'Could not load the saved policy. Try again.')}
+                        </div>
+                      ) : facilityPoliciesMap[facility.id] ? (
                         (() => {
-                          const pol = facilityPoliciesMap[facility.id] || createDefaultFacilityPolicy(facility.id)
-                          const depositPct = pol.depositPercentage ?? pol.depositPercent ?? 100
-                          const minMonths = pol.minimumRentalMonths ?? 1
-                          const renewalDays = pol.renewalWindowDays ?? 3
-                          const cancelFullHours = pol.cancellationFullRefundHours ?? 48
-                          const cancelPartHours = pol.cancellationPartialRefundHours ?? 24
-                          const cancelPartPct = pol.cancellationPartialRefundPercent ?? 50
-                          const noticeDays = pol.returnNoticeDays ?? 0
-                          const slaDays = pol.depositRefundSlaDays ?? 5
-                          const lateFee = Number(pol.dailyLateFee ?? pol.lateFeePerDay ?? 50000)
-                          const graceDays = pol.overdueGraceDays ?? pol.gracePeriodDays ?? 1
-                          const lockDays = pol.overdueAccessDisableDays ?? 3
-                          const sealDays = pol.overdueSealingDays ?? 7
+                          const pol = facilityPoliciesMap[facility.id]
+                          const depositPct = pol.depositPercentage ?? pol.depositPercent
+                          const minMonths = pol.minimumRentalMonths
+                          const renewalDays = pol.renewalWindowDays
+                          const cancelFullHours = pol.cancellationFullRefundHours
+                          const cancelPartHours = pol.cancellationPartialRefundHours
+                          const cancelPartPct = pol.cancellationPartialRefundPercent
+                          const noticeDays = pol.returnNoticeDays
+                          const slaDays = pol.depositRefundSlaDays
+                          const lateFee = pol.dailyLateFee ?? pol.lateFeePerDay
+                          const graceDays = pol.overdueGraceDays ?? pol.gracePeriodDays
+                          const lockDays = pol.overdueAccessDisableDays
+                          const sealDays = pol.overdueSealingDays
 
                           return (
                             <div className="space-y-2 text-xs">
                               <div className="grid grid-cols-2 gap-2">
                                 <div className="rounded-lg border border-slate-200/80 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-800/80">
                                   <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{t('Tiền cọc & Thuê min', 'Deposit & Min Term')}</div>
-                                  <div className="mt-0.5 font-bold text-slate-900 dark:text-slate-100">{depositPct}% · {minMonths} {t('tháng', 'mo')}</div>
+                                  <div className="mt-0.5 font-bold text-slate-900 dark:text-slate-100">{depositPct == null ? '—' : `${depositPct}%`} · {minMonths == null ? '—' : `${minMonths} ${t('tháng', 'mo')}`}</div>
                                 </div>
                                 <div className="rounded-lg border border-slate-200/80 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-800/80">
                                   <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{t('Hủy trước check-in', 'Cancellation')}</div>
-                                  <div className="mt-0.5 font-bold text-emerald-700 dark:text-emerald-400">100% (&ge;{cancelFullHours}h) · {cancelPartPct}% (&ge;{cancelPartHours}h)</div>
+                                  <div className="mt-0.5 font-bold text-emerald-700 dark:text-emerald-400">100% (&ge;{cancelFullHours ?? '—'}h) · {cancelPartPct == null ? '—' : `${cancelPartPct}%`} (&ge;{cancelPartHours ?? '—'}h)</div>
                                 </div>
                                 <div className="rounded-lg border border-slate-200/80 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-800/80">
                                   <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{t('Gia hạn & Hoàn cọc', 'Renewal & SLA')}</div>
-                                  <div className="mt-0.5 font-bold text-cyan-800 dark:text-cyan-300">Trước {renewalDays}d · SLA {slaDays}d</div>
+                                  <div className="mt-0.5 font-bold text-cyan-800 dark:text-cyan-300">{renewalDays == null ? '—' : `Trước ${renewalDays}d`} · SLA {slaDays == null ? '—' : `${slaDays}d`}</div>
                                 </div>
                                 <div className="rounded-lg border border-slate-200/80 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-800/80">
                                   <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{t('Quá hạn & Khóa kho', 'Overdue & Lockout')}</div>
-                                  <div className="mt-0.5 font-bold text-rose-700 dark:text-rose-400">{lateFee.toLocaleString('vi-VN')} đ/d · Khóa D+{lockDays}</div>
+                                  <div className="mt-0.5 font-bold text-rose-700 dark:text-rose-400">{lateFee == null ? '—' : `${Number(lateFee).toLocaleString('vi-VN')} đ/d`} · {lockDays == null ? '—' : `Khóa D+${lockDays}`}</div>
                                 </div>
                               </div>
 
                               <div className="flex items-center justify-between pt-1 text-[11px]">
                                 <span className="text-slate-500 dark:text-slate-400">
-                                  {t('Ân hạn', 'Grace')}: {graceDays}d · {t('Niêm phong', 'Seal')}: D+{sealDays}{noticeDays > 0 ? ` · Báo trước: ${noticeDays}d` : ''}
+                                  {t('Ân hạn', 'Grace')}: {graceDays == null ? '—' : `${graceDays}d`} · {t('Niêm phong', 'Seal')}: {sealDays == null ? '—' : `D+${sealDays}`}{noticeDays != null && noticeDays > 0 ? ` · Báo trước: ${noticeDays}d` : ''}
                                 </span>
                                 <button
                                   type="button"
@@ -573,7 +596,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                             </div>
                           )
                         })()
-                      )}
+                      ) : null}
                     </div>
                   )}
                 </div>

@@ -21,6 +21,9 @@ public class BoxoraApplication {
                 System.setProperty(entry.getKey(), entry.getValue());
             }
         });
+
+        // Tắt cơ chế devtools restart để tránh xung đột bytecode / RestartClassLoader
+        System.setProperty("spring.devtools.restart.enabled", "false");
     }
 
     public static void main(String[] args) {

@@ -31,6 +31,6 @@ public class OverdueDebtItemResponse {
     private BigDecimal dailyLateFee;
     private BigDecimal totalLateFee;
     private BigDecimal totalDebt;
-    private String overdueStage; // GRACE_PERIOD, WARNING, ACCESS_BLOCKED, ELIGIBLE_FOR_SEALING
-    private String smartLockStatus; // NORMAL, WARNING, TEMP_LOCKED, SEALED
+    private String overdueStage; // GRACE_PERIOD, WARNING, ACCESS_BLOCKED, ELIGIBLE_FOR_SEALING, POLICY_UNCONFIGURED
+    private String smartLockStatus; // UNVERIFIED unless a physical device reports its actual state
 }

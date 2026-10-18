@@ -123,25 +123,18 @@ export function filterArrivals(
     }
 
     // 3. Shift filter
+    if (!b.expectedCheckInAt) return false
+    const appointment = new Date(b.expectedCheckInAt)
+    if (isNaN(appointment.getTime())) return false
     if (selectedShiftFilter === 'today') {
-      const todayStr = currentDateObj.toISOString().split('T')[0]
-      const bDate = b.expectedCheckInAt ? b.expectedCheckInAt.split('T')[0] : b.startDate
-      if (bDate && bDate !== todayStr) return false
+      const todayStr = `${currentDateObj.getFullYear()}-${String(currentDateObj.getMonth() + 1).padStart(2, '0')}-${String(currentDateObj.getDate()).padStart(2, '0')}`
+      const bDate = `${appointment.getFullYear()}-${String(appointment.getMonth() + 1).padStart(2, '0')}-${String(appointment.getDate()).padStart(2, '0')}`
+      if (bDate !== todayStr) return false
     } else if (selectedShiftFilter === 'current') {
-      if (b.expectedCheckInAt) {
-        const d = new Date(b.expectedCheckInAt)
-        if (!isNaN(d.getTime())) {
-          const todayStr = currentDateObj.toISOString().split('T')[0]
-          const bDate = b.expectedCheckInAt.split('T')[0]
-          // If explicitly scheduled for today, verify if it falls in the current operational shift
-          if (bDate === todayStr) {
-            const h = d.getHours()
-            const curH = currentDateObj.getHours()
-            const getShift = (hour: number) => (hour >= 6 && hour < 14 ? 1 : hour >= 14 && hour < 22 ? 2 : 3)
-            if (getShift(h) !== getShift(curH)) return false
-          }
-        }
-      }
+      const todayStr = `${currentDateObj.getFullYear()}-${String(currentDateObj.getMonth() + 1).padStart(2, '0')}-${String(currentDateObj.getDate()).padStart(2, '0')}`
+      const bDate = `${appointment.getFullYear()}-${String(appointment.getMonth() + 1).padStart(2, '0')}-${String(appointment.getDate()).padStart(2, '0')}`
+      const getShift = (hour: number) => (hour >= 6 && hour < 14 ? 1 : hour >= 14 && hour < 22 ? 2 : 3)
+      if (bDate !== todayStr || getShift(appointment.getHours()) !== getShift(currentDateObj.getHours())) return false
     }
 
     return true

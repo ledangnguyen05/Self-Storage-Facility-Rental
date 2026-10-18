@@ -41,7 +41,7 @@ public enum ActivityAction {
 
     // Renewal & Overdue
     RENEWAL_REQUEST(false), RENEWAL_PAID(false), CONTRACT_EXTENDED(false),
-    OVERDUE_DETECTED(false), OVERDUE_ACCESS_DISABLED(true), OVERDUE_SEALING_APPROVED(true),
+    OVERDUE_DETECTED(false), OVERDUE_REMINDER_SENT(false), OVERDUE_ACCESS_DISABLED(true), OVERDUE_SEALING_APPROVED(true),
     OVERDUE_UNIT_LOCKED(true),
 
     // Checkout & Refund

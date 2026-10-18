@@ -24,7 +24,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1")
-@Tag(name = "Overdue & Sealing", description = "API quản lý hợp đồng quá hạn (+1 phạt 5%, +3 khóa PIN, +7 niêm phong BR-RULE-012)")
+@Tag(name = "Overdue & Sealing", description = "Overdue reporting, Boxora credential revocation, and witnessed on-site sealing records")
 @RequiredArgsConstructor
 @Slf4j
 public class OverdueProcessingController {
@@ -32,8 +32,8 @@ public class OverdueProcessingController {
     private final OverdueProcessingService overdueProcessingService;
 
     @PostMapping("/cron/overdue-process")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
-    @Operation(summary = "Kích hoạt quét và xử lý quá hạn thủ công (+1 phạt 5%, +3 khóa PIN, +7 niêm phong)")
+    @PreAuthorize("hasAuthority('OVERDUE_PROCESS')")
+    @Operation(summary = "Run overdue processing; reports sealing eligibility without performing physical sealing")
     public ResponseEntity<ApiResponse<OverdueProcessResult>> triggerOverdueProcess(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate referenceDate
     ) {
@@ -42,7 +42,7 @@ public class OverdueProcessingController {
     }
 
     @GetMapping("/overdue/contracts")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('OVERDUE_VIEW')")
     @Operation(summary = "Danh sách tổng quan các hợp đồng đang bị quá hạn hiện tại kèm mốc xử lý")
     public ResponseEntity<ApiResponse<List<OverdueContractDetail>>> getOverdueContracts() {
         List<OverdueContractDetail> list = overdueProcessingService.getOverdueContractsSummary();
@@ -50,7 +50,7 @@ public class OverdueProcessingController {
     }
 
     @GetMapping("/sealing-records")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('OVERDUE_VIEW')")
     @Operation(summary = "Danh sách biên bản niêm phong kho lưu trữ (BR-RULE-012)")
     public ResponseEntity<ApiResponse<PageResponse<SealingRecordResponse>>> getAllSealingRecords(
             @RequestParam(required = false) UUID facilityId,
@@ -64,7 +64,7 @@ public class OverdueProcessingController {
     }
 
     @GetMapping("/sealing-records/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('OVERDUE_VIEW')")
     @Operation(summary = "Xem chi tiết một biên bản niêm phong kho")
     public ResponseEntity<ApiResponse<SealingRecordResponse>> getSealingRecordById(
             @PathVariable UUID id
@@ -74,7 +74,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/sealing-records/{id}/unseal")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAuthority('OVERDUE_PROCESS')")
     @Operation(summary = "Mở niêm phong kho sau khi khách đã thanh toán công nợ và phí quá hạn (BR-RULE-012)")
     public ResponseEntity<ApiResponse<SealingRecordResponse>> unsealUnit(
             @PathVariable UUID id,
@@ -85,14 +85,14 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/overdue/contracts/{contractId}/lockout")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
-    @Operation(summary = "Khóa mã PIN và thu hồi quyền truy cập hợp đồng quá hạn (P0-04, BR-RULE-012)")
+    @PreAuthorize("hasAuthority('OVERDUE_PROCESS')")
+    @Operation(summary = "Revoke stored PIN/QR credentials for a contract that reached its facility threshold")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.LockoutResponse>> lockoutContract(
             @PathVariable UUID contractId,
             @RequestBody(required = false) com.boxora.dto.request.LockoutRequest request
     ) {
         String reason = (request != null && request.getReason() != null) ? request.getReason() : "Quá hạn thanh toán cước thuê";
         com.boxora.dto.response.LockoutResponse response = overdueProcessingService.lockoutContract(contractId, reason);
-        return ResponseEntity.ok(ApiResponse.success("Khóa quyền truy cập PIN/QR thành công", response));
+        return ResponseEntity.ok(ApiResponse.success("PIN/QR credentials were revoked in Boxora; physical lock state is unverified", response));
     }
 }

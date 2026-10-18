@@ -6,6 +6,7 @@ interface ContractOtpModalProps {
   contract: RentalContract
   onClose: () => void
   onOpenSimulationSign?: (contract: RentalContract) => void
+  allowSimulation?: boolean
 }
 
 function getErrorMessage(error: unknown) {
@@ -22,7 +23,7 @@ function maskEmail(email: string) {
   return `${name.slice(0, 2)}${'*'.repeat(Math.max(2, name.length - 2))}@${domain}`
 }
 
-export function ContractOtpModal({ contract, onClose, onOpenSimulationSign }: ContractOtpModalProps) {
+export function ContractOtpModal({ contract, onClose, onOpenSimulationSign, allowSimulation = true }: ContractOtpModalProps) {
   const [otp, setOtp] = useState('')
   const [hasSentOtp, setHasSentOtp] = useState(false)
   const [resendInSeconds, setResendInSeconds] = useState(0)
@@ -73,12 +74,18 @@ export function ContractOtpModal({ contract, onClose, onOpenSimulationSign }: Co
         throw new Error('Không nhận được liên kết ký hợp đồng.')
       }
 
-      if (result.signingUrl.includes('mockSignContractId=') && onOpenSimulationSign) {
-        onOpenSimulationSign(contract)
-        onClose()
-      } else {
-        window.location.assign(result.signingUrl)
+      if (result.signingUrl.includes('mockSignContractId=')) {
+        if (!allowSimulation) {
+          setError('Dịch vụ ký điện tử DocuSeal hiện chưa khả dụng. Hợp đồng chưa được ký; vui lòng thử lại sau.')
+          return
+        }
+        if (onOpenSimulationSign) {
+          onOpenSimulationSign(contract)
+          onClose()
+          return
+        }
       }
+      window.location.assign(result.signingUrl)
     } catch (requestError) {
       setError(getErrorMessage(requestError))
     } finally {

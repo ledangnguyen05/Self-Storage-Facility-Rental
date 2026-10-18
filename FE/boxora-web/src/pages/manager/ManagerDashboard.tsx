@@ -23,13 +23,13 @@ interface InspectedUnit {
   backendId?: string
   size: string
   type: string
-  status: 'Available' | 'Rented' | 'Pending' | 'Overdue' | 'Maintenance'
+  status: 'Available' | 'Rented' | 'Pending' | 'Overdue' | 'Maintenance' | 'Unknown'
   rawStatus?: string
   color: 'emerald' | 'blue' | 'amber' | 'rose' | 'red' | 'purple'
   tenant: string
   contract: string
   due: string
-  battery: string
+  battery?: string
   smartlock: string
   lastAccess: string
   floorLevel: string
@@ -198,9 +198,9 @@ export const ManagerDashboard: React.FC = () => {
         storageUnitService.getUnits(targetId ? { facilityId: targetId } : undefined),
         reportService.getOverdueDebtReport(targetId ? { facilityId: targetId } : undefined),
         targetId ? facilityPolicyService.getByFacilityId(targetId) : Promise.resolve(null),
-        bookingService.getUpcomingArrivals(),
-        bookingService.getAll({ status: 'ACTIVE', size: 100 }),
-        supportTicketService.getQueue(),
+        bookingService.getUpcomingArrivals(targetId),
+        bookingService.getAll({ status: 'ACTIVE', size: 100, facilityId: targetId }),
+        supportTicketService.getQueue(targetId ? { facilityId: targetId } : undefined),
       ])
 
       // 1. Process Storage Units
@@ -210,10 +210,14 @@ export const ManagerDashboard: React.FC = () => {
           const isOcc = su.status === 'OCCUPIED'
           const isMaint = su.status === 'UNDER_MAINTENANCE' || su.status === 'MAINTENANCE'
           const isRes = su.status === 'RESERVED'
+          const isOverdue = su.status === 'OVERDUE_LOCKED'
 
-          let status: InspectedUnit['status'] = 'Available'
-          let color: InspectedUnit['color'] = 'emerald'
-          if (isOcc) {
+          let status: InspectedUnit['status'] = 'Unknown'
+          let color: InspectedUnit['color'] = 'red'
+          if (isAvail) {
+            status = 'Available'
+            color = 'emerald'
+          } else if (isOcc) {
             status = 'Rented'
             color = 'blue'
           } else if (isMaint) {
@@ -222,13 +226,16 @@ export const ManagerDashboard: React.FC = () => {
           } else if (isRes) {
             status = 'Pending'
             color = 'amber'
+          } else if (isOverdue) {
+            status = 'Overdue'
+            color = 'rose'
           }
 
           return {
             id: su.unitCode,
             backendId: su.id,
-            size: su.areaSqMeters ? `${su.areaSqMeters.toFixed(1)} m²` : '8.0 m²',
-            type: su.unitTypeName || 'Standard Roll-up',
+            size: su.areaSqMeters != null ? `${su.areaSqMeters.toFixed(1)} m²` : '—',
+            type: su.unitTypeName || 'Type not reported',
             status,
             rawStatus: su.status,
             color,
@@ -239,10 +246,10 @@ export const ManagerDashboard: React.FC = () => {
               : su.dueDate
               ? new Date(su.dueDate).toLocaleDateString('vi-VN')
               : (isAvail ? '—' : 'Chưa xác định'),
-            battery: su.batteryLevel || '98%',
-            smartlock: su.smartLockSerial || `SL-${su.unitCode.replace('-', '')}`,
-            lastAccess: su.lastAccessTime || (isAvail ? 'Chưa ghi nhận' : 'Chưa có lượt ra vào'),
-            floorLevel: su.floorLevel || 'Floor 1',
+            battery: su.batteryLevel || undefined,
+            smartlock: su.smartLockSerial || 'Not reported',
+            lastAccess: su.lastAccessTime || 'No access record reported',
+            floorLevel: su.floorLevel || 'Not reported',
             pricePerMonth: su.pricePerMonth,
             facilityId: su.facilityId,
             facilityName: su.facilityName
@@ -286,7 +293,7 @@ export const ManagerDashboard: React.FC = () => {
       if (arrivalsRes.status === 'fulfilled' && Array.isArray(arrivalsRes.value)) {
         let filteredArrivals = arrivalsRes.value
         if (targetId) {
-          filteredArrivals = filteredArrivals.filter(b => b.facilityId === targetId || !b.facilityId)
+          filteredArrivals = filteredArrivals.filter(b => b.facilityId === targetId)
         }
         setUpcomingHandovers(filteredArrivals)
       } else {
@@ -451,11 +458,10 @@ export const ManagerDashboard: React.FC = () => {
     
     if (sizeFilter !== 'all') {
       const sizeNum = parseFloat(u.size)
-      if (!isNaN(sizeNum)) {
-        if (sizeFilter === 's' && !(sizeNum <= 6.5)) return false
-        if (sizeFilter === 'm' && !(sizeNum > 6.5 && sizeNum <= 12)) return false
-        if (sizeFilter === 'l' && !(sizeNum > 12)) return false
-      }
+      if (isNaN(sizeNum)) return false
+      if (sizeFilter === 's' && !(sizeNum <= 6.5)) return false
+      if (sizeFilter === 'm' && !(sizeNum > 6.5 && sizeNum <= 12)) return false
+      if (sizeFilter === 'l' && !(sizeNum > 12)) return false
     }
 
     if (statusFilter !== 'all' && u.status !== statusFilter) {
@@ -484,6 +490,7 @@ export const ManagerDashboard: React.FC = () => {
   const overduePercent = totalUnitsCount > 0 ? ((overdueUnitsCount / totalUnitsCount) * 100).toFixed(1) : '0.0'
 
   const facilityProfile = useMemo(() => parseFacilityLayoutConfig(currentFacility?.layoutConfig), [currentFacility])
+  const selectedUnitOverdue = overdueItems.find(item => item.unitCode === selectedUnit?.id)
 
   // Current shift identification
   const currentShiftText = useMemo(() => {
@@ -501,6 +508,7 @@ export const ManagerDashboard: React.FC = () => {
       case 'Pending': return 'bg-amber-50 text-amber-800 border-amber-200'
       case 'Overdue': return 'bg-rose-50 text-rose-700 border-rose-200'
       case 'Maintenance': return 'bg-purple-50 text-purple-700 border-purple-200'
+      case 'Unknown': return 'bg-slate-50 text-slate-700 border-slate-200'
     }
   }
 
@@ -546,7 +554,7 @@ export const ManagerDashboard: React.FC = () => {
                unit.status === 'Rented' ? 'Thuê' :
                unit.status === 'Pending' ? 'Chờ giao' :
                unit.status === 'Maintenance' ? 'Bảo trì' :
-               unit.status === 'Overdue' ? 'Quá hạn' : 'Bảo trì'}
+               unit.status === 'Overdue' ? 'Quá hạn' : unit.status === 'Unknown' ? 'Unknown' : 'Bảo trì'}
             </span>
           </div>
         </button>
@@ -567,7 +575,7 @@ export const ManagerDashboard: React.FC = () => {
             <span className="material-symbols-outlined text-cyan-500 text-[14px]" title="Vi khí hậu 18-22°C">device_thermostat</span>
           ) : (
             <span className="text-[10px] font-mono text-slate-400 font-medium">
-              {unit.smartlock.startsWith('SL-') ? unit.smartlock.slice(-4) : 'IoT'}
+              {unit.smartlock === 'Not reported' ? 'No lock data' : unit.smartlock.startsWith('SL-') ? unit.smartlock.slice(-4) : 'ID'}
             </span>
           )}
         </div>
@@ -596,7 +604,7 @@ export const ManagerDashboard: React.FC = () => {
              unit.status === 'Rented' ? 'Thuê' :
              unit.status === 'Pending' ? 'Chờ giao' :
              unit.status === 'Maintenance' ? 'Bảo trì' :
-             unit.status === 'Overdue' ? 'Quá hạn' : 'Bảo trì'}
+             unit.status === 'Overdue' ? 'Quá hạn' : unit.status === 'Unknown' ? 'Unknown' : 'Bảo trì'}
           </span>
         </div>
       </button>
@@ -1082,14 +1090,16 @@ export const ManagerDashboard: React.FC = () => {
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-700">Khóa điện tử:</span>
-                  <span className="font-mono font-bold text-slate-900">{selectedUnit.smartlock}</span>
+                  <span className="font-mono font-bold text-slate-900">
+                    {selectedUnit.smartlock === 'Not reported' ? 'No device ID reported' : selectedUnit.smartlock}
+                  </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="p-2 bg-white rounded-lg border border-slate-200">
                     <span className="text-[10px] text-slate-400 uppercase font-mono block">Pin SmartLock</span>
                     <span className="font-mono font-bold text-emerald-700 mt-0.5 flex items-center gap-1">
                       <span className="material-symbols-outlined text-[14px]">battery_full</span>
-                      {selectedUnit.battery}
+                      {selectedUnit.battery || 'Not reported'}
                     </span>
                   </div>
                   <div className="p-2 bg-white rounded-lg border border-slate-200">
@@ -1118,7 +1128,7 @@ export const ManagerDashboard: React.FC = () => {
                   </button>
                 )}
 
-                {selectedUnit.status === 'Rented' && (
+                {role === 'FACILITY_MANAGER' && selectedUnit.status === 'Rented' && (
                   <button
                     type="button"
                     onClick={() => setShowDoorAccessModal(true)}
@@ -1129,17 +1139,22 @@ export const ManagerDashboard: React.FC = () => {
                   </button>
                 )}
 
-                {selectedUnit.status === 'Overdue' && (
+                {selectedUnit.status === 'Overdue' && selectedUnitOverdue
+                  && selectedUnitOverdue.contractId
+                  && selectedUnitOverdue.overdueStage === 'ELIGIBLE_FOR_SEALING' && (
                   <button
                     type="button"
                     onClick={() => {
                       setSealingModalData({
                         unitCode: selectedUnit.id,
                         unitId: selectedUnit.backendId,
-                        tenantName: selectedUnit.tenant,
-                        contractCode: selectedUnit.contract,
-                        overdueDays: 15,
-                        totalDebt: '3.650.000 ₫'
+                        tenantName: selectedUnitOverdue.customerName || selectedUnit.tenant,
+                        contractCode: selectedUnitOverdue.contractCode || 'N/A',
+                        contractId: selectedUnitOverdue.contractId || undefined,
+                        overdueDays: selectedUnitOverdue.daysOverdue,
+                        totalDebt: selectedUnitOverdue.totalDebt != null
+                          ? `${selectedUnitOverdue.totalDebt.toLocaleString('vi-VN')} ₫`
+                          : 'Chưa đối soát'
                       })
                     }}
                     className="w-full py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
@@ -1573,10 +1588,10 @@ export const ManagerDashboard: React.FC = () => {
                 <span className="material-symbols-outlined text-slate-400 text-[18px]">sensors</span>
               </div>
               <div className="mt-3 flex items-baseline gap-1">
-                <span className="text-3xl font-extrabold font-mono text-emerald-600 tabular-nums">99.8%</span>
-                <span className="text-xs text-slate-500">uptime</span>
+                <span className="text-lg font-bold text-slate-700">Not connected</span>
+                <span className="text-xs text-slate-500">hardware integration</span>
               </div>
-              <span className="text-xs text-emerald-700 font-semibold mt-2 block">Ping: 14ms • 0 khóa ngoại tuyến</span>
+              <span className="text-xs text-amber-700 font-semibold mt-2 block">No live device telemetry is available.</span>
             </div>
 
           </div>
@@ -1605,7 +1620,7 @@ export const ManagerDashboard: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Áp dụng quy chế cưỡng chế khóa SmartLock và lập biên bản niêm phong tài sản đối với các hợp đồng quá hạn &gt; 7 ngày ({overdueItems.length} hồ sơ cần theo dõi).
+                    Theo dõi hợp đồng quá hạn, thu hồi PIN/QR trong Boxora khi cần và lập biên bản niêm phong. Trạng thái khóa vật lý chưa được xác minh ({overdueItems.length} hồ sơ cần theo dõi).
                   </p>
                 </div>
                 <Link

@@ -33,6 +33,9 @@ public interface StaffAssignmentRepository extends JpaRepository<StaffAssignment
     List<StaffAssignment> findByStaff_IdAndAssignedDate(UUID staffId, LocalDate assignedDate);
 
     @EntityGraph(attributePaths = {"staff", "facility", "assignedBy"})
+    List<StaffAssignment> findByStaff_IdAndAssignedDateBetween(UUID staffId, LocalDate fromDate, LocalDate toDate);
+
+    @EntityGraph(attributePaths = {"staff", "facility", "assignedBy"})
     List<StaffAssignment> findByFacility_Id(UUID facilityId);
 
     boolean existsByStaff_IdAndAssignedDateAndShift(UUID staffId, LocalDate assignedDate, StaffShift shift);

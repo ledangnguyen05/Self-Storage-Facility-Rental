@@ -25,6 +25,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -80,6 +81,12 @@ class BookingServiceTest {
     @Mock
     private com.boxora.repository.RentalContractRepository rentalContractRepository;
 
+    @Mock
+    private ObjectProvider<ContractSigningService> contractSigningServiceProvider;
+
+    @Mock
+    private ContractSigningService contractSigningService;
+
     @InjectMocks
     private BookingServiceImpl bookingService;
 
@@ -94,6 +101,7 @@ class BookingServiceTest {
     void setUp() {
         ReflectionTestUtils.setField(bookingService, "softLockHours", 24L);
         ReflectionTestUtils.setField(bookingService, "maxAdvanceDays", 30);
+        lenient().when(contractSigningServiceProvider.getIfAvailable()).thenReturn(contractSigningService);
 
         lenient().when(pricingService.calculateQuote(any())).thenReturn(
                 com.boxora.dto.response.PricingQuoteResponse.builder()
@@ -160,6 +168,7 @@ class BookingServiceTest {
             assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.RESERVED);
 
             verify(storageUnitLockService).tryLockUnit(eq(unitId), any(), anyLong());
+            verify(contractSigningService).ensureContractForBooking(any());
             verify(activityLogService).record(
                     eq(testFacility.getId()),
                     eq(ActivityAction.RESERVATION_CREATE),
@@ -169,6 +178,34 @@ class BookingServiceTest {
                     isNull(),
                     eq(BookingStatus.PENDING_PAYMENT)
             );
+        }
+
+        @Test
+        @DisplayName("Free in-person reservation remains CONFIRMED and creates no payment transaction")
+        void createFreeInPersonReservationDoesNotCreatePayment() {
+            BookingCreateRequest request = BookingCreateRequest.builder()
+                    .storageUnitId(unitId)
+                    .customerId(customerId)
+                    .startDate(LocalDate.now().plusDays(5))
+                    .rentalMonths(2)
+                    .signingMethod("IN_PERSON")
+                    .build();
+
+            when(storageUnitRepository.findWithDetailsByIdForUpdate(unitId)).thenReturn(Optional.of(testUnit));
+            when(storageUnitLockService.isUnitLocked(unitId)).thenReturn(false);
+            when(storageUnitLockService.tryLockUnit(eq(unitId), any(), anyLong())).thenReturn(true);
+            when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(testPolicy));
+            when(bookingRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+            BookingResponse response = bookingService.createBooking(request);
+
+            assertThat(response.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+            assertThat(response.getPaymentStatus()).isEqualTo("UNPAID");
+            assertThat(response.getDepositPaid()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(response.getAccessPin()).isNull();
+            verify(paymentRepository, never()).save(any());
+            verify(contractSigningService).ensureContractForBooking(any());
         }
 
         @Test
@@ -490,6 +527,26 @@ class BookingServiceTest {
         }
 
         @Test
+        @DisplayName("Reschedule requires an explicit check-in appointment time")
+        void reschedule_RejectsMissingAppointmentTime() {
+            com.boxora.dto.request.BookingRescheduleRequest req = com.boxora.dto.request.BookingRescheduleRequest.builder()
+                    .newStartDate(LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).plusDays(5))
+                    .reason("Date-only request must not invent an appointment time")
+                    .build();
+
+            when(bookingRepository.findByIdForUpdate(bookingId)).thenReturn(Optional.of(eligibleBooking));
+            when(requestContext.currentUserId()).thenReturn(testCustomer.getId());
+            when(userRepository.findById(testCustomer.getId())).thenReturn(Optional.of(testCustomer));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            AppException exception = assertThrows(AppException.class,
+                    () -> bookingService.rescheduleBookingDetailed(bookingId, req));
+
+            assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+            verify(bookingRepository, never()).save(any());
+        }
+        @Test
         @DisplayName("2. Khách hàng không thể đổi lịch đơn của khách hàng khác -> FORBIDDEN")
         void reschedule_Forbidden_AnotherCustomer() {
             UUID strangerId = UUID.randomUUID();
@@ -615,6 +672,65 @@ class BookingServiceTest {
             assertThat(res.getBookingId()).isEqualTo(bookingId);
             assertThat(res.getRestrictions()).isNotEmpty();
             assertThat(res.getAllowedMinDate()).isEqualTo(LocalDate.now());
+        }
+    }
+
+    @Nested
+    @DisplayName("Operational booking list scope tests")
+    class OperationalBookingScopeTests {
+
+        @Test
+        @DisplayName("Facility Manager arrivals are queried only for the assigned facility and hide credentials")
+        void arrivalsUseAssignedFacilityAndHideAccessCredentials() {
+            UUID facilityId = testFacility.getId();
+            com.boxora.entity.Booking arrival = com.boxora.entity.Booking.builder()
+                    .bookingCode("BX-ARRIVAL-01")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(LocalDate.now())
+                    .endDate(LocalDate.now().plusMonths(1))
+                    .expectedCheckInAt(LocalDate.now().atTime(10, 30))
+                    .rentalMonths(1)
+                    .totalRentalFee(new BigDecimal("3000000"))
+                    .depositPaid(BigDecimal.ZERO)
+                    .depositAmount(new BigDecimal("1500000"))
+                    .status(BookingStatus.CONFIRMED)
+                    .accessPin("encrypted-pin")
+                    .qrAccessToken("secret-qr")
+                    .build();
+
+            when(facilityAccessGuard.isFacilityScoped()).thenReturn(true);
+            when(facilityAccessGuard.scopedFacilityIdOrNull()).thenReturn(facilityId);
+            com.boxora.entity.Booking noAppointment = com.boxora.entity.Booking.builder()
+                    .bookingCode("BX-NO-APPOINTMENT")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(LocalDate.now())
+                    .endDate(LocalDate.now().plusMonths(1))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            noAppointment.setId(UUID.randomUUID());
+            when(bookingRepository.findByStorageUnit_Facility_Id(facilityId))
+                    .thenReturn(java.util.List.of(noAppointment, arrival));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facilityId)).thenReturn(Optional.empty());
+
+            var results = bookingService.getUpcomingArrivals();
+
+            assertThat(results).hasSize(1);
+            assertThat(results.get(0).getFacilityId()).isEqualTo(facilityId);
+            assertThat(results.get(0).getAccessPin()).isNull();
+            assertThat(results.get(0).getQrAccessToken()).isNull();
+            verify(bookingRepository).findByStorageUnit_Facility_Id(facilityId);
+            verify(bookingRepository, never()).findAll();
+        }
+
+        @Test
+        @DisplayName("Remote unlock reports unavailable when no physical SmartLock integration exists")
+        void remoteUnlockReportsUnavailableIntegration() {
+            AppException ex = assertThrows(AppException.class,
+                    () -> bookingService.remoteUnlock(UUID.randomUUID()));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.SMARTLOCK_INTEGRATION_UNAVAILABLE);
         }
     }
 
