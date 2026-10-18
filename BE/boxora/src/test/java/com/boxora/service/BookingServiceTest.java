@@ -733,4 +733,67 @@ class BookingServiceTest {
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.UNAUTHORIZED);
         }
     }
+
+    @Nested
+    @DisplayName("Upcoming Arrivals Scoping Tests")
+    class UpcomingArrivalsTests {
+
+        @Test
+        @DisplayName("getUpcomingArrivals: Lọc chính xác theo cơ sở và loại bỏ đơn cơ sở khác")
+        void getUpcomingArrivals_WithFacilityId_FiltersCorrectly() {
+            UUID fac1Id = testFacility.getId();
+            UUID fac2Id = UUID.randomUUID();
+            com.boxora.entity.Facility fac2 = com.boxora.entity.Facility.builder()
+                    .name("Boxora Chi Nhanh Khac")
+                    .code("BX-OTHER")
+                    .build();
+            fac2.setId(fac2Id);
+
+            StorageUnit unit2 = StorageUnit.builder()
+                    .unitCode("U-OTHER-01")
+                    .facility(fac2)
+                    .status(UnitStatus.AVAILABLE)
+                    .build();
+            unit2.setId(UUID.randomUUID());
+
+            com.boxora.entity.Booking b1 = com.boxora.entity.Booking.builder()
+                    .bookingCode("BK-ARR-001")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(LocalDate.now())
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            b1.setId(UUID.randomUUID());
+
+            com.boxora.entity.Booking b2 = com.boxora.entity.Booking.builder()
+                    .bookingCode("BK-ARR-002")
+                    .customer(testCustomer)
+                    .storageUnit(unit2)
+                    .startDate(LocalDate.now())
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            b2.setId(UUID.randomUUID());
+
+            when(facilityAccessGuard.isFacilityScoped()).thenReturn(false);
+            when(bookingRepository.findAll()).thenReturn(java.util.List.of(b1, b2));
+
+            java.util.List<com.boxora.dto.response.BookingResponse> result = bookingService.getUpcomingArrivals(fac1Id);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getBookingCode()).isEqualTo("BK-ARR-001");
+        }
+
+        @Test
+        @DisplayName("getUpcomingArrivals: Bị từ chối khi truy cập cơ sở ngoài phạm vi được phân công")
+        void getUpcomingArrivals_AccessDenied_ThrowsException() {
+            UUID assignedFacilityId = testFacility.getId();
+            UUID unauthorizedFacilityId = UUID.randomUUID();
+
+            when(facilityAccessGuard.isFacilityScoped()).thenReturn(true);
+            when(facilityAccessGuard.scopedFacilityIdOrNull()).thenReturn(assignedFacilityId);
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.getUpcomingArrivals(unauthorizedFacilityId));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FACILITY_ACCESS_DENIED);
+        }
+    }
 }

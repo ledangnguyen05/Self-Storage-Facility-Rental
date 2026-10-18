@@ -198,9 +198,9 @@ export const ManagerDashboard: React.FC = () => {
         storageUnitService.getUnits(targetId ? { facilityId: targetId } : undefined),
         reportService.getOverdueDebtReport(targetId ? { facilityId: targetId } : undefined),
         targetId ? facilityPolicyService.getByFacilityId(targetId) : Promise.resolve(null),
-        bookingService.getUpcomingArrivals(),
+        bookingService.getUpcomingArrivals(targetId),
         bookingService.getAll({ status: 'ACTIVE', size: 100 }),
-        supportTicketService.getQueue(),
+        supportTicketService.getQueue(targetId ? { facilityId: targetId } : undefined),
       ])
 
       // 1. Process Storage Units
@@ -286,7 +286,7 @@ export const ManagerDashboard: React.FC = () => {
       if (arrivalsRes.status === 'fulfilled' && Array.isArray(arrivalsRes.value)) {
         let filteredArrivals = arrivalsRes.value
         if (targetId) {
-          filteredArrivals = filteredArrivals.filter(b => b.facilityId === targetId || !b.facilityId)
+          filteredArrivals = filteredArrivals.filter(b => b.facilityId === targetId)
         }
         setUpcomingHandovers(filteredArrivals)
       } else {
@@ -297,7 +297,7 @@ export const ManagerDashboard: React.FC = () => {
       if (rentalsRes.status === 'fulfilled' && rentalsRes.value?.content) {
         let filteredRentals = rentalsRes.value.content
         if (targetId) {
-          filteredRentals = filteredRentals.filter(b => b.facilityId === targetId || !b.facilityId)
+          filteredRentals = filteredRentals.filter(b => b.facilityId === targetId)
         }
         setActiveRentals(filteredRentals)
       } else {

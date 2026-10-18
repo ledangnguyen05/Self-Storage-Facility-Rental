@@ -67,7 +67,7 @@ public class StaffAssignmentController {
     }
 
     @PostMapping("/{id}/check-in")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Điểm danh xác nhận vào ca trực (Check-in)")
     public ResponseEntity<ApiResponse<StaffAssignmentResponse>> checkIn(
             @PathVariable UUID id,
@@ -78,7 +78,7 @@ public class StaffAssignmentController {
     }
 
     @PostMapping("/{id}/check-out")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Kết thúc ca trực (Check-out)")
     public ResponseEntity<ApiResponse<StaffAssignmentResponse>> checkOut(
             @PathVariable UUID id,

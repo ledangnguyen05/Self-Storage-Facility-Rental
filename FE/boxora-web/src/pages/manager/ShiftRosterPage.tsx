@@ -551,8 +551,8 @@ export const ShiftRosterPage: React.FC = () => {
                               <div className="font-semibold text-slate-900 text-xs">
                                 {assignment.staffFullName || assignment.staffUsername}
                               </div>
-                              <div className="text-[10px] text-slate-400 font-mono">
-                                NV-{assignment.staffUsername || assignment.staffId?.slice(-6).toUpperCase()}
+                              <div className="text-[10px] text-slate-400 font-mono" title={assignment.staffId || assignment.staffUsername}>
+                                ID: {assignment.staffId || assignment.staffUsername}
                               </div>
                               <div className="text-[10px] text-slate-500">{assignment.staffEmail}</div>
                             </div>
@@ -945,8 +945,8 @@ export const ShiftRosterPage: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {staffList.map(s => (
                   <tr key={s.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3 px-4 font-mono font-bold text-blue-700">
-                      NV-{s.username || s.id?.slice(-6).toUpperCase()}
+                    <td className="py-3 px-4 font-mono font-bold text-blue-700" title={s.id}>
+                      {s.id || s.username}
                     </td>
                     <td className="py-3 px-4 font-semibold text-slate-900">
                       {s.fullName || s.username}

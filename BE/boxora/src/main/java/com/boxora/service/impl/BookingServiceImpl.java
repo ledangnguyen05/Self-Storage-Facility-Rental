@@ -505,10 +505,25 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional(readOnly = true)
     public List<BookingResponse> getUpcomingArrivals() {
-        UUID scopedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+        return getUpcomingArrivals(null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<BookingResponse> getUpcomingArrivals(UUID facilityId) {
+        UUID effectiveFacilityId = facilityId;
+        if (facilityAccessGuard.isFacilityScoped()) {
+            UUID scopedId = facilityAccessGuard.scopedFacilityIdOrNull();
+            if (facilityId != null && !facilityId.equals(scopedId)) {
+                throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
+            }
+            effectiveFacilityId = scopedId;
+        }
+
+        UUID finalFacilityId = effectiveFacilityId;
         List<Booking> list = bookingRepository.findAll().stream()
                 .filter(b -> b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.PENDING_PAYMENT)
-                .filter(b -> scopedFacilityId == null || (b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null && scopedFacilityId.equals(b.getStorageUnit().getFacility().getId())))
+                .filter(b -> finalFacilityId == null || (b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null && finalFacilityId.equals(b.getStorageUnit().getFacility().getId())))
                 .collect(Collectors.toList());
         return list.stream().map(this::mapToResponse).collect(Collectors.toList());
     }

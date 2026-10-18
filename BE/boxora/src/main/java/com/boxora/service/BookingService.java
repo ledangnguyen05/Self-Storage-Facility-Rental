@@ -16,6 +16,7 @@ public interface BookingService {
     List<BookingResponse> getMyBookings(UUID customerId);
     List<BookingResponse> getMyActiveBookings(UUID customerId);
     List<BookingResponse> getUpcomingArrivals();
+    List<BookingResponse> getUpcomingArrivals(UUID facilityId);
     BookingResponse renewBooking(UUID id, int extraMonths);
     BookingResponse remoteUnlock(UUID id);
     BookingResponse getById(UUID id);

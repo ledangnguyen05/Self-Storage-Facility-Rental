@@ -96,10 +96,10 @@ public class BookingController {
     }
 
     @GetMapping("/arrivals")
-    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Danh sách khách sắp đến nhận kho")
-    public ResponseEntity<ApiResponse<List<BookingResponse>>> getArrivals() {
-        return ResponseEntity.ok(ApiResponse.success(bookingService.getUpcomingArrivals()));
+    public ResponseEntity<ApiResponse<List<BookingResponse>>> getArrivals(@RequestParam(required = false) UUID facilityId) {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getUpcomingArrivals(facilityId)));
     }
 
     @GetMapping("/{id}")
