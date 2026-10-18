@@ -132,10 +132,14 @@ public class ChatbotServiceImpl implements ChatbotService {
                     continue;
                 }
 
-                String url = String.format("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, apiKey);
+                HttpHeaders reqHeaders = new HttpHeaders();
+                reqHeaders.setContentType(MediaType.APPLICATION_JSON);
+                reqHeaders.set("x-goog-api-key", apiKey);
+
+                String url = String.format("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", model);
 
                 try {
-                    HttpEntity<String> entity = new HttpEntity<>(requestBodyJson, headers);
+                    HttpEntity<String> entity = new HttpEntity<>(requestBodyJson, reqHeaders);
                     ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
 
                     if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {

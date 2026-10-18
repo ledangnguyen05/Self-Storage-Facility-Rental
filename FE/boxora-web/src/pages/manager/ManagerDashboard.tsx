@@ -239,7 +239,7 @@ export const ManagerDashboard: React.FC = () => {
             status,
             rawStatus: su.status,
             color,
-            tenant: su.tenantName || (isAvail ? 'Kho trống' : isRes ? 'Đang cập nhật hồ sơ' : 'Đang cập nhật'),
+            tenant: su.tenantName || (isAvail ? 'Kho trống' : isRes ? 'Đang cập nhật hồ sơ' : 'Chưa có thông tin'),
             contract: su.contractCode || (isAvail ? 'Chưa có hợp đồng' : isRes ? 'Chờ ký HĐ bàn giao' : 'Chưa có mã HĐ'),
             due: (su.startDate && su.dueDate)
               ? `${new Date(su.startDate).toLocaleDateString('vi-VN')} - ${new Date(su.dueDate).toLocaleDateString('vi-VN')}`
@@ -304,7 +304,7 @@ export const ManagerDashboard: React.FC = () => {
       if (rentalsRes.status === 'fulfilled' && rentalsRes.value?.content) {
         let filteredRentals = rentalsRes.value.content
         if (targetId) {
-          filteredRentals = filteredRentals.filter(b => b.facilityId === targetId || !b.facilityId)
+          filteredRentals = filteredRentals.filter(b => b.facilityId === targetId)
         }
         setActiveRentals(filteredRentals)
       } else {

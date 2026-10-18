@@ -573,6 +573,7 @@ export const DashboardLayout: React.FC = () => {
           )}
 
           {/* ADMIN NAVIGATION */}
+          {/* ADMIN NAVIGATION */}
           {role === 'ADMIN' && (
             <>
               <div>
@@ -596,13 +597,24 @@ export const DashboardLayout: React.FC = () => {
                   <Link
                     to="/portal/admin?tab=users"
                     className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/admin') && new URLSearchParams(location.search).get('tab') !== 'facilities'
+                      isCurrentPath('/portal/admin') && (new URLSearchParams(location.search).get('tab') === 'users' || !new URLSearchParams(location.search).get('tab'))
                         ? 'bg-slate-100 text-slate-900 font-semibold'
                         : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">admin_panel_settings</span>
                     <span>{t('Users, roles and permissions', 'Users, roles and permissions')}</span>
+                  </Link>
+                  <Link
+                    to="/portal/admin?tab=logs"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                      isCurrentPath('/portal/admin') && new URLSearchParams(location.search).get('tab') === 'logs'
+                        ? 'bg-slate-100 text-slate-900 font-semibold'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">history</span>
+                    <span>{t('Nhật ký kiểm toán hệ thống')}</span>
                   </Link>
                 </nav>
               </div>

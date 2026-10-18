@@ -39,7 +39,7 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
             SELECT new com.boxora.dto.response.FacilityRevenueResponse(
                 f.id,
                 f.name,
-                SUM(p.amount),
+                SUM(CASE WHEN p.paymentType != com.boxora.enums.PaymentType.DEPOSIT THEN p.amount ELSE 0 END),
                 SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.DEPOSIT THEN p.amount ELSE 0 END),
                 SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENTAL_FEE THEN p.amount ELSE 0 END),
                 SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENEWAL_FEE THEN p.amount ELSE 0 END),
@@ -69,7 +69,7 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
     // a null SUM when there are no matching payments in the period.
     @Query("""
             SELECT new com.boxora.dto.response.SystemRevenueSummaryResponse(
-                COALESCE(SUM(p.amount), 0),
+                COALESCE(SUM(CASE WHEN p.paymentType != com.boxora.enums.PaymentType.DEPOSIT THEN p.amount ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.DEPOSIT THEN p.amount ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENTAL_FEE THEN p.amount ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENEWAL_FEE THEN p.amount ELSE 0 END), 0),

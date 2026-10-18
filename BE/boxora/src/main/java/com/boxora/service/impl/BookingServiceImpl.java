@@ -457,13 +457,14 @@ public class BookingServiceImpl implements BookingService {
         }
 
         UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
+        String role = requestContext != null ? requestContext.currentUserRole() : null;
+        boolean isStaffOrManagerOrAdmin = "ADMIN".equalsIgnoreCase(role) || "FACILITY_MANAGER".equalsIgnoreCase(role) || "STAFF".equalsIgnoreCase(role) || "BUSINESS_MANAGER".equalsIgnoreCase(role) || "SYSTEM_ADMIN".equalsIgnoreCase(role);
         if (currentUserId != null && customerId != null && !currentUserId.equals(customerId)) {
-            String role = requestContext.currentUserRole();
-            if (!"ADMIN".equalsIgnoreCase(role) && !"FACILITY_MANAGER".equalsIgnoreCase(role) && !"STAFF".equalsIgnoreCase(role)) {
+            if (!isStaffOrManagerOrAdmin) {
                 throw new AppException(ErrorCode.FORBIDDEN);
             }
         }
-        UUID targetCustomerId = customerId != null ? customerId : currentUserId;
+        UUID targetCustomerId = customerId != null ? customerId : (isStaffOrManagerOrAdmin ? null : currentUserId);
         List<Booking> bookings;
         if (targetCustomerId != null) {
             bookings = bookingRepository.findByCustomer_Id(targetCustomerId);

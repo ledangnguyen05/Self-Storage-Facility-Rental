@@ -44,6 +44,8 @@ const isAssignmentOnDuty = (assignment: StaffAssignmentResponse | null, now = ne
 
 export const StaffDashboard: React.FC = () => {
   const { user } = useAuth()
+  const resolvedRole = (typeof user?.role === 'string' ? user?.role : user?.role?.name || user?.roleName || '').toUpperCase()
+  const isAdmin = resolvedRole === 'ADMIN' || resolvedRole === 'SYSTEM_ADMIN'
   const { selectedFacility, facilities: contextFacilities } = useOutletContext<{
     selectedFacility?: string
     facilities?: Facility[]
@@ -202,12 +204,16 @@ export const StaffDashboard: React.FC = () => {
     }
   }
 
-  // Initial data loading
+  // Initial and reactive data loading
   useEffect(() => {
     const targetFacility = currentTargetFacility
+    setArrivals([])
+    setActiveBookingId('')
+    setActiveRentals([])
+    setSelectedReturnBookingId('')
     fetchArrivals(targetFacility)
     loadFacilities()
-    loadTicketQueue()
+    loadTicketQueue(targetFacility)
     loadActiveRentals(targetFacility)
     loadRadarUnits(targetFacility)
     loadFacilityPolicy(targetFacility)
@@ -245,16 +251,17 @@ export const StaffDashboard: React.FC = () => {
 
   const fetchArrivals = async (facilityId?: string) => {
     try {
-      const data = await bookingService.getUpcomingArrivals()
+      const targetId = facilityId || currentTargetFacility
+      const data = await bookingService.getUpcomingArrivals(targetId)
       if (Array.isArray(data)) {
         let filtered = data
-        if (facilityId) {
+        if (targetId) {
           filtered = filtered.filter(b => {
-            if (b.facilityId) return b.facilityId === facilityId
+            if (b.facilityId) return b.facilityId === targetId
             if (b.storageUnitId) {
               const matchedUnit = radarUnits.find(u => u.id === b.storageUnitId)
               if (matchedUnit?.facilityId) {
-                return matchedUnit.facilityId === facilityId
+                return matchedUnit.facilityId === targetId
               }
             }
             return false // Deny by default: Không hiển thị booking thiếu cơ sở xác minh
@@ -274,16 +281,17 @@ export const StaffDashboard: React.FC = () => {
 
   const loadActiveRentals = async (facilityId?: string) => {
     try {
-      const res = await bookingService.getAll({ status: 'ACTIVE', size: 50 })
+      const targetId = facilityId || currentTargetFacility
+      const res = await bookingService.getAll({ status: 'ACTIVE', facilityId: targetId, size: 50 })
       if (res?.content && res.content.length > 0) {
         let filtered = res.content
-        if (facilityId) {
+        if (targetId) {
           filtered = filtered.filter(b => {
-            if (b.facilityId) return b.facilityId === facilityId
+            if (b.facilityId) return b.facilityId === targetId
             if (b.storageUnitId) {
               const matchedUnit = radarUnits.find(u => u.id === b.storageUnitId)
               if (matchedUnit?.facilityId) {
-                return matchedUnit.facilityId === facilityId
+                return matchedUnit.facilityId === targetId
               }
             }
             return false // Deny by default
@@ -315,9 +323,10 @@ export const StaffDashboard: React.FC = () => {
     }
   }
 
-  const loadTicketQueue = async () => {
+  const loadTicketQueue = async (facilityId?: string) => {
     try {
-      const res = await supportTicketService.getQueue()
+      const targetId = facilityId || currentTargetFacility
+      const res = await supportTicketService.getQueue(targetId ? { facilityId: targetId } : undefined)
       if (Array.isArray(res)) {
         setTickets(res.map(t => ({
           id: `#TK-${t.ticketCode || t.id.slice(0, 6)}`,
@@ -512,7 +521,11 @@ export const StaffDashboard: React.FC = () => {
                 </h1>
 
                 {/* Real Shift Badge */}
-                {myTodayAssignment ? (
+                {isAdmin ? (
+                  <span className="px-2.5 py-0.5 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-[11px] font-semibold">
+                    Giám sát quản trị viên (Không trực ca)
+                  </span>
+                ) : myTodayAssignment ? (
                   <>
                     <span className="px-2.5 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[11px] font-mono font-bold uppercase tracking-wider">
                       {myTodayAssignment.shift === 'MORNING'
@@ -551,7 +564,6 @@ export const StaffDashboard: React.FC = () => {
                 {myTodayAssignment?.assignedZone && (
                   <>• Phân khu: <strong className="text-blue-700">{myTodayAssignment.assignedZone}</strong>{' '}</>
                 )}
-                • Cơ sở: <strong className="text-cyan-800">{assignedFacilityName}</strong>
               </span>
             </div>
           </div>
@@ -571,7 +583,7 @@ export const StaffDashboard: React.FC = () => {
               </button>
             )}
 
-            {myTodayAssignment?.status === 'CHECKED_IN' && (
+            {!isAdmin && myTodayAssignment?.status === 'CHECKED_IN' && (
               <button
                 type="button"
                 onClick={handleStaffCheckOut}
@@ -584,7 +596,7 @@ export const StaffDashboard: React.FC = () => {
             )}
 
             {/* Handover Button */}
-            {myTodayAssignment && (
+            {!isAdmin && myTodayAssignment && (
               <button
                 type="button"
                 onClick={() => setShowStaffHandoverModal(true)}
@@ -775,6 +787,7 @@ export const StaffDashboard: React.FC = () => {
         {/* BÊN TRÁI: QUY TRÌNH CHECK-IN & BÀN GIAO KHO (Col 7) */}
         <div className="xl:col-span-7 flex flex-col gap-6">
           <HandoverCheckInWorkbench
+            facilityId={currentTargetFacility}
             arrivals={arrivals}
             onOpenQrScanner={() => setIsQrScannerOpen(true)}
             activeBookingId={activeBookingId}

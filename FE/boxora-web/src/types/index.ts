@@ -446,10 +446,22 @@ export interface FacilityPolicyUpdateRequest {
   minimumRentalMonths?: number
 }
 
+export interface MonthlyRevenueBreakdown {
+  monthKey: string
+  label: string
+  rentalFee: number
+  deposit: number
+  renewalFee: number
+  extraCharge: number
+  total: number
+}
+
 export interface RevenueReport {
   fromDate?: string
   toDate?: string
   totalRevenue?: number
+  refundedAmount?: number
+  monthlyBreakdown?: MonthlyRevenueBreakdown[]
   systemSummary?: {
     totalRevenue: number
     rentalFeeRevenue: number
@@ -458,6 +470,8 @@ export interface RevenueReport {
     extraChargeRevenue?: number
     bookingPaymentRevenue?: number
     paymentCount: number
+    netRevenue?: number
+    totalCollected?: number
   }
   byFacility?: Array<{
     facilityId: string
@@ -469,6 +483,8 @@ export interface RevenueReport {
     extraChargeRevenue?: number
     bookingPaymentRevenue?: number
     paymentCount?: number
+    netRevenue?: number
+    totalCollected?: number
   }>
     monthlyRevenue?: Array<{
       month: string | null
