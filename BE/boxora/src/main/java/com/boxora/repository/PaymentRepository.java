@@ -19,6 +19,10 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
 
     java.util.Optional<Payment> findByTransactionId(String transactionId);
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Payment p WHERE p.transactionId = :transactionId")
+    java.util.Optional<Payment> findByTransactionIdForUpdate(@Param("transactionId") String transactionId);
+
     boolean existsByTransactionId(String transactionId);
 
     boolean existsByBooking_IdAndStatus(UUID bookingId, com.boxora.enums.PaymentStatus status);
@@ -40,6 +44,7 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
                 SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENTAL_FEE THEN p.amount ELSE 0 END),
                 SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENEWAL_FEE THEN p.amount ELSE 0 END),
                 SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.EXTRA_CHARGE THEN p.amount ELSE 0 END),
+                SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN p.amount ELSE 0 END),
                 COUNT(p)
             )
             FROM Payment p
@@ -69,6 +74,7 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENTAL_FEE THEN p.amount ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENEWAL_FEE THEN p.amount ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.EXTRA_CHARGE THEN p.amount ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN p.amount ELSE 0 END), 0),
                 COUNT(p)
             )
             FROM Payment p
@@ -87,9 +93,17 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
             @Param("facilityId") UUID facilityId
     );
 
-    // All successful PAID payments in period for authoritative monthly chart aggregation
+    // Revenue chart series use the same PAID status, payment_time bounds, and facility resolution
+    // as the report totals above. YEAR/MONTH keep the grouping in the database and avoid page caps.
     @Query("""
-            SELECT p FROM Payment p
+            SELECT YEAR(p.paymentTime), MONTH(p.paymentTime),
+                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENTAL_FEE THEN p.amount ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.DEPOSIT THEN p.amount ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENEWAL_FEE THEN p.amount ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.EXTRA_CHARGE THEN p.amount ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN p.amount ELSE 0 END), 0),
+                COALESCE(SUM(p.amount), 0), COUNT(p)
+            FROM Payment p
             LEFT JOIN p.booking b
             LEFT JOIN b.storageUnit bSu
             LEFT JOIN p.contract c
@@ -98,28 +112,31 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
             AND (CAST(:fromDate AS timestamp) IS NULL OR p.paymentTime >= :fromDate)
             AND (CAST(:toDate AS timestamp) IS NULL OR p.paymentTime <= :toDate)
             AND (:facilityId IS NULL OR f.id = :facilityId)
-            ORDER BY p.paymentTime ASC
+            GROUP BY YEAR(p.paymentTime), MONTH(p.paymentTime)
+            ORDER BY YEAR(p.paymentTime), MONTH(p.paymentTime)
             """)
-    List<Payment> findSuccessfulPaymentsInPeriod(
+    List<Object[]> sumRevenueByMonth(
             @Param("fromDate") LocalDateTime fromDate,
             @Param("toDate") LocalDateTime toDate,
             @Param("facilityId") UUID facilityId
     );
 
-    // Reconciled completed refunds
+    // Keep unrecognized and null channels as their own groups so the dashboard can show them
+    // as unknown instead of silently assigning them to a known payment method.
     @Query("""
-            SELECT COALESCE(SUM(p.amount), 0)
+            SELECT p.paymentMethod, COUNT(p)
             FROM Payment p
             LEFT JOIN p.booking b
             LEFT JOIN b.storageUnit bSu
             LEFT JOIN p.contract c
             LEFT JOIN Facility f ON (f.id = bSu.facility.id OR (bSu.facility.id IS NULL AND f.id = c.facility.id))
-            WHERE p.status = com.boxora.enums.PaymentStatus.REFUNDED
+            WHERE p.status = com.boxora.enums.PaymentStatus.PAID
             AND (CAST(:fromDate AS timestamp) IS NULL OR p.paymentTime >= :fromDate)
             AND (CAST(:toDate AS timestamp) IS NULL OR p.paymentTime <= :toDate)
             AND (:facilityId IS NULL OR f.id = :facilityId)
+            GROUP BY p.paymentMethod
             """)
-    java.math.BigDecimal sumRefundedAmount(
+    List<Object[]> countPaidPaymentsByMethod(
             @Param("fromDate") LocalDateTime fromDate,
             @Param("toDate") LocalDateTime toDate,
             @Param("facilityId") UUID facilityId

@@ -30,7 +30,7 @@ public class ShiftSwapController {
     private final ShiftSwapService shiftSwapService;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER')")
     @Operation(summary = "Tạo mới yêu cầu đổi ca trực")
     public ResponseEntity<ApiResponse<ShiftSwapResponse>> createSwapRequest(
             @Valid @RequestBody ShiftSwapCreateRequest request
@@ -41,7 +41,7 @@ public class ShiftSwapController {
     }
 
     @PatchMapping("/{id}/review")
-    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasRole('FACILITY_MANAGER')")
     @Operation(summary = "Quản lý phê duyệt hoặc từ chối đơn đổi ca trực")
     public ResponseEntity<ApiResponse<ShiftSwapResponse>> reviewSwapRequest(
             @PathVariable UUID id,
@@ -52,7 +52,7 @@ public class ShiftSwapController {
     }
 
     @PatchMapping("/{id}/cancel")
-    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER')")
     @Operation(summary = "Hủy yêu cầu đổi ca trực đang chờ duyệt")
     public ResponseEntity<ApiResponse<ShiftSwapResponse>> cancelSwapRequest(@PathVariable UUID id) {
         ShiftSwapResponse response = shiftSwapService.cancelSwapRequest(id);
@@ -82,7 +82,7 @@ public class ShiftSwapController {
     }
 
     @GetMapping("/my-requests")
-    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER')")
     @Operation(summary = "Danh sách yêu cầu đổi ca của nhân viên hiện tại")
     public ResponseEntity<ApiResponse<List<ShiftSwapResponse>>> getMySwapRequests() {
         List<ShiftSwapResponse> response = shiftSwapService.getMySwapRequests();

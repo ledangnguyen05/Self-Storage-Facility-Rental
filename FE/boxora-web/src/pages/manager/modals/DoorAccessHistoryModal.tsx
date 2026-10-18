@@ -9,7 +9,7 @@ interface DoorAccessHistoryModalProps {
     id: string
     tenant: string
     smartlock: string
-    battery: string
+    battery?: string
   }
 }
 
@@ -31,18 +31,23 @@ export const DoorAccessHistoryModal: React.FC<DoorAccessHistoryModalProps> = ({
   const loadLogs = async () => {
     setIsLoading(true)
     try {
-      // First attempt to search logs referencing this unit
+      const now = new Date()
+      const toDate = now.toLocaleDateString('en-CA')
+      const from = new Date(now)
+      if (filterPeriod === '7D') from.setDate(from.getDate() - 7)
+      if (filterPeriod === '30D') from.setDate(from.getDate() - 30)
+
       const res = await activityLogService.getAll({
         search: unit.id,
-        size: 30
+        fromDate: filterPeriod === 'ALL' ? undefined : from.toLocaleDateString('en-CA'),
+        toDate,
+        size: 30,
+        sortBy: 'createdAt',
+        sortDir: 'desc'
       })
-      if (res?.content && res.content.length > 0) {
-        setLogs(res.content)
-      } else {
-        // Fallback to recent system activity logs so user can see recent audit records
-        const fallbackRes = await activityLogService.getAll({ size: 15 })
-        setLogs(fallbackRes?.content || [])
-      }
+      setLogs((res?.content || []).filter(log =>
+        log.description?.toLowerCase().includes(unit.id.toLowerCase())
+      ))
     } catch {
       setLogs([])
     } finally {
@@ -81,13 +86,13 @@ export const DoorAccessHistoryModal: React.FC<DoorAccessHistoryModalProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-slate-900">Nhật Ký Hoạt Động &amp; Mở Cửa Kho #{unit.id}</h2>
+                <h2 className="text-lg font-bold text-slate-900">Operational audit records for unit #{unit.id}</h2>
                 <span className="px-2 py-0.5 rounded-md bg-slate-100 font-mono text-xs font-bold text-slate-800 border border-slate-200">
                   {unit.smartlock}
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Chủ kho: <strong className="text-slate-800">{unit.tenant}</strong> &bull; Trạng thái pin SmartLock: {unit.battery}
+                Tenant: <strong className="text-slate-800">{unit.tenant}</strong> &bull; Physical lock access events are not available.
               </p>
             </div>
           </div>
@@ -103,21 +108,21 @@ export const DoorAccessHistoryModal: React.FC<DoorAccessHistoryModalProps> = ({
         {/* Quick Stats Strip */}
         <div className="grid grid-cols-3 gap-3">
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-            <span className="text-[11px] uppercase font-bold text-slate-500">Tổng lượt ghi nhận</span>
+            <span className="text-[11px] uppercase font-bold text-slate-500">Audit records mentioning this unit</span>
             <div className="flex items-baseline gap-1 mt-1">
               <span className="text-2xl font-extrabold font-mono text-slate-900">{logs.length}</span>
               <span className="text-xs text-slate-600 font-medium">lượt log</span>
             </div>
           </div>
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-            <span className="text-[11px] uppercase font-bold text-slate-500">Thành công</span>
+            <span className="text-[11px] uppercase font-bold text-slate-500">Successful log entries</span>
             <div className="flex items-baseline gap-1 mt-1">
               <span className="text-2xl font-extrabold font-mono text-emerald-700">{successCount}</span>
               <span className="text-xs text-slate-600 font-medium">lần</span>
             </div>
           </div>
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-            <span className="text-[11px] uppercase font-bold text-slate-500">Cảnh báo / Lỗi</span>
+            <span className="text-[11px] uppercase font-bold text-slate-500">Warning / failure log entries</span>
             <div className="flex items-baseline gap-1 mt-1">
               <span className="text-2xl font-extrabold font-mono text-amber-700">{failCount}</span>
               <span className="text-xs text-slate-600 font-medium">sự kiện</span>
@@ -158,7 +163,7 @@ export const DoorAccessHistoryModal: React.FC<DoorAccessHistoryModalProps> = ({
           </div>
 
           <span className="text-xs text-slate-500 font-mono">
-            Dữ liệu thật từ Activity Log Database
+            Audit entries referencing this unit; this is not device telemetry.
           </span>
         </div>
 

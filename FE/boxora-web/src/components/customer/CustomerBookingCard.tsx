@@ -7,10 +7,6 @@ interface CustomerBookingCardProps {
   booking: Booking
   onRenew: (booking: Booking) => void
   onReportIssue: (unitCode: string) => void
-  onRemoteUnlock: (booking: Booking) => Promise<void>
-  isUnlocking: boolean
-  unlockSucceeded: boolean
-  unlockError?: string
 }
 
 const ACCESS_CREDENTIAL_VISIBILITY_SECONDS = 60
@@ -27,10 +23,6 @@ export function CustomerBookingCard({
   booking,
   onRenew,
   onReportIssue,
-  onRemoteUnlock,
-  isUnlocking,
-  unlockSucceeded,
-  unlockError,
 }: CustomerBookingCardProps) {
   const [credentials, setCredentials] = useState<{ accessPin: string; qrAccessToken: string } | null>(null)
   const [isLoadingCredentials, setIsLoadingCredentials] = useState(false)
@@ -158,9 +150,9 @@ export function CustomerBookingCard({
         <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs font-mono text-slate-600">
           <span className="flex items-center gap-1.5">
             <span className="material-symbols-outlined text-[15px] text-cyan-600">security</span>
-            Smart Lock
+            PIN/QR trong Boxora
           </span>
-          <span className="font-semibold text-emerald-700">Đang bảo vệ</span>
+          <span className="font-semibold text-amber-700">Thiết bị chưa xác minh</span>
           <span>{booking.rentalMonths} tháng</span>
         </div>
 
@@ -172,9 +164,12 @@ export function CustomerBookingCard({
             </div>
             <span className="flex items-center gap-1 rounded border border-cyan-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-cyan-800">
               <span className="material-symbols-outlined text-[12px]">lock</span>
-              Bảo vệ
+              Chưa xác minh
             </span>
           </div>
+          <p className="text-[11px] text-slate-600">
+            Boxora lưu PIN/QR nhưng không xác nhận cài đặt hoặc trạng thái khóa vật lý. Hãy xác nhận tại cơ sở trước khi sử dụng.
+          </p>
 
           {!credentials ? (
             <div className="flex flex-col gap-3 rounded-lg border border-cyan-100 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -229,18 +224,6 @@ export function CustomerBookingCard({
           {credentialsError && <p role="alert" className="text-xs font-medium text-rose-700">{credentialsError}</p>}
         </section>
 
-        <button
-          type="button"
-          onClick={() => void onRemoteUnlock(booking)}
-          disabled={isUnlocking}
-          className={`flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-bold shadow-xs transition-all disabled:opacity-60 ${
-            unlockSucceeded ? 'bg-emerald-600 text-white' : 'stitch-btn-primary'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[18px]">{unlockSucceeded ? 'lock_open' : 'key'}</span>
-          {isUnlocking ? 'Đang gửi lệnh mở khóa...' : unlockSucceeded ? 'Đã gửi lệnh mở khóa' : 'Mở khóa từ xa'}
-        </button>
-        {unlockError && <p role="alert" className="text-xs font-medium text-rose-700">{unlockError}</p>}
       </div>
 
       <div className="mt-4 flex gap-3 border-t border-slate-100 pt-4">

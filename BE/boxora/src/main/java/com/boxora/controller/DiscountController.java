@@ -63,7 +63,7 @@ public class DiscountController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('DISCOUNT_CREATE')")
     @Operation(summary = "Tạo mới chương trình khuyến mãi / voucher (ADMIN, BUSINESS_MANAGER)")
     public ResponseEntity<ApiResponse<DiscountResponse>> createDiscount(
             @Valid @RequestBody DiscountCreateRequest request
@@ -74,7 +74,7 @@ public class DiscountController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('DISCOUNT_UPDATE')")
     @Operation(summary = "Cập nhật chương trình khuyến mãi / voucher (ADMIN, BUSINESS_MANAGER)")
     public ResponseEntity<ApiResponse<DiscountResponse>> updateDiscount(
             @PathVariable UUID id,
@@ -85,7 +85,7 @@ public class DiscountController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('DISCOUNT_DELETE')")
     @Operation(summary = "Vô hiệu hóa chương trình ưu đãi (ADMIN, BUSINESS_MANAGER)")
     public ResponseEntity<ApiResponse<Void>> deleteDiscount(@PathVariable UUID id) {
         discountService.deleteDiscount(id);

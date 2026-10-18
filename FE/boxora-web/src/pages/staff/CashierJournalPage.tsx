@@ -4,6 +4,30 @@ import { useAuth } from '../../context/AuthContext'
 import { paymentService, PaymentItem } from '../../services/paymentService'
 import { Facility } from '../../types'
 
+const localDateInput = (date: Date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const paymentTypeLabel = (type: string) => ({
+  DEPOSIT: 'Deposit',
+  RENTAL_FEE: 'Rental',
+  RENEWAL_FEE: 'Renewal',
+  EXTRA_CHARGE: 'Extra charge',
+  BOOKING_PAYMENT: 'Booking payment'
+}[type] || type)
+
+const paymentStatusLabel = (status: string) => ({
+  PAID: 'Paid',
+  PENDING: 'Pending',
+  FAILED: 'Failed',
+  EXPIRED: 'Expired',
+  REFUND_PENDING: 'Refund pending',
+  REFUNDED: 'Refunded'
+}[status] || status)
+
 export const CashierJournalPage: React.FC = () => {
   const { user } = useAuth()
   const { selectedFacility, facilities: contextFacilities } = useOutletContext<{
@@ -14,8 +38,11 @@ export const CashierJournalPage: React.FC = () => {
   const [payments, setPayments] = useState<PaymentItem[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [typeFilter, setTypeFilter] = useState<'ALL' | 'RENTAL' | 'DEPOSIT'>('ALL')
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'SUCCESS' | 'PENDING' | 'FAILED'>('ALL')
+  const [typeFilter, setTypeFilter] = useState<'ALL' | 'RENTAL' | 'DEPOSIT' | 'BOOKING_PAYMENT'>('ALL')
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PAID' | 'PENDING' | 'FAILED' | 'EXPIRED' | 'REFUND_PENDING' | 'REFUNDED'>('ALL')
+  const [periodStart, setPeriodStart] = useState(() => localDateInput(new Date()))
+  const [periodEnd, setPeriodEnd] = useState(() => localDateInput(new Date()))
+  const [fetchError, setFetchError] = useState<string | null>(null)
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState<number>(1)
@@ -23,7 +50,7 @@ export const CashierJournalPage: React.FC = () => {
 
   const activeFacilityId = useMemo(() => {
     if (user?.role?.name === 'FACILITY_MANAGER' || user?.role?.name === 'STAFF') {
-      return user.facilityId || (selectedFacility !== 'ALL' ? selectedFacility : undefined)
+      return user.facilityId
     }
     return selectedFacility && selectedFacility !== 'ALL' ? selectedFacility : undefined
   }, [user, selectedFacility])
@@ -34,24 +61,38 @@ export const CashierJournalPage: React.FC = () => {
       const match = contextFacilities.find(f => f.id === activeFacilityId)
       if (match) return match.name
     }
-    return 'Tất cả cơ sở'
+    return 'Cơ sở chưa xác nhận'
   }, [user?.facilityName, activeFacilityId, contextFacilities])
 
   const fetchPayments = async () => {
     setIsLoading(true)
+    setFetchError(null)
+    if ((user?.role?.name === 'STAFF' || user?.role?.name === 'FACILITY_MANAGER') && !user.facilityId) {
+      setPayments([])
+      setFetchError('No facility is assigned to this account.')
+      setIsLoading(false)
+      return
+    }
     try {
-      const res = await paymentService.getPayments({
-        size: 150,
-        facilityId: activeFacilityId || undefined,
-        status: undefined // fetch all to show realistic shift ledger
-      })
-      if (Array.isArray(res)) {
-        setPayments(res)
-      } else {
-        setPayments([])
-      }
-    } catch (err) {
-      console.warn('Failed to fetch shift payments:', err)
+      const allPayments: PaymentItem[] = []
+      let page = 0
+      let totalPages = 1
+      do {
+        const result = await paymentService.getPaymentsPage({
+          page,
+          size: 100,
+          facilityId: activeFacilityId,
+          fromDate: `${periodStart}T00:00:00`,
+          toDate: `${periodEnd}T23:59:59`
+        })
+        allPayments.push(...(result?.content || []))
+        totalPages = result?.totalPages || 0
+        page += 1
+      } while (page < totalPages)
+      setPayments(allPayments)
+    } catch (err: any) {
+      console.warn('Failed to fetch payment journal:', err)
+      setFetchError(err?.response?.data?.message || err?.message || 'Could not load the payment journal.')
       setPayments([])
     } finally {
       setIsLoading(false)
@@ -60,53 +101,50 @@ export const CashierJournalPage: React.FC = () => {
 
   useEffect(() => {
     fetchPayments()
-  }, [activeFacilityId])
+  }, [activeFacilityId, periodStart, periodEnd, user?.role?.name, user?.facilityId])
 
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, typeFilter, statusFilter])
+  }, [searchQuery, typeFilter, statusFilter, periodStart, periodEnd])
 
   // Calculations
   const shiftTotalCollected = useMemo(() => {
     return payments
-      .filter(p => p.status === 'SUCCESS' || p.status === 'PAID')
+      .filter(p => p.status === 'PAID')
       .reduce((sum, p) => sum + (p.amount || 0), 0)
   }, [payments])
 
   const shiftRentalRevenue = useMemo(() => {
     return payments
-      .filter(p => (p.status === 'SUCCESS' || p.status === 'PAID') && p.paymentType !== 'DEPOSIT')
+      .filter(p => p.status === 'PAID' && ['RENTAL_FEE', 'RENEWAL_FEE', 'EXTRA_CHARGE'].includes(p.paymentType))
       .reduce((sum, p) => sum + (p.amount || 0), 0)
   }, [payments])
 
   const shiftDepositRevenue = useMemo(() => {
     return payments
-      .filter(p => (p.status === 'SUCCESS' || p.status === 'PAID') && p.paymentType === 'DEPOSIT')
+      .filter(p => p.status === 'PAID' && p.paymentType === 'DEPOSIT')
       .reduce((sum, p) => sum + (p.amount || 0), 0)
   }, [payments])
 
-  const successRate = useMemo(() => {
-    if (payments.length === 0) return '100%'
-    const successCount = payments.filter(p => p.status === 'SUCCESS' || p.status === 'PAID').length
-    return `${Math.round((successCount / payments.length) * 100)}%`
-  }, [payments])
+  const shiftBookingPayments = useMemo(() => payments
+    .filter(p => p.status === 'PAID' && p.paymentType === 'BOOKING_PAYMENT')
+    .reduce((sum, p) => sum + (p.amount || 0), 0), [payments])
+
+  const completedRefunds = useMemo(() => payments
+    .filter(p => p.status === 'REFUNDED')
+    .reduce((sum, p) => sum + (p.amount || 0), 0), [payments])
 
   // Filtered Payments
   const filteredPayments = useMemo(() => {
     return payments.filter(p => {
       // Type filter
       if (typeFilter === 'DEPOSIT' && p.paymentType !== 'DEPOSIT') return false
-      if (typeFilter === 'RENTAL' && p.paymentType === 'DEPOSIT') return false
+      if (typeFilter === 'BOOKING_PAYMENT' && p.paymentType !== 'BOOKING_PAYMENT') return false
+      if (typeFilter === 'RENTAL' && !['RENTAL_FEE', 'RENEWAL_FEE', 'EXTRA_CHARGE'].includes(p.paymentType)) return false
 
       // Status filter
-      const isSuccess = p.status === 'SUCCESS' || p.status === 'PAID'
-      const isPending = p.status === 'PENDING'
-      const isFailed = p.status === 'FAILED' || p.status === 'CANCELLED'
-
-      if (statusFilter === 'SUCCESS' && !isSuccess) return false
-      if (statusFilter === 'PENDING' && !isPending) return false
-      if (statusFilter === 'FAILED' && !isFailed) return false
+      if (statusFilter !== 'ALL' && p.status !== statusFilter) return false
 
       // Search query
       if (searchQuery.trim()) {
@@ -129,30 +167,6 @@ export const CashierJournalPage: React.FC = () => {
     return filteredPayments.slice(startIndex, startIndex + pageSize)
   }, [filteredPayments, currentPage, pageSize])
 
-  const handleExportCsv = () => {
-    const headers = ['Mã GD', 'Thời Gian', 'Khách Hàng', 'Mã Kho', 'Loại Giao Dịch', 'Phương Thức', 'Số Tiền (VND)', 'Trạng Thái']
-    const rows = filteredPayments.map(p => [
-      p.id,
-      p.paymentTime ? new Date(p.paymentTime).toLocaleString('vi-VN') : '',
-      `"${p.customerName || 'Khách hàng Boxora'}"`,
-      p.unitCode || '',
-      p.paymentType === 'DEPOSIT' ? 'Tiền ký quỹ (Cọc)' : 'Tiền thuê kho',
-      p.paymentMethod || 'VNPay',
-      p.amount,
-      p.status === 'SUCCESS' || p.status === 'PAID' ? 'Thành công' : p.status === 'PENDING' ? 'Chờ xử lý' : 'Thất bại'
-    ])
-
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.setAttribute('download', `So_Thu_Ngan_Ca_Truc_${new Date().toISOString().slice(0, 10)}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }
-
   return (
     <div className="flex flex-col gap-6 w-full">
       {/* Header Banner */}
@@ -170,9 +184,7 @@ export const CashierJournalPage: React.FC = () => {
                 {currentFacilityName}
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Báo cáo tài chính hợp nhất: Tổng doanh thu cơ sở, phí thuê kho, cọc lưu ký, nợ cước và sổ cái đối soát cổng VNPay
-            </p>
+            <p className="text-xs text-slate-500 mt-1">Selected-period payment ledger. Pending, failed, and refund statuses remain separate from cash received.</p>
           </div>
         </div>
 
@@ -188,14 +200,6 @@ export const CashierJournalPage: React.FC = () => {
               refresh
             </span>
             <span>Làm mới</span>
-          </button>
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[16px]">download</span>
-            <span>Xuất CSV</span>
           </button>
         </div>
       </div>
@@ -220,8 +224,9 @@ export const CashierJournalPage: React.FC = () => {
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
               <span className="font-semibold text-emerald-600">
-                {payments.filter(p => p.status === 'SUCCESS' || p.status === 'PAID').length}
-              </span> giao dịch hợp lệ
+                {payments.filter(p => p.status === 'PAID').length}
+              </span> paid transactions
+              <div>Booking payments: {isLoading ? "Loading..." : `${shiftBookingPayments.toLocaleString("vi-VN")} ₫`}</div>
             </div>
           </div>
         </div>
@@ -270,30 +275,27 @@ export const CashierJournalPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Card 4: Tỷ lệ khớp lệnh */}
+        {/* Completed refunds: Tỷ lệ khớp lệnh */}
         <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Tỷ lệ khớp lệnh ca trực</span>
+            <span>Completed refunds</span>
             <div className="p-1.5 rounded-lg bg-purple-50 text-purple-600">
               <span className="material-symbols-outlined text-[18px]">task_alt</span>
             </div>
           </div>
           <div className="mt-3">
             <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
-              {isLoading ? (
-                <span className="inline-block w-20 h-7 bg-slate-100 animate-pulse rounded"></span>
-              ) : (
-                successRate
-              )}
+              {isLoading ? <span className="inline-block w-20 h-7 bg-slate-100 animate-pulse rounded"></span> : `${completedRefunds.toLocaleString('vi-VN')} ₫`}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Khớp lệnh thanh toán thành công
+              Completed refunds; shown separately from cash collected
             </div>
           </div>
         </div>
       </div>
 
       {/* Main Ledger Table with Search, Filter & Pagination */}
+      {fetchError && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">{fetchError}</div>}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col gap-4">
         {/* Controls Toolbar */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
@@ -311,14 +313,23 @@ export const CashierJournalPage: React.FC = () => {
               />
             </div>
 
+            <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
+              From
+              <input type="date" value={periodStart} max={periodEnd} onChange={(e) => setPeriodStart(e.target.value)} className="px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg" />
+            </label>
+            <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
+              To
+              <input type="date" value={periodEnd} min={periodStart} onChange={(e) => setPeriodEnd(e.target.value)} className="px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg" />
+            </label>
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value as any)}
               className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none cursor-pointer"
             >
               <option value="ALL">Tất cả loại giao dịch</option>
-              <option value="RENTAL">Tiền thuê kho định kỳ</option>
-              <option value="DEPOSIT">Tiền ký quỹ (Đặt cọc)</option>
+              <option value="RENTAL">Rental, renewal &amp; extra charge</option>
+              <option value="DEPOSIT">Deposit</option>
+              <option value="BOOKING_PAYMENT">Booking payment</option>
             </select>
 
             <select
@@ -327,9 +338,12 @@ export const CashierJournalPage: React.FC = () => {
               className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none cursor-pointer"
             >
               <option value="ALL">Tất cả trạng thái</option>
-              <option value="SUCCESS">Thành công (Paid)</option>
+              <option value="PAID">Paid / received</option>
               <option value="PENDING">Đang chờ xử lý</option>
-              <option value="FAILED">Thất bại / Hủy</option>
+              <option value="FAILED">Failed</option>
+              <option value="EXPIRED">Expired</option>
+              <option value="REFUND_PENDING">Refund pending</option>
+              <option value="REFUNDED">Refunded</option>
             </select>
           </div>
         </div>
@@ -371,19 +385,13 @@ export const CashierJournalPage: React.FC = () => {
                 </tr>
               ) : (
                 paginatedPayments.map((p) => {
-                  const isSuccess = p.status === 'SUCCESS' || p.status === 'PAID'
-                  const isPending = p.status === 'PENDING'
+                  const isSuccess = p.status === 'PAID'
+                  const isPending = p.status === 'PENDING' || p.status === 'REFUND_PENDING'
 
                   return (
                     <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3 px-3.5">
-                        <div className="font-mono font-medium text-slate-900" title={p.transactionId ? `Cổng TT: ${p.transactionId} | Mã hệ thống: ${p.id}` : `Mã nội bộ: ${p.id}`}>
-                          {p.transactionId ? (
-                            <span>{p.transactionId}</span>
-                          ) : (
-                            <span className="text-slate-600 font-mono text-xs">Mã nội bộ: {p.id}</span>
-                          )}
-                        </div>
+                        <div className="font-mono font-medium text-slate-900">{(p.transactionId || p.id).slice(0, 18)}</div>
                         <div className="text-[11px] text-slate-400 font-mono">
                           {p.paymentTime
                             ? new Date(p.paymentTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -391,7 +399,7 @@ export const CashierJournalPage: React.FC = () => {
                         </div>
                       </td>
                       <td className="py-3 px-3.5 font-medium text-slate-800">
-                        {p.customerName || 'Khách hàng Boxora'}
+                        {p.customerName || 'Unknown customer'}
                       </td>
                       <td className="py-3 px-3.5">
                         <span className="font-mono font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
@@ -404,14 +412,14 @@ export const CashierJournalPage: React.FC = () => {
                             ? 'bg-amber-50 text-amber-800 border-amber-200'
                             : 'bg-blue-50 text-blue-700 border-blue-200'
                         }`}>
-                          {p.paymentType === 'DEPOSIT' ? 'Tiền ký quỹ (Cọc)' : 'Tiền thuê kho'}
+                          {paymentTypeLabel(p.paymentType)}
                         </span>
                       </td>
                       <td className="py-3 px-3.5 text-slate-600 font-medium">
-                        {p.paymentMethod || 'VNPay'}
+                        {p.paymentMethod || 'Unspecified'}
                       </td>
                       <td className="py-3 px-3.5 text-right font-bold text-slate-900 font-mono">
-                        {p.amount.toLocaleString('vi-VN')} ₫
+                        {p.status === 'REFUNDED' ? '−' : ''}{p.amount.toLocaleString('vi-VN')} ₫
                       </td>
                       <td className="py-3 px-3.5 text-center">
                         <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
@@ -421,7 +429,7 @@ export const CashierJournalPage: React.FC = () => {
                             ? 'bg-amber-50 text-amber-700 border-amber-200'
                             : 'bg-rose-50 text-rose-700 border-rose-200'
                         }`}>
-                          {isSuccess ? 'Thành công' : isPending ? 'Chờ xử lý' : 'Thất bại'}
+                          {paymentStatusLabel(p.status)}
                         </span>
                       </td>
                     </tr>

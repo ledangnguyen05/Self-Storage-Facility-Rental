@@ -6,6 +6,7 @@ import com.boxora.dto.response.VNPayIpnResponse;
 import com.boxora.dto.response.VNPayPaymentResponse;
 import com.boxora.entity.Booking;
 import com.boxora.entity.Payment;
+import com.boxora.entity.RentalContract;
 import com.boxora.enums.ActivityAction;
 import com.boxora.enums.BookingStatus;
 import com.boxora.enums.PaymentStatus;
@@ -100,6 +101,7 @@ class PaymentServiceTest {
         mockBooking = Booking.builder()
                 .bookingCode("BK-2026-001")
                 .status(BookingStatus.PENDING_PAYMENT)
+                .signingMethod("IN_PERSON")
                 .depositPaid(BigDecimal.ZERO)
                 .totalRentalFee(new BigDecimal("1000000"))
                 .build();
@@ -117,6 +119,8 @@ class PaymentServiceTest {
         mockPayment.setId(paymentId);
 
         lenient().when(bookingRepository.findByIdForUpdate(any())).thenReturn(Optional.of(mockBooking));
+        lenient().when(paymentRepository.findByTransactionIdForUpdate(anyString()))
+                .thenAnswer(invocation -> paymentRepository.findByTransactionId(invocation.getArgument(0)));
     }
 
     @Test
@@ -166,6 +170,91 @@ class PaymentServiceTest {
     }
 
     @Test
+    @DisplayName("Online booking payment is rejected until the persisted DocuSeal contract is confirmed signed")
+    void onlineBookingPaymentRequiresVerifiedSignedContract() {
+        mockBooking.setSigningMethod("ONLINE");
+        mockBooking.setPaymentExpiresAt(java.time.Instant.now().plusSeconds(900));
+        mockBooking.setDepositAmount(new BigDecimal("500000"));
+        mockBooking.setRentalMonths(1);
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(mockBooking));
+
+        for (PaymentType paymentType : java.util.List.of(
+                PaymentType.BOOKING_PAYMENT, PaymentType.DEPOSIT, PaymentType.RENTAL_FEE, PaymentType.EXTRA_CHARGE)) {
+            PaymentCreateRequest request = PaymentCreateRequest.builder()
+                    .bookingId(bookingId)
+                    .paymentType(paymentType)
+                    .amount(new BigDecimal("1500000"))
+                    .build();
+            AppException ex = assertThrows(AppException.class, () -> paymentService.createVNPayPayment(request, null));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+        }
+        verify(paymentRepository, never()).save(any(Payment.class));
+        verifyNoInteractions(vnPayService);
+    }
+
+    @Test
+    @DisplayName("Online booking payment is created after the contract row records a verified signature")
+    void onlineBookingPaymentAllowedAfterVerifiedSignature() {
+        mockBooking.setSigningMethod("ONLINE");
+        mockBooking.setPaymentExpiresAt(java.time.Instant.now().plusSeconds(900));
+        mockBooking.setDepositAmount(new BigDecimal("500000"));
+        mockBooking.setRentalMonths(1);
+        RentalContract signedContract = RentalContract.builder()
+                .booking(mockBooking)
+                .status(com.boxora.enums.RentalContractStatus.PENDING_ACTIVATION)
+                .signedAt(LocalDateTime.now())
+                .build();
+        PaymentCreateRequest request = PaymentCreateRequest.builder()
+                .bookingId(bookingId)
+                .paymentType(PaymentType.BOOKING_PAYMENT)
+                .amount(new BigDecimal("1500000"))
+                .build();
+
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(mockBooking));
+        when(rentalContractRepository.findByBookingIdForUpdate(bookingId)).thenReturn(Optional.of(signedContract));
+        when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(java.util.List.of());
+        when(requestContext.currentIpAddress()).thenReturn("127.0.0.1");
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> {
+            Payment p = invocation.getArgument(0);
+            p.setId(UUID.randomUUID());
+            return p;
+        });
+        when(vnPayService.createPaymentUrl(anyString(), any(BigDecimal.class), anyString(), anyString()))
+                .thenReturn("https://sandbox.vnpayment.vn/paymentv2/vpcpay.html");
+
+        VNPayPaymentResponse response = paymentService.createVNPayPayment(request, null);
+
+        assertThat(response.getAmount()).isEqualByComparingTo("1500000");
+        verify(rentalContractRepository).findByBookingIdForUpdate(bookingId);
+        verify(paymentRepository).save(any(Payment.class));
+    }
+
+    @Test
+    @DisplayName("Online booking payment rejects locally simulated signatures")
+    void onlineBookingPaymentRejectsMockSignatureData() {
+        mockBooking.setSigningMethod("ONLINE");
+        mockBooking.setPaymentExpiresAt(java.time.Instant.now().plusSeconds(900));
+        RentalContract simulatedContract = RentalContract.builder()
+                .booking(mockBooking)
+                .status(com.boxora.enums.RentalContractStatus.PENDING_ACTIVATION)
+                .signedAt(LocalDateTime.now())
+                .signatureData("data:image/png;base64,fake")
+                .build();
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(mockBooking));
+        when(rentalContractRepository.findByBookingIdForUpdate(bookingId)).thenReturn(Optional.of(simulatedContract));
+        PaymentCreateRequest request = PaymentCreateRequest.builder()
+                .bookingId(bookingId)
+                .paymentType(PaymentType.BOOKING_PAYMENT)
+                .amount(new BigDecimal("1000000"))
+                .build();
+
+        AppException exception = assertThrows(AppException.class, () -> paymentService.createVNPayPayment(request, null));
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+        verify(paymentRepository, never()).save(any(Payment.class));
+    }
+
+    @Test
     @DisplayName("processVNPayReturn should update Payment to PAID and Booking to CONFIRMED on code 00")
     void testProcessVNPayReturnSuccess() {
         Map<String, String> params = new HashMap<>();
@@ -212,12 +301,29 @@ class PaymentServiceTest {
     }
 
     @Test
+    @DisplayName("VNPay callback without a signed amount is not accepted as a payment result")
+    void processVNPayReturnRejectsMissingAmount() {
+        Map<String, String> params = new HashMap<>();
+        params.put("vnp_TxnRef", "BOX123456789");
+        params.put("vnp_ResponseCode", "00");
+        params.put("vnp_TransactionStatus", "00");
+        when(vnPayService.verifySignature(params)).thenReturn(true);
+        when(paymentRepository.findByTransactionId("BOX123456789")).thenReturn(Optional.of(mockPayment));
+
+        AppException exception = assertThrows(AppException.class, () -> paymentService.processVNPayReturn(params));
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
+        assertThat(mockPayment.getStatus()).isEqualTo(PaymentStatus.PENDING);
+    }
+
+    @Test
     @DisplayName("processVNPayReturn should mark Payment as FAILED when responseCode is not 00")
     void testProcessVNPayReturnFailure() {
         Map<String, String> params = new HashMap<>();
         params.put("vnp_TxnRef", "BOX123456789");
         params.put("vnp_ResponseCode", "24"); // Cancelled by customer
         params.put("vnp_TransactionStatus", "02");
+        params.put("vnp_Amount", "50000000");
 
         when(vnPayService.verifySignature(params)).thenReturn(true);
         when(paymentRepository.findByTransactionId("BOX123456789")).thenReturn(Optional.of(mockPayment));

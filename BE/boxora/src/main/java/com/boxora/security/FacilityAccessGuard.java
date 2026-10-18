@@ -43,6 +43,14 @@ public class FacilityAccessGuard {
 
     /** Facility to filter list queries by when isFacilityScoped() is true; null otherwise. */
     public UUID scopedFacilityIdOrNull() {
-        return isFacilityScoped() ? requestContext.currentUserFacilityId() : null;
+        if (!isFacilityScoped()) {
+            return null;
+        }
+
+        UUID facilityId = requestContext.currentUserFacilityId();
+        if (facilityId == null) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
+        }
+        return facilityId;
     }
 }

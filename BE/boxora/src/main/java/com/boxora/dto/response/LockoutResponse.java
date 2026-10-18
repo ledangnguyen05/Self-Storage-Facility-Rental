@@ -22,4 +22,5 @@ public class LockoutResponse {
     private String reason;
     private LocalDateTime lockedAt;
     private boolean pinRevoked;
+    private String physicalLockState;
 }

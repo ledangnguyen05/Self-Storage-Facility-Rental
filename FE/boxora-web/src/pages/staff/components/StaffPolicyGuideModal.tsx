@@ -142,7 +142,7 @@ export const StaffPolicyGuideModal: React.FC<StaffPolicyGuideModalProps> = ({
               <li>Mức thu tiền cọc bắt buộc: <strong className="text-slate-900 font-mono">{depositPct}% tiền thuê</strong>.</li>
               <li>Thời gian thuê tối thiểu hợp đồng: <strong className="text-slate-900">{minMonths} tháng</strong>.</li>
               <li>Cửa sổ đăng ký gia hạn: <strong className="text-slate-900">{renewalDays} ngày trước khi hợp đồng hết hạn</strong>.</li>
-              <li>Khi bàn giao chìa / PIN SmartLock: Phải đối chiếu CCCD và kích hoạt ứng dụng Boxora trước mặt khách.</li>
+              <li>Sau khi backend xác nhận đủ điều kiện, lập biên bản bàn giao và đối chiếu CCCD gốc. PIN phần mềm chưa được đồng bộ với khóa vật lý; không xác nhận khách đã mở được khóa nếu chưa kiểm tra trực tiếp tại cơ sở.</li>
             </ul>
           </div>
 

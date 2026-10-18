@@ -26,7 +26,7 @@ public class NotificationController {
     private final NotificationService notificationService;
 
     @PostMapping("renewal-reminders/scan")
-    @PreAuthorize("hasAuthority('RENEWAL_VIEW') or hasAnyRole('ADMIN', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAuthority('RENEWAL_SCAN')")
     @Operation(summary = "Kích hoạt quét toàn hệ thống và gửi email nhắc gia hạn mốc -7 và -3 ngày")
     public ResponseEntity<ApiResponse<RenewalReminderScanResponse>> triggerScan() {
         RenewalReminderScanResponse response = notificationService.scanAndSendRenewalReminders();
@@ -34,7 +34,7 @@ public class NotificationController {
     }
 
     @PostMapping("contracts/{contractId}/send-renewal-reminder")
-    @PreAuthorize("hasAuthority('RENEWAL_VIEW') or hasAnyRole('ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('RENEWAL_SEND')")
     @Operation(summary = "Gửi thông báo nhắc gia hạn trực tiếp cho một hợp đồng")
     public ResponseEntity<ApiResponse<Void>> sendSingleReminder(@PathVariable UUID contractId) {
         notificationService.sendSingleContractRenewalReminder(contractId);

@@ -127,6 +127,88 @@ class SupportTicketServiceTest {
     class CreateTicketTests {
 
         @Test
+        @DisplayName("Facility manager cannot create a ticket for a different facility")
+        void createTicket_facilityManagerCannotSpecifyAnotherFacility() {
+            UUID managerId = UUID.randomUUID();
+            UUID otherFacilityId = UUID.randomUUID();
+            User manager = User.builder().facility(testFacility).build();
+            manager.setId(managerId);
+            SupportTicketRequest request = SupportTicketRequest.builder()
+                    .customerId(customerId)
+                    .facilityId(otherFacilityId)
+                    .category("OTHER")
+                    .title("Facility issue")
+                    .description("Issue reported on site")
+                    .build();
+
+            when(requestContext.currentUserId()).thenReturn(managerId);
+            when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
+            when(userRepository.findById(managerId)).thenReturn(Optional.of(manager));
+
+            AppException ex = assertThrows(AppException.class, () -> supportTicketService.createTicket(request));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_FACILITY_MISMATCH);
+            verify(supportTicketRepository, never()).save(any(SupportTicket.class));
+        }
+
+        @Test
+        @DisplayName("Facility manager cannot create a ticket from a booking at a different facility")
+        void createTicket_facilityManagerCannotUseBookingFromAnotherFacility() {
+            UUID managerId = UUID.randomUUID();
+            UUID otherFacilityId = UUID.randomUUID();
+            Facility otherFacility = Facility.builder().name("Other facility").code("BX-OTHER").build();
+            otherFacility.setId(otherFacilityId);
+            StorageUnit otherUnit = StorageUnit.builder().unitCode("B-201").facility(otherFacility).build();
+            otherUnit.setId(UUID.randomUUID());
+            Booking otherBooking = Booking.builder().customer(testCustomer).storageUnit(otherUnit).build();
+            UUID otherBookingId = UUID.randomUUID();
+            otherBooking.setId(otherBookingId);
+            User manager = User.builder().facility(testFacility).build();
+            manager.setId(managerId);
+            SupportTicketRequest request = SupportTicketRequest.builder()
+                    .customerId(customerId)
+                    .bookingId(otherBookingId)
+                    .category("OTHER")
+                    .title("Facility issue")
+                    .description("Issue reported on site")
+                    .build();
+
+            when(requestContext.currentUserId()).thenReturn(managerId);
+            when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
+            when(userRepository.findById(managerId)).thenReturn(Optional.of(manager));
+            when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
+            when(bookingRepository.findById(otherBookingId)).thenReturn(Optional.of(otherBooking));
+
+            AppException ex = assertThrows(AppException.class, () -> supportTicketService.createTicket(request));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_FACILITY_MISMATCH);
+            verify(supportTicketRepository, never()).save(any(SupportTicket.class));
+        }
+
+        @Test
+        @DisplayName("Staff without an assigned facility cannot create a ticket")
+        void createTicket_staffWithoutAssignedFacilityIsForbidden() {
+            UUID staffId = UUID.randomUUID();
+            User unassignedStaff = User.builder().build();
+            unassignedStaff.setId(staffId);
+            SupportTicketRequest request = SupportTicketRequest.builder()
+                    .category("OTHER")
+                    .title("Facility issue")
+                    .description("Issue reported on site")
+                    .build();
+
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(unassignedStaff));
+
+            AppException ex = assertThrows(AppException.class, () -> supportTicketService.createTicket(request));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+            verify(facilityRepository, never()).findAllByOrderByCreatedAtAsc();
+            verify(supportTicketRepository, never()).save(any(SupportTicket.class));
+        }
+
+        @Test
         @DisplayName("createTicket should save imageEvidence string and parse into evidenceUrls response")
         void createTicket_withSingleImageEvidence_shouldSucceed() {
             String testImageUrl = "https://images.unsplash.com/photo-lock-issue.jpg";
@@ -664,14 +746,14 @@ class SupportTicketServiceTest {
             when(requestContext.currentUserId()).thenReturn(staffId);
             when(requestContext.currentUserRole()).thenReturn("STAFF");
             when(userRepository.findById(staffId)).thenReturn(Optional.of(staff));
-            when(supportTicketRepository.findByFacility_IdOrAssignedStaff_Id(facilityId, staffId))
+            when(supportTicketRepository.findByFacility_Id(facilityId))
                     .thenReturn(List.of(ticket1));
 
             List<SupportTicketResponse> res = supportTicketService.getQueue(null, null, null, null);
 
             assertThat(res).hasSize(1);
             assertThat(res.get(0).getTitle()).isEqualTo("Sự cố 1");
-            verify(supportTicketRepository).findByFacility_IdOrAssignedStaff_Id(facilityId, staffId);
+            verify(supportTicketRepository).findByFacility_Id(facilityId);
         }
 
         @Test
@@ -808,92 +890,42 @@ class SupportTicketServiceTest {
         }
 
         @Test
-        @DisplayName("Staff without assigned facility queries stats -> throws FORBIDDEN (deny-by-default)")
-        void staffQueriesStatsWithoutAssignedFacility_throwsForbidden() {
-            UUID staffId = UUID.randomUUID();
-            User unassignedStaff = User.builder().fullName("Staff Unassigned").facility(null).build();
-            unassignedStaff.setId(staffId);
-
-            when(requestContext.currentUserId()).thenReturn(staffId);
-            when(requestContext.currentUserRole()).thenReturn("STAFF");
-            when(userRepository.findById(staffId)).thenReturn(Optional.of(unassignedStaff));
-
-            AppException ex = assertThrows(AppException.class, () ->
-                    supportTicketService.getStats(null));
-
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
-        }
-
-        @Test
-        @DisplayName("getStats: Formula 5 statuses = totalTickets and real avgResolutionMinutes calculation")
-        void getStats_CalculatesRealAvgResolutionMinutes_AndStatusConsistency() {
+        @DisplayName("Ticket stats calculate resolution time from records and keep overdue as an overlapping dimension")
+        void statsUsePersistedResolutionTimesAndCountSlaSeparately() {
             UUID adminId = UUID.randomUUID();
             User admin = User.builder().fullName("Admin Sys").build();
             admin.setId(adminId);
 
             LocalDateTime now = LocalDateTime.now();
+            SupportTicket overdueOpen = SupportTicket.builder()
+                    .title("Open ticket past SLA")
+                    .facility(testFacility)
+                    .status(TicketStatus.OPEN)
+                    .slaDueAt(now.minusMinutes(5))
+                    .build();
+            overdueOpen.setCreatedAt(now.minusHours(2));
 
-            SupportTicket t1 = SupportTicket.builder().title("T1").facility(testFacility).status(TicketStatus.OPEN).build();
-            t1.setCreatedAt(now.minusHours(2));
-
-            SupportTicket t2 = SupportTicket.builder().title("T2").facility(testFacility).status(TicketStatus.IN_PROGRESS).build();
-            t2.setCreatedAt(now.minusHours(3));
-
-            SupportTicket t3 = SupportTicket.builder().title("T3").facility(testFacility).status(TicketStatus.REOPENED).build();
-            t3.setCreatedAt(now.minusHours(4));
-
-            SupportTicket t4 = SupportTicket.builder().title("T4").facility(testFacility).status(TicketStatus.RESOLVED)
-                    .resolvedAt(now).build(); // 60 mins
-            t4.setCreatedAt(now.minusMinutes(60));
-
-            SupportTicket t5 = SupportTicket.builder().title("T5").facility(testFacility).status(TicketStatus.CLOSED)
-                    .resolvedAt(now).build(); // 120 mins
-            t5.setCreatedAt(now.minusMinutes(120));
+            SupportTicket resolved = SupportTicket.builder()
+                    .title("Resolved ticket")
+                    .facility(testFacility)
+                    .status(TicketStatus.RESOLVED)
+                    .resolvedAt(now.minusMinutes(30))
+                    .build();
+            resolved.setCreatedAt(now.minusMinutes(90));
 
             when(requestContext.currentUserId()).thenReturn(adminId);
             when(requestContext.currentUserRole()).thenReturn("ADMIN");
             when(userRepository.findById(adminId)).thenReturn(Optional.of(admin));
-            when(supportTicketRepository.findAll()).thenReturn(List.of(t1, t2, t3, t4, t5));
+            when(supportTicketRepository.findAll()).thenReturn(List.of(overdueOpen, resolved));
 
             SupportTicketStatsResponse stats = supportTicketService.getStats(null);
 
-            assertThat(stats.getTotalTickets()).isEqualTo(5);
+            assertThat(stats.getTotalTickets()).isEqualTo(2);
             assertThat(stats.getOpenTickets()).isEqualTo(1);
-            assertThat(stats.getInProgressTickets()).isEqualTo(1);
-            assertThat(stats.getReopenedTickets()).isEqualTo(1);
             assertThat(stats.getResolvedTickets()).isEqualTo(1);
-            assertThat(stats.getClosedTickets()).isEqualTo(1);
-
-            // Consistency verification
-            long sumStatuses = stats.getOpenTickets() + stats.getInProgressTickets() + stats.getReopenedTickets()
-                    + stats.getResolvedTickets() + stats.getClosedTickets();
-            assertThat(sumStatuses).isEqualTo(stats.getTotalTickets());
-
-            // Real avg calculation: (60 + 120) / 2 = 90.0 minutes
-            assertThat(stats.getAvgResolutionMinutes()).isNotNull();
-            assertThat(stats.getAvgResolutionMinutes()).isEqualTo(90.0);
-        }
-
-        @Test
-        @DisplayName("getStats: avgResolutionMinutes is null when no resolved tickets exist (no fake 18.0)")
-        void getStats_AvgResolutionMinutesNullWhenNoResolvedTickets() {
-            UUID adminId = UUID.randomUUID();
-            User admin = User.builder().fullName("Admin Sys").build();
-            admin.setId(adminId);
-
-            LocalDateTime now = LocalDateTime.now();
-            SupportTicket t1 = SupportTicket.builder().title("T1").facility(testFacility).status(TicketStatus.OPEN).build();
-            t1.setCreatedAt(now);
-
-            when(requestContext.currentUserId()).thenReturn(adminId);
-            when(requestContext.currentUserRole()).thenReturn("ADMIN");
-            when(userRepository.findById(adminId)).thenReturn(Optional.of(admin));
-            when(supportTicketRepository.findAll()).thenReturn(List.of(t1));
-
-            SupportTicketStatsResponse stats = supportTicketService.getStats(null);
-
-            assertThat(stats.getTotalTickets()).isEqualTo(1);
-            assertThat(stats.getAvgResolutionMinutes()).isNull();
+            assertThat(stats.getOverdueTickets()).isEqualTo(1);
+            assertThat(stats.getSlaCompliancePercent()).isEqualTo(50.0);
+            assertThat(stats.getAvgResolutionMinutes()).isEqualTo(60.0);
         }
     }
 }

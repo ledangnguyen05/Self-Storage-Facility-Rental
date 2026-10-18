@@ -12,6 +12,7 @@ import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
 import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
 import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
 import { PaymentResultPage } from './pages/public/PaymentResultPage'
+import { OnlineBookingContractPage } from './pages/customer/OnlineBookingContractPage'
 
 // StorageOps Pro Portals (Matching Prototype Stitch Files)
 
@@ -81,6 +82,14 @@ function MainContent() {
           <Route path="/units" element={<UnitsExplorerPage />} />
           <Route path="/explore-units" element={<UnitsExplorerPage />} />
           <Route path="/payment-result" element={<PaymentResultPage />} />
+          <Route
+            path="/online-booking-contract"
+            element={
+              <ProtectedRoute allowedRoles={['CUSTOMER']}>
+                <OnlineBookingContractPage />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Boxora Terms & Standards Dashboard */}
           <Route path="/terms" element={<TermsAndStandardsPage />} />
@@ -108,21 +117,21 @@ function MainContent() {
               }
             />
 
-            {/* 2. Staff Portal: Staff, Facility Manager */}
+            {/* 2. Staff Portal: operational access is reserved for Staff */}
             <Route
               path="staff"
               element={
-                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER']}>
+                <ProtectedRoute allowedRoles={['STAFF']}>
                   <StaffDashboard />
                 </ProtectedRoute>
               }
             />
 
-            {/* 3. Facility Manager Portal: Facility Manager, Business Manager, Admin, Staff */}
+            {/* 3. Facility operations belong to the assigned facility team */}
             <Route
               path="facility-manager"
               element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN', 'STAFF']}>
+                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'STAFF']}>
                   <ManagerDashboard />
                 </ProtectedRoute>
               }
@@ -167,21 +176,21 @@ function MainContent() {
               }
             />
 
-            {/* 8. Overdue Delinquency Management: Facility Manager, Business Manager, Admin */}
+            {/* 8. Overdue actions are operational facility work */}
             <Route
               path="overdue"
               element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
+                <ProtectedRoute allowedRoles={['FACILITY_MANAGER']}>
                   <OverdueManagementPage />
                 </ProtectedRoute>
               }
             />
 
-            {/* 9. Shift Roster & Workforce: Facility Manager, Business Manager, Admin */}
+            {/* 9. Facility managers administer schedules; Staff see their own shifts in their portal */}
             <Route
               path="shifts"
               element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
+                <ProtectedRoute allowedRoles={['FACILITY_MANAGER']}>
                   <ShiftRosterPage />
                 </ProtectedRoute>
               }

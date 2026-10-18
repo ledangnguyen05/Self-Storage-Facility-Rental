@@ -160,11 +160,6 @@ export const bookingService = {
     return response.data?.data as Booking
   },
 
-  async remoteUnlock(id: string) {
-    const response = await api.post(`/api/v1/bookings/${id}/remote-unlock`)
-    return response.data?.data as Booking
-  },
-
   async rescheduleBooking(id: string, payload: BookingReschedulePayload) {
     const response = await api.put(`/api/v1/bookings/${id}/reschedule`, payload)
     return response.data?.data as Booking

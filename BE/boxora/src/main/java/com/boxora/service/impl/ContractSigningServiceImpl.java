@@ -284,6 +284,11 @@ public class ContractSigningServiceImpl implements ContractSigningService {
             throw new AppException(ErrorCode.INVALID_REQUEST);
         }
 
+        if (isOnlineBookingContract(contract) && docuSealConfig.isMockActive()) {
+            throw new AppException(ErrorCode.CONTRACT_SIGNING_FAILED,
+                    "Dịch vụ DocuSeal chưa được cấu hình; không thể tạo chữ ký mô phỏng cho đặt thuê trực tuyến.");
+        }
+
         // Nếu đã có slug tạo trước đó và chưa ký, có thể tái sử dụng signing URL
         if (contract.getDocusealSubmitterSlug() != null) {
             return signingUrl(contract, contract.getDocusealSubmitterSlug());
@@ -295,7 +300,10 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         DocuSealSubmissionRequest request = DocuSealSubmissionRequest.builder()
                 .template_id(docuSealConfig.getTemplateId())
                 .send_email(false)
-                .completed_redirect_url(frontendUrl + "/portal/customer?tab=contracts&signed=true")
+                .completed_redirect_url(contract.getBooking() != null
+                        && "ONLINE".equalsIgnoreCase(contract.getBooking().getSigningMethod())
+                        ? frontendUrl + "/online-booking-contract?bookingId=" + contract.getBooking().getId()
+                        : frontendUrl + "/portal/customer?tab=contracts")
                 .submitters(List.of(
                         DocuSealSubmissionRequest.Submitter.builder()
                                 .role("Customer")
@@ -307,10 +315,19 @@ public class ContractSigningServiceImpl implements ContractSigningService {
                                         field("customer_email", customerEmail),
                                         field("unit_code", contract.getUnit().getUnitCode()),
                                         field("facility_name", contract.getFacility().getName()),
+                                        field("booking_code", contract.getBooking() != null ? contract.getBooking().getBookingCode() : ""),
                                         field("start_date", contract.getStartDate().format(DATE_FMT)),
                                         field("end_date", contract.getEndDate().format(DATE_FMT)),
                                         field("monthly_fee", contract.getMonthlyFee() != null ? contract.getMonthlyFee().toPlainString() : "0"),
-                                        field("deposit_amount", contract.getDepositHeld() != null ? contract.getDepositHeld().toPlainString() : "0")
+                                        field("rental_months", contract.getBooking() != null && contract.getBooking().getRentalMonths() != null
+                                                ? contract.getBooking().getRentalMonths().toString() : ""),
+                                        field("rental_total", contract.getBooking() != null && contract.getBooking().getTotalRentalFee() != null
+                                                ? contract.getBooking().getTotalRentalFee().toPlainString() : ""),
+                                        field("deposit_amount", contract.getBooking() != null && contract.getBooking().getDepositAmount() != null
+                                                ? contract.getBooking().getDepositAmount().toPlainString()
+                                                : (contract.getDepositHeld() != null ? contract.getDepositHeld().toPlainString() : "0")),
+                                        field("expected_check_in_at", contract.getBooking() != null && contract.getBooking().getExpectedCheckInAt() != null
+                                                ? contract.getBooking().getExpectedCheckInAt().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")) : "")
                                 ))
                                 .build()
                 ))
@@ -430,10 +447,26 @@ public class ContractSigningServiceImpl implements ContractSigningService {
             return;
         }
 
-        RentalContract contract = rentalContractRepository.findById(contractId).orElse(null);
+        RentalContract contract = rentalContractRepository.findByIdForUpdate(contractId).orElse(null);
         if (contract == null) {
             log.warn("No contract found for DocuSeal external_id={}", externalId);
             return;
+        }
+
+        Object rawSubmissionId = data.get("submission_id");
+        if (rawSubmissionId != null && contract.getDocusealSubmissionId() != null) {
+            try {
+                long receivedSubmissionId = rawSubmissionId instanceof Number number
+                        ? number.longValue()
+                        : Long.parseLong(rawSubmissionId.toString());
+                if (!contract.getDocusealSubmissionId().equals(receivedSubmissionId)) {
+                    log.warn("Ignoring DocuSeal completion for contract {} with an unexpected submission id", contractId);
+                    return;
+                }
+            } catch (NumberFormatException ex) {
+                log.warn("Ignoring DocuSeal completion for contract {} with an invalid submission id", contractId);
+                return;
+            }
         }
 
         // Idempotency: không xử lý lại nếu đã được đánh dấu ký
@@ -504,6 +537,10 @@ public class ContractSigningServiceImpl implements ContractSigningService {
 
         if (contract.getBooking() != null) {
             Booking booking = contract.getBooking();
+            if ("ONLINE".equalsIgnoreCase(booking.getSigningMethod())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST,
+                        "Đặt thuê ký trực tuyến chỉ được xác nhận qua webhook DocuSeal đã xác thực.");
+            }
             if (booking.getStatus() == BookingStatus.CANCELLED
                     || booking.getStatus() == BookingStatus.OVERDUE
                     || booking.getStatus() == BookingStatus.COMPLETED
@@ -572,6 +609,11 @@ public class ContractSigningServiceImpl implements ContractSigningService {
             }
         }
         return false;
+    }
+
+    private boolean isOnlineBookingContract(RentalContract contract) {
+        return contract != null && contract.getBooking() != null
+                && "ONLINE".equalsIgnoreCase(contract.getBooking().getSigningMethod());
     }
 
     private boolean isBookingInitialPaymentSatisfied(Booking booking) {
@@ -696,7 +738,7 @@ public class ContractSigningServiceImpl implements ContractSigningService {
     }
 
     private void completeContractSigning(RentalContract contract, String documentUrl) {
-        contract.setSignedDocumentUrl(documentUrl != null ? documentUrl : "https://docuseal.com/documents/contract-" + contract.getContractCode() + "-signed.pdf");
+        contract.setSignedDocumentUrl(documentUrl);
         contract.setSignedAt(LocalDateTime.now());
         boolean isBookingPendingCheckIn = contract.getBooking() != null && contract.getBooking().getStatus() != BookingStatus.ACTIVE;
         contract.setStatus(isBookingPendingCheckIn ? RentalContractStatus.PENDING_ACTIVATION : RentalContractStatus.ACTIVE);
@@ -735,6 +777,9 @@ public class ContractSigningServiceImpl implements ContractSigningService {
     @Transactional
     public RentalContract ensureContractForBooking(Booking booking) {
         if (booking == null) return null;
+        if (booking.getId() != null) {
+            booking = bookingRepository.findByIdForUpdate(booking.getId()).orElse(booking);
+        }
         Optional<RentalContract> existing = rentalContractRepository.findByBookingId(booking.getId());
         if (existing.isPresent()) {
             return existing.get();
@@ -742,11 +787,9 @@ public class ContractSigningServiceImpl implements ContractSigningService {
 
         StorageUnit unit = booking.getStorageUnit();
         Facility facility = unit != null ? unit.getFacility() : null;
-        BigDecimal monthlyFee = (unit != null && unit.getEffectiveBasePrice() != null)
-                ? unit.getEffectiveBasePrice()
-                : (booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
-                ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), java.math.RoundingMode.HALF_UP)
-                : BigDecimal.valueOf(1500000));
+        BigDecimal monthlyFee = booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
+                ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP)
+                : (unit != null && unit.getEffectiveBasePrice() != null ? unit.getEffectiveBasePrice() : BigDecimal.valueOf(1500000));
 
         RentalContract contract = RentalContract.builder()
                 .contractCode("CTR-" + booking.getBookingCode())
@@ -759,6 +802,7 @@ public class ContractSigningServiceImpl implements ContractSigningService {
                 .monthlyFee(monthlyFee)
                 .depositHeld(booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO)
                 .status(booking.getStatus() == BookingStatus.ACTIVE ? RentalContractStatus.ACTIVE : RentalContractStatus.PENDING_SIGNATURE)
+                .signingMethod(booking.getSigningMethod() != null ? booking.getSigningMethod() : "ELECTRONIC")
                 .build();
 
         contract = rentalContractRepository.save(contract);

@@ -39,6 +39,7 @@ import java.util.UUID;
 public class OverdueProcessingServiceImpl implements OverdueProcessingService {
 
     private final RentalContractRepository rentalContractRepository;
+    private final FacilityPolicyRepository facilityPolicyRepository;
     private final BookingRepository bookingRepository;
     private final StorageUnitRepository storageUnitRepository;
     private final SealingRecordRepository sealingRecordRepository;
@@ -57,18 +58,18 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
         log.info("[CRON] Starting daily automated overdue scan...");
         try {
             OverdueProcessResult result = processOverdueContracts(LocalDate.now());
-            log.info("[CRON] Overdue scan completed. Scanned: {}, Late Penalty: {}, PIN Locked: {}, Sealed: {}",
+            log.info("[CRON] Overdue scan completed. Scanned: {}, Late Penalty: {}, Credentials Revoked in Boxora: {}, Sealing Eligible: {}",
                     result.getScannedOverdueContractsCount(),
                     result.getLatePenaltyCount(),
                     result.getPinDisabledCount(),
-                    result.getSealedUnitsCount());
+                    result.getSealingEligibleCount());
         } catch (Exception e) {
             log.error("[CRON] Error during daily automated overdue scan", e);
         }
     }
 
     /**
-     * Cron Job tự động thu hồi mã SmartLock PIN/QR khi hợp đồng đã hết hạn kỳ thuê (9.8).
+     * Scheduled Boxora credential cleanup for expired contracts.
      */
     @Scheduled(cron = "${app.scheduling.credential-cleanup-cron:0 0 2 * * ?}")
     @Transactional
@@ -78,19 +79,36 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
             LocalDate today = LocalDate.now();
             List<RentalContract> expiredContracts = rentalContractRepository.findActiveOrOverdueContractsBeforeDate(today);
             for (RentalContract contract : expiredContracts) {
+                Facility facility = contract.getFacility();
+                StorageUnit unit = contract.getUnit();
                 Booking booking = contract.getBooking();
-                if (booking != null && booking.getAccessPin() != null && ChronoUnit.DAYS.between(contract.getEndDate(), today) >= 1) {
+                if (facility == null || unit == null || unit.getFacility() == null
+                        || !facility.getId().equals(unit.getFacility().getId()) || booking == null
+                        || (booking.getStatus() != BookingStatus.ACTIVE && booking.getStatus() != BookingStatus.OVERDUE)
+                        || !isRecognizedPaymentStatus(booking.getPaymentStatus())
+                        || "REFUNDED".equalsIgnoreCase(booking.getPaymentStatus())) {
+                    continue;
+                }
+                FacilityPolicy policy = facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facility.getId()).orElse(null);
+                if (policy == null || policy.getOverdueAccessDisableDays() == null
+                        || policy.getOverdueAccessDisableDays() < 0) {
+                    continue;
+                }
+                long overdueDays = ChronoUnit.DAYS.between(contract.getEndDate(), today);
+                boolean credentialsNeedRevocation = booking.getAccessPin() != null
+                        || (booking.getQrAccessToken() != null && !booking.getQrAccessToken().startsWith("REVOKED"));
+                if (overdueDays >= policy.getOverdueAccessDisableDays() && credentialsNeedRevocation) {
                     booking.setAccessPin(null);
-                    if (booking.getQrAccessToken() != null && !booking.getQrAccessToken().startsWith("REVOKED")) {
-                        booking.setQrAccessToken("REVOKED_EXPIRED");
-                    }
+                    booking.setQrAccessToken("REVOKED_EXPIRED");
                     bookingRepository.save(booking);
                     activityLogService.recordSystem(
-                            contract.getFacility() != null ? contract.getFacility().getId() : null,
+                            facility.getId(),
                             ActivityAction.ACCESS_CREDENTIAL_REVOKE,
                             "Booking",
                             booking.getId(),
-                            "Tự động thu hồi mã PIN/QR kho " + (contract.getUnit() != null ? contract.getUnit().getUnitCode() : "") + " do hợp đồng " + contract.getContractCode() + " đã hết hạn."
+                            "PIN/QR credentials revoked in Boxora for unit " + unit.getUnitCode()
+                                    + " because contract " + contract.getContractCode()
+                                    + " passed the facility policy threshold; physical lock state is unverified."
                     );
                 }
             }
@@ -100,7 +118,8 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
     }
 
     /**
-     * Nghiệp vụ chính: Quét và xử lý hợp đồng quá hạn theo mốc (+1 phạt 5%, +3 khóa PIN, +7 niêm phong BR-RULE-012).
+     * Scans overdue contracts, revokes stored credentials at the facility threshold, and reports sealing eligibility.
+     * Physical sealing remains a witnessed on-site workflow.
      */
     @Override
     @Transactional
@@ -108,12 +127,19 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
         LocalDate today = (referenceDate != null) ? referenceDate : LocalDate.now();
         log.info("Processing overdue contracts with reference date: {}", today);
 
+        UUID scopedFacilityId = facilityAccessGuard.isFacilityScoped()
+                ? facilityAccessGuard.scopedFacilityIdOrNull()
+                : null;
         List<RentalContract> overdueContracts = rentalContractRepository
-                .findActiveOrOverdueContractsBeforeDate(today);
+                .findActiveOrOverdueContractsBeforeDate(today).stream()
+                .filter(contract -> scopedFacilityId == null
+                        || (contract.getFacility() != null && scopedFacilityId.equals(contract.getFacility().getId())))
+                .toList();
 
         int penaltyCount = 0;
         int pinLockCount = 0;
         int sealedCount = 0;
+        int sealingEligibleCount = 0;
         List<OverdueContractDetail> details = new ArrayList<>();
 
         for (RentalContract contract : overdueContracts) {
@@ -126,10 +152,26 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
             Facility facility = contract.getFacility();
             Booking booking = contract.getBooking();
 
+            if (facility == null || unit == null || unit.getFacility() == null
+                    || !facility.getId().equals(unit.getFacility().getId())) {
+                log.warn("Skipping overdue contract {} with missing or mismatched facility/unit scope", contract.getId());
+                continue;
+            }
+
+            FacilityPolicy policy = facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facility.getId()).orElse(null);
+
+            if (booking != null && ((booking.getStatus() != BookingStatus.ACTIVE
+                    && booking.getStatus() != BookingStatus.OVERDUE)
+                    || !isRecognizedPaymentStatus(booking.getPaymentStatus()))) {
+                log.info("Skipping overdue processing for booking {} with inactive or unreconciled status", booking.getId());
+                continue;
+            }
+
             boolean latePenaltyApplied = false;
             BigDecimal latePenaltyAmount = BigDecimal.ZERO;
             boolean pinAccessDisabled = false;
-            boolean unitSealed = false;
+            boolean unitSealed = sealingRecordRepository
+                    .existsByStorageUnit_IdAndStatus(unit.getId(), SealingStatus.SEALED);
             String sealTagNumber = null;
             List<String> actions = new ArrayList<>();
 
@@ -167,88 +209,41 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
             // =========================================================================
             // MỐC 2: +3 NGÀY QUÁ HẠN -> Khóa mã PIN / thu hồi quyền truy cập (Idempotent)
             // =========================================================================
-            if (overdueDays >= 3) {
-                boolean alreadyDisabled = booking != null && booking.getAccessPin() == null
+            if (booking != null && policy != null && policy.getOverdueAccessDisableDays() != null
+                    && overdueDays >= policy.getOverdueAccessDisableDays()) {
+                boolean alreadyDisabled = booking.getAccessPin() == null
                         && "REVOKED_OVERDUE".equals(booking.getQrAccessToken());
-
-                if (booking != null && !alreadyDisabled) {
+                if (alreadyDisabled) {
+                    pinAccessDisabled = true;
+                    actions.add("PIN/QR credentials were already revoked in Boxora; physical lock state is unverified.");
+                } else if ((booking.getStatus() == BookingStatus.ACTIVE || booking.getStatus() == BookingStatus.OVERDUE)
+                        && isRecognizedPaymentStatus(booking.getPaymentStatus())
+                        && !"REFUNDED".equalsIgnoreCase(booking.getPaymentStatus())) {
                     booking.setStatus(BookingStatus.OVERDUE);
-                    booking.setAccessPin(null); // Khóa PIN
+                    booking.setAccessPin(null);
                     booking.setQrAccessToken("REVOKED_OVERDUE");
                     bookingRepository.save(booking);
 
                     pinAccessDisabled = true;
                     pinLockCount++;
-                    actions.add("Đã khóa mã PIN và vô hiệu hóa mã QR truy cập (+3 ngày)");
-
+                    actions.add("PIN/QR credentials revoked in Boxora; physical lock state is unverified.");
                     activityLogService.recordSystem(
-                            facility != null ? facility.getId() : null,
+                            facility.getId(),
                             ActivityAction.OVERDUE_ACCESS_DISABLED,
                             "Booking",
                             booking.getId(),
-                            String.format("Hợp đồng %s quá hạn %d ngày (+3 ngày). Đã khóa quyền truy cập PIN/QR kho %s",
-                                    contract.getContractCode(), overdueDays, unit != null ? unit.getUnitCode() : "N/A")
+                            String.format("Contract %s is %d days overdue. PIN/QR credentials revoked in Boxora for unit %s; physical lock state is unverified.",
+                                    contract.getContractCode(), overdueDays, unit.getUnitCode())
                     );
                 } else {
-                    pinAccessDisabled = true;
-                    actions.add("Quyền truy cập PIN/QR đã bị vô hiệu hóa trước đó.");
+                    actions.add("Skipped credential revocation for cancelled or refunded booking.");
                 }
             }
-
-            // =========================================================================
-            // MỐC 3: +7 NGÀY QUÁ HẠN -> Niêm phong kho (Sealing Record BR-RULE-012)
-            // =========================================================================
-            if (overdueDays >= 7 && unit != null) {
-                boolean alreadySealed = sealingRecordRepository
-                        .existsByStorageUnit_IdAndStatus(unit.getId(), SealingStatus.SEALED);
-
-                if (!alreadySealed) {
-                    User sealedBy = findSealedByUser(facility);
-                    User witness = findWitnessUser(facility, sealedBy);
-
-                    sealTagNumber = String.format("SEAL-%d-%s-%04d",
-                            today.getYear(),
-                            unit.getUnitCode() != null ? unit.getUnitCode() : "UNIT",
-                            (System.currentTimeMillis() % 10000));
-
-                    SealingRecord sealingRecord = SealingRecord.builder()
-                            .storageUnit(unit)
-                            .contract(contract)
-                            .facility(facility)
-                            .sealTagNumber(sealTagNumber)
-                            .reason(String.format("Quá hạn hợp đồng %s %d ngày (+7 ngày theo BR-RULE-012). Tự động niêm phong bảo toàn tài sản.",
-                                    contract.getContractCode(), overdueDays))
-                            .sealedAt(LocalDateTime.now())
-                            .sealedBy(sealedBy)
-                            .witness(witness)
-                            .status(SealingStatus.SEALED)
-                            .notes("Hệ thống tự động lập biên bản niêm phong kho qua Overdue Cron Job.")
-                            .build();
-
-                    sealingRecordRepository.save(sealingRecord);
-
-                    // Đổi trạng thái kho sang UNDER_MAINTENANCE để ngăn cấp phát mới
-                    unit.setStatus(UnitStatus.UNDER_MAINTENANCE);
-                    storageUnitRepository.save(unit);
-
-                    unitSealed = true;
-                    sealedCount++;
-                    actions.add(String.format("Đã lập biên bản niêm phong %s và khóa kho (+7 ngày theo BR-RULE-012)", sealTagNumber));
-
-                    activityLogService.recordSystem(
-                            facility != null ? facility.getId() : null,
-                            ActivityAction.OVERDUE_SEALING_APPROVED,
-                            "SealingRecord",
-                            sealingRecord.getId(),
-                            String.format("Hợp đồng %s quá hạn %d ngày (+7 ngày). Đã niêm phong kho %s, số tem: %s",
-                                    contract.getContractCode(), overdueDays, unit.getUnitCode(), sealTagNumber)
-                    );
-                } else {
-                    unitSealed = true;
-                    actions.add("Kho đã trong trạng thái niêm phong trước đó.");
-                }
+            if (policy != null && policy.getOverdueSealingDays() != null && policy.getOverdueSealingDays() >= 0
+                    && overdueDays >= policy.getOverdueSealingDays()) {
+                sealingEligibleCount++;
+                actions.add("Eligible for on-site sealing under the facility policy; no physical sealing was performed by this scan.");
             }
-
             rentalContractRepository.save(contract);
 
             OverdueContractDetail detail = OverdueContractDetail.builder()
@@ -269,6 +264,7 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
                     .latePenaltyAmount(latePenaltyAmount)
                     .pinAccessDisabled(pinAccessDisabled)
                     .unitSealed(unitSealed)
+                    .physicalLockState("UNVERIFIED")
                     .sealTagNumber(sealTagNumber)
                     .actionSummary(String.join("; ", actions))
                     .build();
@@ -278,10 +274,11 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
 
         return OverdueProcessResult.builder()
                 .executionTime(LocalDateTime.now())
-                .scannedOverdueContractsCount(overdueContracts.size())
+                .scannedOverdueContractsCount(details.size())
                 .latePenaltyCount(penaltyCount)
                 .pinDisabledCount(pinLockCount)
                 .sealedUnitsCount(sealedCount)
+                .sealingEligibleCount(sealingEligibleCount)
                 .details(details)
                 .build();
     }
@@ -290,42 +287,55 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
     @Transactional(readOnly = true)
     public List<OverdueContractDetail> getOverdueContractsSummary() {
         LocalDate today = LocalDate.now();
+        UUID scopedFacilityId = facilityAccessGuard.isFacilityScoped()
+                ? facilityAccessGuard.scopedFacilityIdOrNull()
+                : null;
         List<RentalContract> list = rentalContractRepository.findActiveOrOverdueContractsBeforeDate(today);
 
-        return list.stream().map(c -> {
-            long overdueDays = ChronoUnit.DAYS.between(c.getEndDate(), today);
-            boolean isSealed = c.getUnit() != null && sealingRecordRepository
-                    .existsByStorageUnit_IdAndStatus(c.getUnit().getId(), SealingStatus.SEALED);
+        return list.stream()
+                .filter(contract -> contract.getFacility() != null
+                        && (scopedFacilityId == null || scopedFacilityId.equals(contract.getFacility().getId())))
+                .filter(contract -> contract.getBooking() == null
+                        || ((contract.getBooking().getStatus() == BookingStatus.ACTIVE
+                        || contract.getBooking().getStatus() == BookingStatus.OVERDUE)
+                        && isRecognizedPaymentStatus(contract.getBooking().getPaymentStatus())))
+                .map(contract -> {
+                    long overdueDays = ChronoUnit.DAYS.between(contract.getEndDate(), today);
+                    Booking booking = contract.getBooking();
+                    StorageUnit unit = contract.getUnit();
+                    boolean penaltyRecorded = activityLogRepository.existsByResourceIdAndAction(
+                            contract.getId(), ActivityAction.OVERDUE_DETECTED);
+                    boolean credentialsRevoked = booking != null && booking.getAccessPin() == null
+                            && booking.getQrAccessToken() != null && booking.getQrAccessToken().startsWith("REVOKED");
+                    boolean sealingRecordExists = unit != null && sealingRecordRepository
+                            .existsByStorageUnit_IdAndStatus(unit.getId(), SealingStatus.SEALED);
 
-            BigDecimal latePenalty = c.getMonthlyFee() != null
-                    ? c.getMonthlyFee().multiply(new BigDecimal("0.05")) : BigDecimal.ZERO;
-
-            return OverdueContractDetail.builder()
-                    .contractId(c.getId())
-                    .contractCode(c.getContractCode())
-                    .customerId(c.getCustomer() != null ? c.getCustomer().getId() : null)
-                    .customerName(c.getCustomer() != null ? c.getCustomer().getFullName() : "N/A")
-                    .customerEmail(c.getCustomer() != null ? c.getCustomer().getEmail() : "N/A")
-                    .storageUnitId(c.getUnit() != null ? c.getUnit().getId() : null)
-                    .unitCode(c.getUnit() != null ? c.getUnit().getUnitCode() : "N/A")
-                    .facilityId(c.getFacility() != null ? c.getFacility().getId() : null)
-                    .facilityName(c.getFacility() != null ? c.getFacility().getName() : "N/A")
-                    .endDate(c.getEndDate())
-                    .overdueDays(overdueDays)
-                    .monthlyFee(c.getMonthlyFee())
-                    .contractStatus(c.getStatus())
-                    .latePenaltyApplied(overdueDays >= 1)
-                    .latePenaltyAmount(latePenalty)
-                    .pinAccessDisabled(overdueDays >= 3)
-                    .unitSealed(isSealed || overdueDays >= 7)
-                    .actionSummary(String.format("Quá hạn %d ngày. Giai đoạn: %s",
-                            overdueDays,
-                            overdueDays >= 7 ? "Mốc +7 (Niêm phong)" :
-                            overdueDays >= 3 ? "Mốc +3 (Khóa PIN)" : "Mốc +1 (Phạt 5%)"))
-                    .build();
-        }).toList();
+                    return OverdueContractDetail.builder()
+                            .contractId(contract.getId())
+                            .contractCode(contract.getContractCode())
+                            .customerId(contract.getCustomer() != null ? contract.getCustomer().getId() : null)
+                            .customerName(contract.getCustomer() != null ? contract.getCustomer().getFullName() : null)
+                            .customerEmail(contract.getCustomer() != null ? contract.getCustomer().getEmail() : null)
+                            .storageUnitId(unit != null ? unit.getId() : null)
+                            .unitCode(unit != null ? unit.getUnitCode() : null)
+                            .facilityId(contract.getFacility().getId())
+                            .facilityName(contract.getFacility().getName())
+                            .endDate(contract.getEndDate())
+                            .overdueDays(overdueDays)
+                            .monthlyFee(contract.getMonthlyFee())
+                            .contractStatus(contract.getStatus())
+                            .latePenaltyApplied(penaltyRecorded)
+                            .latePenaltyAmount(null)
+                            .pinAccessDisabled(credentialsRevoked)
+                            .unitSealed(sealingRecordExists)
+                            .physicalLockState("UNVERIFIED")
+                            .actionSummary(String.format(
+                                    "%d days overdue. Fee record: %s. Boxora PIN/QR revoked: %s. Sealing record exists: %s. Physical lock state: unverified.",
+                                    overdueDays, penaltyRecorded, credentialsRevoked, sealingRecordExists))
+                            .build();
+                })
+                .toList();
     }
-
     @Override
     @Transactional(readOnly = true)
     public PageResponse<SealingRecordResponse> getAllSealingRecords(
@@ -350,6 +360,9 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
         SealingRecord record = sealingRecordRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.SEALING_RECORD_NOT_FOUND));
 
+        if (record.getFacility() == null) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
+        }
         facilityAccessGuard.checkFacilityAccess(record.getFacility().getId());
 
         return sealingRecordMapper.toResponse(record);
@@ -367,12 +380,18 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
             throw new AppException(ErrorCode.SEALING_ALREADY_UNSEALED);
         }
 
+        if (record.getFacility() == null) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
+        }
         facilityAccessGuard.checkFacilityAccess(record.getFacility().getId());
 
-        User unsealedBy = null;
         UUID currentUserId = requestContext.currentUserId();
-        if (currentUserId != null) {
-            unsealedBy = userRepository.findById(currentUserId).orElse(null);
+        User unsealedBy = currentUserId != null ? userRepository.findById(currentUserId).orElse(null) : null;
+        if (unsealedBy == null || !Boolean.TRUE.equals(unsealedBy.getIsActive())) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
+        if (!isFacilityOperator(unsealedBy, record.getFacility())) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
         }
 
         record.setStatus(SealingStatus.UNSEALED);
@@ -389,8 +408,20 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
         // Mở lại trạng thái kho
         StorageUnit unit = record.getStorageUnit();
         if (unit != null) {
-            unit.setStatus(UnitStatus.AVAILABLE);
+            RentalContract contract = record.getContract();
+            if (contract != null && contract.getEndDate() != null && !LocalDate.now().isAfter(contract.getEndDate())) {
+                unit.setStatus(UnitStatus.OCCUPIED);
+                contract.setStatus(RentalContractStatus.ACTIVE);
+            } else {
+                unit.setStatus(UnitStatus.AVAILABLE);
+                if (contract != null) {
+                    contract.setStatus(RentalContractStatus.EXPIRED);
+                }
+            }
             storageUnitRepository.save(unit);
+            if (contract != null) {
+                rentalContractRepository.save(contract);
+            }
         }
 
         SealingRecord saved = sealingRecordRepository.save(record);
@@ -411,35 +442,6 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
         return sealingRecordMapper.toResponse(saved);
     }
 
-    private User findSealedByUser(Facility facility) {
-        if (facility != null) {
-            List<User> managers = userRepository.findByFacility_IdAndRole_Name(facility.getId(), "FACILITY_MANAGER");
-            if (!managers.isEmpty()) {
-                return managers.get(0);
-            }
-        }
-        List<User> admins = userRepository.findByRole_Name("ADMIN");
-        if (!admins.isEmpty()) {
-            return admins.get(0);
-        }
-        return userRepository.findAll().stream().findFirst().orElse(null);
-    }
-
-    private User findWitnessUser(Facility facility, User sealedBy) {
-        if (facility != null) {
-            List<User> staffList = userRepository.findByFacility_IdAndRole_Name(facility.getId(), "STAFF").stream()
-                    .filter(u -> sealedBy == null || !u.getId().equals(sealedBy.getId()))
-                    .toList();
-            if (!staffList.isEmpty()) {
-                return staffList.get(0);
-            }
-        }
-        return userRepository.findAll().stream()
-                .filter(u -> sealedBy == null || !u.getId().equals(sealedBy.getId()))
-                .findFirst()
-                .orElse(sealedBy);
-    }
-
     @Override
     @Transactional
     public com.boxora.dto.response.LockoutResponse lockoutContract(UUID contractId, String reason) {
@@ -447,12 +449,66 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
                 .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
 
         Facility facility = contract.getFacility();
-        if (facility != null) {
-            facilityAccessGuard.checkFacilityAccess(facility.getId());
+        if (facility == null) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
+        }
+        facilityAccessGuard.checkFacilityAccess(facility.getId());
+
+        StorageUnit unit = contract.getUnit();
+        if (unit == null || unit.getFacility() == null || !facility.getId().equals(unit.getFacility().getId())) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
+        }
+
+        UUID operatorId = requestContext != null ? requestContext.currentUserId() : null;
+        User operator = operatorId != null ? userRepository.findById(operatorId).orElse(null) : null;
+        if (operator == null || !Boolean.TRUE.equals(operator.getIsActive())) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
+        if (!isFacilityOperator(operator, facility)) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
+        }
+
+        if (contract.getStatus() != RentalContractStatus.ACTIVE
+                && contract.getStatus() != RentalContractStatus.OVERDUE
+                && contract.getStatus() != RentalContractStatus.EXPIRED) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Only active or expired rental contracts can be locked out for overdue access");
+        }
+        if (contract.getEndDate() == null || !contract.getEndDate().isBefore(LocalDate.now())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "The contract must be past its end date before PIN/QR revocation");
+        }
+        if (contract.getMonthlyFee() == null || contract.getMonthlyFee().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "A valid contract rent amount is required before PIN/QR revocation");
+        }
+
+        FacilityPolicy policy = facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facility.getId())
+                .orElseThrow(() -> new AppException(ErrorCode.FACILITY_POLICY_NOT_FOUND));
+        if (policy.getOverdueAccessDisableDays() == null || policy.getOverdueAccessDisableDays() < 0) {
+            throw new AppException(ErrorCode.FACILITY_POLICY_NOT_FOUND, "The active facility policy has no PIN/QR revocation threshold");
+        }
+        long overdueDays = ChronoUnit.DAYS.between(contract.getEndDate(), LocalDate.now());
+        if (overdueDays < policy.getOverdueAccessDisableDays()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "The facility policy PIN/QR revocation threshold has not been reached");
         }
 
         Booking booking = contract.getBooking();
-        StorageUnit unit = contract.getUnit();
+        if (booking == null) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "A booking is required to revoke stored PIN/QR credentials");
+        }
+        if (booking != null) {
+            if (booking.getStorageUnit() == null || !unit.getId().equals(booking.getStorageUnit().getId())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "The booking and contract units do not match");
+            }
+            if ((booking.getStatus() != BookingStatus.ACTIVE && booking.getStatus() != BookingStatus.OVERDUE)
+                    || "REFUNDED".equalsIgnoreCase(booking.getPaymentStatus())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Only active, non-refunded bookings can have overdue credentials revoked");
+            }
+            String paymentStatus = booking.getPaymentStatus();
+            if (paymentStatus == null || !("UNPAID".equalsIgnoreCase(paymentStatus)
+                    || "PARTIALLY_PAID".equalsIgnoreCase(paymentStatus)
+                    || "PAID".equalsIgnoreCase(paymentStatus))) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "The booking payment status is not reconciled");
+            }
+        }
 
         // Idempotency: nếu đã khóa rồi thì trả về kết quả thành công ngay
         boolean alreadyLocked = (booking != null && booking.getAccessPin() == null && "REVOKED_OVERDUE".equals(booking.getQrAccessToken()));
@@ -465,10 +521,11 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
                     .bookingId(booking != null ? booking.getId() : null)
                     .unitCode(unit != null ? unit.getUnitCode() : "N/A")
                     .status("SUCCESS")
-                    .message("Hợp đồng và quyền truy cập kho đã ở trạng thái khóa trước đó (Idempotent).")
+                    .message("PIN/QR credentials were already revoked in Boxora; physical lock state is unverified.")
                     .reason(reason != null ? reason : "Quá hạn thanh toán cước thuê")
                     .lockedAt(booking != null && booking.getPinUpdatedAt() != null ? booking.getPinUpdatedAt() : LocalDateTime.now())
                     .pinRevoked(true)
+                    .physicalLockState("UNVERIFIED")
                     .build();
         }
 
@@ -491,16 +548,16 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
         rentalContractRepository.save(contract);
 
         // Ghi Audit Trail
-        String operator = requestContext.currentUserEmail() != null ? requestContext.currentUserEmail() : "Manager";
-        String lockoutReason = (reason != null && !reason.isBlank()) ? reason : "Khóa tạm SmartLock do quá hạn thanh toán";
+        String operatorIdentifier = requestContext.currentUserEmail() != null ? requestContext.currentUserEmail() : operatorId.toString();
+        String lockoutReason = (reason != null && !reason.isBlank()) ? reason : "Overdue PIN/QR credential revocation";
 
         activityLogService.record(
                 facility != null ? facility.getId() : null,
                 ActivityAction.OVERDUE_ACCESS_DISABLED,
                 "RentalContract",
                 contract.getId(),
-                String.format("Người vận hành %s đã kích hoạt ngắt mã PIN và khóa SmartLock kho %s theo HĐ %s. Lý do: %s",
-                        operator, unit != null ? unit.getUnitCode() : "N/A", contract.getContractCode(), lockoutReason),
+                String.format("Operator %s revoked PIN/QR credentials for unit %s under contract %s. Physical lock state is unverified. Reason: %s",
+                        operatorIdentifier, unit != null ? unit.getUnitCode() : "N/A", contract.getContractCode(), lockoutReason),
                 null,
                 BookingStatus.OVERDUE
         );
@@ -511,10 +568,23 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
                 .bookingId(booking != null ? booking.getId() : null)
                 .unitCode(unit != null ? unit.getUnitCode() : "N/A")
                 .status("SUCCESS")
-                .message("Đã kích hoạt ngắt mã PIN và khóa tạm SmartLock thành công.")
+                .message("PIN/QR credentials were revoked in Boxora; physical lock state is unverified.")
                 .reason(lockoutReason)
                 .lockedAt(now)
                 .pinRevoked(true)
+                .physicalLockState("UNVERIFIED")
                 .build();
+    }
+    private boolean isRecognizedPaymentStatus(String paymentStatus) {
+        return "UNPAID".equalsIgnoreCase(paymentStatus)
+                || "PARTIALLY_PAID".equalsIgnoreCase(paymentStatus)
+                || "PAID".equalsIgnoreCase(paymentStatus);
+    }
+
+    private boolean isFacilityOperator(User user, Facility facility) {
+        String roleName = user.getRole() != null ? user.getRole().getName() : null;
+        return facility != null && user.getFacility() != null
+                && facility.getId().equals(user.getFacility().getId())
+                && ("FACILITY_MANAGER".equalsIgnoreCase(roleName) || "STAFF".equalsIgnoreCase(roleName));
     }
 }

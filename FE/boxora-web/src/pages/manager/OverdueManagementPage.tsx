@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { reportService } from '../../services/reportService'
 import { facilityService } from '../../services/facilityService'
 import { useAuth } from '../../context/AuthContext'
-import { OverdueDebtItem, Facility } from '../../types'
+import { OverdueDebtItem, Facility, OverdueDebtReport } from '../../types'
 import { NoticeDispatcherModal } from './modals/NoticeDispatcherModal'
 import { AssetSealingModal } from './modals/AssetSealingModal'
 import { overdueService } from '../../services/overdueService'
@@ -12,9 +12,10 @@ export const OverdueManagementPage: React.FC = () => {
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>('')
   const [overdueItems, setOverdueItems] = useState<OverdueDebtItem[]>([])
+  const [reportSummary, setReportSummary] = useState<OverdueDebtReport | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [filterStage, setFilterStage] = useState<'ALL' | 'GRACE_PERIOD' | 'ACCESS_BLOCKED' | 'ELIGIBLE_FOR_SEALING'>('ALL')
+  const [filterStage, setFilterStage] = useState<'ALL' | 'GRACE_PERIOD' | 'WARNING' | 'ACCESS_BLOCKED' | 'ELIGIBLE_FOR_SEALING' | 'POLICY_UNCONFIGURED'>('ALL')
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 6
 
@@ -77,9 +78,11 @@ export const OverdueManagementPage: React.FC = () => {
     try {
       const data = await reportService.getOverdueDebtReport({ facilityId: selectedFacilityId })
       setOverdueItems(data?.items || [])
+      setReportSummary(data || null)
     } catch (err) {
       console.warn('Failed to fetch overdue debt report:', err)
       setOverdueItems([])
+      setReportSummary(null)
     } finally {
       setIsLoading(false)
     }
@@ -94,17 +97,13 @@ export const OverdueManagementPage: React.FC = () => {
   }, [facilities, selectedFacilityId])
 
   // KPIs
-  const totalDebtAmount = useMemo(() => {
-    return overdueItems.reduce((acc, i) => acc + (i.totalDebt || i.unpaidRent || 0), 0)
-  }, [overdueItems])
+  const totalDebtAmount = reportSummary?.totalDebtAmount
+  const blockedCount = reportSummary?.accessBlockedCount ?? 0
+  const eligibleSealingCount = reportSummary?.eligibleForSealingCount ?? 0
+  const policyUnconfiguredCount = reportSummary?.policyUnconfiguredCount ?? 0
 
-  const blockedCount = useMemo(() => {
-    return overdueItems.filter(i => i.overdueStage === 'ACCESS_BLOCKED' || (i.daysOverdue >= 5 && i.daysOverdue < 10)).length
-  }, [overdueItems])
-
-  const eligibleSealingCount = useMemo(() => {
-    return overdueItems.filter(i => i.overdueStage === 'ELIGIBLE_FOR_SEALING' || i.daysOverdue >= 10).length
-  }, [overdueItems])
+  const formatAmount = (amount?: number | null) =>
+    amount == null ? 'Chưa đối soát' : `${amount.toLocaleString('vi-VN')} ₫`
 
   // Filtered Items
   const filteredItems = useMemo(() => {
@@ -117,13 +116,19 @@ export const OverdueManagementPage: React.FC = () => {
       if (!matchSearch) return false
 
       if (filterStage === 'ACCESS_BLOCKED') {
-        return item.overdueStage === 'ACCESS_BLOCKED' || (item.daysOverdue >= 5 && item.daysOverdue < 10)
+        return item.overdueStage === 'ACCESS_BLOCKED'
       }
       if (filterStage === 'ELIGIBLE_FOR_SEALING') {
-        return item.overdueStage === 'ELIGIBLE_FOR_SEALING' || item.daysOverdue >= 10
+        return item.overdueStage === 'ELIGIBLE_FOR_SEALING'
       }
       if (filterStage === 'GRACE_PERIOD') {
-        return item.overdueStage === 'GRACE_PERIOD' || item.daysOverdue < 5
+        return item.overdueStage === 'GRACE_PERIOD'
+      }
+      if (filterStage === 'WARNING') {
+        return item.overdueStage === 'WARNING'
+      }
+      if (filterStage === 'POLICY_UNCONFIGURED') {
+        return item.overdueStage === 'POLICY_UNCONFIGURED'
       }
 
       return true
@@ -138,15 +143,18 @@ export const OverdueManagementPage: React.FC = () => {
   }, [filteredItems, currentPage, itemsPerPage])
 
   const handleLockoutConfirm = async () => {
-    if (!confirmLockoutItem) return
+    if (!confirmLockoutItem?.contractId) {
+      setLockoutError('A rental contract is required for PIN/QR revocation.')
+      return
+    }
     setIsLocking(true)
     setLockoutError(null)
     try {
       await overdueService.lockoutContract(
         confirmLockoutItem.contractId,
-        `Quá hạn thanh toán ${confirmLockoutItem.daysOverdue} ngày (Nợ: ${confirmLockoutItem.totalDebt?.toLocaleString('vi-VN')}đ)`
+        `Overdue ${confirmLockoutItem.daysOverdue} days (balance: ${formatAmount(confirmLockoutItem.totalDebt)})`
       )
-      showToast(`Đã ngắt mã PIN và khóa tạm SmartLock kho #${confirmLockoutItem.unitCode} thành công!`)
+      showToast(`Đã thu hồi PIN/QR trong Boxora cho kho #${confirmLockoutItem.unitCode}. Trạng thái khóa vật lý chưa được xác minh.`)
       setConfirmLockoutItem(null)
       await fetchOverdueReport()
     } catch (err: any) {
@@ -167,11 +175,11 @@ export const OverdueManagementPage: React.FC = () => {
     const rows = overdueItems.map(i => [
       i.unitCode || '',
       i.customerName || '',
-      i.contractCode || '',
+      i.contractCode || i.bookingCode || '',
       i.daysOverdue || 0,
-      i.unpaidRent || 0,
-      i.totalLateFee || 0,
-      i.totalDebt || 0,
+      i.unpaidRent ?? '',
+      i.totalLateFee ?? '',
+      i.totalDebt ?? '',
       i.overdueStage || ''
     ])
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
@@ -204,14 +212,14 @@ export const OverdueManagementPage: React.FC = () => {
           <div>
             <div className="flex items-center gap-2.5 flex-wrap">
               <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-                Xử Lý Nợ Cước Quá Hạn &amp; Khóa SmartLock
+                Xử Lý Nợ Cước Quá Hạn &amp; Thu Hồi PIN/QR
               </h1>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
                 {currentFacilityName}
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Kiểm soát vi phạm kỳ hạn thanh toán, gửi thông báo nhắc cước, khóa cưỡng chế SmartLock và chuẩn bị thủ tục niêm phong
+              Theo dõi kỳ hạn thanh toán, gửi thông báo nhắc cước, thu hồi PIN/QR trong Boxora và chuẩn bị thủ tục niêm phong. Tình trạng khóa vật lý chưa được xác minh.
             </p>
           </div>
         </div>
@@ -263,10 +271,10 @@ export const OverdueManagementPage: React.FC = () => {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-black text-rose-700 font-mono tracking-tight">
-              {Number(totalDebtAmount).toLocaleString('vi-VN')} ₫
+              {formatAmount(totalDebtAmount)}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Gồm cước phát sinh và tiền phạt trễ hạn
+              Ước tính theo hợp đồng và chính sách; khoản chưa đối soát sẽ để trống.
             </div>
           </div>
         </div>
@@ -280,7 +288,7 @@ export const OverdueManagementPage: React.FC = () => {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
-              {overdueItems.length}
+              {reportSummary?.totalOverdueCount ?? 0}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
               Hợp đồng cần theo dõi tại cơ sở
@@ -290,7 +298,7 @@ export const OverdueManagementPage: React.FC = () => {
 
         <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Đã khóa tạm SmartLock</span>
+            <span>Đạt ngưỡng thu hồi PIN/QR</span>
             <div className="p-1.5 rounded-lg bg-orange-50 text-orange-600">
               <span className="material-symbols-outlined text-[18px]">lock_person</span>
             </div>
@@ -300,7 +308,7 @@ export const OverdueManagementPage: React.FC = () => {
               {blockedCount}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Đã ngắt quyền mở khóa số từ xa
+              Ngưỡng chính sách dựa trên số ngày quá hạn
             </div>
           </div>
         </div>
@@ -317,7 +325,7 @@ export const OverdueManagementPage: React.FC = () => {
               {eligibleSealingCount}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Quá hạn trên 10 ngày (Điều 8 HĐ)
+              Ngưỡng theo chính sách cơ sở; trạng thái khóa vật lý chưa xác minh
             </div>
           </div>
         </div>
@@ -329,16 +337,20 @@ export const OverdueManagementPage: React.FC = () => {
         {/* Filter & Search Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2 flex-wrap">
-            {(['ALL', 'GRACE_PERIOD', 'ACCESS_BLOCKED', 'ELIGIBLE_FOR_SEALING'] as const).map(stage => {
+            {(['ALL', 'GRACE_PERIOD', 'WARNING', 'ACCESS_BLOCKED', 'ELIGIBLE_FOR_SEALING', 'POLICY_UNCONFIGURED'] as const).map(stage => {
               const label =
                 stage === 'ALL' ? 'Tất cả' :
                 stage === 'GRACE_PERIOD' ? 'Ân hạn nhắc cước' :
-                stage === 'ACCESS_BLOCKED' ? 'Đã khóa SmartLock' : 'Đủ điều kiện niêm phong'
+                stage === 'WARNING' ? 'Cảnh báo' :
+                stage === 'ACCESS_BLOCKED' ? 'Đạt ngưỡng thu hồi PIN/QR' :
+                stage === 'POLICY_UNCONFIGURED' ? 'Thiếu chính sách' : 'Đủ điều kiện niêm phong'
               
               const count =
-                stage === 'ALL' ? overdueItems.length :
-                stage === 'GRACE_PERIOD' ? overdueItems.filter(i => (i.daysOverdue < 5)).length :
-                stage === 'ACCESS_BLOCKED' ? blockedCount : eligibleSealingCount
+                stage === 'ALL' ? (reportSummary?.totalOverdueCount ?? 0) :
+                stage === 'GRACE_PERIOD' ? (reportSummary?.gracePeriodCount ?? 0) :
+                stage === 'WARNING' ? (reportSummary?.warningCount ?? 0) :
+                stage === 'ACCESS_BLOCKED' ? blockedCount :
+                stage === 'POLICY_UNCONFIGURED' ? policyUnconfiguredCount : eligibleSealingCount
 
               return (
                 <button
@@ -386,12 +398,13 @@ export const OverdueManagementPage: React.FC = () => {
             </div>
           ) : (
             paginatedItems.map(item => {
-              const isEligibleSealing = item.overdueStage === 'ELIGIBLE_FOR_SEALING' || item.daysOverdue >= 10
-              const isBlocked = item.overdueStage === 'ACCESS_BLOCKED' || (item.daysOverdue >= 5 && item.daysOverdue < 10)
+              const isEligibleSealing = item.overdueStage === 'ELIGIBLE_FOR_SEALING'
+              const isBlocked = item.overdueStage === 'ACCESS_BLOCKED'
+              const isWarning = item.overdueStage === 'WARNING'
 
               return (
                 <div
-                  key={item.contractId || item.unitCode}
+                  key={item.contractId || item.bookingId || item.unitCode}
                   className="flex flex-col lg:flex-row lg:items-center justify-between p-4 bg-slate-50 hover:bg-slate-100/70 rounded-xl gap-4 border border-slate-200 transition-all shadow-2xs"
                 >
                   <div className="flex flex-col gap-1.5 min-w-0">
@@ -403,16 +416,18 @@ export const OverdueManagementPage: React.FC = () => {
                         {item.customerName || 'Khách hàng'}
                       </span>
                       <span className="font-mono text-xs text-slate-500 font-semibold">
-                        (HĐ #{item.contractCode})
+                        {item.contractCode ? `(HĐ #${item.contractCode})` : `(Đặt kho #${item.bookingCode || 'chưa có mã'})`}
                       </span>
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                         isEligibleSealing
                           ? 'bg-red-50 text-red-700 border-red-200'
                           : isBlocked
                           ? 'bg-orange-50 text-orange-700 border-orange-200'
+                          : isWarning
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
                           : 'bg-amber-50 text-amber-700 border-amber-200'
                       }`}>
-                        {isEligibleSealing ? 'Đủ điều kiện niêm phong' : isBlocked ? 'Đã khóa SmartLock' : 'Đang ân hạn'}
+                        {isEligibleSealing ? 'Đạt ngưỡng niêm phong theo chính sách' : isBlocked ? 'Đạt ngưỡng thu hồi PIN/QR' : isWarning ? 'Cảnh báo theo chính sách' : item.overdueStage === 'GRACE_PERIOD' ? 'Ân hạn theo chính sách' : 'Thiếu chính sách cơ sở'}
                       </span>
                     </div>
 
@@ -421,9 +436,9 @@ export const OverdueManagementPage: React.FC = () => {
                         <span className="material-symbols-outlined text-[15px]">schedule</span>
                         Quá hạn {item.daysOverdue} ngày
                       </span>
-                      <span>Cước nợ: <strong className="font-mono text-slate-900">{Number(item.unpaidRent || 0).toLocaleString('vi-VN')} ₫</strong></span>
-                      <span>Phí phạt: <strong className="font-mono text-rose-600">{Number(item.totalLateFee || 0).toLocaleString('vi-VN')} ₫</strong></span>
-                      <span>Tổng nợ: <strong className="font-mono text-rose-700 font-bold">{Number(item.totalDebt || 0).toLocaleString('vi-VN')} ₫</strong></span>
+                      <span>Cước theo hồ sơ: <strong className="font-mono text-slate-900">{formatAmount(item.unpaidRent)}</strong></span>
+                      <span>Phí phạt: <strong className="font-mono text-rose-600">{formatAmount(item.totalLateFee)}</strong></span>
+                      <span>Tổng nợ: <strong className="font-mono text-rose-700 font-bold">{formatAmount(item.totalDebt)}</strong></span>
                     </div>
 
                     <div className="text-[11px] text-slate-500">
@@ -438,11 +453,11 @@ export const OverdueManagementPage: React.FC = () => {
                       onClick={() => setNoticeModalData({
                         unitCode: item.unitCode,
                         tenantName: item.customerName || 'Khách hàng',
-                        contractCode: item.contractCode,
+                        contractCode: item.contractCode || item.bookingCode || 'N/A',
                         daysOverdue: Number(item.daysOverdue) || 0,
-                        baseDebt: `${Number(item.unpaidRent || 0).toLocaleString('vi-VN')} ₫`,
-                        penaltyFee: `${Number(item.totalLateFee || 0).toLocaleString('vi-VN')} ₫`,
-                        totalDebt: `${Number(item.totalDebt || 0).toLocaleString('vi-VN')} ₫`
+                        baseDebt: formatAmount(item.unpaidRent),
+                        penaltyFee: formatAmount(item.totalLateFee),
+                        totalDebt: formatAmount(item.totalDebt)
                       })}
                       className="px-3 py-2 rounded-lg bg-white text-slate-800 text-xs font-semibold border border-slate-200 hover:bg-slate-50 transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
                     >
@@ -452,22 +467,26 @@ export const OverdueManagementPage: React.FC = () => {
 
                     <button
                       type="button"
+                      disabled={!item.contractId}
                       onClick={() => setConfirmLockoutItem(item)}
-                      className="px-3 py-2 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                      title={!item.contractId ? 'No contract is associated with this booking' : undefined}
+                      className="px-3 py-2 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <span className="material-symbols-outlined text-[16px]">lock_person</span>
-                      <span>Khóa SmartLock</span>
+                      <span>Thu hồi PIN/QR</span>
                     </button>
 
-                    {isEligibleSealing && (
+                    {isEligibleSealing && item.contractId && (
                       <button
                         type="button"
                         onClick={() => setSealingModalData({
                           unitCode: item.unitCode,
+                          unitId: item.unitId,
                           tenantName: item.customerName || 'Khách hàng',
-                          contractCode: item.contractCode,
+                          contractCode: item.contractCode || item.bookingCode || 'N/A',
+                          contractId: item.contractId || undefined,
                           overdueDays: Number(item.daysOverdue) || 0,
-                          totalDebt: `${Number(item.totalDebt || 0).toLocaleString('vi-VN')} ₫`,
+                          totalDebt: formatAmount(item.totalDebt),
                           facilityId: selectedFacilityId
                         })}
                         className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer"
@@ -534,8 +553,10 @@ export const OverdueManagementPage: React.FC = () => {
           isOpen={!!sealingModalData}
           onClose={() => setSealingModalData(null)}
           unitCode={sealingModalData.unitCode}
+          unitId={sealingModalData.unitId}
           tenantName={sealingModalData.tenantName}
           contractCode={sealingModalData.contractCode}
+          contractId={sealingModalData.contractId}
           overdueDays={sealingModalData.overdueDays}
           totalDebt={sealingModalData.totalDebt}
           facilityId={sealingModalData.facilityId}
@@ -557,12 +578,12 @@ export const OverdueManagementPage: React.FC = () => {
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900">
-                  Xác nhận Khóa Tạm (Lockout) SmartLock
+                  Xác nhận thu hồi PIN/QR trong Boxora
                 </h3>
                 <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                  Ngắt quyền mở cửa kho #{confirmLockoutItem.unitCode} đối với khách hàng{' '}
+                  Thu hồi PIN/QR đang lưu trong Boxora cho kho #{confirmLockoutItem.unitCode} của khách hàng{' '}
                   <strong>{confirmLockoutItem.customerName}</strong> (Quá hạn {confirmLockoutItem.daysOverdue} ngày).
-                  Khách hàng chỉ có thể mở lại kho sau khi thanh toán toàn bộ nợ cước.
+                  Thao tác này không xác nhận hoặc điều khiển khóa vật lý; trạng thái khóa tại kho chưa được xác minh.
                 </p>
               </div>
             </div>
@@ -598,7 +619,7 @@ export const OverdueManagementPage: React.FC = () => {
                     <span>Đang ngắt quyền truy cập...</span>
                   </>
                 ) : (
-                  <span>Xác nhận Khóa SmartLock</span>
+                  <span>Xác nhận thu hồi PIN/QR</span>
                 )}
               </button>
             </div>

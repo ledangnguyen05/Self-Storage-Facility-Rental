@@ -138,11 +138,12 @@ public class FacilityServiceImpl implements FacilityService {
                 .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
 
         facilityAccessGuard.checkFacilityAccess(facility.getId());
-
-        facilityRepository.deleteById(facility.getId());
-
+        // Preserve contracts, payments, tickets, units, and operational history. The public
+        // delete operation is a deactivation; facility-linked rows may otherwise cascade-delete.
+        facility.setStatus(FacilityStatus.INACTIVE);
+        facilityRepository.save(facility);
         activityLogService.record(facility.getId(), ActivityAction.FACILITY_DEACTIVATE, "FACILITY", facility.getId(),
-                "Deleted facility: " + facility.getName(), null, null);
+                "Deactivated facility: " + facility.getName(), null, facility.getStatus());
     }
 
     @Override

@@ -42,6 +42,9 @@ class OverdueProcessingServiceTest {
     private RentalContractRepository rentalContractRepository;
 
     @Mock
+    private FacilityPolicyRepository facilityPolicyRepository;
+
+    @Mock
     private BookingRepository bookingRepository;
 
     @Mock
@@ -107,6 +110,7 @@ class OverdueProcessingServiceTest {
                 .fullName("Tran Manager")
                 .role(managerRole)
                 .facility(testFacility)
+                .isActive(true)
                 .build();
         testManager.setId(UUID.randomUUID());
 
@@ -144,6 +148,15 @@ class OverdueProcessingServiceTest {
                 .status(RentalContractStatus.ACTIVE)
                 .build();
         testContract.setId(UUID.randomUUID());
+
+        lenient().when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                .thenReturn(Optional.of(FacilityPolicy.builder()
+                        .facility(testFacility)
+                        .overdueGraceDays(1)
+                        .overdueAccessDisableDays(3)
+                        .overdueSealingDays(7)
+                        .dailyLateFee(new BigDecimal("50000"))
+                        .build()));
     }
 
     @Nested
@@ -184,6 +197,43 @@ class OverdueProcessingServiceTest {
         }
 
         @Test
+        void processOverdueContracts_scopesManualProcessingToAssignedFacility() {
+            Facility otherFacility = Facility.builder().name("Other").build();
+            otherFacility.setId(UUID.randomUUID());
+            StorageUnit otherUnit = StorageUnit.builder()
+                    .unitCode("O-101")
+                    .facility(otherFacility)
+                    .status(UnitStatus.OCCUPIED)
+                    .build();
+            otherUnit.setId(UUID.randomUUID());
+            RentalContract otherContract = RentalContract.builder()
+                    .contractCode("RC-OTHER")
+                    .customer(testCustomer)
+                    .unit(otherUnit)
+                    .facility(otherFacility)
+                    .startDate(LocalDate.of(2026, 1, 1))
+                    .endDate(LocalDate.of(2026, 1, 31))
+                    .monthlyFee(new BigDecimal("1000000"))
+                    .status(RentalContractStatus.ACTIVE)
+                    .build();
+            otherContract.setId(UUID.randomUUID());
+
+            LocalDate today = LocalDate.of(2026, 2, 1);
+            when(facilityAccessGuard.isFacilityScoped()).thenReturn(true);
+            when(facilityAccessGuard.scopedFacilityIdOrNull()).thenReturn(testFacility.getId());
+            when(rentalContractRepository.findActiveOrOverdueContractsBeforeDate(today))
+                    .thenReturn(List.of(testContract, otherContract));
+
+            OverdueProcessResult result = overdueProcessingService.processOverdueContracts(today);
+
+            assertThat(result.getScannedOverdueContractsCount()).isEqualTo(1);
+            assertThat(result.getDetails()).extracting(OverdueContractDetail::getContractId)
+                    .containsExactly(testContract.getId());
+            assertThat(otherContract.getStatus()).isEqualTo(RentalContractStatus.ACTIVE);
+            verify(rentalContractRepository, never()).save(otherContract);
+        }
+
+        @Test
         @DisplayName("Mốc +3 ngày quá hạn: Khóa mã PIN và vô hiệu hóa QR access trên Booking")
         void testMilestone2_OverdueThreeDays_DisablePinAndQr() {
             LocalDate today = LocalDate.of(2026, 2, 3); // 3 ngày sau 31/1
@@ -212,32 +262,22 @@ class OverdueProcessingServiceTest {
         }
 
         @Test
-        @DisplayName("Mốc +7 ngày quá hạn (BR-RULE-012): Lập biên bản SealingRecord và chuyển Unit sang UNDER_MAINTENANCE")
-        void testMilestone3_OverdueSevenDays_SealUnit() {
+        @DisplayName("At the facility sealing threshold, an automated scan marks eligibility but performs no physical sealing")
+        void testMilestone3_OverdueSevenDays_MarksEligibleWithoutSealing() {
             LocalDate today = LocalDate.of(2026, 2, 7); // 7 ngày sau 31/1
             when(rentalContractRepository.findActiveOrOverdueContractsBeforeDate(today))
                     .thenReturn(List.of(testContract));
-            when(sealingRecordRepository.existsByStorageUnit_IdAndStatus(testUnit.getId(), SealingStatus.SEALED))
-                    .thenReturn(false);
-            when(userRepository.findAll()).thenReturn(List.of(testManager, testStaff));
-
             OverdueProcessResult result = overdueProcessingService.processOverdueContracts(today);
 
             assertThat(result.getLatePenaltyCount()).isEqualTo(1);
             assertThat(result.getPinDisabledCount()).isEqualTo(1);
-            assertThat(result.getSealedUnitsCount()).isEqualTo(1);
+            assertThat(result.getSealingEligibleCount()).isEqualTo(1);
+            assertThat(result.getSealedUnitsCount()).isZero();
 
-            assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.UNDER_MAINTENANCE);
-            verify(storageUnitRepository).save(testUnit);
-            verify(sealingRecordRepository).save(any(SealingRecord.class));
-
-            verify(activityLogService).recordSystem(
-                    eq(testFacility.getId()),
-                    eq(ActivityAction.OVERDUE_SEALING_APPROVED),
-                    eq("SealingRecord"),
-                    any(),
-                    anyString()
-            );
+            assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.OCCUPIED);
+            assertThat(result.getDetails().get(0).getPhysicalLockState()).isEqualTo("UNVERIFIED");
+            verify(storageUnitRepository, never()).save(any());
+            verify(sealingRecordRepository, never()).save(any(SealingRecord.class));
         }
 
         @Test
@@ -253,6 +293,56 @@ class OverdueProcessingServiceTest {
 
             assertThat(result.getSealedUnitsCount()).isEqualTo(0);
             verify(sealingRecordRepository, never()).save(any());
+        }
+    }
+
+    @Nested
+    class LockoutTests {
+
+        @Test
+        void lockoutContract_rejectsBeforeFacilityPolicyThreshold() {
+            UUID operatorId = testManager.getId();
+            UUID contractId = testContract.getId();
+            testContract.setEndDate(LocalDate.now().minusDays(1));
+
+            when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(testContract));
+            when(requestContext.currentUserId()).thenReturn(operatorId);
+            when(userRepository.findById(operatorId)).thenReturn(Optional.of(testManager));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(
+                    FacilityPolicy.builder().facility(testFacility).overdueAccessDisableDays(3).build()
+            ));
+
+            AppException ex = assertThrows(AppException.class,
+                    () -> overdueProcessingService.lockoutContract(contractId, "overdue"));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+            verify(bookingRepository, never()).save(any());
+            verify(storageUnitRepository, never()).save(any());
+        }
+
+        @Test
+        void lockoutContract_revokesCredentialsOnlyAfterConfiguredThreshold() {
+            UUID operatorId = testManager.getId();
+            UUID contractId = testContract.getId();
+            testContract.setEndDate(LocalDate.now().minusDays(4));
+
+            when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(testContract));
+            when(requestContext.currentUserId()).thenReturn(operatorId);
+            when(userRepository.findById(operatorId)).thenReturn(Optional.of(testManager));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(
+                    FacilityPolicy.builder().facility(testFacility).overdueAccessDisableDays(3).build()
+            ));
+
+            com.boxora.dto.response.LockoutResponse response =
+                    overdueProcessingService.lockoutContract(contractId, "overdue threshold reached");
+
+            assertThat(response.isPinRevoked()).isTrue();
+            assertThat(response.getPhysicalLockState()).isEqualTo("UNVERIFIED");
+            assertThat(testBooking.getAccessPin()).isNull();
+            assertThat(testBooking.getQrAccessToken()).isEqualTo("REVOKED_OVERDUE");
+            assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.OVERDUE_LOCKED);
+            verify(bookingRepository).save(testBooking);
+            verify(storageUnitRepository).save(testUnit);
         }
     }
 
@@ -363,13 +453,50 @@ class OverdueProcessingServiceTest {
         void testGetOverdueContractsSummary() {
             when(rentalContractRepository.findActiveOrOverdueContractsBeforeDate(any(LocalDate.class)))
                     .thenReturn(List.of(testContract));
+            when(activityLogRepository.existsByResourceIdAndAction(testContract.getId(), ActivityAction.OVERDUE_DETECTED))
+                    .thenReturn(false);
 
             List<OverdueContractDetail> list = overdueProcessingService.getOverdueContractsSummary();
 
             assertThat(list).hasSize(1);
             assertThat(list.get(0).getContractCode()).isEqualTo("RC-2026-001");
             assertThat(list.get(0).getCustomerEmail()).isEqualTo("customer@example.com");
-            assertThat(list.get(0).getLatePenaltyApplied()).isTrue();
+            assertThat(list.get(0).getLatePenaltyApplied()).isFalse();
+            assertThat(list.get(0).getLatePenaltyAmount()).isNull();
+            assertThat(list.get(0).getPinAccessDisabled()).isFalse();
+            assertThat(list.get(0).getUnitSealed()).isFalse();
+            assertThat(list.get(0).getPhysicalLockState()).isEqualTo("UNVERIFIED");
+        }
+
+        @Test
+        void testGetOverdueContractsSummaryScopesFacilityAndDoesNotInferLockStateFromAge() {
+            Facility otherFacility = Facility.builder().name("Other").build();
+            otherFacility.setId(UUID.randomUUID());
+            StorageUnit otherUnit = StorageUnit.builder().facility(otherFacility).unitCode("O-1").build();
+            otherUnit.setId(UUID.randomUUID());
+            RentalContract otherContract = RentalContract.builder()
+                    .contractCode("RC-OTHER")
+                    .customer(testCustomer)
+                    .facility(otherFacility)
+                    .unit(otherUnit)
+                    .endDate(LocalDate.now().minusDays(30))
+                    .monthlyFee(new BigDecimal("1000000"))
+                    .status(RentalContractStatus.OVERDUE)
+                    .build();
+            otherContract.setId(UUID.randomUUID());
+
+            when(facilityAccessGuard.isFacilityScoped()).thenReturn(true);
+            when(facilityAccessGuard.scopedFacilityIdOrNull()).thenReturn(testFacility.getId());
+            when(rentalContractRepository.findActiveOrOverdueContractsBeforeDate(any(LocalDate.class)))
+                    .thenReturn(List.of(testContract, otherContract));
+            when(activityLogRepository.existsByResourceIdAndAction(testContract.getId(), ActivityAction.OVERDUE_DETECTED))
+                    .thenReturn(false);
+
+            List<OverdueContractDetail> list = overdueProcessingService.getOverdueContractsSummary();
+
+            assertThat(list).extracting(OverdueContractDetail::getContractId).containsExactly(testContract.getId());
+            assertThat(list.get(0).getUnitSealed()).isFalse();
+            assertThat(list.get(0).getPhysicalLockState()).isEqualTo("UNVERIFIED");
         }
     }
 }

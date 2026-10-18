@@ -15,6 +15,10 @@ import java.util.UUID;
 @Repository
 public interface RentalContractRepository extends JpaRepository<RentalContract, UUID>, JpaSpecificationExecutor<RentalContract> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("SELECT c FROM RentalContract c WHERE c.id = :id")
+    Optional<RentalContract> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") UUID id);
+
     List<RentalContract> findByCustomerId(UUID customerId);
 
     Page<RentalContract> findByCustomerId(UUID customerId, Pageable pageable);
@@ -28,6 +32,10 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
     Optional<RentalContract> findByDocusealSubmitterSlug(String submitterSlug);
 
     Optional<RentalContract> findByBookingId(UUID bookingId);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("SELECT c FROM RentalContract c WHERE c.booking.id = :bookingId")
+    Optional<RentalContract> findByBookingIdForUpdate(@org.springframework.data.repository.query.Param("bookingId") UUID bookingId);
 
     Optional<RentalContract> findByContractCodeIgnoreCase(String contractCode);
 

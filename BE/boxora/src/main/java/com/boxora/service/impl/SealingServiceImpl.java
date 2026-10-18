@@ -55,7 +55,8 @@ public class SealingServiceImpl implements SealingService {
     public SealingRecordResponse createSealing(SealingCreateRequest request) {
         RentalContract contract = null;
         if (request.getContractId() != null) {
-            contract = rentalContractRepository.findById(request.getContractId()).orElse(null);
+            contract = rentalContractRepository.findById(request.getContractId())
+                    .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
         }
 
         StorageUnit unit = null;
@@ -70,10 +71,55 @@ public class SealingServiceImpl implements SealingService {
         if (unit == null) {
             throw new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND);
         }
+        if (contract == null) {
+            throw new AppException(ErrorCode.CONTRACT_NOT_FOUND, "A rental contract is required for overdue sealing");
+        }
 
         Facility facility = unit.getFacility() != null ? unit.getFacility() : (contract != null ? contract.getFacility() : null);
-        if (facility != null) {
-            facilityAccessGuard.checkFacilityAccess(facility.getId());
+        if (facility == null || contract.getFacility() == null
+                || !facility.getId().equals(contract.getFacility().getId())) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
+        }
+        facilityAccessGuard.checkFacilityAccess(facility.getId());
+
+        if (contract.getStatus() != RentalContractStatus.ACTIVE
+                && contract.getStatus() != RentalContractStatus.OVERDUE
+                && contract.getStatus() != RentalContractStatus.EXPIRED) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Only active or expired rental contracts can be sealed for overdue debt");
+        }
+        if (contract.getEndDate() == null || !contract.getEndDate().isBefore(LocalDate.now())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "The contract must be past its end date before sealing");
+        }
+        if (contract.getMonthlyFee() == null || contract.getMonthlyFee().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "A valid contract rent amount is required before sealing");
+        }
+        Booking booking = contract.getBooking();
+        if (booking != null) {
+            if (booking.getStorageUnit() == null || !unit.getId().equals(booking.getStorageUnit().getId())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "The booking and contract units do not match");
+            }
+            if ((booking.getStatus() != com.boxora.enums.BookingStatus.ACTIVE
+                    && booking.getStatus() != com.boxora.enums.BookingStatus.OVERDUE)
+                    || "REFUNDED".equalsIgnoreCase(booking.getPaymentStatus())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Only active, non-refunded bookings can be sealed for overdue debt");
+            }
+            String paymentStatus = booking.getPaymentStatus();
+            if (paymentStatus == null || !("UNPAID".equalsIgnoreCase(paymentStatus)
+                    || "PARTIALLY_PAID".equalsIgnoreCase(paymentStatus)
+                    || "PAID".equalsIgnoreCase(paymentStatus))) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "The booking payment status is not reconciled");
+            }
+        }
+        FacilityPolicy policy = facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facility.getId())
+                .orElseThrow(() -> new AppException(ErrorCode.FACILITY_POLICY_NOT_FOUND));
+        if (policy.getOverdueSealingDays() == null || policy.getOverdueSealingDays() < 0
+                || policy.getOverdueGraceDays() == null || policy.getOverdueGraceDays() < 0
+                || policy.getDailyLateFee() == null || policy.getDailyLateFee().compareTo(BigDecimal.ZERO) < 0) {
+            throw new AppException(ErrorCode.FACILITY_POLICY_NOT_FOUND, "The active facility policy is incomplete for overdue sealing");
+        }
+        long overdueDays = ChronoUnit.DAYS.between(contract.getEndDate(), LocalDate.now());
+        if (overdueDays < policy.getOverdueSealingDays()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "The facility policy sealing threshold has not been reached");
         }
 
         // 1. Kiểm tra trạng thái hiện tại đã bị niêm phong chưa
@@ -82,54 +128,41 @@ public class SealingServiceImpl implements SealingService {
         }
 
         // 2. Xác thực Performer & Witness (Two-Person Integrity)
-        UUID currentUserId = requestContext.currentUserId();
-        User performer = currentUserId != null
-                ? userRepository.findById(currentUserId).orElse(null)
-                : null;
-        if (performer == null) {
-            performer = userRepository.findAll().stream()
-                    .filter(u -> u.getRole() != null && ("FACILITY_MANAGER".equalsIgnoreCase(u.getRole().getName()) || "ADMIN".equalsIgnoreCase(u.getRole().getName())))
-                    .findFirst()
-                    .orElseThrow(() -> new AppException(ErrorCode.UNAUTHORIZED));
+        UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
+        User performer = currentUserId != null ? userRepository.findById(currentUserId).orElse(null) : null;
+        if (performer == null || !Boolean.TRUE.equals(performer.getIsActive())) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
+        if (!isFacilityOperator(performer, facility)) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
         }
 
-        final User finalPerformer = performer;
-        User witness = null;
-        if (request.getWitnessId() != null) {
-            witness = userRepository.findById(request.getWitnessId())
-                    .orElseThrow(() -> new AppException(ErrorCode.MASTER_KEY_WITNESS_NOT_FOUND));
-        } else {
-            witness = userRepository.findAll().stream()
-                    .filter(u -> !u.getId().equals(finalPerformer.getId()) && Boolean.TRUE.equals(u.getIsActive()))
-                    .filter(u -> u.getRole() != null && ("STAFF".equalsIgnoreCase(u.getRole().getName()) || "FACILITY_MANAGER".equalsIgnoreCase(u.getRole().getName()) || "ADMIN".equalsIgnoreCase(u.getRole().getName())))
-                    .findFirst()
-                    .orElseThrow(() -> new AppException(ErrorCode.SEALING_WITNESS_REQUIRED));
+        if (request.getWitnessId() == null) {
+            throw new AppException(ErrorCode.SEALING_WITNESS_REQUIRED);
         }
+        User witness = userRepository.findById(request.getWitnessId())
+                .orElseThrow(() -> new AppException(ErrorCode.MASTER_KEY_WITNESS_NOT_FOUND));
 
         if (performer.getId().equals(witness.getId())) {
             throw new AppException(ErrorCode.SEALING_WITNESS_REQUIRED);
         }
 
-        if (!witness.getIsActive()) {
+        if (!Boolean.TRUE.equals(witness.getIsActive())) {
             throw new AppException(ErrorCode.MASTER_KEY_WITNESS_INACTIVE);
+        }
+        String witnessRole = witness.getRole() != null ? witness.getRole().getName() : null;
+        if (!"STAFF".equalsIgnoreCase(witnessRole) && !"FACILITY_MANAGER".equalsIgnoreCase(witnessRole)) {
+            throw new AppException(ErrorCode.MASTER_KEY_WITNESS_UNAUTHORIZED_ROLE);
+        }
+        if (witness.getFacility() == null || !facility.getId().equals(witness.getFacility().getId())) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED, "The sealing witness must belong to the same facility");
         }
 
         // 3. Tính toán số ngày quá hạn và tổng công nợ tại thời điểm niêm phong
-        LocalDate today = LocalDate.now();
-        long overdueDays = 0;
-        if (contract != null && contract.getEndDate() != null && today.isAfter(contract.getEndDate())) {
-            overdueDays = ChronoUnit.DAYS.between(contract.getEndDate(), today);
-        }
-
-        BigDecimal monthlyFee = (contract != null && contract.getMonthlyFee() != null) ? contract.getMonthlyFee() : BigDecimal.ZERO;
-        BigDecimal dailyLateFee = BigDecimal.ZERO;
-        if (facility != null) {
-            FacilityPolicy policy = facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facility.getId()).orElse(null);
-            if (policy != null && policy.getDailyLateFee() != null) {
-                dailyLateFee = policy.getDailyLateFee();
-            }
-        }
-        BigDecimal totalLateFee = dailyLateFee.multiply(BigDecimal.valueOf(overdueDays));
+        BigDecimal monthlyFee = contract.getMonthlyFee();
+        BigDecimal dailyLateFee = policy.getDailyLateFee();
+        long billableDays = Math.max(0, overdueDays - policy.getOverdueGraceDays());
+        BigDecimal totalLateFee = dailyLateFee.multiply(BigDecimal.valueOf(billableDays));
         BigDecimal totalDebt = monthlyFee.add(totalLateFee);
 
         // 4. Tạo mã biên bản niêm phong chuẩn
@@ -230,16 +263,20 @@ public class SealingServiceImpl implements SealingService {
         }
 
         Facility facility = record.getFacility();
-        if (facility != null) {
-            facilityAccessGuard.checkFacilityAccess(facility.getId());
+        if (facility == null) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
         }
+        facilityAccessGuard.checkFacilityAccess(facility.getId());
 
         UUID currentUserId = requestContext.currentUserId();
         User unsealedByUser = currentUserId != null
                 ? userRepository.findById(currentUserId).orElse(null)
                 : null;
-        if (unsealedByUser == null) {
+        if (unsealedByUser == null || !Boolean.TRUE.equals(unsealedByUser.getIsActive())) {
             throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
+        if (!isFacilityOperator(unsealedByUser, facility)) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
         }
 
         record.setStatus(SealingStatus.UNSEALED);
@@ -322,9 +359,10 @@ public class SealingServiceImpl implements SealingService {
         SealingRecord record = sealingRecordRepository.findById(sealingId)
                 .orElseThrow(() -> new AppException(ErrorCode.SEALING_RECORD_NOT_FOUND));
 
-        if (record.getFacility() != null && facilityAccessGuard.isFacilityScoped()) {
-            facilityAccessGuard.checkFacilityAccess(record.getFacility().getId());
+        if (record.getFacility() == null) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
         }
+        facilityAccessGuard.checkFacilityAccess(record.getFacility().getId());
         return toResponse(record);
     }
 
@@ -335,7 +373,16 @@ public class SealingServiceImpl implements SealingService {
                 .findFirstByContractIdAndStatusOrderByCreatedAtDesc(contractId, SealingStatus.SEALED)
                 .orElseThrow(() -> new AppException(ErrorCode.SEALING_RECORD_NOT_FOUND));
 
-        if (record.getFacility() != null && facilityAccessGuard.isFacilityScoped()) {
+        if (record.getFacility() == null) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
+        }
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            UUID currentUserId = requestContext.currentUserId();
+            if (record.getContract() == null || record.getContract().getCustomer() == null
+                    || currentUserId == null || !currentUserId.equals(record.getContract().getCustomer().getId())) {
+                throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
+            }
+        } else {
             facilityAccessGuard.checkFacilityAccess(record.getFacility().getId());
         }
         return toResponse(record);
@@ -365,6 +412,13 @@ public class SealingServiceImpl implements SealingService {
 
         Page<SealingRecord> pageResult = sealingRecordRepository.findAll(spec, pageable);
         return PageResponse.from(pageResult.map(this::toResponse));
+    }
+
+    private boolean isFacilityOperator(User user, Facility facility) {
+        String roleName = user.getRole() != null ? user.getRole().getName() : null;
+        return facility != null && user.getFacility() != null
+                && facility.getId().equals(user.getFacility().getId())
+                && ("FACILITY_MANAGER".equalsIgnoreCase(roleName) || "STAFF".equalsIgnoreCase(roleName));
     }
 
     private SealingRecordResponse toResponse(SealingRecord r) {

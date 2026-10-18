@@ -14,15 +14,6 @@ public class SystemRevenueSummaryResponse {
     private BigDecimal rentalFeeRevenue;
     private BigDecimal renewalFeeRevenue;
     private BigDecimal extraChargeRevenue;
+    private BigDecimal bookingPaymentRevenue;
     private Long paymentCount;
-
-    public BigDecimal getNetRevenue() {
-        return totalRevenue != null ? totalRevenue : BigDecimal.ZERO;
-    }
-
-    public BigDecimal getTotalCollected() {
-        BigDecimal rev = totalRevenue != null ? totalRevenue : BigDecimal.ZERO;
-        BigDecimal dep = depositRevenue != null ? depositRevenue : BigDecimal.ZERO;
-        return rev.add(dep);
-    }
 }
