@@ -4,6 +4,7 @@ public enum StaffAssignmentStatus {
     ASSIGNED,
     CHECKED_IN,
     COMPLETED,
-    ABSENT
+    ABSENT,
+    CANCELLED
 }
 

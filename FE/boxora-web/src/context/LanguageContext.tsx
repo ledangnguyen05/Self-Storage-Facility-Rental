@@ -563,6 +563,8 @@ export const DICTIONARY: Record<string, string> = {
   'Cài đặt giao diện & hệ thống': 'Appearance & System Settings',
   'Tùy chỉnh trải nghiệm làm việc theo nhu cầu cá nhân': 'Personalize your interface and workspace experience',
   'Chủ đề, âm thanh, cảnh báo IoT': 'Theme, alert sounds, IoT alerts',
+  'Chủ đề, thông báo & cảnh báo IoT': 'Theme, notifications & IoT alerts',
+  'Thông báo & Cảnh báo hệ thống': 'System Notifications & Alerts',
   'Chủ đề, còi báo, phông chữ': 'Theme, alarm tone, fonts',
   'Giao diện, còi báo, ngôn ngữ': 'Theme, alarms, language',
   'Tùy chỉnh nhanh': 'Quick Settings',

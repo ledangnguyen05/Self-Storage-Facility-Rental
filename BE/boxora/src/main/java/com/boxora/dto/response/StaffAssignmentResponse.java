@@ -43,6 +43,14 @@ public class StaffAssignmentResponse {
     private UUID assignedById;
     private String assignedByName;
 
+    // Time and Attendance
+    private java.time.LocalTime startTime;
+    private java.time.LocalTime endTime;
+    private LocalDateTime checkedInAt;
+    private LocalDateTime checkedOutAt;
+    private String checkInNote;
+    private String checkOutNote;
+
     private String notes;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

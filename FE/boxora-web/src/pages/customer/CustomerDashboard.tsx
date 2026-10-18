@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { contractService, RentalContract } from '../../services/contractService'
@@ -18,6 +18,7 @@ import { BookingCancelModal } from '../../components/modals/BookingCancelModal'
 import { BookingRescheduleModal } from '../../components/modals/BookingRescheduleModal'
 import { BookingRescheduleHistorySection } from '../../components/booking/BookingRescheduleHistorySection'
 import { TicketCloseConfirmModal } from '../../components/modals/TicketCloseConfirmModal'
+import { extractFloor } from '../../utils/floorUtils'
 
 const UNIT_CARD_IMAGES = [
   'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80',
@@ -25,6 +26,17 @@ const UNIT_CARD_IMAGES = [
   'https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&w=800&q=80',
   'https://images.unsplash.com/photo-1590247813693-5541d1c609fd?auto=format&fit=crop&w=800&q=80'
 ]
+
+const safeFormatDateTime = (dateVal?: string | null, fallback = ''): string => {
+  if (!dateVal) return fallback
+  try {
+    const d = new Date(dateVal)
+    if (isNaN(d.getTime())) return fallback || String(dateVal)
+    return d.toLocaleString('vi-VN')
+  } catch {
+    return fallback || String(dateVal)
+  }
+}
 
 export const CustomerDashboard: React.FC = () => {
   const { user } = useAuth()
@@ -50,6 +62,7 @@ export const CustomerDashboard: React.FC = () => {
   // Real facilities & available units state
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [availableUnits, setAvailableUnits] = useState<StorageUnit[]>([])
+  const [allUnits, setAllUnits] = useState<StorageUnit[]>([])
   const [isCustomerPolicyModalOpen, setIsCustomerPolicyModalOpen] = useState<boolean>(false)
   const [loadingUnits, setLoadingUnits] = useState<boolean>(true)
   const [bookingRequests, setBookingRequests] = useState<Booking[]>([])
@@ -114,12 +127,13 @@ export const CustomerDashboard: React.FC = () => {
   const fetchAvailableUnits = async () => {
     try {
       setLoadingUnits(true)
-      const res = await storageUnitService.getUnits({ status: 'AVAILABLE' })
+      const res = await storageUnitService.getUnits()
       if (Array.isArray(res)) {
-        setAvailableUnits(res)
+        setAllUnits(res)
+        setAvailableUnits(res.filter(u => u.status === 'AVAILABLE'))
       }
     } catch (err) {
-      console.error('Failed to load available storage units from database:', err)
+      console.error('Failed to load storage units from database:', err)
     } finally {
       setLoadingUnits(false)
     }
@@ -286,6 +300,183 @@ export const CustomerDashboard: React.FC = () => {
     }
   }
 
+  const getBookingNoticeInfo = useCallback((b: Booking) => {
+    const matchingContract =
+      contracts.find(c => Boolean(c.bookingId) && (c.bookingId === b.id || c.bookingId === b.bookingCode)) ||
+      contracts.find(
+        c =>
+          !c.bookingId &&
+          Boolean(c.unitCode) &&
+          c.unitCode === b.unitCode &&
+          c.status !== 'TERMINATED' &&
+          c.status !== 'EXPIRED'
+      )
+
+    // Filter initial booking payment transactions and separate PAID, REFUNDED, and REFUND_PENDING
+    const allBookingPayments = customerPayments.filter(
+      p =>
+        ((p.bookingId && (p.bookingId === b.id || p.bookingId === b.bookingCode)) ||
+          (p.bookingCode && (p.bookingCode === b.bookingCode || p.bookingCode === b.id))) &&
+        (p.paymentType === 'DEPOSIT' || p.paymentType === 'RENTAL_FEE' || p.paymentType === 'BOOKING_PAYMENT') &&
+        Number(p.amount || 0) > 0
+    )
+    const confirmedBookingPayments = allBookingPayments.filter(
+      p => p.status === 'PAID' || p.status === 'SUCCESS'
+    )
+    // Only confirmed REFUNDED transactions are deducted from held money; REFUND_PENDING is NOT deducted
+    const refundedBookingPayments = allBookingPayments.filter(
+      p => p.status === 'REFUNDED'
+    )
+    const refundPendingBookingPayments = allBookingPayments.filter(
+      p => p.status === 'REFUND_PENDING'
+    )
+    const hasRefundPendingTx = refundPendingBookingPayments.length > 0
+    const hasRefundedOrRefundPendingDepositTx = allBookingPayments.some(
+      p =>
+        (p.paymentType === 'DEPOSIT' || p.paymentType === 'BOOKING_PAYMENT') &&
+        (p.status === 'REFUNDED' || p.status === 'REFUND_PENDING')
+    )
+
+    const requiredDeposit = Math.max(0, Number(b.depositAmount ?? matchingContract?.depositHeld ?? 0))
+    const requiredFirstMonthRent = Math.max(
+      0,
+      b.totalRentalFee && b.rentalMonths && b.rentalMonths > 0
+        ? Math.round(Number(b.totalRentalFee) / Number(b.rentalMonths))
+        : Number(b.totalRentalFee ?? matchingContract?.monthlyFee ?? 0)
+    )
+    const requiredTotalInitial =
+      b.initialPaymentAmount && Number(b.initialPaymentAmount) > 0
+        ? Number(b.initialPaymentAmount)
+        : requiredDeposit + requiredFirstMonthRent
+
+    const paidDepositTx = confirmedBookingPayments
+      .filter(p => p.paymentType === 'DEPOSIT')
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+    const paidRentTx = confirmedBookingPayments
+      .filter(p => p.paymentType === 'RENTAL_FEE')
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+    const paidBookingTx = confirmedBookingPayments
+      .filter(p => p.paymentType === 'BOOKING_PAYMENT')
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+
+    const refundedDepositTx = refundedBookingPayments
+      .filter(p => p.paymentType === 'DEPOSIT')
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+    const refundedRentTx = refundedBookingPayments
+      .filter(p => p.paymentType === 'RENTAL_FEE')
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+    const refundedBookingTx = refundedBookingPayments
+      .filter(p => p.paymentType === 'BOOKING_PAYMENT')
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+
+    const isBookingCancelledOrRefunded =
+      b.status === 'CANCELLED' || String(b.paymentStatus || '').toUpperCase() === 'REFUNDED'
+    const canFallbackToBookingDepositField =
+      !isBookingCancelledOrRefunded &&
+      b.status !== 'PENDING_PAYMENT' &&
+      !hasRefundedOrRefundPendingDepositTx &&
+      String(b.paymentStatus || '').toUpperCase() !== 'UNPAID'
+
+    // Avoid double-counting BOOKING_PAYMENT with DEPOSIT / RENTAL_FEE or booking.depositPaid
+    const baseDepositPaid =
+      paidDepositTx === 0 && paidBookingTx === 0
+        ? canFallbackToBookingDepositField
+          ? Math.max(0, Number(b.depositPaid || 0))
+          : 0
+        : paidDepositTx
+    const unpaidDepositBeforeBookingTx = Math.max(0, requiredDeposit - baseDepositPaid)
+    const allocatedBookingToDeposit = Math.min(paidBookingTx, unpaidDepositBeforeBookingTx)
+    const remainingBookingTxForRent = Math.max(0, paidBookingTx - allocatedBookingToDeposit)
+
+    const grossDepositPaid = isBookingCancelledOrRefunded ? 0 : baseDepositPaid + allocatedBookingToDeposit
+    const grossRentPaid = isBookingCancelledOrRefunded ? 0 : paidRentTx + remainingBookingTxForRent
+
+    const deductDeposit = Math.min(refundedDepositTx, grossDepositPaid)
+    const excessDepositRefund = Math.max(0, refundedDepositTx - deductDeposit)
+    const afterDepositRefund = Math.max(0, grossDepositPaid - deductDeposit)
+    const afterRentRefund = Math.max(0, grossRentPaid - refundedRentTx - excessDepositRefund)
+
+    const deductBookingFromDeposit = Math.min(refundedBookingTx, afterDepositRefund)
+    const remBookingRefund = Math.max(0, refundedBookingTx - deductBookingFromDeposit)
+
+    const effectiveDepositPaid = Math.max(0, afterDepositRefund - deductBookingFromDeposit)
+    const effectiveRentPaid = Math.max(0, afterRentRefund - remBookingRefund)
+
+    const depositRemaining = Math.max(0, requiredDeposit - effectiveDepositPaid)
+    const rentRemaining = Math.max(0, requiredFirstMonthRent - effectiveRentPaid)
+    const remainingAmountDue = depositRemaining + rentRemaining
+
+    const isObligationSatisfiedByTx =
+      !isBookingCancelledOrRefunded &&
+      !hasRefundPendingTx &&
+      (requiredTotalInitial > 0
+        ? depositRemaining === 0 && rentRemaining === 0
+        : paidBookingTx - refundedBookingTx > 0)
+
+    // Never treat PARTIALLY_PAID or a single DEPOSIT transaction as full payment when rental fee is still unpaid
+    const isPaid =
+      !isBookingCancelledOrRefunded &&
+      !hasRefundPendingTx &&
+      b.paymentStatus !== 'PARTIALLY_PAID' &&
+      (isObligationSatisfiedByTx ||
+        (b.paymentStatus === 'PAID' &&
+          b.status !== 'PENDING_PAYMENT' &&
+          confirmedBookingPayments.length === 0 &&
+          refundedBookingPayments.length === 0 &&
+          !hasRefundedOrRefundPendingDepositTx))
+
+    const isPartiallyPaid =
+      !isBookingCancelledOrRefunded &&
+      !hasRefundPendingTx &&
+      !isPaid &&
+      ((b.paymentStatus === 'PARTIALLY_PAID' && !hasRefundedOrRefundPendingDepositTx) ||
+        effectiveDepositPaid > 0 ||
+        effectiveRentPaid > 0)
+
+    const isContractSigned = Boolean(
+      b.status === 'ACTIVE' ||
+      (matchingContract && (
+        matchingContract.status === 'ACTIVE' ||
+        matchingContract.status === 'PENDING_ACTIVATION' ||
+        Boolean(matchingContract.signedAt) ||
+        Boolean(matchingContract.signedDocumentUrl) ||
+        Boolean((matchingContract as any).paperVerifiedAt) ||
+        Boolean(matchingContract.signatureData)
+      ))
+    )
+
+    let scenario: 'CANCELLED_OR_OVERDUE' | 'ACTIVE' | 'PAID_SIGNED' | 'PAID_UNSIGNED' | 'UNPAID_IN_PERSON' = 'UNPAID_IN_PERSON'
+
+    if (b.status === 'CANCELLED' || b.status === 'OVERDUE' || hasRefundPendingTx) {
+      scenario = 'CANCELLED_OR_OVERDUE'
+    } else if (b.status === 'ACTIVE') {
+      scenario = 'ACTIVE'
+    } else if (isPaid && isContractSigned) {
+      scenario = 'PAID_SIGNED'
+    } else if (
+      (isPaid && !isContractSigned) ||
+      b.status === 'PENDING_SIGNATURE' ||
+      matchingContract?.status === 'PENDING_SIGNATURE'
+    ) {
+      scenario = 'PAID_UNSIGNED'
+    } else {
+      scenario = 'UNPAID_IN_PERSON'
+    }
+
+    return {
+      matchingContract,
+      isPaid,
+      isPartiallyPaid,
+      effectiveDepositPaid,
+      effectiveRentPaid,
+      depositRemaining,
+      rentRemaining,
+      remainingAmountDue,
+      isContractSigned,
+      scenario,
+    }
+  }, [contracts, customerPayments])
+
   const handleGoToBooking = (booking: Booking) => {
     const fullBooking =
       customerBookings.find(
@@ -449,7 +640,315 @@ export const CustomerDashboard: React.FC = () => {
   const [reopenReasonText, setReopenReasonText] = useState('')
   const [isProcessingTicketAction, setIsProcessingTicketAction] = useState(false)
 
-  // Filter explore state
+  // Unit lookups
+  const unitMapById = useMemo(() => {
+    const map = new Map<string, StorageUnit>()
+    allUnits.forEach(u => map.set(u.id, u))
+    return map
+  }, [allUnits])
+
+  const unitMapByCode = useMemo(() => {
+    const map = new Map<string, StorageUnit>()
+    allUnits.forEach(u => {
+      if (u.unitCode) map.set(u.unitCode.trim().toUpperCase(), u)
+    })
+    return map
+  }, [allUnits])
+
+  const getNormalizedFloor = (rawFloor?: string | null, unitCode?: string | null): string | null => {
+    const fromRaw = extractFloor(rawFloor)
+    if (fromRaw) return fromRaw
+    if (unitCode) {
+      const match = unitCode.match(/(?:[A-Z0-9]+-)?([A-Z])?([1-9])\d{2}/i)
+      if (match && match[2]) return match[2]
+    }
+    return null
+  }
+
+  const matchesSize = (area: number | null | undefined, sizeFilter: string): boolean => {
+    if (sizeFilter === 'all') return true
+    const eff = area ?? 6
+    if (sizeFilter === 'mini') return eff <= 5
+    if (sizeFilter === 'family') return eff > 5 && eff <= 10
+    if (sizeFilter === 'business') return eff > 10
+    return true
+  }
+
+  const matchesFacility = (
+    itemFacilityId: string | undefined | null,
+    itemFacilityName: string | undefined | null,
+    selectedFacility: string
+  ): boolean => {
+    if (selectedFacility === 'all') return true
+    if (itemFacilityId && itemFacilityId === selectedFacility) return true
+    if (itemFacilityName && (itemFacilityName.toLowerCase() === selectedFacility.toLowerCase() || selectedFacility.toLowerCase().includes(itemFacilityName.toLowerCase()))) return true
+    return false
+  }
+
+  // 1. Tab "Kho của tôi" (My Units) Filter States & Calculations
+  const [myUnitsSearchTerm, setMyUnitsSearchTerm] = useState('')
+  const [myUnitsFacility, setMyUnitsFacility] = useState('all')
+  const [myUnitsFloor, setMyUnitsFloor] = useState('all')
+  const [myUnitsSize, setMyUnitsSize] = useState('all')
+
+  const myUnitsFacilities = useMemo(() => {
+    const map = new Map<string, string>()
+    activeContracts.forEach(c => {
+      const name = c.facilityName?.trim() || 'Cơ sở trực thuộc'
+      const key = c.facilityId || name
+      if (!map.has(key)) map.set(key, name)
+    })
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
+  }, [activeContracts])
+
+  const myUnitsFloors = useMemo(() => {
+    const floorSet = new Set<string>()
+    activeContracts.forEach(c => {
+      if (!matchesFacility(c.facilityId, c.facilityName, myUnitsFacility)) return
+      const unit = (c.storageUnitId ? unitMapById.get(c.storageUnitId) : null) || (c.unitCode ? unitMapByCode.get(c.unitCode.trim().toUpperCase()) : null)
+      const fl = getNormalizedFloor(unit?.floorLevel, c.unitCode)
+      if (fl) floorSet.add(fl)
+    })
+    return Array.from(floorSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+  }, [activeContracts, myUnitsFacility, unitMapById, unitMapByCode])
+
+  useEffect(() => {
+    if (myUnitsFloor !== 'all' && !myUnitsFloors.includes(myUnitsFloor)) {
+      setMyUnitsFloor('all')
+    }
+  }, [myUnitsFloor, myUnitsFloors])
+
+  const filteredActiveContracts = useMemo(() => {
+    return activeContracts.filter(c => {
+      if (!matchesFacility(c.facilityId, c.facilityName, myUnitsFacility)) return false
+
+      const unit = (c.storageUnitId ? unitMapById.get(c.storageUnitId) : null) || (c.unitCode ? unitMapByCode.get(c.unitCode.trim().toUpperCase()) : null)
+      const fl = getNormalizedFloor(unit?.floorLevel, c.unitCode)
+      if (myUnitsFloor !== 'all' && fl !== myUnitsFloor) return false
+
+      const area = unit?.areaSqMeters
+      if (!matchesSize(area, myUnitsSize)) return false
+
+      if (myUnitsSearchTerm.trim()) {
+        const q = myUnitsSearchTerm.toLowerCase().trim()
+        const matchUnit = c.unitCode?.toLowerCase().includes(q)
+        const matchContract = c.contractCode?.toLowerCase().includes(q)
+        const matchFac = c.facilityName?.toLowerCase().includes(q)
+        const matchType = unit?.unitTypeName?.toLowerCase().includes(q)
+        if (!matchUnit && !matchContract && !matchFac && !matchType) return false
+      }
+      return true
+    })
+  }, [activeContracts, myUnitsFacility, myUnitsFloor, myUnitsSize, myUnitsSearchTerm, unitMapById, unitMapByCode])
+
+  // 2. Tab "Đơn đặt chỗ" (Bookings) Filter States & Calculations
+  const [bookingFacility, setBookingFacility] = useState('all')
+  const [bookingFloor, setBookingFloor] = useState('all')
+  const [bookingSize, setBookingSize] = useState('all')
+
+  const bookingsFacilities = useMemo(() => {
+    const map = new Map<string, string>()
+    customerBookings.forEach(b => {
+      const name = b.facilityName?.trim() || 'Cơ sở trực thuộc'
+      const key = b.facilityId || name
+      if (!map.has(key)) map.set(key, name)
+    })
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
+  }, [customerBookings])
+
+  const bookingsFloors = useMemo(() => {
+    const floorSet = new Set<string>()
+    customerBookings.forEach(b => {
+      if (!matchesFacility(b.facilityId, b.facilityName, bookingFacility)) return
+      const unit = (b.storageUnitId ? unitMapById.get(b.storageUnitId) : null) || (b.unitCode ? unitMapByCode.get(b.unitCode.trim().toUpperCase()) : null)
+      const fl = getNormalizedFloor(b.floorLevel || unit?.floorLevel, b.unitCode)
+      if (fl) floorSet.add(fl)
+    })
+    return Array.from(floorSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+  }, [customerBookings, bookingFacility, unitMapById, unitMapByCode])
+
+  useEffect(() => {
+    if (bookingFloor !== 'all' && !bookingsFloors.includes(bookingFloor)) {
+      setBookingFloor('all')
+    }
+  }, [bookingFloor, bookingsFloors])
+
+  const filteredCustomerBookings = useMemo(() => {
+    return customerBookings.filter(b => {
+      if (bookingStatusFilter !== 'ALL') {
+        if (bookingStatusFilter === 'PENDING_SIGNATURE') {
+          const info = getBookingNoticeInfo(b)
+          const isPendingSign =
+            info.scenario === 'PAID_UNSIGNED' ||
+            b.status === 'PENDING_SIGNATURE' ||
+            info.matchingContract?.status === 'PENDING_SIGNATURE'
+          if (!isPendingSign) return false
+        } else if (b.status !== bookingStatusFilter) {
+          return false
+        }
+      }
+
+      if (!matchesFacility(b.facilityId, b.facilityName, bookingFacility)) return false
+
+      const unit = (b.storageUnitId ? unitMapById.get(b.storageUnitId) : null) || (b.unitCode ? unitMapByCode.get(b.unitCode.trim().toUpperCase()) : null)
+      const fl = getNormalizedFloor(b.floorLevel || unit?.floorLevel, b.unitCode)
+      if (bookingFloor !== 'all' && fl !== bookingFloor) return false
+
+      const area = unit?.areaSqMeters
+      if (!matchesSize(area, bookingSize)) return false
+
+      if (bookingSearchTerm.trim()) {
+        const q = bookingSearchTerm.toLowerCase().trim()
+        const codeMatch = b.bookingCode?.toLowerCase().includes(q)
+        const unitMatch = b.unitCode?.toLowerCase().includes(q)
+        const facMatch = b.facilityName?.toLowerCase().includes(q)
+        const phoneMatch = b.customerPhone?.toLowerCase().includes(q)
+        const pinMatch = b.accessPin?.toLowerCase().includes(q) || b.accessCode?.toLowerCase().includes(q)
+        if (!codeMatch && !unitMatch && !facMatch && !phoneMatch && !pinMatch) return false
+      }
+      return true
+    })
+  }, [customerBookings, bookingStatusFilter, bookingFacility, bookingFloor, bookingSize, bookingSearchTerm, unitMapById, unitMapByCode, getBookingNoticeInfo])
+
+  // 3. Tab "Hợp đồng & hóa đơn" (Contracts) Filter States & Calculations
+  const [contractsSearchTerm, setContractsSearchTerm] = useState('')
+  const [contractsFacility, setContractsFacility] = useState('all')
+  const [contractsFloor, setContractsFloor] = useState('all')
+  const [contractsSize, setContractsSize] = useState('all')
+
+  const contractsFacilities = useMemo(() => {
+    const map = new Map<string, string>()
+    contracts.forEach(c => {
+      const name = c.facilityName?.trim() || 'Cơ sở trực thuộc'
+      const key = c.facilityId || name
+      if (!map.has(key)) map.set(key, name)
+    })
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
+  }, [contracts])
+
+  const contractsFloors = useMemo(() => {
+    const floorSet = new Set<string>()
+    contracts.forEach(c => {
+      if (!matchesFacility(c.facilityId, c.facilityName, contractsFacility)) return
+      const unit = (c.storageUnitId ? unitMapById.get(c.storageUnitId) : null) || (c.unitCode ? unitMapByCode.get(c.unitCode.trim().toUpperCase()) : null)
+      const fl = getNormalizedFloor(unit?.floorLevel, c.unitCode)
+      if (fl) floorSet.add(fl)
+    })
+    return Array.from(floorSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+  }, [contracts, contractsFacility, unitMapById, unitMapByCode])
+
+  useEffect(() => {
+    if (contractsFloor !== 'all' && !contractsFloors.includes(contractsFloor)) {
+      setContractsFloor('all')
+    }
+  }, [contractsFloor, contractsFloors])
+
+  const filteredContracts = useMemo(() => {
+    return contracts.filter(c => {
+      if (!matchesFacility(c.facilityId, c.facilityName, contractsFacility)) return false
+
+      const unit = (c.storageUnitId ? unitMapById.get(c.storageUnitId) : null) || (c.unitCode ? unitMapByCode.get(c.unitCode.trim().toUpperCase()) : null)
+      const fl = getNormalizedFloor(unit?.floorLevel, c.unitCode)
+      if (contractsFloor !== 'all' && fl !== contractsFloor) return false
+
+      const area = unit?.areaSqMeters
+      if (!matchesSize(area, contractsSize)) return false
+
+      if (contractsSearchTerm.trim()) {
+        const q = contractsSearchTerm.toLowerCase().trim()
+        const matchCode = c.contractCode?.toLowerCase().includes(q)
+        const matchUnit = c.unitCode?.toLowerCase().includes(q)
+        const matchFac = c.facilityName?.toLowerCase().includes(q)
+        const matchStatus = c.status?.toLowerCase().includes(q)
+        if (!matchCode && !matchUnit && !matchFac && !matchStatus) return false
+      }
+      return true
+    })
+  }, [contracts, contractsFacility, contractsFloor, contractsSize, contractsSearchTerm, unitMapById, unitMapByCode])
+
+  // 4. Tab "Hỗ trợ & sự cố" (Support) Filter States & Calculations
+  const [ticketFacility, setTicketFacility] = useState('all')
+  const [ticketFloor, setTicketFloor] = useState('all')
+  const [ticketSize, setTicketSize] = useState('all')
+
+  const supportFacilities = useMemo(() => {
+    const map = new Map<string, string>()
+    customerTickets.forEach(t => {
+      const unit = t.unitCode ? unitMapByCode.get(t.unitCode.trim().toUpperCase()) : null
+      const name = t.facilityName?.trim() || unit?.facilityName?.trim() || (t.facilityCode ? `Boxora ${t.facilityCode}` : null)
+      if (name) {
+        const key = t.facilityId || unit?.facilityId || name
+        if (!map.has(key)) map.set(key, name)
+      }
+    })
+    if (map.size === 0) {
+      contracts.forEach(c => {
+        const name = c.facilityName?.trim() || 'Cơ sở trực thuộc'
+        const key = c.facilityId || name
+        if (!map.has(key)) map.set(key, name)
+      })
+    }
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
+  }, [customerTickets, unitMapByCode, contracts])
+
+  const supportFloors = useMemo(() => {
+    const floorSet = new Set<string>()
+    customerTickets.forEach(t => {
+      const unit = t.unitCode ? unitMapByCode.get(t.unitCode.trim().toUpperCase()) : null
+      const facKey = t.facilityId || unit?.facilityId || t.facilityName || unit?.facilityName
+      if (ticketFacility !== 'all' && facKey !== ticketFacility && t.facilityName !== ticketFacility) return
+      const fl = getNormalizedFloor(unit?.floorLevel, t.unitCode)
+      if (fl) floorSet.add(fl)
+    })
+    return Array.from(floorSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+  }, [customerTickets, ticketFacility, unitMapByCode])
+
+  useEffect(() => {
+    if (ticketFloor !== 'all' && !supportFloors.includes(ticketFloor)) {
+      setTicketFloor('all')
+    }
+  }, [ticketFloor, supportFloors])
+
+  const filteredCustomerTickets = useMemo(() => {
+    return customerTickets.filter(t => {
+      if (ticketStatusFilter !== 'ALL') {
+        if (ticketStatusFilter === 'PENDING') {
+          if (t.status !== 'OPEN' && t.status !== 'PENDING') return false
+        } else if (ticketStatusFilter === 'RESOLVED') {
+          if (t.status !== 'RESOLVED' && t.status !== 'CLOSED') return false
+        } else if (t.status !== ticketStatusFilter) {
+          return false
+        }
+      }
+
+      const unit = t.unitCode ? unitMapByCode.get(t.unitCode.trim().toUpperCase()) : null
+      const facKey = t.facilityId || unit?.facilityId || t.facilityName || unit?.facilityName
+      if (ticketFacility !== 'all' && facKey !== ticketFacility && t.facilityName !== ticketFacility && unit?.facilityName !== ticketFacility) {
+        return false
+      }
+
+      const fl = getNormalizedFloor(unit?.floorLevel, t.unitCode)
+      if (ticketFloor !== 'all' && fl !== ticketFloor) return false
+
+      const area = unit?.areaSqMeters
+      if (!matchesSize(area, ticketSize)) return false
+
+      if (ticketSearchTerm.trim()) {
+        const q = ticketSearchTerm.toLowerCase().trim()
+        const codeMatch = t.ticketCode?.toLowerCase().includes(q) || t.ticketNumber?.toLowerCase().includes(q)
+        const unitMatch = t.unitCode?.toLowerCase().includes(q)
+        const titleMatch = t.title?.toLowerCase().includes(q)
+        const descMatch = t.description?.toLowerCase().includes(q)
+        const catMatch = t.category?.toLowerCase().includes(q)
+        const facMatch = t.facilityName?.toLowerCase().includes(q) || unit?.facilityName?.toLowerCase().includes(q)
+        if (!codeMatch && !unitMatch && !titleMatch && !descMatch && !catMatch && !facMatch) return false
+      }
+
+      return true
+    })
+  }, [customerTickets, ticketStatusFilter, ticketFacility, ticketFloor, ticketSize, ticketSearchTerm, unitMapByCode])
+
+  // Filter explore state (Tab Tìm kiếm kho mới)
   const [filterFacility, setFilterFacility] = useState('all')
   const [filterFloor, setFilterFloor] = useState('all')
   const [filterSize, setFilterSize] = useState('all')
@@ -458,9 +957,10 @@ export const CustomerDashboard: React.FC = () => {
     const floors = new Set<string>()
     availableUnits.forEach(u => {
       if (filterFacility !== 'all' && u.facilityId !== filterFacility) return
-      if (u.floorLevel) floors.add(u.floorLevel)
+      const fl = extractFloor(u.floorLevel)
+      if (fl) floors.add(fl)
     })
-    return Array.from(floors).sort()
+    return Array.from(floors).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
   }, [availableUnits, filterFacility])
 
   const handleCopy = (id: string, pin: string) => {
@@ -1198,179 +1698,6 @@ export const CustomerDashboard: React.FC = () => {
     }, 2000)
   }
 
-  const getBookingNoticeInfo = (b: Booking) => {
-    const matchingContract =
-      contracts.find(c => Boolean(c.bookingId) && (c.bookingId === b.id || c.bookingId === b.bookingCode)) ||
-      contracts.find(
-        c =>
-          !c.bookingId &&
-          Boolean(c.unitCode) &&
-          c.unitCode === b.unitCode &&
-          c.status !== 'TERMINATED' &&
-          c.status !== 'EXPIRED'
-      )
-
-    // Filter initial booking payment transactions and separate PAID, REFUNDED, and REFUND_PENDING
-    const allBookingPayments = customerPayments.filter(
-      p =>
-        ((p.bookingId && (p.bookingId === b.id || p.bookingId === b.bookingCode)) ||
-          (p.bookingCode && (p.bookingCode === b.bookingCode || p.bookingCode === b.id))) &&
-        (p.paymentType === 'DEPOSIT' || p.paymentType === 'RENTAL_FEE' || p.paymentType === 'BOOKING_PAYMENT') &&
-        Number(p.amount || 0) > 0
-    )
-    const confirmedBookingPayments = allBookingPayments.filter(
-      p => p.status === 'PAID' || p.status === 'SUCCESS'
-    )
-    // Only confirmed REFUNDED transactions are deducted from held money; REFUND_PENDING is NOT deducted
-    const refundedBookingPayments = allBookingPayments.filter(
-      p => p.status === 'REFUNDED'
-    )
-    const refundPendingBookingPayments = allBookingPayments.filter(
-      p => p.status === 'REFUND_PENDING'
-    )
-    const hasRefundPendingTx = refundPendingBookingPayments.length > 0
-    const hasRefundedOrRefundPendingDepositTx = allBookingPayments.some(
-      p =>
-        (p.paymentType === 'DEPOSIT' || p.paymentType === 'BOOKING_PAYMENT') &&
-        (p.status === 'REFUNDED' || p.status === 'REFUND_PENDING')
-    )
-
-    const requiredDeposit = Math.max(0, Number(b.depositAmount ?? matchingContract?.depositHeld ?? 0))
-    const requiredFirstMonthRent = Math.max(
-      0,
-      b.totalRentalFee && b.rentalMonths && b.rentalMonths > 0
-        ? Math.round(Number(b.totalRentalFee) / Number(b.rentalMonths))
-        : Number(b.totalRentalFee ?? matchingContract?.monthlyFee ?? 0)
-    )
-    const requiredTotalInitial =
-      b.initialPaymentAmount && Number(b.initialPaymentAmount) > 0
-        ? Number(b.initialPaymentAmount)
-        : requiredDeposit + requiredFirstMonthRent
-
-    const paidDepositTx = confirmedBookingPayments
-      .filter(p => p.paymentType === 'DEPOSIT')
-      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
-    const paidRentTx = confirmedBookingPayments
-      .filter(p => p.paymentType === 'RENTAL_FEE')
-      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
-    const paidBookingTx = confirmedBookingPayments
-      .filter(p => p.paymentType === 'BOOKING_PAYMENT')
-      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
-
-    const refundedDepositTx = refundedBookingPayments
-      .filter(p => p.paymentType === 'DEPOSIT')
-      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
-    const refundedRentTx = refundedBookingPayments
-      .filter(p => p.paymentType === 'RENTAL_FEE')
-      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
-    const refundedBookingTx = refundedBookingPayments
-      .filter(p => p.paymentType === 'BOOKING_PAYMENT')
-      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
-
-    const isBookingCancelledOrRefunded =
-      b.status === 'CANCELLED' || String(b.paymentStatus || '').toUpperCase() === 'REFUNDED'
-    const canFallbackToBookingDepositField =
-      !isBookingCancelledOrRefunded &&
-      b.status !== 'PENDING_PAYMENT' &&
-      !hasRefundedOrRefundPendingDepositTx &&
-      String(b.paymentStatus || '').toUpperCase() !== 'UNPAID'
-
-    // Avoid double-counting BOOKING_PAYMENT with DEPOSIT / RENTAL_FEE or booking.depositPaid
-    const baseDepositPaid =
-      paidDepositTx === 0 && paidBookingTx === 0
-        ? canFallbackToBookingDepositField
-          ? Math.max(0, Number(b.depositPaid || 0))
-          : 0
-        : paidDepositTx
-    const unpaidDepositBeforeBookingTx = Math.max(0, requiredDeposit - baseDepositPaid)
-    const allocatedBookingToDeposit = Math.min(paidBookingTx, unpaidDepositBeforeBookingTx)
-    const remainingBookingTxForRent = Math.max(0, paidBookingTx - allocatedBookingToDeposit)
-
-    const grossDepositPaid = isBookingCancelledOrRefunded ? 0 : baseDepositPaid + allocatedBookingToDeposit
-    const grossRentPaid = isBookingCancelledOrRefunded ? 0 : paidRentTx + remainingBookingTxForRent
-
-    const deductDeposit = Math.min(refundedDepositTx, grossDepositPaid)
-    const excessDepositRefund = Math.max(0, refundedDepositTx - deductDeposit)
-    const afterDepositRefund = Math.max(0, grossDepositPaid - deductDeposit)
-    const afterRentRefund = Math.max(0, grossRentPaid - refundedRentTx - excessDepositRefund)
-
-    const deductBookingFromDeposit = Math.min(refundedBookingTx, afterDepositRefund)
-    const remBookingRefund = Math.max(0, refundedBookingTx - deductBookingFromDeposit)
-
-    const effectiveDepositPaid = Math.max(0, afterDepositRefund - deductBookingFromDeposit)
-    const effectiveRentPaid = Math.max(0, afterRentRefund - remBookingRefund)
-
-    const depositRemaining = Math.max(0, requiredDeposit - effectiveDepositPaid)
-    const rentRemaining = Math.max(0, requiredFirstMonthRent - effectiveRentPaid)
-    const remainingAmountDue = depositRemaining + rentRemaining
-
-    const isObligationSatisfiedByTx =
-      !isBookingCancelledOrRefunded &&
-      !hasRefundPendingTx &&
-      (requiredTotalInitial > 0
-        ? depositRemaining === 0 && rentRemaining === 0
-        : paidBookingTx - refundedBookingTx > 0)
-
-    // Never treat PARTIALLY_PAID or a single DEPOSIT transaction as full payment when rental fee is still unpaid
-    const isPaid =
-      !isBookingCancelledOrRefunded &&
-      !hasRefundPendingTx &&
-      b.paymentStatus !== 'PARTIALLY_PAID' &&
-      (isObligationSatisfiedByTx ||
-        (b.paymentStatus === 'PAID' &&
-          b.status !== 'PENDING_PAYMENT' &&
-          confirmedBookingPayments.length === 0 &&
-          refundedBookingPayments.length === 0 &&
-          !hasRefundedOrRefundPendingDepositTx))
-
-    const isPartiallyPaid =
-      !isBookingCancelledOrRefunded &&
-      !hasRefundPendingTx &&
-      !isPaid &&
-      ((b.paymentStatus === 'PARTIALLY_PAID' && !hasRefundedOrRefundPendingDepositTx) ||
-        effectiveDepositPaid > 0 ||
-        effectiveRentPaid > 0)
-
-    const isContractSigned = Boolean(
-      b.status === 'ACTIVE' ||
-      (matchingContract && (
-        matchingContract.status === 'ACTIVE' ||
-        matchingContract.status === 'PENDING_ACTIVATION' ||
-        Boolean(matchingContract.signedAt) ||
-        Boolean(matchingContract.signedDocumentUrl) ||
-        Boolean((matchingContract as any).paperVerifiedAt) ||
-        Boolean(matchingContract.signatureData)
-      ))
-    )
-
-    let scenario: 'CANCELLED_OR_OVERDUE' | 'ACTIVE' | 'PAID_SIGNED' | 'PAID_UNSIGNED' | 'UNPAID_IN_PERSON' = 'UNPAID_IN_PERSON'
-
-    if (b.status === 'CANCELLED' || b.status === 'OVERDUE' || hasRefundPendingTx) {
-      scenario = 'CANCELLED_OR_OVERDUE'
-    } else if (b.status === 'ACTIVE') {
-      scenario = 'ACTIVE'
-    } else if (isPaid && isContractSigned) {
-      scenario = 'PAID_SIGNED'
-    } else if (isPaid && !isContractSigned) {
-      scenario = 'PAID_UNSIGNED'
-    } else {
-      scenario = 'UNPAID_IN_PERSON'
-    }
-
-    return {
-      matchingContract,
-      isPaid,
-      isPartiallyPaid,
-      effectiveDepositPaid,
-      effectiveRentPaid,
-      depositRemaining,
-      rentRemaining,
-      remainingAmountDue,
-      isContractSigned,
-      scenario,
-    }
-  }
-
   return (
     <div className="flex flex-col gap-6 text-left max-w-7xl mx-auto pb-12">
       
@@ -1634,8 +1961,151 @@ export const CustomerDashboard: React.FC = () => {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {activeContracts.map((c) => {
+            <div className="flex flex-col gap-6">
+              {/* Filter & Search Toolbar */}
+              <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3">
+                <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+                  {/* Search Input */}
+                  <div className="relative flex-1">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
+                      search
+                    </span>
+                    <input
+                      type="text"
+                      placeholder="Tìm theo mã kho (TD-A101...), hợp đồng, cơ sở, loại kho..."
+                      value={myUnitsSearchTerm}
+                      onChange={(e) => setMyUnitsSearchTerm(e.target.value)}
+                      className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                    />
+                    {myUnitsSearchTerm && (
+                      <button
+                        type="button"
+                        onClick={() => setMyUnitsSearchTerm('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-1 cursor-pointer"
+                        title="Xóa tìm kiếm"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Filter Dropdowns */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Facility */}
+                    <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
+                      <span className="material-symbols-outlined text-[16px] text-slate-500">apartment</span>
+                      <span className="text-slate-500 font-medium">Cơ sở:</span>
+                      <select
+                        value={myUnitsFacility}
+                        onChange={(e) => setMyUnitsFacility(e.target.value)}
+                        className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer max-w-[170px] truncate"
+                      >
+                        <option value="all">
+                          {myUnitsFacilities.length > 1
+                            ? `Tất cả cơ sở (${myUnitsFacilities.length})`
+                            : myUnitsFacilities[0]?.name || 'Tất cả cơ sở'}
+                        </option>
+                        {myUnitsFacilities.length > 1 &&
+                          myUnitsFacilities.map((f) => (
+                            <option key={f.id} value={f.id}>
+                              {f.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+
+                    {/* Floor */}
+                    <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
+                      <span className="material-symbols-outlined text-[16px] text-slate-500">layers</span>
+                      <span className="text-slate-500 font-medium">Tầng:</span>
+                      <select
+                        value={myUnitsFloor}
+                        onChange={(e) => setMyUnitsFloor(e.target.value)}
+                        className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
+                      >
+                        <option value="all">Tất cả tầng</option>
+                        {myUnitsFloors.map((fl) => (
+                          <option key={fl} value={fl}>
+                            Tầng {fl}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Size */}
+                    <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
+                      <span className="material-symbols-outlined text-[16px] text-slate-500">straighten</span>
+                      <span className="text-slate-500 font-medium">Kích cỡ:</span>
+                      <select
+                        value={myUnitsSize}
+                        onChange={(e) => setMyUnitsSize(e.target.value)}
+                        className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
+                      >
+                        <option value="all">Tất cả kích cỡ</option>
+                        <option value="mini">Kho Mini (≤ 5 m²)</option>
+                        <option value="family">Kho Gia Đình (6 - 10 m²)</option>
+                        <option value="business">Kho Doanh Nghiệp (&gt; 10 m²)</option>
+                      </select>
+                    </div>
+
+                    {/* Reset Button */}
+                    {(myUnitsSearchTerm || myUnitsFacility !== 'all' || myUnitsFloor !== 'all' || myUnitsSize !== 'all') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMyUnitsSearchTerm('')
+                          setMyUnitsFacility('all')
+                          setMyUnitsFloor('all')
+                          setMyUnitsSize('all')
+                        }}
+                        className="px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold rounded-xl flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Đặt lại bộ lọc"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+                        <span className="hidden sm:inline">Đặt lại</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-500 px-1 pt-1 border-t border-slate-100 flex-wrap gap-2">
+                  <span>
+                    Hiển thị <strong className="text-slate-900 font-bold">{filteredActiveContracts.length}</strong> / {activeContracts.length} kho đang thuê
+                  </span>
+                  {(myUnitsSearchTerm || myUnitsFacility !== 'all' || myUnitsFloor !== 'all' || myUnitsSize !== 'all') && (
+                    <span className="text-blue-600 font-semibold flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">filter_alt</span>
+                      <span>Đang lọc theo tiêu chí</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {filteredActiveContracts.length === 0 ? (
+                <div className="stitch-card p-10 text-center flex flex-col items-center justify-center gap-3">
+                  <div className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-[30px]">search_off</span>
+                  </div>
+                  <h4 className="font-bold text-slate-800 text-sm">Không tìm thấy kho nào phù hợp</h4>
+                  <p className="text-xs text-slate-500 max-w-sm">
+                    Không có kho đang thuê nào phù hợp với bộ lọc cơ sở, tầng, kích cỡ hoặc từ khóa tìm kiếm của bạn.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMyUnitsSearchTerm('')
+                      setMyUnitsFacility('all')
+                      setMyUnitsFloor('all')
+                      setMyUnitsSize('all')
+                    }}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                  >
+                    Xóa bộ lọc tìm kiếm
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {filteredActiveContracts.map((c) => {
                 const targetId = c.bookingId || c.id
                 const pin = loadedPins[c.unitCode] || ''
                 const isRevealed = revealedPins[c.unitCode]
@@ -1856,6 +2326,8 @@ export const CustomerDashboard: React.FC = () => {
                   </div>
                 )
               })}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1907,31 +2379,115 @@ export const CustomerDashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* Search & Status Filters */}
-            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pt-3 border-t border-slate-100">
-              <div className="relative flex-1 max-w-md">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
-                  search
-                </span>
-                <input
-                  type="text"
-                  placeholder="Tìm theo mã đặt chỗ (BX-...), mã kho (D1-..., D7-...), hoặc cơ sở..."
-                  value={bookingSearchTerm}
-                  onChange={(e) => setBookingSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
-                />
-                {bookingSearchTerm && (
-                  <button
-                    onClick={() => setBookingSearchTerm('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-0.5"
-                  >
-                    ✕
-                  </button>
-                )}
+            {/* Search & Multi-Filters */}
+            <div className="flex flex-col gap-3 pt-3 border-t border-slate-100">
+              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+                {/* Search Input */}
+                <div className="relative flex-1">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Tìm theo mã đặt chỗ (BX-...), mã kho (TD-...), sđt, mã PIN hoặc cơ sở..."
+                    value={bookingSearchTerm}
+                    onChange={(e) => setBookingSearchTerm(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                  />
+                  {bookingSearchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setBookingSearchTerm('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-1 cursor-pointer"
+                      title="Xóa tìm kiếm"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Filter Dropdowns */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Facility */}
+                  <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
+                    <span className="material-symbols-outlined text-[16px] text-slate-500">apartment</span>
+                    <span className="text-slate-500 font-medium">Cơ sở:</span>
+                    <select
+                      value={bookingFacility}
+                      onChange={(e) => setBookingFacility(e.target.value)}
+                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer max-w-[170px] truncate"
+                    >
+                      <option value="all">
+                        {bookingsFacilities.length > 1
+                          ? `Tất cả cơ sở (${bookingsFacilities.length})`
+                          : bookingsFacilities[0]?.name || 'Tất cả cơ sở'}
+                      </option>
+                      {bookingsFacilities.length > 1 &&
+                        bookingsFacilities.map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {f.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  {/* Floor */}
+                  <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
+                    <span className="material-symbols-outlined text-[16px] text-slate-500">layers</span>
+                    <span className="text-slate-500 font-medium">Tầng:</span>
+                    <select
+                      value={bookingFloor}
+                      onChange={(e) => setBookingFloor(e.target.value)}
+                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
+                    >
+                      <option value="all">Tất cả tầng</option>
+                      {bookingsFloors.map((fl) => (
+                        <option key={fl} value={fl}>
+                          Tầng {fl}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Size */}
+                  <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
+                    <span className="material-symbols-outlined text-[16px] text-slate-500">straighten</span>
+                    <span className="text-slate-500 font-medium">Kích cỡ:</span>
+                    <select
+                      value={bookingSize}
+                      onChange={(e) => setBookingSize(e.target.value)}
+                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
+                    >
+                      <option value="all">Tất cả kích cỡ</option>
+                      <option value="mini">Kho Mini (≤ 5 m²)</option>
+                      <option value="family">Kho Gia Đình (6 - 10 m²)</option>
+                      <option value="business">Kho Doanh Nghiệp (&gt; 10 m²)</option>
+                    </select>
+                  </div>
+
+                  {/* Reset Button */}
+                  {(bookingSearchTerm || bookingFacility !== 'all' || bookingFloor !== 'all' || bookingSize !== 'all' || bookingStatusFilter !== 'ALL') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBookingSearchTerm('')
+                        setBookingFacility('all')
+                        setBookingFloor('all')
+                        setBookingSize('all')
+                        setBookingStatusFilter('ALL')
+                      }}
+                      className="px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold rounded-xl flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Đặt lại bộ lọc"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+                      <span className="hidden sm:inline">Đặt lại</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Status Filter Pills */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 pt-1">
                 {[
                   { key: 'ALL', label: 'Tất cả', count: customerBookings.length },
                   { key: 'CONFIRMED', label: 'Đã giữ chỗ', count: customerBookings.filter(b => b.status === 'CONFIRMED').length },
@@ -1941,7 +2497,11 @@ export const CustomerDashboard: React.FC = () => {
                     label: 'Chờ ký', 
                     count: customerBookings.filter(b => {
                       const info = getBookingNoticeInfo(b)
-                      return info.scenario === 'PAID_UNSIGNED'
+                      return (
+                        info.scenario === 'PAID_UNSIGNED' ||
+                        b.status === 'PENDING_SIGNATURE' ||
+                        info.matchingContract?.status === 'PENDING_SIGNATURE'
+                      )
                     }).length 
                   },
                   { key: 'ACTIVE', label: 'Đang dùng', count: customerBookings.filter(b => b.status === 'ACTIVE').length },
@@ -1968,6 +2528,19 @@ export const CustomerDashboard: React.FC = () => {
                   </button>
                 ))}
               </div>
+
+              {/* Count & Active status footer */}
+              <div className="flex items-center justify-between text-[11px] text-slate-500 px-1 pt-1 border-t border-slate-100 flex-wrap gap-2">
+                <span>
+                  Hiển thị <strong className="text-slate-900 font-bold">{filteredCustomerBookings.length}</strong> / {customerBookings.length} đơn đặt giữ chỗ
+                </span>
+                {(bookingSearchTerm || bookingFacility !== 'all' || bookingFloor !== 'all' || bookingSize !== 'all' || bookingStatusFilter !== 'ALL') && (
+                  <span className="text-blue-600 font-semibold flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">filter_alt</span>
+                    <span>Đang lọc theo tiêu chí</span>
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1978,24 +2551,7 @@ export const CustomerDashboard: React.FC = () => {
               <span>Đang tải lịch sử đặt kho từ máy chủ Boxora...</span>
             </div>
           ) : (() => {
-            const filteredBookings = customerBookings.filter((b) => {
-              if (bookingStatusFilter !== 'ALL') {
-                if (bookingStatusFilter === 'PENDING_SIGNATURE') {
-                  const info = getBookingNoticeInfo(b)
-                  if (info.scenario !== 'PAID_UNSIGNED') return false
-                } else if (b.status !== bookingStatusFilter) {
-                  return false
-                }
-              }
-              if (bookingSearchTerm.trim()) {
-                const term = bookingSearchTerm.toLowerCase().trim()
-                const codeMatch = b.bookingCode?.toLowerCase().includes(term)
-                const unitMatch = b.unitCode?.toLowerCase().includes(term)
-                const facMatch = b.facilityName?.toLowerCase().includes(term)
-                if (!codeMatch && !unitMatch && !facMatch) return false
-              }
-              return true
-            })
+            const filteredBookings = filteredCustomerBookings
 
             if (filteredBookings.length === 0) {
               return (
@@ -2152,7 +2708,7 @@ export const CustomerDashboard: React.FC = () => {
                           <div>
                             <span className="text-slate-400 block text-[10px] uppercase font-bold">Lịch hẹn nhận kho</span>
                             <span className="font-mono font-bold text-slate-900">
-                              {b.expectedCheckInAt ? new Date(b.expectedCheckInAt).toLocaleString('vi-VN') : b.startDate}
+                              {safeFormatDateTime(b.expectedCheckInAt, b.startDate || 'Chưa ấn định')}
                             </span>
                           </div>
                           <div>
@@ -2162,7 +2718,7 @@ export const CustomerDashboard: React.FC = () => {
                           <div>
                             <span className="text-slate-400 block text-[10px] uppercase font-bold">Hạn giữ chỗ</span>
                             <span className="font-mono font-bold text-amber-700">
-                              {b.holdExpiresAt ? new Date(b.holdExpiresAt).toLocaleString('vi-VN') : (b.status === 'ACTIVE' ? 'Đã kích hoạt' : 'Theo chính sách')}
+                              {safeFormatDateTime(b.holdExpiresAt, b.status === 'ACTIVE' ? 'Đã kích hoạt' : 'Theo chính sách')}
                             </span>
                           </div>
                           <div>
@@ -2186,7 +2742,7 @@ export const CustomerDashboard: React.FC = () => {
                               event_busy
                             </span>
                             <div className="leading-relaxed">
-                              <strong>Đơn giữ chỗ đã hết hạn / đã hủy:</strong> {b.holdExpiresAt ? `Hạn giữ chỗ đã kết thúc lúc ${new Date(b.holdExpiresAt).toLocaleString('vi-VN')}. ` : ''}Kho đã được tự động giải phóng theo chính sách cơ sở.
+                              <strong>Đơn giữ chỗ đã hết hạn / đã hủy:</strong> {b.holdExpiresAt ? `Hạn giữ chỗ đã kết thúc lúc ${safeFormatDateTime(b.holdExpiresAt)}. ` : ''}Kho đã được tự động giải phóng theo chính sách cơ sở.
                             </div>
                           </div>
                         )}
@@ -2211,7 +2767,7 @@ export const CustomerDashboard: React.FC = () => {
                                     </span>
                                   </div>
                                   <div>
-                                    Thủ tục hợp đồng và thanh toán đã hoàn tất 100%! Quý khách chỉ cần mang CCCD gốc đến cơ sở Boxora đúng lịch hẹn (<strong>{b.expectedCheckInAt ? new Date(b.expectedCheckInAt).toLocaleString('vi-VN') : b.startDate}</strong>) để xem kho thực tế, nhận bàn giao và nhận mã PIN SmartLock. <em>Lưu ý: Thời hạn thuê kho sẽ chính thức có hiệu lực tính từ ngày bạn check-in và kích hoạt mã PIN tại cơ sở.</em>
+                                    Thủ tục hợp đồng và thanh toán đã hoàn tất 100%! Quý khách chỉ cần mang CCCD gốc đến cơ sở Boxora đúng lịch hẹn (<strong>{safeFormatDateTime(b.expectedCheckInAt, b.startDate || 'lịch hẹn')}</strong>) để xem kho thực tế, nhận bàn giao và nhận mã PIN SmartLock. <em>Lưu ý: Thời hạn thuê kho sẽ chính thức có hiệu lực tính từ ngày bạn check-in và kích hoạt mã PIN tại cơ sở.</em>
                                   </div>
                                 </div>
                               </div>
@@ -2410,7 +2966,7 @@ export const CustomerDashboard: React.FC = () => {
                 <option value="all">Tất cả tầng</option>
                 {availableFloors.map(floor => (
                   <option key={floor} value={floor}>
-                    {floor.startsWith('Floor ') ? `Tầng ${floor.replace('Floor ', '')}` : floor}
+                    Tầng {floor}
                   </option>
                 ))}
               </select>
@@ -2436,7 +2992,7 @@ export const CustomerDashboard: React.FC = () => {
               </div>
             ) : availableUnits.filter(u => {
                 if (filterFacility !== 'all' && u.facilityId !== filterFacility) return false
-                if (filterFloor !== 'all' && u.floorLevel !== filterFloor) return false
+                if (filterFloor !== 'all' && extractFloor(u.floorLevel) !== filterFloor) return false
                 const area = u.areaSqMeters || 6
                 if (filterSize === 'mini' && area > 5) return false
                 if (filterSize === 'family' && (area <= 5 || area > 10)) return false
@@ -2449,7 +3005,7 @@ export const CustomerDashboard: React.FC = () => {
             ) : (
               availableUnits.filter(u => {
                 if (filterFacility !== 'all' && u.facilityId !== filterFacility) return false
-                if (filterFloor !== 'all' && u.floorLevel !== filterFloor) return false
+                if (filterFloor !== 'all' && extractFloor(u.floorLevel) !== filterFloor) return false
                 const area = u.areaSqMeters || 6
                 if (filterSize === 'mini' && area > 5) return false
                 if (filterSize === 'family' && (area <= 5 || area > 10)) return false
@@ -2677,6 +3233,125 @@ export const CustomerDashboard: React.FC = () => {
               </div>
             </div>
 
+            {/* Filter & Search Toolbar */}
+            <div className="bg-slate-50/70 p-3.5 sm:p-4 rounded-xl border border-slate-200/90 flex flex-col gap-3">
+              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+                {/* Search Input */}
+                <div className="relative flex-1">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Tìm theo mã hợp đồng, mã kho, hoặc cơ sở..."
+                    value={contractsSearchTerm}
+                    onChange={(e) => setContractsSearchTerm(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                  {contractsSearchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setContractsSearchTerm('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-1 cursor-pointer"
+                      title="Xóa tìm kiếm"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Filter Dropdowns */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Facility */}
+                  <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs">
+                    <span className="material-symbols-outlined text-[16px] text-slate-500">apartment</span>
+                    <span className="text-slate-500 font-medium">Cơ sở:</span>
+                    <select
+                      value={contractsFacility}
+                      onChange={(e) => setContractsFacility(e.target.value)}
+                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer max-w-[170px] truncate"
+                    >
+                      <option value="all">
+                        {contractsFacilities.length > 1
+                          ? `Tất cả cơ sở (${contractsFacilities.length})`
+                          : contractsFacilities[0]?.name || 'Tất cả cơ sở'}
+                      </option>
+                      {contractsFacilities.length > 1 &&
+                        contractsFacilities.map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {f.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  {/* Floor */}
+                  <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs">
+                    <span className="material-symbols-outlined text-[16px] text-slate-500">layers</span>
+                    <span className="text-slate-500 font-medium">Tầng:</span>
+                    <select
+                      value={contractsFloor}
+                      onChange={(e) => setContractsFloor(e.target.value)}
+                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
+                    >
+                      <option value="all">Tất cả tầng</option>
+                      {contractsFloors.map((fl) => (
+                        <option key={fl} value={fl}>
+                          Tầng {fl}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Size */}
+                  <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs">
+                    <span className="material-symbols-outlined text-[16px] text-slate-500">straighten</span>
+                    <span className="text-slate-500 font-medium">Kích cỡ:</span>
+                    <select
+                      value={contractsSize}
+                      onChange={(e) => setContractsSize(e.target.value)}
+                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
+                    >
+                      <option value="all">Tất cả kích cỡ</option>
+                      <option value="mini">Kho Mini (≤ 5 m²)</option>
+                      <option value="family">Kho Gia Đình (6 - 10 m²)</option>
+                      <option value="business">Kho Doanh Nghiệp (&gt; 10 m²)</option>
+                    </select>
+                  </div>
+
+                  {/* Reset Button */}
+                  {(contractsSearchTerm || contractsFacility !== 'all' || contractsFloor !== 'all' || contractsSize !== 'all') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setContractsSearchTerm('')
+                        setContractsFacility('all')
+                        setContractsFloor('all')
+                        setContractsSize('all')
+                      }}
+                      className="px-2.5 py-2 bg-white hover:bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg border border-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Đặt lại bộ lọc"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+                      <span className="hidden sm:inline">Đặt lại</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] text-slate-500 px-1 pt-0.5 border-t border-slate-200/70 flex-wrap gap-2">
+                <span>
+                  Hiển thị <strong className="text-slate-900 font-bold">{filteredContracts.length}</strong> / {contracts.length} hợp đồng
+                </span>
+                {(contractsSearchTerm || contractsFacility !== 'all' || contractsFloor !== 'all' || contractsSize !== 'all') && (
+                  <span className="text-blue-600 font-semibold flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">filter_alt</span>
+                    <span>Đang lọc theo tiêu chí</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider text-[11px]">
@@ -2707,8 +3382,14 @@ export const CustomerDashboard: React.FC = () => {
                         Chưa có hợp đồng nào trong hồ sơ của bạn.
                       </td>
                     </tr>
+                  ) : filteredContracts.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-8 text-center text-slate-500 text-xs">
+                        Không tìm thấy hợp đồng nào phù hợp với bộ lọc tìm kiếm đã chọn.
+                      </td>
+                    </tr>
                   ) : (
-                    contracts.map(c => (
+                    filteredContracts.map(c => (
                       <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
                         <td className="py-3.5 px-4 font-unit-code text-xs font-bold text-slate-900">#{c.contractCode}</td>
                         <td className="py-3.5 px-4 font-bold text-blue-600">#{c.unitCode}</td>
@@ -3095,59 +3776,158 @@ export const CustomerDashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* Filters & Search */}
-            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-              <div className="relative flex-1 max-w-md">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
-                  search
-                </span>
-                <input
-                  type="text"
-                  placeholder="Tìm theo mã phiếu (TK-...), kho, hoặc nội dung..."
-                  value={ticketSearchTerm}
-                  onChange={(e) => setTicketSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
-                />
-                {ticketSearchTerm && (
-                  <button
-                    onClick={() => setTicketSearchTerm('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-0.5"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
+            {/* Filters & Search Toolbar */}
+            <div className="bg-slate-50/70 p-3.5 sm:p-4 rounded-xl border border-slate-200/90 flex flex-col gap-3">
+              {/* Row 1: Search & Status Filter Pills */}
+              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+                {/* Search Input */}
+                <div className="relative flex-1">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Tìm theo mã phiếu (TK-...), kho, tiêu đề, hoặc nội dung..."
+                    value={ticketSearchTerm}
+                    onChange={(e) => setTicketSearchTerm(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                  {ticketSearchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setTicketSearchTerm('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-1 cursor-pointer"
+                      title="Xóa tìm kiếm"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
 
-              {/* Status Filter Pills */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
-                {[
-                  { key: 'ALL', label: 'Tất cả', count: customerTickets.length },
-                  { key: 'PENDING', label: 'Chờ tiếp nhận', count: customerTickets.filter(t => t.status === 'OPEN' || t.status === 'PENDING').length },
-                  { key: 'IN_PROGRESS', label: 'Đang xử lý', count: customerTickets.filter(t => t.status === 'IN_PROGRESS').length },
-                  { key: 'RESOLVED', label: 'Đã giải quyết', count: customerTickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED').length },
-                ].map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setTicketStatusFilter(tab.key)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
-                      ticketStatusFilter === tab.key
-                        ? 'bg-slate-900 text-white shadow-xs'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                    }`}
-                  >
-                    <span>{tab.label}</span>
-                    <span
-                      className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                {/* Status Filter Pills */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
+                  {[
+                    { key: 'ALL', label: 'Tất cả', count: customerTickets.length },
+                    { key: 'PENDING', label: 'Chờ tiếp nhận', count: customerTickets.filter(t => t.status === 'OPEN' || t.status === 'PENDING').length },
+                    { key: 'IN_PROGRESS', label: 'Đang xử lý', count: customerTickets.filter(t => t.status === 'IN_PROGRESS').length },
+                    { key: 'RESOLVED', label: 'Đã giải quyết', count: customerTickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED').length },
+                  ].map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setTicketStatusFilter(tab.key)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
                         ticketStatusFilter === tab.key
-                          ? 'bg-white/20 text-white'
-                          : 'bg-slate-200 text-slate-700'
+                          ? 'bg-slate-900 text-white shadow-xs'
+                          : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
                       }`}
                     >
-                      {tab.count}
+                      <span>{tab.label}</span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                          ticketStatusFilter === tab.key
+                            ? 'bg-white/20 text-white'
+                            : 'bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        {tab.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Row 2: Facility, Floor, Size Filter Dropdowns & Stats */}
+              <div className="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-slate-200/60">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Facility */}
+                  <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs">
+                    <span className="material-symbols-outlined text-[16px] text-slate-500">apartment</span>
+                    <span className="text-slate-500 font-medium">Cơ sở:</span>
+                    <select
+                      value={ticketFacility}
+                      onChange={(e) => setTicketFacility(e.target.value)}
+                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer max-w-[170px] truncate"
+                    >
+                      <option value="all">
+                        {supportFacilities.length > 1
+                          ? `Tất cả cơ sở (${supportFacilities.length})`
+                          : supportFacilities[0]?.name || 'Tất cả cơ sở'}
+                      </option>
+                      {supportFacilities.length > 1 &&
+                        supportFacilities.map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {f.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  {/* Floor */}
+                  <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs">
+                    <span className="material-symbols-outlined text-[16px] text-slate-500">layers</span>
+                    <span className="text-slate-500 font-medium">Tầng:</span>
+                    <select
+                      value={ticketFloor}
+                      onChange={(e) => setTicketFloor(e.target.value)}
+                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
+                    >
+                      <option value="all">Tất cả tầng</option>
+                      {supportFloors.map((fl) => (
+                        <option key={fl} value={fl}>
+                          Tầng {fl}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Size */}
+                  <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs">
+                    <span className="material-symbols-outlined text-[16px] text-slate-500">aspect_ratio</span>
+                    <span className="text-slate-500 font-medium">Kích cỡ:</span>
+                    <select
+                      value={ticketSize}
+                      onChange={(e) => setTicketSize(e.target.value)}
+                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
+                    >
+                      <option value="all">Tất cả cỡ</option>
+                      <option value="mini">Mini (≤ 5m²)</option>
+                      <option value="family">Gia đình (6-10m²)</option>
+                      <option value="business">Doanh nghiệp (&gt; 10m²)</option>
+                    </select>
+                  </div>
+
+                  {/* Reset Filters */}
+                  {(ticketSearchTerm || ticketFacility !== 'all' || ticketFloor !== 'all' || ticketSize !== 'all' || ticketStatusFilter !== 'ALL') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTicketSearchTerm('')
+                        setTicketFacility('all')
+                        setTicketFloor('all')
+                        setTicketSize('all')
+                        setTicketStatusFilter('ALL')
+                      }}
+                      className="px-2.5 py-2 bg-white hover:bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg border border-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Đặt lại bộ lọc"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+                      <span className="hidden sm:inline">Đặt lại</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                  <span>
+                    Hiển thị <strong className="text-slate-900 font-bold">{filteredCustomerTickets.length}</strong> / {customerTickets.length} sự cố
+                  </span>
+                  {(ticketSearchTerm || ticketFacility !== 'all' || ticketFloor !== 'all' || ticketSize !== 'all') && (
+                    <span className="text-blue-600 font-semibold flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">filter_alt</span>
+                      <span>Đang lọc</span>
                     </span>
-                  </button>
-                ))}
+                  )}
+                </div>
               </div>
             </div>
 
@@ -3158,27 +3938,7 @@ export const CustomerDashboard: React.FC = () => {
                 <span>Đang tải lịch sử báo cáo sự cố từ hệ thống...</span>
               </div>
             ) : (() => {
-              const filteredTickets = customerTickets.filter(t => {
-                if (ticketStatusFilter !== 'ALL') {
-                  if (ticketStatusFilter === 'PENDING') {
-                    if (t.status !== 'OPEN' && t.status !== 'PENDING') return false
-                  } else if (ticketStatusFilter === 'RESOLVED') {
-                    if (t.status !== 'RESOLVED' && t.status !== 'CLOSED') return false
-                  } else if (t.status !== ticketStatusFilter) {
-                    return false
-                  }
-                }
-                if (ticketSearchTerm.trim()) {
-                  const term = ticketSearchTerm.toLowerCase().trim()
-                  const codeMatch = t.ticketCode?.toLowerCase().includes(term)
-                  const unitMatch = t.unitCode?.toLowerCase().includes(term)
-                  const titleMatch = t.title?.toLowerCase().includes(term)
-                  const descMatch = t.description?.toLowerCase().includes(term)
-                  const resMatch = t.resolutionNote?.toLowerCase().includes(term)
-                  if (!codeMatch && !unitMatch && !titleMatch && !descMatch && !resMatch) return false
-                }
-                return true
-              })
+              const filteredTickets = filteredCustomerTickets
 
               if (filteredTickets.length === 0) {
                 return (
@@ -3188,13 +3948,13 @@ export const CustomerDashboard: React.FC = () => {
                     </div>
                     <div className="max-w-md">
                       <h4 className="text-sm font-bold text-slate-800">
-                        {ticketSearchTerm || ticketStatusFilter !== 'ALL'
+                        {ticketSearchTerm || ticketStatusFilter !== 'ALL' || ticketFacility !== 'all' || ticketFloor !== 'all' || ticketSize !== 'all'
                           ? 'Không có báo cáo sự cố nào phù hợp bộ lọc'
                           : 'Chưa có yêu cầu hỗ trợ hoặc báo cáo sự cố nào'}
                       </h4>
                       <p className="text-xs text-slate-500 mt-1">
-                        {ticketSearchTerm || ticketStatusFilter !== 'ALL'
-                          ? 'Thử thay đổi từ khóa tìm kiếm hoặc chọn bộ lọc trạng thái khác.'
+                        {ticketSearchTerm || ticketStatusFilter !== 'ALL' || ticketFacility !== 'all' || ticketFloor !== 'all' || ticketSize !== 'all'
+                          ? 'Thử thay đổi từ khóa tìm kiếm, cơ sở/tầng hoặc chọn bộ lọc trạng thái khác.'
                           : 'Khi gặp sự cố khóa thông minh, kẹt cửa cuốn, cần cấp lại mã PIN hoặc hỗ trợ thanh toán, bạn có thể gửi yêu cầu ở biểu mẫu phía trên.'}
                       </p>
                     </div>

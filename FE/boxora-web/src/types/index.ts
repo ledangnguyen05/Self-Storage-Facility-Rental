@@ -121,7 +121,7 @@ export interface StorageUnit {
   dueDate?: string
 }
 
-export type BookingStatusType = 'PENDING_APPROVAL' | 'PENDING_PAYMENT' | 'CONFIRMED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
+export type BookingStatusType = 'PENDING_APPROVAL' | 'PENDING_PAYMENT' | 'CONFIRMED' | 'PENDING_SIGNATURE' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
 
 export interface Booking {
   id: string

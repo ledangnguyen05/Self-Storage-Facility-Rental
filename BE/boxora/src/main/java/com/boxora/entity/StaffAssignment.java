@@ -47,6 +47,24 @@ public class StaffAssignment extends BaseEntity {
     @JoinColumn(name = "assigned_by_id")
     private User assignedBy;
 
+    @Column(name = "start_time")
+    private java.time.LocalTime startTime;
+
+    @Column(name = "end_time")
+    private java.time.LocalTime endTime;
+
+    @Column(name = "checked_in_at")
+    private java.time.LocalDateTime checkedInAt;
+
+    @Column(name = "checked_out_at")
+    private java.time.LocalDateTime checkedOutAt;
+
+    @Column(name = "check_in_note")
+    private String checkInNote;
+
+    @Column(name = "check_out_note")
+    private String checkOutNote;
+
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
 }
