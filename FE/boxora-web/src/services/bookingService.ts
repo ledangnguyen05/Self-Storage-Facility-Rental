@@ -82,8 +82,10 @@ export const bookingService = {
     return response.data?.data as Booking
   },
 
-  async getUpcomingArrivals() {
-    const response = await api.get('/api/v1/bookings/arrivals')
+  async getUpcomingArrivals(facilityId?: string) {
+    const response = await api.get('/api/v1/bookings/arrivals', {
+      params: facilityId ? { facilityId } : undefined,
+    })
     return (response.data?.data || []) as Booking[]
   },
 

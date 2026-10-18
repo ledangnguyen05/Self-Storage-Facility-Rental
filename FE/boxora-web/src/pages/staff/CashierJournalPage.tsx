@@ -377,7 +377,9 @@ export const CashierJournalPage: React.FC = () => {
                   return (
                     <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3 px-3.5">
-                        <div className="font-mono font-medium text-slate-900">{p.id.slice(0, 10)}...</div>
+                        <div className="font-mono font-medium text-slate-900" title={p.transactionId || p.id}>
+                          {p.transactionId || p.id}
+                        </div>
                         <div className="text-[11px] text-slate-400 font-mono">
                           {p.paymentTime
                             ? new Date(p.paymentTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })

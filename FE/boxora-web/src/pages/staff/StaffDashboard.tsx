@@ -19,6 +19,7 @@ import { FacilityStaffStorageDiagram } from './components/FacilityStaffStorageDi
 
 export const StaffDashboard: React.FC = () => {
   const { user } = useAuth()
+  const isAdmin = user?.role?.name === 'ADMIN' || user?.roleName === 'ADMIN'
   const { selectedFacility, facilities: contextFacilities } = useOutletContext<{
     selectedFacility?: string
     facilities?: Facility[]
@@ -431,7 +432,11 @@ export const StaffDashboard: React.FC = () => {
                 </h1>
 
                 {/* Real Shift Badge */}
-                {myTodayAssignment ? (
+                {isAdmin ? (
+                  <span className="px-2.5 py-0.5 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-[11px] font-semibold">
+                    Giám sát quản trị viên (Không trực ca)
+                  </span>
+                ) : myTodayAssignment ? (
                   <>
                     <span className="px-2.5 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[11px] font-mono font-bold uppercase tracking-wider">
                       {myTodayAssignment.shift === 'MORNING'
@@ -466,11 +471,26 @@ export const StaffDashboard: React.FC = () => {
                 )}
               </div>
               <span className="text-xs text-slate-500 mt-1">
-                Nhân viên trực: <strong className="text-slate-900">{user?.fullName || user?.username || 'Nhân viên trực ca'}</strong>{' '}
-                {myTodayAssignment?.assignedZone && (
-                  <>• Phân khu: <strong className="text-blue-700">{myTodayAssignment.assignedZone}</strong>{' '}</>
+                {isAdmin ? (
+                  <>
+                    Tài khoản: <strong className="text-purple-700">{user?.fullName || user?.username}</strong>{' '}
+                    <span className="text-slate-400 font-medium">(Quản trị hệ thống — Chế độ giám sát toàn quyền)</span>
+                  </>
+                ) : myTodayAssignment?.status === 'CHECKED_IN' ? (
+                  <>
+                    Nhân viên trực ca: <strong className="text-slate-900">{user?.fullName || user?.username}</strong>{' '}
+                    {myTodayAssignment?.assignedZone && (
+                      <>• Phân khu: <strong className="text-blue-700">{myTodayAssignment.assignedZone}</strong>{' '}</>
+                    )}
+                    • Cơ sở: <strong className="text-cyan-800">{assignedFacilityName}</strong>
+                  </>
+                ) : (
+                  <>
+                    Nhân viên: <strong className="text-slate-700">{user?.fullName || user?.username || 'Chưa định danh'}</strong>{' '}
+                    <span className="text-amber-600 font-medium">(Chưa điểm danh vào ca trực)</span>{' '}
+                    • Cơ sở: <strong className="text-cyan-800">{assignedFacilityName}</strong>
+                  </>
                 )}
-                • Cơ sở: <strong className="text-cyan-800">{assignedFacilityName}</strong>
               </span>
             </div>
           </div>
@@ -478,7 +498,7 @@ export const StaffDashboard: React.FC = () => {
           {/* Quick Actions & Attendance Controls */}
           <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
             {/* Shift Check-in / Check-out Buttons */}
-            {myTodayAssignment?.status === 'ASSIGNED' && (
+            {!isAdmin && myTodayAssignment?.status === 'ASSIGNED' && (
               <button
                 type="button"
                 onClick={handleStaffCheckIn}
@@ -490,7 +510,7 @@ export const StaffDashboard: React.FC = () => {
               </button>
             )}
 
-            {myTodayAssignment?.status === 'CHECKED_IN' && (
+            {!isAdmin && myTodayAssignment?.status === 'CHECKED_IN' && (
               <button
                 type="button"
                 onClick={handleStaffCheckOut}
@@ -503,7 +523,7 @@ export const StaffDashboard: React.FC = () => {
             )}
 
             {/* Handover Button */}
-            {myTodayAssignment && (
+            {!isAdmin && myTodayAssignment && (
               <button
                 type="button"
                 onClick={() => setShowStaffHandoverModal(true)}

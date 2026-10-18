@@ -557,12 +557,13 @@ export const DashboardLayout: React.FC = () => {
           )}
 
           {/* ADMIN NAVIGATION */}
+          {/* ADMIN NAVIGATION */}
           {role === 'ADMIN' && (
             <>
               <div>
                 <div className="px-3 pb-2">
                   <span className="text-[11px] font-semibold tracking-wide text-slate-400">
-                    Quản trị hệ thống
+                    Quản trị &amp; Kiểm toán hệ thống
                   </span>
                 </div>
                 <nav className="flex flex-col gap-1 text-left">
@@ -580,7 +581,7 @@ export const DashboardLayout: React.FC = () => {
                   <Link
                     to="/portal/admin?tab=users"
                     className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/admin') && new URLSearchParams(location.search).get('tab') !== 'facilities'
+                      isCurrentPath('/portal/admin') && (new URLSearchParams(location.search).get('tab') === 'users' || !new URLSearchParams(location.search).get('tab'))
                         ? 'bg-slate-100 text-slate-900 font-semibold'
                         : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }`}
@@ -588,13 +589,24 @@ export const DashboardLayout: React.FC = () => {
                     <span className="material-symbols-outlined text-[18px]">admin_panel_settings</span>
                     <span>{t('Phân quyền RBAC & người dùng')}</span>
                   </Link>
+                  <Link
+                    to="/portal/admin?tab=logs"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                      isCurrentPath('/portal/admin') && new URLSearchParams(location.search).get('tab') === 'logs'
+                        ? 'bg-slate-100 text-slate-900 font-semibold'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">history</span>
+                    <span>{t('Nhật ký kiểm toán hệ thống')}</span>
+                  </Link>
                 </nav>
               </div>
 
               <div>
                 <div className="px-3 pb-2 pt-2 border-t border-slate-100">
                   <span className="text-[11px] font-semibold tracking-wide text-slate-400">
-                    Vận hành toàn chuỗi
+                    Giám sát &amp; Báo cáo vĩ mô
                   </span>
                 </div>
                 <nav className="flex flex-col gap-1 text-left">
@@ -607,7 +619,7 @@ export const DashboardLayout: React.FC = () => {
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">query_stats</span>
-                    <span>{t('Báo cáo doanh thu')}</span>
+                    <span>{t('Báo cáo doanh thu toàn chuỗi')}</span>
                   </Link>
                   <Link
                     to="/portal/facility-manager"
@@ -618,53 +630,7 @@ export const DashboardLayout: React.FC = () => {
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">grid_view</span>
-                    <span>{t('Sơ đồ cơ sở kho')}</span>
-                  </Link>
-
-                  <Link
-                    to="/portal/overdue"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/overdue')
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">money_off</span>
-                    <span>{t('Xử lý nợ cước quá hạn')}</span>
-                  </Link>
-
-                  <Link
-                    to="/portal/shifts"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/shifts')
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">schedule</span>
-                    <span>{t('Xử lý trực ca')}</span>
-                  </Link>
-                  <Link
-                    to="/portal/staff"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/staff')
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">badge</span>
-                    <span>{t('Vận hành quầy bàn giao')}</span>
-                  </Link>
-                  <Link
-                    to="/portal/cashier"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/cashier')
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
-                    <span>{t('Báo cáo thu ngân')}</span>
+                    <span>{t('Giám sát sơ đồ & phòng kho')}</span>
                   </Link>
                   <Link
                     to="/portal/tickets"
@@ -675,7 +641,18 @@ export const DashboardLayout: React.FC = () => {
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">build_circle</span>
-                    <span>{t('Xử lý sự cố tại chỗ')}</span>
+                    <span>{t('Giám sát sự cố & SLA')}</span>
+                  </Link>
+                  <Link
+                    to="/portal/cashier"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                      isCurrentPath('/portal/cashier')
+                        ? 'bg-slate-100 text-slate-900 font-semibold'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
+                    <span>{t('Sổ nhật ký giao dịch')}</span>
                   </Link>
                 </nav>
               </div>

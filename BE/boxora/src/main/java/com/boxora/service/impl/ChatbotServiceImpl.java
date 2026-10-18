@@ -129,10 +129,14 @@ public class ChatbotServiceImpl implements ChatbotService {
                     continue;
                 }
 
-                String url = String.format("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, apiKey);
+                HttpHeaders reqHeaders = new HttpHeaders();
+                reqHeaders.setContentType(MediaType.APPLICATION_JSON);
+                reqHeaders.set("x-goog-api-key", apiKey);
+
+                String url = String.format("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", model);
 
                 try {
-                    HttpEntity<String> entity = new HttpEntity<>(requestBodyJson, headers);
+                    HttpEntity<String> entity = new HttpEntity<>(requestBodyJson, reqHeaders);
                     ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
 
                     if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
@@ -144,10 +148,12 @@ public class ChatbotServiceImpl implements ChatbotService {
                         }
                     }
                 } catch (HttpClientErrorException | HttpServerErrorException e) {
-                    log.warn("Gemini API call failed [{}] with status {}: {}", model, e.getStatusCode(), e.getMessage());
+                    String safeMessage = e.getMessage() != null ? e.getMessage().replaceAll("key=[^&\\s]+", "key=REDACTED") : "";
+                    log.warn("Gemini API call failed [{}] with status {}: {}", model, e.getStatusCode(), safeMessage);
                     keyCooldowns.put(matrixKey, System.currentTimeMillis() + 60000);
                 } catch (Exception e) {
-                    log.warn("Error calling Gemini API [{}]: {}", model, e.getMessage());
+                    String safeMessage = e.getMessage() != null ? e.getMessage().replaceAll("key=[^&\\s]+", "key=REDACTED") : "";
+                    log.warn("Error calling Gemini API [{}]: {}", model, safeMessage);
                     keyCooldowns.put(matrixKey, System.currentTimeMillis() + 30000);
                 }
             }

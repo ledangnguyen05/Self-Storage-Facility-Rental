@@ -146,12 +146,14 @@ export const OperationsDashboard: React.FC = () => {
     })
   }, [payments, contracts, facilities, selectedFacilityId])
 
-  // Dynamic monthly revenue aggregation from real DB payments
+  // Dynamic monthly revenue aggregation from real DB payments (PAID / SUCCESS only)
   const monthlyRevenueData = useMemo(() => {
     if (!scopedPayments || scopedPayments.length === 0) return []
     const groups: Record<string, { rentalFee: number; deposit: number; renewalFee: number; total: number }> = {}
 
-    scopedPayments.forEach((p) => {
+    const successfulPayments = scopedPayments.filter((p) => p.status === 'PAID' || p.status === 'SUCCESS')
+
+    successfulPayments.forEach((p) => {
       const dateStr = p.paymentTime || p.createdAt
       if (!dateStr) return
       const monthKey = dateStr.slice(0, 7) // "2026-03"
@@ -183,15 +185,21 @@ export const OperationsDashboard: React.FC = () => {
     return Math.max(...monthlyRevenueData.map((m) => m.total), 1)
   }, [monthlyRevenueData])
 
-  // Dynamic payment method distribution from real DB payments
+  // Count only successful payments for accurate transaction telemetry
+  const successfulPaymentsCount = useMemo(() => {
+    return scopedPayments.filter((p) => p.status === 'PAID' || p.status === 'SUCCESS').length
+  }, [scopedPayments])
+
+  // Dynamic payment method distribution from real DB payments (PAID / SUCCESS only)
   const paymentMethodStats = useMemo(() => {
-    const totalCount = scopedPayments.length
+    const successOnly = scopedPayments.filter((p) => p.status === 'PAID' || p.status === 'SUCCESS')
+    const totalCount = successOnly.length
     if (totalCount === 0) {
       return { vnpayPercent: 0, bankPercent: 0, momoPercent: 0, vnpayCount: 0, bankCount: 0, momoCount: 0, totalCount: 0 }
     }
-    const vnpayCount = scopedPayments.filter((p) => p.paymentMethod === 'VNPAY').length
-    const bankCount = scopedPayments.filter((p) => p.paymentMethod === 'BANK_TRANSFER').length
-    const momoCount = scopedPayments.filter((p) => p.paymentMethod === 'MOMO').length
+    const vnpayCount = successOnly.filter((p) => p.paymentMethod === 'VNPAY').length
+    const bankCount = successOnly.filter((p) => p.paymentMethod === 'BANK_TRANSFER').length
+    const momoCount = successOnly.filter((p) => p.paymentMethod === 'MOMO').length
 
     return {
       vnpayPercent: Math.round((vnpayCount / totalCount) * 1000) / 10,
@@ -690,7 +698,7 @@ export const OperationsDashboard: React.FC = () => {
               </span>
             </div>
             <span className="text-xs font-mono font-bold text-slate-900">
-              Tổng cộng: {scopedPayments.length} GD thành công
+              Tổng cộng: {successfulPaymentsCount} GD thành công
             </span>
           </div>
         </div>

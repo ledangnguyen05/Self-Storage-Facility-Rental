@@ -74,7 +74,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/sealing-records/{id}/unseal")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Mở niêm phong kho sau khi khách đã thanh toán công nợ và phí quá hạn (BR-RULE-012)")
     public ResponseEntity<ApiResponse<SealingRecordResponse>> unsealUnit(
             @PathVariable UUID id,
@@ -85,7 +85,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/overdue/contracts/{contractId}/lockout")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Khóa mã PIN và thu hồi quyền truy cập hợp đồng quá hạn (P0-04, BR-RULE-012)")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.LockoutResponse>> lockoutContract(
             @PathVariable UUID contractId,

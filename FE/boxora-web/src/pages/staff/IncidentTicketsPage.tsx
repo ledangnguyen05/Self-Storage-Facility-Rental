@@ -591,14 +591,20 @@ export const IncidentTicketsPage: React.FC = () => {
         {/* Card 2: Đang xử lý */}
         <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Đang xử lý</span>
+            <span>Đang xử lý &amp; Chờ nhận</span>
             <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600">
               <span className="material-symbols-outlined text-[18px]">pending_actions</span>
             </div>
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold text-blue-700 tracking-tight">
-              {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : (stats?.inProgressTickets ?? tickets.filter(t => t.status === 'IN_PROGRESS' || t.status === 'OPEN').length)}
+              {isLoading ? (
+                <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span>
+              ) : (
+                stats
+                  ? (stats.openTickets ?? 0) + (stats.inProgressTickets ?? 0) + (stats.reopenedTickets ?? 0)
+                  : tickets.filter(t => t.status === 'IN_PROGRESS' || t.status === 'OPEN' || t.status === 'REOPENED').length
+              )}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
               Cần nhân viên kiểm tra hiện trường
@@ -616,7 +622,11 @@ export const IncidentTicketsPage: React.FC = () => {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold text-rose-700 tracking-tight">
-              {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : ((stats?.overdueTickets ?? stats?.overdueSlaTickets) ?? tickets.filter(t => t.isOverdue || t.isOverdueSla).length)}
+              {isLoading ? (
+                <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span>
+              ) : (
+                ((stats?.overdueTickets ?? stats?.overdueSlaTickets) ?? tickets.filter(t => t.isOverdue || t.isOverdueSla).length)
+              )}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
               Cần ưu tiên xử lý khẩn cấp
@@ -634,7 +644,13 @@ export const IncidentTicketsPage: React.FC = () => {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold text-emerald-700 tracking-tight">
-              {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : (stats?.resolvedTickets ?? tickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED').length)}
+              {isLoading ? (
+                <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span>
+              ) : (
+                stats
+                  ? (stats.resolvedTickets ?? 0) + (stats.closedTickets ?? 0)
+                  : tickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED').length
+              )}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
               Khôi phục an toàn cơ sở
