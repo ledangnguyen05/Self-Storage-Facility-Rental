@@ -795,5 +795,15 @@ class BookingServiceTest {
             AppException ex = assertThrows(AppException.class, () -> bookingService.getUpcomingArrivals(unauthorizedFacilityId));
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FACILITY_ACCESS_DENIED);
         }
+
+        @Test
+        @DisplayName("getUpcomingArrivals: Nhân sự chưa được gán cơ sở (scopedFacilityId == null) -> Bị từ chối deny-by-default")
+        void getUpcomingArrivals_ScopedUserWithoutFacility_ThrowsException() {
+            when(facilityAccessGuard.isFacilityScoped()).thenReturn(true);
+            when(facilityAccessGuard.scopedFacilityIdOrNull()).thenReturn(null);
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.getUpcomingArrivals(testFacility.getId()));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FACILITY_ACCESS_DENIED);
+        }
     }
 }

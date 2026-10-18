@@ -112,6 +112,10 @@ export const OperationsDashboard: React.FC = () => {
     ? revenueData?.systemSummary?.paymentCount
     : (revenueData?.byFacility?.find((item) => item.facilityId === selectedFacilityId)?.paymentCount ?? 0)
 
+  const depositForScope = selectedFacilityId === 'all'
+    ? revenueData?.systemSummary?.depositRevenue
+    : (revenueData?.byFacility?.find((item) => item.facilityId === selectedFacilityId)?.depositRevenue ?? 0)
+
   const renewalRevenueForScope = selectedFacilityId === 'all'
     ? revenueData?.systemSummary?.renewalFeeRevenue
     : (revenueData?.byFacility?.find((item) => item.facilityId === selectedFacilityId)?.renewalFeeRevenue ?? 0)
@@ -146,10 +150,21 @@ export const OperationsDashboard: React.FC = () => {
     })
   }, [payments, contracts, facilities, selectedFacilityId])
 
-  // Dynamic monthly revenue aggregation from real DB payments (PAID / SUCCESS only)
+  // Authoritative monthly revenue aggregation from backend report API (with fallback)
   const monthlyRevenueData = useMemo(() => {
+    if (revenueData?.monthlyBreakdown && revenueData.monthlyBreakdown.length > 0) {
+      return revenueData.monthlyBreakdown.map((m) => ({
+        monthKey: m.monthKey,
+        label: m.label,
+        rentalFee: Number(m.rentalFee) || 0,
+        deposit: Number(m.deposit) || 0,
+        renewalFee: Number(m.renewalFee) || 0,
+        extraCharge: Number(m.extraCharge) || 0,
+        total: Number(m.total) || 0,
+      }))
+    }
     if (!scopedPayments || scopedPayments.length === 0) return []
-    const groups: Record<string, { rentalFee: number; deposit: number; renewalFee: number; total: number }> = {}
+    const groups: Record<string, { rentalFee: number; deposit: number; renewalFee: number; extraCharge: number; total: number }> = {}
 
     const successfulPayments = scopedPayments.filter((p) => p.status === 'PAID' || p.status === 'SUCCESS')
 
@@ -158,14 +173,21 @@ export const OperationsDashboard: React.FC = () => {
       if (!dateStr) return
       const monthKey = dateStr.slice(0, 7) // "2026-03"
       if (!groups[monthKey]) {
-        groups[monthKey] = { rentalFee: 0, deposit: 0, renewalFee: 0, total: 0 }
+        groups[monthKey] = { rentalFee: 0, deposit: 0, renewalFee: 0, extraCharge: 0, total: 0 }
       }
       const amt = Number(p.amount) || 0
-      groups[monthKey].total += amt
-      if (p.paymentType === 'RENTAL_FEE') groups[monthKey].rentalFee += amt
-      else if (p.paymentType === 'DEPOSIT') groups[monthKey].deposit += amt
-      else if (p.paymentType === 'RENEWAL_FEE') groups[monthKey].renewalFee += amt
-      else groups[monthKey].rentalFee += amt
+      if (p.paymentType === 'RENTAL_FEE') {
+        groups[monthKey].rentalFee += amt
+        groups[monthKey].total += amt
+      } else if (p.paymentType === 'DEPOSIT') {
+        groups[monthKey].deposit += amt
+      } else if (p.paymentType === 'RENEWAL_FEE') {
+        groups[monthKey].renewalFee += amt
+        groups[monthKey].total += amt
+      } else {
+        groups[monthKey].extraCharge += amt
+        groups[monthKey].total += amt
+      }
     })
 
     return Object.entries(groups)
@@ -178,7 +200,7 @@ export const OperationsDashboard: React.FC = () => {
           ...data,
         }
       })
-  }, [scopedPayments])
+  }, [revenueData?.monthlyBreakdown, scopedPayments])
 
   const maxMonthlyTotal = useMemo(() => {
     if (monthlyRevenueData.length === 0) return 1
@@ -225,10 +247,10 @@ export const OperationsDashboard: React.FC = () => {
       return
     }
     const csvRows = [
-      ['Cơ sở', 'Tổng doanh thu (VND)', 'Tiền thuê (VND)', 'Tiền cọc (VND)', 'Gia hạn (VND)', 'Số thanh toán'],
+      ['Cơ sở', 'Doanh thu thuần (VND)', 'Tiền thuê kho (VND)', 'Tiền cọc giữ hộ (VND)', 'Gia hạn (VND)', 'Phí dịch vụ khác (VND)', 'Số thanh toán thành công'],
       ...rows
         .filter(row => selectedFacilityId === 'all' || row.facilityId === selectedFacilityId)
-        .map(row => [row.facilityName, row.totalRevenue, row.rentalFeeRevenue, row.depositRevenue, row.renewalFeeRevenue ?? 0, row.paymentCount ?? 0]),
+        .map(row => [row.facilityName, row.totalRevenue, row.rentalFeeRevenue, row.depositRevenue, row.renewalFeeRevenue ?? 0, row.extraChargeRevenue ?? 0, row.paymentCount ?? 0]),
     ]
     const csv = '\uFEFF' + csvRows.map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(',')).join('\r\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
@@ -525,11 +547,11 @@ export const OperationsDashboard: React.FC = () => {
 
       {/* 4 EXECUTIVE SUMMARY KPI CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {/* Metric 1 */}
+        {/* Metric 1: Doanh thu thuần */}
         <div className="relative overflow-hidden rounded-xl bg-white p-5 shadow-sm border border-slate-200 flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="flex flex-col">
-              <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">Tổng Doanh Thu Hệ Thống</span>
+              <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">Doanh Thu Thuần Kinh Doanh</span>
               <div className="flex items-baseline gap-2 mt-1">
                 <span className="text-2xl font-bold font-mono text-slate-900">
                   {revenueData ? (revenueForScope ?? 0).toLocaleString('vi-VN') : '—'}
@@ -541,10 +563,19 @@ export const OperationsDashboard: React.FC = () => {
               <span className="material-symbols-outlined text-[22px]">payments</span>
             </div>
           </div>
-          <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
-            {revenueData != null
-              ? `${(paymentCountForScope ?? 0).toLocaleString('vi-VN')} giao dịch trong kỳ`
-              : 'Chưa có dữ liệu doanh thu'}
+          <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500 flex flex-col gap-1">
+            <div className="flex justify-between items-center">
+              <span>{revenueData != null ? `${(paymentCountForScope ?? 0).toLocaleString('vi-VN')} giao dịch thành công` : 'Chưa có dữ liệu'}</span>
+              <span className="text-slate-400 font-mono text-[11px]">Tiền thuê &amp; Gia hạn</span>
+            </div>
+            {revenueData && (
+              <div className="text-[11px] text-slate-400">
+                Tiền cọc giữ hộ: <strong className="text-amber-700 font-mono">{(depositForScope ?? 0).toLocaleString('vi-VN')} VNĐ</strong>
+                {revenueData.refundedAmount && revenueData.refundedAmount > 0 ? (
+                  <> · Đã hoàn: <strong className="text-rose-700 font-mono">{revenueData.refundedAmount.toLocaleString('vi-VN')} VNĐ</strong></>
+                ) : null}
+              </div>
+            )}
           </div>
         </div>
 

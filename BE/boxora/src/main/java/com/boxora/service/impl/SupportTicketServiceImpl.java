@@ -708,30 +708,37 @@ public class SupportTicketServiceImpl implements SupportTicketService {
 
         User currentUser = userRepository.findById(currentUserId).orElse(null);
 
-        UUID targetFacilityId = facilityId;
+        List<SupportTicket> list;
         if ("STAFF".equalsIgnoreCase(currentUserRole)) {
-            if (currentUser != null && currentUser.getFacility() != null) {
-                if (facilityId != null && !facilityId.equals(currentUser.getFacility().getId())) {
-                    throw new AppException(ErrorCode.FORBIDDEN, "Nhân viên không có quyền xem thống kê của cơ sở khác");
-                }
-                targetFacilityId = currentUser.getFacility().getId();
-            } else if (facilityId != null) {
+            if (currentUser == null || currentUser.getFacility() == null) {
+                log.warn("[SECURITY] Staff {} without assigned facility attempted to access ticket stats", currentUserId);
                 throw new AppException(ErrorCode.FORBIDDEN, "Nhân viên chưa được phân công cơ sở");
             }
+            if (facilityId != null && !facilityId.equals(currentUser.getFacility().getId())) {
+                log.warn("[SECURITY] Staff {} attempted to access ticket stats of facility {}", currentUserId, facilityId);
+                throw new AppException(ErrorCode.FORBIDDEN, "Nhân viên không có quyền xem thống kê của cơ sở khác");
+            }
+            list = supportTicketRepository.findByFacility_IdOrAssignedStaff_Id(currentUser.getFacility().getId(), currentUserId);
         } else if ("FACILITY_MANAGER".equalsIgnoreCase(currentUserRole)) {
-            if (currentUser != null && currentUser.getFacility() != null) {
-                if (facilityId != null && !facilityId.equals(currentUser.getFacility().getId())) {
-                    throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở không có quyền xem thống kê của cơ sở khác");
-                }
-                targetFacilityId = currentUser.getFacility().getId();
-            } else if (facilityId != null) {
+            if (currentUser == null || currentUser.getFacility() == null) {
+                log.warn("[SECURITY] Facility Manager {} without assigned facility attempted to access ticket stats", currentUserId);
                 throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở chưa được phân công cơ sở");
             }
+            if (facilityId != null && !facilityId.equals(currentUser.getFacility().getId())) {
+                log.warn("[SECURITY] Facility Manager {} attempted to access ticket stats of facility {}", currentUserId, facilityId);
+                throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở không có quyền xem thống kê của cơ sở khác");
+            }
+            list = supportTicketRepository.findByFacility_Id(currentUser.getFacility().getId());
+        } else if ("CUSTOMER".equalsIgnoreCase(currentUserRole)) {
+            list = supportTicketRepository.findByCustomer_Id(currentUserId);
+        } else {
+            // ADMIN, BUSINESS_MANAGER, BUSINESS_OPERATIONS_MANAGER, SYSTEM_ADMIN
+            if (facilityId != null) {
+                list = supportTicketRepository.findByFacility_Id(facilityId);
+            } else {
+                list = supportTicketRepository.findAll();
+            }
         }
-
-        List<SupportTicket> list = (targetFacilityId != null)
-                ? supportTicketRepository.findByFacility_Id(targetFacilityId)
-                : supportTicketRepository.findAll();
 
         long total = list.size();
         long open = list.stream().filter(t -> t.getStatus() == TicketStatus.OPEN).count();
@@ -747,6 +754,18 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         }).count();
 
         double slaCompliance = (total > 0) ? Math.max(0, Math.min(100.0, ((double) (total - overdue) / total) * 100.0)) : 100.0;
+
+        List<Long> resolutionMinutesList = list.stream()
+                .filter(t -> (t.getStatus() == TicketStatus.RESOLVED || t.getStatus() == TicketStatus.CLOSED) && t.getResolvedAt() != null && t.getCreatedAt() != null)
+                .map(t -> java.time.Duration.between(t.getCreatedAt(), t.getResolvedAt()).toMinutes())
+                .filter(mins -> mins >= 0)
+                .collect(Collectors.toList());
+
+        Double avgResolutionMinutes = null;
+        if (!resolutionMinutesList.isEmpty()) {
+            double avg = resolutionMinutesList.stream().mapToLong(Long::longValue).average().orElse(0.0);
+            avgResolutionMinutes = Math.round(avg * 10.0) / 10.0;
+        }
 
         Map<String, Long> countByFacility = list.stream()
                 .filter(t -> t.getFacility() != null)
@@ -769,7 +788,7 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .reopenedTickets(reopened)
                 .overdueTickets(overdue)
                 .slaCompliancePercent(Math.round(slaCompliance * 10.0) / 10.0)
-                .avgResolutionMinutes(18.0) // Average benchmark from facility SLA telemetry
+                .avgResolutionMinutes(avgResolutionMinutes)
                 .countByFacility(countByFacility)
                 .countByCategory(countByCategory)
                 .countByPriority(countByPriority)

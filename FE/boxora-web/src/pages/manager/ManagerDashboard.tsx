@@ -199,7 +199,7 @@ export const ManagerDashboard: React.FC = () => {
         reportService.getOverdueDebtReport(targetId ? { facilityId: targetId } : undefined),
         targetId ? facilityPolicyService.getByFacilityId(targetId) : Promise.resolve(null),
         bookingService.getUpcomingArrivals(targetId),
-        bookingService.getAll({ status: 'ACTIVE', size: 100 }),
+        bookingService.getAll({ status: 'ACTIVE', facilityId: targetId, size: 100 }),
         supportTicketService.getQueue(targetId ? { facilityId: targetId } : undefined),
       ])
 
@@ -227,22 +227,22 @@ export const ManagerDashboard: React.FC = () => {
           return {
             id: su.unitCode,
             backendId: su.id,
-            size: su.areaSqMeters ? `${su.areaSqMeters.toFixed(1)} m²` : '8.0 m²',
+            size: su.areaSqMeters ? `${su.areaSqMeters.toFixed(1)} m²` : 'Chưa có dữ liệu',
             type: su.unitTypeName || 'Standard Roll-up',
             status,
             rawStatus: su.status,
             color,
-            tenant: su.tenantName || (isAvail ? 'Kho trống' : isRes ? 'Đang cập nhật hồ sơ' : 'Đang cập nhật'),
+            tenant: su.tenantName || (isAvail ? 'Kho trống' : isRes ? 'Đang cập nhật hồ sơ' : 'Chưa có thông tin'),
             contract: su.contractCode || (isAvail ? 'Chưa có hợp đồng' : isRes ? 'Chờ ký HĐ bàn giao' : 'Chưa có mã HĐ'),
             due: (su.startDate && su.dueDate)
               ? `${new Date(su.startDate).toLocaleDateString('vi-VN')} - ${new Date(su.dueDate).toLocaleDateString('vi-VN')}`
               : su.dueDate
               ? new Date(su.dueDate).toLocaleDateString('vi-VN')
               : (isAvail ? '—' : 'Chưa xác định'),
-            battery: su.batteryLevel || '98%',
-            smartlock: su.smartLockSerial || `SL-${su.unitCode.replace('-', '')}`,
+            battery: su.batteryLevel ? `${su.batteryLevel}%` : 'Chưa có dữ liệu',
+            smartlock: su.smartLockSerial || 'Chưa có dữ liệu',
             lastAccess: su.lastAccessTime || (isAvail ? 'Chưa ghi nhận' : 'Chưa có lượt ra vào'),
-            floorLevel: su.floorLevel || 'Floor 1',
+            floorLevel: su.floorLevel || 'Chưa có dữ liệu',
             pricePerMonth: su.pricePerMonth,
             facilityId: su.facilityId,
             facilityName: su.facilityName
@@ -567,7 +567,7 @@ export const ManagerDashboard: React.FC = () => {
             <span className="material-symbols-outlined text-cyan-500 text-[14px]" title="Vi khí hậu 18-22°C">device_thermostat</span>
           ) : (
             <span className="text-[10px] font-mono text-slate-400 font-medium">
-              {unit.smartlock.startsWith('SL-') ? unit.smartlock.slice(-4) : 'IoT'}
+              {unit.smartlock && unit.smartlock !== 'Chưa có dữ liệu' && unit.smartlock.startsWith('SL-') ? unit.smartlock.slice(-4) : (unit.smartlock && unit.smartlock !== 'Chưa có dữ liệu' ? 'IoT' : '—')}
             </span>
           )}
         </div>

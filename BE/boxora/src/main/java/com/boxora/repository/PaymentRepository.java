@@ -35,7 +35,7 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
             SELECT new com.boxora.dto.response.FacilityRevenueResponse(
                 f.id,
                 f.name,
-                SUM(p.amount),
+                SUM(CASE WHEN p.paymentType != com.boxora.enums.PaymentType.DEPOSIT THEN p.amount ELSE 0 END),
                 SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.DEPOSIT THEN p.amount ELSE 0 END),
                 SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENTAL_FEE THEN p.amount ELSE 0 END),
                 SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENEWAL_FEE THEN p.amount ELSE 0 END),
@@ -64,7 +64,7 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
     // a null SUM when there are no matching payments in the period.
     @Query("""
             SELECT new com.boxora.dto.response.SystemRevenueSummaryResponse(
-                COALESCE(SUM(p.amount), 0),
+                COALESCE(SUM(CASE WHEN p.paymentType != com.boxora.enums.PaymentType.DEPOSIT THEN p.amount ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.DEPOSIT THEN p.amount ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENTAL_FEE THEN p.amount ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENEWAL_FEE THEN p.amount ELSE 0 END), 0),
@@ -82,6 +82,44 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
             AND (:facilityId IS NULL OR f.id = :facilityId)
             """)
     SystemRevenueSummaryResponse sumSystemRevenue(
+            @Param("fromDate") LocalDateTime fromDate,
+            @Param("toDate") LocalDateTime toDate,
+            @Param("facilityId") UUID facilityId
+    );
+
+    // All successful PAID payments in period for authoritative monthly chart aggregation
+    @Query("""
+            SELECT p FROM Payment p
+            LEFT JOIN p.booking b
+            LEFT JOIN b.storageUnit bSu
+            LEFT JOIN p.contract c
+            LEFT JOIN Facility f ON (f.id = bSu.facility.id OR (bSu.facility.id IS NULL AND f.id = c.facility.id))
+            WHERE p.status = com.boxora.enums.PaymentStatus.PAID
+            AND (CAST(:fromDate AS timestamp) IS NULL OR p.paymentTime >= :fromDate)
+            AND (CAST(:toDate AS timestamp) IS NULL OR p.paymentTime <= :toDate)
+            AND (:facilityId IS NULL OR f.id = :facilityId)
+            ORDER BY p.paymentTime ASC
+            """)
+    List<Payment> findSuccessfulPaymentsInPeriod(
+            @Param("fromDate") LocalDateTime fromDate,
+            @Param("toDate") LocalDateTime toDate,
+            @Param("facilityId") UUID facilityId
+    );
+
+    // Reconciled completed refunds
+    @Query("""
+            SELECT COALESCE(SUM(p.amount), 0)
+            FROM Payment p
+            LEFT JOIN p.booking b
+            LEFT JOIN b.storageUnit bSu
+            LEFT JOIN p.contract c
+            LEFT JOIN Facility f ON (f.id = bSu.facility.id OR (bSu.facility.id IS NULL AND f.id = c.facility.id))
+            WHERE p.status = com.boxora.enums.PaymentStatus.REFUNDED
+            AND (CAST(:fromDate AS timestamp) IS NULL OR p.paymentTime >= :fromDate)
+            AND (CAST(:toDate AS timestamp) IS NULL OR p.paymentTime <= :toDate)
+            AND (:facilityId IS NULL OR f.id = :facilityId)
+            """)
+    java.math.BigDecimal sumRefundedAmount(
             @Param("fromDate") LocalDateTime fromDate,
             @Param("toDate") LocalDateTime toDate,
             @Param("facilityId") UUID facilityId
