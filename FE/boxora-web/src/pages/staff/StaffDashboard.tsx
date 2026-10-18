@@ -15,6 +15,7 @@ import { StaffPolicyGuideModal } from './components/StaffPolicyGuideModal'
 import { staffAssignmentService, StaffAssignmentResponse } from '../../services/staffAssignmentService'
 import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
 import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
+import { FacilityStaffStorageDiagram } from './components/FacilityStaffStorageDiagram'
 
 export const StaffDashboard: React.FC = () => {
   const { user } = useAuth()
@@ -52,6 +53,7 @@ export const StaffDashboard: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedFloor, setSelectedFloor] = useState<string>('all')
   const [selectedShiftFilter, setSelectedShiftFilter] = useState<'current' | 'today' | 'all'>('current')
+  const [showDiagram, setShowDiagram] = useState<boolean>(false)
 
   // Return Inspection Checklist state (Interactive)
   const [inspectionRollDoor, setInspectionRollDoor] = useState<'GOOD' | 'MINOR_DAMAGE' | 'BLOCKED'>('GOOD')
@@ -685,138 +687,12 @@ export const StaffDashboard: React.FC = () => {
         </div>
       </section>
 
-      {/* KHU VỰC VẬN HÀNH QUẦY & THỰC ĐỊA TRẠM */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-        {/* BÊN TRÁI: NGHIỆP VỤ QUẦY (LỊCH HẸN NHẬN KHO TRONG CA) (Col 7) */}
-        <div className="xl:col-span-7 flex flex-col gap-4">
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-              <div>
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-900 font-mono block">
-                  Lịch Hẹn Nhận Kho Trong Ca
-                </span>
-                <span className="text-xs text-slate-500 font-mono">
-                  {filteredArrivals.length} lượt khách đang chờ
-                </span>
-              </div>
-              <Link
-                to="/portal/facility-manager"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200 text-xs font-semibold transition cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px] text-blue-600">apartment</span>
-                <span>Sơ đồ cơ sở kho</span>
-                <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-              </Link>
-            </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider text-[11px]">
-                      <th className="py-2.5 px-3 rounded-l-lg font-semibold">Khách hàng</th>
-                      <th className="py-2.5 px-3 font-semibold">Mã Đặt Chỗ</th>
-                      <th className="py-2.5 px-3 font-semibold">Kho Đăng Ký</th>
-                      <th className="py-2.5 px-3 font-semibold">Ngày Bắt Đầu</th>
-                      <th className="py-2.5 px-3 font-semibold">Trạng Thái</th>
-                      <th className="py-2.5 px-3 font-semibold">Cọc Giữ Chỗ</th>
-                      <th className="py-2.5 px-3 rounded-r-lg text-right font-semibold">Hành động</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
-                    {filteredArrivals.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="py-10 text-center text-slate-400 text-xs">
-                          <div className="flex flex-col items-center justify-center gap-1.5">
-                            <span className="material-symbols-outlined text-3xl text-slate-300">event_available</span>
-                            <span className="font-semibold text-slate-600">Không có khách chờ trong ca trực này</span>
-                            <span className="text-[11px] text-slate-400">Tất cả lịch hẹn tiếp đón đã được phục vụ hoặc chưa có lịch hẹn mới.</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredArrivals.map((b) => {
-                        const isCurrentActive = b.id === activeBookingId || b.bookingCode === activeBookingId
-                        return (
-                          <tr
-                            key={b.id}
-                            className={`transition-colors ${
-                              isCurrentActive
-                                ? 'bg-cyan-50/80 ring-1 ring-cyan-200'
-                                : 'hover:bg-slate-50/70'
-                            }`}
-                          >
-                            <td className="py-3.5 px-3">
-                              <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
-                                {isCurrentActive && (
-                                  <span className="w-2 h-2 rounded-full bg-cyan-600 animate-pulse"></span>
-                                )}
-                                <span>{b.customerName || 'Khách vãng lai'}</span>
-                              </div>
-                              <div className="text-slate-500 font-mono text-[11px] tabular-nums mt-0.5">{b.customerPhone || 'N/A'}</div>
-                            </td>
-                            <td className="py-3.5 px-3 font-mono font-bold text-slate-900">{b.bookingCode}</td>
-                            <td className="py-3.5 px-3">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-mono font-bold text-cyan-700">Kho #{b.unitCode}</span>
-                                {(() => {
-                                  const fl = resolveBookingFloor(b, unitMapById, unitMapByCodeAndFacility)
-                                  return fl ? (
-                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200">
-                                      Tầng {fl}
-                                    </span>
-                                  ) : (
-                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500">
-                                      Chưa rõ tầng
-                                    </span>
-                                  )
-                                })()}
-                              </div>
-                              <span className="text-slate-500 block text-[10px]">{b.facilityName || assignedFacilityName}</span>
-                            </td>
-                            <td className="py-3.5 px-3 font-mono tabular-nums text-slate-700">{b.startDate}</td>
-                            <td className="py-3.5 px-3">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                b.status === 'CONFIRMED'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
-                              }`}>
-                                {b.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Chờ cọc'}
-                              </span>
-                            </td>
-                            <td className="py-3.5 px-3 font-mono font-bold text-slate-900 tabular-nums">
-                              {(b.depositPaid || b.depositAmount || 0).toLocaleString('vi-VN')}đ
-                            </td>
-                            <td className="py-3.5 px-3 text-right">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActiveBookingId(b.id)
-                                  document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-                                }}
-                                className={`px-3 py-1.5 rounded-lg font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 ml-auto ${
-                                  isCurrentActive
-                                    ? 'bg-cyan-600 text-white shadow-xs'
-                                    : 'bg-blue-50 hover:bg-blue-100 text-blue-700'
-                                }`}
-                              >
-                                <span className="material-symbols-outlined text-[14px]">
-                                  {isCurrentActive ? 'task_alt' : 'touch_app'}
-                                </span>
-                                <span>{isCurrentActive ? 'Đang Xử Lý' : 'Tiếp đón & Đối soát'}</span>
-                              </button>
-                            </td>
-                          </tr>
-                        )
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-        </div>
-
-        {/* BÊN PHẢI: BÀN VẬN HÀNH QUẦY & NGHIỆM THU TRẢ KHO (Col 5) */}
-        <div className="xl:col-span-5 flex flex-col gap-6">
+      {/* ============================================================== */}
+      {/* PHẦN 2 & PHẦN 3: BỐ CỤC HAI BÊN (BÀN TIẾP ĐÓN & TRẢ KHO) */}
+      {/* ============================================================== */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+        {/* BÊN TRÁI: QUY TRÌNH CHECK-IN & BÀN GIAO KHO (Col 7) */}
+        <div className="xl:col-span-7 flex flex-col gap-6">
           <HandoverCheckInWorkbench
             arrivals={arrivals}
             onOpenQrScanner={() => setIsQrScannerOpen(true)}
@@ -829,6 +705,10 @@ export const StaffDashboard: React.FC = () => {
               loadRadarUnits(currentTargetFacility)
             }}
           />
+        </div>
+
+        {/* BÊN PHẢI: BÀN VẬN HÀNH QUẦY & NGHIỆM THU TRẢ KHO (Col 5) */}
+        <div className="xl:col-span-5 flex flex-col gap-6">
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
@@ -1123,6 +1003,176 @@ export const StaffDashboard: React.FC = () => {
         </div>
 
       </div>
+
+      {/* ============================================================== */}
+      {/* PHẦN 4: LỊCH HẸN NHẬN KHO TRONG CA & SƠ ĐỒ CƠ SỞ KHO (FULL WIDTH) */}
+      {/* ============================================================== */}
+      <section className="w-full bg-white border border-slate-200/90 rounded-2xl shadow-sm p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 mb-4 border-b border-slate-100 gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-blue-600 text-[22px]">calendar_today</span>
+              <h2 className="font-headline text-base font-bold text-slate-900">
+                Lịch Hẹn Nhận Kho Trong Ca
+              </h2>
+              <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-mono text-[11px] font-bold">
+                {filteredArrivals.length} lượt khách đang chờ
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Danh sách tiếp đón khách hàng đến nhận kho trực tiếp tại cơ sở trong ca làm việc.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowDiagram(false)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                !showDiagram
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">list_alt</span>
+              <span>Danh Sách Lịch Hẹn</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDiagram(true)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                showDiagram
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">apartment</span>
+              <span>Sơ đồ cơ sở kho</span>
+            </button>
+          </div>
+        </div>
+
+        {!showDiagram ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider text-[11px]">
+                  <th className="py-2.5 px-3 rounded-l-lg font-semibold">Khách hàng</th>
+                  <th className="py-2.5 px-3 font-semibold">Mã Đặt Chỗ</th>
+                  <th className="py-2.5 px-3 font-semibold">Kho Đăng Ký</th>
+                  <th className="py-2.5 px-3 font-semibold">Ngày Bắt Đầu</th>
+                  <th className="py-2.5 px-3 font-semibold">Trạng Thái</th>
+                  <th className="py-2.5 px-3 font-semibold">Cọc Giữ Chỗ</th>
+                  <th className="py-2.5 px-3 rounded-r-lg text-right font-semibold">Hành động</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {filteredArrivals.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-10 text-center text-slate-400 text-xs">
+                      <div className="flex flex-col items-center justify-center gap-1.5">
+                        <span className="material-symbols-outlined text-3xl text-slate-300">event_available</span>
+                        <span className="font-semibold text-slate-600">Không có khách chờ trong ca trực này</span>
+                        <span className="text-[11px] text-slate-400">Tất cả lịch hẹn tiếp đón đã được phục vụ hoặc chưa có lịch hẹn mới.</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredArrivals.map((b) => {
+                    const isCurrentActive = b.id === activeBookingId || b.bookingCode === activeBookingId
+                    return (
+                      <tr
+                        key={b.id}
+                        className={`transition-colors ${
+                          isCurrentActive
+                            ? 'bg-cyan-50/80 ring-1 ring-cyan-200'
+                            : 'hover:bg-slate-50/70'
+                        }`}
+                      >
+                        <td className="py-3.5 px-3">
+                          <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                            {isCurrentActive && (
+                              <span className="w-2 h-2 rounded-full bg-cyan-600 animate-pulse"></span>
+                            )}
+                            <span>{b.customerName || 'Khách vãng lai'}</span>
+                          </div>
+                          <div className="text-slate-500 font-mono text-[11px] tabular-nums mt-0.5">{b.customerPhone || 'N/A'}</div>
+                        </td>
+                        <td className="py-3.5 px-3 font-mono font-bold text-slate-900">{b.bookingCode}</td>
+                        <td className="py-3.5 px-3">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono font-bold text-cyan-700">Kho #{b.unitCode}</span>
+                            {(() => {
+                              const fl = resolveBookingFloor(b, unitMapById, unitMapByCodeAndFacility)
+                              return fl ? (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200">
+                                  Tầng {fl}
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500">
+                                  Chưa rõ tầng
+                                </span>
+                              )
+                            })()}
+                          </div>
+                          <span className="text-slate-500 block text-[10px]">{b.facilityName || assignedFacilityName}</span>
+                        </td>
+                        <td className="py-3.5 px-3 font-mono tabular-nums text-slate-700">{b.startDate}</td>
+                        <td className="py-3.5 px-3">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            b.status === 'CONFIRMED'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-amber-50 text-amber-700 border border-amber-200'
+                          }`}>
+                            {b.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Chờ cọc'}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-3 font-mono font-bold text-slate-900 tabular-nums">
+                          {(b.depositPaid || b.depositAmount || 0).toLocaleString('vi-VN')}đ
+                        </td>
+                        <td className="py-3.5 px-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveBookingId(b.id)
+                              document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                            }}
+                            className={`px-3 py-1.5 rounded-lg font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 ml-auto ${
+                              isCurrentActive
+                                ? 'bg-cyan-600 text-white shadow-xs'
+                                : 'bg-blue-50 hover:bg-blue-100 text-blue-700'
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-[14px]">
+                              {isCurrentActive ? 'task_alt' : 'touch_app'}
+                            </span>
+                            <span>{isCurrentActive ? 'Đang Xử Lý' : 'Tiếp đón & Đối soát'}</span>
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <FacilityStaffStorageDiagram
+            units={radarUnits}
+            facilityName={assignedFacilityName}
+            facilityId={currentTargetFacility}
+            arrivals={arrivals}
+            activeRentals={activeRentals}
+            tickets={tickets}
+            userRole={user?.role?.name || user?.roleName || 'STAFF'}
+            onSelectBookingForHandover={(bookingId) => {
+              setActiveBookingId(bookingId)
+              setShowDiagram(false)
+              document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+            }}
+          />
+        )}
+      </section>
 
       {/* MODAL QUÉT QR CHECK-IN QUA CAMERA */}
       <QrCameraCheckInModal
