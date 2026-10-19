@@ -49,7 +49,7 @@ public class SecurityConfig {
             "/swagger-ui.html",
             "/api-docs/**",
             "/v3/api-docs/**",
-            "/uploads/public/**",
+            "/uploads/**",
             "/api/v1/chatbot/**",
             "/api/v1/pricing/**"
     };
@@ -94,7 +94,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of(frontendUrl, "http://localhost:5173", "http://localhost:3000"));
+        configuration.setAllowedOriginPatterns(List.of("*"));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
