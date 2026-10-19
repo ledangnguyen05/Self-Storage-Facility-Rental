@@ -12,12 +12,9 @@
 BA-Blueprint-Agent/
 Development-Agent/
 bug/
-docs/*
-!docs/design-research.md
-!docs/refactor-checklist.md
+docs/
 *.md
 !README.md
-!design.md
 .env*
 !.env.example
 docker-compose*.yml
