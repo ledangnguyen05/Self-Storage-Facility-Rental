@@ -55,15 +55,19 @@ if not exist ".env" (
 )
 
 :: 3. Menu lua chon che do chay
-echo ------------------------------------------------------------------------------
-echo Chon mot trong cac che do sau:
-echo   [1] Build file JAR moi va Chay truc tiep tren Console (Xem log ngay)
-echo   [2] Chi Chay file JAR hien co (Khong build lai - Khoi dong cuc nhanh)
-echo   [3] Cai dat Backend thanh Windows Service 24/7 (Chay ngam qua NSSM)
-echo   [4] Khoi dong lai (Restart) Windows Service BoxoraBackend
-echo   [5] Dung (Stop) Windows Service BoxoraBackend
-echo ------------------------------------------------------------------------------
-set /p CHOICE="Nhap lua chon [1-5] (Mac dinh la 1): "
+if not "%~1"=="" (
+    set "CHOICE=%~1"
+) else (
+    echo ------------------------------------------------------------------------------
+    echo Chon mot trong cac che do sau:
+    echo   [1] Build file JAR moi va Chay truc tiep tren Console (Xem log ngay)
+    echo   [2] Chi Chay file JAR hien co (Khong build lai - Khoi dong cuc nhanh)
+    echo   [3] Cai dat Backend thanh Windows Service 24/7 (Chay ngam qua NSSM)
+    echo   [4] Khoi dong lai (Restart) Windows Service BoxoraBackend
+    echo   [5] Dung (Stop) Windows Service BoxoraBackend
+    echo ------------------------------------------------------------------------------
+    set /p CHOICE="Nhap lua chon [1-5] (Mac dinh la 1): "
+)
 if "!CHOICE!"=="" set CHOICE=1
 
 if "!CHOICE!"=="1" goto BUILD_AND_RUN
@@ -96,11 +100,16 @@ if not exist "!JAR_FILE!" (
     exit /b 1
 )
 
-echo [RUNNING] java -Xms512m -Xmx1536m -jar !JAR_FILE!
+set "JAVA_EXE=java"
+if defined FOUND_JDK (
+    if exist "!FOUND_JDK!\bin\java.exe" set "JAVA_EXE=!FOUND_JDK!\bin\java.exe"
+)
+
+echo [RUNNING] "!JAVA_EXE!" -Xms512m -Xmx1536m -jar !JAR_FILE!
 echo ------------------------------------------------------------------------------
 echo Nhan Ctrl + C de dung ung dung.
 echo ------------------------------------------------------------------------------
-java -Xms512m -Xmx1536m -jar "!JAR_FILE!"
+"!JAVA_EXE!" -Xms512m -Xmx1536m -jar "!JAR_FILE!"
 if !errorlevel! neq 0 (
     echo [INFO] Ung dung da dung lai voi ma loi: !errorlevel!
 )
