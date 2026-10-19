@@ -121,8 +121,8 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo   - Dang day len Cloudflare Pages (boxora-storage)...
-call npx wrangler pages deploy dist --project-name=boxora-storage --commit-dirty=true
+echo   - Dang day len Cloudflare Pages (boxora-storage - Main Production)...
+call npx wrangler pages deploy dist --project-name=boxora-storage --branch=main --commit-dirty=true
 if %errorlevel% neq 0 (
     echo [WARNING] Wrangler deploy gap loi hoac can xac thuc.
 ) else (
