@@ -1,43 +1,43 @@
 @echo off
 setlocal EnableDelayedExpansion
-title BOXORA - 1-CLICK CLOUDFLARE DEPLOY & BACKEND ONLINE
+title BOXORA - 1-CLICK CLOUDFLARE DEPLOY AND BACKEND ONLINE
 chcp 65001 >nul
 
 cd /d "%~dp0"
 
 echo ==============================================================================
-echo       BOXORA - 1-CLICK DEPLOY CLOUDFLARE PAGES & RUN BACKEND ONLINE
+echo       BOXORA - 1-CLICK DEPLOY CLOUDFLARE PAGES AND RUN BACKEND ONLINE
 echo ==============================================================================
 echo.
 echo Quy trinh tu dong:
-echo   1. Build va Day Frontend moi nhat len Cloudflare Pages (boxora-storage.pages.dev)
-echo   2. Kiem tra & Khoi dong PostgreSQL (Port 5432)
-echo   3. Khoi dong Backend Spring Boot (Port 8080) voi JDK 21
-echo   4. Mo Cloudflare Tunnel ket noi Backend ra toan cau (HTTPS)
+echo   1. Build va Day Frontend moi nhat len Cloudflare Pages
+echo   2. Kiem tra va Khoi dong PostgreSQL - Port 5432
+echo   3. Khoi dong Backend Spring Boot - Port 8080 voi JDK 21
+echo   4. Mo Cloudflare Tunnel ket noi Backend ra toan cau - HTTPS
 echo   5. Tu dong ghep URL va mo trinh duyet truc tiep den website da online
 echo.
 
 :: -----------------------------------------------------------------------------
-:: BƯỚC 1: KIỂM TRA POSTGRESQL (PORT 5432)
+:: BUOC 1: KIEM TRA POSTGRESQL (PORT 5432)
 :: -----------------------------------------------------------------------------
-echo [1/5] Kiem tra Database PostgreSQL (Port 5432)...
-powershell -NoProfile -Command "$t = Test-NetConnection -ComputerName localhost -Port 5432 -InformationLevel Quiet; if (-not $t) { exit 1 }"
+echo [1/5] Kiem tra Database PostgreSQL...
+powershell -NoProfile -Command "$t = Test-NetConnection -ComputerName 127.0.0.1 -Port 5432 -InformationLevel Quiet; if (-not $t) { exit 1 }"
 if %errorlevel% neq 0 (
     echo [WARNING] PostgreSQL chua bat! Dang thu khoi dong Service PostgreSQL...
     powershell -NoProfile -Command "Get-Service *postgres* -ErrorAction SilentlyContinue | Start-Service"
-    timeout /t 2 /nobreak >nul
+    ping 127.0.0.1 -n 3 >nul
 ) else (
     echo [OK] PostgreSQL dang hoat dong tot.
 )
 
 :: -----------------------------------------------------------------------------
-:: BƯỚC 2: BUILD VÀ DEPLOY FRONTEND LÊN CLOUDFLARE PAGES
+:: BUOC 2: BUILD VA DEPLOY FRONTEND LEN CLOUDFLARE PAGES
 :: -----------------------------------------------------------------------------
 echo.
-echo [2/5] Dang build va deploy Frontend len Cloudflare Pages (boxora-storage)...
+echo [2/5] Dang build va deploy Frontend len Cloudflare Pages...
 cd /d "%~dp0FE\boxora-web"
 
-echo   - Dang build Frontend (npm run build)...
+echo   - Dang build Frontend...
 call npm run build
 if %errorlevel% neq 0 (
     echo [ERROR] Build Frontend that bai! Vui long kiem tra code.
@@ -48,7 +48,7 @@ if %errorlevel% neq 0 (
 echo   - Dang day len Cloudflare Pages (boxora-storage)...
 call npx wrangler pages deploy dist --project-name=boxora-storage --commit-dirty=true
 if %errorlevel% neq 0 (
-    echo [WARNING] Wrangler deploy gap loi hoac can xac thuc. Vui long kiem tra lai wrangler login.
+    echo [WARNING] Wrangler deploy gap loi hoac can xac thuc.
 ) else (
     echo [OK] Frontend da duoc deploy thanh cong len Cloudflare Pages!
 )
@@ -56,37 +56,37 @@ if %errorlevel% neq 0 (
 cd /d "%~dp0"
 
 :: -----------------------------------------------------------------------------
-:: BƯỚC 3: KHỞI ĐỘNG BACKEND SPRING BOOT (PORT 8080)
+:: BUOC 3: KHOI DONG BACKEND SPRING BOOT (PORT 8080)
 :: -----------------------------------------------------------------------------
 echo.
-echo [3/5] Kiem tra va khoi dong Backend Spring Boot (Port 8080)...
-powershell -NoProfile -Command "$t = Test-NetConnection -ComputerName localhost -Port 8080 -InformationLevel Quiet; if ($t) { exit 0 } else { exit 1 }"
-if %errorlevel% equ 0 (
-    echo [OK] Backend Spring Boot da dang chay tren Port 8080.
-) else (
-    echo   - Dang khoi dong Backend Spring Boot trong cua so rieng...
-    start "BOXORA - BACKEND SPRING BOOT (PORT 8080)" cmd /k "cd /d \"%~dp0BE\boxora\" && setup_and_run_backend.bat 2"
-    
-    echo   - Cho Backend khoi tao va san sang tren Port 8080...
-    set /a RETRY=0
-    :WAIT_BACKEND
-    timeout /t 3 /nobreak >nul
-    set /a RETRY+=1
-    powershell -NoProfile -Command "$t = Test-NetConnection -ComputerName localhost -Port 8080 -InformationLevel Quiet; if ($t) { exit 0 } else { exit 1 }"
-    if %errorlevel% neq 0 (
-        if !RETRY! lss 25 (
-            echo     ...dang cho Backend khoi dong (!RETRY!/25)...
-            goto WAIT_BACKEND
-        ) else (
-            echo [WARNING] Backend khoi dong hoi cham, he thong se tiep tuc mo tunnel...
-        )
-    ) else (
-        echo [OK] Backend Spring Boot da san sang tren Port 8080!
-    )
-)
+echo [3/5] Kiem tra va khoi dong Backend Spring Boot...
+powershell -NoProfile -Command "$t = Test-NetConnection -ComputerName 127.0.0.1 -Port 8080 -InformationLevel Quiet; if ($t) { exit 0 } else { exit 1 }"
+if %errorlevel% equ 0 goto BACKEND_RUNNING
 
+echo   - Dang khoi dong Backend Spring Boot trong cua so rieng...
+start "BOXORA - BACKEND SPRING BOOT (PORT 8080)" cmd /k "cd /d "%~dp0BE\boxora" && setup_and_run_backend.bat 2"
+echo   - Dang cho Backend khoi tao tren Port 8080...
+
+set /a RETRY_COUNT=0
+:CHECK_BACKEND_PORT
+ping 127.0.0.1 -n 4 >nul
+set /a RETRY_COUNT+=1
+powershell -NoProfile -Command "$t = Test-NetConnection -ComputerName 127.0.0.1 -Port 8080 -InformationLevel Quiet; if ($t) { exit 0 } else { exit 1 }"
+if %errorlevel% equ 0 goto BACKEND_RUNNING
+if !RETRY_COUNT! GEQ 30 goto BACKEND_TIMEOUT
+echo     ...dang cho Backend khoi dong - lan !RETRY_COUNT! tren 30
+goto CHECK_BACKEND_PORT
+
+:BACKEND_TIMEOUT
+echo [WARNING] Backend khoi dong hoi cham, he thong se tiep tuc mo tunnel...
+goto PROCEED_TUNNEL
+
+:BACKEND_RUNNING
+echo [OK] Backend Spring Boot da san sang tren Port 8080!
+
+:PROCEED_TUNNEL
 :: -----------------------------------------------------------------------------
-:: BƯỚC 4: KHỞI TẠO CLOUDFLARE TUNNEL CHO BACKEND (PORT 8080)
+:: BUOC 4: KHOI TAO CLOUDFLARE TUNNEL CHO BACKEND (PORT 8080)
 :: -----------------------------------------------------------------------------
 echo.
 echo [4/5] Kiem tra Cloudflare Tunnel (cloudflared)...
@@ -103,21 +103,23 @@ if exist "!LOGFILE!" del /f /q "!LOGFILE!" >nul 2>&1
 echo   - Dang mo Cloudflare Quick Tunnel cho Backend (http://localhost:8080)...
 start "BOXORA - BACKEND TUNNEL" /min "!CLOUDFLARED!" tunnel --url http://localhost:8080 --logfile "!LOGFILE!"
 
-echo   - Dang lay public HTTPS tunnel URL...
+echo   - Dang trich xuat public HTTPS tunnel URL...
 set "BACKEND_TUNNEL_URL="
-for /l %%i in (1,1,25) do (
-    timeout /t 1 /nobreak >nul
-    if exist "!LOGFILE!" (
-        for /f "tokens=*" %%a in ('powershell -NoProfile -Command "Select-String -Path $env:TEMP\boxora_backend_tunnel.log -Pattern 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' | ForEach-Object { $_.Matches.Value } | Select-Object -First 1"') do (
-            if not "%%a"=="" (
-                set "BACKEND_TUNNEL_URL=%%a"
-                goto TUNNEL_READY
-            )
+set /a TUNNEL_TRY=0
+:CHECK_TUNNEL_LOG
+ping 127.0.0.1 -n 2 >nul
+set /a TUNNEL_TRY+=1
+if exist "!LOGFILE!" (
+    for /f "usebackq delims=" %%u in (`powershell -NoProfile -Command "Select-String -Path $env:TEMP\boxora_backend_tunnel.log -Pattern 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' | ForEach-Object { $_.Matches.Value } | Select-Object -First 1"`) do (
+        if not "%%u"=="" (
+            set "BACKEND_TUNNEL_URL=%%u"
+            goto TUNNEL_SUCCESS
         )
     )
 )
+if !TUNNEL_TRY! LSS 30 goto CHECK_TUNNEL_LOG
 
-:TUNNEL_READY
+:TUNNEL_SUCCESS
 if "!BACKEND_TUNNEL_URL!"=="" (
     echo [WARNING] Chua lay duoc link trycloudflare tu dong.
     echo Vui long xem log tai: !LOGFILE!
@@ -128,7 +130,7 @@ if "!BACKEND_TUNNEL_URL!"=="" (
 )
 
 :: -----------------------------------------------------------------------------
-:: BƯỚC 5: TỰ ĐỘNG MỞ TRÌNH DUYỆT VÀ THEO DÕI LIÊN TỤC
+:: BUOC 5: TU DONG MO TRINH DUYET VA THEO DOI
 :: -----------------------------------------------------------------------------
 echo.
 echo ==============================================================================
@@ -150,7 +152,6 @@ echo [CHU Y] Giu cua so nay mo de duy tri website online. Nhan Ctrl + C de dung.
 echo ==============================================================================
 echo.
 
-:: Loop monitoring
 :MONITOR_LOOP
-timeout /t 10 /nobreak >nul
+ping 127.0.0.1 -n 11 >nul
 goto MONITOR_LOOP

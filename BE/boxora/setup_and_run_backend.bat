@@ -55,19 +55,21 @@ if not exist ".env" (
 )
 
 :: 3. Menu lua chon che do chay
-if not "%~1"=="" (
-    set "CHOICE=%~1"
-) else (
-    echo ------------------------------------------------------------------------------
-    echo Chon mot trong cac che do sau:
-    echo   [1] Build file JAR moi va Chay truc tiep tren Console (Xem log ngay)
-    echo   [2] Chi Chay file JAR hien co (Khong build lai - Khoi dong cuc nhanh)
-    echo   [3] Cai dat Backend thanh Windows Service 24/7 (Chay ngam qua NSSM)
-    echo   [4] Khoi dong lai (Restart) Windows Service BoxoraBackend
-    echo   [5] Dung (Stop) Windows Service BoxoraBackend
-    echo ------------------------------------------------------------------------------
-    set /p CHOICE="Nhap lua chon [1-5] (Mac dinh la 1): "
-)
+if "%1"=="1" goto BUILD_AND_RUN
+if "%1"=="2" goto RUN_JAR
+if "%1"=="3" goto INSTALL_SERVICE
+if "%1"=="4" goto RESTART_SERVICE
+if "%1"=="5" goto STOP_SERVICE
+
+echo ------------------------------------------------------------------------------
+echo Chon mot trong cac che do sau:
+echo   [1] Build file JAR moi va Chay truc tiep tren Console (Xem log ngay)
+echo   [2] Chi Chay file JAR hien co (Khong build lai - Khoi dong cuc nhanh)
+echo   [3] Cai dat Backend thanh Windows Service 24/7 (Chay ngam qua NSSM)
+echo   [4] Khoi dong lai (Restart) Windows Service BoxoraBackend
+echo   [5] Dung (Stop) Windows Service BoxoraBackend
+echo ------------------------------------------------------------------------------
+set /p CHOICE="Nhap lua chon [1-5] (Mac dinh la 1): "
 if "!CHOICE!"=="" set CHOICE=1
 
 if "!CHOICE!"=="1" goto BUILD_AND_RUN
