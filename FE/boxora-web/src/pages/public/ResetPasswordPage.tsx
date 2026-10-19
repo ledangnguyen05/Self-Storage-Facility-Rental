@@ -155,9 +155,9 @@ export const ResetPasswordPage: React.FC = () => {
           {/* SUCCESS STATE */}
           {isSuccess ? (
             <div className="space-y-4 pt-2">
-              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs space-y-1.5">
-                <div className="flex items-center gap-2 font-bold text-emerald-700">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs space-y-1.5">
+                <div className="flex items-center gap-2 font-bold text-emerald-700 dark:text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <span>An toàn 100%</span>
                 </div>
                 <p className="leading-relaxed">
@@ -168,7 +168,7 @@ export const ResetPasswordPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => navigate('/login')}
-                className="w-full h-12 rounded-xl bg-gradient-to-r from-sky-600 via-cyan-500 to-teal-400 hover:from-sky-500 hover:to-teal-500 text-white font-black text-xs uppercase tracking-wider transition-all shadow-md shadow-cyan-500/25 flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 cursor-pointer"
               >
                 <span>Đăng nhập ngay bây giờ</span>
                 <ArrowRight className="w-4 h-4" />
@@ -179,7 +179,7 @@ export const ResetPasswordPage: React.FC = () => {
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Field 1: Mật khẩu mới */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-800">
+                <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
                   Mật khẩu mới
                 </label>
                 <div className="relative flex items-center">
@@ -193,12 +193,12 @@ export const ResetPasswordPage: React.FC = () => {
                     placeholder="Tối thiểu 5 ký tự"
                     required
                     disabled={!token || isLoading}
-                    className="w-full h-11 pl-10 pr-10 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/15 transition-all disabled:opacity-60"
+                    className="w-full h-11 pl-10 pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all disabled:opacity-60"
                   />
                   <button
                     type="button"
                     onClick={() => setShowNewPassword(!showNewPassword)}
-                    className="absolute right-3 text-slate-400 hover:text-slate-600 cursor-pointer p-1"
+                    className="absolute right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-1"
                   >
                     {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -207,7 +207,7 @@ export const ResetPasswordPage: React.FC = () => {
 
               {/* Field 2: Xác nhận mật khẩu mới */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-800">
+                <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
                   Xác nhận lại mật khẩu
                 </label>
                 <div className="relative flex items-center">
@@ -221,12 +221,12 @@ export const ResetPasswordPage: React.FC = () => {
                     placeholder="Nhập lại mật khẩu mới"
                     required
                     disabled={!token || isLoading}
-                    className="w-full h-11 pl-10 pr-10 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/15 transition-all disabled:opacity-60"
+                    className="w-full h-11 pl-10 pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all disabled:opacity-60"
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 text-slate-400 hover:text-slate-600 cursor-pointer p-1"
+                    className="absolute right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-1"
                   >
                     {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -234,8 +234,8 @@ export const ResetPasswordPage: React.FC = () => {
               </div>
 
               {/* Security Hint */}
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-500 flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-cyan-600 shrink-0" />
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                 <span>Mật khẩu được mã hóa an toàn BCrypt Salted Hash trước khi lưu trữ.</span>
               </div>
 
@@ -243,7 +243,7 @@ export const ResetPasswordPage: React.FC = () => {
               <button
                 type="submit"
                 disabled={!token || isLoading}
-                className="w-full h-11 rounded-xl bg-gradient-to-r from-sky-600 via-cyan-500 to-teal-400 hover:from-sky-500 hover:to-teal-500 text-white font-black text-xs uppercase tracking-wider transition-all shadow-md shadow-cyan-500/25 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-blue-600/20 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
               >
                 {isLoading ? (
                   <>
@@ -264,8 +264,8 @@ export const ResetPasswordPage: React.FC = () => {
       </main>
 
       {/* Footer */}
-      <footer className="relative z-10 py-5 text-center text-xs text-slate-400">
-        &copy; 2026 Boxora Smart Storage. Hỗ trợ khẩn cấp: 1980-6868
+      <footer className="relative z-10 py-5 text-center text-xs text-slate-400 font-mono">
+        &copy; {new Date().getFullYear()} Boxora Smart Storage. Hỗ trợ khẩn cấp: 1900-6868
       </footer>
     </div>
   )
