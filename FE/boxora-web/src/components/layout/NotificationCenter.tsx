@@ -169,11 +169,15 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
         aria-expanded={isOpen}
         aria-controls="dashboard-notifications-panel"
         title="Thông báo gần đây"
-        className={`relative flex h-10 w-10 items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-600 focus-visible:ring-offset-2 ${isOpen ? 'border-cyan-200 bg-cyan-50 text-cyan-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'}`}
+        className={`relative flex h-9 w-9 items-center justify-center rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+          isOpen
+            ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+            : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+        }`}
       >
-        <span className="material-symbols-outlined text-[21px]">notifications</span>
+        <span className="material-symbols-outlined text-[20px]">notifications</span>
         {items.length > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-cyan-700 px-1 text-[9px] font-bold leading-none text-white">
+          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-white dark:border-slate-900 bg-blue-600 px-1 text-[9px] font-bold leading-none text-white">
             {items.length > 9 ? '9+' : items.length}
           </span>
         )}
@@ -184,12 +188,12 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
           id="dashboard-notifications-panel"
           role="dialog"
           aria-label="Thông báo gần đây"
-          className="absolute right-0 top-[calc(100%+0.75rem)] z-[60] w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-[0_18px_55px_rgba(15,23,42,0.18)]"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-60 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-left shadow-xl"
         >
-          <header className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5">
+          <header className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-4 py-3">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Thông báo</h2>
-              <p className="mt-0.5 text-[11px] text-slate-500">Lịch sử mới nhất của tài khoản</p>
+              <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-tight">Thông báo</h2>
+              <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">Lịch sử mới nhất của tài khoản</p>
             </div>
             <div className="flex items-center gap-1">
               {items.length > 0 && (
@@ -199,7 +203,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
                     localStorage.removeItem('boxora_in_app_notifications')
                     setItems([])
                   }}
-                  className="px-2 py-1 text-[11px] font-semibold text-slate-500 hover:text-cyan-700 hover:bg-slate-100 rounded-lg transition-colors"
+                  className="px-2 py-1 text-[11px] font-medium text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors"
                   title="Đánh dấu tất cả là đã đọc"
                 >
                   Đã đọc tất cả

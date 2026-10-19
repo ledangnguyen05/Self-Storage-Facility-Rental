@@ -9,7 +9,7 @@ export interface ModalProps {
   title?: string
   description?: string
   children: React.ReactNode
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl'
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl'
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -35,23 +35,24 @@ export const Modal: React.FC<ModalProps> = ({
   }, [isOpen, onClose])
 
   const maxWidthClasses = {
-    sm: 'max-w-[420px]',
-    md: 'max-w-[540px]',
-    lg: 'max-w-[680px]',
-    xl: 'max-w-[840px]',
+    sm: 'max-w-md',
+    md: 'max-w-lg',
+    lg: 'max-w-2xl',
+    xl: 'max-w-3xl',
+    '2xl': 'max-w-5xl',
   }
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
           {/* Overlay */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-[#111111]/30 backdrop-blur-[2px]"
+            transition={{ duration: 0.18 }}
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs"
             onClick={onClose}
           />
 
@@ -60,37 +61,39 @@ export const Modal: React.FC<ModalProps> = ({
             initial={{ opacity: 0, scale: 0.98, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.98, y: 8 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className={cn(
-              'relative w-full bg-[#FFFFFF] rounded-[16px] border border-[#E5E5E1] shadow-elevated z-10 overflow-hidden text-left',
+              'relative w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl z-10 overflow-hidden text-left my-auto',
               maxWidthClasses[maxWidth]
             )}
           >
             {/* Header */}
-            <div className="flex items-start justify-between p-6 border-b border-[#E5E5E1] bg-[#F7F7F5]/40">
-              <div>
-                {title && (
-                  <h3 className="font-display text-[18px] font-semibold text-[#111111] tracking-tight">
-                    {title}
-                  </h3>
-                )}
-                {description && (
-                  <p className="mt-1 text-[13px] text-[#555555]">
-                    {description}
-                  </p>
-                )}
+            {(title || description) && (
+              <div className="flex items-start justify-between px-6 py-5 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/50">
+                <div className="pr-6">
+                  {title && (
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 tracking-tight font-sans">
+                      {title}
+                    </h3>
+                  )}
+                  {description && (
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                      {description}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={onClose}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+                  aria-label="Đóng cửa sổ"
+                >
+                  <X size={18} />
+                </button>
               </div>
-              <button
-                onClick={onClose}
-                className="p-1.5 rounded-[6px] text-[#8A8A8A] hover:text-[#111111] hover:bg-[#F2F2EF] transition-colors cursor-pointer"
-                aria-label="Close modal"
-              >
-                <X size={18} />
-              </button>
-            </div>
+            )}
 
             {/* Content */}
-            <div className="p-6 max-h-[80vh] overflow-y-auto">{children}</div>
+            <div className="p-6 max-h-[calc(85vh-80px)] overflow-y-auto">{children}</div>
           </motion.div>
         </div>
       )}

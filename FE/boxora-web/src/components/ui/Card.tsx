@@ -2,7 +2,7 @@ import React from 'react'
 import { cn } from '../../lib/utils'
 
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
-  variant?: 'surface' | 'subtle' | 'border-only'
+  variant?: 'surface' | 'subtle' | 'border-only' | 'elevated'
   hoverLift?: boolean
 }
 
@@ -14,17 +14,22 @@ export const Card: React.FC<CardProps> = ({
   ...props
 }) => {
   const variantClasses = {
-    surface: 'bg-[#FFFFFF] border border-[#E5E5E1] shadow-subtle',
-    subtle: 'bg-[#F2F2EF] border border-[#E5E5E1]',
-    'border-only': 'bg-transparent border border-[#E5E5E1]',
+    surface:
+      'bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs',
+    subtle:
+      'bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800/80',
+    'border-only':
+      'bg-transparent border border-slate-200 dark:border-slate-800',
+    elevated:
+      'bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm hover:shadow-md',
   }
 
   return (
     <div
       className={cn(
-        'rounded-[12px] p-6 text-left transition-all duration-200',
+        'rounded-xl p-5 sm:p-6 text-left transition-all duration-200 text-slate-900 dark:text-slate-100',
         variantClasses[variant],
-        hoverLift && 'hover:-translate-y-1 hover:border-[#D5D5D0] hover:shadow-elevated',
+        hoverLift && 'hover:-translate-y-0.5 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-sm',
         className
       )}
       {...props}

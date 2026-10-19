@@ -143,8 +143,8 @@ export const DashboardLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--on-surface)] flex flex-col antialiased">
-      {/* Fixed Top Header (80px) */}
-      <header className="fixed top-0 left-0 right-0 h-20 bg-white z-50 shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-slate-200">
+      {/* Fixed Top Header (64px) */}
+      <header className="fixed top-0 left-0 right-0 h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md z-50 border-b border-slate-200/80 dark:border-slate-800 shadow-2xs transition-colors">
         <div className="w-full h-full px-4 sm:px-6 flex items-center justify-between gap-3">
           
           {/* Logo & Mobile Menu Toggle */}
@@ -152,7 +152,7 @@ export const DashboardLayout: React.FC = () => {
             {/* Mobile Hamburger Button */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="lg:hidden p-2 rounded-xl text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer flex items-center justify-center"
+              className="lg:hidden p-2 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer flex items-center justify-center"
               aria-label="Mở menu điều hướng"
             >
               <span className="material-symbols-outlined text-[24px]">
@@ -252,25 +252,25 @@ export const DashboardLayout: React.FC = () => {
       )}
 
       {/* Sidebar (Responsive drawer on mobile, fixed column on lg) */}
-      <aside className={`fixed left-0 top-20 bottom-0 w-64 bg-white z-40 border-r border-slate-200 flex flex-col py-4 shadow-[0_1px_8px_rgba(0,0,0,0.02)] transition-transform duration-200 ease-in-out ${
+      <aside className={`fixed left-0 top-16 bottom-0 w-64 bg-white dark:bg-slate-900 z-40 border-r border-slate-200 dark:border-slate-800 flex flex-col py-4 shadow-2xs transition-transform duration-200 ease-in-out ${
         isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       }`}>
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4">
           
           {/* Active Account Summary Card */}
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-left">
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/90 dark:border-slate-700/80 text-left">
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] font-semibold text-slate-400">
+              <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">
                 Phiên đăng nhập
               </span>
               <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${roleBadge.bg}`}>
                 {role || 'ANONYMOUS'}
               </span>
             </div>
-            <div className="text-xs font-semibold text-slate-900 truncate">
+            <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
               {user?.fullName || 'Khách vãng lai'}
             </div>
-            <div className="text-[11px] text-slate-500 truncate">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
               {user?.email || 'Chưa đăng nhập'}
             </div>
           </div>
@@ -710,8 +710,8 @@ export const DashboardLayout: React.FC = () => {
       </aside>
 
       {/* Main Canvas Area */}
-      <div className="lg:pl-64 pt-20 flex-1 min-w-0">
-        <main className="min-h-[calc(100vh-5rem)] w-full bg-slate-50 p-4 sm:p-6 lg:p-8 pb-24 sm:pb-28">
+      <div className="lg:pl-64 pt-16 flex-1 min-w-0">
+        <main className="min-h-[calc(100vh-4rem)] w-full bg-slate-50/70 dark:bg-slate-950 p-4 sm:p-6 lg:p-8 transition-colors">
           <div className="mx-auto w-full max-w-[1600px]">
             <Outlet context={{
               selectedFacility: isFacilityScopedRole && assignedFacilityId ? assignedFacilityId : selectedFacility,
