@@ -3,6 +3,7 @@ package com.boxora.service;
 import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.ShiftSwapCreateRequest;
 import com.boxora.dto.request.ShiftSwapReviewRequest;
+import com.boxora.dto.request.ShiftSwapTargetRespondRequest;
 import com.boxora.dto.response.ShiftSwapResponse;
 import com.boxora.enums.ShiftSwapStatus;
 
@@ -15,6 +16,8 @@ public interface ShiftSwapService {
 
     ShiftSwapResponse reviewSwapRequest(UUID swapId, ShiftSwapReviewRequest request);
 
+    ShiftSwapResponse respondToSwapRequest(UUID swapId, ShiftSwapTargetRespondRequest request);
+
     ShiftSwapResponse cancelSwapRequest(UUID swapId);
 
     ShiftSwapResponse getById(UUID id);
@@ -23,6 +26,8 @@ public interface ShiftSwapService {
             UUID facilityId,
             ShiftSwapStatus status,
             UUID staffId,
+            java.time.LocalDate fromDate,
+            java.time.LocalDate toDate,
             int page,
             int size
     );

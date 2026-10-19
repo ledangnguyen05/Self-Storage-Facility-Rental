@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Booking } from '../../../types'
 import { handoverService, HandoverPrerequisites } from '../../../services/handoverService'
 import { bookingService } from '../../../services/bookingService'
+import { useAuth } from '../../../context/AuthContext'
 
 export interface BookingChecklist {
   doorRoll: boolean
@@ -25,6 +26,17 @@ export interface BookingWorkbenchSession {
   identityVerified: boolean
   isCompleted: boolean
   completedAt?: string
+}
+
+export interface HandoverSuccessModalData {
+  bookingCode: string
+  unitCode: string
+  customerName: string
+  customerPhone: string
+  customerEmail: string
+  pin: string
+  facilityName: string
+  completedAt: string
 }
 
 const STORAGE_KEY = 'boxora_handover_workbench_sessions'
@@ -99,6 +111,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   onSelectBooking,
   facilityId
 }) => {
+  const { user } = useAuth()
+  const resolvedRole = (typeof user?.role === 'string' ? user?.role : user?.role?.name || user?.roleName || '').toUpperCase()
+  const isAdmin = resolvedRole === 'ADMIN' || resolvedRole === 'SYSTEM_ADMIN'
+
   const [internalArrivals, setInternalArrivals] = useState<Booking[]>([])
   const [selectedBookingId, setSelectedBookingId] = useState<string>('')
   const [extraBookingDetails, setExtraBookingDetails] = useState<Record<string, Booking>>({})
@@ -151,6 +167,17 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const [isCompletingStep1, setIsCompletingStep1] = useState(false)
   const [isRecordingInspection, setIsRecordingInspection] = useState(false)
 
+  // Evidence Photos preview & lightbox modal states
+  const [doorPreviewUrl, setDoorPreviewUrl] = useState<string>('')
+  const [interiorPreviewUrl, setInteriorPreviewUrl] = useState<string>('')
+  const [isUploadingDoor, setIsUploadingDoor] = useState<boolean>(false)
+  const [isUploadingInterior, setIsUploadingInterior] = useState<boolean>(false)
+  const [previewModalImage, setPreviewModalImage] = useState<{ url: string; title: string } | null>(null)
+
+  // Handover confirmation modal state (Hiển thị giữa màn hình confirm đã bàn giao thành công cho customer)
+  const [handoverSuccessModalData, setHandoverSuccessModalData] = useState<HandoverSuccessModalData | null>(null)
+  const [copiedSuccessPin, setCopiedSuccessPin] = useState<boolean>(false)
+
   const doorInputRef = useRef<HTMLInputElement | null>(null)
   const interiorInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -161,11 +188,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   useEffect(() => {
     if (propArrivals !== undefined) {
       setInternalArrivals(propArrivals)
-      if (propArrivals.length > 0) {
-        if (!selectedBookingId && !activeBookingId) {
-          setSelectedBookingId(propArrivals[0].id)
-        }
-      } else {
+      if (propArrivals.length === 0) {
         setSelectedBookingId('')
       }
     } else {
@@ -178,9 +201,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       const data = await bookingService.getUpcomingArrivals(targetFacId || facilityId)
       if (data && data.length > 0) {
         setInternalArrivals(data)
-        if (!selectedBookingId && !activeBookingId) {
-          setSelectedBookingId(data[0].id)
-        }
       } else {
         setInternalArrivals([])
         setSelectedBookingId('')
@@ -193,17 +213,17 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
   // Sync when activeBookingId prop changes from parent (e.g. table click "Tiếp đón & Đối soát")
   useEffect(() => {
-    if (activeBookingId && activeBookingId !== selectedBookingId) {
+    if (activeBookingId !== undefined && activeBookingId !== selectedBookingId) {
       setSelectedBookingId(activeBookingId)
       setCheckInError(null)
       setDispatchFeedback(null)
     }
   }, [activeBookingId])
 
-  // Exact lookup for current selected booking without defaulting to arrivalsList[0] if specific ID is selected
+  // Exact lookup for current selected booking - strictly null if not selected
   const currentBooking = useMemo(() => {
     if (!selectedBookingId) {
-      return arrivalsList.length > 0 ? arrivalsList[0] : null
+      return null
     }
     return (
       arrivalsList.find((b) => b.id === selectedBookingId || b.bookingCode === selectedBookingId) ||
@@ -211,6 +231,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       null
     )
   }, [arrivalsList, selectedBookingId, extraBookingDetails])
+
+  // Permission evaluation for currently selected customer
+  const isAssignedToOther = Boolean(
+    currentBooking?.assignedStaffId && currentBooking.assignedStaffId !== user?.id && !isAdmin
+  )
+  const isUnassigned = Boolean(currentBooking && !currentBooking.assignedStaffId && !isAdmin)
 
   // If selectedBookingId is not found in arrivalsList, fetch it directly from backend
   useEffect(() => {
@@ -351,6 +377,53 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     currentPrerequisites?.facilityName ||
     'Boxora Facility'
 
+  // Effective preview photo URLs (ưu tiên local blob URL khi vừa upload, fallback sang server URL)
+  const effectiveDoorPhoto = doorPreviewUrl || currentSession.photoDoor
+  const effectiveInteriorPhoto = interiorPreviewUrl || currentSession.photoInterior
+
+  // Synchronize authorized preview URLs for evidence photos
+  useEffect(() => {
+    let isMounted = true
+
+    if (currentSession.photoDoor) {
+      if (currentSession.photoDoor.startsWith('blob:') || currentSession.photoDoor.startsWith('data:')) {
+        setDoorPreviewUrl(currentSession.photoDoor)
+      } else if (selectedBookingId && currentSession.photoDoor.startsWith('/uploads/')) {
+        handoverService
+          .viewAuthorizedDocument(selectedBookingId, currentSession.photoDoor)
+          .then((blobUrl) => {
+            if (isMounted) setDoorPreviewUrl(blobUrl)
+          })
+          .catch((err) => {
+            console.warn('Could not load authorized door photo preview:', err)
+          })
+      }
+    } else {
+      setDoorPreviewUrl('')
+    }
+
+    if (currentSession.photoInterior) {
+      if (currentSession.photoInterior.startsWith('blob:') || currentSession.photoInterior.startsWith('data:')) {
+        setInteriorPreviewUrl(currentSession.photoInterior)
+      } else if (selectedBookingId && currentSession.photoInterior.startsWith('/uploads/')) {
+        handoverService
+          .viewAuthorizedDocument(selectedBookingId, currentSession.photoInterior)
+          .then((blobUrl) => {
+            if (isMounted) setInteriorPreviewUrl(blobUrl)
+          })
+          .catch((err) => {
+            console.warn('Could not load authorized interior photo preview:', err)
+          })
+      }
+    } else {
+      setInteriorPreviewUrl('')
+    }
+
+    return () => {
+      isMounted = false
+    }
+  }, [selectedBookingId, currentSession.photoDoor, currentSession.photoInterior])
+
   const handleSendEmail = async () => {
     if (!currentBooking) return
     if (!customerDisplayEmail) {
@@ -425,17 +498,34 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     const file = e.target.files?.[0]
     if (!file) return
     const input = e.target
+
+    // 1. Tạo ngay local object URL để hiển thị tức thời cho nhân viên kiểm tra, không bị đen/lỗi
+    const localBlobUrl = URL.createObjectURL(file)
+    if (type === 'door') {
+      setDoorPreviewUrl(localBlobUrl)
+      setIsUploadingDoor(true)
+    } else {
+      setInteriorPreviewUrl(localBlobUrl)
+      setIsUploadingInterior(true)
+    }
+
     try {
-      if (!selectedBookingId) throw new Error('Select a booking before uploading evidence.')
+      if (!selectedBookingId) throw new Error('Vui lòng chọn lượt nhận kho trước khi tải ảnh hiện trường.')
       const stored = await handoverService.uploadHandoverDocument(selectedBookingId, file, 'CHECKIN_EVIDENCE')
       const fileUrl = stored?.fileUrl
-      if (!fileUrl) throw new Error('Upload completed without a stored file URL.')
-      if (type === 'door') updateCurrentSession({ photoDoor: fileUrl })
-      else updateCurrentSession({ photoInterior: fileUrl })
-      setDispatchFeedback({ text: 'Inspection photo uploaded and saved.' })
+      if (!fileUrl) throw new Error('Upload thành công nhưng máy chủ không trả về đường dẫn tệp.')
+
+      if (type === 'door') {
+        updateCurrentSession({ photoDoor: fileUrl })
+      } else {
+        updateCurrentSession({ photoInterior: fileUrl })
+      }
+      setDispatchFeedback({ text: `Đã lưu ảnh hiện trạng ${type === 'door' ? 'cửa ngoài' : 'nền sàn bên trong'} thành công!` })
     } catch (err: any) {
-      setCheckInError(err?.response?.data?.message || err?.message || 'Could not upload inspection photo.')
+      setCheckInError(err?.response?.data?.message || err?.message || 'Không thể tải ảnh nghiệm thu lên hệ thống.')
     } finally {
+      if (type === 'door') setIsUploadingDoor(false)
+      else setIsUploadingInterior(false)
       input.value = ''
     }
   }
@@ -449,8 +539,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   // Sync identity input with loaded prerequisites
   useEffect(() => {
     if (currentPrerequisites) {
-      setIdCardInputNumber(currentPrerequisites.idCardNumber || '')
-      setIdCardType(currentPrerequisites.idCardType || 'CCCD')
+      setIdCardInputNumber(currentPrerequisites.idCardNumber || currentPrerequisites.registeredIdCardNumber || '')
+      setIdCardType(currentPrerequisites.idCardType || currentPrerequisites.registeredIdCardType || 'CCCD')
       setIdOriginalSeen(Boolean(currentPrerequisites.identityVerified))
     } else {
       setIdCardInputNumber('')
@@ -590,6 +680,13 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       return
     }
 
+    // Đối chiếu với số CCCD/Passport đã lưu trong CSDL của đơn đặt giữ chỗ
+    const expectedId = (currentPrerequisites?.registeredIdCardNumber || currentPrerequisites?.idCardNumber || '').trim()
+    if (expectedId && expectedId !== num) {
+      setCheckInError(`Số ${idCardType} đối chiếu (${num}) không trùng khớp với số ${currentPrerequisites?.registeredIdCardType || 'CCCD'} đã đăng ký trong hồ sơ đặt giữ chỗ (${expectedId}). Vui lòng kiểm tra lại giấy tờ gốc của khách hàng.`)
+      return
+    }
+
     setIsVerifyingIdentity(true)
     setCheckInError(null)
     try {
@@ -688,12 +785,25 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
       const generatedPin = res?.accessPin
       if (!generatedPin) throw new Error('Check-in completed without an access PIN in the server response.')
+      const nowIso = new Date().toISOString()
       updateCurrentSession({
         accessPin: generatedPin,
         isCompleted: true,
-        completedAt: new Date().toISOString(),
+        completedAt: nowIso,
         emailSent: false,
         webPushSent: false
+      })
+
+      // Kích hoạt hiển thị thông báo giữa màn hình confirm đã bàn giao thành công cho customer
+      setHandoverSuccessModalData({
+        bookingCode: bookingDisplayCode,
+        unitCode: unitDisplayCode,
+        customerName: customerDisplayName,
+        customerPhone: customerDisplayPhone,
+        customerEmail: customerDisplayEmail,
+        pin: generatedPin,
+        facilityName: facilityDisplayName,
+        completedAt: nowIso
       })
 
       if (onHandoverComplete) {
@@ -713,27 +823,162 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
   }
 
-  if (!currentBooking && arrivalsList.length === 0) {
+  if (!currentBooking) {
     return (
-      <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center">
-        <div className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
-          <span className="material-symbols-outlined text-[30px]">event_busy</span>
+      <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
+        {/* 1. Process Header Card */}
+        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
+            <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
+          </div>
+          <div>
+            <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
+              Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+              Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+            </p>
+          </div>
         </div>
-        <h3 className="font-headline text-base font-bold text-slate-800">
-          Chưa có khách chờ tiếp đón nhận kho
-        </h3>
-        <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-          Tất cả lịch hẹn nhận kho hôm nay đã hoàn tất hoặc chưa có đặt chỗ mới trong ca trực hiện tại.
-        </p>
-        {onOpenQrScanner && (
+
+        {/* Empty State Card */}
+        <div className="py-12 px-4 flex flex-col items-center justify-center text-center">
+          <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4 shadow-xs">
+            <span className="material-symbols-outlined text-[34px]">person_pin_circle</span>
+          </div>
+          <h3 className="font-headline text-base font-bold text-slate-900">
+            Chưa Chọn Lượt Khách Tiếp Nhận Bàn Giao
+          </h3>
+          <p className="text-xs text-slate-500 mt-2 max-w-md mx-auto leading-relaxed">
+            {arrivalsList.length > 0
+              ? 'Vui lòng bấm "Tiếp nhận" hoặc chọn lượt khách bạn được phân công từ danh sách "Lịch Hẹn Nhận Kho Trong Ca" bên dưới để bắt đầu quy trình đối soát hồ sơ và bàn giao.'
+              : 'Hiện tại chưa có khách hẹn nhận kho trong ca làm việc này.'}
+          </p>
+          {onOpenQrScanner && (
+            <button
+              onClick={onOpenQrScanner}
+              className="mt-5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl inline-flex items-center gap-2 shadow-xs cursor-pointer transition-colors"
+            >
+              <span className="material-symbols-outlined text-[18px]">qr_code_scanner</span>
+              <span>Quét Mã QR Khách Đến Sớm</span>
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  if (isAssignedToOther) {
+    return (
+      <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
+        {/* 1. Process Header Card */}
+        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5 mb-5">
+          <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
+            <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
+          </div>
+          <div>
+            <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
+              Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+              Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+            </p>
+          </div>
+        </div>
+
+        <div className="p-6 rounded-2xl bg-amber-50 border border-amber-200 text-center flex flex-col items-center">
+          <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mb-3">
+            <span className="material-symbols-outlined text-[30px]">lock_person</span>
+          </div>
+          <h3 className="font-headline text-base font-bold text-amber-900">
+            Lượt Khách Đang Thuộc Về Nhân Viên Khác
+          </h3>
+          <p className="text-xs text-amber-800 mt-1.5 max-w-md leading-relaxed">
+            Đơn <strong>{currentBooking.bookingCode}</strong> (Khách hàng <strong>{currentBooking.customerName}</strong>) hiện đang do nhân viên <strong>{currentBooking.assignedStaffName || 'khác'}</strong> phụ trách tiếp đón.
+          </p>
+          <p className="text-[11px] text-amber-700 mt-1">
+            Theo quy định phân quyền, bạn chỉ được thao tác trên các đơn do bạn chủ động tiếp nhận hoặc được phân công.
+          </p>
           <button
-            onClick={onOpenQrScanner}
-            className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl inline-flex items-center gap-2 shadow-xs cursor-pointer transition-colors"
+            type="button"
+            onClick={() => {
+              setSelectedBookingId('')
+              if (onSelectBooking) onSelectBooking('')
+            }}
+            className="mt-4 px-4 py-2 bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold rounded-xl inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[18px]">qr_code_scanner</span>
-            <span>Quét Mã QR Khách Đến Sớm</span>
+            <span className="material-symbols-outlined text-[16px]">close</span>
+            <span>Đóng Chi Tiết &amp; Quay Lại</span>
           </button>
-        )}
+        </div>
+      </div>
+    )
+  }
+
+  if (isUnassigned) {
+    return (
+      <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
+        {/* 1. Process Header Card */}
+        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5 mb-5">
+          <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
+            <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
+          </div>
+          <div>
+            <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
+              Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+              Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+            </p>
+          </div>
+        </div>
+
+        <div className="p-6 rounded-2xl bg-blue-50 border border-blue-200 text-center flex flex-col items-center">
+          <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center mb-3">
+            <span className="material-symbols-outlined text-[30px]">how_to_reg</span>
+          </div>
+          <h3 className="font-headline text-base font-bold text-blue-900">
+            Chưa Tiếp Nhận Khách Hàng Này
+          </h3>
+          <p className="text-xs text-blue-800 mt-1.5 max-w-md leading-relaxed">
+            Đơn <strong>{currentBooking.bookingCode}</strong> (Khách hàng <strong>{currentBooking.customerName}</strong>) chưa có nhân sự tiếp đón tại quầy.
+          </p>
+          <p className="text-[11px] text-blue-700 mt-1">
+            Vui lòng bấm nút tiếp nhận bên dưới để đăng ký phụ trách khách hàng này trước khi thực hiện đối soát và bàn giao kho.
+          </p>
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const updated = await bookingService.claimCheckInReception(currentBooking.id)
+                  setInternalArrivals(prev => prev.map(b => b.id === currentBooking.id ? {
+                    ...b,
+                    assignedStaffId: updated.assignedStaffId || user?.id,
+                    assignedStaffName: updated.assignedStaffName || user?.fullName || 'Nhân viên quầy'
+                  } : b))
+                  if (onRefreshArrivals) onRefreshArrivals()
+                } catch (err: any) {
+                  alert(err?.response?.data?.message || 'Không thể tiếp nhận đơn này.')
+                }
+              }}
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl inline-flex items-center gap-2 shadow-xs cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
+              <span>Tiếp Nhận Đơn Này Ngay</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedBookingId('')
+                if (onSelectBooking) onSelectBooking('')
+              }}
+              className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+            >
+              Quay Lại
+            </button>
+          </div>
+        </div>
       </div>
     )
   }
@@ -741,63 +986,23 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   return (
     <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
       
-      {/* 1. Header & Active Arriving Session Ribbon */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
-            <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
-          </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="font-headline text-lg font-bold text-slate-900">
-                Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
-              </h2>
-            </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
-            </p>
-          </div>
+      {/* 1. Process Header Card */}
+      <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5">
+        <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
+          <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
         </div>
-
-        {/* Customer Quick Selector & Scan Trigger */}
-        <div className="flex items-center gap-2 flex-wrap shrink-0">
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs">
-            <span className="text-slate-500 font-medium">Khách tại sảnh:</span>
-            <select
-              value={selectedBookingId}
-              onChange={(e) => {
-                const newId = e.target.value
-                setSelectedBookingId(newId)
-                setCheckInError(null)
-                setDispatchFeedback(null)
-                if (onSelectBooking) {
-                  onSelectBooking(newId)
-                }
-              }}
-              className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
-            >
-              {arrivalsList.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.customerName || 'Khách'} ({b.bookingCode} - {b.unitCode})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {onOpenQrScanner && (
-            <button
-              onClick={onOpenQrScanner}
-              className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1 transition-colors border border-slate-200 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[16px]">qr_code_scanner</span>
-              <span>Quét QR</span>
-            </button>
-          )}
+        <div>
+          <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
+            Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+            Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+          </p>
         </div>
       </div>
 
       {/* 2. Customer Spotlight Profile Card */}
-      <div className="mt-5 p-4 rounded-xl bg-slate-50 border border-slate-200">
+      <div className="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-start gap-3.5">
             <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center font-headline font-bold text-base shadow-xs shrink-0">
@@ -993,7 +1198,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                               : 'bg-slate-100 text-slate-500'
                           }`}
                         >
-                          <span className="material-symbols-outlined text-[20px]">description</span>
+                          <span className="material-symbols-outlined text-[20px]">
+                            {currentPrerequisites?.contractSigningMethod === 'PAPER' ? 'contract' : 'draw'}
+                          </span>
                         </div>
                         <div>
                           <span className="font-bold text-slate-900 text-xs block">1. Hợp Đồng Thuê Kho</span>
@@ -1012,10 +1219,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                         }`}
                       >
                         {isContractMet
-                          ? '✓ ĐÃ KÝ & XÁC MINH'
+                          ? (currentPrerequisites?.contractSigningMethod === 'PAPER' ? '✓ ĐÃ KÝ & XÁC MINH' : '✓ ĐÃ KÝ ĐIỆN TỬ')
                           : currentPrerequisites?.contractVerificationStatus === 'PENDING_VERIFICATION'
                           ? '⏳ CHỜ XÁC MINH HỢP ĐỒNG GIẤY'
-                          : 'CHƯA KÝ'}
+                          : currentPrerequisites?.contractSigningMethod === 'PAPER'
+                          ? 'CHƯA TẢI HĐ GIẤY'
+                          : 'CHƯA KÝ ONLINE'}
                       </span>
                     </div>
 
@@ -1024,6 +1233,29 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                         <span className="text-slate-500">Mã hợp đồng:</span>
                         <strong className="font-mono text-slate-800">{currentPrerequisites?.contractCode || 'Chưa khởi tạo'}</strong>
                       </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Phương thức:</span>
+                        <span className="font-medium text-slate-700">
+                          {currentPrerequisites?.contractSigningMethod === 'PAPER' ? 'Ký bản cứng tại quầy cơ sở' : 'Ký số điện tử trực tuyến'}
+                        </span>
+                      </div>
+                      {isContractMet && currentPrerequisites?.contractSigningMethod !== 'PAPER' && (
+                        <div className="flex justify-between items-center text-emerald-700 font-medium">
+                          <span>Xác thực:</span>
+                          <span className="inline-flex items-center gap-1 font-bold">
+                            <span className="material-symbols-outlined text-[14px]">verified</span>
+                            Đã ký số xác thực trực tuyến
+                          </span>
+                        </div>
+                      )}
+                      {currentPrerequisites?.contractSignedAt && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Thời điểm ký:</span>
+                          <span className="font-mono text-slate-700">
+                            {new Date(currentPrerequisites.contractSignedAt).toLocaleString('vi-VN')}
+                          </span>
+                        </div>
+                      )}
                       {currentPrerequisites?.paperOriginalLocation && (
                         <div className="flex justify-between">
                           <span className="text-slate-500">Vị trí lưu bản cứng:</span>
@@ -1057,25 +1289,74 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
                   {/* Actions for Contract */}
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                    <button
-                      type="button"
-                      onClick={handleOpenPaperContractModal}
-                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[15px]">upload_file</span>
-                      <span>{currentPrerequisites?.paperContractUrl ? 'Cập Nhật Bản Scan' : 'Tạo / Tải HĐ Giấy'}</span>
-                    </button>
+                    {/* TH1: Ký điện tử và đã ký thành công */}
+                    {isContractMet && currentPrerequisites?.contractSigningMethod !== 'PAPER' ? (
+                      <div className="w-full flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5 text-emerald-700 text-[11px] font-bold">
+                          <span className="material-symbols-outlined text-[16px]">task_alt</span>
+                          <span>Hợp đồng điện tử hợp lệ (không bắt buộc tải HĐ giấy)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {currentPrerequisites?.signedDocumentUrl && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenAuthorizedDocument(currentPrerequisites.signedDocumentUrl!)}
+                              disabled={openingDocumentUrl === currentPrerequisites.signedDocumentUrl}
+                              className="px-2.5 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 font-bold text-xs flex items-center gap-1 cursor-pointer border border-cyan-200"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">description</span>
+                              <span>Xem HĐ Điện Tử</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={handleOpenPaperContractModal}
+                            className="text-[11px] text-slate-500 hover:text-slate-700 underline font-medium cursor-pointer"
+                            title="Nếu chi nhánh muốn lưu thêm bản giấy photo/scan dự phòng"
+                          >
+                            {currentPrerequisites?.paperContractUrl ? 'Cập nhật bản scan dự phòng' : '+ Tải bản scan dự phòng (tùy chọn)'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : currentPrerequisites?.contractSigningMethod === 'PAPER' ? (
+                      /* TH2: Ký giấy tại quầy cơ sở */
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleOpenPaperContractModal}
+                          className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">upload_file</span>
+                          <span>{currentPrerequisites?.paperContractUrl ? 'Cập Nhật Bản Scan' : 'Tạo / Tải HĐ Giấy'}</span>
+                        </button>
 
-                    {currentPrerequisites?.contractVerificationStatus === 'PENDING_VERIFICATION' && (
-                      <button
-                        type="button"
-                        onClick={handleVerifyPaperContract}
-                        disabled={isVerifyingPaperContract}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
-                      >
-                        <span className="material-symbols-outlined text-[15px]">verified</span>
-                        <span>{isVerifyingPaperContract ? 'Đang xác minh...' : 'Xác Minh Hợp Đồng'}</span>
-                      </button>
+                        {currentPrerequisites?.contractVerificationStatus === 'PENDING_VERIFICATION' && (
+                          <button
+                            type="button"
+                            onClick={handleVerifyPaperContract}
+                            disabled={isVerifyingPaperContract}
+                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">verified</span>
+                            <span>{isVerifyingPaperContract ? 'Đang xác minh...' : 'Xác Minh Hợp Đồng'}</span>
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      /* TH3: Chọn ký online nhưng khách chưa hoàn tất ký */
+                      <div className="w-full flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-[11px] text-amber-700 font-medium">
+                          Chờ khách ký trực tuyến hoặc hướng dẫn chuyển sang ký tại quầy.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleOpenPaperContractModal}
+                          className="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer border border-amber-300"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">edit_document</span>
+                          <span>Chuyển Sang Ký Giấy Tại Quầy</span>
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1297,19 +1578,36 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       </div>
                     ) : (
                       <div className="mt-2.5 space-y-2 text-xs">
+                        {Boolean(currentPrerequisites?.registeredIdCardNumber || currentPrerequisites?.idCardNumber) && (
+                          <div className="p-2 rounded-lg bg-blue-50/90 border border-blue-200/80 flex items-center justify-between text-[11px]">
+                            <span className="text-blue-900 font-semibold flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[15px] text-blue-700">info</span>
+                              CCCD đăng ký trong đơn:
+                            </span>
+                            <span className="font-mono font-bold text-blue-950">
+                              {currentPrerequisites?.registeredIdCardNumber || currentPrerequisites?.idCardNumber}
+                              <span className="ml-1 text-[10px] text-blue-700 font-sans">
+                                ({currentPrerequisites?.registeredIdCardType || currentPrerequisites?.idCardType || 'CCCD'})
+                              </span>
+                            </span>
+                          </div>
+                        )}
                         <div className="flex items-center gap-2">
                           <select
                             value={idCardType}
                             onChange={(e) => setIdCardType(e.target.value)}
                             className="p-1.5 bg-slate-50 border border-slate-200 rounded text-slate-900 font-bold text-xs focus:outline-none"
                           >
-                            <option value="CCCD">Căn Cước (CCCD)</option>
-                            <option value="PASSPORT">Hộ Chiếu (Passport)</option>
+                            <option value="CCCD">Căn Cước</option>
+                            <option value="PASSPORT">Hộ Chiếu</option>
                           </select>
                           <input
                             type="text"
                             value={idCardInputNumber}
-                            onChange={(e) => setIdCardInputNumber(e.target.value)}
+                            onChange={(e) => {
+                              setIdCardInputNumber(e.target.value)
+                              if (checkInError) setCheckInError(null)
+                            }}
                             placeholder="Nhập 9-12 chữ số..."
                             className="flex-1 p-1.5 bg-slate-50 border border-slate-200 rounded text-slate-900 font-mono text-xs focus:outline-none focus:border-cyan-600"
                           />
@@ -1592,13 +1890,25 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
               {/* Photo 1: Door Overview */}
               <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex flex-col">
-                <div className="relative aspect-video bg-slate-900 overflow-hidden flex items-center justify-center">
-                  {currentSession.photoDoor ? (
-                    <img
-                      src={currentSession.photoDoor}
-                      alt="Ảnh Cửa Ngoài Kho"
-                      className="w-full h-full object-cover"
-                    />
+                <div className="relative aspect-video bg-slate-900 overflow-hidden flex items-center justify-center group">
+                  {effectiveDoorPhoto ? (
+                    <>
+                      <img
+                        src={effectiveDoorPhoto}
+                        alt="Ảnh Cửa Ngoài Kho"
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 cursor-pointer"
+                        onClick={() => setPreviewModalImage({ url: effectiveDoorPhoto, title: `Ảnh 1: Cửa Ngoài & Bảng Số #${unitDisplayCode}` })}
+                      />
+                      {/* Zoom overlay hint */}
+                      <button
+                        type="button"
+                        onClick={() => setPreviewModalImage({ url: effectiveDoorPhoto, title: `Ảnh 1: Cửa Ngoài & Bảng Số #${unitDisplayCode}` })}
+                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer text-white text-xs font-semibold gap-1.5"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">zoom_in</span>
+                        <span>Bấm để phóng to kiểm tra ảnh</span>
+                      </button>
+                    </>
                   ) : (
                     <button
                       type="button"
@@ -1609,30 +1919,50 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       <span>Bấm chụp/tải ảnh cửa ngoài kho #{unitDisplayCode}</span>
                     </button>
                   )}
-                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-slate-900/80 text-white font-mono text-[10px] backdrop-blur-xs">
-                    Ảnh 1: Cửa Ngoài &amp; Bảng Số #{unitDisplayCode}
+                  {isUploadingDoor && (
+                    <div className="absolute inset-0 bg-slate-900/70 flex items-center justify-center gap-2 text-white text-xs">
+                      <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+                      <span>Đang lưu ảnh...</span>
+                    </div>
+                  )}
+                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-slate-900/80 text-white font-mono text-[10px] backdrop-blur-xs flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    <span>Ảnh 1: Cửa Ngoài &amp; Bảng Số #{unitDisplayCode}</span>
                   </div>
                 </div>
                 <div className="p-2.5 flex items-center justify-between bg-white text-xs">
-                  <span className="text-slate-600 text-[11px] truncate">
-                    {currentSession.photoDoor ? `door_overview_${unitDisplayCode}.jpg` : 'Chưa có ảnh'}
+                  <span className="text-slate-600 text-[11px] truncate max-w-[140px]" title={effectiveDoorPhoto ? `door_overview_${unitDisplayCode}.jpg` : 'Chưa có ảnh'}>
+                    {effectiveDoorPhoto ? `door_overview_${unitDisplayCode}.jpg` : 'Chưa có ảnh'}
                   </span>
                   <div className="flex items-center gap-1.5">
-                    {currentSession.photoDoor && (
-                      <button
-                        type="button"
-                        onClick={() => updateCurrentSession({ photoDoor: '' })}
-                        className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] transition-colors cursor-pointer"
-                      >
-                        Xóa
-                      </button>
+                    {effectiveDoorPhoto && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewModalImage({ url: effectiveDoorPhoto, title: `Ảnh 1: Cửa Ngoài & Bảng Số #${unitDisplayCode}` })}
+                          className="px-2 py-1 rounded bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">visibility</span>
+                          <span>Xem to</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDoorPreviewUrl('')
+                            updateCurrentSession({ photoDoor: '' })
+                          }}
+                          className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] transition-colors cursor-pointer"
+                        >
+                          Xóa
+                        </button>
+                      </>
                     )}
                     <button
                       type="button"
                       onClick={() => doorInputRef.current?.click()}
                       className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
                     >
-                      {currentSession.photoDoor ? 'Chụp lại' : 'Tải ảnh lên'}
+                      {effectiveDoorPhoto ? 'Chụp lại' : 'Tải ảnh lên'}
                     </button>
                   </div>
                 </div>
@@ -1640,13 +1970,25 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
               {/* Photo 2: Inside Storage Unit */}
               <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex flex-col">
-                <div className="relative aspect-video bg-slate-900 overflow-hidden flex items-center justify-center">
-                  {currentSession.photoInterior ? (
-                    <img
-                      src={currentSession.photoInterior}
-                      alt="Ảnh Bên Trong Kho"
-                      className="w-full h-full object-cover"
-                    />
+                <div className="relative aspect-video bg-slate-900 overflow-hidden flex items-center justify-center group">
+                  {effectiveInteriorPhoto ? (
+                    <>
+                      <img
+                        src={effectiveInteriorPhoto}
+                        alt="Ảnh Bên Trong Kho"
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 cursor-pointer"
+                        onClick={() => setPreviewModalImage({ url: effectiveInteriorPhoto, title: `Ảnh 2: Nền Sàn & Vách Trong #${unitDisplayCode}` })}
+                      />
+                      {/* Zoom overlay hint */}
+                      <button
+                        type="button"
+                        onClick={() => setPreviewModalImage({ url: effectiveInteriorPhoto, title: `Ảnh 2: Nền Sàn & Vách Trong #${unitDisplayCode}` })}
+                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer text-white text-xs font-semibold gap-1.5"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">zoom_in</span>
+                        <span>Bấm để phóng to kiểm tra ảnh</span>
+                      </button>
+                    </>
                   ) : (
                     <button
                       type="button"
@@ -1657,30 +1999,50 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       <span>Bấm chụp/tải ảnh nền sàn &amp; vách trong kho</span>
                     </button>
                   )}
-                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-slate-900/80 text-white font-mono text-[10px] backdrop-blur-xs">
-                    Ảnh 2: Nền Sàn &amp; Vách Trong
+                  {isUploadingInterior && (
+                    <div className="absolute inset-0 bg-slate-900/70 flex items-center justify-center gap-2 text-white text-xs">
+                      <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+                      <span>Đang lưu ảnh...</span>
+                    </div>
+                  )}
+                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-slate-900/80 text-white font-mono text-[10px] backdrop-blur-xs flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    <span>Ảnh 2: Nền Sàn &amp; Vách Trong</span>
                   </div>
                 </div>
                 <div className="p-2.5 flex items-center justify-between bg-white text-xs">
-                  <span className="text-slate-600 text-[11px] truncate">
-                    {currentSession.photoInterior ? `interior_floor_${unitDisplayCode}.jpg` : 'Chưa có ảnh'}
+                  <span className="text-slate-600 text-[11px] truncate max-w-[140px]" title={effectiveInteriorPhoto ? `interior_floor_${unitDisplayCode}.jpg` : 'Chưa có ảnh'}>
+                    {effectiveInteriorPhoto ? `interior_floor_${unitDisplayCode}.jpg` : 'Chưa có ảnh'}
                   </span>
                   <div className="flex items-center gap-1.5">
-                    {currentSession.photoInterior && (
-                      <button
-                        type="button"
-                        onClick={() => updateCurrentSession({ photoInterior: '' })}
-                        className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] transition-colors cursor-pointer"
-                      >
-                        Xóa
-                      </button>
+                    {effectiveInteriorPhoto && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewModalImage({ url: effectiveInteriorPhoto, title: `Ảnh 2: Nền Sàn & Vách Trong #${unitDisplayCode}` })}
+                          className="px-2 py-1 rounded bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">visibility</span>
+                          <span>Xem to</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInteriorPreviewUrl('')
+                            updateCurrentSession({ photoInterior: '' })
+                          }}
+                          className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] transition-colors cursor-pointer"
+                        >
+                          Xóa
+                        </button>
+                      </>
                     )}
                     <button
                       type="button"
                       onClick={() => interiorInputRef.current?.click()}
                       className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
                     >
-                      {currentSession.photoInterior ? 'Chụp lại' : 'Tải ảnh lên'}
+                      {effectiveInteriorPhoto ? 'Chụp lại' : 'Tải ảnh lên'}
                     </button>
                   </div>
                 </div>
@@ -1964,8 +2326,27 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
               <div className="flex items-center gap-2 shrink-0">
                 <button
+                  type="button"
+                  onClick={() => {
+                    setHandoverSuccessModalData({
+                      bookingCode: bookingDisplayCode,
+                      unitCode: unitDisplayCode,
+                      customerName: customerDisplayName,
+                      customerPhone: customerDisplayPhone,
+                      customerEmail: customerDisplayEmail,
+                      pin: currentSession.accessPin,
+                      facilityName: facilityDisplayName,
+                      completedAt: currentSession.completedAt || new Date().toISOString()
+                    })
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                >
+                  <span className="material-symbols-outlined text-[16px]">verified</span>
+                  <span>Xem Xác Nhận &amp; PIN</span>
+                </button>
+                <button
                   onClick={() => setShowPdfModal(true)}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
+                  className="px-3 py-1.5 rounded-lg bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-900 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
                 >
                   <span className="material-symbols-outlined text-[16px]">print</span>
                   <span>In Phiếu Nhận Kho</span>
@@ -1988,7 +2369,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 </div>
                 <div>
                   <h3 className="font-headline text-sm font-bold text-slate-900">
-                    Lập / Tải Lên Hợp Đồng Giấy Tại Kho
+                    {isContractMet && currentPrerequisites?.contractSigningMethod !== 'PAPER'
+                      ? 'Lưu Bản Scan Hợp Đồng Giấy Dự Phòng'
+                      : 'Lập / Tải Lên Hợp Đồng Giấy Tại Kho'}
                   </h3>
                   <span className="text-[11px] text-slate-500 font-mono">
                     Đơn đặt: #{bookingDisplayCode} • Kho #{unitDisplayCode}
@@ -2120,7 +2503,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] flex items-start gap-2">
                 <span className="material-symbols-outlined text-[16px] text-amber-700 mt-0.5">info</span>
                 <span>
-                  Sau khi lưu hồ sơ, trạng thái hợp đồng là <strong>Chờ xác minh</strong>. Nhân viên có thẩm quyền cần kiểm tra kỹ chữ ký và bấm nút <strong>Xác minh hồ sơ</strong> để chính thức công nhận hợp đồng.
+                  {isContractMet && currentPrerequisites?.contractSigningMethod !== 'PAPER'
+                    ? 'Hợp đồng điện tử đã được khách hàng ký hợp lệ và có giá trị pháp lý. Bản scan tải lên ở đây chỉ nhằm mục đích số hóa lưu trữ hồ sơ bổ sung tại kho (không bắt buộc).'
+                    : <>Sau khi lưu hồ sơ, trạng thái hợp đồng là <strong>Chờ xác minh</strong>. Nhân viên có thẩm quyền cần kiểm tra kỹ chữ ký và bấm nút <strong>Xác minh hồ sơ</strong> để chính thức công nhận hợp đồng.</>}
                 </span>
               </div>
             </div>
@@ -2260,6 +2645,235 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Modal: Phóng to ảnh hiện trường để staff kiểm tra chi tiết */}
+      {previewModalImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+          <div className="relative max-w-4xl w-full bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col">
+            <div className="flex items-center justify-between px-5 py-3.5 bg-slate-800/90 border-b border-slate-700">
+              <div className="flex items-center gap-2 text-white font-headline text-sm font-semibold">
+                <span className="material-symbols-outlined text-cyan-400 text-[20px]">image</span>
+                <span>{previewModalImage.title}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewModalImage(null)}
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 flex items-center justify-center transition-colors cursor-pointer"
+                title="Đóng (Esc)"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+            <div className="p-4 flex items-center justify-center bg-black/70 min-h-[300px] max-h-[75vh] overflow-auto">
+              <img
+                src={previewModalImage.url}
+                alt={previewModalImage.title}
+                className="max-h-[70vh] w-auto max-w-full object-contain rounded-lg shadow-xl"
+              />
+            </div>
+            <div className="px-5 py-3 bg-slate-800/90 border-t border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-300">
+              <div className="flex items-center gap-1.5 text-slate-400">
+                <span className="material-symbols-outlined text-[16px] text-amber-400">info</span>
+                <span>Nhân viên kiểm tra rõ nét biển số phòng, then chốt khóa, sàn kho và tem niêm phong.</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewModalImage.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-semibold transition-colors flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[15px]">open_in_new</span>
+                  <span>Mở tab mới</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewModalImage(null)}
+                  className="px-4 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold transition-colors cursor-pointer"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Xác Nhận Bàn Giao Thành Công & Cấp Mã PIN Giữa Màn Hình */}
+      {handoverSuccessModalData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-fadeIn">
+          <div className="relative max-w-lg w-full bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden transform transition-all flex flex-col text-left">
+            {/* Top Accent Gradient Bar */}
+            <div className="h-2.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 w-full" />
+
+            <div className="p-6 sm:p-7 flex flex-col">
+              {/* Close Icon */}
+              <button
+                type="button"
+                onClick={() => setHandoverSuccessModalData(null)}
+                className="absolute top-5 right-5 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </button>
+
+              {/* Success Badge & Header */}
+              <div className="text-center mb-5">
+                <div className="w-16 h-16 rounded-full bg-emerald-50 border-4 border-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-3 shadow-inner">
+                  <span className="material-symbols-outlined text-[36px] animate-bounce">task_alt</span>
+                </div>
+                <span className="inline-flex items-center gap-1 px-3 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono text-[11px] font-bold uppercase tracking-wider mb-1.5">
+                  ✓ Bàn Giao Hoàn Tất
+                </span>
+                <h3 className="font-headline text-xl sm:text-2xl font-extrabold text-slate-900">
+                  Xác Nhận Bàn Giao Thành Công!
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Đã bàn giao phòng kho #{handoverSuccessModalData.unitCode} cho khách hàng{' '}
+                  <strong className="text-slate-800">{handoverSuccessModalData.customerName}</strong>.
+                </p>
+              </div>
+
+              {/* PIN Code Highlight Box */}
+              <div className="p-4 rounded-2xl bg-slate-950 text-white border border-slate-800 shadow-xl mb-5 flex flex-col items-center">
+                <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-cyan-400 tracking-widest uppercase mb-2">
+                  <span className="material-symbols-outlined text-[16px]">pin</span>
+                  <span>MÃ PIN MỞ KHÓA SMARTLOCK</span>
+                </div>
+                <div className="flex items-center justify-center gap-1.5 sm:gap-2 my-1">
+                  {(handoverSuccessModalData.pin || '------').split('').map((digit, idx) => (
+                    <div
+                      key={idx}
+                      className="w-10 h-14 sm:w-12 sm:h-16 rounded-xl bg-slate-900 border border-cyan-500/40 flex items-center justify-center font-mono text-2xl sm:text-3xl font-extrabold text-cyan-300 shadow-inner"
+                    >
+                      {digit}
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-400 text-center mt-2">
+                  Mã PIN 6 chữ số dùng để mở ổ khóa điện tử kho và cửa ra vào cơ sở.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(handoverSuccessModalData.pin)
+                    setCopiedSuccessPin(true)
+                    setTimeout(() => setCopiedSuccessPin(false), 2500)
+                  }}
+                  className="mt-3 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono font-bold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px] text-cyan-400">
+                    {copiedSuccessPin ? 'check' : 'content_copy'}
+                  </span>
+                  <span>{copiedSuccessPin ? 'Đã sao chép mã PIN!' : 'Sao chép mã PIN'}</span>
+                </button>
+              </div>
+
+              {/* Handover Details Summary Grid */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs mb-5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Phòng kho:</span>
+                  <span className="font-bold text-slate-900 font-mono">
+                    #{handoverSuccessModalData.unitCode} ({handoverSuccessModalData.facilityName})
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Khách hàng:</span>
+                  <span className="font-bold text-slate-900">
+                    {handoverSuccessModalData.customerName} • {handoverSuccessModalData.customerPhone}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Email:</span>
+                  <span className="font-mono text-slate-800">{handoverSuccessModalData.customerEmail || 'Chưa cập nhật'}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Mã đơn đặt:</span>
+                  <span className="font-mono text-slate-700">{handoverSuccessModalData.bookingCode}</span>
+                </div>
+                <div className="flex items-center justify-between border-t border-slate-200/80 pt-2 text-[11px]">
+                  <span className="text-slate-500">Thời gian kích hoạt:</span>
+                  <span className="text-emerald-700 font-semibold font-mono">
+                    {new Date(handoverSuccessModalData.completedAt).toLocaleString('vi-VN')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick Communication Actions */}
+              <div className="flex flex-col gap-2 mb-5">
+                <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                  Gửi mã PIN &amp; Biên bản cho khách:
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSendEmail}
+                    disabled={isSendingEmail}
+                    className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                      currentSession.emailSent
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                        : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-300'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      {currentSession.emailSent ? 'mark_email_read' : 'mail'}
+                    </span>
+                    <span>
+                      {currentSession.emailSent
+                        ? 'Đã Gửi Email'
+                        : isSendingEmail
+                        ? 'Đang gửi...'
+                        : 'Gửi Email Khách'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSendWebPush}
+                    disabled={isSendingWebPush}
+                    className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                      currentSession.webPushSent
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                        : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-300'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      {currentSession.webPushSent ? 'notifications_active' : 'notifications'}
+                    </span>
+                    <span>
+                      {currentSession.webPushSent
+                        ? 'Đã Bắn Web Push'
+                        : isSendingWebPush
+                        ? 'Đang bắn...'
+                        : 'Bắn Thông Báo Web'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Main Completion CTA Button */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPdfModal(true)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[18px]">visibility</span>
+                  <span>Xem Biên Bản</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHandoverSuccessModalData(null)}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[18px]">check</span>
+                  <span>Xác Nhận &amp; Hoàn Tất</span>
+                </button>
+              </div>
+
+            </div>
           </div>
         </div>
       )}

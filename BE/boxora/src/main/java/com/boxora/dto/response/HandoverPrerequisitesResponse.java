@@ -43,6 +43,8 @@ public class HandoverPrerequisitesResponse {
     private String contractStatus;
     private String contractSigningMethod;
     private String contractVerificationStatus;
+    private String signedDocumentUrl;
+    private java.time.LocalDateTime contractSignedAt;
     private String paperContractUrl;
     private String paperOriginalLocation;
     private String paperVerifiedByName;
@@ -52,6 +54,8 @@ public class HandoverPrerequisitesResponse {
     private boolean identityVerified;
     private String idCardType;
     private String idCardNumber;
+    private String registeredIdCardNumber;
+    private String registeredIdCardType;
     private String identityVerifiedByName;
     private java.time.LocalDateTime identityVerifiedAt;
 

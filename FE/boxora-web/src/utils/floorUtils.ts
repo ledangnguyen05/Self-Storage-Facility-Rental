@@ -92,17 +92,25 @@ export function resolveBookingFloor(
  * Filters arrivals list based on:
  * - Search query (customerName, customerPhone, bookingCode, unitCode)
  * - Selected floor ('all' or '1', '2', '3', etc.)
- * - Selected shift ('all', 'today', 'current')
+ * - Selected shift / timeframe ('current' | 'today' | 'past' | 'future' | 'all')
+ * - Optional fromDateStr / toDateStr ('YYYY-MM-DD')
  */
+export type AppointmentStatusFilter = 'ALL' | 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
+
 export function filterArrivals(
   arrivals: Booking[],
   searchQuery: string,
   selectedFloor: string,
-  selectedShiftFilter: 'current' | 'today' | 'all',
+  selectedShiftFilter: 'current' | 'today' | 'past' | 'future' | 'all',
   unitMapById: Map<string, StorageUnit>,
   unitMapByCodeAndFacility: Map<string, StorageUnit>,
-  currentDateObj: Date = new Date()
+  currentDateObj: Date = new Date(),
+  fromDateStr?: string,
+  toDateStr?: string,
+  statusFilter: AppointmentStatusFilter = 'ALL'
 ): Booking[] {
+  const todayStr = `${currentDateObj.getFullYear()}-${String(currentDateObj.getMonth() + 1).padStart(2, '0')}-${String(currentDateObj.getDate()).padStart(2, '0')}`
+
   return arrivals.filter((b) => {
     // 1. Search filter
     if (searchQuery.trim()) {
@@ -122,19 +130,52 @@ export function filterArrivals(
       }
     }
 
-    // 3. Shift filter
-    if (!b.expectedCheckInAt) return false
-    const appointment = new Date(b.expectedCheckInAt)
-    if (isNaN(appointment.getTime())) return false
+    // Determine target check-in date
+    const checkInDateTime = b.expectedCheckInAt ? new Date(b.expectedCheckInAt) : (b.startDate ? new Date(b.startDate) : null)
+    const bDateStr = checkInDateTime && !isNaN(checkInDateTime.getTime())
+      ? `${checkInDateTime.getFullYear()}-${String(checkInDateTime.getMonth() + 1).padStart(2, '0')}-${String(checkInDateTime.getDate()).padStart(2, '0')}`
+      : (b.startDate || '')
+
+    // 3. Timeframe / Shift filter
     if (selectedShiftFilter === 'today') {
-      const todayStr = `${currentDateObj.getFullYear()}-${String(currentDateObj.getMonth() + 1).padStart(2, '0')}-${String(currentDateObj.getDate()).padStart(2, '0')}`
-      const bDate = `${appointment.getFullYear()}-${String(appointment.getMonth() + 1).padStart(2, '0')}-${String(appointment.getDate()).padStart(2, '0')}`
-      if (bDate !== todayStr) return false
+      if (bDateStr !== todayStr) return false
+    } else if (selectedShiftFilter === 'past') {
+      if (!bDateStr || bDateStr >= todayStr) return false
+    } else if (selectedShiftFilter === 'future') {
+      if (!bDateStr || bDateStr <= todayStr) return false
     } else if (selectedShiftFilter === 'current') {
-      const todayStr = `${currentDateObj.getFullYear()}-${String(currentDateObj.getMonth() + 1).padStart(2, '0')}-${String(currentDateObj.getDate()).padStart(2, '0')}`
-      const bDate = `${appointment.getFullYear()}-${String(appointment.getMonth() + 1).padStart(2, '0')}-${String(appointment.getDate()).padStart(2, '0')}`
-      const getShift = (hour: number) => (hour >= 6 && hour < 14 ? 1 : hour >= 14 && hour < 22 ? 2 : 3)
-      if (bDate !== todayStr || getShift(appointment.getHours()) !== getShift(currentDateObj.getHours())) return false
+      if (bDateStr !== todayStr) return false
+      if (checkInDateTime && !isNaN(checkInDateTime.getTime())) {
+        const getShift = (hour: number) => (hour >= 6 && hour < 14 ? 1 : hour >= 14 && hour < 22 ? 2 : 3)
+        const currentShift = getShift(currentDateObj.getHours())
+        const appointmentShift = getShift(checkInDateTime.getHours())
+        const isPendingOrWaiting = b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT' || b.status === 'PENDING_APPROVAL' || b.status === 'PENDING_SIGNATURE'
+        if (appointmentShift !== currentShift && !(appointmentShift < currentShift && isPendingOrWaiting)) {
+          return false
+        }
+      }
+    }
+
+    // 4. Custom date range filter (fromDate / toDate)
+    if (fromDateStr && bDateStr && bDateStr < fromDateStr) {
+      return false
+    }
+    if (toDateStr && bDateStr && bDateStr > toDateStr) {
+      return false
+    }
+
+    // 5. Appointment Status filter
+    if (statusFilter && statusFilter !== 'ALL') {
+      if (statusFilter === 'PENDING') {
+        const isPending = b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT' || b.status === 'PENDING_APPROVAL' || b.status === 'PENDING_SIGNATURE'
+        if (!isPending) return false
+      } else if (statusFilter === 'ACTIVE') {
+        if (b.status !== 'ACTIVE') return false
+      } else if (statusFilter === 'COMPLETED') {
+        if (b.status !== 'COMPLETED') return false
+      } else if (statusFilter === 'CANCELLED') {
+        if (b.status !== 'CANCELLED') return false
+      }
     }
 
     return true

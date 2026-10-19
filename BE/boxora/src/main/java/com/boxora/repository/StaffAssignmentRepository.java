@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
@@ -17,7 +18,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface StaffAssignmentRepository extends JpaRepository<StaffAssignment, UUID> {
+public interface StaffAssignmentRepository extends JpaRepository<StaffAssignment, UUID>, JpaSpecificationExecutor<StaffAssignment> {
 
     @Override
     @EntityGraph(attributePaths = {"staff", "facility", "assignedBy"})
@@ -41,6 +42,10 @@ public interface StaffAssignmentRepository extends JpaRepository<StaffAssignment
     boolean existsByStaff_IdAndAssignedDateAndShift(UUID staffId, LocalDate assignedDate, StaffShift shift);
 
     boolean existsByStaff_IdAndAssignedDateAndShiftAndIdNot(UUID staffId, LocalDate assignedDate, StaffShift shift, UUID id);
+
+    @Override
+    @EntityGraph(attributePaths = {"staff", "facility", "assignedBy"})
+    Page<StaffAssignment> findAll(org.springframework.data.jpa.domain.Specification<StaffAssignment> spec, Pageable pageable);
 
     @EntityGraph(attributePaths = {"staff", "facility", "assignedBy"})
     @Query("""

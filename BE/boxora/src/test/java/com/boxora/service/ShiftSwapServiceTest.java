@@ -2,6 +2,7 @@ package com.boxora.service;
 
 import com.boxora.dto.request.ShiftSwapCreateRequest;
 import com.boxora.dto.request.ShiftSwapReviewRequest;
+import com.boxora.dto.request.ShiftSwapTargetRespondRequest;
 import com.boxora.dto.response.ShiftSwapResponse;
 import com.boxora.entity.Facility;
 import com.boxora.entity.Role;
@@ -181,7 +182,7 @@ class ShiftSwapServiceTest {
     }
 
     @Test
-    @DisplayName("Quản lý duyệt đổi ca thành công và cập nhật nhân sự trên ca làm việc")
+    @DisplayName("Quản lý duyệt đổi ca thành công, chuyển trạng thái sang MANAGER_APPROVED chờ nhân viên tiếp nhận xác nhận")
     void shouldApproveSwapRequestSuccessfully() {
         UUID swapId = UUID.randomUUID();
         ShiftSwapRequest swap = ShiftSwapRequest.builder()
@@ -196,10 +197,11 @@ class ShiftSwapServiceTest {
 
         when(shiftSwapRequestRepository.findById(swapId)).thenReturn(Optional.of(swap));
         when(requestContext.currentUserId()).thenReturn(managerId);
+        when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
         when(userRepository.findById(managerId)).thenReturn(Optional.of(manager));
         when(shiftSwapRequestRepository.save(any(ShiftSwapRequest.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        ShiftSwapResponse resp = ShiftSwapResponse.builder().id(swapId).status(ShiftSwapStatus.APPROVED).build();
+        ShiftSwapResponse resp = ShiftSwapResponse.builder().id(swapId).status(ShiftSwapStatus.MANAGER_APPROVED).build();
         when(shiftSwapMapper.toResponse(any(ShiftSwapRequest.class))).thenReturn(resp);
 
         ShiftSwapReviewRequest reviewReq = ShiftSwapReviewRequest.builder()
@@ -209,10 +211,105 @@ class ShiftSwapServiceTest {
 
         ShiftSwapResponse res = shiftSwapService.reviewSwapRequest(swapId, reviewReq);
 
+        assertThat(res.getStatus()).isEqualTo(ShiftSwapStatus.MANAGER_APPROVED);
+        assertThat(assignment.getStaff()).isEqualTo(staff1); // Not changed yet!
+        verify(staffAssignmentRepository, never()).save(assignment);
+        verify(activityLogService).record(eq(facilityId), eq(ActivityAction.SHIFT_SWAP_APPROVE), eq("ShiftSwapRequest"), eq(swapId), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Nhân sự tiếp nhận đồng ý nhận ca, chuyển trạng thái APPROVED và cập nhật phân công ca trực")
+    void shouldTargetStaffAcceptSwapRequestSuccessfully() {
+        UUID swapId = UUID.randomUUID();
+        ShiftSwapRequest swap = ShiftSwapRequest.builder()
+                .assignment(assignment)
+                .requester(staff1)
+                .targetStaff(staff2)
+                .facility(facility)
+                .reason("Đổi ca")
+                .status(ShiftSwapStatus.MANAGER_APPROVED)
+                .reviewedBy(manager)
+                .build();
+        swap.setId(swapId);
+
+        when(shiftSwapRequestRepository.findById(swapId)).thenReturn(Optional.of(swap));
+        when(requestContext.currentUserId()).thenReturn(staff2Id);
+        when(shiftSwapRequestRepository.save(any(ShiftSwapRequest.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ShiftSwapResponse resp = ShiftSwapResponse.builder().id(swapId).status(ShiftSwapStatus.APPROVED).build();
+        when(shiftSwapMapper.toResponse(any(ShiftSwapRequest.class))).thenReturn(resp);
+
+        ShiftSwapTargetRespondRequest respondReq = ShiftSwapTargetRespondRequest.builder()
+                .accept(true)
+                .notes("Tôi đồng ý trực thay")
+                .build();
+
+        ShiftSwapResponse res = shiftSwapService.respondToSwapRequest(swapId, respondReq);
+
         assertThat(res.getStatus()).isEqualTo(ShiftSwapStatus.APPROVED);
-        assertThat(assignment.getStaff()).isEqualTo(staff2);
+        assertThat(assignment.getStaff()).isEqualTo(staff2); // Updated to staff2!
         verify(staffAssignmentRepository).save(assignment);
         verify(activityLogService).record(eq(facilityId), eq(ActivityAction.SHIFT_SWAP_APPROVE), eq("ShiftSwapRequest"), eq(swapId), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Nhân sự tiếp nhận từ chối nhận ca, chuyển trạng thái REJECTED và không thay đổi ca trực")
+    void shouldTargetStaffRejectSwapRequestSuccessfully() {
+        UUID swapId = UUID.randomUUID();
+        ShiftSwapRequest swap = ShiftSwapRequest.builder()
+                .assignment(assignment)
+                .requester(staff1)
+                .targetStaff(staff2)
+                .facility(facility)
+                .reason("Đổi ca")
+                .status(ShiftSwapStatus.MANAGER_APPROVED)
+                .reviewedBy(manager)
+                .build();
+        swap.setId(swapId);
+
+        when(shiftSwapRequestRepository.findById(swapId)).thenReturn(Optional.of(swap));
+        when(requestContext.currentUserId()).thenReturn(staff2Id);
+        when(shiftSwapRequestRepository.save(any(ShiftSwapRequest.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ShiftSwapResponse resp = ShiftSwapResponse.builder().id(swapId).status(ShiftSwapStatus.REJECTED).build();
+        when(shiftSwapMapper.toResponse(any(ShiftSwapRequest.class))).thenReturn(resp);
+
+        ShiftSwapTargetRespondRequest respondReq = ShiftSwapTargetRespondRequest.builder()
+                .accept(false)
+                .notes("Bận lịch học không trực thay được")
+                .build();
+
+        ShiftSwapResponse res = shiftSwapService.respondToSwapRequest(swapId, respondReq);
+
+        assertThat(res.getStatus()).isEqualTo(ShiftSwapStatus.REJECTED);
+        assertThat(assignment.getStaff()).isEqualTo(staff1); // Not changed!
+        verify(staffAssignmentRepository, never()).save(assignment);
+        verify(activityLogService).record(eq(facilityId), eq(ActivityAction.SHIFT_SWAP_REJECT), eq("ShiftSwapRequest"), eq(swapId), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Nhân sự tiếp nhận không thể phản hồi khi đơn chưa được Quản lý duyệt")
+    void shouldFailTargetStaffRespondWhenNotManagerApproved() {
+        UUID swapId = UUID.randomUUID();
+        ShiftSwapRequest swap = ShiftSwapRequest.builder()
+                .assignment(assignment)
+                .requester(staff1)
+                .targetStaff(staff2)
+                .facility(facility)
+                .reason("Đổi ca")
+                .status(ShiftSwapStatus.PENDING)
+                .build();
+        swap.setId(swapId);
+
+        when(shiftSwapRequestRepository.findById(swapId)).thenReturn(Optional.of(swap));
+        when(requestContext.currentUserId()).thenReturn(staff2Id);
+
+        ShiftSwapTargetRespondRequest respondReq = ShiftSwapTargetRespondRequest.builder()
+                .accept(true)
+                .build();
+
+        AppException ex = assertThrows(AppException.class, () -> shiftSwapService.respondToSwapRequest(swapId, respondReq));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.SHIFT_SWAP_ALREADY_PROCESSED);
     }
 
     @Test
@@ -231,6 +328,7 @@ class ShiftSwapServiceTest {
 
         when(shiftSwapRequestRepository.findById(swapId)).thenReturn(Optional.of(swap));
         when(requestContext.currentUserId()).thenReturn(managerId);
+        when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
         when(userRepository.findById(managerId)).thenReturn(Optional.of(manager));
         when(shiftSwapRequestRepository.save(any(ShiftSwapRequest.class))).thenAnswer(inv -> inv.getArgument(0));
 

@@ -574,10 +574,10 @@ export const AdminDashboard: React.FC = () => {
               <Link
                 to="/tickets"
                 className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 flex items-center gap-2 transition-all cursor-pointer"
-                title="Xem danh sách và chi tiết báo cáo sự cố toàn hệ thống (Chỉ đọc)"
+                title="Xem danh sách và chi tiết báo cáo sự cố toàn hệ thống"
               >
                 <span className="material-symbols-outlined text-[16px] text-slate-600">support_agent</span>
-                <span>Báo cáo sự cố (Chỉ đọc)</span>
+                <span>Báo cáo sự cố</span>
               </Link>
             </div>
           </div>
@@ -754,14 +754,14 @@ export const AdminDashboard: React.FC = () => {
               </div>
             )}
 
-            {/* Pagination Controls */}
+            {/* Pagination Controls - Centered */}
             {filteredUsers.length > 0 && (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-3 border-t border-slate-200 bg-slate-50/70 text-xs text-slate-600">
-                <div className="text-slate-600">
+              <div className="relative flex flex-col md:flex-row items-center justify-between gap-4 px-4 py-3.5 border-t border-slate-200 bg-slate-50/70 text-xs text-slate-600">
+                <div className="text-slate-600 text-center md:text-left">
                   Hiển thị <span className="font-semibold text-slate-900 font-mono">{(currentPage - 1) * pageSize + 1}</span> - <span className="font-semibold text-slate-900 font-mono">{Math.min(currentPage * pageSize, filteredUsers.length)}</span> trong tổng số <span className="font-semibold text-slate-900 font-mono">{filteredUsers.length}</span> tài khoản
                 </div>
 
-                <div className="flex items-center gap-1 sm:ml-auto">
+                <div className="flex items-center justify-center gap-1 md:absolute md:left-1/2 md:-translate-x-1/2 flex-wrap">
                   <button
                     type="button"
                     onClick={() => setCurrentPage(1)}
@@ -779,7 +779,7 @@ export const AdminDashboard: React.FC = () => {
                     title="Trang trước"
                   >
                     <span className="material-symbols-outlined text-[16px]">chevron_left</span>
-                    <span>Trước</span>
+                    <span className="hidden sm:inline">Trước</span>
                   </button>
 
                   <div className="flex items-center gap-1 px-1">
@@ -817,7 +817,7 @@ export const AdminDashboard: React.FC = () => {
                     className="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold transition-colors cursor-pointer flex items-center gap-0.5"
                     title="Trang sau"
                   >
-                    <span>Sau</span>
+                    <span className="hidden sm:inline">Sau</span>
                     <span className="material-symbols-outlined text-[16px]">chevron_right</span>
                   </button>
                   <button
@@ -830,6 +830,8 @@ export const AdminDashboard: React.FC = () => {
                     <span className="material-symbols-outlined text-[16px]">last_page</span>
                   </button>
                 </div>
+
+                <div className="hidden md:block w-28 pointer-events-none" aria-hidden="true" />
               </div>
             )}
           </div>
@@ -1067,13 +1069,13 @@ export const AdminDashboard: React.FC = () => {
             </table>
           </div>
 
-          {/* Pagination Controls */}
+          {/* Pagination Controls - Centered */}
           {logsTotalPages > 1 && (
-            <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs">
-              <span className="text-slate-500">
+            <div className="relative px-4 py-3.5 border-t border-slate-200 bg-slate-50 flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
+              <span className="text-slate-500 text-center md:text-left">
                 Hiển thị trang <strong>{logsPage + 1}</strong> / <strong>{logsTotalPages}</strong> (Tổng số: {logsTotalElements} nhật ký)
               </span>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center justify-center gap-1.5 md:absolute md:left-1/2 md:-translate-x-1/2">
                 <button
                   type="button"
                   disabled={logsPage === 0}
@@ -1122,6 +1124,8 @@ export const AdminDashboard: React.FC = () => {
                   Sau ›
                 </button>
               </div>
+
+              <div className="hidden md:block w-28 pointer-events-none" aria-hidden="true" />
             </div>
           )}
         </div>

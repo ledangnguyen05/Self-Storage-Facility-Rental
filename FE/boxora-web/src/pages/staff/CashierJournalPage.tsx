@@ -12,20 +12,20 @@ const localDateInput = (date: Date) => {
 }
 
 const paymentTypeLabel = (type: string) => ({
-  DEPOSIT: 'Deposit',
-  RENTAL_FEE: 'Rental',
-  RENEWAL_FEE: 'Renewal',
-  EXTRA_CHARGE: 'Extra charge',
-  BOOKING_PAYMENT: 'Booking payment'
+  DEPOSIT: 'Tiền cọc',
+  RENTAL_FEE: 'Tiền thuê',
+  RENEWAL_FEE: 'Gia hạn thuê',
+  EXTRA_CHARGE: 'Phụ phí',
+  BOOKING_PAYMENT: 'Thanh toán đơn đặt'
 }[type] || type)
 
 const paymentStatusLabel = (status: string) => ({
-  PAID: 'Paid',
-  PENDING: 'Pending',
-  FAILED: 'Failed',
-  EXPIRED: 'Expired',
-  REFUND_PENDING: 'Refund pending',
-  REFUNDED: 'Refunded'
+  PAID: 'Đã thanh toán',
+  PENDING: 'Chờ thanh toán',
+  FAILED: 'Thất bại',
+  EXPIRED: 'Hết hạn',
+  REFUND_PENDING: 'Chờ hoàn tiền',
+  REFUNDED: 'Đã hoàn tiền'
 }[status] || status)
 
 export const CashierJournalPage: React.FC = () => {
@@ -184,7 +184,7 @@ export const CashierJournalPage: React.FC = () => {
                 {currentFacilityName}
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-1">Selected-period payment ledger. Pending, failed, and refund statuses remain separate from cash received.</p>
+            <p className="text-xs text-slate-500 mt-1">Nhật ký thanh toán trong kỳ. Trạng thái chờ, thất bại và hoàn tiền được hạch toán tách biệt với thực nhận.</p>
           </div>
         </div>
 
@@ -225,8 +225,8 @@ export const CashierJournalPage: React.FC = () => {
             <div className="text-[11px] text-slate-500 mt-1">
               <span className="font-semibold text-emerald-600">
                 {payments.filter(p => p.status === 'PAID').length}
-              </span> paid transactions
-              <div>Booking payments: {isLoading ? "Loading..." : `${shiftBookingPayments.toLocaleString("vi-VN")} ₫`}</div>
+              </span> giao dịch đã thanh toán
+              <div>Thanh toán đơn đặt: {isLoading ? "Đang tải..." : `${shiftBookingPayments.toLocaleString("vi-VN")} ₫`}</div>
             </div>
           </div>
         </div>
@@ -278,7 +278,7 @@ export const CashierJournalPage: React.FC = () => {
         {/* Completed refunds: Tỷ lệ khớp lệnh */}
         <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Completed refunds</span>
+            <span>Tiền hoàn cọc đã chi trả</span>
             <div className="p-1.5 rounded-lg bg-purple-50 text-purple-600">
               <span className="material-symbols-outlined text-[18px]">task_alt</span>
             </div>
@@ -288,7 +288,7 @@ export const CashierJournalPage: React.FC = () => {
               {isLoading ? <span className="inline-block w-20 h-7 bg-slate-100 animate-pulse rounded"></span> : `${completedRefunds.toLocaleString('vi-VN')} ₫`}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Completed refunds; shown separately from cash collected
+              Tiền hoàn cọc đã chi trả; hiển thị tách biệt với thực thu
             </div>
           </div>
         </div>
@@ -314,11 +314,11 @@ export const CashierJournalPage: React.FC = () => {
             </div>
 
             <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
-              From
+              Từ ngày
               <input type="date" value={periodStart} max={periodEnd} onChange={(e) => setPeriodStart(e.target.value)} className="px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg" />
             </label>
             <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
-              To
+              Đến ngày
               <input type="date" value={periodEnd} min={periodStart} onChange={(e) => setPeriodEnd(e.target.value)} className="px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg" />
             </label>
             <select
@@ -327,9 +327,9 @@ export const CashierJournalPage: React.FC = () => {
               className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none cursor-pointer"
             >
               <option value="ALL">Tất cả loại giao dịch</option>
-              <option value="RENTAL">Rental, renewal &amp; extra charge</option>
-              <option value="DEPOSIT">Deposit</option>
-              <option value="BOOKING_PAYMENT">Booking payment</option>
+              <option value="RENTAL">Tiền thuê, gia hạn &amp; phụ phí</option>
+              <option value="DEPOSIT">Tiền cọc</option>
+              <option value="BOOKING_PAYMENT">Thanh toán đơn đặt</option>
             </select>
 
             <select
@@ -338,12 +338,12 @@ export const CashierJournalPage: React.FC = () => {
               className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none cursor-pointer"
             >
               <option value="ALL">Tất cả trạng thái</option>
-              <option value="PAID">Paid / received</option>
+              <option value="PAID">Đã thanh toán / Đã thu</option>
               <option value="PENDING">Đang chờ xử lý</option>
-              <option value="FAILED">Failed</option>
-              <option value="EXPIRED">Expired</option>
-              <option value="REFUND_PENDING">Refund pending</option>
-              <option value="REFUNDED">Refunded</option>
+              <option value="FAILED">Thất bại</option>
+              <option value="EXPIRED">Hết hạn</option>
+              <option value="REFUND_PENDING">Chờ hoàn tiền</option>
+              <option value="REFUNDED">Đã hoàn tiền</option>
             </select>
           </div>
         </div>
@@ -440,15 +440,15 @@ export const CashierJournalPage: React.FC = () => {
           </table>
         </div>
 
-        {/* Pagination Toolbar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
-          <div>
+        {/* Pagination Toolbar - Centered */}
+        <div className="relative flex flex-col md:flex-row items-center justify-between gap-3 pt-3.5 border-t border-slate-100 text-xs text-slate-500">
+          <div className="text-center md:text-left">
             Hiển thị <span className="font-semibold text-slate-800 font-mono">{totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1}</span> -{' '}
             <span className="font-semibold text-slate-800 font-mono">{Math.min(currentPage * pageSize, totalItems)}</span> trên tổng số{' '}
             <span className="font-semibold text-slate-800 font-mono">{totalItems}</span> giao dịch
           </div>
 
-          <div className="flex items-center gap-1.5 sm:ml-auto">
+          <div className="flex items-center justify-center gap-1.5 md:absolute md:left-1/2 md:-translate-x-1/2">
             <button
               type="button"
               disabled={currentPage <= 1}
@@ -499,6 +499,8 @@ export const CashierJournalPage: React.FC = () => {
               <span className="material-symbols-outlined text-[16px]">chevron_right</span>
             </button>
           </div>
+
+          <div className="hidden md:block w-28 pointer-events-none" aria-hidden="true" />
         </div>
       </div>
     </div>

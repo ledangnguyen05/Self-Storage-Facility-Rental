@@ -13,6 +13,10 @@ interface ShiftHandoverModalProps {
   onSuccess: (msg: string) => void
 }
 
+const formatDateLocal = (d: Date): string => {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export const ShiftHandoverModal: React.FC<ShiftHandoverModalProps> = ({
   isOpen,
   onClose,
@@ -73,7 +77,7 @@ export const ShiftHandoverModal: React.FC<ShiftHandoverModalProps> = ({
     try {
       await staffAssignmentService.createHandover({
         facilityId,
-        handoverDate: new Date().toISOString().split('T')[0],
+        handoverDate: formatDateLocal(new Date()),
         shift: currentShift,
         incomingStaffId: incomingStaffId || undefined,
         outgoingAssignmentId,

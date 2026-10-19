@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -25,12 +26,14 @@ public class RolePermissionController {
     private final RolePermissionService rolePermissionService;
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('ROLE_PERMISSION_VIEW') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<RolePermissionResponse>> getById(@PathVariable UUID id) {
         RolePermissionResponse response = rolePermissionService.getById(id);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('ROLE_PERMISSION_ASSIGN') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<RolePermissionResponse>> create
             (@Valid @RequestBody RolePermissionCreateRequest request) {
         RolePermissionResponse response = rolePermissionService.create(request);
@@ -39,6 +42,7 @@ public class RolePermissionController {
     }
 
     @PostMapping("/bulk-assign")
+    @PreAuthorize("hasAuthority('ROLE_PERMISSION_ASSIGN') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<List<RolePermissionResponse>>> bulkAssign(
             @Valid @RequestBody RolePermissionBulkAssignRequest request) {
         log.info("Bulk assigning permissions to role: {}", request.getRoleId());
@@ -47,6 +51,7 @@ public class RolePermissionController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('ROLE_PERMISSION_ASSIGN') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<RolePermissionResponse>> update
             (@PathVariable UUID id, @Valid @RequestBody RolePermissionUpdateRequest request) {
         RolePermissionResponse response = rolePermissionService.update(id, request);
@@ -54,12 +59,14 @@ public class RolePermissionController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('ROLE_PERMISSION_REVOKE') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         rolePermissionService.delete(id);
         return ResponseEntity.ok(ApiResponse.success("Revoked permission from role successfully.", null));
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('ROLE_PERMISSION_VIEW') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<PageResponse<RolePermissionResponse>>> getAll(
             @RequestParam(required = false) UUID roleId,
             @RequestParam(required = false) UUID permissionId,
@@ -76,6 +83,7 @@ public class RolePermissionController {
     }
 
     @GetMapping("/by-role/{roleId}")
+    @PreAuthorize("hasAuthority('ROLE_PERMISSION_VIEW') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<List<RolePermissionResponse>>> getByRoleId(@PathVariable UUID roleId) {
         List<RolePermissionResponse> response = rolePermissionService.getByRoleId(roleId);
         return ResponseEntity.ok(ApiResponse.success(response));

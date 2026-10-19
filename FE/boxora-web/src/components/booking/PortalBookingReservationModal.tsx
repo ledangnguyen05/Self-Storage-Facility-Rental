@@ -8,6 +8,7 @@ export interface PortalBookingUnitData {
     id: string
     unitCode: string
     name: string
+    facilityId?: string
     facilityName: string
     priceFormatted: string
     priceNumber: number
@@ -68,9 +69,42 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
     return d.toISOString().split('T')[0]
   })
   const [bookingCheckInTime, setBookingCheckInTime] = useState('09:00')
+  const [identityCardNumber, setIdentityCardNumber] = useState('')
+  const [identityCardType, setIdentityCardType] = useState<'CCCD' | 'PASSPORT'>('CCCD')
   const [bookingPolicyAccepted, setBookingPolicyAccepted] = useState(false)
   const [bookingWorkflow, setBookingWorkflow] = useState<BookingWorkflow>('HOLD_ONLY')
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false)
+
+  // Validation: Check-in appointment must be at least 5 hours from current time
+  const minAllowedDateTime = new Date(Date.now() + 5 * 60 * 60 * 1000)
+  const minAllowedYear = minAllowedDateTime.getFullYear()
+  const minAllowedMonth = String(minAllowedDateTime.getMonth() + 1).padStart(2, '0')
+  const minAllowedDay = String(minAllowedDateTime.getDate()).padStart(2, '0')
+  const minAllowedDateStr = `${minAllowedYear}-${minAllowedMonth}-${minAllowedDay}`
+  const minAllowedTimeStr = `${String(minAllowedDateTime.getHours()).padStart(2, '0')}:${String(minAllowedDateTime.getMinutes()).padStart(2, '0')}`
+
+  const selectedCheckInDateTime = (bookingCheckInDate && bookingCheckInTime)
+    ? new Date(`${bookingCheckInDate}T${bookingCheckInTime}:00`)
+    : null
+  const isCheckInTimeTooSoon = selectedCheckInDateTime
+    ? selectedCheckInDateTime.getTime() < minAllowedDateTime.getTime()
+    : false
+
+  const earliestAllowedFormatted = minAllowedDateTime.toLocaleString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+
+  const handleCheckInDateChange = (val: string) => {
+    setBookingCheckInDate(val)
+    if (bookingModalError) setBookingModalError(null)
+    if (val === minAllowedDateStr && bookingCheckInTime < minAllowedTimeStr) {
+      setBookingCheckInTime(minAllowedTimeStr)
+    }
+  }
 
   const formatDisplayDate = (d?: string) => {
     if (!d) return String.fromCharCode(8212)
@@ -292,8 +326,31 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
       return
     }
 
+    if (!identityCardNumber.trim()) {
+      setBookingModalError('Vui lòng nhập số CCCD hoặc Hộ chiếu (Passport) của bạn để hoàn tất đặt giữ chỗ kho.')
+      return
+    }
+
+    const trimmedId = identityCardNumber.trim().replace(/\s+/g, '')
+    if (identityCardType === 'CCCD') {
+      if (!/^\d{9}$|^\d{12}$/.test(trimmedId)) {
+        setBookingModalError('Số Căn cước công dân (CCCD) phải bao gồm đúng 12 chữ số (hoặc 9 số với CMND cũ).')
+        return
+      }
+    } else {
+      if (trimmedId.length < 6 || trimmedId.length > 20) {
+        setBookingModalError('Số Hộ chiếu (Passport) không hợp lệ (độ dài từ 6 đến 20 ký tự).')
+        return
+      }
+    }
+
     if (quoteError) {
       setBookingModalError('Không thể hoàn tất đơn đặt chỗ do chưa tải được báo giá chính thức từ máy chủ. Vui lòng bấm "Thử lại".')
+      return
+    }
+
+    if (isCheckInTimeTooSoon) {
+      setBookingModalError(`Lịch hẹn nhận kho phải cách thời điểm hiện tại ít nhất 5 tiếng để cơ sở kịp chuẩn bị kho (sớm nhất có thể chọn: ${earliestAllowedFormatted}).`)
       return
     }
 
@@ -316,6 +373,8 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
             signingMethod: 'ONLINE',
             checkInTime: bookingCheckInTime || '09:00',
             expectedCheckInAt,
+            identityCardNumber: trimmedId,
+            identityCardType: identityCardType,
           })
           if (!res?.id) {
             throw new Error('Hệ thống không trả về mã đơn đặt kho hợp lệ.')
@@ -366,6 +425,8 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
           signingMethod: 'IN_PERSON',
           checkInTime: bookingCheckInTime || '09:00',
           expectedCheckInAt,
+          identityCardNumber: trimmedId,
+          identityCardType: identityCardType,
         })
         if (!res?.id) {
           throw new Error('Hệ thống không trả về thông tin xác nhận.')
@@ -653,32 +714,115 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
 
                     {/* Ngày & Giờ check-in dự kiến */}
                     <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5">
-                      <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-                        Lịch hẹn check-in dự kiến
-                      </label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                          Lịch hẹn check-in dự kiến
+                        </label>
+                        <span className="text-[10px] text-slate-500 font-medium">Kho mở 24/7 · Tối thiểu trước 5h</span>
+                      </div>
                       <div className="grid grid-cols-5 gap-2">
                         <input
                           type="date"
-                          min={new Date().toISOString().split('T')[0]}
+                          min={minAllowedDateStr}
                           max={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
                           value={bookingCheckInDate}
-                          onChange={(e) => setBookingCheckInDate(e.target.value)}
+                          onChange={(e) => handleCheckInDateChange(e.target.value)}
                           className="col-span-3 h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
                         />
-                        <select
+                        <input
+                          type="time"
+                          required
                           value={bookingCheckInTime}
-                          onChange={(e) => setBookingCheckInTime(e.target.value)}
-                          className="col-span-2 h-9 px-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500 cursor-pointer"
-                        >
-                          <option value="09:00">09:00</option>
-                          <option value="13:00">13:00</option>
-                          <option value="15:00">15:00</option>
-                        </select>
+                          onChange={(e) => {
+                            setBookingCheckInTime(e.target.value)
+                            if (bookingModalError) setBookingModalError(null)
+                          }}
+                          className={`col-span-2 h-9 px-2 bg-white border rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 ${
+                            isCheckInTimeTooSoon
+                              ? 'border-amber-400 bg-amber-50/40 focus:ring-amber-500/20 focus:border-amber-500 text-amber-900'
+                              : 'border-slate-200 focus:ring-blue-500/20 focus:border-blue-500'
+                          }`}
+                        />
                       </div>
+
+                      {/* Warning banner when check-in is sooner than 5 hours */}
+                      {isCheckInTimeTooSoon && (
+                        <div className="p-2.5 bg-amber-50/90 border border-amber-300 rounded-lg text-amber-900 text-xs flex items-start gap-2 animate-in fade-in">
+                          <span className="material-symbols-outlined text-base text-amber-600 shrink-0 mt-0.5">warning</span>
+                          <div className="space-y-0.5">
+                            <p className="font-bold text-amber-900 text-[11px]">Giờ hẹn nhận kho phải cách hiện tại tối thiểu 5 tiếng</p>
+                            <p className="text-[10px] text-amber-800 leading-relaxed">
+                              Để cơ sở kịp chuẩn bị kho và mã PIN SmartLock, vui lòng chọn từ <strong>{earliestAllowedFormatted}</strong> trở đi.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
                       <p className="text-[10px] text-slate-500 leading-normal">
                         Ngày hẹn nhận kho không mặc nhiên là ngày bắt đầu thuê chính thức.
                       </p>
                     </div>
+                  </div>
+
+                  {/* Nhập số CCCD / Hộ chiếu (Passport) */}
+                  <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <label className="text-[11px] font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-blue-600 text-[16px]">badge</span>
+                        Số CCCD / Hộ chiếu (Passport)
+                        <span className="text-rose-500 font-bold">*</span>
+                      </label>
+                      <div className="flex items-center gap-1 text-[11px] bg-slate-200/70 p-0.5 rounded-lg">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIdentityCardType('CCCD')
+                            setBookingModalError(null)
+                          }}
+                          className={`px-2.5 py-0.5 rounded-md font-medium transition cursor-pointer ${
+                            identityCardType === 'CCCD'
+                              ? 'bg-white text-blue-700 shadow-2xs font-bold'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          CCCD
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIdentityCardType('PASSPORT')
+                            setBookingModalError(null)
+                          }}
+                          className={`px-2.5 py-0.5 rounded-md font-medium transition cursor-pointer ${
+                            identityCardType === 'PASSPORT'
+                              ? 'bg-white text-blue-700 shadow-2xs font-bold'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Hộ chiếu
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={identityCardNumber}
+                        onChange={(e) => {
+                          setIdentityCardNumber(e.target.value)
+                          if (e.target.value.trim()) setBookingModalError(null)
+                        }}
+                        placeholder={
+                          identityCardType === 'CCCD'
+                            ? 'Nhập 12 số Căn cước công dân (hoặc 9 số CMND)...'
+                            : 'Nhập mã số hộ chiếu (ví dụ: B1234567)...'
+                        }
+                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-normal">
+                      Thông tin dùng để đối soát danh tính khách hàng trực tiếp khi nhận bàn giao kho và xác lập hợp đồng thuê hợp pháp.
+                    </p>
                   </div>
 
                   {/* Ngày kết thúc thuê dự kiến */}
@@ -956,9 +1100,9 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
                   <button
                     type="button"
                     onClick={handleConfirmBooking}
-                    disabled={isSubmittingBooking || !bookingPolicyAccepted || isLoadingQuote || !!quoteError}
+                    disabled={isSubmittingBooking || !bookingPolicyAccepted || isLoadingQuote || !!quoteError || isCheckInTimeTooSoon}
                     className={`flex-1 py-2.5 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                      !bookingPolicyAccepted || isLoadingQuote || !!quoteError
+                      !bookingPolicyAccepted || isLoadingQuote || !!quoteError || isCheckInTimeTooSoon
                         ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
                         : bookingWorkflow === 'HOLD_ONLY'
                         ? 'bg-slate-900 hover:bg-slate-800'

@@ -159,6 +159,8 @@ export interface Booking {
   assignedStaffId?: string | null
   assignedStaffName?: string | null
   staffAssignmentNotes?: string | null
+  identityCardNumber?: string | null
+  identityCardType?: string | null
 }
 
 export interface BookingCancellationPreview {
@@ -274,6 +276,8 @@ export interface RentalContract {
   customerEmail: string
   customerName?: string
   customerPhone?: string
+  identityCardNumber?: string | null
+  identityCardType?: string | null
   bookingId?: string
   storageUnitId?: string
   facilityId?: string

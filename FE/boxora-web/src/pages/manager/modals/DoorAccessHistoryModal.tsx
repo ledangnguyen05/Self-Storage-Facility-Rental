@@ -136,8 +136,10 @@ export const DoorAccessHistoryModal: React.FC<DoorAccessHistoryModalProps> = ({
             <button
               type="button"
               onClick={() => setFilterPeriod('7D')}
-              className={`px-3 py-1 rounded-md text-xs font-semibold cursor-pointer transition-all ${
-                filterPeriod === '7D' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              className={`px-3 py-1 rounded-md text-xs cursor-pointer transition-all ${
+                filterPeriod === '7D'
+                  ? 'bg-white text-blue-700 font-bold shadow-md shadow-slate-900/10 border border-slate-200/80 ring-1 ring-blue-500/20'
+                  : 'text-slate-600 hover:text-slate-900 font-semibold'
               }`}
             >
               7 ngày qua
@@ -145,8 +147,10 @@ export const DoorAccessHistoryModal: React.FC<DoorAccessHistoryModalProps> = ({
             <button
               type="button"
               onClick={() => setFilterPeriod('30D')}
-              className={`px-3 py-1 rounded-md text-xs font-semibold cursor-pointer transition-all ${
-                filterPeriod === '30D' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              className={`px-3 py-1 rounded-md text-xs cursor-pointer transition-all ${
+                filterPeriod === '30D'
+                  ? 'bg-white text-blue-700 font-bold shadow-md shadow-slate-900/10 border border-slate-200/80 ring-1 ring-blue-500/20'
+                  : 'text-slate-600 hover:text-slate-900 font-semibold'
               }`}
             >
               30 ngày qua
@@ -154,8 +158,10 @@ export const DoorAccessHistoryModal: React.FC<DoorAccessHistoryModalProps> = ({
             <button
               type="button"
               onClick={() => setFilterPeriod('ALL')}
-              className={`px-3 py-1 rounded-md text-xs font-semibold cursor-pointer transition-all ${
-                filterPeriod === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              className={`px-3 py-1 rounded-md text-xs cursor-pointer transition-all ${
+                filterPeriod === 'ALL'
+                  ? 'bg-white text-blue-700 font-bold shadow-md shadow-slate-900/10 border border-slate-200/80 ring-1 ring-blue-500/20'
+                  : 'text-slate-600 hover:text-slate-900 font-semibold'
               }`}
             >
               Toàn bộ lịch sử

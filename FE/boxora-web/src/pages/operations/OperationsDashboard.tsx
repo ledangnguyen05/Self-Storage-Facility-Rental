@@ -358,7 +358,13 @@ export const OperationsDashboard: React.FC = () => {
                   setIsDatePickerOpen(!isDatePickerOpen)
                 }}
                 title={tr('Bấm để chọn khoảng ngày báo cáo doanh thu', 'Choose a revenue reporting date range')}
-                className="flex items-center bg-slate-50 hover:bg-slate-100 text-left px-3 py-1.5 rounded-lg border border-slate-200 hover:border-slate-300 transition-all shadow-xs cursor-pointer group"
+                className={`flex items-center text-left px-3 py-1.5 rounded-lg border transition-all cursor-pointer group ${
+                  isDatePickerOpen
+                    ? 'bg-blue-50/70 border-blue-400 shadow-md shadow-blue-500/15 ring-2 ring-blue-400/20'
+                    : (fromDate || toDate)
+                    ? 'bg-blue-50/40 border-blue-300 shadow-sm'
+                    : 'bg-slate-50 hover:bg-slate-100 border-slate-200 hover:border-slate-300 shadow-xs'
+                }`}
               >
                 <span className="material-symbols-outlined text-blue-600 group-hover:scale-110 transition-transform text-[20px] mr-2">
                   calendar_month
@@ -377,114 +383,120 @@ export const OperationsDashboard: React.FC = () => {
               </button>
 
               {/* Date Range Picker Popover */}
-              {isDatePickerOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setIsDatePickerOpen(false)}
-                  />
-                  <div className="absolute right-0 top-full mt-2 z-50 w-88 max-w-[90vw] bg-white rounded-xl border border-slate-200 shadow-2xl p-4 animate-in fade-in zoom-in-95 duration-150">
-                    <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-100">
-                      <div className="flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-blue-600 text-[18px]">date_range</span>
-                        <h4 className="text-xs font-bold text-slate-900">{tr('Chọn Kỳ Báo Cáo', 'Choose a report period')}</h4>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setIsDatePickerOpen(false)}
-                        className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">close</span>
-                      </button>
-                    </div>
+              {isDatePickerOpen && (() => {
+                const now = new Date()
+                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+                const thisMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+                const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+                const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0)
+                const lastMonthStart = `${firstDayLastMonth.getFullYear()}-${String(firstDayLastMonth.getMonth() + 1).padStart(2, '0')}-01`
+                const lastMonthEnd = `${lastDayLastMonth.getFullYear()}-${String(lastDayLastMonth.getMonth() + 1).padStart(2, '0')}-${String(lastDayLastMonth.getDate()).padStart(2, '0')}`
+                const d7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+                const last7Start = `${d7.getFullYear()}-${String(d7.getMonth() + 1).padStart(2, '0')}-${String(d7.getDate()).padStart(2, '0')}`
+                const d30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+                const last30Start = `${d30.getFullYear()}-${String(d30.getMonth() + 1).padStart(2, '0')}-${String(d30.getDate()).padStart(2, '0')}`
+                const thisYearStart = `${now.getFullYear()}-01-01`
 
-                    {/* Quick Presets */}
-                    <div className="mb-3">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
-                        {tr('Chọn nhanh', 'Quick presets')}
-                      </span>
-                      <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                const quickPresets = [
+                  {
+                    id: 'ALL',
+                    label: tr('Toàn bộ', 'All time'),
+                    isSelected: !tempFromDate && !tempToDate,
+                    apply: () => {
+                      setTempFromDate('')
+                      setTempToDate('')
+                    },
+                  },
+                  {
+                    id: 'THIS_MONTH',
+                    label: tr('Tháng này', 'This month'),
+                    isSelected: tempFromDate === thisMonthStart && tempToDate === todayStr,
+                    apply: () => {
+                      setTempFromDate(thisMonthStart)
+                      setTempToDate(todayStr)
+                    },
+                  },
+                  {
+                    id: 'LAST_MONTH',
+                    label: tr('Tháng trước', 'Last month'),
+                    isSelected: tempFromDate === lastMonthStart && tempToDate === lastMonthEnd,
+                    apply: () => {
+                      setTempFromDate(lastMonthStart)
+                      setTempToDate(lastMonthEnd)
+                    },
+                  },
+                  {
+                    id: 'LAST_7_DAYS',
+                    label: tr('7 ngày qua', 'Last 7 days'),
+                    isSelected: tempFromDate === last7Start && tempToDate === todayStr,
+                    apply: () => {
+                      setTempFromDate(last7Start)
+                      setTempToDate(todayStr)
+                    },
+                  },
+                  {
+                    id: 'LAST_30_DAYS',
+                    label: tr('30 ngày qua', 'Last 30 days'),
+                    isSelected: tempFromDate === last30Start && tempToDate === todayStr,
+                    apply: () => {
+                      setTempFromDate(last30Start)
+                      setTempToDate(todayStr)
+                    },
+                  },
+                  {
+                    id: 'THIS_YEAR',
+                    label: tr('Năm nay', 'This year'),
+                    isSelected: tempFromDate === thisYearStart && tempToDate === todayStr,
+                    apply: () => {
+                      setTempFromDate(thisYearStart)
+                      setTempToDate(todayStr)
+                    },
+                  },
+                ]
+
+                return (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setIsDatePickerOpen(false)}
+                    />
+                    <div className="absolute right-0 top-full mt-2 z-50 w-88 max-w-[90vw] bg-white rounded-xl border border-slate-200 shadow-2xl p-4 animate-in fade-in zoom-in-95 duration-150">
+                      <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-100">
+                        <div className="flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-blue-600 text-[18px]">date_range</span>
+                          <h4 className="text-xs font-bold text-slate-900">{tr('Chọn Kỳ Báo Cáo', 'Choose a report period')}</h4>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            setTempFromDate('')
-                            setTempToDate('')
-                          }}
-                          className={`px-2 py-1 rounded-md text-xs font-semibold border cursor-pointer text-center ${!tempFromDate && !tempToDate ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'}`}
+                          onClick={() => setIsDatePickerOpen(false)}
+                          className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
                         >
-                          {tr('Toàn bộ', 'All time')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const now = new Date()
-                            const f = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-                            const t = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-                            setTempFromDate(f)
-                            setTempToDate(t)
-                          }}
-                          className="px-2 py-1 rounded-md bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold border border-slate-200 cursor-pointer text-center"
-                        >
-                          {tr('Tháng này', 'This month')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const now = new Date()
-                            const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-                            const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0)
-                            const f = `${firstDayLastMonth.getFullYear()}-${String(firstDayLastMonth.getMonth() + 1).padStart(2, '0')}-01`
-                            const t = `${lastDayLastMonth.getFullYear()}-${String(lastDayLastMonth.getMonth() + 1).padStart(2, '0')}-${String(lastDayLastMonth.getDate()).padStart(2, '0')}`
-                            setTempFromDate(f)
-                            setTempToDate(t)
-                          }}
-                          className="px-2 py-1 rounded-md bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold border border-slate-200 cursor-pointer text-center"
-                        >
-                          {tr('Tháng trước', 'Last month')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const now = new Date()
-                            const d7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-                            const f = `${d7.getFullYear()}-${String(d7.getMonth() + 1).padStart(2, '0')}-${String(d7.getDate()).padStart(2, '0')}`
-                            const t = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-                            setTempFromDate(f)
-                            setTempToDate(t)
-                          }}
-                          className="px-2 py-1 rounded-md bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold border border-slate-200 cursor-pointer text-center"
-                        >
-                          {tr('7 ngày qua', 'Last 7 days')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const now = new Date()
-                            const d30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-                            const f = `${d30.getFullYear()}-${String(d30.getMonth() + 1).padStart(2, '0')}-${String(d30.getDate()).padStart(2, '0')}`
-                            const t = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-                            setTempFromDate(f)
-                            setTempToDate(t)
-                          }}
-                          className="px-2 py-1 rounded-md bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold border border-slate-200 cursor-pointer text-center"
-                        >
-                          {tr('30 ngày qua', 'Last 30 days')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const now = new Date()
-                            const f = `${now.getFullYear()}-01-01`
-                            const t = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-                            setTempFromDate(f)
-                            setTempToDate(t)
-                          }}
-                          className="px-2 py-1 rounded-md bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold border border-slate-200 cursor-pointer text-center"
-                        >
-                          {tr('Năm nay', 'This year')}
+                          <span className="material-symbols-outlined text-[18px]">close</span>
                         </button>
                       </div>
-                    </div>
+
+                      {/* Quick Presets */}
+                      <div className="mb-3">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                          {tr('Chọn nhanh', 'Quick presets')}
+                        </span>
+                        <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                          {quickPresets.map(preset => (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              onClick={preset.apply}
+                              className={`px-2 py-1.5 rounded-lg text-xs font-semibold border cursor-pointer text-center transition-all ${
+                                preset.isSelected
+                                  ? 'bg-blue-50 text-blue-700 border-blue-400 font-bold shadow-md shadow-blue-500/25 ring-2 ring-blue-400/30'
+                                  : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
 
                     {/* Custom Date Pickers */}
                     <div className="space-y-2 mb-4 text-xs">
@@ -541,7 +553,7 @@ export const OperationsDashboard: React.FC = () => {
                     </div>
                   </div>
                 </>
-              )}
+              )})()}
             </div>
 
 
@@ -903,7 +915,7 @@ export const OperationsDashboard: React.FC = () => {
               <span className="material-symbols-outlined text-orange-600 text-[24px]">view_list</span>
               <h2 className="text-base font-bold text-slate-900">{tr('So sánh các cơ sở', 'Facility comparison')}</h2>
             </div>
-            <p className="text-xs text-slate-500">{tr('Công suất hiện tại và doanh thu trong kỳ báo cáo. Dấu “—” là chưa có số liệu.', 'Current capacity and revenue for the report period. “—” means no data.')}</p>
+            <p className="text-xs text-slate-500">{tr('Công suất hiện tại và doanh thu trong kỳ báo cáo.', 'Current capacity and revenue for the report period.')}</p>
           </div>
           <div className="flex items-center gap-2">
             <span className="hidden text-xs text-slate-500 sm:inline">{tr('Sắp xếp:', 'Sort:')}</span>

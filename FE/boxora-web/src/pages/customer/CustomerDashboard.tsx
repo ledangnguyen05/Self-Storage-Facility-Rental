@@ -12,7 +12,7 @@ import { BookingCheckoutModal } from '../../components/modals/BookingCheckoutMod
 import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
 import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
 import { ContractOtpModal } from '../../components/modals/ContractOtpModal'
-import { CustomerPolicyModal } from '../../components/modals/CustomerPolicyModal'
+import { CustomerPolicyModal, PolicyTab } from '../../components/modals/CustomerPolicyModal'
 import { BookingCancelModal } from '../../components/modals/BookingCancelModal'
 import { BookingRescheduleModal } from '../../components/modals/BookingRescheduleModal'
 import { BookingRescheduleHistorySection } from '../../components/booking/BookingRescheduleHistorySection'
@@ -65,6 +65,8 @@ export const CustomerDashboard: React.FC = () => {
   const [availableUnits, setAvailableUnits] = useState<StorageUnit[]>([])
   const [allUnits, setAllUnits] = useState<StorageUnit[]>([])
   const [isCustomerPolicyModalOpen, setIsCustomerPolicyModalOpen] = useState<boolean>(false)
+  const [customerPolicyModalTab, setCustomerPolicyModalTab] = useState<PolicyTab>('cancellation')
+  const [customerPolicyFacility, setCustomerPolicyFacility] = useState<{ id?: string; name?: string } | null>(null)
   const [loadingUnits, setLoadingUnits] = useState<boolean>(true)
   const [bookingRequests, setBookingRequests] = useState<Booking[]>([])
   const [requestToPay, setRequestToPay] = useState<Booking | null>(null)
@@ -204,11 +206,30 @@ export const CustomerDashboard: React.FC = () => {
     return customerPayments.filter(p => p.status === 'PAID' || p.status === 'SUCCESS').reduce((sum, p) => sum + (p.amount || 0), 0)
   }, [customerPayments])
 
+  // Helper: Hiển thị đúng số tiền cọc lưu ký theo dữ liệu CSDL và chính sách Boxora
+  const getContractDepositHeld = useCallback((c: any) => {
+    if (Number(c?.depositHeld || 0) > 0) return Number(c.depositHeld)
+
+    const matchingPayment = customerPayments.find(
+      (p) => (p.bookingId === c?.bookingId || (p.unitCode && c?.unitCode && p.unitCode.trim().toUpperCase() === c.unitCode.trim().toUpperCase()))
+        && p.paymentType === 'DEPOSIT' && (p.status === 'PAID' || p.status === 'SUCCESS')
+    )
+    if (matchingPayment?.amount && Number(matchingPayment.amount) > 0) return Number(matchingPayment.amount)
+
+    const matchingBooking = customerBookings.find(
+      (b) => b.id === c?.bookingId || (b.unitCode && c?.unitCode && b.unitCode.trim().toUpperCase() === c.unitCode.trim().toUpperCase())
+    )
+    if (matchingBooking?.depositPaid && Number(matchingBooking.depositPaid) > 0) return Number(matchingBooking.depositPaid)
+    if (matchingBooking?.depositAmount && Number(matchingBooking.depositAmount) > 0) return Number(matchingBooking.depositAmount)
+
+    return Number(c?.monthlyFee || 0)
+  }, [customerPayments, customerBookings])
+
   const totalDepositsHeld = useMemo(() => {
     const fromPayments = customerPayments.filter(p => (p.status === 'PAID' || p.status === 'SUCCESS') && p.paymentType === 'DEPOSIT').reduce((sum, p) => sum + (p.amount || 0), 0)
-    const fromContracts = contracts.reduce((sum, c) => sum + (c.depositHeld || 0), 0)
+    const fromContracts = contracts.reduce((sum, c) => sum + getContractDepositHeld(c), 0)
     return fromPayments > 0 ? fromPayments : fromContracts
-  }, [customerPayments, contracts])
+  }, [customerPayments, contracts, getContractDepositHeld])
 
   const monthlyRentalTotal = useMemo(() => {
     return activeContracts.reduce((sum, c) => sum + (c.monthlyFee || 0), 0)
@@ -454,11 +475,7 @@ export const CustomerDashboard: React.FC = () => {
       scenario = 'ACTIVE'
     } else if (isPaid && isContractSigned) {
       scenario = 'PAID_SIGNED'
-    } else if (
-      (isPaid && !isContractSigned) ||
-      b.status === 'PENDING_SIGNATURE' ||
-      matchingContract?.status === 'PENDING_SIGNATURE'
-    ) {
+    } else if (isPaid && !isContractSigned) {
       scenario = 'PAID_UNSIGNED'
     } else {
       scenario = 'UNPAID_IN_PERSON'
@@ -731,10 +748,7 @@ export const CustomerDashboard: React.FC = () => {
       if (bookingStatusFilter !== 'ALL') {
         if (bookingStatusFilter === 'PENDING_SIGNATURE') {
           const info = getBookingNoticeInfo(b)
-          const isPendingSign =
-            info.scenario === 'PAID_UNSIGNED' ||
-            b.status === 'PENDING_SIGNATURE' ||
-            info.matchingContract?.status === 'PENDING_SIGNATURE'
+          const isPendingSign = info.scenario === 'PAID_UNSIGNED'
           if (!isPendingSign) return false
         } else if (b.status !== bookingStatusFilter) {
           return false
@@ -915,6 +929,19 @@ export const CustomerDashboard: React.FC = () => {
     })
     return Array.from(floors).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
   }, [availableUnits, filterFacility])
+
+  const handleOpenPolicyModal = (tab: PolicyTab = 'cancellation', facility?: { id?: string; name?: string }) => {
+    setCustomerPolicyModalTab(tab)
+    if (facility) {
+      setCustomerPolicyFacility(facility)
+    } else if (filterFacility !== 'all') {
+      const matched = facilities.find(f => f.id === filterFacility)
+      setCustomerPolicyFacility(matched ? { id: matched.id, name: matched.name } : null)
+    } else {
+      setCustomerPolicyFacility(facilities[0] ? { id: facilities[0].id, name: facilities[0].name } : null)
+    }
+    setIsCustomerPolicyModalOpen(true)
+  }
 
   const handleCopy = (id: string, pin: string) => {
     if (navigator.clipboard) {
@@ -1193,10 +1220,6 @@ export const CustomerDashboard: React.FC = () => {
   }
 
   const handlePayBookingVNPay = (b: Booking) => {
-    if (b.signingMethod === 'ONLINE') {
-      navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}`)
-      return
-    }
     const info = getBookingNoticeInfo(b)
     if (info.isPaid) {
       if (!info.isContractSigned) {
@@ -1247,10 +1270,6 @@ export const CustomerDashboard: React.FC = () => {
   }
 
   const handleSignContractForBooking = async (b: Booking, existingContract?: RentalContract) => {
-    if (b.signingMethod === 'ONLINE') {
-      navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}`)
-      return
-    }
     if (existingContract) {
       handleSignContractNow(existingContract)
       return
@@ -1408,84 +1427,96 @@ export const CustomerDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Main Tab Buttons */}
-      <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl w-fit border border-slate-200 shadow-sm overflow-x-auto max-w-full">
-        <button
-          onClick={() => handleTabChange('my-units')}
-          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'my-units'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <span>Kho của tôi</span>
-          <span className="px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold">
-            {activeContracts.length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => handleTabChange('bookings')}
-          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'bookings'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <span>Đơn đặt chỗ</span>
-          <div className="flex items-center gap-1">
-            <span className={`px-1.5 py-0.5 rounded-full text-white text-[10px] font-bold ${
-              pendingReservations.length > 0 ? 'bg-amber-600' : 'bg-slate-700'
-            }`}>
-              {customerBookings.length}
+      {/* 2. Main Tab Buttons & Action Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl w-fit border border-slate-200 shadow-sm overflow-x-auto max-w-full">
+          <button
+            onClick={() => handleTabChange('my-units')}
+            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'my-units'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <span>Kho của tôi</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+              {activeContracts.length}
             </span>
-            {pendingReservations.length > 0 && (
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+          </button>
+
+          <button
+            onClick={() => handleTabChange('bookings')}
+            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'bookings'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <span>Đơn đặt chỗ</span>
+            <div className="flex items-center gap-1">
+              <span className={`px-1.5 py-0.5 rounded-full text-white text-[10px] font-bold ${
+                pendingReservations.length > 0 ? 'bg-amber-600' : 'bg-slate-700'
+              }`}>
+                {customerBookings.length}
+              </span>
+              {pendingReservations.length > 0 && (
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+              )}
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleTabChange('explore')}
+            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'explore'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <span>Tìm &amp; thuê kho mới</span>
+          </button>
+
+          <button
+            onClick={() => handleTabChange('contracts')}
+            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'contracts'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <span>Hợp đồng &amp; hóa đơn</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-slate-700 text-white text-[10px] font-bold">
+              {contracts.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => handleTabChange('support')}
+            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'support'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <span>Hỗ trợ &amp; sự cố</span>
+            {customerTickets.length > 0 && (
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                activeTab === 'support' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {customerTickets.length}
+              </span>
             )}
-          </div>
-        </button>
+          </button>
+        </div>
 
         <button
-          onClick={() => handleTabChange('explore')}
-          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'explore'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
+          type="button"
+          onClick={() => handleOpenPolicyModal('cancellation')}
+          className="self-start sm:self-center px-3.5 py-2 bg-white hover:bg-cyan-50/80 text-slate-700 hover:text-cyan-700 text-xs font-semibold rounded-xl flex items-center gap-2 transition-all cursor-pointer border border-slate-200 hover:border-cyan-300 shadow-2xs whitespace-nowrap shrink-0"
+          title="Xem quy định đặt cọc, hủy giữ chỗ và thời gian hoàn tiền cọc"
         >
-          <span>Tìm &amp; thuê kho mới</span>
-        </button>
-
-        <button
-          onClick={() => handleTabChange('contracts')}
-          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'contracts'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <span>Hợp đồng &amp; hóa đơn</span>
-          <span className="px-1.5 py-0.5 rounded-full bg-slate-700 text-white text-[10px] font-bold">
-            {contracts.length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => handleTabChange('support')}
-          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'support'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <span>Hỗ trợ &amp; sự cố</span>
-          {customerTickets.length > 0 && (
-            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-              activeTab === 'support' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-700'
-            }`}>
-              {customerTickets.length}
-            </span>
-          )}
+          <span className="material-symbols-outlined text-[18px] text-cyan-600">policy</span>
+          <span>Chính sách đặt cọc &amp; hủy</span>
         </button>
       </div>
 
@@ -1926,8 +1957,8 @@ export const CustomerDashboard: React.FC = () => {
                         </div>
                         <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
                           <span className="text-[11px] text-slate-500 block font-normal">Tiền cọc lưu ký</span>
-                          <span className="text-sm font-semibold text-slate-900">
-                            {Number(c.depositHeld || 0).toLocaleString('vi-VN')} ₫
+                          <span className="text-sm font-semibold text-slate-900 font-mono">
+                            {getContractDepositHeld(c).toLocaleString('vi-VN')} ₫
                           </span>
                         </div>
                       </div>
@@ -1980,12 +2011,12 @@ export const CustomerDashboard: React.FC = () => {
               <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
                 <button
                   type="button"
-                  onClick={() => setIsCustomerPolicyModalOpen(true)}
-                  className="px-3 py-2 bg-cyan-50 hover:bg-cyan-100 text-cyan-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer border border-cyan-200"
-                  title="Xem quy định đặt cọc, hủy đặt kho và SLA hoàn tiền"
+                  onClick={() => handleOpenPolicyModal('cancellation')}
+                  className="px-3 py-2 bg-white hover:bg-cyan-50/80 text-slate-700 hover:text-cyan-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200 hover:border-cyan-300 shadow-2xs"
+                  title="Xem quy định đặt cọc, hủy giữ chỗ và thời gian hoàn tiền cọc"
                 >
-                  <span className="material-symbols-outlined text-[16px]">policy</span>
-                  <span>Chính sách cọc &amp; hủy</span>
+                  <span className="material-symbols-outlined text-[17px] text-cyan-600">policy</span>
+                  <span>Chính sách đặt cọc &amp; hủy</span>
                 </button>
                 <button
                   type="button"
@@ -2127,11 +2158,7 @@ export const CustomerDashboard: React.FC = () => {
                     label: 'Chờ ký', 
                     count: customerBookings.filter(b => {
                       const info = getBookingNoticeInfo(b)
-                      return (
-                        info.scenario === 'PAID_UNSIGNED' ||
-                        b.status === 'PENDING_SIGNATURE' ||
-                        info.matchingContract?.status === 'PENDING_SIGNATURE'
-                      )
+                      return info.scenario === 'PAID_UNSIGNED'
                     }).length 
                   },
                   { key: 'ACTIVE', label: 'Đang dùng', count: customerBookings.filter(b => b.status === 'ACTIVE').length },
@@ -2702,13 +2729,33 @@ export const CustomerDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="p-5 pt-0">
+                    <div className="p-5 pt-0 flex flex-col gap-2.5">
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+                        <span className="flex items-center gap-1 text-slate-600 font-medium">
+                          <span className="material-symbols-outlined text-[14px] text-emerald-600">verified</span>
+                          Bảo lưu cọc 100%
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleOpenPolicyModal('cancellation', { id: unit.facilityId, name: unit.facilityName })
+                          }}
+                          className="inline-flex items-center gap-1 text-cyan-700 hover:text-cyan-800 font-semibold hover:underline cursor-pointer"
+                          title="Xem quy định đặt cọc, hủy giữ chỗ & hoàn tiền cọc của cơ sở này"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">policy</span>
+                          <span>Chính sách đặt cọc &amp; hủy</span>
+                        </button>
+                      </div>
+
                       <button
                         onClick={() => {
                           setSelectedBookingUnit({ 
                             id: unit.id, 
                             unitCode: unit.unitCode,
                             name: unit.unitTypeName || `Kho Tiêu Chuẩn #${unit.unitCode}`, 
+                            facilityId: unit.facilityId,
                             facilityName: unit.facilityName || 'Hệ thống kho Boxora',
                             priceFormatted: priceFormatted,
                             priceNumber: Number(unit.pricePerMonth || 1250000),
@@ -2837,7 +2884,7 @@ export const CustomerDashboard: React.FC = () => {
               <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
-                  onClick={() => setIsCustomerPolicyModalOpen(true)}
+                  onClick={() => handleOpenPolicyModal('rental')}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-700 text-xs font-bold border border-cyan-200 transition cursor-pointer"
                   title="Xem các quy định về hợp đồng, thanh toán và hoàn trả tiền cọc"
                 >
@@ -3027,7 +3074,7 @@ export const CustomerDashboard: React.FC = () => {
                           {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫
                         </td>
                         <td className="py-3.5 px-4 font-data-tabular text-slate-700 text-right font-bold">
-                          {Number(c.depositHeld || 0).toLocaleString('vi-VN')} ₫
+                          {getContractDepositHeld(c).toLocaleString('vi-VN')} ₫
                         </td>
                         <td className="py-3.5 px-4 text-center">
                           <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${
@@ -4631,8 +4678,9 @@ export const CustomerDashboard: React.FC = () => {
       <CustomerPolicyModal
         isOpen={isCustomerPolicyModalOpen}
         onClose={() => setIsCustomerPolicyModalOpen(false)}
-        facilityId={facilities[0]?.id}
-        facilityName={facilities[0]?.name}
+        facilityId={customerPolicyFacility?.id || (selectedBookingUnit ? facilities.find(f => f.name === selectedBookingUnit.facilityName || f.id === selectedBookingUnit.facilityId)?.id : undefined) || facilities[0]?.id}
+        facilityName={customerPolicyFacility?.name || selectedBookingUnit?.facilityName || facilities[0]?.name}
+        initialTab={customerPolicyModalTab}
       />
 
       {/* Booking Cancellation Modal (3 Refund Milestones & Unit Release) */}

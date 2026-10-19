@@ -24,6 +24,8 @@ public class RentalContractResponse {
     private String customerName;
     private String customerEmail;
     private String customerPhone;
+    private String identityCardNumber;
+    private String identityCardType;
 
     private UUID unitId;
     private String unitCode;

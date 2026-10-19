@@ -21,17 +21,20 @@ import com.boxora.security.FacilityAccessGuard;
 import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
 import com.boxora.service.ShiftHandoverService;
+import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -175,17 +178,47 @@ public class ShiftHandoverServiceImpl implements ShiftHandoverService {
             UUID facilityId,
             LocalDate date,
             ShiftHandoverStatus status,
+            LocalDate fromDate,
+            LocalDate toDate,
             int page,
             int size
     ) {
+        if (fromDate != null && toDate != null && toDate.isBefore(fromDate)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "toDate must be on or after fromDate");
+        }
+
         UUID scopedFacilityId = facilityAccessGuard.isFacilityScoped()
                 ? facilityAccessGuard.scopedFacilityIdOrNull()
                 : facilityId;
 
-        Page<ShiftHandoverResponse> result = shiftHandoverRepository.findAllWithFilters(
-                scopedFacilityId,
-                date,
-                status,
+        final UUID targetFacilityId = scopedFacilityId;
+        final LocalDate targetDate = date;
+        final ShiftHandoverStatus targetStatus = status;
+        final LocalDate targetFromDate = fromDate;
+        final LocalDate targetToDate = toDate;
+
+        Specification<ShiftHandover> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (targetFacilityId != null) {
+                predicates.add(cb.equal(root.get("facility").get("id"), targetFacilityId));
+            }
+            if (targetDate != null) {
+                predicates.add(cb.equal(root.get("handoverDate"), targetDate));
+            }
+            if (targetStatus != null) {
+                predicates.add(cb.equal(root.get("status"), targetStatus));
+            }
+            if (targetFromDate != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("handoverDate"), targetFromDate));
+            }
+            if (targetToDate != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("handoverDate"), targetToDate));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+
+        Page<ShiftHandoverResponse> result = shiftHandoverRepository.findAll(
+                spec,
                 PageRequest.of(page, size, Sort.by("handoverDate").descending().and(Sort.by("createdAt").descending()))
         ).map(shiftHandoverMapper::toResponse);
 

@@ -1,43 +1,80 @@
 import React, { useState, useEffect } from 'react'
 import { userService } from '../../../services/userService'
 import { staffAssignmentService } from '../../../services/staffAssignmentService'
-import { User } from '../../../types'
+import { useAuth } from '../../../context/AuthContext'
+import { User, Facility } from '../../../types'
 
 interface ShiftAssignmentModalProps {
   isOpen: boolean
   onClose: () => void
   facilityId?: string
+  facilities?: Facility[]
+  targetRole?: 'STAFF' | 'FACILITY_MANAGER'
   onSaveShift: (summary: string) => void
+}
+
+const formatDateLocal = (d: Date): string => {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
   isOpen,
   onClose,
   facilityId,
+  facilities = [],
+  targetRole,
   onSaveShift
 }) => {
+  const { user } = useAuth()
+  const userRole = (typeof user?.role === 'object' ? user?.role?.name : user?.role) || user?.roleName
+  const isBusinessManager = userRole === 'BUSINESS_MANAGER'
+  const activeTargetRole: 'STAFF' | 'FACILITY_MANAGER' = targetRole || (isBusinessManager ? 'FACILITY_MANAGER' : 'STAFF')
+
+  const [selectedFacilityId, setSelectedFacilityId] = useState<string>(facilityId || '')
   const [staffList, setStaffList] = useState<User[]>([])
   const [isLoadingStaff, setIsLoadingStaff] = useState(false)
   const [selectedStaffId, setSelectedStaffId] = useState<string>('')
   const [shiftType, setShiftType] = useState<'MORNING' | 'AFTERNOON' | 'NIGHT'>('AFTERNOON')
   const [targetZone, setTargetZone] = useState('Phân khu A (Hành lang Aisle North)')
-  const [assignmentDate, setAssignmentDate] = useState(() => new Date().toISOString().split('T')[0])
-  const [taskNotes, setTaskNotes] = useState('Tuần tra định kỳ 2 giờ/lần, kiểm tra pin SmartLock các kho nợ quá hạn và hỗ trợ khách bàn giao.')
+  const [assignmentDate, setAssignmentDate] = useState(() => formatDateLocal(new Date()))
+  const [taskNotes, setTaskNotes] = useState(
+    activeTargetRole === 'FACILITY_MANAGER'
+      ? 'Trực điều hành cơ sở, giám sát an ninh, phê duyệt đổi ca và kiểm tra vận hành hệ thống.'
+      : 'Tuần tra định kỳ 2 giờ/lần, kiểm tra pin SmartLock các kho nợ quá hạn và hỗ trợ khách bàn giao.'
+  )
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (facilityId) {
+      setSelectedFacilityId(facilityId)
+    } else if (facilities.length > 0 && !selectedFacilityId) {
+      setSelectedFacilityId(facilities[0].id)
+    }
+  }, [facilityId, facilities])
 
   useEffect(() => {
     if (isOpen) {
       loadStaff()
     }
-  }, [isOpen, facilityId])
+  }, [isOpen, selectedFacilityId, activeTargetRole])
 
   const loadStaff = async () => {
     setIsLoadingStaff(true)
     setErrorMessage(null)
     try {
-      const res = await userService.getAllUsers({ role: 'STAFF', facilityId })
-      const users = res?.data || []
+      const res = await userService.getAllUsers({
+        role: activeTargetRole,
+        facilityId: selectedFacilityId || undefined,
+        size: 50
+      })
+      let users = res?.data || []
+
+      // Quản lý cơ sở không được tự phân ca cho chính mình
+      if (userRole === 'FACILITY_MANAGER') {
+        users = users.filter(u => u.id !== user?.id)
+      }
+
       setStaffList(users)
       if (users.length > 0) {
         setSelectedStaffId(users[0].id)
@@ -45,7 +82,7 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
         setSelectedStaffId('')
       }
     } catch (err: any) {
-      setErrorMessage(err?.response?.data?.message || 'Không thể tải danh sách nhân viên từ hệ thống.')
+      setErrorMessage(err?.response?.data?.message || 'Không thể tải danh sách nhân sự từ hệ thống.')
     } finally {
       setIsLoadingStaff(false)
     }
@@ -56,7 +93,13 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedStaffId) {
-      setErrorMessage('Vui lòng chọn nhân viên trực ca.')
+      setErrorMessage(`Vui lòng chọn ${activeTargetRole === 'FACILITY_MANAGER' ? 'Quản lý cơ sở' : 'nhân viên'} trực ca.`)
+      return
+    }
+
+    const effectiveFacId = selectedFacilityId || facilityId
+    if (!effectiveFacId) {
+      setErrorMessage('Vui lòng chọn cơ sở áp dụng.')
       return
     }
 
@@ -65,20 +108,20 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
 
     try {
       const staff = staffList.find(s => s.id === selectedStaffId)
-      const staffDisplayName = staff?.fullName || staff?.username || 'Nhân viên'
-      const shiftLabel = shiftType === 'MORNING' ? 'Ca Sáng (07:00 - 15:30)' : shiftType === 'AFTERNOON' ? 'Ca Chiều (14:30 - 22:00)' : 'Ca Đêm (21:30 - 07:30)'
+      const staffDisplayName = staff?.fullName || staff?.username || 'Nhân sự'
+      const shiftLabel = shiftType === 'MORNING' ? 'Ca Sáng (06:00 - 14:00)' : shiftType === 'AFTERNOON' ? 'Ca Chiều (14:00 - 22:00)' : 'Ca Đêm (22:00 - 06:00)'
 
       await staffAssignmentService.createAssignment({
         staffId: selectedStaffId,
-        facilityId: facilityId || staff?.facilityId || '',
+        facilityId: effectiveFacId,
         assignedDate: assignmentDate,
         shift: shiftType,
         assignedZone: targetZone,
-        roleInShift: 'PRIMARY_STAFF',
+        roleInShift: activeTargetRole === 'FACILITY_MANAGER' ? 'FACILITY_LEAD' : 'PRIMARY_STAFF',
         notes: taskNotes
       })
 
-      onSaveShift(`Đã phân công ${staffDisplayName} trực ${shiftLabel} tại ${targetZone} vào CSDL!`)
+      onSaveShift(`Đã phân công ${staffDisplayName} (${activeTargetRole}) trực ${shiftLabel} tại ${targetZone}!`)
       onClose()
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Lỗi khi lưu phân công ca trực vào cơ sở dữ liệu.'
@@ -95,12 +138,20 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-slate-100 text-slate-800">
-              <span className="material-symbols-outlined text-[26px]">person_add</span>
+              <span className="material-symbols-outlined text-[26px]">
+                {activeTargetRole === 'FACILITY_MANAGER' ? 'manage_accounts' : 'person_add'}
+              </span>
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Phân Công Ca Trực Nhân Sự</h2>
+              <h2 className="text-lg font-bold text-slate-900">
+                {activeTargetRole === 'FACILITY_MANAGER'
+                  ? 'Phân Công Ca Quản Lý Cơ Sở'
+                  : 'Phân Công Ca Trực Nhân Viên'}
+              </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Nối dữ liệu thật qua API StaffAssignmentController
+                {activeTargetRole === 'FACILITY_MANAGER'
+                  ? 'Dành riêng cho Business Manager điều phối Quản lý cơ sở'
+                  : 'Điều phối nhân sự trực thuộc cơ sở phụ trách'}
               </p>
             </div>
           </div>
@@ -122,11 +173,33 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
 
         {/* Assignment Form */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-xs">
-          {/* Select Staff */}
+          {/* Facility Selector for Business Manager */}
+          {isBusinessManager && facilities.length > 0 && (
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">
+                Cơ sở phân công
+              </label>
+              <select
+                value={selectedFacilityId}
+                onChange={(e) => setSelectedFacilityId(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 rounded-lg border border-slate-200 font-medium text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer"
+              >
+                {facilities.map(f => (
+                  <option key={f.id} value={f.id}>
+                    {f.name} ({f.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Select Staff / FM */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-slate-700 font-semibold">
-                Chọn nhân viên trực ca (Dữ liệu thật)
+                {activeTargetRole === 'FACILITY_MANAGER'
+                  ? 'Chọn Quản lý cơ sở (FACILITY_MANAGER)'
+                  : 'Chọn nhân viên trực ca (STAFF)'}
               </label>
               {isLoadingStaff && (
                 <span className="text-[11px] text-cyan-600 flex items-center gap-1">
@@ -138,7 +211,9 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
 
             {staffList.length === 0 && !isLoadingStaff ? (
               <div className="p-4 rounded-xl border border-dashed border-slate-200 text-center text-slate-500">
-                Không tìm thấy nhân viên (STAFF) nào thuộc cơ sở này.
+                {activeTargetRole === 'FACILITY_MANAGER'
+                  ? 'Không tìm thấy Quản lý cơ sở nào thuộc cơ sở đã chọn.'
+                  : 'Không tìm thấy nhân viên (STAFF) nào thuộc cơ sở này.'}
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">

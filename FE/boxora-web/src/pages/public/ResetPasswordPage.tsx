@@ -14,6 +14,7 @@ import {
 import { authService } from '../../services/authService'
 import boxoraLogo from '../../assets/boxora-logo.png'
 import futuristicBoxoraBg from '../../assets/Futuristic BOXORA Smart Warehouse.png'
+import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
 
 export const ResetPasswordPage: React.FC = () => {
   const navigate = useNavigate()
@@ -91,13 +92,16 @@ export const ResetPasswordPage: React.FC = () => {
             • SECURE ACCESS
           </span>
         </Link>
-        <Link
-          to="/login"
-          className="flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4 text-cyan-400" />
-          <span>Về trang đăng nhập</span>
-        </Link>
+        <div className="flex items-center gap-3">
+          <QuickThemeLanguageToggle />
+          <Link
+            to="/login"
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4 text-cyan-400" />
+            <span>Về trang đăng nhập</span>
+          </Link>
+        </div>
       </header>
 
       {/* Main Card */}

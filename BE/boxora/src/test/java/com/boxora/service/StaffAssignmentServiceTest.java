@@ -117,6 +117,9 @@ class StaffAssignmentServiceTest {
                 .isActive(true)
                 .build();
         managerUser.setId(managerId);
+
+        lenient().when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
+        lenient().when(requestContext.currentUserId()).thenReturn(managerId);
     }
 
     @Nested
@@ -404,7 +407,7 @@ class StaffAssignmentServiceTest {
 
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
             assertThat(assignment.getStatus()).isEqualTo(StaffAssignmentStatus.CHECKED_IN);
-            verify(staffAssignmentRepository, never()).delete(any());
+            verify(staffAssignmentRepository, never()).delete(any(StaffAssignment.class));
             verify(staffAssignmentRepository, never()).save(any());
         }
     }
@@ -433,7 +436,7 @@ class StaffAssignmentServiceTest {
             verify(facilityAccessGuard).checkFacilityAccess(facilityId);
             assertThat(assignment.getStatus()).isEqualTo(StaffAssignmentStatus.CANCELLED);
             verify(staffAssignmentRepository).save(assignment);
-            verify(staffAssignmentRepository, never()).delete(any());
+            verify(staffAssignmentRepository, never()).delete(any(StaffAssignment.class));
             verify(activityLogService).record(eq(facilityId), eq(ActivityAction.STAFF_ASSIGNMENT_REMOVE),
                     eq("StaffAssignment"), eq(assignmentId), any(),
                     eq(StaffAssignmentStatus.ASSIGNED.name()), eq(StaffAssignmentStatus.CANCELLED.name()));

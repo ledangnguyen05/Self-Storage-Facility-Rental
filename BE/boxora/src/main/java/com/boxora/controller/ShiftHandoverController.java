@@ -68,10 +68,12 @@ public class ShiftHandoverController {
             @RequestParam(required = false) UUID facilityId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @RequestParam(required = false) ShiftHandoverStatus status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        PageResponse<ShiftHandoverResponse> response = shiftHandoverService.getHandovers(facilityId, date, status, page, size);
+        PageResponse<ShiftHandoverResponse> response = shiftHandoverService.getHandovers(facilityId, date, status, fromDate, toDate, page, size);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 

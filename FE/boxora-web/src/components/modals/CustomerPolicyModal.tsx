@@ -4,24 +4,32 @@ import { FacilityPolicy } from '../../types'
 import { createDefaultFacilityPolicy } from '../../utils/facilityPolicyDefaults'
 import axios from 'axios'
 
-interface CustomerPolicyModalProps {
+export type PolicyTab = 'rental' | 'payment' | 'cancellation' | 'return' | 'overdue'
+
+export interface CustomerPolicyModalProps {
   isOpen: boolean
   onClose: () => void
   facilityId?: string
   facilityName?: string
+  initialTab?: PolicyTab
 }
-
-type PolicyTab = 'rental' | 'payment' | 'cancellation' | 'return' | 'overdue'
 
 export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
   isOpen,
   onClose,
   facilityId,
   facilityName = 'Hệ thống Boxora Self-Storage',
+  initialTab = 'rental',
 }) => {
-  const [activeTab, setActiveTab] = useState<PolicyTab>('rental')
+  const [activeTab, setActiveTab] = useState<PolicyTab>(initialTab)
   const [policy, setPolicy] = useState<FacilityPolicy | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab || 'rental')
+    }
+  }, [isOpen, initialTab])
 
   useEffect(() => {
     if (!isOpen) return
