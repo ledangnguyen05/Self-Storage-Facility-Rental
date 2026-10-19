@@ -18,6 +18,8 @@ public interface BookingService {
     List<BookingResponse> getMyActiveBookings(UUID customerId);
     List<BookingResponse> getUpcomingArrivals();
     List<BookingResponse> getUpcomingArrivals(UUID facilityId);
+    List<BookingResponse> getUpcomingArrivals(UUID facilityId, String timeframe, java.time.LocalDate fromDate, java.time.LocalDate toDate);
+    BookingResponse claimCheckInReception(UUID bookingId);
     List<BookingResponse> getBookings(UUID customerId, BookingStatus status, UUID facilityId);
     BookingResponse renewBooking(UUID id, int extraMonths);
     BookingResponse remoteUnlock(UUID id);

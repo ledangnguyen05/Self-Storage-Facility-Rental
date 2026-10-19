@@ -25,6 +25,7 @@ import { CashierJournalPage } from './pages/staff/CashierJournalPage'
 import { IncidentTicketsPage } from './pages/staff/IncidentTicketsPage'
 import { OverdueManagementPage } from './pages/manager/OverdueManagementPage'
 import { ShiftRosterPage } from './pages/manager/ShiftRosterPage'
+import { StaffMyShiftsPage } from './pages/staff/StaffMyShiftsPage'
 import { checkCustomerPortalAccess } from './utils/rentalAccess'
 import { BoxoraChatWidget } from './components/chat/BoxoraChatWidget'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
@@ -127,11 +128,20 @@ function MainContent() {
               }
             />
 
-            {/* 3. Facility operations belong to the assigned facility team */}
+            <Route
+              path="staff/shifts"
+              element={
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER']}>
+                  <StaffMyShiftsPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* 3. Facility operations and storage diagram */}
             <Route
               path="facility-manager"
               element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'STAFF']}>
+                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'STAFF', 'BUSINESS_MANAGER', 'ADMIN']}>
                   <ManagerDashboard />
                 </ProtectedRoute>
               }
@@ -186,11 +196,11 @@ function MainContent() {
               }
             />
 
-            {/* 9. Facility managers administer schedules; Staff see their own shifts in their portal */}
+            {/* 9. Facility managers administer schedules; Business managers oversee chain-wide; Staff see their own shifts in their portal */}
             <Route
               path="shifts"
               element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER']}>
+                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER']}>
                   <ShiftRosterPage />
                 </ProtectedRoute>
               }
@@ -200,6 +210,8 @@ function MainContent() {
           {/* Direct Friendly URLs with Automatic Route Guards */}
           <Route path="/customer" element={<Navigate to="/portal/customer" replace />} />
           <Route path="/staff" element={<Navigate to="/portal/staff" replace />} />
+          <Route path="/staff/shifts" element={<Navigate to="/portal/staff/shifts" replace />} />
+          <Route path="/my-shifts" element={<Navigate to="/portal/staff/shifts" replace />} />
           <Route path="/facility-manager" element={<Navigate to="/portal/facility-manager" replace />} />
           <Route path="/manager" element={<Navigate to="/portal/facility-manager" replace />} />
           <Route path="/cashier" element={<Navigate to="/portal/cashier" replace />} />

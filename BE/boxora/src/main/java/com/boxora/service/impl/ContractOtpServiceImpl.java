@@ -96,11 +96,13 @@ public class ContractOtpServiceImpl implements ContractOtpService {
             throw new AppException(ErrorCode.CONTRACT_OTP_INVALID);
         }
 
-        String signingUrl = contractSigningService.createSigningRequest(contractId);
         if (challenge.getVerifiedAt() == null) {
             challenge.setVerifiedAt(LocalDateTime.now());
+            challenge.setFailedAttempts(0);
             otpRepository.save(challenge);
         }
+
+        String signingUrl = contractSigningService.createSigningRequest(contractId);
         return ContractOtpResponse.builder()
                 .expiresInSeconds(0)
                 .resendInSeconds(0)

@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { LayoutDashboard } from 'lucide-react'
 import axios from 'axios'
 import { Booking, RentalContract } from '../../types'
 import { bookingService } from '../../services/bookingService'
 import { contractService } from '../../services/contractService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
 import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
-import { ContractOtpModal } from '../../components/modals/ContractOtpModal'
+import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
 import { facilityService } from '../../services/facilityService'
 import { FacilityPolicy } from '../../types'
+import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
 
 const money = (value?: number | null) => `${Number(value || 0).toLocaleString('vi-VN')} ₫`
 const date = (value?: string | null) => value ? new Date(value).toLocaleDateString('vi-VN') : 'Chưa xác định'
@@ -32,7 +34,8 @@ export const OnlineBookingContractPage = () => {
   const [paying, setPaying] = useState(false)
   const [error, setError] = useState('')
   const [showDocument, setShowDocument] = useState(false)
-  const [showOtp, setShowOtp] = useState(false)
+  const [contractForSimulation, setContractForSimulation] = useState<RentalContract | null>(null)
+  const [justSigned, setJustSigned] = useState(false)
 
   const refresh = useCallback(async (initial = false) => {
     if (!bookingId) {
@@ -80,6 +83,13 @@ export const OnlineBookingContractPage = () => {
     return () => window.clearInterval(timer)
   }, [refresh])
 
+  useEffect(() => {
+    const mockId = searchParams.get('mockSignContractId')
+    if (mockId && contract && contract.id === mockId && !isSigned(contract)) {
+      setContractForSimulation(contract)
+    }
+  }, [searchParams, contract])
+
   const paidTransactions = payments.filter(payment => payment.status === 'PAID'
     && ['BOOKING_PAYMENT', 'DEPOSIT', 'RENTAL_FEE'].includes(payment.paymentType))
   const paidPayment = paidTransactions.find(payment => payment.paymentType === 'BOOKING_PAYMENT') || paidTransactions[0] || null
@@ -90,7 +100,7 @@ export const OnlineBookingContractPage = () => {
   const paymentDeadline = booking?.paymentExpiresAt || booking?.holdExpiresAt
   const paymentExpired = booking?.status === 'PENDING_PAYMENT'
     && (!paymentDeadline || new Date(paymentDeadline).getTime() <= Date.now())
-  const canPay = signed && !paymentConfirmed && !paymentExpired
+  const canPay = !paymentConfirmed && !paymentExpired
     && (booking?.status === 'PENDING_PAYMENT' || booking?.status === 'CONFIRMED')
 
   const startPayment = async () => {
@@ -127,8 +137,13 @@ export const OnlineBookingContractPage = () => {
         <section className="mx-auto mt-16 max-w-xl rounded-2xl border border-rose-200 bg-white p-8 text-center shadow-sm">
           <h1 className="text-xl font-bold text-slate-900">Chưa mở được hồ sơ đặt thuê</h1>
           <p className="mt-3 text-sm text-rose-700">{error || 'Không tìm thấy hợp đồng cho đơn đặt thuê này.'}</p>
-          <button onClick={() => void refresh(true)} className="mt-5 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Thử tải lại</button>
-          <Link to="/portal/customer" className="mt-4 block text-sm text-slate-600 underline">Về trang tổng quan</Link>
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+            <button onClick={() => void refresh(true)} className="rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-800 transition">Thử tải lại</button>
+            <Link to="/portal/customer" className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-xs hover:bg-slate-50 transition">
+              <LayoutDashboard className="h-4 w-4 text-slate-500" />
+              <span>Về trang tổng quan</span>
+            </Link>
+          </div>
         </section>
       </main>
     )
@@ -142,8 +157,38 @@ export const OnlineBookingContractPage = () => {
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-700">Boxora · Đặt thuê trực tuyến</p>
             <h1 className="mt-1 text-2xl font-extrabold text-slate-900">Hợp đồng và thanh toán</h1>
           </div>
-          <Link to="/portal/customer" className="text-sm font-semibold text-slate-600 underline">Trang tổng quan</Link>
+          <div className="flex items-center gap-2.5">
+            <QuickThemeLanguageToggle />
+          </div>
         </header>
+
+        {justSigned && (
+          <div className="rounded-2xl border border-emerald-300 bg-emerald-50/90 p-4 text-emerald-900 shadow-sm flex items-start gap-3 animate-in fade-in slide-in-from-top duration-300">
+            <div className="h-9 w-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <span className="material-symbols-outlined text-2xl">verified</span>
+            </div>
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-sm text-emerald-950">
+                  Xác nhận đã ký hợp đồng điện tử thành công!
+                </h3>
+                <span className="text-[10px] bg-emerald-200/80 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                  {contract.contractCode}
+                </span>
+              </div>
+              <p className="text-xs text-emerald-800 leading-relaxed">
+                Chữ ký số của quý khách đã được lưu trữ hợp lệ trên hệ thống Boxora. Quý khách vui lòng kiểm tra nghĩa vụ thanh toán bên dưới để hoàn tất giữ chỗ hoặc chuẩn bị đến cơ sở nhận bàn giao kho đúng lịch hẹn.
+              </p>
+            </div>
+            <button
+              onClick={() => setJustSigned(false)}
+              className="text-emerald-700 hover:text-emerald-900 p-1 rounded-lg cursor-pointer"
+              title="Đóng thông báo"
+            >
+              <span className="material-symbols-outlined text-lg">close</span>
+            </button>
+          </div>
+        )}
 
         {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
 
@@ -163,6 +208,21 @@ export const OnlineBookingContractPage = () => {
             <div className="rounded-xl bg-slate-50 p-3"><span className="text-xs text-slate-500">Mã hợp đồng</span><p className="mt-1 font-mono font-semibold text-slate-900">{contract.contractCode}</p></div>
             <div className="rounded-xl bg-slate-50 p-3"><span className="text-xs text-slate-500">Kỳ hạn thuê</span><p className="mt-1 font-semibold text-slate-900">{booking.rentalMonths} tháng · {date(booking.startDate)} – {date(booking.endDate)}</p></div>
             <div className="rounded-xl bg-slate-50 p-3"><span className="text-xs text-slate-500">Lịch hẹn nhận kho</span><p className="mt-1 font-semibold text-slate-900">{dateTime(booking.expectedCheckInAt)}</p></div>
+            <div className="rounded-xl bg-slate-50 p-3 sm:col-span-2">
+              <span className="text-xs text-slate-500">Thông tin người thuê &amp; Giấy tờ định danh</span>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-semibold text-slate-900 text-sm">
+                <span>{contract.customerName || booking.customerName || 'Khách hàng'}</span>
+                <span className="text-slate-300">|</span>
+                <span>SĐT: {contract.customerPhone || booking.customerPhone || 'Theo hồ sơ'}</span>
+                <span className="text-slate-300">|</span>
+                <span className="flex items-center gap-1.5 text-blue-900">
+                  <span className="text-xs text-slate-500 font-normal">{booking.identityCardType || contract.identityCardType || 'CCCD'}:</span>
+                  <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200/60">
+                    {booking.identityCardNumber || contract.identityCardNumber || 'Chưa cung cấp'}
+                  </span>
+                </span>
+              </div>
+            </div>
           </div>
 
           <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/70 p-4 text-sm text-blue-950">
@@ -182,29 +242,41 @@ export const OnlineBookingContractPage = () => {
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
-            <button type="button" onClick={() => setShowDocument(true)} className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50">
+            <button type="button" onClick={() => setShowDocument(true)} className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50 cursor-pointer">
               {signed ? 'Xem hợp đồng đã ký' : 'Xem nội dung hợp đồng'}
             </button>
             {!signed && contract.status !== 'CANCELLED' && (
-              <button type="button" onClick={() => setShowOtp(true)} className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800">
+              <button
+                type="button"
+                onClick={() => setContractForSimulation(contract)}
+                className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 cursor-pointer"
+              >
                 Tiếp tục ký điện tử
               </button>
             )}
+            {signed && (
+              <Link to="/portal/customer" className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 transition">
+                <LayoutDashboard className="h-4 w-4" />
+                <span>Về trang tổng quan</span>
+              </Link>
+            )}
           </div>
           {!signed && (
-            <p className="mt-3 text-xs leading-relaxed text-slate-500">Sau khi ký trên DocuSeal, hãy quay lại trang này. Boxora chỉ mở bước thanh toán khi webhook đã xác thực trạng thái ký.</p>
+            <p className="mt-3 text-xs leading-relaxed text-slate-500">Sau khi thanh toán qua VNPay, bạn có thể tiếp tục ký hợp đồng điện tử trực tuyến ngay trên hệ thống Boxora.</p>
           )}
         </section>
 
-        {signed && (
+        {(signed || canPay || paymentConfirmed) && (
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Hợp đồng đã ký</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-blue-700">Thanh toán trực tuyến</p>
                 <h2 className="mt-1 text-xl font-bold text-slate-900">Nghĩa vụ thanh toán</h2>
                 {contract.signedAt && <p className="mt-1 text-xs text-slate-500">Thời điểm xác nhận ký: {dateTime(contract.signedAt)}</p>}
               </div>
-              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">Đã ký điện tử</span>
+              <span className={`rounded-full px-3 py-1 text-xs font-bold ${signed ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
+                {signed ? 'Đã ký điện tử' : 'Chờ ký điện tử'}
+              </span>
             </div>
             <dl className="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-200 px-4">
               <div className="flex justify-between gap-4 py-3 text-sm"><dt className="text-slate-600">Tiền thuê ({booking.rentalMonths} tháng)</dt><dd className="font-semibold text-slate-900">{money(booking.totalRentalFee)}</dd></div>
@@ -233,8 +305,30 @@ export const OnlineBookingContractPage = () => {
           </section>
         )}
 
-        {showDocument && <ContractDocumentModal contract={contract} booking={booking} onClose={() => setShowDocument(false)} onSignNow={() => { setShowDocument(false); setShowOtp(true) }} />}
-        {showOtp && <ContractOtpModal contract={contract} allowSimulation={false} onClose={() => setShowOtp(false)} />}
+        {showDocument && (
+          <ContractDocumentModal
+            contract={contract}
+            booking={booking}
+            onClose={() => setShowDocument(false)}
+            onSignNow={() => {
+              setShowDocument(false)
+              setContractForSimulation(contract)
+            }}
+          />
+        )}
+        {contractForSimulation && (
+          <DocuSealSimulationModal
+            contract={contractForSimulation}
+            booking={booking}
+            onClose={() => setContractForSimulation(null)}
+            onSignedSuccess={(updated) => {
+              setContract(updated)
+              setContractForSimulation(null)
+              setJustSigned(true)
+              void refresh()
+            }}
+          />
+        )}
       </section>
     </main>
   )

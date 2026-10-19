@@ -54,6 +54,10 @@ public class ShiftSwapResponse {
     private String reviewedByName;
     private LocalDateTime reviewedAt;
 
+    // Target Staff Response
+    private LocalDateTime targetStaffRespondedAt;
+    private String targetStaffNotes;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

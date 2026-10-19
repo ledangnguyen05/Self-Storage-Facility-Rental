@@ -10,10 +10,10 @@ interface QuickThemeLanguageToggleProps {
 
 export const QuickThemeLanguageToggle: React.FC<QuickThemeLanguageToggleProps> = ({
   className = '',
-  showLanguage = true,
+  showLanguage: _showLanguage = false,
   showTheme = true,
 }) => {
-  const { language, setLanguage, t } = useLanguage()
+  const { t } = useLanguage()
   const [settings, setSettings] = useState<WebSettings>(getWebSettings())
   const [systemIsDark, setSystemIsDark] = useState(() => getResolvedTheme({ theme: 'system' }) === 'dark')
 
@@ -42,10 +42,6 @@ export const QuickThemeLanguageToggle: React.FC<QuickThemeLanguageToggleProps> =
     setSettings(updated)
   }
 
-  const handleSwitchLanguage = (lang: 'vi' | 'en') => {
-    setLanguage(lang)
-  }
-
   return (
     <div className={`flex items-center gap-1.5 ${className}`}>
       {/* Theme Toggle Button */}
@@ -64,44 +60,6 @@ export const QuickThemeLanguageToggle: React.FC<QuickThemeLanguageToggleProps> =
             <span className="material-symbols-outlined text-[17px] text-slate-600">dark_mode</span>
           )}
         </button>
-      )}
-
-      {/* Language Toggle Pill */}
-      {showLanguage && (
-        <div
-          role="group"
-          aria-label={t('Chọn ngôn ngữ', 'Select language')}
-          className="flex min-h-9 items-center gap-0.5 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800 shadow-sm text-[11px] font-bold"
-        >
-          <button
-            type="button"
-            onClick={() => handleSwitchLanguage('vi')}
-            aria-pressed={language === 'vi'}
-            aria-label={t('Tiếng Việt', 'Vietnamese')}
-            title={t('Tiếng Việt', 'Vietnamese')}
-            className={`min-w-9 px-2.5 py-1.5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer ${
-              language === 'vi'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            VI
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSwitchLanguage('en')}
-            aria-pressed={language === 'en'}
-            aria-label={t('Tiếng Anh', 'English')}
-            title={t('Tiếng Anh', 'English')}
-            className={`min-w-9 px-2.5 py-1.5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer ${
-              language === 'en'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            EN
-          </button>
-        </div>
       )}
     </div>
   )

@@ -65,6 +65,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractSigningService> contractSigningServiceProvider;
     private final com.boxora.service.StorageUnitLockService storageUnitLockService;
     private final com.boxora.repository.RefundRequestRepository refundRequestRepository;
+    private final com.boxora.config.DocuSealConfig docuSealConfig;
 
     private UUID extractFacilityId(Payment payment) {
         if (payment == null) return null;
@@ -422,19 +423,6 @@ public class PaymentServiceImpl implements PaymentService {
         PaymentType effectivePaymentType = request.getPaymentType();
         BigDecimal authoritativeAmount;
 
-        if ("ONLINE".equalsIgnoreCase(booking.getSigningMethod())) {
-            RentalContract contract = rentalContractRepository.findByBookingIdForUpdate(booking.getId())
-                    .orElseThrow(() -> new AppException(ErrorCode.INVALID_REQUEST,
-                            "Hợp đồng điện tử chưa được tạo cho đơn đặt kho này."));
-            boolean contractSigned = contract.getSignedAt() != null
-                    && contract.getSignatureData() == null
-                    && (contract.getStatus() == com.boxora.enums.RentalContractStatus.PENDING_ACTIVATION
-                            || contract.getStatus() == com.boxora.enums.RentalContractStatus.ACTIVE);
-            if (!contractSigned) {
-                throw new AppException(ErrorCode.INVALID_REQUEST,
-                        "Chỉ có thể thanh toán sau khi Boxora xác nhận hợp đồng đã ký điện tử.");
-            }
-        }
 
         if (request.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
 

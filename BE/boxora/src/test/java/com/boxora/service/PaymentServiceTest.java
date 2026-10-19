@@ -85,6 +85,9 @@ class PaymentServiceTest {
     @Mock
     private com.boxora.repository.RefundRequestRepository refundRequestRepository;
 
+    @Mock
+    private com.boxora.config.DocuSealConfig docuSealConfig;
+
     @InjectMocks
     private PaymentServiceImpl paymentService;
 
@@ -170,40 +173,13 @@ class PaymentServiceTest {
     }
 
     @Test
-    @DisplayName("Online booking payment is rejected until the persisted DocuSeal contract is confirmed signed")
-    void onlineBookingPaymentRequiresVerifiedSignedContract() {
+    @DisplayName("Online booking payment is created directly before contract signing")
+    void onlineBookingPaymentAllowedBeforeContractSigning() {
         mockBooking.setSigningMethod("ONLINE");
         mockBooking.setPaymentExpiresAt(java.time.Instant.now().plusSeconds(900));
         mockBooking.setDepositAmount(new BigDecimal("500000"));
         mockBooking.setRentalMonths(1);
-        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(mockBooking));
 
-        for (PaymentType paymentType : java.util.List.of(
-                PaymentType.BOOKING_PAYMENT, PaymentType.DEPOSIT, PaymentType.RENTAL_FEE, PaymentType.EXTRA_CHARGE)) {
-            PaymentCreateRequest request = PaymentCreateRequest.builder()
-                    .bookingId(bookingId)
-                    .paymentType(paymentType)
-                    .amount(new BigDecimal("1500000"))
-                    .build();
-            AppException ex = assertThrows(AppException.class, () -> paymentService.createVNPayPayment(request, null));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
-        }
-        verify(paymentRepository, never()).save(any(Payment.class));
-        verifyNoInteractions(vnPayService);
-    }
-
-    @Test
-    @DisplayName("Online booking payment is created after the contract row records a verified signature")
-    void onlineBookingPaymentAllowedAfterVerifiedSignature() {
-        mockBooking.setSigningMethod("ONLINE");
-        mockBooking.setPaymentExpiresAt(java.time.Instant.now().plusSeconds(900));
-        mockBooking.setDepositAmount(new BigDecimal("500000"));
-        mockBooking.setRentalMonths(1);
-        RentalContract signedContract = RentalContract.builder()
-                .booking(mockBooking)
-                .status(com.boxora.enums.RentalContractStatus.PENDING_ACTIVATION)
-                .signedAt(LocalDateTime.now())
-                .build();
         PaymentCreateRequest request = PaymentCreateRequest.builder()
                 .bookingId(bookingId)
                 .paymentType(PaymentType.BOOKING_PAYMENT)
@@ -211,7 +187,6 @@ class PaymentServiceTest {
                 .build();
 
         when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(mockBooking));
-        when(rentalContractRepository.findByBookingIdForUpdate(bookingId)).thenReturn(Optional.of(signedContract));
         when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(java.util.List.of());
         when(requestContext.currentIpAddress()).thenReturn("127.0.0.1");
         when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> {
@@ -225,33 +200,7 @@ class PaymentServiceTest {
         VNPayPaymentResponse response = paymentService.createVNPayPayment(request, null);
 
         assertThat(response.getAmount()).isEqualByComparingTo("1500000");
-        verify(rentalContractRepository).findByBookingIdForUpdate(bookingId);
         verify(paymentRepository).save(any(Payment.class));
-    }
-
-    @Test
-    @DisplayName("Online booking payment rejects locally simulated signatures")
-    void onlineBookingPaymentRejectsMockSignatureData() {
-        mockBooking.setSigningMethod("ONLINE");
-        mockBooking.setPaymentExpiresAt(java.time.Instant.now().plusSeconds(900));
-        RentalContract simulatedContract = RentalContract.builder()
-                .booking(mockBooking)
-                .status(com.boxora.enums.RentalContractStatus.PENDING_ACTIVATION)
-                .signedAt(LocalDateTime.now())
-                .signatureData("data:image/png;base64,fake")
-                .build();
-        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(mockBooking));
-        when(rentalContractRepository.findByBookingIdForUpdate(bookingId)).thenReturn(Optional.of(simulatedContract));
-        PaymentCreateRequest request = PaymentCreateRequest.builder()
-                .bookingId(bookingId)
-                .paymentType(PaymentType.BOOKING_PAYMENT)
-                .amount(new BigDecimal("1000000"))
-                .build();
-
-        AppException exception = assertThrows(AppException.class, () -> paymentService.createVNPayPayment(request, null));
-
-        assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
-        verify(paymentRepository, never()).save(any(Payment.class));
     }
 
     @Test

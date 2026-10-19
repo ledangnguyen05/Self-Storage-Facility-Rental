@@ -17,6 +17,7 @@ import { NoticeDispatcherModal } from './modals/NoticeDispatcherModal'
 import { AssetSealingModal } from './modals/AssetSealingModal'
 import { CreateStorageUnitModal } from './modals/CreateStorageUnitModal'
 import { FacilityPolicyViewModal } from './modals/FacilityPolicyViewModal'
+import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
 
 interface InspectedUnit {
   id: string
@@ -112,7 +113,14 @@ export const ManagerDashboard: React.FC = () => {
   // Management Summaries Data
   const [upcomingHandovers, setUpcomingHandovers] = useState<Booking[]>([])
   const [activeRentals, setActiveRentals] = useState<Booking[]>([])
+  const [showAllRentals, setShowAllRentals] = useState(false)
   const [tickets, setTickets] = useState<SupportTicketRecord[]>([])
+
+  // Check-in Filter & Claim States
+  const [checkinTimeframe, setCheckinTimeframe] = useState<'current' | 'today' | 'past' | 'future' | 'all'>('all')
+  const [checkinFromDate, setCheckinFromDate] = useState<string>('')
+  const [checkinToDate, setCheckinToDate] = useState<string>('')
+  const [claimingBookingId, setClaimingBookingId] = useState<string | null>(null)
 
   // Tickets queue pagination
   const [ticketCurrentPage, setTicketCurrentPage] = useState<number>(1)
@@ -132,6 +140,11 @@ export const ManagerDashboard: React.FC = () => {
   const [showIoTModal, setShowIoTModal] = useState(false)
   const [showCreateUnitModal, setShowCreateUnitModal] = useState(false)
   const [showReadOnlyBookingModal, setShowReadOnlyBookingModal] = useState(false)
+  const [receptionAlertData, setReceptionAlertData] = useState<{
+    isOpen: boolean
+    message: string
+    booking?: Booking | null
+  } | null>(null)
   const [readOnlyTargetBookingId, setReadOnlyTargetBookingId] = useState<string | undefined>(undefined)
   const [showDoorAccessModal, setShowDoorAccessModal] = useState(false)
   const [noticeModalData, setNoticeModalData] = useState<{
@@ -198,7 +211,11 @@ export const ManagerDashboard: React.FC = () => {
         storageUnitService.getUnits(targetId ? { facilityId: targetId } : undefined),
         reportService.getOverdueDebtReport(targetId ? { facilityId: targetId } : undefined),
         targetId ? facilityPolicyService.getByFacilityId(targetId) : Promise.resolve(null),
-        bookingService.getUpcomingArrivals(targetId),
+        bookingService.getUpcomingArrivals(targetId, {
+          timeframe: checkinTimeframe.toUpperCase(),
+          fromDate: checkinFromDate || undefined,
+          toDate: checkinToDate || undefined,
+        }),
         bookingService.getAll({ status: 'ACTIVE', size: 100, facilityId: targetId }),
         supportTicketService.getQueue(targetId ? { facilityId: targetId } : undefined),
       ])
@@ -329,6 +346,79 @@ export const ManagerDashboard: React.FC = () => {
       setTickets([])
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const fetchUpcomingHandovers = async (
+    facId?: string,
+    timeframe?: 'current' | 'today' | 'past' | 'future' | 'all',
+    fromDate?: string,
+    toDate?: string
+  ) => {
+    try {
+      const targetId = (facId && facId !== 'ALL')
+        ? facId
+        : (selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : facilities[0]?.id)
+      const tf = timeframe !== undefined ? timeframe : checkinTimeframe
+      const from = fromDate !== undefined ? fromDate : checkinFromDate
+      const to = toDate !== undefined ? toDate : checkinToDate
+
+      const data = await bookingService.getUpcomingArrivals(targetId, {
+        timeframe: tf?.toUpperCase(),
+        fromDate: from || undefined,
+        toDate: to || undefined,
+      })
+      if (Array.isArray(data)) {
+        let filteredArrivals = data
+        if (targetId) {
+          filteredArrivals = filteredArrivals.filter(b => b.facilityId === targetId)
+        }
+        setUpcomingHandovers(filteredArrivals)
+      } else {
+        setUpcomingHandovers([])
+      }
+    } catch {
+      setUpcomingHandovers([])
+    }
+  }
+
+  const handleCheckinTimeframeChange = (tf: 'current' | 'today' | 'past' | 'future' | 'all') => {
+    setCheckinTimeframe(tf)
+    fetchUpcomingHandovers(selectedFacilityId, tf, checkinFromDate, checkinToDate)
+  }
+
+  const handleCheckinDateFilterApply = (from: string, to: string) => {
+    setCheckinFromDate(from)
+    setCheckinToDate(to)
+    fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, from, to)
+  }
+
+  const handleResetCheckinDateFilter = () => {
+    setCheckinFromDate('')
+    setCheckinToDate('')
+    fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, '', '')
+  }
+
+  const handleManagerClaimReception = async (booking: Booking) => {
+    setClaimingBookingId(booking.id)
+    try {
+      const updated = await bookingService.claimCheckInReception(booking.id)
+      setUpcomingHandovers(prev => prev.map(b => b.id === booking.id ? {
+        ...b,
+        assignedStaffId: updated.assignedStaffId || user?.id,
+        assignedStaffName: updated.assignedStaffName || user?.fullName || 'Quản lý cơ sở'
+      } : b))
+      setActionSuccessMessage(`Đã tiếp nhận lượt đón khách của đơn ${booking.bookingCode} thành công!`)
+      setTimeout(() => setActionSuccessMessage(null), 4000)
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Không thể tiếp nhận khách: Bạn chỉ có thể tiếp nhận khi có ca làm việc vào ngày hẹn check-in tại cơ sở và đã điểm danh vào ca trực.'
+      setReceptionAlertData({
+        isOpen: true,
+        message: msg,
+        booking,
+      })
+    } finally {
+      setClaimingBookingId(null)
     }
   }
 
@@ -509,6 +599,85 @@ export const ManagerDashboard: React.FC = () => {
       case 'Overdue': return 'bg-rose-50 text-rose-700 border-rose-200'
       case 'Maintenance': return 'bg-purple-50 text-purple-700 border-purple-200'
       case 'Unknown': return 'bg-slate-50 text-slate-700 border-slate-200'
+    }
+  }
+
+  // Đếm ngược ngày hết hạn hợp đồng với phân cấp màu sắc mức độ
+  const getExpirationCountdown = (endDateStr?: string | null) => {
+    if (!endDateStr) {
+      return {
+        text: 'Chưa có ngày',
+        days: 0,
+        badgeClass: 'bg-slate-50 text-slate-500 border-slate-200',
+        dotClass: 'bg-slate-400',
+      }
+    }
+
+    const parts = endDateStr.split('T')[0].split('-')
+    let targetDate: Date
+    if (parts.length === 3) {
+      targetDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10))
+    } else {
+      targetDate = new Date(endDateStr)
+    }
+
+    if (isNaN(targetDate.getTime())) {
+      return {
+        text: endDateStr,
+        days: 0,
+        badgeClass: 'bg-slate-50 text-slate-500 border-slate-200',
+        dotClass: 'bg-slate-400',
+      }
+    }
+
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const diffTime = targetDate.getTime() - today.getTime()
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
+
+    if (diffDays < 0) {
+      const overdue = Math.abs(diffDays)
+      return {
+        text: `Quá hạn ${overdue} ngày`,
+        days: diffDays,
+        badgeClass: 'bg-rose-50 text-rose-700 border-rose-200 font-bold',
+        dotClass: 'bg-rose-600',
+      }
+    } else if (diffDays === 0) {
+      return {
+        text: 'Hết hạn hôm nay',
+        days: 0,
+        badgeClass: 'bg-red-50 text-red-700 border-red-300 font-bold animate-pulse',
+        dotClass: 'bg-red-600',
+      }
+    } else if (diffDays <= 3) {
+      return {
+        text: `Còn ${diffDays} ngày`,
+        days: diffDays,
+        badgeClass: 'bg-amber-50 text-amber-800 border-amber-300 font-bold',
+        dotClass: 'bg-amber-500',
+      }
+    } else if (diffDays <= 7) {
+      return {
+        text: `Còn ${diffDays} ngày`,
+        days: diffDays,
+        badgeClass: 'bg-orange-50 text-orange-700 border-orange-200 font-semibold',
+        dotClass: 'bg-orange-500',
+      }
+    } else if (diffDays <= 30) {
+      return {
+        text: `Còn ${diffDays} ngày`,
+        days: diffDays,
+        badgeClass: 'bg-blue-50 text-blue-700 border-blue-200 font-semibold',
+        dotClass: 'bg-blue-500',
+      }
+    } else {
+      return {
+        text: `Còn ${diffDays} ngày`,
+        days: diffDays,
+        badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200 font-medium',
+        dotClass: 'bg-emerald-500',
+      }
     }
   }
 
@@ -1124,7 +1293,7 @@ export const ManagerDashboard: React.FC = () => {
                     className="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-[18px]">verified</span>
-                    <span>Xem Hồ Sơ &amp; 4 Điều Kiện Bàn Giao (Read-only)</span>
+                    <span>Xem Hồ Sơ &amp; 4 Điều Kiện Bàn Giao</span>
                   </button>
                 )}
 
@@ -1209,24 +1378,86 @@ export const ManagerDashboard: React.FC = () => {
             <span className="material-symbols-outlined text-blue-600 text-[24px] shrink-0 mt-0.5">policy</span>
             <div className="text-xs text-blue-900 leading-relaxed">
               <strong className="block text-sm font-bold mb-0.5">Phân định thẩm quyền vận hành:</strong>
-              Màn hình này cung cấp <strong>chế độ giám sát tiến độ (Read-only Monitoring)</strong> dành cho Quản lý cơ sở. Toàn bộ quy trình tiếp đón khách, đối soát CCCD, nghiệm thu hiện trường 5 hạng mục và phát hành mã PIN bàn giao được thực hiện trực tiếp bởi <strong>Nhân viên quầy (Facility Staff)</strong> tại Bàn Vận Hành Quầy &amp; Tiếp Đón.
+              Màn hình này cung cấp <strong>chế độ giám sát tiến độ</strong> dành cho Quản lý cơ sở. Toàn bộ quy trình tiếp đón khách, đối soát CCCD, nghiệm thu hiện trường 5 hạng mục và phát hành mã PIN bàn giao được thực hiện trực tiếp bởi <strong>Nhân viên quầy (Facility Staff)</strong> tại Bàn Vận Hành Quầy &amp; Tiếp Đón.
             </div>
           </div>
 
           {/* Upcoming Handovers Table */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-cyan-600 text-[20px]">how_to_reg</span>
                 <h3 className="font-headline text-sm font-bold text-slate-900">
                   Lịch Hẹn Nhận Kho &amp; Chờ Bàn Giao ({upcomingHandovers.length} đơn)
                 </h3>
               </div>
-              <span className="text-xs text-slate-500 font-mono">Nhân viên quầy tiếp đón trực tiếp</span>
+              <span className="text-xs text-slate-500 font-mono">Nhân viên quầy &amp; Quản lý tiếp đón trực tiếp</span>
+            </div>
+
+            {/* Filter Bar: Khung thời gian & Khoảng ngày */}
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 mb-5 p-3 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+              {/* Timeframe Tabs */}
+              <div className="flex items-center gap-1.5 p-1 bg-white border border-slate-200/80 rounded-xl shadow-2xs overflow-x-auto">
+                {[
+                  { id: 'current', label: 'Hiện tại / Hôm nay', icon: 'schedule' },
+                  { id: 'past', label: 'Quá khứ', icon: 'history' },
+                  { id: 'future', label: 'Tương lai', icon: 'upcoming' },
+                  { id: 'all', label: 'Tất cả', icon: 'clear_all' },
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => handleCheckinTimeframeChange(tab.id as any)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                      checkinTimeframe === tab.id
+                        ? 'bg-cyan-700 text-white shadow-xs font-bold'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[15px]">{tab.icon}</span>
+                    <span>{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Date Range Picker (Từ ngày - Đến ngày) */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs shadow-2xs">
+                  <span className="material-symbols-outlined text-[15px] text-slate-400">calendar_month</span>
+                  <span className="text-slate-500 font-medium text-[11px]">Từ ngày:</span>
+                  <input
+                    type="date"
+                    value={checkinFromDate}
+                    onChange={(e) => handleCheckinDateFilterApply(e.target.value, checkinToDate)}
+                    className="bg-transparent border-none text-slate-800 text-xs font-mono focus:outline-none cursor-pointer"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs shadow-2xs">
+                  <span className="material-symbols-outlined text-[15px] text-slate-400">event</span>
+                  <span className="text-slate-500 font-medium text-[11px]">Đến ngày:</span>
+                  <input
+                    type="date"
+                    value={checkinToDate}
+                    onChange={(e) => handleCheckinDateFilterApply(checkinFromDate, e.target.value)}
+                    className="bg-transparent border-none text-slate-800 text-xs font-mono focus:outline-none cursor-pointer"
+                  />
+                </div>
+                {(checkinFromDate || checkinToDate) && (
+                  <button
+                    type="button"
+                    onClick={handleResetCheckinDateFilter}
+                    className="px-2.5 py-1.5 text-[11px] font-bold text-slate-600 hover:text-rose-600 bg-white hover:bg-rose-50 border border-slate-200 rounded-xl transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                    title="Xóa bộ lọc ngày"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">close</span>
+                    <span>Xóa lọc</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {upcomingHandovers.length === 0 ? (
-              <p className="text-xs text-slate-400 py-6 text-center">Hiện không có lịch hẹn bàn giao kho nào trong danh sách chờ.</p>
+              <p className="text-xs text-slate-400 py-6 text-center">Hiện không có lịch hẹn bàn giao kho nào trong danh sách lọc.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
@@ -1235,10 +1466,10 @@ export const ManagerDashboard: React.FC = () => {
                       <th className="py-2.5 px-3 rounded-l-lg">Khách Hàng</th>
                       <th className="py-2.5 px-3">Mã Đặt Chỗ</th>
                       <th className="py-2.5 px-3">Kho Đăng Ký</th>
-                      <th className="py-2.5 px-3">Ngày Bắt Đầu</th>
+                      <th className="py-2.5 px-3">Ngày Check-in</th>
                       <th className="py-2.5 px-3">Trạng Thái Đơn</th>
                       <th className="py-2.5 px-3">Cọc Giữ Chỗ</th>
-                      <th className="py-2.5 px-3 rounded-r-lg text-right">Chi Tiết (Read-only)</th>
+                      <th className="py-2.5 px-3 rounded-r-lg text-right">Chi Tiết / Tiếp Nhận</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1250,7 +1481,20 @@ export const ManagerDashboard: React.FC = () => {
                         </td>
                         <td className="py-3 px-3 font-mono font-bold text-slate-900">{b.bookingCode}</td>
                         <td className="py-3 px-3 font-mono font-bold text-cyan-800">#{b.unitCode}</td>
-                        <td className="py-3 px-3 font-mono text-slate-600">{b.startDate}</td>
+                        <td className="py-3 px-3">
+                          <div className="font-mono tabular-nums">
+                            {b.expectedCheckInAt ? (
+                              <>
+                                <span className="font-bold text-slate-900">{new Date(b.expectedCheckInAt).toLocaleDateString('vi-VN')}</span>
+                                <span className="text-[11px] text-cyan-700 font-semibold block">
+                                  {new Date(b.expectedCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-slate-700">{b.startDate}</span>
+                            )}
+                          </div>
+                        </td>
                         <td className="py-3 px-3">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                             b.status === 'CONFIRMED'
@@ -1264,16 +1508,38 @@ export const ManagerDashboard: React.FC = () => {
                           {(b.depositPaid || b.depositAmount || 0).toLocaleString('vi-VN')} đ
                         </td>
                         <td className="py-3 px-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setReadOnlyTargetBookingId(b.id)
-                              setShowReadOnlyBookingModal(true)
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold transition cursor-pointer"
-                          >
-                            Xem hồ sơ đối soát
-                          </button>
+                          <div className="flex items-center justify-end gap-2 flex-wrap">
+                            {b.assignedStaffName ? (
+                              <div
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold"
+                                title={b.staffAssignmentNotes || undefined}
+                              >
+                                <span className="material-symbols-outlined text-[14px] text-emerald-600">person_check</span>
+                                <span>{b.assignedStaffName}</span>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={claimingBookingId === b.id}
+                                onClick={() => handleManagerClaimReception(b)}
+                                className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
+                                <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận'}</span>
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReadOnlyTargetBookingId(b.id)
+                                setShowReadOnlyBookingModal(true)
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold transition cursor-pointer"
+                            >
+                              Xem hồ sơ đối soát
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1306,39 +1572,67 @@ export const ManagerDashboard: React.FC = () => {
                       <th className="py-2.5 px-3">Mã Hợp Đồng</th>
                       <th className="py-2.5 px-3">Kho</th>
                       <th className="py-2.5 px-3">Hạn Kết Thúc</th>
+                      <th className="py-2.5 px-3">Hết Hạn Sau</th>
                       <th className="py-2.5 px-3">Tiền Cọc Bảo Lãnh</th>
                       <th className="py-2.5 px-3 rounded-r-lg text-right">Hành Động Quản Lý</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {activeRentals.slice(0, 10).map(r => (
-                      <tr key={r.id} className="hover:bg-slate-50/80">
-                        <td className="py-3 px-3">
-                          <span className="font-bold text-slate-900 block">{r.customerName || 'N/A'}</span>
-                          <span className="text-[11px] text-slate-500 font-mono">{r.customerPhone || 'N/A'}</span>
-                        </td>
-                        <td className="py-3 px-3 font-mono font-bold text-blue-600">{r.bookingCode}</td>
-                        <td className="py-3 px-3 font-mono font-bold text-cyan-800">#{r.unitCode}</td>
-                        <td className="py-3 px-3 font-mono text-slate-700">{r.endDate || 'Hôm nay'}</td>
-                        <td className="py-3 px-3 font-mono font-bold text-slate-900">
-                          {(r.depositPaid || r.depositAmount || 0).toLocaleString('vi-VN')} đ
-                        </td>
-                        <td className="py-3 px-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setReadOnlyTargetBookingId(r.id)
-                              setShowReadOnlyBookingModal(true)
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-[11px] transition cursor-pointer"
-                          >
-                            Xem chi tiết
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {(showAllRentals ? activeRentals : activeRentals.slice(0, 10)).map(r => {
+                      const countdown = getExpirationCountdown(r.endDate)
+                      return (
+                        <tr key={r.id} className="hover:bg-slate-50/80">
+                          <td className="py-3 px-3">
+                            <span className="font-bold text-slate-900 block">{r.customerName || 'N/A'}</span>
+                            <span className="text-[11px] text-slate-500 font-mono">{r.customerPhone || 'N/A'}</span>
+                          </td>
+                          <td className="py-3 px-3 font-mono font-bold text-blue-600">{r.bookingCode}</td>
+                          <td className="py-3 px-3 font-mono font-bold text-cyan-800">#{r.unitCode}</td>
+                          <td className="py-3 px-3 font-mono text-slate-700">{r.endDate || 'Hôm nay'}</td>
+                          <td className="py-3 px-3">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] border shadow-2xs ${countdown.badgeClass}`}
+                              title={`Hạn hợp đồng: ${r.endDate || 'N/A'}`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${countdown.dotClass}`}></span>
+                              <span className="font-mono">{countdown.text}</span>
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 font-mono font-bold text-slate-900">
+                            {(r.depositPaid || r.depositAmount || 0).toLocaleString('vi-VN')} đ
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReadOnlyTargetBookingId(r.id)
+                                setShowReadOnlyBookingModal(true)
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-[11px] transition cursor-pointer"
+                            >
+                              Xem chi tiết
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
+
+                {activeRentals.length > 10 && (
+                  <div className="pt-3.5 mt-2 flex items-center justify-between border-t border-slate-100 text-xs text-slate-500">
+                    <span>
+                      Hiển thị <strong>{showAllRentals ? activeRentals.length : 10}</strong> trên tổng số <strong>{activeRentals.length}</strong> hợp đồng
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowAllRentals(!showAllRentals)}
+                      className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition cursor-pointer shadow-2xs"
+                    >
+                      {showAllRentals ? 'Thu gọn (10 hợp đồng)' : `Xem tất cả ${activeRentals.length} hợp đồng`}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1468,14 +1762,31 @@ export const ManagerDashboard: React.FC = () => {
 
             {/* Pagination Controls - Centered */}
             {tickets.length > 0 && (
-              <div className="relative flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 mt-2 border-t border-slate-100 text-xs">
-                {/* Left: Range Info */}
-                <div className="text-[11px] text-slate-500 font-medium">
-                  Hiển thị <span className="font-semibold text-slate-900 font-mono">{tickets.length === 0 ? 0 : (ticketCurrentPage - 1) * ticketPageSize + 1}</span> - <span className="font-semibold text-slate-900 font-mono">{Math.min(ticketCurrentPage * ticketPageSize, tickets.length)}</span> trên tổng số <span className="font-semibold text-slate-900 font-mono">{tickets.length}</span> sự cố
+              <div className="relative flex flex-col md:flex-row items-center justify-between gap-3 pt-4 mt-2 border-t border-slate-100 text-xs">
+                {/* Left: Range Info & Page Size */}
+                <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 font-medium text-center md:text-left">
+                  <div>
+                    Hiển thị <span className="font-semibold text-slate-900 font-mono">{tickets.length === 0 ? 0 : (ticketCurrentPage - 1) * ticketPageSize + 1}</span> - <span className="font-semibold text-slate-900 font-mono">{Math.min(ticketCurrentPage * ticketPageSize, tickets.length)}</span> trên tổng số <span className="font-semibold text-slate-900 font-mono">{tickets.length}</span> sự cố
+                  </div>
+                  <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200">
+                    <span>Mỗi trang:</span>
+                    <select
+                      value={ticketPageSize}
+                      onChange={(e) => {
+                        setTicketPageSize(Number(e.target.value))
+                        setTicketCurrentPage(1)
+                      }}
+                      className="bg-white border border-slate-200 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer"
+                    >
+                      <option value={5}>5</option>
+                      <option value={10}>10</option>
+                      <option value={15}>15</option>
+                    </select>
+                  </div>
                 </div>
 
                 {/* Center: Pagination Buttons */}
-                <div className="flex items-center justify-center gap-1.5 sm:absolute sm:left-1/2 sm:-translate-x-1/2">
+                <div className="flex items-center justify-center gap-1.5 md:absolute md:left-1/2 md:-translate-x-1/2">
                   <button
                     type="button"
                     onClick={() => setTicketCurrentPage(p => Math.max(1, p - 1))}
@@ -1534,23 +1845,8 @@ export const ManagerDashboard: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Right: Page Size Selector */}
-                <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                  <span>Hiển thị:</span>
-                  <select
-                    value={ticketPageSize}
-                    onChange={(e) => {
-                      setTicketPageSize(Number(e.target.value))
-                      setTicketCurrentPage(1)
-                    }}
-                    className="bg-white border border-slate-200 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer"
-                  >
-                    <option value={5}>5</option>
-                    <option value={10}>10</option>
-                    <option value={15}>15</option>
-                  </select>
-                  <span>/ trang</span>
-                </div>
+                {/* Empty right spacer to keep right edge clear of floating AI chat button */}
+                <div className="hidden md:block w-28 pointer-events-none" aria-hidden="true" />
               </div>
             )}
           </div>
@@ -1854,6 +2150,17 @@ export const ManagerDashboard: React.FC = () => {
           facilityId={currentFacility.id}
           facilityName={currentFacility.name}
           canEdit={hasPolicyException}
+        />
+      )}
+
+      {/* 11. Reception Shift & Check-in Alert Modal */}
+      {receptionAlertData && (
+        <ReceptionShiftAlertModal
+          isOpen={receptionAlertData.isOpen}
+          onClose={() => setReceptionAlertData(null)}
+          message={receptionAlertData.message}
+          booking={receptionAlertData.booking}
+          role={role || 'FACILITY_MANAGER'}
         />
       )}
 

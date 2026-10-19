@@ -19,6 +19,8 @@ export interface BookingCreatePayload {
   signingMethod?: 'ONLINE' | 'IN_PERSON'
   expectedCheckInAt?: string
   checkInTime?: string
+  identityCardNumber?: string
+  identityCardType?: string
 }
 
 export interface BookingReschedulePayload {
@@ -82,11 +84,21 @@ export const bookingService = {
     return response.data?.data as Booking
   },
 
-  async getUpcomingArrivals(facilityId?: string) {
+  async getUpcomingArrivals(facilityId?: string, params?: { timeframe?: string; fromDate?: string; toDate?: string }) {
     const response = await api.get('/api/v1/bookings/arrivals', {
-      params: facilityId ? { facilityId } : undefined,
+      params: {
+        ...(facilityId ? { facilityId } : {}),
+        ...(params?.timeframe ? { timeframe: params.timeframe } : {}),
+        ...(params?.fromDate ? { fromDate: params.fromDate } : {}),
+        ...(params?.toDate ? { toDate: params.toDate } : {}),
+      },
     })
     return (response.data?.data || []) as Booking[]
+  },
+
+  async claimCheckInReception(id: string) {
+    const response = await api.post(`/api/v1/bookings/${id}/claim-reception`)
+    return response.data?.data as Booking
   },
 
   async getAccessCredentials(id: string) {

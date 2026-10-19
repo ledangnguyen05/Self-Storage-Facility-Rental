@@ -6,6 +6,8 @@ import { paymentService, PaymentItem } from '../../services/paymentService'
 import { contractService } from '../../services/contractService'
 import { Booking, RentalContract } from '../../types'
 import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
+import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
+import { LayoutDashboard } from 'lucide-react'
 
 const money = (value?: number | null) => `${Number(value || 0).toLocaleString('vi-VN')} ₫`
 const date = (value?: string | null) => value ? new Date(value).toLocaleDateString('vi-VN') : 'Chưa lên lịch'
@@ -115,19 +117,13 @@ export const PaymentResultPage = () => {
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-10">
+    <main className="min-h-screen bg-slate-100 px-4 py-8">
+      <div className="mx-auto mb-5 flex max-w-2xl items-center justify-end">
+        <QuickThemeLanguageToggle />
+      </div>
       <section className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl sm:p-8">
         {loading ? (
           <div className="py-12 text-center text-sm text-slate-600">Đang đối soát thông tin với Boxora…</div>
-        ) : paid && booking?.signingMethod === 'ONLINE' && !contractSigned ? (
-          <div className="space-y-4 py-7 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700"><span className="material-symbols-outlined text-3xl">hourglass_top</span></div>
-            <p className="text-xs font-bold uppercase tracking-wider text-amber-800">Thanh toán đã xác nhận · Hợp đồng chưa xác minh</p>
-            <h1 className="text-xl font-extrabold text-slate-900">Đơn đặt thuê chưa hoàn tất</h1>
-            <p className="mx-auto max-w-md text-sm text-slate-600">Giao dịch này đã được backend xác nhận, nhưng Boxora chưa xác minh hợp đồng đã ký. Khoản thanh toán và lịch sử giao dịch vẫn được giữ để đối soát; trạng thái bàn giao chưa được kích hoạt.</p>
-            <p className="font-mono text-xs text-slate-500">Mã đặt thuê: {booking?.bookingCode || bookingId} · Mã giao dịch: {authoritativePayment?.transactionId || txnRef}</p>
-            <Link to={`/online-booking-contract?bookingId=${encodeURIComponent(bookingId)}`} className="inline-block rounded-xl bg-blue-700 px-4 py-3 text-sm font-bold text-white">Mở hợp đồng để tiếp tục</Link>
-          </div>
         ) : paid ? (
           <div className="space-y-5">
             <header className="text-center">
@@ -139,7 +135,7 @@ export const PaymentResultPage = () => {
             <dl className="grid gap-3 text-sm sm:grid-cols-2">
               <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Mã đặt thuê</dt><dd className="mt-1 font-mono font-bold">{booking?.bookingCode || bookingId}</dd></div>
               <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Kho và cơ sở</dt><dd className="mt-1 font-semibold">{booking?.unitCode || '—'} · {booking?.facilityName || '—'}</dd></div>
-              <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Trạng thái hợp đồng</dt><dd className="mt-1 font-semibold text-emerald-700">{contractSigned ? 'Đã ký điện tử' : 'Chưa xác minh chữ ký'}</dd>{contract?.contractCode && <dd className="font-mono text-xs text-slate-500">{contract.contractCode}</dd>}</div>
+              <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Trạng thái hợp đồng</dt><dd className="mt-1 font-semibold text-emerald-700">{contractSigned ? 'Đã ký điện tử' : 'Chờ ký điện tử'}</dd>{contract?.contractCode && <dd className="font-mono text-xs text-slate-500">{contract.contractCode}</dd>}</div>
               <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Trạng thái thanh toán</dt><dd className="mt-1 font-semibold text-emerald-700">Đã xác nhận</dd></div>
               <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Mã giao dịch</dt><dd className="mt-1 break-all font-mono text-xs font-semibold">{authoritativePayment?.transactionId || txnRef || 'Đã xác nhận'}</dd></div>
               <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Số tiền đã thanh toán</dt><dd className="mt-1 font-mono font-bold text-emerald-700">{money(authoritativePayment?.amount)}</dd></div>
@@ -151,18 +147,45 @@ export const PaymentResultPage = () => {
               <p className="mt-1 text-xs leading-relaxed">Ngày bắt đầu và kết thúc thuê chính thức được Boxora ghi nhận khi hoàn tất check-in tại cơ sở. Thanh toán chưa tự kích hoạt PIN; PIN được cấp theo quy trình bàn giao.</p>
             </div>
 
-            {!contractSigned && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                Giao dịch cũ đã được xác nhận nhưng hợp đồng chưa được backend xác minh đã ký. Hãy tiếp tục tại trang hợp đồng; trạng thái thanh toán đã được giữ nguyên.
-                <Link className="ml-1 font-bold underline" to={`/online-booking-contract?bookingId=${encodeURIComponent(bookingId)}`}>Mở hợp đồng</Link>
+            {!contractSigned ? (
+              <div className="rounded-2xl border-2 border-blue-500 bg-blue-50/90 p-5 sm:p-6 text-sm text-blue-950 shadow-md">
+                <div className="flex items-center gap-2.5 font-bold text-base text-blue-900 mb-2">
+                  <span className="material-symbols-outlined text-[24px] text-blue-600">draw</span>
+                  <span>Bắt buộc: Ký hợp đồng điện tử để hoàn tất đặt thuê</span>
+                </div>
+                <p className="text-xs text-blue-800 leading-relaxed">
+                  Thanh toán của bạn đã được ghi nhận thành công! Theo quy định thuê kho tại Boxora, bạn cần hoàn thành ký hợp đồng điện tử trực tuyến ngay để đơn đặt thuê có hiệu lực và sẵn sàng cho thủ tục nhận bàn giao kho đúng lịch hẹn.
+                </p>
+                <div className="mt-5">
+                  <Link
+                    to={`/online-booking-contract?bookingId=${encodeURIComponent(bookingId)}`}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 py-3.5 px-6 text-sm font-bold text-white shadow-lg shadow-blue-600/25 transition-all cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">draw</span>
+                    <span>Ký hợp đồng điện tử ngay</span>
+                    <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 sm:flex-row">
+                {contract && (
+                  <button
+                    type="button"
+                    onClick={() => setShowContract(true)}
+                    className="flex-1 rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold text-slate-800 hover:bg-slate-50 transition cursor-pointer"
+                  >
+                    Xem hợp đồng đã ký
+                  </button>
+                )}
+                <Link
+                  to="/portal/customer"
+                  className="flex-1 rounded-xl bg-blue-700 hover:bg-blue-800 px-4 py-3 text-center text-sm font-bold text-white transition cursor-pointer"
+                >
+                  Về trang tổng quan
+                </Link>
               </div>
             )}
-
-            <div className="flex flex-col gap-2 sm:flex-row">
-              {contractSigned && contract && <button type="button" onClick={() => setShowContract(true)} className="flex-1 rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold text-slate-800">Xem hợp đồng đã ký</button>}
-              <Link to={`/portal/customer?tab=bookings&bookingId=${encodeURIComponent(bookingId)}`} className="flex-1 rounded-xl border border-slate-300 px-4 py-3 text-center text-sm font-bold text-slate-800">Xem lịch nhận kho</Link>
-              <Link to="/portal/customer" className="flex-1 rounded-xl bg-blue-700 px-4 py-3 text-center text-sm font-bold text-white">Về trang tổng quan</Link>
-            </div>
           </div>
         ) : pendingReconciliation ? (
           <div className="py-8 text-center">
@@ -178,14 +201,18 @@ export const PaymentResultPage = () => {
             <h1 className="mt-3 text-xl font-extrabold text-slate-900">{paymentFailed ? 'Thanh toán chưa thành công' : 'Chưa xác nhận được thanh toán'}</h1>
             <p className="mx-auto mt-2 max-w-md text-sm text-slate-600">{error || 'Không ghi nhận thanh toán thành công. Nếu bạn vừa hoàn tất giao dịch, hãy chờ đối soát trước khi thử lại.'}</p>
             {booking && <p className="mt-3 text-sm text-slate-600">Mã đặt thuê: <strong className="font-mono text-slate-900">{booking.bookingCode}</strong></p>}
-            {contractSigned && booking?.status === 'PENDING_PAYMENT' && !paymentExpired && (paymentFailed || !txnRef) && (
+            {booking?.status === 'PENDING_PAYMENT' && !paymentExpired && (paymentFailed || !txnRef) && (
               <button type="button" disabled={retrying} onClick={() => void retryPayment()} className="mt-5 w-full rounded-xl bg-blue-700 px-4 py-3 text-sm font-bold text-white disabled:opacity-50 sm:w-auto">
                 {retrying ? 'Đang mở cổng thanh toán…' : 'Thử thanh toán lại'}
               </button>
             )}
-            {!contractSigned && booking && <Link to={`/online-booking-contract?bookingId=${encodeURIComponent(booking.id)}`} className="mt-5 inline-block rounded-xl bg-blue-700 px-4 py-3 text-sm font-bold text-white">Mở hợp đồng để ký</Link>}
             {paymentExpired && <p className="mt-3 text-xs text-amber-800">Thời hạn giữ kho/thanh toán đã kết thúc. Vui lòng liên hệ Boxora để được đối soát.</p>}
-            <div className="mt-5"><Link to="/portal/customer" className="text-sm font-semibold text-slate-600 underline">Về trang tổng quan</Link></div>
+            <div className="mt-5">
+              <Link to="/portal/customer" className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-xs hover:bg-slate-50 transition">
+                <LayoutDashboard className="h-4 w-4 text-slate-500" />
+                <span>Về trang tổng quan</span>
+              </Link>
+            </div>
           </div>
         )}
       </section>

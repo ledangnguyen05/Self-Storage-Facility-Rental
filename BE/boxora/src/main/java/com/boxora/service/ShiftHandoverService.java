@@ -22,6 +22,8 @@ public interface ShiftHandoverService {
             UUID facilityId,
             LocalDate date,
             ShiftHandoverStatus status,
+            LocalDate fromDate,
+            LocalDate toDate,
             int page,
             int size
     );

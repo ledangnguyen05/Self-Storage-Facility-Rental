@@ -68,6 +68,8 @@ export interface HandoverPrerequisites {
   contractStatus?: string
   contractSigningMethod?: string
   contractVerificationStatus?: string
+  signedDocumentUrl?: string
+  contractSignedAt?: string
   paperContractUrl?: string
   paperOriginalLocation?: string
   paperVerifiedByName?: string
@@ -75,6 +77,8 @@ export interface HandoverPrerequisites {
   identityVerified: boolean
   idCardType?: string
   idCardNumber?: string
+  registeredIdCardNumber?: string
+  registeredIdCardType?: string
   identityVerifiedByName?: string
   identityVerifiedAt?: string
   eligibleForCheckIn: boolean

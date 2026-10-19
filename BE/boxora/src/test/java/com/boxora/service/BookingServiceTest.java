@@ -30,6 +30,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -86,6 +87,9 @@ class BookingServiceTest {
 
     @Mock
     private ContractSigningService contractSigningService;
+
+    @Mock
+    private com.boxora.repository.StaffAssignmentRepository staffAssignmentRepository;
 
     @InjectMocks
     private BookingServiceImpl bookingService;
@@ -616,6 +620,28 @@ class BookingServiceTest {
         }
 
         @Test
+        @DisplayName("5.1. Giờ hẹn check-in mới dưới 5 tiếng so với hiện tại -> Bị từ chối")
+        void reschedule_Rejected_LessThan5HoursNotice() {
+            when(bookingRepository.findByIdForUpdate(bookingId)).thenReturn(Optional.of(eligibleBooking));
+            when(requestContext.currentUserId()).thenReturn(testCustomer.getId());
+            when(userRepository.findById(testCustomer.getId())).thenReturn(Optional.of(testCustomer));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            LocalDateTime tooSoon = LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).plusHours(2);
+            com.boxora.dto.request.BookingRescheduleRequest req = com.boxora.dto.request.BookingRescheduleRequest.builder()
+                    .newStartDate(tooSoon.toLocalDate())
+                    .newExpectedCheckInAt(tooSoon)
+                    .newCheckInTime(String.format("%02d:%02d", tooSoon.getHour(), tooSoon.getMinute()))
+                    .reason("Dời lịch quá gấp")
+                    .build();
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.rescheduleBookingDetailed(bookingId, req));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+            assertThat(ex.getMessage()).contains("5 tiếng");
+        }
+
+        @Test
         @DisplayName("6. Hợp đồng đã ký điện tử: Bảo lưu chữ ký số và cập nhật lịch dự kiến")
         void reschedule_PreservesSignedContract() {
             LocalDate newDate = LocalDate.now().plusDays(7);
@@ -877,6 +903,7 @@ class BookingServiceTest {
                     .customer(testCustomer)
                     .storageUnit(testUnit)
                     .startDate(LocalDate.now())
+                    .expectedCheckInAt(LocalDate.now().atTime(10, 0))
                     .status(BookingStatus.CONFIRMED)
                     .build();
             b1.setId(UUID.randomUUID());
@@ -886,6 +913,7 @@ class BookingServiceTest {
                     .customer(testCustomer)
                     .storageUnit(unit2)
                     .startDate(LocalDate.now())
+                    .expectedCheckInAt(LocalDate.now().atTime(11, 0))
                     .status(BookingStatus.CONFIRMED)
                     .build();
             b2.setId(UUID.randomUUID());
@@ -920,6 +948,92 @@ class BookingServiceTest {
 
             AppException ex = assertThrows(AppException.class, () -> bookingService.getUpcomingArrivals(testFacility.getId()));
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FACILITY_ACCESS_DENIED);
+        }
+    }
+
+    @Nested
+    @DisplayName("claimCheckInReception: Tiếp nhận lượt khách check-in")
+    class ClaimCheckInReceptionTests {
+
+        @Test
+        @DisplayName("Tiếp nhận thành công khi nhân viên có ca trực và đã điểm danh vào ca")
+        void claimCheckInReception_SuccessWhenCheckedInShift() {
+            UUID bookingId = UUID.randomUUID();
+            UUID staffId = UUID.randomUUID();
+            LocalDate today = LocalDate.now();
+
+            User staffUser = User.builder().fullName("Tran Staff").build();
+            staffUser.setId(staffId);
+
+            com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                    .bookingCode("BK-CLAIM-01")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(today)
+                    .expectedCheckInAt(today.atTime(9, 30))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            booking.setId(bookingId);
+
+            com.boxora.entity.StaffAssignment assignment = com.boxora.entity.StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(testFacility)
+                    .assignedDate(today)
+                    .status(com.boxora.enums.StaffAssignmentStatus.CHECKED_IN)
+                    .checkedInAt(today.atTime(8, 0))
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(staffAssignmentRepository.findByStaff_IdAndAssignedDate(staffId, today))
+                    .thenReturn(List.of(assignment));
+            when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            var res = bookingService.claimCheckInReception(bookingId);
+
+            assertThat(res.getAssignedStaffId()).isEqualTo(staffId);
+            assertThat(res.getAssignedStaffName()).isEqualTo("Tran Staff");
+        }
+
+        @Test
+        @DisplayName("Bị từ chối khi nhân viên chưa điểm danh vào ca trực ngày hẹn")
+        void claimCheckInReception_ThrowsWhenNotCheckedInShift() {
+            UUID bookingId = UUID.randomUUID();
+            UUID staffId = UUID.randomUUID();
+            LocalDate today = LocalDate.now();
+
+            User staffUser = User.builder().fullName("Tran Staff").build();
+            staffUser.setId(staffId);
+
+            com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                    .bookingCode("BK-CLAIM-02")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(today)
+                    .expectedCheckInAt(today.atTime(14, 0))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            booking.setId(bookingId);
+
+            // Ca trực đang ở trạng thái ASSIGNED (chưa check-in)
+            com.boxora.entity.StaffAssignment assignment = com.boxora.entity.StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(testFacility)
+                    .assignedDate(today)
+                    .status(com.boxora.enums.StaffAssignmentStatus.ASSIGNED)
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(staffAssignmentRepository.findByStaff_IdAndAssignedDate(staffId, today))
+                    .thenReturn(List.of(assignment));
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.claimCheckInReception(bookingId));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
         }
     }
 }

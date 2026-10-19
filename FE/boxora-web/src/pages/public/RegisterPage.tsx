@@ -28,6 +28,7 @@ import { AuthAnimatedBackground } from '../../components/auth/AuthAnimatedBackgr
 import boxoraLogo from '../../assets/boxora-logo.png'
 import { TermsAndStandardsModal } from '../../components/common/TermsAndStandardsModal'
 import { GoogleAuthButton } from '../../components/auth/GoogleAuthButton'
+import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate()
@@ -245,6 +246,8 @@ export const RegisterPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Quick Language & Theme Controls */}
+        <QuickThemeLanguageToggle />
       </header>
 
       {/* ============================================================ */}

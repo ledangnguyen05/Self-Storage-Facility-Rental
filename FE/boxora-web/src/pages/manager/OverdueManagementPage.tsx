@@ -359,7 +359,7 @@ export const OverdueManagementPage: React.FC = () => {
                   onClick={() => { setFilterStage(stage); setCurrentPage(1) }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     filterStage === stage
-                      ? 'bg-slate-900 text-white shadow-xs'
+                      ? 'bg-slate-900 text-white shadow-md shadow-slate-900/25 ring-2 ring-slate-900/10'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
@@ -502,13 +502,13 @@ export const OverdueManagementPage: React.FC = () => {
           )}
         </div>
 
-        {/* Pagination Controls */}
+        {/* Pagination Controls - Centered */}
         {filteredItems.length > itemsPerPage && (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-slate-100 text-xs text-slate-500">
-            <div>
+          <div className="relative flex flex-col md:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-100 text-xs text-slate-500">
+            <div className="text-center md:text-left">
               Hiển thị <span className="font-semibold text-slate-800 font-mono">{paginatedItems.length}</span> trên tổng số <span className="font-semibold text-slate-800 font-mono">{filteredItems.length}</span> khoản nợ
             </div>
-            <div className="flex items-center gap-2 sm:ml-auto">
+            <div className="flex items-center justify-center gap-2 md:absolute md:left-1/2 md:-translate-x-1/2">
               <button
                 type="button"
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
@@ -517,7 +517,7 @@ export const OverdueManagementPage: React.FC = () => {
               >
                 Trang trước
               </button>
-              <span className="font-mono font-bold text-slate-900 px-1">
+              <span className="font-mono font-bold text-slate-900 px-2 py-1 rounded-md bg-slate-100 border border-slate-200">
                 {currentPage} / {totalPages}
               </span>
               <button
@@ -529,6 +529,8 @@ export const OverdueManagementPage: React.FC = () => {
                 Trang sau
               </button>
             </div>
+
+            <div className="hidden md:block w-28 pointer-events-none" aria-hidden="true" />
           </div>
         )}
 

@@ -46,7 +46,7 @@ public class UserController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
     public ResponseEntity<ApiResponse<PageResponse<UserResponse>>> getAll(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Boolean isActive,

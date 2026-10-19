@@ -50,4 +50,6 @@ public class BookingResponse {
     private UUID assignedStaffId;
     private String assignedStaffName;
     private String staffAssignmentNotes;
+    private String identityCardNumber;
+    private String identityCardType;
 }

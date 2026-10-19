@@ -105,6 +105,8 @@ public class HandoverServiceImpl implements HandoverService {
         String contractStatus = "CHƯA_TẠO";
         String contractSigningMethod = booking.getSigningMethod() != null ? booking.getSigningMethod() : "ONLINE";
         String contractVerificationStatus = null;
+        String signedDocumentUrl = null;
+        LocalDateTime contractSignedAt = null;
         String paperContractUrl = null;
         String paperOriginalLocation = null;
         String paperVerifiedByName = null;
@@ -113,6 +115,8 @@ public class HandoverServiceImpl implements HandoverService {
         if (contractOpt.isPresent()) {
             RentalContract contract = contractOpt.get();
             contractCode = contract.getContractCode();
+            signedDocumentUrl = contract.getSignedDocumentUrl();
+            contractSignedAt = contract.getSignedAt();
             if (contract.getSigningMethod() != null) {
                 contractSigningMethod = contract.getSigningMethod();
             }
@@ -123,36 +127,39 @@ public class HandoverServiceImpl implements HandoverService {
             }
             paperVerifiedAt = contract.getPaperVerifiedAt();
 
-            boolean isPaper = "PAPER".equalsIgnoreCase(contractSigningMethod)
-                    || "IN_PERSON".equalsIgnoreCase(contractSigningMethod)
-                    || "IN_PERSON".equalsIgnoreCase(booking.getSigningMethod());
-
             boolean isContractSignedOrActive = contract.getStatus() == RentalContractStatus.ACTIVE
                     || contract.getStatus() == RentalContractStatus.PENDING_ACTIVATION;
 
-            if (isPaper) {
-                if (isContractSignedOrActive && contract.getPaperVerifiedAt() != null) {
-                    contractSigned = true;
-                    contractStatus = "ĐÃ_KÝ_VÀ_XÁC_MINH";
-                    contractVerificationStatus = "VERIFIED";
-                } else if (contract.getStatus() == RentalContractStatus.PENDING_VERIFICATION
-                        || (contract.getPaperContractUrl() != null && contract.getPaperVerifiedAt() == null)) {
-                    contractSigned = false;
-                    contractStatus = "CHỜ_XÁC_MINH_HỢP_ĐỒNG_GIẤY";
-                    contractVerificationStatus = "PENDING_VERIFICATION";
+            // Kiểm tra xem hợp đồng đã hoàn tất ký hay chưa:
+            // TH1: Đã ký điện tử trực tuyến (có signedAt và trạng thái ACTIVE hoặc PENDING_ACTIVATION)
+            if (isContractSignedOrActive && contract.getSignedAt() != null) {
+                contractSigned = true;
+                contractStatus = "ĐÃ_KÝ_ĐIỆN_TỬ";
+                contractVerificationStatus = "VERIFIED";
+            }
+            // TH2: Đã ký giấy tại quầy và đã được nhân viên kiểm tra xác minh (có paperVerifiedAt)
+            else if (isContractSignedOrActive && contract.getPaperVerifiedAt() != null) {
+                contractSigned = true;
+                contractStatus = "ĐÃ_KÝ_VÀ_XÁC_MINH";
+                contractVerificationStatus = "VERIFIED";
+            }
+            // TH3: Chưa hoàn tất ký hợp đồng
+            else {
+                contractSigned = false;
+                boolean isPaper = "PAPER".equalsIgnoreCase(contractSigningMethod)
+                        || "IN_PERSON".equalsIgnoreCase(contractSigningMethod)
+                        || "IN_PERSON".equalsIgnoreCase(booking.getSigningMethod());
+
+                if (isPaper) {
+                    if (contract.getStatus() == RentalContractStatus.PENDING_VERIFICATION
+                            || (contract.getPaperContractUrl() != null && contract.getPaperVerifiedAt() == null)) {
+                        contractStatus = "CHỜ_XÁC_MINH_HỢP_ĐỒNG_GIẤY";
+                        contractVerificationStatus = "PENDING_VERIFICATION";
+                    } else {
+                        contractStatus = "CHỜ_TẢI_HỢP_ĐỒNG_GIẤY";
+                        contractVerificationStatus = "PENDING_UPLOAD";
+                    }
                 } else {
-                    contractSigned = false;
-                    contractStatus = "CHỜ_TẢI_HỢP_ĐỒNG_GIẤY";
-                    contractVerificationStatus = "PENDING_UPLOAD";
-                }
-            } else {
-                // ELECTRONIC / ONLINE
-                if (isContractSignedOrActive && contract.getSignedAt() != null) {
-                    contractSigned = true;
-                    contractStatus = "ĐÃ_KÝ_ĐIỆN_TỬ";
-                    contractVerificationStatus = "VERIFIED";
-                } else {
-                    contractSigned = false;
                     contractStatus = contract.getStatus() != null ? contract.getStatus().name() : "CHỜ_KÝ_ONLINE";
                     contractVerificationStatus = "PENDING_SIGNATURE";
                 }
@@ -228,6 +235,8 @@ public class HandoverServiceImpl implements HandoverService {
                 .contractStatus(contractStatus)
                 .contractSigningMethod(contractSigningMethod)
                 .contractVerificationStatus(contractVerificationStatus)
+                .signedDocumentUrl(signedDocumentUrl)
+                .contractSignedAt(contractSignedAt)
                 .paperContractUrl(paperContractUrl)
                 .paperOriginalLocation(paperOriginalLocation)
                 .paperVerifiedByName(paperVerifiedByName)
@@ -235,6 +244,8 @@ public class HandoverServiceImpl implements HandoverService {
                 .identityVerified(identityVerified)
                 .idCardType(idCardType)
                 .idCardNumber(idCardNumber)
+                .registeredIdCardNumber(booking.getIdentityCardNumber())
+                .registeredIdCardType(booking.getIdentityCardType() != null ? booking.getIdentityCardType() : "CCCD")
                 .identityVerifiedByName(identityVerifiedByName)
                 .identityVerifiedAt(identityVerifiedAt)
                 .eligibleForInspection(eligible)
@@ -333,15 +344,12 @@ public class HandoverServiceImpl implements HandoverService {
         boolean contractSigned = false;
         if (contractOpt.isPresent()) {
             RentalContract contract = contractOpt.get();
-            boolean isPaper = "PAPER".equalsIgnoreCase(contract.getSigningMethod())
-                    || "IN_PERSON".equalsIgnoreCase(contract.getSigningMethod())
-                    || "IN_PERSON".equalsIgnoreCase(booking.getSigningMethod());
             boolean isContractSignedOrActive = contract.getStatus() == RentalContractStatus.ACTIVE
                     || contract.getStatus() == RentalContractStatus.PENDING_ACTIVATION;
-            if (isPaper) {
-                contractSigned = (isContractSignedOrActive && contract.getPaperVerifiedAt() != null);
-            } else {
-                contractSigned = (isContractSignedOrActive && contract.getSignedAt() != null);
+            if (isContractSignedOrActive && contract.getSignedAt() != null) {
+                contractSigned = true;
+            } else if (isContractSignedOrActive && contract.getPaperVerifiedAt() != null) {
+                contractSigned = true;
             }
         }
         if (!contractSigned) {
@@ -505,6 +513,12 @@ public class HandoverServiceImpl implements HandoverService {
 
         if (facility != null) {
             facilityAccessGuard.checkFacilityAccess(facility.getId());
+        }
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            UUID currentUserId = requestContext.currentUserId();
+            if (currentUserId == null || customer == null || !currentUserId.equals(customer.getId())) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
         }
 
         Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
@@ -1052,6 +1066,23 @@ public class HandoverServiceImpl implements HandoverService {
     @Override
     @Transactional(readOnly = true)
     public List<HandoverResponse> getByBookingId(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        if (facilityAccessGuard.isFacilityScoped()) {
+            UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                    ? booking.getStorageUnit().getFacility().getId() : null;
+            if (facilityId != null) {
+                facilityAccessGuard.checkFacilityAccess(facilityId);
+            }
+        }
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            UUID currentUserId = requestContext.currentUserId();
+            if (currentUserId == null || booking.getCustomer() == null || !currentUserId.equals(booking.getCustomer().getId())) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        }
+
         return handoverRecordRepository.findByBookingId(bookingId).stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
@@ -1538,16 +1569,19 @@ public class HandoverServiceImpl implements HandoverService {
                 contract.setPaperNotes(request.getNotes().trim());
             }
 
+            boolean wasOnlineSigned = "ONLINE".equalsIgnoreCase(contract.getSigningMethod()) && contract.getSignedAt() != null;
             contract.setContractCode(code);
-            contract.setSigningMethod("PAPER");
             contract.setPaperContractUrl(cleanPaperUrl);
-            contract.setStatus(RentalContractStatus.PENDING_VERIFICATION);
-            contract.setPaperVerifiedAt(null);
-            contract.setPaperVerifiedBy(null);
-            contract.setSignedAt(null);
+            if (!wasOnlineSigned) {
+                contract.setSigningMethod("PAPER");
+                contract.setStatus(RentalContractStatus.PENDING_VERIFICATION);
+                contract.setPaperVerifiedAt(null);
+                contract.setPaperVerifiedBy(null);
+                contract.setSignedAt(null);
 
-            booking.setSigningMethod("IN_PERSON");
-            bookingRepository.save(booking);
+                booking.setSigningMethod("IN_PERSON");
+                bookingRepository.save(booking);
+            }
 
             contract = rentalContractRepository.save(contract);
 
@@ -1865,8 +1899,24 @@ public class HandoverServiceImpl implements HandoverService {
         if (!idNumber.matches("^[0-9]{9,12}$")) {
             throw new AppException(ErrorCode.INVALID_REQUEST, "Số CCCD / Hộ chiếu phải gồm từ 9 đến 12 chữ số hợp lệ");
         }
-        booking.setIdentityCardType(request.getIdCardType() != null ? request.getIdCardType() : "CCCD");
-        booking.setIdentityCardNumber(idNumber);
+
+        // Đối chiếu số CCCD / Hộ chiếu nhập vào với số đã lưu trong CSDL của đơn đặt giữ chỗ
+        String registeredId = booking.getIdentityCardNumber() != null ? booking.getIdentityCardNumber().trim() : null;
+        if (registeredId != null && !registeredId.isEmpty()) {
+            if (!registeredId.equalsIgnoreCase(idNumber)) {
+                throw new AppException(ErrorCode.INVALID_REQUEST,
+                        String.format("Số %s đối chiếu (%s) không trùng khớp với số %s đã đăng ký trong đơn đặt giữ chỗ (%s). Vui lòng kiểm tra lại giấy tờ gốc của khách hàng.",
+                                request.getIdCardType() != null ? request.getIdCardType() : "CCCD",
+                                idNumber,
+                                booking.getIdentityCardType() != null ? booking.getIdentityCardType() : "CCCD",
+                                registeredId));
+            }
+        } else {
+            // Trường hợp dữ liệu cũ chưa có số CCCD đăng ký trong booking
+            booking.setIdentityCardNumber(idNumber);
+            booking.setIdentityCardType(request.getIdCardType() != null ? request.getIdCardType() : "CCCD");
+        }
+
         booking.setIdentityVerifiedByStaff(staff);
         booking.setIdentityVerifiedAt(LocalDateTime.now());
         booking.setIdentityOriginalDocumentSeen(true);

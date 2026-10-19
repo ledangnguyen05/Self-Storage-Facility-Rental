@@ -39,4 +39,10 @@ public class BookingCreateRequest {
 
     /** Giờ dự kiến đến cơ sở nhận kho (ví dụ: "14:00") */
     private String checkInTime;
+
+    /** Số Căn cước công dân hoặc Hộ chiếu */
+    private String identityCardNumber;
+
+    /** Loại giấy tờ định danh (CCCD hoặc PASSPORT) */
+    private String identityCardType;
 }

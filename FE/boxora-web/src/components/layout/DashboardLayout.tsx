@@ -173,11 +173,8 @@ export const DashboardLayout: React.FC = () => {
                     {t('Cơ sở trực thuộc', 'Assigned Facility')}
                   </span>
                   {isFacilityScopedRole ? (
-                    <div className="text-xs text-slate-900 font-semibold pr-1 flex items-center gap-1.5">
+                    <div className="text-xs text-slate-900 font-semibold pr-1">
                       <span>{assignedFacilityDisplayName}</span>
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">
-                        {t('Cố định', 'Fixed')}
-                      </span>
                     </div>
                   ) : (
                     <select
@@ -285,11 +282,8 @@ export const DashboardLayout: React.FC = () => {
                 Cơ sở trực thuộc
               </span>
               {isFacilityScopedRole ? (
-                <div className="text-xs text-slate-900 font-semibold p-2 bg-white rounded-lg border border-slate-200 flex items-center justify-between">
+                <div className="text-xs text-slate-900 font-semibold p-2 bg-white rounded-lg border border-slate-200">
                   <span>{assignedFacilityDisplayName}</span>
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800">
-                    {t('Cố định', 'Fixed')}
-                  </span>
                 </div>
               ) : (
                 <select
@@ -399,6 +393,18 @@ export const DashboardLayout: React.FC = () => {
                 >
                   <span className="material-symbols-outlined text-[18px]">badge</span>
                   <span>{t('Bàn vận hành quầy & tiếp đón')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/staff/shifts"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    isCurrentPath('/portal/staff/shifts')
+                      ? 'bg-slate-100 text-slate-900 font-semibold'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">calendar_month</span>
+                  <span>{t('Ca làm')}</span>
                 </Link>
 
                 <Link
@@ -534,6 +540,18 @@ export const DashboardLayout: React.FC = () => {
                 </Link>
 
                 <Link
+                  to="/portal/shifts"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    isCurrentPath('/portal/shifts')
+                      ? 'bg-slate-100 text-slate-900 font-semibold'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">event_note</span>
+                  <span>{t('Giám sát ca toàn chuỗi')}</span>
+                </Link>
+
+                <Link
                   to="/portal/admin?tab=facilities"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
                     isCurrentPath('/portal/admin') && new URLSearchParams(location.search).get('tab') === 'facilities'
@@ -579,7 +597,7 @@ export const DashboardLayout: React.FC = () => {
               <div>
                 <div className="px-3 pb-2">
                   <span className="text-[11px] font-semibold tracking-wide text-slate-400">
-                    {t('System administration', 'System administration')}
+                    {t('Quản trị hệ thống', 'System administration')}
                   </span>
                 </div>
                 <nav className="flex flex-col gap-1 text-left">
@@ -592,7 +610,7 @@ export const DashboardLayout: React.FC = () => {
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">domain</span>
-                    <span>{t('Branches (read only)', 'Branches (read only)')}</span>
+                    <span>{t('Chi nhánh', 'Branches')}</span>
                   </Link>
                   <Link
                     to="/portal/admin?tab=users"
@@ -603,7 +621,7 @@ export const DashboardLayout: React.FC = () => {
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">admin_panel_settings</span>
-                    <span>{t('Users, roles and permissions', 'Users, roles and permissions')}</span>
+                    <span>{t('Người dùng, vai trò & phân quyền', 'Users, roles and permissions')}</span>
                   </Link>
                   <Link
                     to="/portal/admin?tab=logs"
@@ -622,7 +640,7 @@ export const DashboardLayout: React.FC = () => {
               <div>
                 <div className="px-3 pb-2 pt-2 border-t border-slate-100">
                   <span className="text-[11px] font-semibold tracking-wide text-slate-400">
-                    {t('Authorized oversight', 'Authorized oversight')}
+                    {t('Giám sát nghiệp vụ', 'Authorized oversight')}
                   </span>
                 </div>
                 <nav className="flex flex-col gap-1 text-left">
@@ -635,7 +653,7 @@ export const DashboardLayout: React.FC = () => {
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">query_stats</span>
-                    <span>{t('Business reports', 'Business reports')}</span>
+                    <span>{t('Báo cáo kinh doanh', 'Business reports')}</span>
                   </Link>
                   <Link
                     to="/portal/cashier"
@@ -646,7 +664,7 @@ export const DashboardLayout: React.FC = () => {
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">receipt_long</span>
-                    <span>{t('Transaction journal (read only)', 'Transaction journal (read only)')}</span>
+                    <span>{t('Nhật ký giao dịch', 'Transaction journal')}</span>
                   </Link>
                   <Link
                     to="/portal/tickets"
@@ -657,7 +675,7 @@ export const DashboardLayout: React.FC = () => {
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">troubleshoot</span>
-                    <span>{t('Ticket oversight (read only)', 'Ticket oversight (read only)')}</span>
+                    <span>{t('Giám sát sự cố', 'Ticket oversight')}</span>
                   </Link>
                 </nav>
               </div>

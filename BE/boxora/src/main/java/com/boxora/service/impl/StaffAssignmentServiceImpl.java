@@ -25,15 +25,18 @@ import com.boxora.service.ActivityLogService;
 import com.boxora.service.StaffAssignmentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -68,7 +71,7 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
                 .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
         facilityAccessGuard.checkFacilityAccess(facility.getId());
 
-        // 3. Kiểm tra nhân viên tồn tại, kích hoạt và đúng vai trò STAFF
+        // 3. Kiểm tra nhân viên tồn tại, kích hoạt và đúng vai trò
         User staff = userRepository.findById(request.getStaffId())
                 .orElseThrow(() -> new AppException(ErrorCode.STAFF_USER_NOT_FOUND));
 
@@ -76,13 +79,37 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             throw new AppException(ErrorCode.USER_NOT_FOUND);
         }
 
-        if (staff.getRole() == null || !"STAFF".equalsIgnoreCase(staff.getRole().getName())) {
-            throw new AppException(ErrorCode.USER_NOT_A_STAFF);
-        }
+        String callerRole = requestContext.currentUserRole();
+        UUID currentUserId = requestContext.currentUserId();
 
-        // Kiểm tra cơ sở trực thuộc của nhân viên nếu đã được gán cơ sở cố định
-        if (staff.getFacility() != null && !staff.getFacility().getId().equals(facility.getId())) {
-            throw new AppException(ErrorCode.STAFF_ASSIGNMENT_FACILITY_MISMATCH);
+        if ("FACILITY_MANAGER".equalsIgnoreCase(callerRole)) {
+            // FM cannot self-assign
+            if (staff.getId().equals(currentUserId)) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở không được tự phân ca cho chính mình");
+            }
+            // FM cannot assign FM
+            if (staff.getRole() != null && "FACILITY_MANAGER".equalsIgnoreCase(staff.getRole().getName())) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở không được phân ca cho Quản lý cơ sở khác");
+            }
+            // FM can ONLY assign STAFF
+            if (staff.getRole() == null || !"STAFF".equalsIgnoreCase(staff.getRole().getName())) {
+                throw new AppException(ErrorCode.USER_NOT_A_STAFF);
+            }
+            // Kiểm tra cơ sở trực thuộc của nhân viên
+            if (staff.getFacility() != null && !staff.getFacility().getId().equals(facility.getId())) {
+                throw new AppException(ErrorCode.STAFF_ASSIGNMENT_FACILITY_MISMATCH);
+            }
+        } else if ("BUSINESS_MANAGER".equalsIgnoreCase(callerRole)) {
+            // BM can ONLY assign FACILITY_MANAGER
+            if (staff.getRole() == null || !"FACILITY_MANAGER".equalsIgnoreCase(staff.getRole().getName())) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Business Manager chỉ được phân công ca cho Quản lý cơ sở (FACILITY_MANAGER)");
+            }
+            // Kiểm tra cơ sở trực thuộc của Quản lý cơ sở
+            if (staff.getFacility() != null && !staff.getFacility().getId().equals(facility.getId())) {
+                throw new AppException(ErrorCode.STAFF_ASSIGNMENT_FACILITY_MISMATCH);
+            }
+        } else {
+            throw new AppException(ErrorCode.FORBIDDEN, "Tài khoản không có quyền tạo phân công ca trực");
         }
 
         // 4. Kiểm tra trùng ca trực trong ngày của nhân viên
@@ -95,7 +122,6 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
 
         // 5. Xác định người phân công (quản lý / admin hiện tại)
         User assignedBy = null;
-        UUID currentUserId = requestContext.currentUserId();
         if (currentUserId != null) {
             assignedBy = userRepository.findById(currentUserId).orElse(null);
         }
@@ -173,6 +199,25 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
 
         // Kiểm tra quyền cơ sở
         facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
+
+        String callerRole = requestContext.currentUserRole();
+        UUID currentUserId = requestContext.currentUserId();
+
+        if ("FACILITY_MANAGER".equalsIgnoreCase(callerRole)) {
+            if (assignment.getStaff().getRole() == null || !"STAFF".equalsIgnoreCase(assignment.getStaff().getRole().getName())) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở chỉ được cập nhật lịch của nhân viên (STAFF)");
+            }
+            if (assignment.getStaff().getId().equals(currentUserId)) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở không được chỉnh sửa lịch của chính mình");
+            }
+        } else if ("BUSINESS_MANAGER".equalsIgnoreCase(callerRole)) {
+            if (assignment.getStaff().getRole() == null || !"FACILITY_MANAGER".equalsIgnoreCase(assignment.getStaff().getRole().getName())) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Business Manager chỉ được cập nhật lịch của Quản lý cơ sở (FACILITY_MANAGER)");
+            }
+        } else {
+            throw new AppException(ErrorCode.FORBIDDEN, "Tài khoản không có quyền cập nhật phân công ca trực");
+        }
+
         if (assignment.getStatus() != StaffAssignmentStatus.ASSIGNED) {
             throw new AppException(ErrorCode.INVALID_REQUEST,
                     "Attendance records cannot be edited as a schedule");
@@ -251,8 +296,8 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
         UUID currentUserId = requestContext.currentUserId();
         boolean isSelf = currentUserId != null && currentUserId.equals(assignment.getStaff().getId());
         facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
-        if ("STAFF".equalsIgnoreCase(requestContext.currentUserRole()) && !isSelf) {
-            throw new AppException(ErrorCode.FORBIDDEN);
+        if (!isSelf) {
+            throw new AppException(ErrorCode.FORBIDDEN, "Chỉ được check-in ca trực của chính mình");
         }
 
         if (assignment.getStatus() == StaffAssignmentStatus.CHECKED_IN) {
@@ -315,8 +360,8 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
         UUID currentUserId = requestContext.currentUserId();
         boolean isSelf = currentUserId != null && currentUserId.equals(assignment.getStaff().getId());
         facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
-        if ("STAFF".equalsIgnoreCase(requestContext.currentUserRole()) && !isSelf) {
-            throw new AppException(ErrorCode.FORBIDDEN);
+        if (!isSelf) {
+            throw new AppException(ErrorCode.FORBIDDEN, "Chỉ được check-out ca trực của chính mình");
         }
 
         if (assignment.getStatus() != StaffAssignmentStatus.CHECKED_IN) {
@@ -400,8 +445,23 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
                 .orElseThrow(() -> new AppException(ErrorCode.STAFF_ASSIGNMENT_NOT_FOUND));
 
         facilityAccessGuard.checkFacilityAccess(assignment.getFacility().getId());
-        if (!"FACILITY_MANAGER".equalsIgnoreCase(requestContext.currentUserRole())) {
-            throw new AppException(ErrorCode.FORBIDDEN);
+
+        String callerRole = requestContext.currentUserRole();
+        UUID currentUserId = requestContext.currentUserId();
+
+        if ("FACILITY_MANAGER".equalsIgnoreCase(callerRole)) {
+            if (assignment.getStaff().getRole() == null || !"STAFF".equalsIgnoreCase(assignment.getStaff().getRole().getName())) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở chỉ được hủy phân công của nhân viên (STAFF)");
+            }
+            if (assignment.getStaff().getId().equals(currentUserId)) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở không được hủy lịch của chính mình");
+            }
+        } else if ("BUSINESS_MANAGER".equalsIgnoreCase(callerRole)) {
+            if (assignment.getStaff().getRole() == null || !"FACILITY_MANAGER".equalsIgnoreCase(assignment.getStaff().getRole().getName())) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Business Manager chỉ được hủy phân công của Quản lý cơ sở (FACILITY_MANAGER)");
+            }
+        } else {
+            throw new AppException(ErrorCode.FORBIDDEN, "Tài khoản không có quyền hủy phân công ca trực");
         }
 
         if (assignment.getStatus() != StaffAssignmentStatus.ASSIGNED) {
@@ -456,6 +516,10 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             String sortBy,
             String sortDir
     ) {
+        if (fromDate != null && toDate != null && toDate.isBefore(fromDate)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "toDate must be on or after fromDate");
+        }
+
         UUID scopedFacilityId = facilityAccessGuard.isFacilityScoped()
                 ? facilityAccessGuard.scopedFacilityIdOrNull()
                 : facilityId;
@@ -474,16 +538,37 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
 
         Pageable pageable = PageRequest.of(page, size, sort);
 
-        Page<StaffAssignmentResponse> result = staffAssignmentRepository.findAllWithFilters(
-                scopedFacilityId,
-                effectiveStaffId,
-                assignedDate,
-                shift,
-                status,
-                fromDate,
-                toDate,
-                pageable
-        ).map(staffAssignmentMapper::toResponse);
+        final UUID targetFacilityId = scopedFacilityId;
+        final UUID targetStaffId = effectiveStaffId;
+
+        Specification<StaffAssignment> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (targetFacilityId != null) {
+                predicates.add(cb.equal(root.get("facility").get("id"), targetFacilityId));
+            }
+            if (targetStaffId != null) {
+                predicates.add(cb.equal(root.get("staff").get("id"), targetStaffId));
+            }
+            if (assignedDate != null) {
+                predicates.add(cb.equal(root.get("assignedDate"), assignedDate));
+            }
+            if (shift != null) {
+                predicates.add(cb.equal(root.get("shift"), shift));
+            }
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+            if (fromDate != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("assignedDate"), fromDate));
+            }
+            if (toDate != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("assignedDate"), toDate));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+
+        Page<StaffAssignmentResponse> result = staffAssignmentRepository.findAll(spec, pageable)
+                .map(staffAssignmentMapper::toResponse);
 
         return PageResponse.from(result);
     }

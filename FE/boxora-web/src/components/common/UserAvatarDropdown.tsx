@@ -25,7 +25,7 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
   onOpenLogoutConfirm,
   extraActions,
 }) => {
-  const { language, setLanguage, t } = useLanguage()
+  const { t } = useLanguage()
   const [isOpen, setIsOpen] = useState(false)
   const [webSettings, setWebSettings] = useState<WebSettings>(getWebSettings())
   const [systemIsDark, setSystemIsDark] = useState(() => getResolvedTheme({ theme: 'system' }) === 'dark')
@@ -79,9 +79,6 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
     setWebSettings(updated)
   }
 
-  const handleSwitchLanguage = (lang: 'vi' | 'en') => {
-    setLanguage(lang)
-  }
 
   const userInitials = user?.fullName
     ? user.fullName
@@ -270,43 +267,7 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
               </button>
             </div>
 
-            {/* Language switch */}
-            <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
-              <span className="text-[11px] font-medium text-slate-700 flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[15px] text-slate-500">language</span>
-                {t('Ngôn ngữ')}
-              </span>
-              <div className="flex items-center gap-1 bg-slate-200/70 p-0.5 rounded-lg text-[10px] font-bold">
-                <button
-                  type="button"
-                  onClick={() => handleSwitchLanguage('vi')}
-                  aria-pressed={language === 'vi'}
-                  aria-label={t('Tiếng Việt', 'Vietnamese')}
-                  title={t('Tiếng Việt', 'Vietnamese')}
-                  className={`min-w-9 px-2 py-1 rounded cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                    language === 'vi'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  VI
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSwitchLanguage('en')}
-                  aria-pressed={language === 'en'}
-                  aria-label={t('Tiếng Anh', 'English')}
-                  title={t('Tiếng Anh', 'English')}
-                  className={`min-w-9 px-2 py-1 rounded cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                    language === 'en'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  EN
-                </button>
-              </div>
-            </div>
+
           </div>
 
           {/* Logout Action */}

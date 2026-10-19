@@ -159,6 +159,7 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
               <div><strong>Email định danh:</strong> {contract.customerEmail}</div>
               <div><strong>Số điện thoại:</strong> {contract.customerPhone || '0901 234 567'}</div>
               <div><strong>Mã khách hàng:</strong> {contract.customerId ? `KH-${contract.customerId.slice(0, 8).toUpperCase()}` : 'CUST-VERIFIED'}</div>
+              <div><strong>Số {booking?.identityCardType || contract.identityCardType || 'CCCD'}:</strong> <span className="font-mono font-semibold text-slate-900">{booking?.identityCardNumber || contract.identityCardNumber || 'Chưa cập nhật'}</span></div>
               <div><strong>Tài khoản hệ thống:</strong> Đã xác thực CCCD/E-KYC số trên Boxora Portal</div>
             </div>
           </div>

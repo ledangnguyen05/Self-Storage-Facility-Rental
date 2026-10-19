@@ -33,6 +33,9 @@ export const DICTIONARY: Record<string, string> = {
   'Hệ thống cơ sở': 'Facilities',
   'Hệ Thống Cơ Sở': 'Facilities',
   'HỆ THỐNG CƠ SỞ': 'FACILITIES',
+  'Chi nhánh': 'Branches',
+  'Nhật ký giao dịch': 'Transaction Journal',
+  'Giám sát sự cố': 'Ticket Oversight',
   'Quy trình 3 bước': '3-Step Guide',
   'Quy Trình 3 Bước': '3-Step Guide',
   'QUY TRÌNH 3 BƯỚC': '3-STEP GUIDE',
@@ -859,8 +862,365 @@ const reservationTermKey = Object.keys(DICTIONARY).find(key => key.startsWith('t
 if (reservationTermKey) DICTIONARY[reservationTermKey] = 'months ' + reservationMultiply
 DICTIONARY['T'+String.fromCodePoint(0x1ea7)+'ng '] = 'Floor '
 
+// ============================================================================
+// COMPREHENSIVE DASHBOARD, STAFF, WORKBENCH, FINANCE & OPERATIONS TRANSLATIONS
+// ============================================================================
+Object.assign(DICTIONARY, {
+  // Staff Workbench & Handover Flow
+  'Bàn Vận Hành Quầy & Tiếp Đón': 'Front Desk & Reception Operations',
+  'Bàn vận hành quầy & tiếp đón': 'Front desk & reception operations',
+  'Ca làm': 'My Shifts',
+  'Quy Trình Check-in & Nghiệm Thu Bàn Giao Kho': 'Check-in & Handover Acceptance Workflow',
+  'Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.':
+    'Standardize 4 prerequisites (BR-RULE-005), 5-point inspection, on-site photo records, and secure PIN provisioning.',
+  'Lịch Hẹn Bàn Giao Trong Ngày': "Today's Move-in Appointments",
+  'Lịch Hẹn Nhận Kho Trong Ca': 'Shift Move-in Appointments',
+  'Lịch Hẹn Nhận Kho': 'Move-in Appointments',
+  'Chờ Bàn Giao': 'Pending Handover',
+  'Chờ Nghiệm Thu Trả Kho': 'Pending Return Acceptance',
+  'Sự Cố Ưu Tiên Cao': 'High Priority Incidents',
+  'lịch hẹn trong ca': 'appointments in shift',
+  'lượt khách đang chờ': 'guests waiting',
+  'đơn cần kiểm tra điều kiện': 'orders pending prerequisite verification',
+  'Đối soát hợp đồng, thanh toán và giấy tờ trước bàn giao': 'Verify contract, payment, and ID before handover',
+  'hợp đồng đến hạn': 'expiring contracts',
+  'Hồ sơ thuê cần thẩm định thực địa & hoàn cọc': 'Rentals requiring field appraisal & deposit refund',
+  'khách đã thanh toán tiền cọc': 'customers with deposit paid',
+  'ca mức độ Cao': 'high-priority incidents',
+  'ticket đang mở': 'open tickets',
+  'Danh sách tiếp đón khách hàng đến nhận kho trực tiếp tại cơ sở trong ca làm việc.': 'Reception list of customers arriving at the facility during the shift.',
+  'Đối Soát 4 Điều Kiện': 'Prerequisite Audit (4 Conditions)',
+  'Nghiệm Thu Hiện Trường (5/5) & Ảnh': 'Field Inspection (5/5) & Photos',
+  'Cấp Mã PIN & Bàn Giao': 'Issue PIN Code & Handover',
+  '4 Điều Kiện Tiên Quyết Bàn Giao (BR-RULE-005)': '4 Handover Prerequisites (BR-RULE-005)',
+  'Hợp đồng hợp lệ & đã ký': 'Valid & signed contract',
+  'Tiền cọc an toàn & Tiền thuê': 'Security deposit & rental fee',
+  'Đối soát CCCD & Thẻ cứng': 'ID card & access card verification',
+  'Khóa SmartLock & Phòng kho sẵn sàng': 'SmartLock & unit readiness',
+  '1. Cửa cuốn & Ray trượt': '1. Roller door & slide tracks',
+  '2. Vệ sinh kho & Sàn': '2. Unit & floor cleanliness',
+  '3. Khóa SmartLock & Phụ kiện': '3. SmartLock & accessories',
+  '4. Môi trường kho thực tế': '4. Real ambient environment',
+  '5. Tường & kết cấu buồng kho': '5. Wall and structural condition',
+  '5. Wall and structural condition': '5. Wall and structural condition',
+  'Tốt / Bình thường': 'Good / Normal',
+  'Móp nhẹ / Trầy xước': 'Minor dent / Scratches',
+  'Kẹt ray / Hỏng nặng': 'Track jammed / Severe damage',
+  'Sạch sẽ / Đã dọn rác': 'Clean / Cleared out',
+  'Còn rác / Cần vệ sinh': 'Littered / Cleaning required',
+  'Bẩn nhiều / Ẩm mốc': 'Heavy dirt / Mildew',
+  'Bình thường / Đủ phụ kiện': 'Normal / Accessories intact',
+  'Hỏng chốt an toàn': 'Damaged latch',
+  'Mất khóa / Lỗi điện tử': 'Missing lock / Electronic error',
+  'Khô ráo, thông thoáng': 'Dry, well-ventilated',
+  'Cần bảo dưỡng quạt': 'Fan maintenance needed',
+  'Có dấu hiệu ẩm ướt': 'Signs of moisture',
+  'Không biến dạng / Tốt': 'No visible damage / Good',
+  'No visible damage': 'No visible damage',
+  'Móp méo / Hư hại': 'Visible damage / Deformed',
+  'Visible damage': 'Visible damage',
+  'Ghi chú thẩm định hiện trường khác...': 'Additional inspection notes...',
+  'Ảnh Chụp Hiện Trường (Tải từ thiết bị)': 'On-site Evidence Photos (Upload from device)',
+  'Toàn cảnh kho': 'Unit panoramic',
+  'Khóa & Cửa kho': 'Lock & Door',
+  'Tiền cọc ban đầu đã thanh toán:': 'Initial deposit paid:',
+  'Đề xuất khấu trừ (VND):': 'Proposed deduction (VND):',
+  'Lý do khấu trừ (vd: Phí vệ sinh sàn kho)...': 'Deduction reason (e.g. Floor cleaning fee)...',
+  'Số tiền cọc dự kiến hoàn trả:': 'Estimated deposit refund:',
+  '* Nhân viên quầy lập biên bản nghiệm thu hiện trường và đề xuất hoàn cọc. Giao dịch hoàn tiền sẽ do Quản lý cơ sở / Kế toán phê duyệt.':
+    '* Front desk staff records field inspection and proposes refund. Refund disbursement is approved by Facility Manager / Accountant.',
+  'Đã lưu biên bản nghiệm thu': 'Inspection record saved',
+  'Return inspection saved': 'Return inspection saved',
+  'Đang lưu biên bản…': 'Saving inspection…',
+  'Saving inspection…': 'Saving inspection…',
+  'Lưu biên bản nghiệm thu trả kho': 'Save return inspection',
+  'Save return inspection': 'Save return inspection',
+  'ĐÃ LẬP BIÊN BẢN & ĐỀ XUẤT': 'PROPOSAL RECORDED',
+  'Đang Lưu Biên Bản...': 'Saving Proposal...',
+  'Lập Biên Bản Nghiệm Thu & Đề Xuất Hoàn Cọc': 'Record Inspection & Propose Deposit Refund',
+  'Nghiệm Thu Trả Kho': 'Return Unit Inspection',
+  'Hợp Đồng Nghiệm Thu': 'Inspection Contract',
+  'Hiện không có hợp đồng nào đến hạn nghiệm thu trả kho.': 'No contracts currently due for return inspection.',
+  'Hạng mục kiểm tra hiện trường': 'Field inspection checklist',
+  'Đánh giá thực tế': 'Actual assessment',
+  'Đã nhận kho (ACTIVE)': 'Checked in (ACTIVE)',
+  'Đã hoàn tất ca tiếp đón': 'Reception completed',
+  '🏢 Ký Trực Tiếp Tại Kho': '🏢 Sign On-site at Facility',
+  '✍️ Ký Điện Tử Trực Tuyến': '✍️ Sign Electronically Online',
+  'Ký Trực Tiếp Tại Quầy': 'Sign On-site at Counter',
+  'Ký Online Qua Hệ Thống': 'Sign Online via Portal',
+  'Tra cứu booking': 'Lookup booking',
+  'Hướng dẫn nghiệp vụ': 'Operational guide',
+  'Tìm kiếm nhanh tên khách hàng, SĐT, mã đặt chỗ #RES-XXXX, hoặc mã số kho...':
+    'Quickly search customer name, phone, booking ref #RES-XXXX, or unit code...',
+  'Tất cả tầng': 'All floors',
+  'Khung giờ:': 'Shift time:',
+  'Ca Hiện Tại': 'Current Shift',
+  'Trọn Vẹn Hôm Nay': 'Full Day Today',
+  'Tất Cả Lịch Hẹn': 'All Appointments',
+  'Check-in Vào ca': 'Shift Check-in',
+  'Check-out Kết thúc ca': 'Shift Check-out',
+  'Bàn giao ca': 'Shift Handover',
+  'Xin đổi ca': 'Request Shift Swap',
+  'Đang trực ca': 'On Duty',
+  'Đã kết thúc ca': 'Shift Ended',
+  'Chưa vào ca': 'Not Checked In',
+  'Hôm nay không có lịch trực ca': 'No shift scheduled today',
+  'Giám sát quản trị viên (Không trực ca)': 'Admin Oversight (No shift assignment)',
+  'Tài khoản đăng nhập:': 'Signed-in account:',
+  'Phân khu:': 'Assigned zone:',
+  'Hạn trả:': 'Return deadline:',
+
+  // Shift Roster
+  'Xử Lý Trực Ca & Điều Phối Nhân Sự': 'Shift Roster & Staff Scheduling',
+  'Xử lý trực ca': 'Shift roster',
+  'Xử Lý Trực Ca': 'Shift Roster',
+  'Điều phối ca trực quầy tiếp đón, kiểm tra buồng kho, chấm công vào/ra ca, đổi ca và biên bản bàn giao':
+    'Manage reception desk shifts, unit rounds, attendance check-in/out, shift swaps, and handovers',
+  'Tổng nhân sự cơ sở': 'Total Facility Staff',
+  'Nhân viên thuộc biên chế chi nhánh này': 'Staff assigned to this facility',
+  'Phân công ca mới': 'Assign New Shift',
+  'Ca Sáng': 'Morning Shift',
+  'Ca Chiều': 'Afternoon Shift',
+  'Ca Đêm': 'Night Shift',
+  'Cả Ngày': 'All Day',
+  'Ca sáng: 06:00 - 14:00': 'Morning shift: 06:00 - 14:00',
+  'Ca chiều: 14:00 - 22:00': 'Afternoon shift: 14:00 - 22:00',
+  'Ca đêm: 22:00 - 06:00': 'Night shift: 22:00 - 06:00',
+  'Lịch Phân Công Ca Trực': 'Shift Assignment Schedule',
+  'Yêu Cầu Đổi Ca': 'Shift Swap Requests',
+  'Biên Bản Bàn Giao Ca': 'Shift Handover Logs',
+  'Danh Sách Nhân Viên': 'Staff Member List',
+
+  // Cashier Journal & Transactions
+  'Báo Cáo Doanh Thu, Dòng Tiền Cơ Sở & Thu Ngân': 'Facility Revenue, Cashflow & Cashier Journal',
+  'Báo cáo thu ngân': 'Cashier Journal',
+  'Sổ Quỹ & Nhật Ký Giao Dịch': 'Cashier Journal & Transaction Log',
+  'Tổng thu ngân thực nhận': 'Total Cash Collected',
+  'paid transactions': 'paid transactions',
+  'giao dịch đã thanh toán': 'paid transactions',
+  'Thu tiền thuê kho & gia hạn': 'Rental & Renewal Collections',
+  'Phí dịch vụ lưu trữ định kỳ': 'Recurring storage service fee',
+  'Thu tiền cọc nhận kho (Ký quỹ)': 'Security Deposit Collections (Escrow)',
+  'Cọc giữ kho & bảo chứng tài sản': 'Unit holding deposit & property security',
+  'Tiền hoàn cọc đã chi trả': 'Completed refunds',
+  'Tiền hoàn cọc đã chi trả; hiển thị tách biệt với thực thu': 'Completed refunds; shown separately from cash collected',
+  'Completed refunds': 'Completed refunds',
+  'Completed refunds; shown separately from cash collected': 'Completed refunds; shown separately from cash collected',
+  'Tìm mã GD, mã kho (#A-101), khách hàng...': 'Search Txn ID, unit (#A-101), customer...',
+  'Tất cả loại giao dịch': 'All transaction types',
+  'Tất cả trạng thái': 'All statuses',
+  'Mã GD / Giờ nhận': 'Txn ID / Time',
+  'Loại thanh toán': 'Payment Type',
+  'Phương thức': 'Method',
+  'Số tiền': 'Amount',
+  'Trạng thái': 'Status',
+  'Tiền cọc': 'Deposit',
+  'Tiền thuê': 'Rental Fee',
+  'Gia hạn thuê': 'Renewal Fee',
+  'Phụ phí': 'Extra Charge',
+  'Thanh toán đơn đặt': 'Booking Payment',
+  'Rental, renewal & extra charge': 'Rental, renewal & extra charge',
+  'Tiền thuê, gia hạn & phụ phí': 'Rental, renewal & extra charge',
+  'Paid / received': 'Paid / received',
+  'Đã thanh toán / Đã thu': 'Paid / received',
+  'Đang chờ xử lý': 'Pending',
+  'Chờ thanh toán': 'Pending',
+  'Đã thanh toán': 'Paid',
+  'Chờ hoàn tiền': 'Refund Pending',
+  'Đã hoàn tiền': 'Refunded',
+  'Thất bại': 'Failed',
+  'Hết hạn': 'Expired',
+  'Từ ngày': 'From date',
+  'Đến ngày': 'To date',
+  'Nhật ký thanh toán trong kỳ. Trạng thái chờ, thất bại và hoàn tiền được hạch toán tách biệt với thực nhận.':
+    'Selected-period payment ledger. Pending, failed, and refund statuses remain separate from cash received.',
+  'Selected-period payment ledger. Pending, failed, and refund statuses remain separate from cash received.':
+    'Selected-period payment ledger. Pending, failed, and refund statuses remain separate from cash received.',
+  'Thanh toán đơn đặt:': 'Booking payments:',
+  'Booking payments:': 'Booking payments:',
+
+  // Incident Tickets
+  'Quản Lý & Xử Lý Sự Cố Boxora': 'Boxora Incident Ticket Management',
+  'Ghi Nhận Sự Cố': 'Report Incident',
+  'Tổng sự cố trong phạm vi': 'Total Tickets in Scope',
+  'Chưa hoàn tất': 'Unresolved Tickets',
+  'Quá hạn SLA': 'SLA Overdue',
+  'Đã xử lý & hoàn tất': 'Resolved & Closed',
+  'Chờ tiếp nhận': 'Pending Acceptance',
+  'Đang xử lý': 'In Progress',
+  'Đã giải quyết': 'Resolved',
+  'Đã đóng': 'Closed',
+  'Mở lại (Xử lý lại)': 'Reopened',
+  'Khẩn cấp': 'Critical',
+  'Cao': 'High',
+  'Trung bình': 'Medium',
+  'Thấp': 'Low',
+  'Khóa SmartLock': 'SmartLock Lock',
+  'Truy cập kho': 'Unit Access',
+  'Vệ sinh & Côn trùng': 'Cleanliness & Pest',
+  'Nhiệt độ & Độ ẩm': 'Temperature & Humidity',
+  'Hư hỏng thiết bị': 'Facility Damage',
+  'Khác / Chung': 'Other / General',
+  'Phân công nhân viên': 'Assign Staff',
+  'Ghi nhật ký trao đổi': 'Add Contact Log',
+  'Xác nhận đóng phiếu sự cố': 'Confirm Ticket Closure',
+  'CHẾ ĐỘ GIÁM SÁT': 'MONITORING MODE',
+  'Chế độ Xem & Báo Cáo Sự Cố:': 'Incident Oversight & Reporting Mode:',
+  'Xử lý sự cố tại chỗ': 'On-site Incident Tickets',
+  'Giám sát sự cố & SLA': 'Incident Oversight & SLA',
+
+  // Overdue Management & Risk Control
+  'Xử Lý Nợ Cước Quá Hạn & Thu Hồi PIN/QR': 'Overdue Delinquency & Access Revocation',
+  'Xử lý nợ cước quá hạn': 'Overdue Delinquency',
+  'Tổng nợ cước cần thu': 'Total Delinquent Balance',
+  'Kho vi phạm quá hạn': 'Overdue Storage Units',
+  'Đạt ngưỡng thu hồi PIN/QR': 'Threshold for Access Revocation',
+  'Đủ điều kiện niêm phong': 'Eligible for Asset Sealing',
+  'Ân hạn nhắc cước': 'Grace Period',
+  'Cảnh báo': 'Warning Stage',
+  'Thiếu chính sách': 'Policy Unconfigured',
+  'Xuất CSV': 'Export CSV',
+  'Thu hồi mã PIN/QR': 'Revoke PIN/QR Access',
+  'Gửi thông báo nhắc cước': 'Send Payment Notice',
+  'Lập biên bản niêm phong kho': 'Record Asset Sealing',
+  'Cơ sở không có nợ cước quá hạn': 'No overdue delinquency at this facility',
+  'Tất cả khách hàng tại': 'All customers at',
+  'đang duy trì thanh toán đúng hạn.': 'maintain on-time payments.',
+  'Quá hạn ': 'Overdue ',
+  ' ngày': ' days',
+
+  // Manager Floorplan & Layout
+  'Sơ Đồ Cơ Sở Kho & Trạng Thái Buồng': 'Facility Layout & Unit Occupancy',
+  'Bảng Tổng Quan Quản Lý': 'Manager Overview Dashboard',
+  'Quản Lý Vận Hành Cơ Sở': 'Facility Operations Management',
+  'Sơ đồ cơ sở kho': 'Facility storage layout',
+  'Tổng quan quản lý cơ sở': 'Facility management overview',
+  'Tổng số kho': 'Total Units',
+  'Đang thuê': 'Rented',
+  'Kho trống': 'Available',
+  'Quá hạn': 'Overdue',
+  'Chờ giao': 'Pending Move-in',
+  'Thêm kho mới': 'Add New Storage Unit',
+  'Sơ đồ mặt bằng Tầng 1': 'Level 1 Floorplan',
+  'Sơ đồ mặt bằng Tầng 2': 'Level 2 Floorplan',
+  'Tất cả kích cỡ': 'All Sizes',
+  'Nhỏ (≤ 6.5m²)': 'Small (≤ 6.5m²)',
+  'Vừa (6.5 - 12m²)': 'Medium (6.5 - 12m²)',
+  'Lớn (> 12m²)': 'Large (> 12m²)',
+  'Khu vực A': 'Zone A',
+  'Khu vực B': 'Zone B',
+  'Khu vực C': 'Zone C',
+  'Lịch Sử Mở Cửa & Nhật Ký SmartLock': 'Door Access History & SmartLock Log',
+  'Thông Tin Khách Thuê & Hợp Đồng': 'Tenant & Contract Details',
+  'Chuyển trạng thái bảo trì': 'Toggle Maintenance',
+  'Xem hồ sơ đối soát': 'View Verification Record',
+  'Tiền Cọc Bảo Lãnh': 'Held Security Deposit',
+  'Hạn Kết Thúc': 'Contract End Date',
+  'Hết Hạn Sau': 'Expires In',
+  'Ngoại lệ vi phạm': 'Policy Exception',
+  'Chính sách cơ sở': 'Facility Policy',
+  'Hiệu suất cơ sở': 'Facility Performance',
+
+  // Admin & RBAC System
+  'Chi nhánh & cơ sở lưu trữ': 'Branches & Storage Facilities',
+  'Cấu hình chi nhánh & cơ sở': 'Branch & Facility Configuration',
+  'Cấu hình chi nhánh': 'Branch configuration',
+  'Phân quyền RBAC & quản lý người dùng': 'RBAC & User Management',
+  'Hệ thống phân quyền & quản trị vai trò': 'Permission Matrix & Role Management',
+  'Người dùng & phân quyền': 'Users, Roles & Permissions',
+  'Người dùng, vai trò & phân quyền': 'Users, Roles and Permissions',
+  'Users, roles and permissions': 'Users, roles and permissions',
+  'Quản trị hệ thống': 'System Administration',
+  'System administration': 'System administration',
+  'Nhật ký kiểm toán hệ thống': 'System Audit Trail',
+  'Giám sát nghiệp vụ': 'Operational Oversight',
+  'Authorized oversight': 'Authorized oversight',
+  'Báo cáo kinh doanh': 'Business Reports',
+  'Business reports': 'Business reports',
+  'Thêm người dùng mới': 'Add New User',
+  'Ma trận phân quyền vai trò': 'Role-Based Access Matrix',
+  'Lưu ma trận quyền': 'Save Permission Matrix',
+  'Chi nhánh mở cửa vận hành': 'Operating facilities',
+  'Đang sửa chữa hoặc tạm khóa': 'Under maintenance or locked',
+  'Đã gắn tọa độ bản đồ': 'GPS map coordinates configured',
+  'Chế độ chỉ xem cho Quản trị viên': 'Admin view-only mode',
+  'Thẩm quyền thêm mới và cấu hình chi nhánh thuộc về Business Operations Manager.':
+    'Branch creation & configuration belong to Business Operations Manager.',
+
+  // Customer Portal & Bookings
+  'Dịch Vụ Khách Thuê': 'Tenant Services',
+  'Kho của tôi & Mã PIN': 'My Storage & PIN',
+  'Tìm & Thuê kho mới': 'Find & Rent Storage',
+  'Hợp đồng & Hóa đơn': 'Contracts & Invoices',
+  'Trung tâm hỗ trợ': 'Help & Support Center',
+  'Hợp Đồng Thuê Kho Của Bạn': 'Your Active Rental Contracts',
+  'Mã PIN mở kho SmartLock': 'SmartLock Access PIN',
+  'Đổi mã PIN mới': 'Change Access PIN',
+  'Cấp mã phụ (Dùng 1 lần)': 'Issue Guest PIN (One-time)',
+  'Lịch Sử Giao Dịch & Hóa Đơn VAT': 'Transaction History & VAT Invoices',
+  'Yêu cầu xuất hóa đơn VAT': 'Request e-VAT Invoice',
+  'Hủy đặt chỗ & Hoàn cọc': 'Cancel Booking & Refund',
+  'Đổi lịch hẹn nhận kho': 'Reschedule Move-in Appointment',
+  'Xem hợp đồng đã ký': 'View Signed Contract',
+  'Ký điện tử ngay': 'Sign Contract Online',
+  'Thanh toán ngay qua VNPay': 'Pay Online via VNPay',
+  'Thanh toán đã xác nhận · Hợp đồng chưa xác minh': 'Payment Confirmed · Contract Pending Verification',
+  'Đơn đặt thuê chưa hoàn tất': 'Rental Request Incomplete',
+  'Thanh toán đã được backend xác nhận': 'Payment confirmed by backend',
+  'Đặt thuê và thanh toán thành công!': 'Storage booking & payment successful!',
+  'Đang đối soát thông tin với Boxora…': 'Reconciling details with Boxora…',
+  'Đang xác minh giao dịch': 'Verifying transaction',
+  'Thanh toán chưa thành công': 'Payment Unsuccessful',
+  'Chưa xác nhận được thanh toán': 'Payment Not Yet Confirmed',
+  'Thử thanh toán lại': 'Retry Payment',
+  'Mở hợp đồng để ký': 'Open Contract to Sign',
+  'Về trang tổng quan': 'Back to Dashboard',
+  'Xem lịch nhận kho': 'View Move-in Schedule',
+  'Hợp đồng và thanh toán': 'Contract & Payment',
+  'Boxora · Đặt thuê trực tuyến': 'Boxora · Online Storage Booking',
+
+  // Authentication & Account
+  'Đăng nhập tài khoản Boxora': 'Sign In to Boxora Account',
+  'Đăng ký tài khoản khách thuê': 'Register Tenant Account',
+  'Ghi nhớ đăng nhập': 'Remember Sign In',
+  'Quên mật khẩu?': 'Forgot Password?',
+  'Chưa có tài khoản?': "Don't have an account?",
+  'Đã có tài khoản?': 'Already have an account?',
+  'Về trang đăng nhập': 'Back to Sign In',
+  'Đặt Lại Mật Khẩu': 'Reset Password',
+  'Đổi Mật Khẩu Thành Công': 'Password Reset Successful',
+  'Thiếu mã token xác thực': 'Missing verification token',
+  'Yêu cầu cấp lại liên kết mới': 'Request a new reset link',
+  'Gửi email khôi phục mật khẩu': 'Send Password Reset Email',
+  'Về trang chủ Boxora': 'Back to Boxora Home',
+  'Phiên tài khoản': 'Account session',
+  'Account session': 'Account session',
+  'Phiên đăng nhập đang hoạt động': 'Signed-in session active',
+  'Signed-in session active': 'Signed-in session active',
+  'API và dữ liệu cơ sở sẵn sàng': 'Facility API and data available',
+  'Facility API and data available': 'Facility API and data available',
+  'Đang kiểm tra kết nối': 'Checking connection',
+  'Checking connection': 'Checking connection',
+  'Không kết nối được API': 'Facility API unavailable',
+  'Facility API unavailable': 'Facility API unavailable',
+  'Kiểm tra từ API cơ sở mỗi 60 giây': 'Checked through the facility API every 60 seconds',
+  'Checked through the facility API every 60 seconds': 'Checked through the facility API every 60 seconds',
+  'Cơ sở được phân công': 'Assigned Facility',
+  'Assigned Facility': 'Assigned Facility',
+})
+
 // Pre-sorted dictionary keys by length descending to match longest phrases first
 const SORTED_KEYS = Object.keys(DICTIONARY).sort((a, b) => b.length - a.length)
+
+// Build reverse dictionary for bidirectional English -> Vietnamese translation
+export const REVERSE_DICTIONARY: Record<string, string> = {}
+for (const [vi, en] of Object.entries(DICTIONARY)) {
+  if (en && typeof en === 'string' && en !== vi && !REVERSE_DICTIONARY[en]) {
+    REVERSE_DICTIONARY[en] = vi
+  }
+}
+const SORTED_REVERSE_KEYS = Object.keys(REVERSE_DICTIONARY).sort((a, b) => b.length - a.length)
 
 // WeakMaps storing original Vietnamese text and attributes
 const originalTextMap = new WeakMap<Node, string>()
@@ -876,6 +1236,20 @@ const translateText = (value: string) => {
   for (const phrase of SORTED_KEYS) {
     if (translated.includes(phrase)) {
       translated = translated.split(phrase).join(DICTIONARY[phrase])
+    }
+  }
+  return translated
+}
+
+const translateTextToVietnamese = (value: string) => {
+  const trimmed = value.trim()
+  if (REVERSE_DICTIONARY[trimmed]) {
+    return value.replace(trimmed, REVERSE_DICTIONARY[trimmed])
+  }
+  let translated = value
+  for (const phrase of SORTED_REVERSE_KEYS) {
+    if (phrase.length > 2 && translated.includes(phrase)) {
+      translated = translated.split(phrase).join(REVERSE_DICTIONARY[phrase])
     }
   }
   return translated
@@ -899,11 +1273,18 @@ const applyTextNodeTranslation = (node: Node, lang: Language) => {
     return
   }
 
+  // lang === 'vi'
   if (lastTranslation !== undefined && currentValue === lastTranslation && original !== undefined) {
     if (currentValue !== original) node.nodeValue = original
   } else {
-    // React has rendered fresh Vietnamese content into this text node.
-    originalTextMap.set(node, currentValue)
+    // If currentValue contains an English string from REVERSE_DICTIONARY, translate it to Vietnamese
+    const translated = translateTextToVietnamese(currentValue)
+    if (translated !== currentValue) {
+      node.nodeValue = translated
+      originalTextMap.set(node, translated)
+    } else {
+      originalTextMap.set(node, currentValue)
+    }
   }
   translatedTextMap.delete(node)
 }
@@ -984,8 +1365,13 @@ function applyDOMTranslation(root: Node, lang: Language) {
               const source = orig[attr]
               if (source !== undefined && source !== currentValue) el.setAttribute(attr, source)
             } else {
-              // React has rendered a fresh value; retain it as the Vietnamese source.
-              orig[attr] = currentValue
+              const translated = translateTextToVietnamese(currentValue)
+              if (translated !== currentValue) {
+                el.setAttribute(attr, translated)
+                orig[attr] = translated
+              } else {
+                orig[attr] = currentValue
+              }
             }
             delete lastTranslations[attr]
           }
@@ -1075,7 +1461,11 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const trimmed = key.trim()
     if (language === 'en') {
       if (DICTIONARY[trimmed]) return DICTIONARY[trimmed]
-      if (fallback) return fallback
+      if (REVERSE_DICTIONARY[trimmed]) return trimmed
+      if (fallback) {
+        if (DICTIONARY[fallback.trim()]) return DICTIONARY[fallback.trim()]
+        return fallback
+      }
       // Partial replace for dynamic strings
       let res = key
       for (const phrase of SORTED_KEYS) {
@@ -1085,7 +1475,18 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
       return res
     }
-    return key
+
+    // language === 'vi'
+    if (REVERSE_DICTIONARY[trimmed]) return REVERSE_DICTIONARY[trimmed]
+    if (fallback && DICTIONARY[fallback.trim()]) return fallback
+    // If key has English phrases, translate them
+    let res = key
+    for (const phrase of SORTED_REVERSE_KEYS) {
+      if (phrase.length > 2 && res.includes(phrase)) {
+        res = res.split(phrase).join(REVERSE_DICTIONARY[phrase])
+      }
+    }
+    return res
   }
 
   return (

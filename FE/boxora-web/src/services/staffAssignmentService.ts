@@ -57,11 +57,13 @@ export interface ShiftSwapRequest {
   facilityName?: string
   facilityCode?: string
   reason: string
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+  status: 'PENDING' | 'MANAGER_APPROVED' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
   managerNotes?: string
   reviewedById?: string
   reviewedByName?: string
   reviewedAt?: string
+  targetStaffRespondedAt?: string
+  targetStaffNotes?: string
   createdAt?: string
   updatedAt?: string
 }
@@ -160,6 +162,11 @@ export const staffAssignmentService = {
     return response.data?.data as ShiftSwapRequest
   },
 
+  async respondToSwapRequest(swapId: string, data: { accept: boolean; notes?: string }) {
+    const response = await api.patch(`/api/v1/shift-swaps/${swapId}/respond`, data)
+    return response.data?.data as ShiftSwapRequest
+  },
+
   async cancelSwapRequest(swapId: string) {
     const response = await api.patch(`/api/v1/shift-swaps/${swapId}/cancel`)
     return response.data?.data as ShiftSwapRequest
@@ -169,6 +176,8 @@ export const staffAssignmentService = {
     facilityId?: string
     status?: string
     staffId?: string
+    fromDate?: string
+    toDate?: string
     page?: number
     size?: number
   }) {
@@ -210,6 +219,8 @@ export const staffAssignmentService = {
     facilityId?: string
     date?: string
     status?: string
+    fromDate?: string
+    toDate?: string
     page?: number
     size?: number
   }) {

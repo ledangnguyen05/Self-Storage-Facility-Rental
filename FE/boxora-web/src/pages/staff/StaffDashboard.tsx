@@ -8,13 +8,14 @@ import { facilityService } from '../../services/facilityService'
 import { facilityPolicyService } from '../../services/facilityPolicyService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { Booking, StorageUnit, Facility, FacilityPolicy } from '../../types'
-import { extractFloor, resolveBookingFloor, filterArrivals } from '../../utils/floorUtils'
+import { extractFloor, resolveBookingFloor, filterArrivals, AppointmentStatusFilter } from '../../utils/floorUtils'
 import { HandoverCheckInWorkbench } from './components/HandoverCheckInWorkbench'
 import { QrCameraCheckInModal } from './components/QrCameraCheckInModal'
 import { StaffPolicyGuideModal } from './components/StaffPolicyGuideModal'
 import { staffAssignmentService, StaffAssignmentResponse } from '../../services/staffAssignmentService'
 import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
 import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
+import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
 
 const localDateString = (date: Date) => {
   const year = date.getFullYear()
@@ -56,6 +57,7 @@ export const StaffDashboard: React.FC = () => {
   const [isAttendanceLoading, setIsAttendanceLoading] = useState(false)
   const [showStaffSwapModal, setShowStaffSwapModal] = useState(false)
   const [showStaffHandoverModal, setShowStaffHandoverModal] = useState(false)
+  const [pendingIncomingSwapsCount, setPendingIncomingSwapsCount] = useState<number>(0)
   const [attendanceSuccessMsg, setAttendanceSuccessMsg] = useState<string | null>(null)
   const isActuallyOnDuty = useMemo(() => isAssignmentOnDuty(myTodayAssignment), [myTodayAssignment])
 
@@ -79,7 +81,17 @@ export const StaffDashboard: React.FC = () => {
   // Filter & Search states
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedFloor, setSelectedFloor] = useState<string>('all')
-  const [selectedShiftFilter, setSelectedShiftFilter] = useState<'current' | 'today' | 'all'>('current')
+  const [selectedShiftFilter, setSelectedShiftFilter] = useState<'current' | 'today' | 'past' | 'future' | 'all'>('current')
+  const [filterFromDate, setFilterFromDate] = useState<string>('')
+  const [filterToDate, setFilterToDate] = useState<string>('')
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<AppointmentStatusFilter>('ALL')
+  const [claimingBookingId, setClaimingBookingId] = useState<string | null>(null)
+  const [receptionAlertData, setReceptionAlertData] = useState<{
+    isOpen: boolean
+    message: string
+    booking?: Booking | null
+    canCheckInToday?: boolean
+  } | null>(null)
 
   // Return Inspection Checklist state (Interactive)
   const [inspectionRollDoor, setInspectionRollDoor] = useState<'GOOD' | 'MINOR_DAMAGE' | 'BLOCKED'>('GOOD')
@@ -170,6 +182,17 @@ export const StaffDashboard: React.FC = () => {
     } catch {
       setMyTodayAssignment(null)
     }
+
+    // Fetch incoming swap requests that need current staff confirmation
+    try {
+      const mySwaps = await staffAssignmentService.getMySwapRequests()
+      const incomingPending = (mySwaps || []).filter(
+        s => s.targetStaffId === user?.id && s.status === 'MANAGER_APPROVED'
+      ).length
+      setPendingIncomingSwapsCount(incomingPending)
+    } catch {
+      setPendingIncomingSwapsCount(0)
+    }
   }
 
   // Attendance Handlers
@@ -249,10 +272,23 @@ export const StaffDashboard: React.FC = () => {
     }
   }
 
-  const fetchArrivals = async (facilityId?: string) => {
+  const fetchArrivals = async (
+    facilityId?: string,
+    timeframe?: 'current' | 'today' | 'past' | 'future' | 'all',
+    fromDate?: string,
+    toDate?: string
+  ) => {
     try {
       const targetId = facilityId || currentTargetFacility
-      const data = await bookingService.getUpcomingArrivals(targetId)
+      const tf = timeframe !== undefined ? timeframe : selectedShiftFilter
+      const from = fromDate !== undefined ? fromDate : filterFromDate
+      const to = toDate !== undefined ? toDate : filterToDate
+
+      const data = await bookingService.getUpcomingArrivals(targetId, {
+        timeframe: tf?.toUpperCase(),
+        fromDate: from || undefined,
+        toDate: to || undefined,
+      })
       if (Array.isArray(data)) {
         let filtered = data
         if (targetId) {
@@ -268,9 +304,6 @@ export const StaffDashboard: React.FC = () => {
           })
         }
         setArrivals(filtered)
-        if (filtered.length > 0 && !activeBookingId) {
-          setActiveBookingId(filtered[0].id)
-        }
       } else {
         setArrivals([])
       }
@@ -298,9 +331,6 @@ export const StaffDashboard: React.FC = () => {
           })
         }
         setActiveRentals(filtered)
-        if (!selectedReturnBookingId && filtered.length > 0) {
-          setSelectedReturnBookingId(filtered[0].id)
-        }
       } else {
         setActiveRentals([])
       }
@@ -381,7 +411,22 @@ export const StaffDashboard: React.FC = () => {
     })
   }, [arrivals, radarUnits, unitMapById, unitMapByCodeAndFacility])
 
-  // Filtered arrivals based on Search, Floor, Shift
+  // Summary counts for arrival status pills
+  const arrivalStatusCounts = useMemo(() => {
+    let pending = 0
+    let active = 0
+    let completed = 0
+    let cancelled = 0
+    arrivals.forEach((b) => {
+      if (b.status === 'ACTIVE') active++
+      else if (b.status === 'COMPLETED') completed++
+      else if (b.status === 'CANCELLED') cancelled++
+      else pending++
+    })
+    return { total: arrivals.length, pending, active, completed, cancelled }
+  }, [arrivals])
+
+  // Filtered arrivals based on Search, Floor, Shift / Timeframe, Date range, Status
   const filteredArrivals = useMemo(() => {
     return filterArrivals(
       arrivals,
@@ -389,13 +434,84 @@ export const StaffDashboard: React.FC = () => {
       selectedFloor,
       selectedShiftFilter,
       unitMapById,
-      unitMapByCodeAndFacility
+      unitMapByCodeAndFacility,
+      new Date(),
+      filterFromDate || undefined,
+      filterToDate || undefined,
+      selectedStatusFilter
     )
-  }, [arrivals, searchQuery, selectedFloor, selectedShiftFilter, unitMapById, unitMapByCodeAndFacility])
+  }, [arrivals, searchQuery, selectedFloor, selectedShiftFilter, unitMapById, unitMapByCodeAndFacility, filterFromDate, filterToDate, selectedStatusFilter])
+
+  const handleTimeframeChange = (tf: 'current' | 'today' | 'past' | 'future' | 'all') => {
+    setSelectedShiftFilter(tf)
+    fetchArrivals(currentTargetFacility, tf, filterFromDate, filterToDate)
+  }
+
+  const handleDateFilterApply = (from: string, to: string) => {
+    setFilterFromDate(from)
+    setFilterToDate(to)
+    fetchArrivals(currentTargetFacility, selectedShiftFilter, from, to)
+  }
+
+  const handleResetDateFilter = () => {
+    setFilterFromDate('')
+    setFilterToDate('')
+    fetchArrivals(currentTargetFacility, selectedShiftFilter, '', '')
+  }
+
+  const handleClaimReception = async (booking: Booking) => {
+    // Proactive check on shift attendance if user is staff/manager
+    if (user?.roleName !== 'ADMIN') {
+      const isShiftCheckedIn = myTodayAssignment?.status === 'CHECKED_IN' || (myTodayAssignment?.checkedInAt && !myTodayAssignment?.checkedOutAt)
+      const bookingCheckinDate = booking.expectedCheckInAt ? booking.expectedCheckInAt.slice(0, 10) : booking.startDate
+      const todayStr = localDateString(new Date())
+
+      if (bookingCheckinDate === todayStr && !isShiftCheckedIn) {
+        setReceptionAlertData({
+          isOpen: true,
+          message: 'Bạn chưa điểm danh vào ca làm việc hôm nay! Vui lòng điểm danh vào ca trực trước khi tiếp nhận lượt khách.',
+          booking,
+          canCheckInToday: !!myTodayAssignment,
+        })
+        return
+      }
+    }
+
+    setClaimingBookingId(booking.id)
+    try {
+      const updated = await bookingService.claimCheckInReception(booking.id)
+      setArrivals(prev => prev.map(b => b.id === booking.id ? {
+        ...b,
+        assignedStaffId: updated.assignedStaffId || user?.id,
+        assignedStaffName: updated.assignedStaffName || user?.fullName || 'Nhân viên quầy'
+      } : b))
+      setActiveBookingId(booking.id)
+      setAttendanceSuccessMsg(`Đã tiếp nhận lượt đón khách của đơn ${booking.bookingCode} thành công!`)
+      setTimeout(() => setAttendanceSuccessMsg(null), 4000)
+      setTimeout(() => {
+        document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+      }, 50)
+    } catch (err: any) {
+      const isShiftCheckedIn = myTodayAssignment?.status === 'CHECKED_IN' || (myTodayAssignment?.checkedInAt && !myTodayAssignment?.checkedOutAt)
+      const bookingCheckinDate = booking.expectedCheckInAt ? booking.expectedCheckInAt.slice(0, 10) : booking.startDate
+      const todayStr = localDateString(new Date())
+      const isBookingToday = bookingCheckinDate === todayStr
+
+      setReceptionAlertData({
+        isOpen: true,
+        message: err?.response?.data?.message || 'Không thể tiếp nhận khách: Bạn chỉ có thể tiếp nhận khi có ca làm việc vào ngày hẹn check-in tại cơ sở và đã điểm danh vào ca trực.',
+        booking,
+        canCheckInToday: isBookingToday && !isShiftCheckedIn && !!myTodayAssignment,
+      })
+    } finally {
+      setClaimingBookingId(null)
+    }
+  }
 
   // Current return target
   const currentReturnBooking = useMemo(() => {
-    return activeRentals.find(r => r.id === (selectedReturnBookingId || activeRentals[0]?.id)) || activeRentals[0]
+    if (!selectedReturnBookingId) return null
+    return activeRentals.find(r => r.id === selectedReturnBookingId) || null
   }, [activeRentals, selectedReturnBookingId])
 
   useEffect(() => {
@@ -509,130 +625,23 @@ export const StaffDashboard: React.FC = () => {
 
       {/* 1. HEADER: BÀN VẬN HÀNH QUẦY & TIẾP ĐÓN */}
       <header className="w-full bg-white border border-slate-200/90 shadow-2xs rounded-2xl p-5 sm:p-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-slate-900 flex items-center justify-center text-white shrink-0 shadow-xs">
               <span className="material-symbols-outlined text-[26px] text-cyan-400">desktop_windows</span>
             </div>
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="font-headline text-xl font-bold text-slate-900">
-                  Bàn Vận Hành Quầy &amp; Tiếp Đón
-                </h1>
-
-                {/* Real Shift Badge */}
-                {isAdmin ? (
-                  <span className="px-2.5 py-0.5 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-[11px] font-semibold">
-                    Giám sát quản trị viên (Không trực ca)
-                  </span>
-                ) : myTodayAssignment ? (
-                  <>
-                    <span className="px-2.5 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[11px] font-mono font-bold uppercase tracking-wider">
-                      {myTodayAssignment.shift === 'MORNING'
-                        ? 'Ca Sáng'
-                        : myTodayAssignment.shift === 'AFTERNOON'
-                        ? 'Ca Chiều'
-                        : myTodayAssignment.shift === 'NIGHT'
-                        ? 'Ca Đêm'
-                        : 'Cả Ngày'}{' '}
-                      ({myTodayAssignment.startTime?.slice(0, 5) || '06:00'} - {myTodayAssignment.endTime?.slice(0, 5) || '14:00'})
-                    </span>
-
-                    {isActuallyOnDuty ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        Đang trực ca
-                      </span>
-                    ) : myTodayAssignment.status === 'COMPLETED' ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-semibold">
-                        Đã kết thúc ca
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-semibold">
-                        Chưa vào ca
-                      </span>
-                    )}
-                  </>
-                ) : (
-                  <span className="px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-500 text-[11px] font-medium">
-                    Hôm nay không có lịch trực ca
-                  </span>
-                )}
-              </div>
-              <span className="text-xs text-slate-500 mt-1">
-                Tài khoản đăng nhập: <strong className="text-slate-900">{user?.fullName || user?.username || 'Nhân viên'}</strong>{' '}
-                {myTodayAssignment?.assignedZone && (
-                  <>• Phân khu: <strong className="text-blue-700">{myTodayAssignment.assignedZone}</strong>{' '}</>
-                )}
-              </span>
+            <div>
+              <h1 className="font-headline text-xl font-bold text-slate-900">
+                Bàn Vận Hành Quầy &amp; Tiếp Đón
+              </h1>
             </div>
           </div>
 
-          {/* Quick Actions & Attendance Controls */}
-          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-            {/* Shift Check-in / Check-out Buttons */}
-            {myTodayAssignment?.status === 'ASSIGNED' && isWithinAssignmentWindow(myTodayAssignment) && (
-              <button
-                type="button"
-                onClick={handleStaffCheckIn}
-                disabled={isAttendanceLoading}
-                className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
-                <span>Check-in Vào ca</span>
-              </button>
-            )}
-
-            {!isAdmin && myTodayAssignment?.status === 'CHECKED_IN' && (
-              <button
-                type="button"
-                onClick={handleStaffCheckOut}
-                disabled={isAttendanceLoading}
-                className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[18px]">logout</span>
-                <span>Check-out Kết thúc ca</span>
-              </button>
-            )}
-
-            {/* Handover Button */}
-            {!isAdmin && myTodayAssignment && (
-              <button
-                type="button"
-                onClick={() => setShowStaffHandoverModal(true)}
-                className="px-3 py-2.5 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Lập biên bản bàn giao ca cho đồng nghiệp tiếp theo"
-              >
-                <span className="material-symbols-outlined text-[18px]">assignment_turned_in</span>
-                <span>Bàn giao ca</span>
-              </button>
-            )}
-
-            {/* Shift Swap Button */}
-            {myTodayAssignment && myTodayAssignment.status !== 'COMPLETED' && (
-              <button
-                type="button"
-                onClick={() => setShowStaffSwapModal(true)}
-                className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Gửi yêu cầu xin đổi ca trực"
-              >
-                <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
-                <span>Xin đổi ca</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setIsQrScannerOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[18px]">qr_code_scanner</span>
-              <span>Tra cứu booking</span>
-            </button>
+          <div className="flex items-center gap-2.5 shrink-0">
             <button
               type="button"
               onClick={() => setIsPolicyGuideOpen(true)}
-              className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer shadow-xs hover:border-slate-300"
               title="Tra cứu nhanh hướng dẫn nghiệp vụ & SLA cơ sở"
             >
               <span className="material-symbols-outlined text-[18px] text-cyan-700">menu_book</span>
@@ -641,6 +650,32 @@ export const StaffDashboard: React.FC = () => {
           </div>
         </div>
       </header>
+
+      {/* ALERT: Incoming Shift Swap waiting for confirmation */}
+      {pendingIncomingSwapsCount > 0 && (
+        <div className="p-4 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 rounded-2xl flex items-center justify-between gap-4 shadow-xs flex-wrap">
+          <div className="flex items-center gap-3 text-amber-950 font-medium text-xs">
+            <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs animate-pulse">
+              <span className="material-symbols-outlined text-[20px]">swap_horiz</span>
+            </div>
+            <div>
+              <p className="font-bold text-amber-950 text-sm">
+                Yêu cầu đổi ca trực cần xác nhận!
+              </p>
+              <p className="text-amber-800 text-xs">
+                Bạn có <strong>{pendingIncomingSwapsCount}</strong> ca trực được đồng nghiệp đề xuất đổi sang cho bạn và đã được Quản lý cơ sở phê duyệt.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/staff/my-shifts"
+            className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs inline-flex items-center gap-1.5 transition-colors shadow-xs shrink-0 cursor-pointer"
+          >
+            <span>Xem và phản hồi ngay</span>
+            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+          </Link>
+        </div>
+      )}
 
       {/* 2. 4 THẺ THỐNG KÊ / KPI QUẦY */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -793,6 +828,7 @@ export const StaffDashboard: React.FC = () => {
             activeBookingId={activeBookingId}
             onSelectBooking={setActiveBookingId}
             onHandoverComplete={(bookingId) => {
+              setActiveBookingId('')
               fetchArrivals(currentTargetFacility)
               loadActiveRentals(currentTargetFacility)
               loadRadarUnits(currentTargetFacility)
@@ -820,29 +856,34 @@ export const StaffDashboard: React.FC = () => {
                   <div className="flex items-center justify-between text-xs mb-2">
                     <span className="text-[10px] uppercase font-bold text-slate-500">Hợp Đồng Nghiệm Thu</span>
                     <select
-                      value={selectedReturnBookingId || activeRentals[0]?.id}
+                      value={selectedReturnBookingId}
                       onChange={(e) => {
                         setSelectedReturnBookingId(e.target.value)
                         setReturnConfirmed(false)
                         setSettlementSuccessMsg(null)
                       }}
-                      className="px-2.5 py-1 rounded bg-white border border-slate-200 text-slate-800 font-mono text-[11px] font-bold focus:outline-none cursor-pointer"
+                      className="px-2.5 py-1 rounded bg-white border border-slate-200 text-slate-800 font-mono text-[11px] font-bold focus:outline-none cursor-pointer max-w-[220px] truncate"
                     >
+                      <option value="">-- Chọn hợp đồng ({activeRentals.length}) --</option>
                       {activeRentals.map(r => (
                         <option key={r.id} value={r.id}>
-                          {r.bookingCode} - Kho #{r.unitCode}
+                          {r.bookingCode} - Kho #{r.unitCode} ({r.customerName})
                         </option>
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <span className="font-bold text-slate-900 text-sm block">{currentReturnBooking?.customerName || 'Khách thuê'}</span>
-                    <span className="text-xs text-slate-500">SĐT: {currentReturnBooking?.customerPhone || 'N/A'}</span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
-                    <span className="text-slate-800">Kho: <strong className="font-mono text-cyan-800">#{currentReturnBooking?.unitCode}</strong></span>
-                    <span className="text-amber-700 font-mono font-bold text-[11px]">Hạn trả: {currentReturnBooking?.endDate || 'Đến hạn'}</span>
-                  </div>
+                  {currentReturnBooking && (
+                    <div className="pt-2 border-t border-slate-200/80">
+                      <div>
+                        <span className="font-bold text-slate-900 text-sm block">{currentReturnBooking.customerName || 'Khách thuê'}</span>
+                        <span className="text-xs text-slate-500">SĐT: {currentReturnBooking.customerPhone || 'N/A'}</span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
+                        <span className="text-slate-800">Kho: <strong className="font-mono text-cyan-800">#{currentReturnBooking.unitCode}</strong></span>
+                        <span className="text-amber-700 font-mono font-bold text-[11px]">Hạn trả: {currentReturnBooking.endDate || 'Đến hạn'}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl mb-4 text-xs text-slate-500 text-center">
@@ -850,273 +891,288 @@ export const StaffDashboard: React.FC = () => {
                 </div>
               )}
 
-              {/* Biểu Mẫu Thẩm Định Hiện Trường (Tương tác thực tế) */}
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-900 font-mono">
-                    Hạng mục kiểm tra hiện trường
-                  </span>
-                  <span className="text-[10px] text-slate-500 font-mono">Đánh giá thực tế</span>
-                </div>
-
-                {/* Hạng mục 1: Cửa cuốn */}
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex flex-col gap-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-900 flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px] text-slate-500">garage</span>
-                      1. Cửa cuốn &amp; Ray trượt
-                    </span>
-                    <select
-                      value={inspectionRollDoor}
-                      onChange={(e) => setInspectionRollDoor(e.target.value as any)}
-                      className="px-2 py-0.5 rounded bg-white border border-slate-200 font-bold text-[11px] focus:outline-none cursor-pointer"
-                    >
-                      <option value="GOOD">Tốt / Bình thường</option>
-                      <option value="MINOR_DAMAGE">Móp nhẹ / Trầy xước</option>
-                      <option value="BLOCKED">Kẹt ray / Hỏng nặng</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Hạng mục 2: Vệ sinh */}
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex flex-col gap-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-900 flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px] text-slate-500">cleaning_services</span>
-                      2. Vệ sinh kho &amp; Sàn
-                    </span>
-                    <select
-                      value={inspectionCleanliness}
-                      onChange={(e) => setInspectionCleanliness(e.target.value as any)}
-                      className="px-2 py-0.5 rounded bg-white border border-slate-200 font-bold text-[11px] focus:outline-none cursor-pointer"
-                    >
-                      <option value="CLEAN">Sạch sẽ / Đã dọn rác</option>
-                      <option value="NEEDS_CLEANING">Còn rác / Cần vệ sinh</option>
-                      <option value="DIRTY">Bẩn nhiều / Ẩm mốc</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Hạng mục 3: Ổ khóa SmartLock */}
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex flex-col gap-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-900 flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px] text-slate-500">lock</span>
-                      3. Khóa SmartLock &amp; Phụ kiện
-                    </span>
-                    <select
-                      value={inspectionLock}
-                      onChange={(e) => setInspectionLock(e.target.value as any)}
-                      className="px-2 py-0.5 rounded bg-white border border-slate-200 font-bold text-[11px] focus:outline-none cursor-pointer"
-                    >
-                      <option value="NORMAL">Bình thường / Đủ phụ kiện</option>
-                      <option value="LATCH_DAMAGED">Hỏng chốt an toàn</option>
-                      <option value="FAULTY">Mất khóa / Lỗi điện tử</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Hạng mục 4: Đánh giá môi trường kho (thủ công) */}
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex flex-col gap-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-900 flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px] text-slate-500">thermostat</span>
-                      4. Môi trường kho thực tế
-                    </span>
-                    <select
-                      value={inspectionCondition}
-                      onChange={(e) => setInspectionCondition(e.target.value as any)}
-                      className="px-2 py-0.5 rounded bg-white border border-slate-200 font-bold text-[11px] focus:outline-none cursor-pointer"
-                    >
-                      <option value="GOOD">Khô ráo, thông thoáng</option>
-                      <option value="NEEDS_MAINTENANCE">Cần bảo dưỡng quạt</option>
-                      <option value="ALERT">Có dấu hiệu ẩm ướt</option>
-                    </select>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-900">5. Wall and structural condition</span>
-                    <select
-                      value={inspectionWallStructure}
-                      onChange={(e) => setInspectionWallStructure(e.target.value as 'GOOD' | 'DAMAGED')}
-                      className="px-2 py-0.5 rounded bg-white border border-slate-200 font-bold text-[11px] focus:outline-none cursor-pointer"
-                    >
-                      <option value="GOOD">No visible damage</option>
-                      <option value="DAMAGED">Visible damage</option>
-                    </select>
-                  </div>                  <input
-                    type="text"
-                    value={inspectionNotes}
-                    onChange={(e) => setInspectionNotes(e.target.value)}
-                    placeholder="Ghi chú thẩm định hiện trường khác..."
-                    className="mt-1 px-2.5 py-1 bg-white border border-slate-200 rounded text-[11px] text-slate-800 focus:outline-none"
-                  />
-                </div>
-
-                {/* Ảnh Hiện Trường Thực Tế (Không dùng Unsplash) */}
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[11px] font-bold text-slate-900 uppercase font-mono">
-                      Ảnh Chụp Hiện Trường (Tải từ thiết bị)
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-mono">
-                      {[photoPanoramic, photoLock].filter(Boolean).length}/2 ảnh
-                    </span>
-                  </div>
-
-                  <input
-                    type="file"
-                    accept="image/*"
-                    ref={panoramicInputRef}
-                    className="hidden"
-                    onChange={(e) => handlePhotoUpload(e, 'panoramic')}
-                  />
-                  <input
-                    type="file"
-                    accept="image/*"
-                    ref={lockInputRef}
-                    className="hidden"
-                    onChange={(e) => handlePhotoUpload(e, 'lock')}
-                  />
-
-                  <div className="grid grid-cols-2 gap-2">
-                    {/* Ảnh 1 */}
-                    <div className="relative rounded-lg overflow-hidden h-24 border border-dashed border-slate-300 bg-white flex flex-col items-center justify-center p-2 text-center">
-                      {photoPanoramic ? (
-                        <>
-                          <img src={photoPanoramic} alt="Toàn cảnh kho" className="w-full h-full object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => setPhotoPanoramic(null)}
-                            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-slate-900/80 text-white flex items-center justify-center text-[11px]"
-                          >
-                            ✕
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => panoramicInputRef.current?.click()}
-                          className="flex flex-col items-center justify-center text-slate-500 hover:text-cyan-700 cursor-pointer"
-                        >
-                          <span className="material-symbols-outlined text-[20px]">add_a_photo</span>
-                          <span className="text-[10px] font-semibold mt-1">Toàn cảnh kho</span>
-                        </button>
-                      )}
+              {/* Biểu Mẫu Thẩm Định Hiện Trường (Chỉ hiển thị khi đã chọn hợp đồng) */}
+              {currentReturnBooking ? (
+                <>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-900 font-mono">
+                        Hạng mục kiểm tra hiện trường
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">Đánh giá thực tế</span>
                     </div>
 
-                    {/* Ảnh 2 */}
-                    <div className="relative rounded-lg overflow-hidden h-24 border border-dashed border-slate-300 bg-white flex flex-col items-center justify-center p-2 text-center">
-                      {photoLock ? (
-                        <>
-                          <img src={photoLock} alt="Ổ khóa & cửa" className="w-full h-full object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => setPhotoLock(null)}
-                            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-slate-900/80 text-white flex items-center justify-center text-[11px]"
-                          >
-                            ✕
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => lockInputRef.current?.click()}
-                          className="flex flex-col items-center justify-center text-slate-500 hover:text-cyan-700 cursor-pointer"
+                    {/* Hạng mục 1: Cửa cuốn */}
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex flex-col gap-1.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-900 flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[16px] text-slate-500">garage</span>
+                          1. Cửa cuốn &amp; Ray trượt
+                        </span>
+                        <select
+                          value={inspectionRollDoor}
+                          onChange={(e) => setInspectionRollDoor(e.target.value as any)}
+                          className="px-2 py-0.5 rounded bg-white border border-slate-200 font-bold text-[11px] focus:outline-none cursor-pointer"
                         >
-                          <span className="material-symbols-outlined text-[20px]">add_a_photo</span>
-                          <span className="text-[10px] font-semibold mt-1">Khóa &amp; Cửa kho</span>
-                        </button>
+                          <option value="GOOD">Tốt / Bình thường</option>
+                          <option value="MINOR_DAMAGE">Móp nhẹ / Trầy xước</option>
+                          <option value="BLOCKED">Kẹt ray / Hỏng nặng</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Hạng mục 2: Vệ sinh */}
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex flex-col gap-1.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-900 flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[16px] text-slate-500">cleaning_services</span>
+                          2. Vệ sinh kho &amp; Sàn
+                        </span>
+                        <select
+                          value={inspectionCleanliness}
+                          onChange={(e) => setInspectionCleanliness(e.target.value as any)}
+                          className="px-2 py-0.5 rounded bg-white border border-slate-200 font-bold text-[11px] focus:outline-none cursor-pointer"
+                        >
+                          <option value="CLEAN">Sạch sẽ / Đã dọn rác</option>
+                          <option value="NEEDS_CLEANING">Còn rác / Cần vệ sinh</option>
+                          <option value="DIRTY">Bẩn nhiều / Ẩm mốc</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Hạng mục 3: Ổ khóa SmartLock */}
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex flex-col gap-1.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-900 flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[16px] text-slate-500">lock</span>
+                          3. Khóa SmartLock &amp; Phụ kiện
+                        </span>
+                        <select
+                          value={inspectionLock}
+                          onChange={(e) => setInspectionLock(e.target.value as any)}
+                          className="px-2 py-0.5 rounded bg-white border border-slate-200 font-bold text-[11px] focus:outline-none cursor-pointer"
+                        >
+                          <option value="NORMAL">Bình thường / Đủ phụ kiện</option>
+                          <option value="LATCH_DAMAGED">Hỏng chốt an toàn</option>
+                          <option value="FAULTY">Mất khóa / Lỗi điện tử</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Hạng mục 4: Đánh giá môi trường kho (thủ công) */}
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex flex-col gap-1.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-900 flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[16px] text-slate-500">thermostat</span>
+                          4. Môi trường kho thực tế
+                        </span>
+                        <select
+                          value={inspectionCondition}
+                          onChange={(e) => setInspectionCondition(e.target.value as any)}
+                          className="px-2 py-0.5 rounded bg-white border border-slate-200 font-bold text-[11px] focus:outline-none cursor-pointer"
+                        >
+                          <option value="GOOD">Khô ráo, thông thoáng</option>
+                          <option value="NEEDS_MAINTENANCE">Cần bảo dưỡng quạt</option>
+                          <option value="ALERT">Có dấu hiệu ẩm ướt</option>
+                        </select>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-xs">
+                        <span className="font-semibold text-slate-900">5. Tường &amp; kết cấu buồng kho</span>
+                        <select
+                          value={inspectionWallStructure}
+                          onChange={(e) => setInspectionWallStructure(e.target.value as 'GOOD' | 'DAMAGED')}
+                          className="px-2 py-0.5 rounded bg-white border border-slate-200 font-bold text-[11px] focus:outline-none cursor-pointer"
+                        >
+                          <option value="GOOD">Không biến dạng / Tốt</option>
+                          <option value="DAMAGED">Móp méo / Hư hại</option>
+                        </select>
+                      </div>
+                      <input
+                        type="text"
+                        value={inspectionNotes}
+                        onChange={(e) => setInspectionNotes(e.target.value)}
+                        placeholder="Ghi chú thẩm định hiện trường khác..."
+                        className="mt-1 px-2.5 py-1 bg-white border border-slate-200 rounded text-[11px] text-slate-800 focus:outline-none"
+                      />
+                    </div>
+
+                    {/* Ảnh Hiện Trường Thực Tế */}
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] font-bold text-slate-900 uppercase font-mono">
+                          Ảnh Chụp Hiện Trường (Tải từ thiết bị)
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          {[photoPanoramic, photoLock].filter(Boolean).length}/2 ảnh
+                        </span>
+                      </div>
+
+                      <input
+                        type="file"
+                        accept="image/*"
+                        ref={panoramicInputRef}
+                        className="hidden"
+                        onChange={(e) => handlePhotoUpload(e, 'panoramic')}
+                      />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        ref={lockInputRef}
+                        className="hidden"
+                        onChange={(e) => handlePhotoUpload(e, 'lock')}
+                      />
+
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* Ảnh 1 */}
+                        <div className="relative rounded-lg overflow-hidden h-24 border border-dashed border-slate-300 bg-white flex flex-col items-center justify-center p-2 text-center">
+                          {photoPanoramic ? (
+                            <>
+                              <img src={photoPanoramic} alt="Toàn cảnh kho" className="w-full h-full object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => setPhotoPanoramic(null)}
+                                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-slate-900/80 text-white flex items-center justify-center text-[11px]"
+                              >
+                                ✕
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => panoramicInputRef.current?.click()}
+                              className="flex flex-col items-center justify-center text-slate-500 hover:text-cyan-700 cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[20px]">add_a_photo</span>
+                              <span className="text-[10px] font-semibold mt-1">Toàn cảnh kho</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Ảnh 2 */}
+                        <div className="relative rounded-lg overflow-hidden h-24 border border-dashed border-slate-300 bg-white flex flex-col items-center justify-center p-2 text-center">
+                          {photoLock ? (
+                            <>
+                              <img src={photoLock} alt="Ổ khóa & cửa" className="w-full h-full object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => setPhotoLock(null)}
+                                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-slate-900/80 text-white flex items-center justify-center text-[11px]"
+                              >
+                                ✕
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => lockInputRef.current?.click()}
+                              className="flex flex-col items-center justify-center text-slate-500 hover:text-cyan-700 cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[20px]">add_a_photo</span>
+                              <span className="text-[10px] font-semibold mt-1">Khóa &amp; Cửa kho</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Phân Biệt Tiền Cọc, Đề Xuất Khấu Trừ & Hoàn Trả */}
+                    <div className="p-3.5 rounded-xl bg-slate-100 border border-slate-200 flex flex-col gap-2 text-xs">
+                      <div className="flex items-center justify-between text-slate-600">
+                        <span>Tiền cọc ban đầu đã thanh toán:</span>
+                        <strong className="font-mono tabular-nums text-slate-900">
+                          {returnDepositAmt.toLocaleString('vi-VN')}đ
+                        </strong>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-slate-600">Đề xuất khấu trừ (VND):</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={returnDepositAmt}
+                          value={deductionAmount}
+                          onChange={(e) => setDeductionAmount(Math.max(0, Number(e.target.value) || 0))}
+                          className="w-32 px-2 py-1 bg-white border border-slate-300 rounded font-mono font-bold text-right text-slate-900 focus:outline-none"
+                        />
+                      </div>
+
+                      {deductionAmount > 0 && (
+                        <input
+                          type="text"
+                          value={deductionReason}
+                          onChange={(e) => setDeductionReason(e.target.value)}
+                          placeholder="Lý do khấu trừ (vd: Phí vệ sinh sàn kho)..."
+                          className="px-2.5 py-1 bg-white border border-slate-200 rounded text-[11px] text-slate-800 focus:outline-none"
+                        />
                       )}
+
+                      <div className="flex items-center justify-between text-slate-900 pt-2 border-t border-slate-200">
+                        <span className="font-bold">Số tiền cọc dự kiến hoàn trả:</span>
+                        <span className="font-mono tabular-nums text-base text-emerald-600 font-extrabold">
+                          {expectedRefundAmt.toLocaleString('vi-VN')}đ
+                        </span>
+                      </div>
+
+                      <p className="text-[10px] text-slate-500 italic mt-1">
+                        * Nhân viên quầy lập biên bản nghiệm thu hiện trường và đề xuất hoàn cọc. Giao dịch hoàn tiền sẽ do Quản lý cơ sở / Kế toán phê duyệt.
+                      </p>
                     </div>
                   </div>
-                </div>
 
-                {/* Phân Biệt Tiền Cọc, Đề Xuất Khấu Trừ & Hoàn Trả */}
-                <div className="p-3.5 rounded-xl bg-slate-100 border border-slate-200 flex flex-col gap-2 text-xs">
-                  <div className="flex items-center justify-between text-slate-600">
-                    <span>Tiền cọc ban đầu đã thanh toán:</span>
-                    <strong className="font-mono tabular-nums text-slate-900">
-                      {returnDepositAmt.toLocaleString('vi-VN')}đ
-                    </strong>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-slate-600">Đề xuất khấu trừ (VND):</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={returnDepositAmt}
-                      value={deductionAmount}
-                      onChange={(e) => setDeductionAmount(Math.max(0, Number(e.target.value) || 0))}
-                      className="w-32 px-2 py-1 bg-white border border-slate-300 rounded font-mono font-bold text-right text-slate-900 focus:outline-none"
-                    />
-                  </div>
-
-                  {deductionAmount > 0 && (
-                    <input
-                      type="text"
-                      value={deductionReason}
-                      onChange={(e) => setDeductionReason(e.target.value)}
-                      placeholder="Lý do khấu trừ (vd: Phí vệ sinh sàn kho)..."
-                      className="px-2.5 py-1 bg-white border border-slate-200 rounded text-[11px] text-slate-800 focus:outline-none"
-                    />
+                  {settlementSuccessMsg && (
+                    <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[18px] text-emerald-600">check_circle</span>
+                      <span>{settlementSuccessMsg}</span>
+                    </div>
                   )}
 
-                  <div className="flex items-center justify-between text-slate-900 pt-2 border-t border-slate-200">
-                    <span className="font-bold">Số tiền cọc dự kiến hoàn trả:</span>
-                    <span className="font-mono tabular-nums text-base text-emerald-600 font-extrabold">
-                      {expectedRefundAmt.toLocaleString('vi-VN')}đ
-                    </span>
-                  </div>
+                  {settlementErrorMsg && (
+                    <div role="alert" className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-semibold">
+                      {settlementErrorMsg}
+                    </div>
+                  )}
 
-                  <p className="text-[10px] text-slate-500 italic mt-1">
-                    * Nhân viên quầy lập biên bản nghiệm thu hiện trường và đề xuất hoàn cọc. Giao dịch hoàn tiền sẽ do Quản lý cơ sở / Kế toán phê duyệt.
+                  <button
+                    type="button"
+                    onClick={handleSaveReturnInspection}
+                    disabled={returnInspectionSaved || isSettlingReturn || !currentReturnBooking || !photoPanoramic || !photoLock}
+                    className="mt-4 w-full py-2.5 px-4 rounded-xl text-xs font-bold bg-blue-700 hover:bg-blue-800 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {returnInspectionSaved ? 'Đã lưu biên bản nghiệm thu' : isSettlingReturn ? 'Đang lưu biên bản…' : 'Lưu biên bản nghiệm thu trả kho'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleProcessReturnSettlement}
+                    disabled={returnConfirmed || isSettlingReturn || !currentReturnBooking || !returnInspectionSaved}
+                    className={`mt-3 w-full py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                      returnConfirmed
+                        ? 'bg-emerald-600 text-white'
+                        : isSettlingReturn
+                        ? 'bg-slate-500 text-white cursor-wait'
+                        : 'bg-slate-900 hover:bg-slate-800 text-white'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      {returnConfirmed ? 'check_circle' : isSettlingReturn ? 'hourglass_top' : 'assignment_turned_in'}
+                    </span>
+                    <span>
+                      {returnConfirmed ? 'ĐÃ LẬP BIÊN BẢN & ĐỀ XUẤT' : isSettlingReturn ? 'Đang Lưu Biên Bản...' : 'Lập Biên Bản Nghiệm Thu & Đề Xuất Hoàn Cọc'}
+                    </span>
+                  </button>
+                </>
+              ) : (
+                <div className="py-12 px-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 flex flex-col items-center justify-center text-center my-2">
+                  <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center mb-3">
+                    <span className="material-symbols-outlined text-[26px]">fact_check</span>
+                  </div>
+                  <p className="font-bold text-slate-800 text-sm">Chưa Chọn Hợp Đồng Nghiệm Thu</p>
+                  <p className="text-xs text-slate-500 mt-1 max-w-xs leading-relaxed">
+                    Vui lòng chọn một hợp đồng từ danh sách phía trên để tiến hành thẩm định hiện trường và đề xuất hoàn cọc.
                   </p>
                 </div>
-              </div>
+              )}
             </div>
-
-            {settlementSuccessMsg && (
-              <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px] text-emerald-600">check_circle</span>
-                <span>{settlementSuccessMsg}</span>
-              </div>
-            )}
-
-            {settlementErrorMsg && (
-              <div role="alert" className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-semibold">
-                {settlementErrorMsg}
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={handleSaveReturnInspection}
-              disabled={returnInspectionSaved || isSettlingReturn || !currentReturnBooking || !photoPanoramic || !photoLock}
-              className="mt-4 w-full py-2.5 px-4 rounded-xl text-xs font-bold bg-blue-700 hover:bg-blue-800 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {returnInspectionSaved ? 'Return inspection saved' : isSettlingReturn ? 'Saving inspection…' : 'Save return inspection'}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleProcessReturnSettlement}
-              disabled={returnConfirmed || isSettlingReturn || !currentReturnBooking || !returnInspectionSaved}
-              className={`mt-4 w-full py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                returnConfirmed
-                  ? 'bg-emerald-600 text-white'
-                  : isSettlingReturn
-                  ? 'bg-slate-500 text-white cursor-wait'
-                  : 'bg-slate-900 hover:bg-slate-800 text-white'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">
-                {returnConfirmed ? 'check_circle' : isSettlingReturn ? 'hourglass_top' : 'assignment_turned_in'}
-              </span>
-              <span>
-                {returnConfirmed ? 'ĐÃ LẬP BIÊN BẢN & ĐỀ XUẤT' : isSettlingReturn ? 'Đang Lưu Biên Bản...' : 'Lập Biên Bản Nghiệm Thu & Đề Xuất Hoàn Cọc'}
-              </span>
-            </button>
           </div>
         </div>
 
@@ -1126,7 +1182,7 @@ export const StaffDashboard: React.FC = () => {
       {/* PHẦN 4: LỊCH HẸN NHẬN KHO TRONG CA (FULL WIDTH) */}
       {/* ============================================================== */}
       <section className="w-full bg-white border border-slate-200/90 rounded-2xl shadow-sm p-6">
-        <div className="pb-4 mb-4 border-b border-slate-100">
+        <div className="pb-4 mb-4 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-blue-600 text-[22px]">calendar_today</span>
@@ -1134,7 +1190,7 @@ export const StaffDashboard: React.FC = () => {
                 Lịch Hẹn Nhận Kho Trong Ca
               </h2>
               <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-mono text-[11px] font-bold">
-                {filteredArrivals.length} lượt khách đang chờ
+                {filteredArrivals.length} lịch hẹn ({arrivalStatusCounts.pending} chờ nhận, {arrivalStatusCounts.active} đã bàn giao)
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-1">
@@ -1142,6 +1198,115 @@ export const StaffDashboard: React.FC = () => {
             </p>
           </div>
 
+          {/* Quick Stats or Current Shift Indicator */}
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-700">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span>
+                Ca trực:{' '}
+                {myTodayAssignment?.shift
+                  ? myTodayAssignment.shift === 'MORNING'
+                    ? 'Ca Sáng'
+                    : myTodayAssignment.shift === 'AFTERNOON'
+                    ? 'Ca Chiều'
+                    : myTodayAssignment.shift === 'NIGHT'
+                    ? 'Ca Tối'
+                    : 'Cả Ngày'
+                  : 'Chưa vào ca'}
+              </span>
+            </span>
+          </div>
+        </div>
+
+        {/* Filter Bar: Khung thời gian & Khoảng ngày */}
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 mb-3 p-3 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+          {/* Timeframe Tabs */}
+          <div className="flex items-center gap-1.5 p-1 bg-white border border-slate-200/80 rounded-xl shadow-2xs overflow-x-auto">
+            {[
+              { id: 'current', label: 'Hiện tại / Trong ca', icon: 'schedule' },
+              { id: 'past', label: 'Quá khứ', icon: 'history' },
+              { id: 'future', label: 'Tương lai', icon: 'upcoming' },
+              { id: 'all', label: 'Tất cả thời gian', icon: 'clear_all' },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => handleTimeframeChange(tab.id as any)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                  selectedShiftFilter === tab.id
+                    ? 'bg-blue-600 text-white shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[15px]">{tab.icon}</span>
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Date Range Picker (Từ ngày - Đến ngày) */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs shadow-2xs">
+              <span className="material-symbols-outlined text-[15px] text-slate-400">calendar_month</span>
+              <span className="text-slate-500 font-medium text-[11px]">Từ ngày:</span>
+              <input
+                type="date"
+                value={filterFromDate}
+                onChange={(e) => handleDateFilterApply(e.target.value, filterToDate)}
+                className="bg-transparent border-none text-slate-800 text-xs font-mono focus:outline-none cursor-pointer"
+              />
+            </div>
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs shadow-2xs">
+              <span className="material-symbols-outlined text-[15px] text-slate-400">event</span>
+              <span className="text-slate-500 font-medium text-[11px]">Đến ngày:</span>
+              <input
+                type="date"
+                value={filterToDate}
+                onChange={(e) => handleDateFilterApply(filterFromDate, e.target.value)}
+                className="bg-transparent border-none text-slate-800 text-xs font-mono focus:outline-none cursor-pointer"
+              />
+            </div>
+            {(filterFromDate || filterToDate) && (
+              <button
+                type="button"
+                onClick={handleResetDateFilter}
+                className="px-2.5 py-1.5 text-[11px] font-bold text-slate-600 hover:text-rose-600 bg-white hover:bg-rose-50 border border-slate-200 rounded-xl transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                title="Xóa bộ lọc ngày"
+              >
+                <span className="material-symbols-outlined text-[14px]">close</span>
+                <span>Xóa lọc</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Status Filter Tabs */}
+        <div className="flex items-center gap-1.5 mb-5 p-2 bg-slate-50/80 border border-slate-200/80 rounded-xl overflow-x-auto">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider shrink-0 px-2 flex items-center gap-1">
+            <span className="material-symbols-outlined text-[15px] text-blue-600">filter_alt</span>
+            <span>Lọc trạng thái:</span>
+          </span>
+          {[
+            { id: 'ALL', label: `Tất cả (${arrivalStatusCounts.total})`, icon: 'list' },
+            { id: 'PENDING', label: `Chờ nhận kho (${arrivalStatusCounts.pending})`, icon: 'hourglass_empty', activeClass: 'bg-amber-600 text-white font-bold' },
+            { id: 'ACTIVE', label: `Đã bàn giao (${arrivalStatusCounts.active})`, icon: 'verified', activeClass: 'bg-emerald-600 text-white font-bold' },
+            { id: 'COMPLETED', label: `Đã hoàn tất (${arrivalStatusCounts.completed})`, icon: 'task_alt', activeClass: 'bg-blue-600 text-white font-bold' },
+            { id: 'CANCELLED', label: `Đã hủy (${arrivalStatusCounts.cancelled})`, icon: 'cancel', activeClass: 'bg-rose-600 text-white font-bold' },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setSelectedStatusFilter(tab.id as AppointmentStatusFilter)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shadow-2xs ${
+                selectedStatusFilter === tab.id
+                  ? (tab.activeClass || 'bg-slate-900 text-white font-bold')
+                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          ))}
         </div>
 
         <div className="overflow-x-auto">
@@ -1151,7 +1316,7 @@ export const StaffDashboard: React.FC = () => {
                   <th className="py-2.5 px-3 rounded-l-lg font-semibold">Khách hàng</th>
                   <th className="py-2.5 px-3 font-semibold">Mã Đặt Chỗ</th>
                   <th className="py-2.5 px-3 font-semibold">Kho Đăng Ký</th>
-                  <th className="py-2.5 px-3 font-semibold">Ngày Bắt Đầu</th>
+                  <th className="py-2.5 px-3 font-semibold">Ngày Check-in</th>
                   <th className="py-2.5 px-3 font-semibold">Trạng Thái</th>
                   <th className="py-2.5 px-3 font-semibold">Cọc Giữ Chỗ</th>
                   <th className="py-2.5 px-3 rounded-r-lg text-right font-semibold">Hành động</th>
@@ -1163,8 +1328,8 @@ export const StaffDashboard: React.FC = () => {
                     <td colSpan={7} className="py-10 text-center text-slate-400 text-xs">
                       <div className="flex flex-col items-center justify-center gap-1.5">
                         <span className="material-symbols-outlined text-3xl text-slate-300">event_available</span>
-                        <span className="font-semibold text-slate-600">Không có khách chờ trong ca trực này</span>
-                        <span className="text-[11px] text-slate-400">Tất cả lịch hẹn tiếp đón đã được phục vụ hoặc chưa có lịch hẹn mới.</span>
+                        <span className="font-semibold text-slate-600">Không có lượt hẹn nào phù hợp bộ lọc</span>
+                        <span className="text-[11px] text-slate-400">Thử chuyển bộ lọc trạng thái sang "Tất cả" hoặc mở rộng khung thời gian.</span>
                       </div>
                     </td>
                   </tr>
@@ -1208,37 +1373,140 @@ export const StaffDashboard: React.FC = () => {
                           </div>
                           <span className="text-slate-500 block text-[10px]">{b.facilityName || assignedFacilityName}</span>
                         </td>
-                        <td className="py-3.5 px-3 font-mono tabular-nums text-slate-700">{b.startDate}</td>
                         <td className="py-3.5 px-3">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            b.status === 'CONFIRMED'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-amber-50 text-amber-700 border border-amber-200'
+                          <div className="font-mono tabular-nums">
+                            {b.expectedCheckInAt ? (
+                              <>
+                                <span className="font-bold text-slate-900">{new Date(b.expectedCheckInAt).toLocaleDateString('vi-VN')}</span>
+                                <span className="text-[11px] text-cyan-700 font-semibold block">
+                                  {new Date(b.expectedCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-slate-700">{b.startDate}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-3">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-flex items-center gap-1 shadow-2xs ${
+                            b.status === 'ACTIVE'
+                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
+                              : b.status === 'COMPLETED'
+                              ? 'bg-blue-50 text-blue-800 border border-blue-300'
+                              : b.status === 'CANCELLED'
+                              ? 'bg-rose-50 text-rose-800 border border-rose-300'
+                              : b.status === 'CONFIRMED'
+                              ? 'bg-cyan-50 text-cyan-800 border border-cyan-300'
+                              : 'bg-amber-50 text-amber-800 border border-amber-300'
                           }`}>
-                            {b.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Chờ cọc'}
+                            <span className="material-symbols-outlined text-[12px]">
+                              {b.status === 'ACTIVE' || b.status === 'COMPLETED'
+                                ? 'check_circle'
+                                : b.status === 'CANCELLED'
+                                ? 'cancel'
+                                : 'schedule'}
+                            </span>
+                            <span>
+                              {b.status === 'ACTIVE'
+                                ? 'ĐÃ BÀN GIAO'
+                                : b.status === 'COMPLETED'
+                                ? 'ĐÃ HOÀN TẤT'
+                                : b.status === 'CANCELLED'
+                                ? 'ĐÃ HỦY'
+                                : b.status === 'CONFIRMED'
+                                ? 'CHỜ CHECK-IN'
+                                : 'CHỜ CỌC'}
+                            </span>
                           </span>
                         </td>
                         <td className="py-3.5 px-3 font-mono font-bold text-slate-900 tabular-nums">
                           {(b.depositPaid || b.depositAmount || 0).toLocaleString('vi-VN')}đ
                         </td>
                         <td className="py-3.5 px-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveBookingId(b.id)
-                              document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-                            }}
-                            className={`px-3 py-1.5 rounded-lg font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 ml-auto ${
-                              isCurrentActive
-                                ? 'bg-cyan-600 text-white shadow-xs'
-                                : 'bg-blue-50 hover:bg-blue-100 text-blue-700'
-                            }`}
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {isCurrentActive ? 'task_alt' : 'touch_app'}
-                            </span>
-                            <span>{isCurrentActive ? 'Đang Xử Lý' : 'Tiếp đón & Đối soát'}</span>
-                          </button>
+                          <div className="flex items-center justify-end gap-2 flex-wrap">
+                            {b.status === 'ACTIVE' || b.status === 'COMPLETED' ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveBookingId(b.id)
+                                  document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                                }}
+                                className="px-3 py-1.5 rounded-lg font-bold text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                                title="Xem lại hồ sơ nghiệm thu, ảnh hiện trường và mã PIN"
+                              >
+                                <span className="material-symbols-outlined text-[15px] text-emerald-600">fact_check</span>
+                                <span>Xem Hồ Sơ &amp; PIN</span>
+                              </button>
+                            ) : b.assignedStaffId && b.assignedStaffId !== user?.id && !isAdmin ? (
+                              <>
+                                <div
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-semibold"
+                                  title={`Đang do nhân viên ${b.assignedStaffName || 'khác'} phụ trách`}
+                                >
+                                  <span className="material-symbols-outlined text-[14px] text-slate-500">person</span>
+                                  <span>{b.assignedStaffName}</span>
+                                </div>
+                                <span
+                                  className="px-2.5 py-1.5 rounded-lg text-[10px] text-slate-400 font-medium bg-slate-50 border border-slate-100 cursor-not-allowed inline-flex items-center gap-1"
+                                  title={`Lượt tiếp đón này do nhân viên ${b.assignedStaffName || 'khác'} tiếp nhận`}
+                                >
+                                  <span className="material-symbols-outlined text-[12px]">lock</span>
+                                  Nhân sự khác trực
+                                </span>
+                              </>
+                            ) : b.assignedStaffId === user?.id ? (
+                              <>
+                                <div
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold"
+                                  title="Bạn đang phụ trách lượt tiếp đón này"
+                                >
+                                  <span className="material-symbols-outlined text-[14px] text-emerald-600">verified_user</span>
+                                  <span>Bạn phụ trách</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveBookingId(b.id)
+                                    document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                                  }}
+                                  className={`px-3 py-1.5 rounded-lg font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 ${
+                                    isCurrentActive
+                                      ? 'bg-cyan-600 text-white shadow-xs'
+                                      : 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
+                                  }`}
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">
+                                    {isCurrentActive ? 'task_alt' : 'touch_app'}
+                                  </span>
+                                  <span>{isCurrentActive ? 'Đang Xử Lý' : 'Tiếp đón & Đối soát'}</span>
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={claimingBookingId === b.id}
+                                  onClick={() => handleClaimReception(b)}
+                                  className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
+                                  <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận'}</span>
+                                </button>
+                                {isAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveBookingId(b.id)
+                                      document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                                    }}
+                                    className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer flex items-center gap-1"
+                                  >
+                                    <span>Giám sát</span>
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     )
@@ -1298,6 +1566,20 @@ export const StaffDashboard: React.FC = () => {
             loadMyAssignment()
             setTimeout(() => setAttendanceSuccessMsg(null), 5000)
           }}
+        />
+      )}
+
+      {/* MODAL THÔNG BÁO YÊU CẦU CA TRỰC & ĐIỂM DANH KHI TIẾP NHẬN */}
+      {receptionAlertData && (
+        <ReceptionShiftAlertModal
+          isOpen={receptionAlertData.isOpen}
+          onClose={() => setReceptionAlertData(null)}
+          message={receptionAlertData.message}
+          booking={receptionAlertData.booking}
+          role="STAFF"
+          canCheckInToday={receptionAlertData.canCheckInToday}
+          onCheckInNow={handleStaffCheckIn}
+          isCheckingIn={isAttendanceLoading}
         />
       )}
 

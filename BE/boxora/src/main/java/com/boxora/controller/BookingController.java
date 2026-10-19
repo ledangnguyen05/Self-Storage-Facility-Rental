@@ -94,10 +94,22 @@ public class BookingController {
 
     @GetMapping("/arrivals")
     @PreAuthorize("hasAuthority('BOOKING_VIEW')")
-    @Operation(summary = "Danh sách khách sắp đến nhận kho")
+    @Operation(summary = "Danh sách khách đến nhận kho kèm bộ lọc thời gian")
     public ResponseEntity<ApiResponse<List<BookingResponse>>> getArrivals(
-            @RequestParam(required = false) UUID facilityId) {
-        return ResponseEntity.ok(ApiResponse.success(bookingService.getUpcomingArrivals(facilityId)));
+            @RequestParam(required = false) UUID facilityId,
+            @RequestParam(required = false) String timeframe,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate fromDate,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate toDate) {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getUpcomingArrivals(facilityId, timeframe, fromDate, toDate)));
+    }
+
+    @PostMapping("/{id}/claim-reception")
+    @PreAuthorize("hasAnyAuthority('BOOKING_UPDATE', 'HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @Operation(summary = "Tiếp nhận lượt khách check-in tại quầy cơ sở")
+    public ResponseEntity<ApiResponse<BookingResponse>> claimReception(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Tiếp nhận lượt check-in thành công",
+                bookingService.claimCheckInReception(id)));
     }
 
     @GetMapping("/{id}")

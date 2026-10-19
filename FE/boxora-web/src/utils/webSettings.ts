@@ -31,7 +31,7 @@ export const getWebSettings = (): WebSettings => {
       ...parsed,
       theme: parsed.theme === 'dark' || parsed.theme === 'system' ? parsed.theme : 'light',
       fontSize: parsed.fontSize === 'large' ? 'large' : 'normal',
-      language: parsed.language === 'en' ? 'en' : 'vi',
+      language: 'vi',
     }
   } catch (e) {
     console.warn('Failed to parse web settings from localStorage:', e)

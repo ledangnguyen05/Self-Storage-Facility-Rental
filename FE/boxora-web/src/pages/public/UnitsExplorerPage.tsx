@@ -66,7 +66,7 @@ export const UnitsExplorerPage: React.FC = () => {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { isAuthenticated, user, logout } = useAuth()
-  const { t, language, setLanguage } = useLanguage()
+  const { t, language } = useLanguage()
 
   // Modals state
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
@@ -649,39 +649,6 @@ export const UnitsExplorerPage: React.FC = () => {
               <span>{t('Khám Phá Kho')}</span>
             </Link>
 
-            {/* Language Selector: Clear VI | EN with Globe icon */}
-            <div
-              role="group"
-              aria-label={t('Chọn ngôn ngữ', 'Select language')}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold shadow-2xs"
-            >
-              <span className="material-symbols-outlined text-[15px] text-slate-500">language</span>
-              <button
-                type="button"
-                onClick={() => setLanguage('vi')}
-                className={`px-1.5 py-0.5 rounded transition-all cursor-pointer ${
-                  language === 'vi'
-                    ? 'bg-white text-blue-600 shadow-xs font-extrabold'
-                    : 'text-slate-500 hover:text-slate-900'
-                }`}
-                title="Tiếng Việt"
-              >
-                VI
-              </button>
-              <span className="text-slate-300 font-normal">|</span>
-              <button
-                type="button"
-                onClick={() => setLanguage('en')}
-                className={`px-1.5 py-0.5 rounded transition-all cursor-pointer ${
-                  language === 'en'
-                    ? 'bg-white text-blue-600 shadow-xs font-extrabold'
-                    : 'text-slate-500 hover:text-slate-900'
-                }`}
-                title="English"
-              >
-                EN
-              </button>
-            </div>
 
             {/* Auth Actions: User Dropdown or Login / Register */}
             {isAuthenticated ? (

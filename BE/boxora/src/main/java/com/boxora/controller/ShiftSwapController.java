@@ -4,6 +4,7 @@ import com.boxora.common.response.ApiResponse;
 import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.ShiftSwapCreateRequest;
 import com.boxora.dto.request.ShiftSwapReviewRequest;
+import com.boxora.dto.request.ShiftSwapTargetRespondRequest;
 import com.boxora.dto.response.ShiftSwapResponse;
 import com.boxora.enums.ShiftSwapStatus;
 import com.boxora.service.ShiftSwapService;
@@ -12,11 +13,13 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -41,7 +44,7 @@ public class ShiftSwapController {
     }
 
     @PatchMapping("/{id}/review")
-    @PreAuthorize("hasRole('FACILITY_MANAGER')")
+    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER')")
     @Operation(summary = "Quản lý phê duyệt hoặc từ chối đơn đổi ca trực")
     public ResponseEntity<ApiResponse<ShiftSwapResponse>> reviewSwapRequest(
             @PathVariable UUID id,
@@ -49,6 +52,17 @@ public class ShiftSwapController {
     ) {
         ShiftSwapResponse response = shiftSwapService.reviewSwapRequest(id, request);
         return ResponseEntity.ok(ApiResponse.success("Đã cập nhật kết quả xử lý đổi ca", response));
+    }
+
+    @PatchMapping("/{id}/respond")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER')")
+    @Operation(summary = "Nhân viên hoặc quản lý tiếp nhận phản hồi đồng ý hoặc từ chối đổi ca trực")
+    public ResponseEntity<ApiResponse<ShiftSwapResponse>> respondToSwapRequest(
+            @PathVariable UUID id,
+            @Valid @RequestBody ShiftSwapTargetRespondRequest request
+    ) {
+        ShiftSwapResponse response = shiftSwapService.respondToSwapRequest(id, request);
+        return ResponseEntity.ok(ApiResponse.success("Đã ghi nhận phản hồi đổi ca", response));
     }
 
     @PatchMapping("/{id}/cancel")
@@ -74,10 +88,12 @@ public class ShiftSwapController {
             @RequestParam(required = false) UUID facilityId,
             @RequestParam(required = false) ShiftSwapStatus status,
             @RequestParam(required = false) UUID staffId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        PageResponse<ShiftSwapResponse> response = shiftSwapService.getSwapRequests(facilityId, status, staffId, page, size);
+        PageResponse<ShiftSwapResponse> response = shiftSwapService.getSwapRequests(facilityId, status, staffId, fromDate, toDate, page, size);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 

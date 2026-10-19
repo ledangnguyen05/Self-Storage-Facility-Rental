@@ -52,4 +52,10 @@ public class ShiftSwapRequest extends BaseEntity {
 
     @Column(name = "manager_notes", columnDefinition = "TEXT")
     private String managerNotes;
+
+    @Column(name = "target_staff_responded_at")
+    private LocalDateTime targetStaffRespondedAt;
+
+    @Column(name = "target_staff_notes", columnDefinition = "TEXT")
+    private String targetStaffNotes;
 }

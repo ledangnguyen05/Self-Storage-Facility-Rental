@@ -505,19 +505,19 @@ export const IncidentTicketsPage: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 w-full">
-      {/* Read-Only Notice Pill for BOM & Admin */}
+      {/* Notice Pill for BOM & Admin */}
       {isReadOnly && (
         <div className="p-3.5 bg-blue-50 border border-blue-200 text-blue-900 rounded-xl text-xs flex items-center justify-between gap-3 shadow-2xs">
           <div className="flex items-center gap-2.5">
             <span className="material-symbols-outlined text-[20px] text-blue-600">visibility</span>
             <span>
-              <strong>Chế độ Xem &amp; Báo Cáo Sự Cố (Chỉ Đọc):</strong> Bạn đang đăng nhập với vai trò{' '}
+              <strong>Chế độ Xem &amp; Báo Cáo Sự Cố:</strong> Bạn đang đăng nhập với vai trò{' '}
               <strong className="underline">{isBusinessManager ? 'Business Operations Manager' : 'System Administrator'}</strong>.
               Hệ thống giới hạn quyền để đảm bảo phân nhiệm vận hành; các thao tác phân công, cập nhật trạng thái và đóng ticket do Facility Staff &amp; Facility Manager trực tiếp phụ trách.
             </span>
           </div>
           <span className="px-2.5 py-1 bg-blue-100 text-blue-800 font-bold font-mono text-[11px] rounded-lg border border-blue-300 shrink-0">
-            READ-ONLY
+            CHẾ ĐỘ GIÁM SÁT
           </span>
         </div>
       )}
@@ -990,20 +990,21 @@ export const IncidentTicketsPage: React.FC = () => {
           </table>
         </div>
 
-        {/* Pagination Toolbar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
-          <div>
+        {/* Pagination Toolbar - Centered */}
+        <div className="relative flex flex-col md:flex-row items-center justify-between gap-3 pt-3.5 border-t border-slate-100 text-xs text-slate-500">
+          <div className="text-center md:text-left">
             Hiển thị <span className="font-semibold text-slate-800 font-mono">{totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1}</span> -{' '}
             <span className="font-semibold text-slate-800 font-mono">{Math.min(currentPage * pageSize, totalItems)}</span> trên tổng số{' '}
             <span className="font-semibold text-slate-800 font-mono">{totalItems}</span> ticket sự cố
           </div>
 
-          <div className="flex items-center gap-1.5 sm:ml-auto">
+          <div className="flex items-center justify-center gap-1.5 md:absolute md:left-1/2 md:-translate-x-1/2">
             <button
               type="button"
               disabled={currentPage <= 1}
               onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
               className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+              title="Trang trước"
             >
               <span className="material-symbols-outlined text-[16px]">chevron_left</span>
             </button>
@@ -1043,10 +1044,13 @@ export const IncidentTicketsPage: React.FC = () => {
               disabled={currentPage >= totalPages}
               onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
               className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+              title="Trang sau"
             >
               <span className="material-symbols-outlined text-[16px]">chevron_right</span>
             </button>
           </div>
+
+          <div className="hidden md:block w-28 pointer-events-none" aria-hidden="true" />
         </div>
       </div>
 

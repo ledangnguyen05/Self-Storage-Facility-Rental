@@ -59,14 +59,50 @@ export const BookingRescheduleModal: React.FC<BookingRescheduleModalProps> = ({
         const res = await bookingService.getRescheduleEligibility(booking.id)
         if (isMounted) {
           setEligibility(res)
-          // Default new date to tomorrow or allowed min date
-          const tomorrow = new Date()
-          tomorrow.setDate(tomorrow.getDate() + 1)
-          const tomorrowStr = tomorrow.toISOString().split('T')[0]
-          const defaultDate = res.allowedMinDate && res.allowedMinDate > tomorrowStr
-            ? res.allowedMinDate
-            : tomorrowStr
-          setNewDate(defaultDate)
+          // Lịch hẹn mới đề xuất: Lấy ngày check-in hiện tại + 24 giờ (hoặc ngày mai nếu chưa có)
+          const currentCheckInStr = res.currentAppointmentAt || booking.expectedCheckInAt || (booking.startDate ? `${booking.startDate}T${booking.checkInTime || '09:00'}:00` : '')
+
+          let targetDate = new Date()
+          let targetTime = booking.checkInTime || '09:00'
+
+          if (currentCheckInStr) {
+            const currentAppt = new Date(currentCheckInStr)
+            if (!isNaN(currentAppt.getTime())) {
+              currentAppt.setHours(currentAppt.getHours() + 24)
+              targetDate = currentAppt
+              const hh = String(currentAppt.getHours()).padStart(2, '0')
+              const mm = String(currentAppt.getMinutes()).padStart(2, '0')
+              targetTime = `${hh}:${mm}`
+            } else {
+              targetDate.setDate(targetDate.getDate() + 1)
+            }
+          } else {
+            targetDate.setDate(targetDate.getDate() + 1)
+          }
+
+          // Đảm bảo thời gian đề xuất mặc định luôn >= thời điểm hiện tại + 5 tiếng 30 phút
+          const minBufferTime = new Date(Date.now() + 5 * 60 * 60 * 1000 + 30 * 60 * 1000)
+          if (targetDate.getTime() < minBufferTime.getTime()) {
+            targetDate = new Date(minBufferTime)
+            const hh = String(targetDate.getHours()).padStart(2, '0')
+            const mm = String(targetDate.getMinutes()).padStart(2, '0')
+            targetTime = `${hh}:${mm}`
+          }
+
+          const year = targetDate.getFullYear()
+          const month = String(targetDate.getMonth() + 1).padStart(2, '0')
+          const day = String(targetDate.getDate()).padStart(2, '0')
+          let proposedDateStr = `${year}-${month}-${day}`
+
+          if (res.allowedMinDate && proposedDateStr < res.allowedMinDate) {
+            proposedDateStr = res.allowedMinDate
+          }
+          if (res.allowedMaxDate && proposedDateStr > res.allowedMaxDate) {
+            proposedDateStr = res.allowedMaxDate
+          }
+
+          setNewDate(proposedDateStr)
+          setNewTime(targetTime)
         }
       } catch (err: any) {
         if (isMounted) {
@@ -144,9 +180,37 @@ export const BookingRescheduleModal: React.FC<BookingRescheduleModalProps> = ({
     }
   }
 
+  // Validation: Check-in appointment must be at least 5 hours from current time
+  const minAllowedDateTime = new Date(Date.now() + 5 * 60 * 60 * 1000)
+  const minAllowedYear = minAllowedDateTime.getFullYear()
+  const minAllowedMonth = String(minAllowedDateTime.getMonth() + 1).padStart(2, '0')
+  const minAllowedDay = String(minAllowedDateTime.getDate()).padStart(2, '0')
+  const minAllowedDateStr = `${minAllowedYear}-${minAllowedMonth}-${minAllowedDay}`
+
+  const effectiveMinDate = eligibility?.allowedMinDate && eligibility.allowedMinDate > minAllowedDateStr
+    ? eligibility.allowedMinDate
+    : minAllowedDateStr
+
+  const selectedDateTime = (newDate && newTime) ? new Date(`${newDate}T${newTime}:00`) : null
+  const isTimeTooSoon = selectedDateTime ? selectedDateTime.getTime() < minAllowedDateTime.getTime() : false
+
+  const earliestAllowedFormatted = minAllowedDateTime.toLocaleString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+
   const handleConfirmSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!booking) return
+
+    if (isTimeTooSoon) {
+      setSubmitError(`Giờ hẹn check-in mới phải cách thời điểm hiện tại ít nhất 5 tiếng để cơ sở kịp chuẩn bị kho (sớm nhất có thể chọn: ${earliestAllowedFormatted}).`)
+      return
+    }
+
     const finalReason = customReason.trim() || selectedReason || 'Khách hàng điều chỉnh lịch hẹn nhận kho'
     setIsSubmitting(true)
     setSubmitError(null)
@@ -357,7 +421,7 @@ export const BookingRescheduleModal: React.FC<BookingRescheduleModalProps> = ({
                   </label>
                   <input
                     type="date"
-                    min={eligibility.allowedMinDate}
+                    min={effectiveMinDate}
                     max={eligibility.allowedMaxDate}
                     required
                     value={newDate}
@@ -365,7 +429,7 @@ export const BookingRescheduleModal: React.FC<BookingRescheduleModalProps> = ({
                     className="w-full h-10 px-3 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
                   />
                   <p className="text-[10px] text-slate-500">
-                    Khoảng cho phép: {formatDate(eligibility.allowedMinDate)} đến {formatDate(eligibility.allowedMaxDate)}
+                    Khoảng cho phép: {formatDate(effectiveMinDate)} đến {formatDate(eligibility.allowedMaxDate)}
                   </p>
                 </div>
 
@@ -376,18 +440,34 @@ export const BookingRescheduleModal: React.FC<BookingRescheduleModalProps> = ({
                   </label>
                   <input
                     type="time"
-                    min={eligibility.facilityOpenTime || '08:00'}
-                    max={eligibility.facilityCloseTime || '20:00'}
                     required
                     value={newTime}
                     onChange={(e) => setNewTime(e.target.value)}
-                    className="w-full h-10 px-3 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                    className={`w-full h-10 px-3 bg-white border rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 ${
+                      isTimeTooSoon
+                        ? 'border-amber-400 focus:ring-amber-500/20 focus:border-amber-500'
+                        : 'border-slate-300 focus:ring-blue-500/20 focus:border-blue-600'
+                    }`}
                   />
-                  <p className="text-[10px] text-slate-500">
-                    Khung giờ cơ sở: {eligibility.facilityOpenTime || '08:00'} - {eligibility.facilityCloseTime || '20:00'}
+                  <p className="text-[10px] text-slate-500 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-xs text-blue-600">schedule</span>
+                    <span>Kho mở 24/7 · Tối thiểu trước 5 tiếng</span>
                   </p>
                 </div>
               </div>
+
+              {/* 5-hour warning banner */}
+              {isTimeTooSoon && (
+                <div className="p-3 bg-amber-50/90 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-start gap-2.5 animate-in fade-in">
+                  <span className="material-symbols-outlined text-base text-amber-600 shrink-0 mt-0.5">warning</span>
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-amber-900">Giờ hẹn check-in phải trước thời điểm hiện tại ít nhất 5 tiếng</p>
+                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                      Để cơ sở Boxora kịp kiểm tra niêm phong kho và thiết lập quyền truy cập cho quý khách, vui lòng chọn giờ hẹn từ <strong>{earliestAllowedFormatted}</strong> trở đi.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Reason Selector */}
               <div className="space-y-2">
@@ -475,8 +555,8 @@ export const BookingRescheduleModal: React.FC<BookingRescheduleModalProps> = ({
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting || !newDate}
-                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2"
+                  disabled={isSubmitting || !newDate || !newTime || isTimeTooSoon}
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
                   {isSubmitting ? (
                     <>

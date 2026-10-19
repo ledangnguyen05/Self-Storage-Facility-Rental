@@ -207,13 +207,32 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
           : 'BOOKING_PAYMENT'
       : 'BOOKING_PAYMENT'
 
+  // Validation: Check-in appointment must be at least 5 hours from current time
+  const minAllowedDateTime = new Date(Date.now() + 5 * 60 * 60 * 1000)
+  const minAllowedYear = minAllowedDateTime.getFullYear()
+  const minAllowedMonth = String(minAllowedDateTime.getMonth() + 1).padStart(2, '0')
+  const minAllowedDay = String(minAllowedDateTime.getDate()).padStart(2, '0')
+  const minAllowedDateStr = `${minAllowedYear}-${minAllowedMonth}-${minAllowedDay}`
+  const minAllowedTimeStr = `${String(minAllowedDateTime.getHours()).padStart(2, '0')}:${String(minAllowedDateTime.getMinutes()).padStart(2, '0')}`
+
+  const selectedCheckInDateTime = (startDate && checkInTime) ? new Date(`${startDate}T${checkInTime}:00`) : null
+  const isTimeTooSoon = selectedCheckInDateTime ? selectedCheckInDateTime.getTime() < minAllowedDateTime.getTime() : false
+
+  const earliestAllowedFormatted = minAllowedDateTime.toLocaleString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+
   const isExpired = secondsRemaining !== null && secondsRemaining <= 0
   const formattedCountdown = secondsRemaining === null
     ? ''
     : `${String(Math.floor(secondsRemaining / 3600)).padStart(2, '0')}:${String(Math.floor((secondsRemaining % 3600) / 60)).padStart(2, '0')}:${String(secondsRemaining % 60).padStart(2, '0')}`
   const normalizedPhone = customerPhone.replace(/[\s().-]/g, '')
   const isContactValid = customerName.trim().length >= 2 && /^(?:0\d{9}|\+84\d{9})$/.test(normalizedPhone)
-  const isDateValid = !!startDate && startDate >= getToday()
+  const isDateValid = !!startDate && startDate >= minAllowedDateStr && !isTimeTooSoon
 
   const handleSubmitRequest = async () => {
     setIsSubmitting(true)
@@ -221,6 +240,9 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
     try {
       if (!unit.backendId) throw new Error('Kho này chưa có dữ liệu từ hệ thống, vui lòng chọn kho khác.')
       if (!isContactValid || !isDateValid) throw new Error('Vui lòng kiểm tra họ tên, số điện thoại và ngày bắt đầu thuê.')
+      if (isTimeTooSoon) {
+        throw new Error(`Lịch hẹn nhận kho (${startDate} ${checkInTime}) phải cách thời điểm hiện tại ít nhất 5 tiếng để cơ sở kịp chuẩn bị kho (sớm nhất có thể chọn: ${earliestAllowedFormatted}).`)
+      }
 
       const cleanPhone = normalizedPhone.startsWith('+84') ? `0${normalizedPhone.slice(3)}` : normalizedPhone
       if (customerName.trim() !== (user.fullName || '') || cleanPhone !== (user.phone || '').replace(/[\s().-]/g, '')) {
@@ -239,11 +261,6 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
       })
       setBooking(created)
       setApprovalRejected(false)
-      if (signingMethod === 'ONLINE') {
-        navigate(`/online-booking-contract?bookingId=${encodeURIComponent(created.id)}`)
-        onClose()
-        return
-      }
       setStep(3)
     } catch (error) {
       setErrorMessage(getErrorMessage(error))
@@ -254,11 +271,6 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
 
   const handleCreatePayment = async () => {
     if (!booking || (booking.status !== 'PENDING_PAYMENT' && !(booking.status === 'CONFIRMED' && booking.paymentStatus !== 'PAID'))) return
-    if (booking.signingMethod === 'ONLINE') {
-      navigate(`/online-booking-contract?bookingId=${encodeURIComponent(booking.id)}`)
-      onClose()
-      return
-    }
     setIsSubmitting(true)
     setErrorMessage('')
     try {
@@ -283,7 +295,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
     if (paymentUrl && !isExpired) window.open(paymentUrl, '_blank', 'noopener,noreferrer')
   }
 
-  const steps = ['Thông tin', 'Xác nhận', signingMethod === 'ONLINE' ? 'Ký hợp đồng điện tử' : 'Hoàn tất đặt chỗ']
+  const steps = ['Thông tin', 'Xác nhận', signingMethod === 'ONLINE' ? 'Thanh toán trực tuyến' : 'Hoàn tất đặt chỗ']
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
@@ -292,7 +304,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
           <div>
             <p className="text-[11px] font-semibold text-blue-400">Đặt giữ chỗ kho</p>
             <h2 id="booking-checkout-title" className="mt-1 text-lg font-bold">
-              {step === 3 ? (signingMethod === 'ONLINE' ? 'Thanh toán & nhận kho' : 'Đặt kho thành công') : 'Đăng ký thuê kho'}
+              {step === 3 ? (signingMethod === 'ONLINE' ? 'Thanh toán trực tuyến' : 'Đặt kho thành công') : 'Đăng ký thuê kho'}
             </h2>
           </div>
           <button type="button" onClick={onClose} aria-label="Đóng" className="rounded-lg p-2 text-slate-300 hover:bg-slate-800 hover:text-white">
@@ -337,16 +349,54 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
               </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                  <label className="block space-y-1.5 text-xs font-semibold text-slate-700">Ngày check-in dự kiến
-                  <input type="date" min={getToday()} value={startDate} onChange={event => setStartDate(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" required />
+                  <input
+                    type="date"
+                    min={minAllowedDateStr}
+                    value={startDate}
+                    onChange={event => {
+                      setStartDate(event.target.value)
+                      if (event.target.value === minAllowedDateStr && checkInTime < minAllowedTimeStr) {
+                        setCheckInTime(minAllowedTimeStr)
+                      }
+                      if (errorMessage) setErrorMessage('')
+                    }}
+                    className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100"
+                    required
+                  />
                 </label>
-                 <label className="block space-y-1.5 text-xs font-semibold text-slate-700">Giờ hẹn nhận kho dự kiến
-                   <select value={checkInTime} onChange={event => setCheckInTime(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" required>
-                     <option value="09:00">09:00</option>
-                     <option value="13:00">13:00</option>
-                     <option value="15:00">15:00</option>
-                   </select>
+                 <label className="block space-y-1.5 text-xs font-semibold text-slate-700">
+                   <div className="flex items-center justify-between">
+                     <span>Giờ hẹn nhận kho</span>
+                     <span className="text-[10px] text-slate-400 font-normal">Tối thiểu trước 5h</span>
+                   </div>
+                   <input
+                     type="time"
+                     value={checkInTime}
+                     onChange={event => {
+                       setCheckInTime(event.target.value)
+                       if (errorMessage) setErrorMessage('')
+                     }}
+                     className={`h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 ${
+                       isTimeTooSoon
+                         ? 'border-amber-400 focus:border-amber-500 focus:ring-amber-100 bg-amber-50/30 text-amber-900'
+                         : 'border-slate-300 focus:border-cyan-600 focus:ring-cyan-100'
+                     }`}
+                     required
+                   />
                 </label>
               </div>
+
+              {isTimeTooSoon && (
+                <div className="p-3 bg-amber-50/90 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-start gap-2.5 animate-in fade-in">
+                  <span className="material-symbols-outlined text-base text-amber-600 shrink-0 mt-0.5">warning</span>
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-amber-900">Giờ hẹn nhận kho phải cách thời điểm hiện tại ít nhất 5 tiếng</p>
+                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                      Để cơ sở Boxora kịp kiểm tra niêm phong và chuẩn bị bàn giao kho, vui lòng chọn giờ hẹn từ <strong>{earliestAllowedFormatted}</strong> trở đi.
+                    </p>
+                  </div>
+                </div>
+              )}
               <label className="block space-y-1.5 text-xs font-semibold text-slate-700">Kỳ hạn thuê
                  <select value={rentalMonths} onChange={event => setRentalMonths(Number(event.target.value))} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100">
                    <option value={1}>1 tháng - Linh hoạt</option>
@@ -381,7 +431,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                       <span className="text-xs font-bold text-slate-900">Ký hợp đồng trực tuyến</span>
                     </div>
                     <p className="text-[11px] text-slate-600 leading-relaxed">
-                      Xem và ký hợp đồng điện tử trước; sau khi Boxora xác nhận chữ ký mới thanh toán trực tuyến. Mã PIN chỉ được cấp theo quy trình bàn giao.
+                      Thanh toán tiền cọc và tiền thuê trực tuyến qua VNPay; sau đó ký hợp đồng điện tử trực tuyến. Mã PIN chỉ được cấp theo quy trình bàn giao.
                     </p>
                   </div>
 
@@ -437,7 +487,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
               </div>
               <p className="rounded-lg bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">
                 {signingMethod === 'ONLINE'
-                  ? 'Tạo yêu cầu thuê kho, xem và ký hợp đồng điện tử trước. Chỉ sau khi backend xác nhận hợp đồng đã ký, bạn mới chuyển sang thanh toán trực tuyến.'
+                  ? 'Tạo yêu cầu thuê kho và tiến hành thanh toán trực tuyến qua VNPay. Sau khi thanh toán thành công, bạn sẽ ký hợp đồng điện tử trực tuyến.'
                   : 'Tạo yêu cầu giữ chỗ thành công ngay. Kho được bảo lưu đến sau lịch hẹn của bạn kèm thời gian gia hạn theo chính sách. Quý khách thanh toán tại quầy cơ sở khi đến nhận kho.'}
               </p>
               <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-700">
@@ -519,7 +569,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                     <div className="text-lg font-bold text-cyan-800">
                       {alreadyPaidTotal > 0 ? `Cần thanh toán bổ sung: ${formatVnd(amountDue)}` : `Thanh toán ban đầu: ${formatVnd(amountDue)}`}
                     </div>
-                    <button type="button" disabled={isSubmitting || isExpired} onClick={handleCreatePayment} className="w-full rounded-lg bg-cyan-700 py-3 text-sm font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? 'Đang tạo liên kết...' : 'Thanh toán và ký hợp đồng trực tuyến ngay ->'}</button>
+                    <button type="button" disabled={isSubmitting || isExpired} onClick={handleCreatePayment} className="w-full rounded-lg bg-cyan-700 py-3 text-sm font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? 'Đang tạo liên kết...' : 'Thanh toán qua VNPay ngay ->'}</button>
                   </div>
                 ) : (
                   <>
@@ -541,7 +591,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                         <span className="material-symbols-outlined text-4xl text-cyan-700">account_balance</span>
                         <p className="mt-2 text-sm font-bold text-slate-900">Thanh toán an toàn</p>
                         <p className="mt-1 text-xs text-slate-500">Trang thanh toán chỉ mở khi bạn nhấn nút bên dưới.</p>
-                        <button type="button" disabled={isExpired} onClick={launchVNPay} className="mt-4 w-full rounded-lg bg-cyan-700 py-3 text-xs font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">Thanh toán và ký hợp đồng trực tuyến ngay -&gt;</button>
+                        <button type="button" disabled={isExpired} onClick={launchVNPay} className="mt-4 w-full rounded-lg bg-cyan-700 py-3 text-xs font-bold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50">Thanh toán qua VNPay ngay -&gt;</button>
                       </div>
                     )}
                     <button type="button" disabled={isSubmitting || isExpired} onClick={handleCreatePayment} className="w-full rounded-lg border border-slate-300 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">{isSubmitting ? 'Đang tạo liên kết...' : 'Tạo liên kết thanh toán mới'}</button>
@@ -557,7 +607,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
             {step === 1 && <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2.5 text-xs font-semibold text-slate-700">Đóng</button>}
             {step === 2 && <button type="button" disabled={isSubmitting} onClick={() => setStep(1)} className="rounded-lg border border-slate-300 px-4 py-2.5 text-xs font-semibold text-slate-700 disabled:opacity-50">Quay lại</button>}
             {step === 3 && signingMethod === 'ONLINE' && <button type="button" onClick={onClose} className="ml-auto rounded-lg border border-slate-300 px-4 py-2.5 text-xs font-semibold text-slate-700">Đóng, yêu cầu vẫn được lưu</button>}
-            {step === 1 && <button type="button" disabled={!isContactValid || !isDateValid} onClick={() => setStep(2)} className="rounded-lg bg-blue-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">Tiếp tục</button>}
+            {step === 1 && <button type="button" disabled={!isContactValid || !isDateValid || isTimeTooSoon} onClick={() => setStep(2)} className="rounded-lg bg-blue-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">Tiếp tục</button>}
              {step === 2 && <button type="button" disabled={isSubmitting || !termsAccepted} onClick={handleSubmitRequest} className="rounded-lg bg-blue-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? 'Đang khởi tạo...' : 'Xác nhận đặt kho'}</button>}
           </div>
         </div>
