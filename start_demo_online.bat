@@ -10,11 +10,11 @@ echo       BOXORA - 1-CLICK DEPLOY CLOUDFLARE PAGES AND RUN BACKEND ONLINE
 echo ==============================================================================
 echo.
 echo Quy trinh tu dong:
-echo   1. Build va Day Frontend moi nhat len Cloudflare Pages
-echo   2. Kiem tra va Khoi dong PostgreSQL - Port 5432
-echo   3. Khoi dong Backend Spring Boot - Port 8080 voi JDK 21
-echo   4. Mo Cloudflare Tunnel ket noi Backend ra toan cau - HTTPS
-echo   5. Tu dong ghep URL va mo trinh duyet truc tiep den website da online
+echo   1. Kiem tra va Khoi dong PostgreSQL - Port 5432
+echo   2. Khoi dong Backend Spring Boot - Port 8080 voi JDK 21
+echo   3. Mo Cloudflare Tunnel ket noi Backend ra toan cau - HTTPS
+echo   4. Build va Day Frontend moi nhat len Cloudflare Pages (tich hop san URL Backend)
+echo   5. Tu dong mo trinh duyet truc tiep den website da online hoan hao
 echo.
 
 :: -----------------------------------------------------------------------------
@@ -31,35 +31,10 @@ if %errorlevel% neq 0 (
 )
 
 :: -----------------------------------------------------------------------------
-:: BUOC 2: BUILD VA DEPLOY FRONTEND LEN CLOUDFLARE PAGES
+:: BUOC 2: KHOI DONG BACKEND SPRING BOOT (PORT 8080)
 :: -----------------------------------------------------------------------------
 echo.
-echo [2/5] Dang build va deploy Frontend len Cloudflare Pages...
-cd /d "%~dp0FE\boxora-web"
-
-echo   - Dang build Frontend...
-call npm run build
-if %errorlevel% neq 0 (
-    echo [ERROR] Build Frontend that bai! Vui long kiem tra code.
-    pause
-    exit /b 1
-)
-
-echo   - Dang day len Cloudflare Pages (boxora-storage)...
-call npx wrangler pages deploy dist --project-name=boxora-storage --commit-dirty=true
-if %errorlevel% neq 0 (
-    echo [WARNING] Wrangler deploy gap loi hoac can xac thuc.
-) else (
-    echo [OK] Frontend da duoc deploy thanh cong len Cloudflare Pages!
-)
-
-cd /d "%~dp0"
-
-:: -----------------------------------------------------------------------------
-:: BUOC 3: KHOI DONG BACKEND SPRING BOOT (PORT 8080)
-:: -----------------------------------------------------------------------------
-echo.
-echo [3/5] Kiem tra va khoi dong Backend Spring Boot...
+echo [2/5] Kiem tra va khoi dong Backend Spring Boot (Port 8080)...
 powershell -NoProfile -Command "$t = Test-NetConnection -ComputerName 127.0.0.1 -Port 8080 -InformationLevel Quiet; if ($t) { exit 0 } else { exit 1 }"
 if %errorlevel% equ 0 goto BACKEND_RUNNING
 
@@ -73,8 +48,8 @@ ping 127.0.0.1 -n 4 >nul
 set /a RETRY_COUNT+=1
 powershell -NoProfile -Command "$t = Test-NetConnection -ComputerName 127.0.0.1 -Port 8080 -InformationLevel Quiet; if ($t) { exit 0 } else { exit 1 }"
 if %errorlevel% equ 0 goto BACKEND_RUNNING
-if !RETRY_COUNT! GEQ 30 goto BACKEND_TIMEOUT
-echo     ...dang cho Backend khoi dong - lan !RETRY_COUNT! tren 30
+if !RETRY_COUNT! GEQ 35 goto BACKEND_TIMEOUT
+echo     ...dang cho Backend khoi dong - lan !RETRY_COUNT! tren 35
 goto CHECK_BACKEND_PORT
 
 :BACKEND_TIMEOUT
@@ -86,10 +61,10 @@ echo [OK] Backend Spring Boot da san sang tren Port 8080!
 
 :PROCEED_TUNNEL
 :: -----------------------------------------------------------------------------
-:: BUOC 4: KHOI TAO CLOUDFLARE TUNNEL CHO BACKEND (PORT 8080)
+:: BUOC 3: KHOI TAO CLOUDFLARE TUNNEL CHO BACKEND (PORT 8080)
 :: -----------------------------------------------------------------------------
 echo.
-echo [4/5] Kiem tra Cloudflare Tunnel (cloudflared)...
+echo [3/5] Kiem tra va mo Cloudflare Tunnel cho Backend...
 set "CLOUDFLARED=C:\tools\cloudflared.exe"
 if not exist "!CLOUDFLARED!" (
     echo [DOWNLOAD] Dang tai Cloudflare Tunnel ve C:\tools...
@@ -123,32 +98,66 @@ if !TUNNEL_TRY! LSS 30 goto CHECK_TUNNEL_LOG
 if "!BACKEND_TUNNEL_URL!"=="" (
     echo [WARNING] Chua lay duoc link trycloudflare tu dong.
     echo Vui long xem log tai: !LOGFILE!
-    set "FINAL_DEMO_URL=https://boxora-storage.pages.dev"
+    set "BACKEND_TUNNEL_URL=http://localhost:8080"
 ) else (
     echo [OK] Backend Tunnel Public HTTPS: !BACKEND_TUNNEL_URL!
-    set "FINAL_DEMO_URL=https://boxora-storage.pages.dev?api=!BACKEND_TUNNEL_URL!"
 )
+
+:: -----------------------------------------------------------------------------
+:: BUOC 4: BUILD VA DEPLOY FRONTEND LEN CLOUDFLARE PAGES
+:: -----------------------------------------------------------------------------
+echo.
+echo [4/5] Cau hinh va Deploy Frontend len Cloudflare Pages...
+cd /d "%~dp0FE\boxora-web"
+
+echo   - Ghi nhan Backend API URL vao file .env cua Frontend: !BACKEND_TUNNEL_URL!
+echo VITE_API_BASE_URL=!BACKEND_TUNNEL_URL!> .env
+
+echo   - Dang build Frontend voi URL Backend truc tiep...
+call npm run build
+if %errorlevel% neq 0 (
+    echo [ERROR] Build Frontend that bai! Vui long kiem tra code.
+    pause
+    exit /b 1
+)
+
+echo   - Dang day len Cloudflare Pages (boxora-storage)...
+call npx wrangler pages deploy dist --project-name=boxora-storage --commit-dirty=true
+if %errorlevel% neq 0 (
+    echo [WARNING] Wrangler deploy gap loi hoac can xac thuc.
+) else (
+    echo [OK] Frontend da duoc deploy thanh cong len Cloudflare Pages!
+)
+
+cd /d "%~dp0"
 
 :: -----------------------------------------------------------------------------
 :: BUOC 5: TU DONG MO TRINH DUYET VA THEO DOI
 :: -----------------------------------------------------------------------------
 echo.
+set "FINAL_DEMO_URL=https://boxora-storage.pages.dev?api=!BACKEND_TUNNEL_URL!"
 echo ==============================================================================
 echo [5/5] HE THONG DA SAN SANG VA DANG CHAY ONLINE 100%%!
 echo ==============================================================================
 echo.
-echo Link Website Demo Hoan Chinh (Chia se cho nguoi khac truy cap toan cau):
+echo Link Website Demo (Co the mo truc tiep hoac chia se toan cau):
 echo.
-echo       !FINAL_DEMO_URL!
+echo       https://boxora-storage.pages.dev
+echo   hoac: !FINAL_DEMO_URL!
 echo.
 echo Backend API Endpoint: !BACKEND_TUNNEL_URL!
 echo Cloudflare Pages Frontend: https://boxora-storage.pages.dev
+echo.
+echo Tai khoan dang nhap Quan tri (Admin):
+echo   - Email:    admin1@gmail.com
+echo   - Password: 123456
 echo.
 echo Dang tu dong mo trinh duyet...
 start "" "!FINAL_DEMO_URL!"
 echo.
 echo ==============================================================================
-echo [CHU Y] Giu cua so nay mo de duy tri website online. Nhan Ctrl + C de dung.
+echo [CHU Y] Giu cua so nay mo de duy tri Backend Tunnel online.
+echo         Neu dong cua so nay, ket noi tunnel tu may tinh se bi ngat!
 echo ==============================================================================
 echo.
 

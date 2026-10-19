@@ -1,6 +1,7 @@
 import axios from 'axios'
 
 export const getApiBaseUrl = (): string => {
+  const envUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
   if (typeof window !== 'undefined') {
     const params = new URLSearchParams(window.location.search)
     const queryApi = params.get('api')
@@ -9,10 +10,13 @@ export const getApiBaseUrl = (): string => {
       localStorage.setItem('boxora_api_url', cleanUrl)
       return cleanUrl
     }
+    if (envUrl) {
+      return envUrl
+    }
     const saved = localStorage.getItem('boxora_api_url')
     if (saved) return saved.replace(/\/+$/, '')
   }
-  return (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
+  return envUrl
 }
 
 export const api = axios.create({
