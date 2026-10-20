@@ -45,7 +45,7 @@ public class FacilityController {
             @Valid @RequestBody FacilityCreateRequest request) {
         FacilityResponse response = facilityService.create(request);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Created facility successfully", response));
+                .body(ApiResponse.success("Tạo cơ sở kho thành công", response));
     }
 
     @PutMapping("{id}")
@@ -55,7 +55,7 @@ public class FacilityController {
             @PathVariable UUID id,
             @Valid @RequestBody FacilityUpdateRequest request) {
         FacilityResponse response = facilityService.update(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Updated facility successfully.", response));
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật thông tin cơ sở kho thành công", response));
     }
 
     @DeleteMapping("{id}")
@@ -63,7 +63,7 @@ public class FacilityController {
     @Operation(summary = "Delete a facility")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         facilityService.delete(id);
-        return ResponseEntity.ok(ApiResponse.success("Facility deactivated successfully.", null));
+        return ResponseEntity.ok(ApiResponse.success("Vô hiệu hóa cơ sở kho thành công", null));
     }
 
     @GetMapping
