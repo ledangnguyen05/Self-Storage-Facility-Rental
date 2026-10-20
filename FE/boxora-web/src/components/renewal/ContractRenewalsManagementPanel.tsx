@@ -476,7 +476,7 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
     try {
       // 1. Lấy toàn bộ nhân sự (STAFF và FACILITY_MANAGER) thuộc cơ sở
       const res = await userService.getAllUsers({ facilityId: r.facilityId, size: 100 })
-      const rawUsers = res?.content || (Array.isArray(res) ? res : (res as any)?.data || [])
+      const rawUsers = res?.data || (Array.isArray(res) ? res : (res as any)?.content || [])
       const eligibleUsers = rawUsers.filter((u: any) => {
         const role = (u.roleName || u.role?.name || '').toUpperCase()
         return u.isActive !== false && (role === 'STAFF' || role === 'FACILITY_MANAGER')
