@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 
 export const FloatingContactWidget: React.FC = () => {
   const [showScrollTop, setShowScrollTop] = useState(false)
-  const [viewerCount, setViewerCount] = useState(37)
   const [showBranchModal, setShowBranchModal] = useState(false)
   const [showZaloModal, setShowZaloModal] = useState(false)
   const dialogRef = useRef<HTMLDivElement | null>(null)
@@ -70,17 +69,7 @@ export const FloatingContactWidget: React.FC = () => {
     }
   }, [isDialogOpen, closeDialogs])
 
-  // Natural fluctuation for viewer count (between 35 and 43)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setViewerCount(prev => {
-        const delta = Math.random() > 0.5 ? 1 : -1
-        const next = prev + delta
-        return next >= 35 && next <= 43 ? next : prev
-      })
-    }, 18000)
-    return () => clearInterval(interval)
-  }, [])
+
 
   const scrollToTop = () => {
     window.scrollTo({
@@ -124,12 +113,6 @@ export const FloatingContactWidget: React.FC = () => {
               <path d="M18 15l-6-6-6 6" />
             </svg>
           </button>
-
-          {/* Viewer count pill right under button 1 */}
-          <div className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded-full bg-white/95 border border-slate-200/80 shadow-2xs font-mono text-[10px] sm:text-[11px] font-bold text-slate-700">
-            <span className="material-symbols-outlined text-[12px] sm:text-[13px] text-slate-500">visibility</span>
-            <span>{viewerCount}</span>
-          </div>
         </div>
 
         {/* ========================================================== */}
