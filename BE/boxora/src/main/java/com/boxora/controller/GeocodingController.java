@@ -24,10 +24,21 @@ public class GeocodingController {
     private final GeocodingService geocodingService;
 
     @PostMapping("/search")
-    @Operation(summary = "Tìm danh sách tọa độ GPS theo tên địa chỉ")
+    @Operation(summary = "Tìm danh sách tọa độ GPS theo tên địa chỉ (POST)")
     public ResponseEntity<ApiResponse<List<GeocodeResponse>>> search(
             @Valid @RequestBody GeocodeRequest request
     ) {
+        List<GeocodeResponse> response = geocodingService.geocode(request);
+        return ResponseEntity.ok(ApiResponse.success("Tìm thấy danh sách tọa độ thành công", response));
+    }
+
+    @GetMapping("/search")
+    @Operation(summary = "Tìm danh sách tọa độ GPS theo tên địa chỉ (GET)")
+    public ResponseEntity<ApiResponse<List<GeocodeResponse>>> searchGet(
+            @RequestParam(name = "query", required = false) String query
+    ) {
+        GeocodeRequest request = new GeocodeRequest();
+        request.setQuery(query);
         List<GeocodeResponse> response = geocodingService.geocode(request);
         return ResponseEntity.ok(ApiResponse.success("Tìm thấy danh sách tọa độ thành công", response));
     }

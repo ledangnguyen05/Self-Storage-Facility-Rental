@@ -837,7 +837,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                           step="any"
                           value={draft.latitude}
                           onChange={(e) => handleManualCoordinateChange('latitude', e.target.value)}
-                          placeholder="10.8043499"
+                          placeholder="Ví dụ: 10.776900"
                           className={`${inputClassName} mt-1.5 font-mono`}
                         />
                       </div>
@@ -860,7 +860,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                           step="any"
                           value={draft.longitude}
                           onChange={(e) => handleManualCoordinateChange('longitude', e.target.value)}
-                          placeholder="106.7472609"
+                          placeholder="Ví dụ: 106.695300"
                           className={`${inputClassName} mt-1.5 font-mono`}
                         />
                       </div>
