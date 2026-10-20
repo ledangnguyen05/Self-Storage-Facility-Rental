@@ -18,6 +18,7 @@ import { AssetSealingModal } from './modals/AssetSealingModal'
 import { CreateStorageUnitModal } from './modals/CreateStorageUnitModal'
 import { FacilityPolicyViewModal } from './modals/FacilityPolicyViewModal'
 import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
+import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
 
 interface InspectedUnit {
   id: string
@@ -39,7 +40,7 @@ interface InspectedUnit {
   facilityName?: string
 }
 
-type ManagerDashboardTab = 'overview' | 'handovers-returns' | 'tickets' | 'performance' | 'policy'
+type ManagerDashboardTab = 'overview' | 'renewals' | 'handovers-returns' | 'tickets' | 'performance' | 'policy'
 
 export const ManagerDashboard: React.FC = () => {
   const { t } = useLanguage()
@@ -60,9 +61,9 @@ export const ManagerDashboard: React.FC = () => {
   const isTabAllowed = (tab: ManagerDashboardTab | null): boolean => {
     if (!tab) return false
     if (role === 'STAFF') {
-      return tab === 'overview' || tab === 'handovers-returns' || tab === 'tickets'
+      return tab === 'overview' || tab === 'renewals' || tab === 'handovers-returns' || tab === 'tickets'
     }
-    return tab === 'overview' || tab === 'handovers-returns' || tab === 'tickets' || tab === 'performance' || tab === 'policy'
+    return tab === 'overview' || tab === 'renewals' || tab === 'handovers-returns' || tab === 'tickets' || tab === 'performance' || tab === 'policy'
   }
 
   const [activeTab, setActiveTabState] = useState<ManagerDashboardTab>(
@@ -1000,6 +1001,19 @@ export const ManagerDashboard: React.FC = () => {
 
         <button
           type="button"
+          onClick={() => setActiveTab('renewals')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'renewals'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">autorenew</span>
+          <span>2. Xử Lý Gia Hạn Hợp Đồng</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('handovers-returns')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
             activeTab === 'handovers-returns'
@@ -1368,6 +1382,32 @@ export const ManagerDashboard: React.FC = () => {
       )}
 
       {/* ============================================================== */}
+      {/* TAB: XỬ LÝ GIA HẠN HỢP ĐỒNG (THẨM ĐỊNH & THU CƯỚC) */}
+      {/* ============================================================== */}
+      {activeTab === 'renewals' && (
+        <section className="flex flex-col gap-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+            <div>
+              <h3 className="font-headline text-lg font-bold text-slate-900 flex items-center gap-2">
+                <span className="material-symbols-outlined text-blue-600">autorenew</span>
+                Quản Lý &amp; Thẩm Định Gia Hạn Hợp Đồng
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Xem xét, phê duyệt yêu cầu gia hạn kho và thu cước tại quầy cơ sở theo thẩm quyền
+              </p>
+            </div>
+          </div>
+
+          <ContractRenewalsManagementPanel
+            currentFacilityId={selectedFacilityId}
+            facilities={facilities}
+            userRole={role}
+            showChainWideFilter={role === 'BUSINESS_MANAGER' || role === 'ADMIN'}
+          />
+        </section>
+      )}
+
+      {/* ============================================================== */}
       {/* TAB 2: BÀN GIAO & TRẢ KHO (GIÁM SÁT TIẾN ĐỘ) */}
       {/* ============================================================== */}
       {activeTab === 'handovers-returns' && (
@@ -1399,7 +1439,7 @@ export const ManagerDashboard: React.FC = () => {
               {/* Timeframe Tabs */}
               <div className="flex items-center gap-1.5 p-1 bg-white border border-slate-200/80 rounded-xl shadow-2xs overflow-x-auto">
                 {[
-                  { id: 'current', label: 'Hiện tại / Hôm nay', icon: 'schedule' },
+                  { id: 'current', label: 'Hôm nay', icon: 'schedule' },
                   { id: 'past', label: 'Quá khứ', icon: 'history' },
                   { id: 'future', label: 'Tương lai', icon: 'upcoming' },
                   { id: 'all', label: 'Tất cả', icon: 'clear_all' },

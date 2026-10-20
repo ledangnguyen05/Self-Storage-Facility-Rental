@@ -45,6 +45,19 @@ public class PricingServiceImpl implements PricingService {
                 .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
 
         Facility facility = unit.getFacility();
+        if (facility != null) {
+            if (facility.getStatus() == com.boxora.enums.FacilityStatus.INACTIVE) {
+                log.warn("[FACILITY_INACTIVE] Pricing quote rejected. Facility {} ({}) is INACTIVE", facility.getId(), facility.getName());
+                throw new AppException(ErrorCode.FACILITY_INACTIVE,
+                        String.format("Chi nhánh %s hiện đang tạm ngưng hoạt động. Quý khách vui lòng chọn chi nhánh khác.", facility.getName()));
+            }
+            if (facility.getStatus() == com.boxora.enums.FacilityStatus.MAINTENANCE) {
+                log.warn("[FACILITY_MAINTENANCE] Pricing quote rejected. Facility {} ({}) is under MAINTENANCE", facility.getId(), facility.getName());
+                throw new AppException(ErrorCode.FACILITY_UNDER_MAINTENANCE,
+                        String.format("Chi nhánh %s hiện đang trong thời gian bảo trì kỹ thuật. Quý khách vui lòng chọn chi nhánh khác.", facility.getName()));
+            }
+        }
+
         FacilityPolicy policy = (facility != null)
                 ? facilityPolicyRepository.findByFacilityId(facility.getId()).orElse(null)
                 : null;

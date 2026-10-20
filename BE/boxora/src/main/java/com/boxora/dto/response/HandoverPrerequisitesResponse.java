@@ -60,6 +60,14 @@ public class HandoverPrerequisitesResponse {
     private java.time.LocalDateTime identityVerifiedAt;
 
     // ==========================================
+    // THỜI ĐIỂM CHECK-IN HỢP LỆ (LỊCH HẸN NHẬN KHO)
+    // ==========================================
+    private boolean checkInTimeMet;
+    private String checkInTimeStatus; // BEFORE_DATE | BEFORE_TIME | ON_TIME | LATE
+    private String checkInTimeMessage;
+    private java.time.LocalDateTime expectedCheckInAt;
+
+    // ==========================================
     // TỔNG KẾT & TIẾN TRÌNH
     // ==========================================
 

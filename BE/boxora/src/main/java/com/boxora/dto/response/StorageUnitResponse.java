@@ -19,6 +19,7 @@ public class StorageUnitResponse {
     private String status;
     private UUID facilityId;
     private String facilityName;
+    private String facilityStatus;
     private UUID unitTypeId;
     private String unitTypeName;
     private BigDecimal pricePerMonth;

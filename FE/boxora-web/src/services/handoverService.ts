@@ -81,6 +81,10 @@ export interface HandoverPrerequisites {
   registeredIdCardType?: string
   identityVerifiedByName?: string
   identityVerifiedAt?: string
+  checkInTimeMet?: boolean
+  checkInTimeStatus?: 'BEFORE_DATE' | 'BEFORE_TIME' | 'ON_TIME' | 'LATE'
+  checkInTimeMessage?: string
+  expectedCheckInAt?: string
   eligibleForCheckIn: boolean
   eligibleForInspection: boolean
   missingPrerequisites?: string[]

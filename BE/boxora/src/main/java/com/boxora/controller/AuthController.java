@@ -47,7 +47,6 @@ public class AuthController {
         AuthResponse response = authService.register(request);
         if (response.getRefreshToken() != null) {
             ResponseCookie cookie = createRefreshTokenCookie(response.getRefreshToken(), REFRESH_TOKEN_MAX_AGE_SECONDS);
-            response.setRefreshToken(null);
             return ResponseEntity
                     .status(HttpStatus.CREATED)
                     .header(HttpHeaders.SET_COOKIE, cookie.toString())
@@ -67,7 +66,6 @@ public class AuthController {
 
         // Put refresh token in secure HttpOnly cookie instead of exposing in JSON body
         ResponseCookie cookie = createRefreshTokenCookie(refreshTokenValue, REFRESH_TOKEN_MAX_AGE_SECONDS);
-        response.setRefreshToken(null);
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
@@ -82,7 +80,6 @@ public class AuthController {
         String refreshTokenValue = response.getRefreshToken();
 
         ResponseCookie cookie = createRefreshTokenCookie(refreshTokenValue, REFRESH_TOKEN_MAX_AGE_SECONDS);
-        response.setRefreshToken(null);
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
@@ -135,7 +132,6 @@ public class AuthController {
         String newRefreshToken = response.getRefreshToken() != null ? response.getRefreshToken() : tokenValue;
 
         ResponseCookie cookie = createRefreshTokenCookie(newRefreshToken, REFRESH_TOKEN_MAX_AGE_SECONDS);
-        response.setRefreshToken(null);
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())

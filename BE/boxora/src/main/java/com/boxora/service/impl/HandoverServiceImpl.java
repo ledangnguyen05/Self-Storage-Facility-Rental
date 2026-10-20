@@ -31,6 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -44,6 +46,9 @@ import java.util.stream.Collectors;
 @Transactional
 @Slf4j
 public class HandoverServiceImpl implements HandoverService {
+
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final DateTimeFormatter CHECKIN_DT_FMT = DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy");
 
     private final HandoverRecordRepository handoverRecordRepository;
     private final BookingRepository bookingRepository;
@@ -203,6 +208,50 @@ public class HandoverServiceImpl implements HandoverService {
             missing.add("Chưa xác nhận đã đối chiếu giấy tờ tùy thân / CCCD / Passport gốc của khách hàng tại quầy");
         }
 
+        // =========================================================================
+        // QUY TẮC NGHIỆP VỤ THỜI ĐIỂM CHECK-IN (LỊCH HẸN NHẬN KHO):
+        // 1. Chưa đến ngày check-in -> Không cho phép -> Hiển thị thời điểm được phép nhận kho
+        // 2. Đúng ngày nhưng chưa đến giờ check-in -> Không cho phép -> Chờ đến giờ hợp lệ
+        // 3. Đã đến giờ check-in -> Có thể -> Kiểm tra các điều kiện bàn giao còn lại
+        // 4. Khách đến muộn -> Có thể -> Cho bàn giao nếu hợp đồng, lịch hẹn và các điều kiện khác vẫn hợp lệ
+        // =========================================================================
+        LocalDateTime expectedCheckIn = booking.getExpectedCheckInAt() != null
+                ? booking.getExpectedCheckInAt()
+                : (booking.getStartDate() != null ? booking.getStartDate().atStartOfDay() : null);
+
+        boolean checkInTimeMet = true;
+        String checkInTimeStatus = "ON_TIME";
+        String checkInTimeMessage = "Đã đến thời điểm hợp lệ để nhận kho";
+
+        if (expectedCheckIn != null) {
+            LocalDateTime now = LocalDateTime.now(BUSINESS_ZONE);
+            LocalDate today = now.toLocalDate();
+            LocalDate apptDate = expectedCheckIn.toLocalDate();
+
+            if (today.isBefore(apptDate)) {
+                checkInTimeMet = false;
+                checkInTimeStatus = "BEFORE_DATE";
+                checkInTimeMessage = String.format("Chưa đến ngày check-in. Thời điểm được phép nhận kho từ: %s",
+                        expectedCheckIn.format(CHECKIN_DT_FMT));
+                missing.add(checkInTimeMessage);
+            } else if (today.isEqual(apptDate) && now.isBefore(expectedCheckIn)) {
+                checkInTimeMet = false;
+                checkInTimeStatus = "BEFORE_TIME";
+                checkInTimeMessage = String.format("Đúng ngày nhưng chưa đến giờ check-in (Lịch hẹn lúc %s). Vui lòng chờ đến giờ hợp lệ.",
+                        expectedCheckIn.format(CHECKIN_DT_FMT));
+                missing.add(checkInTimeMessage);
+            } else if (today.isEqual(apptDate)) {
+                checkInTimeMet = true;
+                checkInTimeStatus = "ON_TIME";
+                checkInTimeMessage = "Đã đến giờ check-in hợp lệ";
+            } else {
+                checkInTimeMet = true;
+                checkInTimeStatus = "LATE";
+                checkInTimeMessage = String.format("Khách đến muộn so với lịch hẹn (%s). Cho phép bàn giao nếu hợp đồng, lịch hẹn và các điều kiện khác vẫn hợp lệ.",
+                        expectedCheckIn.format(CHECKIN_DT_FMT));
+            }
+        }
+
         boolean eligible = missing.isEmpty();
 
         List<PaymentResponse> paymentHistory = paymentRepository.findAllByBooking_Id(booking.getId()).stream()
@@ -248,6 +297,10 @@ public class HandoverServiceImpl implements HandoverService {
                 .registeredIdCardType(booking.getIdentityCardType() != null ? booking.getIdentityCardType() : "CCCD")
                 .identityVerifiedByName(identityVerifiedByName)
                 .identityVerifiedAt(identityVerifiedAt)
+                .checkInTimeMet(checkInTimeMet)
+                .checkInTimeStatus(checkInTimeStatus)
+                .checkInTimeMessage(checkInTimeMessage)
+                .expectedCheckInAt(expectedCheckIn)
                 .eligibleForInspection(eligible)
                 .eligibleForCheckIn(eligible)
                 .missingPrerequisites(missing)
@@ -311,6 +364,37 @@ public class HandoverServiceImpl implements HandoverService {
         if (!inspectionPassed || inspectionPhotoCount < 2) {
             throw new AppException(ErrorCode.RETURN_INSPECTION_CHECKLIST_INCOMPLETE,
                     "The latest persisted check-in inspection must pass all checklist items and include two evidence photos.");
+        }
+
+        // =========================================================================
+        // QUY TẮC NGHIỆP VỤ THỜI ĐIỂM CHECK-IN (LỊCH HẸN NHẬN KHO):
+        // 1. Chưa đến ngày check-in -> Không cho phép -> Ném lỗi HANDOVER_BEFORE_CHECKIN_DATE
+        // 2. Đúng ngày nhưng chưa đến giờ check-in -> Không cho phép -> Ném lỗi HANDOVER_BEFORE_CHECKIN_TIME
+        // 3. Đã đến giờ check-in -> Có thể -> Tiếp tục kiểm tra các điều kiện bàn giao còn lại
+        // 4. Khách đến muộn -> Có thể -> Cho bàn giao nếu hợp đồng, lịch hẹn và các điều kiện khác vẫn hợp lệ
+        // =========================================================================
+        LocalDateTime expectedCheckIn = booking.getExpectedCheckInAt() != null
+                ? booking.getExpectedCheckInAt()
+                : (booking.getStartDate() != null ? booking.getStartDate().atStartOfDay() : null);
+
+        if (expectedCheckIn != null) {
+            LocalDateTime now = LocalDateTime.now(BUSINESS_ZONE);
+            LocalDate today = now.toLocalDate();
+            LocalDate apptDate = expectedCheckIn.toLocalDate();
+
+            if (today.isBefore(apptDate)) {
+                log.warn("[CHECKIN-DATE] Handover check-in rejected for booking {}. Today {} is before expected check-in date {}",
+                        booking.getBookingCode(), today, apptDate);
+                throw new AppException(ErrorCode.HANDOVER_BEFORE_CHECKIN_DATE,
+                        String.format("Chưa đến ngày check-in. Thời điểm được phép nhận kho từ: %s",
+                                expectedCheckIn.format(CHECKIN_DT_FMT)));
+            } else if (today.isEqual(apptDate) && now.isBefore(expectedCheckIn)) {
+                log.warn("[CHECKIN-TIME] Handover check-in rejected for booking {}. Current time {} is before expected check-in time {}",
+                        booking.getBookingCode(), now, expectedCheckIn);
+                throw new AppException(ErrorCode.HANDOVER_BEFORE_CHECKIN_TIME,
+                        String.format("Đúng ngày nhưng chưa đến giờ check-in (Lịch hẹn lúc %s). Vui lòng chờ đến giờ hợp lệ.",
+                                expectedCheckIn.format(CHECKIN_DT_FMT)));
+            }
         }
 
         // =========================================================================

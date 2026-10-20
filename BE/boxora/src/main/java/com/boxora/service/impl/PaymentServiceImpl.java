@@ -861,6 +861,20 @@ public class PaymentServiceImpl implements PaymentService {
     public PaymentResponse getByTransactionId(String transactionId) {
         Payment payment = paymentRepository.findByTransactionId(transactionId)
                 .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND));
+
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            UUID currentUserId = requestContext.currentUserId();
+            UUID customerId = null;
+            if (payment.getBooking() != null && payment.getBooking().getCustomer() != null) {
+                customerId = payment.getBooking().getCustomer().getId();
+            } else if (payment.getContract() != null && payment.getContract().getCustomer() != null) {
+                customerId = payment.getContract().getCustomer().getId();
+            }
+            if (currentUserId != null && customerId != null && !currentUserId.equals(customerId)) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        }
+
         return paymentMapper.toResponse(payment);
     }
 

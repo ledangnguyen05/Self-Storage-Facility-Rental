@@ -534,7 +534,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const isRentMet = currentPrerequisites ? currentPrerequisites.firstMonthRentSatisfied : false
   const isContractMet = currentPrerequisites ? currentPrerequisites.contractSigned : false
   const isIdMet = currentPrerequisites ? currentPrerequisites.identityVerified : false
-  const isReadyForCheckIn = isDepositMet && isRentMet && isContractMet && isIdMet && (currentPrerequisites?.eligibleForInspection ?? false)
+  const isCheckInTimeMet = currentPrerequisites ? (currentPrerequisites.checkInTimeMet ?? true) : false
+  const isReadyForCheckIn = isDepositMet && isRentMet && isContractMet && isIdMet && isCheckInTimeMet && (currentPrerequisites?.eligibleForInspection ?? false)
 
   // Sync identity input with loaded prerequisites
   useEffect(() => {
@@ -551,11 +552,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   // Step Tab Navigation Guards (Protect business conditions)
   const handleSelectTab = (tab: 'audit' | 'checklist' | 'pin') => {
     if (tab === 'checklist' && !isReadyForCheckIn) {
-      setCheckInError('Cần thỏa mãn cả 4 điều kiện đối soát (Hợp đồng, tiền cọc, tiền thuê tháng đầu, CCCD gốc) trước khi chuyển sang nghiệm thu!')
+      if (!isCheckInTimeMet) {
+        setCheckInError(currentPrerequisites?.checkInTimeMessage || 'Chưa đến thời điểm check-in hợp lệ theo lịch hẹn!')
+        return
+      }
+      setCheckInError('Cần thỏa mãn cả 4 điều kiện đối soát (Hợp đồng, tiền cọc, tiền thuê tháng đầu, CCCD gốc) và đến thời điểm check-in hợp lệ trước khi chuyển sang nghiệm thu!')
       return
     }
     if (tab === 'pin' && (!isReadyForCheckIn || !isAllChecklistPassed || !currentSession.photoDoor || !currentSession.photoInterior)) {
-      setCheckInError('Cần thỏa mãn 4 điều kiện đối soát và đạt chuẩn 5/5 nghiệm thu hiện trường (kèm đủ 2 ảnh) trước khi chuyển sang cấp mã PIN!')
+      setCheckInError('Cần thỏa mãn các điều kiện đối soát và đạt chuẩn 5/5 nghiệm thu hiện trường (kèm đủ 2 ảnh) trước khi chuyển sang cấp mã PIN!')
       return
     }
     setCheckInError(null)
@@ -710,6 +715,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   // --- STEP TRANSITION HANDLERS ---
   const handleCompleteStep1 = async () => {
     if (!selectedBookingId) return
+    if (!isCheckInTimeMet) {
+      setCheckInError(currentPrerequisites?.checkInTimeMessage || 'Chưa đến thời điểm check-in hợp lệ theo lịch hẹn!')
+      return
+    }
     setIsCompletingStep1(true)
     setCheckInError(null)
     try {
@@ -854,15 +863,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               ? 'Vui lòng bấm "Tiếp nhận" hoặc chọn lượt khách bạn được phân công từ danh sách "Lịch Hẹn Nhận Kho Trong Ca" bên dưới để bắt đầu quy trình đối soát hồ sơ và bàn giao.'
               : 'Hiện tại chưa có khách hẹn nhận kho trong ca làm việc này.'}
           </p>
-          {onOpenQrScanner && (
-            <button
-              onClick={onOpenQrScanner}
-              className="mt-5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl inline-flex items-center gap-2 shadow-xs cursor-pointer transition-colors"
-            >
-              <span className="material-symbols-outlined text-[18px]">qr_code_scanner</span>
-              <span>Quét Mã QR Khách Đến Sớm</span>
-            </button>
-          )}
         </div>
       </div>
     )
@@ -1182,6 +1182,76 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             </div>
           ) : (
             <>
+              {/* Thẻ Quy Tắc Nghiệp Vụ Thời Điểm Check-in */}
+              {(() => {
+                const checkInStatus = currentPrerequisites?.checkInTimeStatus || 'ON_TIME'
+                const checkInMet = currentPrerequisites?.checkInTimeMet ?? true
+                const checkInMsg = currentPrerequisites?.checkInTimeMessage || 'Đã đến thời điểm hợp lệ để nhận kho'
+                const expDateStr = currentPrerequisites?.expectedCheckInAt || currentBooking?.expectedCheckInAt || currentBooking?.startDate
+
+                let statusBadgeLabel = 'Đã đến giờ check-in'
+                let actionAdvice = 'Kiểm tra các điều kiện bàn giao còn lại'
+                let cardClass = 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                let iconName = 'verified'
+                let iconColor = 'text-emerald-600'
+
+                if (checkInStatus === 'BEFORE_DATE') {
+                  statusBadgeLabel = 'Chưa đến ngày check-in'
+                  actionAdvice = 'Hiển thị thời điểm được phép nhận kho • Không cho phép bàn giao'
+                  cardClass = 'bg-rose-50 border-rose-300 text-rose-950'
+                  iconName = 'event_busy'
+                  iconColor = 'text-rose-600'
+                } else if (checkInStatus === 'BEFORE_TIME') {
+                  statusBadgeLabel = 'Đúng ngày nhưng chưa đến giờ'
+                  actionAdvice = 'Chờ đến giờ hợp lệ • Không cho phép bàn giao'
+                  cardClass = 'bg-amber-50 border-amber-300 text-amber-950'
+                  iconName = 'hourglass_top'
+                  iconColor = 'text-amber-600'
+                } else if (checkInStatus === 'LATE') {
+                  statusBadgeLabel = 'Khách đến muộn'
+                  actionAdvice = 'Cho bàn giao nếu hợp đồng, lịch hẹn và các điều kiện khác vẫn hợp lệ'
+                  cardClass = 'bg-sky-50 border-sky-300 text-sky-950'
+                  iconName = 'history_toggle_off'
+                  iconColor = 'text-sky-600'
+                }
+
+                return (
+                  <div className={`p-4 rounded-xl border text-xs shadow-xs space-y-2 ${cardClass}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-white/80 shadow-2xs ${iconColor}`}>
+                          <span className="material-symbols-outlined text-[24px]">{iconName}</span>
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-xs">
+                              Lịch Hẹn Check-in Nhận Kho: {expDateStr ? new Date(expDateStr).toLocaleString('vi-VN') : 'Theo ngày hợp đồng'}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                              checkInMet ? 'bg-emerald-200 text-emerald-950' : 'bg-rose-200 text-rose-950'
+                            }`}>
+                              {checkInMet ? 'Có thể bàn giao' : 'Không cho phép bàn giao'}
+                            </span>
+                          </div>
+                          <p className="mt-1 font-medium text-[11px] leading-relaxed">
+                            {checkInMsg}
+                          </p>
+                          <div className="mt-1 flex items-center gap-1.5 text-[10px] font-semibold">
+                            <span className="opacity-75">Quy tắc xử lý:</span>
+                            <span className="underline decoration-dotted">{actionAdvice}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase tracking-wider bg-white/90 border border-current shadow-2xs">
+                          {statusBadgeLabel}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 
                 {/* Điều kiện 1: Hợp Đồng Thuê Kho (Ký Điện Tử hoặc Ký Giấy Tại Quầy) */}
@@ -1681,7 +1751,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   </span>
                   <span className="font-medium text-slate-800">
                     {isReadyForCheckIn
-                      ? 'Tất cả 4/4 điều kiện đối soát đã hoàn tất hợp lệ. Bạn có thể chuyển sang bước Nghiệm thu hiện trường.'
+                      ? 'Tất cả điều kiện đối soát và thời điểm check-in đã hoàn tất hợp lệ. Bạn có thể chuyển sang bước Nghiệm thu hiện trường.'
+                      : !isCheckInTimeMet
+                      ? (currentPrerequisites?.checkInTimeMessage || 'Chưa đến thời điểm check-in hợp lệ. Hệ thống không cho phép bàn giao trước thời hạn.')
                       : 'Hệ thống chặn chuyển bước và chặn cấp mã PIN cho đến khi cả 4 điều kiện trên được đáp ứng đầy đủ.'}
                   </span>
                 </div>

@@ -7,10 +7,12 @@ import { supportTicketService, SupportTicketRecord } from '../../services/suppor
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
-import { Booking, Facility, StorageUnit } from '../../types'
+import { Booking, Facility, StorageUnit, ContractRenewal } from '../../types'
 import { BookingCheckoutModal } from '../../components/modals/BookingCheckoutModal'
 import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
 import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
+import { DocuSealRenewalModal } from '../../components/modals/DocuSealRenewalModal'
+import { RenewalDocumentModal } from '../../components/modals/RenewalDocumentModal'
 import { ContractOtpModal } from '../../components/modals/ContractOtpModal'
 import { CustomerPolicyModal, PolicyTab } from '../../components/modals/CustomerPolicyModal'
 import { BookingCancelModal } from '../../components/modals/BookingCancelModal'
@@ -167,8 +169,51 @@ export const CustomerDashboard: React.FC = () => {
     }
   }
 
+  const fetchMyRenewals = async () => {
+    try {
+      setLoadingRenewals(true)
+      const res = await contractService.getRenewals({ size: 50 })
+      if (res?.content && Array.isArray(res.content)) {
+        setMyRenewals(res.content)
+      }
+    } catch (err) {
+      console.warn('Failed to load customer renewals:', err)
+      setMyRenewals([])
+    } finally {
+      setLoadingRenewals(false)
+    }
+  }
+
+  const [isRefreshingData, setIsRefreshingData] = useState<boolean>(false)
+
+  const handleRefreshAll = async () => {
+    setIsRefreshingData(true)
+    try {
+      await Promise.allSettled([
+        fetchContracts(),
+        fetchMyRenewals(),
+        fetchCustomerBookings(),
+        fetchCustomerPayments(),
+        fetchAvailableUnits(),
+        fetchFacilities(),
+        fetchCustomerTickets(),
+        (async () => {
+          try {
+            const reqs = await bookingService.getMyRequests()
+            setBookingRequests(reqs)
+          } catch (err) {
+            console.warn('Failed to refresh booking requests:', err)
+          }
+        })()
+      ])
+    } finally {
+      setIsRefreshingData(false)
+    }
+  }
+
   useEffect(() => {
     fetchContracts()
+    fetchMyRenewals()
     fetchCustomerBookings()
     fetchCustomerPayments()
     fetchAvailableUnits()
@@ -495,6 +540,87 @@ export const CustomerDashboard: React.FC = () => {
     }
   }, [contracts, customerPayments])
 
+  // Helper: Tính toán thông báo trạng thái ngày check-in để customer chú ý
+  // Quy chuẩn hiển thị: "đã quá (number) ngày", "hôm nay", "(number) ngày sắp tới"
+  const getCheckInNoticeInfo = useCallback((b: Booking) => {
+    if (!b) return null
+
+    // Không áp dụng cho đơn đã kích hoạt/đang dùng, đã hủy, quá hạn hoặc hoàn tất
+    if (
+      b.status === 'ACTIVE' ||
+      b.status === 'CANCELLED' ||
+      b.status === 'OVERDUE' ||
+      b.status === 'COMPLETED'
+    ) {
+      return null
+    }
+
+    const rawDate = b.expectedCheckInAt || b.startDate
+    if (!rawDate) return null
+
+    let targetDate: Date
+    if (typeof rawDate === 'string') {
+      const parsed = new Date(rawDate)
+      if (!isNaN(parsed.getTime())) {
+        targetDate = parsed
+      } else {
+        const match = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})/)
+        if (match) {
+          targetDate = new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]))
+        } else {
+          return null
+        }
+      }
+    } else {
+      targetDate = new Date(rawDate)
+    }
+
+    if (isNaN(targetDate.getTime())) return null
+
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    const targetDayStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()).getTime()
+
+    const diffMs = targetDayStart - todayStart
+    const diffDays = Math.round(diffMs / (24 * 60 * 60 * 1000))
+
+    const formattedDate = targetDate.toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    })
+
+    if (diffDays < 0) {
+      const overdueDays = Math.abs(diffDays)
+      return {
+        type: 'OVERDUE' as const,
+        days: overdueDays,
+        text: `đã quá ${overdueDays} ngày`,
+        alertTitle: `Chú ý: Đã quá ${overdueDays} ngày so với lịch hẹn nhận kho!`,
+        alertMessage: `Lịch hẹn nhận kho ban đầu là ngày ${formattedDate}. Quý khách vui lòng đến cơ sở để hoàn tất nhận bàn giao kho hoặc bấm "Đổi lịch" bên dưới để hẹn ngày mới phù hợp.`,
+        formattedDate,
+      }
+    } else if (diffDays === 0) {
+      return {
+        type: 'TODAY' as const,
+        days: 0,
+        text: 'hôm nay',
+        alertTitle: 'Hôm nay là ngày hẹn nhận kho!',
+        alertMessage: `Lịch hẹn nhận kho của quý khách là HÔM NAY (${formattedDate})! Vui lòng mang CCCD gốc đến cơ sở Boxora để nhận bàn giao kho và kích hoạt mã PIN SmartLock.`,
+        formattedDate,
+      }
+    } else {
+      return {
+        type: 'UPCOMING' as const,
+        days: diffDays,
+        text: `${diffDays} ngày sắp tới`,
+        alertTitle: `Lịch hẹn nhận kho: ${diffDays} ngày sắp tới`,
+        alertMessage: `Lịch hẹn nhận kho dự kiến trong ${diffDays} ngày sắp tới (${formattedDate}). Quý khách vui lòng lưu ý thời gian đến cơ sở đúng hẹn.`,
+        formattedDate,
+      }
+    }
+  }, [])
+
   const handleGoToBooking = (booking: Booking) => {
     const fullBooking =
       customerBookings.find(
@@ -571,12 +697,35 @@ export const CustomerDashboard: React.FC = () => {
     monthlyPrice: number
   } | null>(null)
   const [renewMonths, setRenewMonths] = useState<number>(3)
-  const [renewMonthlyPrice, setRenewMonthlyPrice] = useState<number>(1500000)
-  const [renewDiscountPercent, setRenewDiscountPercent] = useState<number>(0)
-  const [renewOtherFee, setRenewOtherFee] = useState<number>(0)
+  const [renewNotes, setRenewNotes] = useState<string>('')
   const [renewSuccess, setRenewSuccess] = useState<boolean>(false)
+  const [createdRenewal, setCreatedRenewal] = useState<ContractRenewal | null>(null)
   const [renewError, setRenewError] = useState<string | null>(null)
   const [isSubmittingRenewal, setIsSubmittingRenewal] = useState<boolean>(false)
+  const [renewalForSigning, setRenewalForSigning] = useState<ContractRenewal | null>(null)
+  const [isPayingRenewal, setIsPayingRenewal] = useState<boolean>(false)
+  const [myRenewals, setMyRenewals] = useState<ContractRenewal[]>([])
+  const [loadingRenewals, setLoadingRenewals] = useState<boolean>(false)
+  const [renewMethod, setRenewMethod] = useState<'ONLINE' | 'COUNTER'>('ONLINE')
+  const [renewAppointmentDate, setRenewAppointmentDate] = useState<string>(() => {
+    const d = new Date()
+    d.setDate(d.getDate() + 1)
+    return d.toISOString().split('T')[0]
+  })
+  const [contractHistoryModal, setContractHistoryModal] = useState<{ contract: RentalContract; renewals: ContractRenewal[] } | null>(null)
+
+  // Switch Renewal Method Modal State (Chọn/Đổi sang trực tuyến hoặc trực tiếp tại cơ sở)
+  const [switchMethodTarget, setSwitchMethodTarget] = useState<ContractRenewal | null>(null)
+  const [switchMethodMode, setSwitchMethodMode] = useState<'ONLINE' | 'COUNTER'>('COUNTER')
+  const [switchAppointmentDate, setSwitchAppointmentDate] = useState<string>(() => {
+    const d = new Date()
+    d.setDate(d.getDate() + 1)
+    return d.toISOString().split('T')[0]
+  })
+  const [switchAppointmentTime, setSwitchAppointmentTime] = useState<string>('09:00')
+  const [switchMethodNotes, setSwitchMethodNotes] = useState<string>('')
+  const [isSubmittingSwitchMethod, setIsSubmittingSwitchMethod] = useState<boolean>(false)
+  const [switchMethodError, setSwitchMethodError] = useState<string | null>(null)
 
   // PIN Change Request Modal (Yêu cầu đổi mã PIN)
   const [pinChangeUnit, setPinChangeUnit] = useState<{ unitCode: string; targetId: string; currentPin: string } | null>(null)
@@ -591,6 +740,7 @@ export const CustomerDashboard: React.FC = () => {
   const [contractForDocuSealModal, setContractForDocuSealModal] = useState<RentalContract | null>(null)
   const [contractForOtpModal, setContractForOtpModal] = useState<RentalContract | null>(null)
   const [fetchingSigningUrl, setFetchingSigningUrl] = useState(false)
+  const [selectedRenewalForDocModal, setSelectedRenewalForDocModal] = useState<ContractRenewal | null>(null)
 
   // Share Access Modal
   const [shareModalUnit, setShareModalUnit] = useState<string | null>(null)
@@ -837,26 +987,48 @@ export const CustomerDashboard: React.FC = () => {
   const [ticketFacility, setTicketFacility] = useState('all')
   const [ticketFloor, setTicketFloor] = useState('all')
   const [ticketSize, setTicketSize] = useState('all')
+  const [ticketFormFacilityId, setTicketFormFacilityId] = useState<string>('')
 
+  // Chỉ hiển thị cơ sở nào đang có kho với status là đang hoạt động (ACTIVE hoặc OVERDUE)
   const supportFacilities = useMemo(() => {
     const map = new Map<string, string>()
-    customerTickets.forEach(t => {
-      const unit = t.unitCode ? unitMapByCode.get(t.unitCode.trim().toUpperCase()) : null
-      const name = t.facilityName?.trim() || unit?.facilityName?.trim() || (t.facilityCode ? `Boxora ${t.facilityCode}` : null)
-      if (name) {
-        const key = t.facilityId || unit?.facilityId || name
-        if (!map.has(key)) map.set(key, name)
-      }
+    activeContracts.forEach(c => {
+      const name = c.facilityName?.trim() || 'Cơ sở trực thuộc'
+      const key = c.facilityId || name
+      if (!map.has(key)) map.set(key, name)
     })
-    if (map.size === 0) {
-      contracts.forEach(c => {
-        const name = c.facilityName?.trim() || 'Cơ sở trực thuộc'
-        const key = c.facilityId || name
-        if (!map.has(key)) map.set(key, name)
-      })
-    }
+    customerBookings.filter(b => b.status === 'ACTIVE').forEach(b => {
+      const name = b.facilityName?.trim()
+      const key = b.facilityId || name
+      if (name && key && !map.has(key)) map.set(key, name)
+    })
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
-  }, [customerTickets, unitMapByCode, contracts])
+  }, [activeContracts, customerBookings])
+
+  useEffect(() => {
+    if (supportFacilities.length > 0) {
+      if (!ticketFormFacilityId || !supportFacilities.some(f => f.id === ticketFormFacilityId)) {
+        setTicketFormFacilityId(supportFacilities[0].id)
+      }
+    } else {
+      setTicketFormFacilityId('')
+    }
+  }, [supportFacilities, ticketFormFacilityId])
+
+  const availableActiveUnitsForTicket = useMemo(() => {
+    if (!ticketFormFacilityId) return activeContracts
+    return activeContracts.filter(c => c.facilityId === ticketFormFacilityId || c.facilityName === ticketFormFacilityId)
+  }, [activeContracts, ticketFormFacilityId])
+
+  useEffect(() => {
+    if (availableActiveUnitsForTicket.length > 0) {
+      if (!ticketUnit || !availableActiveUnitsForTicket.some(c => c.unitCode === ticketUnit)) {
+        setTicketUnit(availableActiveUnitsForTicket[0].unitCode)
+      }
+    } else {
+      setTicketUnit('')
+    }
+  }, [availableActiveUnitsForTicket, ticketUnit])
 
   const supportFloors = useMemo(() => {
     const floorSet = new Set<string>()
@@ -969,6 +1141,10 @@ export const CustomerDashboard: React.FC = () => {
 
   const handleSupportSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (activeContracts.length === 0) {
+      setTicketError('Quý khách chưa có kho nào đang ở trạng thái hoạt động (đã check-in). Chỉ các cơ sở có kho đang hoạt động mới có thể gửi báo cáo sự cố.')
+      return
+    }
     if (ticketType === 'other' && (!ticketContent || !ticketContent.trim())) {
       setTicketError('Vui lòng ghi rõ mô tả chi tiết vấn đề bạn cần hỗ trợ.')
       return
@@ -976,8 +1152,12 @@ export const CustomerDashboard: React.FC = () => {
     setIsSubmittingTicket(true)
     setTicketError(null)
     try {
-      const activeUnit = contracts.find(c => c.unitCode === ticketUnit)
-      const isGeneral = ticketUnit === 'general'
+      const activeUnit = activeContracts.find(c => c.unitCode === ticketUnit)
+      if (!activeUnit) {
+        setTicketError('Vui lòng chọn ngăn kho đang hoạt động để gửi yêu cầu hỗ trợ.')
+        setIsSubmittingTicket(false)
+        return
+      }
       
       let category = 'OTHER'
       let typeLabel = 'Khác'
@@ -1004,14 +1184,12 @@ export const CustomerDashboard: React.FC = () => {
         typeLabel = 'Thanh toán'
       }
 
-      const title = isGeneral 
-        ? `Yêu cầu hỗ trợ (${typeLabel})` 
-        : `Sự cố kho #${ticketUnit} (${typeLabel})`
+      const title = `Sự cố kho #${activeUnit.unitCode} (${typeLabel}) - ${activeUnit.facilityName || 'Boxora'}`
 
       await supportTicketService.createTicket({
         customerId: user?.id,
-        bookingId: activeUnit?.bookingId || (activeUnit?.id?.length === 36 ? activeUnit.id : undefined),
-        facilityId: activeUnit?.facilityId,
+        bookingId: activeUnit.bookingId || (activeUnit.id?.length === 36 ? activeUnit.id : undefined),
+        facilityId: activeUnit.facilityId,
         category: category,
         title: title,
         description: ticketContent.trim(),
@@ -1123,29 +1301,31 @@ export const CustomerDashboard: React.FC = () => {
   }
 
   const totalRenewEstimate = useMemo(() => {
-    const base = (renewMonthlyPrice || 0) * (renewMonths || 1)
-    const discountAmt = base * ((renewDiscountPercent || 0) / 100)
-    const total = base - discountAmt + (renewOtherFee || 0)
-    return Math.max(0, Math.round(total))
-  }, [renewMonthlyPrice, renewMonths, renewDiscountPercent, renewOtherFee])
+    if (!renewModalData) return 0
+    return Math.max(0, Math.round((renewModalData.monthlyPrice || 0) * (renewMonths || 1)))
+  }, [renewModalData, renewMonths])
 
   const openRenewModal = (c: RentalContract) => {
     const numFee = Number(c.monthlyFee || 0) || 1500000
     setRenewModalData({
       contractId: c.id,
       contractCode: c.contractCode || `CTR-2026-${c.id.slice(0, 5)}`,
-      customerName: c.customerName || user?.fullName || 'Nguyễn Văn A',
-      facilityName: c.facilityName || 'StoreHub Quận 1',
+      customerName: c.customerName || user?.fullName || 'Khách hàng Boxora',
+      facilityName: c.facilityName || 'Boxora Facility',
       unitCode: c.unitCode,
       startDate: c.startDate || '2026-10-01',
       endDate: c.endDate || '2026-12-31',
       monthlyPrice: numFee,
     })
     setRenewMonths(3)
-    setRenewMonthlyPrice(numFee)
-    setRenewDiscountPercent(0)
-    setRenewOtherFee(0)
+    setRenewNotes('')
     setRenewSuccess(false)
+    setCreatedRenewal(null)
+    setRenewError(null)
+    setRenewMethod('ONLINE')
+    const defDate = new Date()
+    defDate.setDate(defDate.getDate() + 1)
+    setRenewAppointmentDate(defDate.toISOString().split('T')[0])
   }
 
   const openPinChangeModal = (unitCode: string, targetId: string, currentPin: string) => {
@@ -1199,23 +1379,153 @@ export const CustomerDashboard: React.FC = () => {
     if (!renewModalData) return
     setIsSubmittingRenewal(true)
     setRenewError(null)
+
+    const token = localStorage.getItem('boxora_access_token')
+    if (!token) {
+      setRenewError('Phiên đăng nhập đã hết hạn hoặc không tồn tại. Vui lòng đăng nhập lại để tiếp tục gửi yêu cầu.')
+      setIsSubmittingRenewal(false)
+      return
+    }
+
     try {
       const targetContract = contracts.find(c => c.id === renewModalData.contractId || c.unitCode === renewModalData.unitCode)
-      if (targetContract) {
-        await contractService.requestRenewal(targetContract.id, renewMonths)
-      } else {
-        await bookingService.renewBooking(renewModalData.unitCode, renewMonths)
-      }
+      const targetId = targetContract ? targetContract.id : renewModalData.contractId
+
+      const res = await contractService.requestRenewal(targetId, renewMonths, renewNotes.trim() || undefined)
+      setCreatedRenewal(res)
       setRenewSuccess(true)
       await fetchContracts()
+      await fetchMyRenewals()
       await fetchCustomerPayments()
     } catch (err: any) {
       console.warn('Renewal API error:', err)
       setRenewSuccess(false)
-      const msg = err?.response?.data?.message || err?.message || 'Không thể gia hạn hợp đồng. Vui lòng kiểm tra lại điều kiện hợp đồng.'
+      let msg = err?.response?.data?.message
+      if (!msg && err?.response?.data?.errors) {
+        const errorValues = Object.values(err.response.data.errors)
+        if (errorValues.length > 0) {
+          msg = errorValues.join(', ')
+        }
+      }
+      if (!msg) {
+        if (err?.response?.status === 401) {
+          msg = 'Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại để tiếp tục gửi yêu cầu.'
+        } else if (err?.response?.status === 403) {
+          msg = 'Tài khoản hiện tại chưa được cấp quyền gửi yêu cầu gia hạn cho hợp đồng này.'
+        } else {
+          msg = err?.message || 'Không thể gửi yêu cầu gia hạn hợp đồng. Vui lòng kiểm tra lại điều kiện hợp đồng.'
+        }
+      }
       setRenewError(msg)
     } finally {
       setIsSubmittingRenewal(false)
+    }
+  }
+
+  const handlePayRenewalVNPay = async (renewal: ContractRenewal) => {
+    setIsPayingRenewal(true)
+    try {
+      const res = await contractService.createRenewalPayment(renewal.id)
+      if (res?.paymentUrl) {
+        window.location.href = res.paymentUrl
+      }
+    } catch (err: any) {
+      console.error('Lỗi khi mở cổng thanh toán VNPay:', err)
+      const msg = err?.response?.data?.message || err?.message || 'Không thể khởi tạo thanh toán VNPay cho phụ lục này.'
+      alert(msg)
+    } finally {
+      setIsPayingRenewal(false)
+    }
+  }
+
+  const handleCancelRenewal = async (renewalId: string) => {
+    if (!window.confirm('Bạn có chắc chắn muốn hủy yêu cầu gia hạn này không?')) return
+    try {
+      await contractService.cancelRenewal(renewalId)
+      await fetchMyRenewals()
+      await fetchContracts()
+    } catch (err: any) {
+      console.error('Lỗi khi hủy yêu cầu gia hạn:', err)
+      const msg = err?.response?.data?.message || err?.message || 'Không thể hủy yêu cầu gia hạn.'
+      alert(msg)
+    }
+  }
+
+  const handleReactivateRenewal = async (renewalId: string) => {
+    try {
+      await contractService.reactivateRenewal(renewalId)
+      alert('Đã kích hoạt duyệt lại yêu cầu gia hạn thành công! Yêu cầu đã được chuyển tới Quản lý cơ sở để xét duyệt lại.')
+      await fetchMyRenewals()
+      await fetchContracts()
+    } catch (err: any) {
+      console.error('Lỗi khi kích hoạt duyệt lại:', err)
+      const msg = err?.response?.data?.message || err?.message || 'Không thể kích hoạt duyệt lại yêu cầu gia hạn.'
+      alert(msg)
+    }
+  }
+
+  const handleOpenSwitchMethodModal = (renewal: ContractRenewal, targetMode?: 'ONLINE' | 'COUNTER') => {
+    const isSigned = !!(renewal.signedAt || renewal.signatureData || renewal.status === 'PENDING_PAYMENT')
+    if (isSigned && targetMode === 'COUNTER') {
+      alert('Phụ lục gia hạn đã được ký điện tử trực tuyến, bắt buộc hoàn tất thanh toán trực tuyến qua VNPay và không thể đổi sang hình thức trực tiếp tại quầy.')
+      return
+    }
+
+    setSwitchMethodTarget(renewal)
+    const mode = targetMode || (renewal.paymentMethod === 'COUNTER' ? 'ONLINE' : 'COUNTER')
+    setSwitchMethodMode(mode)
+    const d = new Date()
+    d.setDate(d.getDate() + 1)
+    setSwitchAppointmentDate(renewal.counterAppointmentDate ? renewal.counterAppointmentDate.slice(0, 10) : d.toISOString().split('T')[0])
+    setSwitchAppointmentTime(renewal.counterAppointmentTime || '09:00')
+    setSwitchMethodNotes('')
+    setSwitchMethodError(null)
+  }
+
+  const handleSwitchMethodSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!switchMethodTarget) return
+
+    const isSigned = !!(switchMethodTarget.signedAt || switchMethodTarget.signatureData || switchMethodTarget.status === 'PENDING_PAYMENT')
+    if (isSigned && switchMethodMode === 'COUNTER') {
+      setSwitchMethodError('Phụ lục gia hạn đã được ký điện tử trực tuyến, bắt buộc hoàn tất thanh toán trực tuyến qua cổng VNPay.')
+      return
+    }
+
+    if (switchMethodMode === 'COUNTER') {
+      if (!switchAppointmentDate) {
+        setSwitchMethodError('Vui lòng chọn ngày hẹn đến cơ sở gia hạn.')
+        return
+      }
+      const todayStr = new Date().toISOString().split('T')[0]
+      if (switchAppointmentDate < todayStr) {
+        setSwitchMethodError('Ngày hẹn đến cơ sở không thể là ngày trong quá khứ.')
+        return
+      }
+      if (!switchAppointmentTime) {
+        setSwitchMethodError('Vui lòng chọn giờ hẹn check-in đến cơ sở.')
+        return
+      }
+    }
+
+    setIsSubmittingSwitchMethod(true)
+    setSwitchMethodError(null)
+    try {
+      await contractService.switchRenewalMethod(switchMethodTarget.id, {
+        method: switchMethodMode,
+        appointmentDate: switchMethodMode === 'COUNTER' ? switchAppointmentDate : undefined,
+        appointmentTime: switchMethodMode === 'COUNTER' ? switchAppointmentTime : undefined,
+        notes: switchMethodNotes.trim() || undefined,
+      })
+      await fetchMyRenewals()
+      await fetchContracts()
+      setSwitchMethodTarget(null)
+    } catch (err: any) {
+      console.error('Lỗi khi đổi phương thức gia hạn:', err)
+      const msg = err?.response?.data?.message || err?.message || 'Không thể thay đổi phương thức gia hạn.'
+      setSwitchMethodError(msg)
+    } finally {
+      setIsSubmittingSwitchMethod(false)
     }
   }
 
@@ -1363,6 +1673,19 @@ export const CustomerDashboard: React.FC = () => {
               Quản lý kho đang thuê, kiểm tra mã PIN và theo dõi trạng thái khóa bảo mật.
             </p>
           </div>
+
+          <div className="flex items-center gap-2.5 self-start md:self-center shrink-0">
+            <button
+              type="button"
+              onClick={handleRefreshAll}
+              disabled={isRefreshingData}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-bold text-xs border border-slate-200 hover:border-blue-300 transition-all shadow-2xs hover:shadow-sm cursor-pointer disabled:opacity-60 group"
+              title="Tải lại toàn bộ dữ liệu kho, hợp đồng, lịch sử gia hạn và thanh toán mới nhất"
+            >
+              <span className={`material-symbols-outlined text-[19px] text-blue-600 group-hover:rotate-180 transition-transform duration-300 ${isRefreshingData ? 'animate-spin' : ''}`}>sync</span>
+              <span>{isRefreshingData ? 'Đang làm mới...' : 'Làm mới dữ liệu'}</span>
+            </button>
+          </div>
         </div>
 
         {/* 4 Metric Cards */}
@@ -1509,15 +1832,28 @@ export const CustomerDashboard: React.FC = () => {
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => handleOpenPolicyModal('cancellation')}
-          className="self-start sm:self-center px-3.5 py-2 bg-white hover:bg-cyan-50/80 text-slate-700 hover:text-cyan-700 text-xs font-semibold rounded-xl flex items-center gap-2 transition-all cursor-pointer border border-slate-200 hover:border-cyan-300 shadow-2xs whitespace-nowrap shrink-0"
-          title="Xem quy định đặt cọc, hủy giữ chỗ và thời gian hoàn tiền cọc"
-        >
-          <span className="material-symbols-outlined text-[18px] text-cyan-600">policy</span>
-          <span>Chính sách đặt cọc &amp; hủy</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-center flex-wrap">
+          <button
+            type="button"
+            onClick={handleRefreshAll}
+            disabled={isRefreshingData}
+            className="px-3.5 py-2 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer border border-slate-200 hover:border-blue-300 shadow-2xs whitespace-nowrap shrink-0 disabled:opacity-60"
+            title="Làm mới dữ liệu toàn bộ dashboard"
+          >
+            <span className={`material-symbols-outlined text-[17px] text-blue-600 ${isRefreshingData ? 'animate-spin' : ''}`}>sync</span>
+            <span>{isRefreshingData ? 'Đang tải...' : 'Làm mới'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleOpenPolicyModal('cancellation')}
+            className="px-3.5 py-2 bg-white hover:bg-cyan-50/80 text-slate-700 hover:text-cyan-700 text-xs font-semibold rounded-xl flex items-center gap-2 transition-all cursor-pointer border border-slate-200 hover:border-cyan-300 shadow-2xs whitespace-nowrap shrink-0"
+            title="Xem quy định đặt cọc, hủy giữ chỗ và thời gian hoàn tiền cọc"
+          >
+            <span className="material-symbols-outlined text-[18px] text-cyan-600">policy</span>
+            <span>Chính sách đặt cọc &amp; hủy</span>
+          </button>
+        </div>
       </div>
 
       {/* 3. TAB 1: KHO CỦA TÔI ĐANG THUÊ (MY UNITS) */}
@@ -1962,6 +2298,211 @@ export const CustomerDashboard: React.FC = () => {
                           </span>
                         </div>
                       </div>
+
+                      {/* Vị trí nằm ngay bên dưới giá thuê hàng tháng và tiền cọc lưu ký */}
+                      {(() => {
+                        const contractRenewals = myRenewals.filter(r => r.contractId === c.id)
+                        const completedRenewals = contractRenewals.filter(r => r.status === 'COMPLETED')
+                        const pendingRenewal = contractRenewals.find(r => r.status === 'PENDING_SIGNATURE' || r.status === 'PENDING_PAYMENT' || r.status === 'PENDING_REVIEW')
+                        const rejectedRenewal = contractRenewals.find(r => r.status === 'REJECTED')
+
+                        return (
+                          <>
+                            {completedRenewals.length > 0 && (
+                              <div className="mt-3 p-3 bg-blue-50/80 border border-blue-200/90 rounded-xl space-y-2 text-left animate-in fade-in duration-150">
+                                <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                                  <div className="flex items-center gap-1.5 text-blue-900 font-bold text-xs">
+                                    <span className="material-symbols-outlined text-[17px] text-blue-600">verified</span>
+                                    <span>
+                                      Kho có hợp đồng gia hạn ({completedRenewals.length} hợp đồng gia hạn + 1 hợp đồng gốc)
+                                    </span>
+                                  </div>
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-200/90 text-blue-900">
+                                    Tổng {completedRenewals.length + 1} HĐ
+                                  </span>
+                                </div>
+                                
+                                <p className="text-[11px] text-slate-600 leading-relaxed">
+                                  Kho đã hoàn tất ký phụ lục &amp; thanh toán gia hạn trực tuyến. Kỳ hạn hợp đồng hiện tại đã nối dài đến <strong>{formatDisplayDate(c.endDate)}</strong>.
+                                </p>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setContractHistoryModal({ contract: c, renewals: completedRenewals })}
+                                  className="w-full py-2 px-3 bg-white hover:bg-blue-600 hover:text-white text-blue-700 border border-blue-300 hover:border-blue-600 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer group"
+                                >
+                                  <span className="material-symbols-outlined text-[16px] group-hover:scale-110 transition-transform">history_edu</span>
+                                  <span>Hiển thị chi tiết các hợp đồng đã ký trước đó</span>
+                                </button>
+                              </div>
+                            )}
+
+                            {pendingRenewal && (
+                              <div className="mt-3 p-3 bg-amber-50/90 border border-amber-200 rounded-xl space-y-2 text-xs text-left">
+                                <div className="flex items-center justify-between flex-wrap gap-1">
+                                  <span className="font-bold text-amber-900 flex items-center gap-1.5">
+                                    <span className="material-symbols-outlined text-[16px] text-amber-600">pending_actions</span>
+                                    <span>Yêu cầu gia hạn (+{pendingRenewal.cycleMonths} tháng)</span>
+                                  </span>
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    pendingRenewal.status === 'PENDING_REVIEW'
+                                      ? 'bg-amber-200 text-amber-900'
+                                      : pendingRenewal.status === 'PENDING_SIGNATURE'
+                                        ? 'bg-blue-100 text-blue-900 border border-blue-200'
+                                        : 'bg-indigo-100 text-indigo-900 border border-indigo-200'
+                                  }`}>
+                                    {pendingRenewal.status === 'PENDING_REVIEW'
+                                      ? 'Chờ Quản lý cơ sở duyệt'
+                                      : pendingRenewal.status === 'PENDING_SIGNATURE'
+                                        ? 'Đã duyệt • Chờ ký phụ lục'
+                                        : 'Đã ký • Chờ thanh toán online'}
+                                  </span>
+                                </div>
+
+                                {pendingRenewal.status === 'PENDING_REVIEW' && (
+                                  <p className="text-[11px] text-slate-600 leading-relaxed bg-white/70 p-2 rounded-lg border border-amber-200/60">
+                                    Yêu cầu gia hạn đang được Quản lý cơ sở xem xét phê duyệt. Sau khi được duyệt, quý khách có thể chọn hình thức ký và thanh toán (trực tuyến hoặc trực tiếp tại quầy).
+                                  </p>
+                                )}
+
+                                {pendingRenewal.status === 'PENDING_SIGNATURE' && (
+                                  <div className="space-y-2">
+                                    {pendingRenewal.paymentMethod === 'COUNTER' ? (
+                                      <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-900 space-y-1.5">
+                                        <div className="flex items-center justify-between">
+                                          <div className="font-bold flex items-center gap-1">
+                                            <span className="material-symbols-outlined text-[16px] text-emerald-600">storefront</span>
+                                            <span>Hình thức: Ký &amp; Nộp tại quầy</span>
+                                          </div>
+                                          <span className="text-[11px] font-mono font-bold text-emerald-800">
+                                            Hẹn: {formatDisplayDate(pendingRenewal.counterAppointmentDate)}{pendingRenewal.counterAppointmentTime ? ` lúc ${pendingRenewal.counterAppointmentTime}` : ''}
+                                          </span>
+                                        </div>
+                                        <p className="text-[10px] text-slate-600 leading-tight">
+                                          Quý khách vui lòng đến cơ sở vào ngày hẹn trên (hoặc đúng khung giờ đã chọn) để ký phụ lục giấy và thanh toán cước.
+                                        </p>
+                                        <div className="flex items-center gap-2 pt-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenSwitchMethodModal(pendingRenewal, 'ONLINE')}
+                                            className="flex-1 py-1 px-2 bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
+                                          >
+                                            <span className="material-symbols-outlined text-[14px]">draw</span>
+                                            <span>Đổi sang Ký &amp; Thanh toán Online</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenSwitchMethodModal(pendingRenewal, 'COUNTER')}
+                                            className="py-1 px-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-md text-[11px] font-semibold transition cursor-pointer"
+                                          >
+                                            Đổi ngày hẹn
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => setRenewalForSigning(pendingRenewal)}
+                                          className="w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                                        >
+                                          <span className="material-symbols-outlined text-[15px]">draw</span>
+                                          <span>Ký Phụ Lục Online Ngay</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenSwitchMethodModal(pendingRenewal, 'COUNTER')}
+                                          className="w-full py-1 px-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
+                                        >
+                                          <span className="material-symbols-outlined text-[14px] text-emerald-600">storefront</span>
+                                          <span>Muốn đến cơ sở ký &amp; nộp tiền trực tiếp? Nhấn để đặt lịch</span>
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {pendingRenewal.status === 'PENDING_PAYMENT' && (
+                                  <div className="space-y-2">
+                                    <div className="p-2.5 bg-blue-50/90 border border-blue-200 rounded-lg text-blue-900 text-[11px] space-y-1">
+                                      <div className="font-bold flex items-center gap-1 text-blue-950">
+                                        <span className="material-symbols-outlined text-[15px] text-blue-600">lock</span>
+                                        <span>Đã ký phụ lục online • Bắt buộc thanh toán online</span>
+                                      </div>
+                                      <p className="text-slate-600 text-[10px] leading-relaxed">
+                                        Do hợp đồng gia hạn đã được ký điện tử trực tuyến, hệ thống khóa hình thức trực tiếp và quý khách vui lòng hoàn tất thanh toán qua cổng VNPay.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePayRenewalVNPay(pendingRenewal)}
+                                      disabled={isPayingRenewal}
+                                      className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                                    >
+                                      <span className="material-symbols-outlined text-[15px]">credit_card</span>
+                                      <span>Thanh Toán VNPay ({Number(pendingRenewal.renewalFee || 0).toLocaleString('vi-VN')} ₫)</span>
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {!pendingRenewal && rejectedRenewal && (() => {
+                              const createdAtDate = rejectedRenewal.createdAt ? new Date(rejectedRenewal.createdAt) : new Date()
+                              const unlockDate = new Date(createdAtDate.getTime() + 3 * 24 * 60 * 60 * 1000)
+                              const now = new Date()
+                              const canReactivate = now >= unlockDate
+                              const diffMs = unlockDate.getTime() - now.getTime()
+                              const hoursRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60)))
+                              const daysRemaining = Math.floor(hoursRemaining / 24)
+                              const remainingHours = hoursRemaining % 24
+
+                              return (
+                                <div className="mt-3 p-3 bg-rose-50/90 border border-rose-200 rounded-xl space-y-2 text-xs text-left animate-in fade-in">
+                                  <div className="flex items-center justify-between flex-wrap gap-1">
+                                    <span className="font-bold text-rose-950 flex items-center gap-1.5">
+                                      <span className="material-symbols-outlined text-[16px] text-rose-600">cancel</span>
+                                      <span>Yêu cầu gia hạn (+{rejectedRenewal.cycleMonths} tháng) bị từ chối</span>
+                                    </span>
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-200 text-rose-900">
+                                      Đã từ chối
+                                    </span>
+                                  </div>
+
+                                  <div className="bg-white/80 p-2.5 rounded-lg border border-rose-200 text-[11px] space-y-1">
+                                    <p className="text-rose-900 font-semibold">
+                                      Lý do từ chối: <span className="font-normal text-slate-800">{rejectedRenewal.rejectionReason || 'Không có lý do chi tiết'}</span>
+                                    </p>
+                                    <p className="text-[10px] text-slate-500">
+                                      Ngày gửi đơn: {safeFormatDateTime(rejectedRenewal.createdAt)}
+                                    </p>
+                                  </div>
+
+                                  <div className="pt-1">
+                                    {canReactivate ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleReactivateRenewal(rejectedRenewal.id)}
+                                        className="w-full py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                                      >
+                                        <span className="material-symbols-outlined text-[16px]">replay</span>
+                                        <span>Kích hoạt duyệt lại yêu cầu gia hạn ngay</span>
+                                      </button>
+                                    ) : (
+                                      <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center gap-1.5">
+                                        <span className="material-symbols-outlined text-[15px] text-amber-600">schedule</span>
+                                        <span>
+                                          Có thể kích hoạt duyệt lại sau: <strong>{daysRemaining > 0 ? `${daysRemaining} ngày ` : ''}{remainingHours} giờ</strong> nữa (vào lúc {unlockDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ngày {unlockDate.toLocaleDateString('vi-VN')})
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })()}
+                          </>
+                        )
+                      })()}
                     </div>
 
                     <div className="pt-4 mt-4 border-t border-slate-100 flex items-center gap-3">
@@ -2242,6 +2783,7 @@ export const CustomerDashboard: React.FC = () => {
                   const cleanBookingCode = (b.bookingCode || b.id || '').toLowerCase().replace(/[^a-z0-9]/g, '')
                   const cleanHighlightBooking = (highlightedBookingCode || '').toLowerCase().replace(/[^a-z0-9]/g, '')
                   const isBookingHighlighted = Boolean(highlightedBookingCode && cleanBookingCode === cleanHighlightBooking)
+                  const checkInNotice = getCheckInNoticeInfo(b)
 
                   return (
                     <div
@@ -2353,6 +2895,23 @@ export const CustomerDashboard: React.FC = () => {
                                 </>
                               )
                             })()}
+                            {checkInNotice && (
+                              <span
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border tracking-wider mt-0.5 ${
+                                  checkInNotice.type === 'OVERDUE'
+                                    ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                    : checkInNotice.type === 'TODAY'
+                                    ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
+                                    : 'bg-blue-100 text-blue-800 border-blue-300'
+                                }`}
+                                title={`Lịch nhận kho: ${checkInNotice.text}`}
+                              >
+                                <span className="material-symbols-outlined text-[12px]">
+                                  {checkInNotice.type === 'OVERDUE' ? 'warning' : checkInNotice.type === 'TODAY' ? 'schedule' : 'event'}
+                                </span>
+                                <span>{checkInNotice.text}</span>
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -2364,9 +2923,27 @@ export const CustomerDashboard: React.FC = () => {
                           </div>
                           <div>
                             <span className="text-slate-400 block text-[10px] uppercase font-bold">Lịch hẹn nhận kho</span>
-                            <span className="font-mono font-bold text-slate-900">
+                            <span className="font-mono font-bold text-slate-900 block">
                               {safeFormatDateTime(b.expectedCheckInAt, b.startDate || 'Chưa ấn định')}
                             </span>
+                            {checkInNotice && (
+                              <div className="mt-1">
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                    checkInNotice.type === 'OVERDUE'
+                                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                      : checkInNotice.type === 'TODAY'
+                                      ? 'bg-amber-50 text-amber-900 border-amber-300 font-extrabold'
+                                      : 'bg-blue-50 text-blue-700 border-blue-200'
+                                  }`}
+                                >
+                                  <span className="material-symbols-outlined text-[12px]">
+                                    {checkInNotice.type === 'OVERDUE' ? 'warning' : checkInNotice.type === 'TODAY' ? 'schedule' : 'event'}
+                                  </span>
+                                  <span>{checkInNotice.text}</span>
+                                </span>
+                              </div>
+                            )}
                           </div>
                           <div>
                             <span className="text-slate-400 block text-[10px] uppercase font-bold">Thời hạn thuê</span>
@@ -2391,6 +2968,66 @@ export const CustomerDashboard: React.FC = () => {
                             </span>
                           </div>
                         </div>
+
+                        {/* Check-in Reminder Notice Block */}
+                        {checkInNotice && (
+                          <div
+                            className={`p-3 rounded-xl border flex items-start gap-2.5 text-xs transition-all ${
+                              checkInNotice.type === 'OVERDUE'
+                                ? 'bg-rose-50/90 border-rose-200 text-rose-950 shadow-xs'
+                                : checkInNotice.type === 'TODAY'
+                                ? 'bg-amber-50/90 border-amber-200 text-amber-950 shadow-xs'
+                                : 'bg-sky-50/80 border-sky-200 text-sky-950'
+                            }`}
+                          >
+                            <span
+                              className={`material-symbols-outlined text-[18px] shrink-0 mt-0.5 ${
+                                checkInNotice.type === 'OVERDUE'
+                                  ? 'text-rose-600'
+                                  : checkInNotice.type === 'TODAY'
+                                  ? 'text-amber-600 animate-pulse'
+                                  : 'text-sky-600'
+                              }`}
+                            >
+                              {checkInNotice.type === 'OVERDUE'
+                                ? 'notification_important'
+                                : checkInNotice.type === 'TODAY'
+                                ? 'alarm'
+                                : 'event'}
+                            </span>
+                            <div className="flex-1 leading-relaxed">
+                              <div className="font-bold flex items-center justify-between gap-2 mb-0.5 flex-wrap">
+                                <span className={
+                                  checkInNotice.type === 'OVERDUE'
+                                    ? 'text-rose-900'
+                                    : checkInNotice.type === 'TODAY'
+                                    ? 'text-amber-900'
+                                    : 'text-sky-900'
+                                }>
+                                  {checkInNotice.type === 'OVERDUE'
+                                    ? 'Lưu ý ngày nhận kho:'
+                                    : checkInNotice.type === 'TODAY'
+                                    ? 'Lịch nhận kho hôm nay:'
+                                    : 'Lịch nhận kho dự kiến:'}
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase border tracking-wide ${
+                                    checkInNotice.type === 'OVERDUE'
+                                      ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                      : checkInNotice.type === 'TODAY'
+                                      ? 'bg-amber-200 text-amber-900 border-amber-400'
+                                      : 'bg-blue-100 text-blue-800 border-blue-300'
+                                  }`}
+                                >
+                                  {checkInNotice.text}
+                                </span>
+                              </div>
+                              <div className="text-[11px]">
+                                {checkInNotice.alertMessage}
+                              </div>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Status Notice Block */}
                         {(b.status === 'CANCELLED' || b.status === 'OVERDUE') && (
@@ -3124,8 +3761,280 @@ export const CustomerDashboard: React.FC = () => {
               </table>
             </div>
           </div>
+          {/* Section 2: Contract Renewals Table */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[18px]">autorenew</span>
+                </div>
+                <div>
+                  <h3 className="font-headline text-base font-bold text-slate-900">
+                    Yêu Cầu &amp; Phụ Lục Gia Hạn Hợp Đồng
+                  </h3>
+                  <span className="text-xs text-slate-500">
+                    Theo dõi tình trạng phê duyệt, ký phụ lục điện tử DocuSeal và thanh toán cước kỳ mới
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={fetchMyRenewals}
+                  className="px-2.5 py-1 text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg border border-slate-200 flex items-center gap-1 transition cursor-pointer"
+                  title="Làm mới danh sách gia hạn"
+                >
+                  <span className="material-symbols-outlined text-[15px]">refresh</span>
+                  <span>Làm mới</span>
+                </button>
+                <span className="px-3 py-1 rounded-full bg-blue-50 border border-blue-200 font-mono text-xs font-bold text-blue-700">
+                  {myRenewals.length} Yêu cầu gia hạn
+                </span>
+              </div>
+            </div>
 
-          {/* Section 2: Real DB Payments Ledger & VAT E-Invoices */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider text-[11px]">
+                  <tr>
+                    <th className="py-3 px-4 rounded-l-lg font-semibold">Mã YC / Ngày Yêu Cầu</th>
+                    <th className="py-3 px-4 font-semibold">Hợp Đồng / Kho</th>
+                    <th className="py-3 px-4 font-semibold">Cơ Sở</th>
+                    <th className="py-3 px-4 font-semibold">Thời Hạn Mới</th>
+                    <th className="py-3 px-4 font-semibold text-right">Phí Gia Hạn</th>
+                    <th className="py-3 px-4 font-semibold text-center">Trạng Thái</th>
+                    <th className="py-3 px-4 rounded-r-lg text-right font-semibold">Thao Tác</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {loadingRenewals ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-slate-400 text-xs">
+                        <div className="flex items-center justify-center gap-2">
+                          <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+                          <span>Đang tải thông tin gia hạn hợp đồng...</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : myRenewals.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-slate-400 text-xs">
+                        Chưa phát sinh yêu cầu gia hạn nào. Quý khách có thể yêu cầu gia hạn tại bảng hợp đồng trên hoặc trong trang "Kho của tôi".
+                      </td>
+                    </tr>
+                  ) : (
+                    myRenewals.map((r) => (
+                      <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-3.5 px-4">
+                          <div className="font-mono font-bold text-slate-900">#{r.id.slice(0, 8)}...</div>
+                          <div className="text-[11px] text-slate-400">
+                            {r.createdAt ? new Date(r.createdAt).toLocaleString('vi-VN') : '—'}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-mono font-bold text-blue-600">#{r.contractCode}</div>
+                          <div className="text-[11px] text-slate-500 font-medium">Kho #{r.unitCode}</div>
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-700">
+                          {r.facilityName || 'Boxora Facility'}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-mono font-bold text-emerald-700">{formatDisplayDate(r.newEndDate)}</div>
+                          <div className="text-[11px] text-slate-500 font-semibold">+{r.cycleMonths} tháng (từ {formatDisplayDate(r.oldEndDate)})</div>
+                        </td>
+                        <td className="py-3.5 px-4 font-mono font-bold text-slate-900 text-right">
+                          {Number(r.renewalFee || 0).toLocaleString('vi-VN')} ₫
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          {r.status === 'PENDING_REVIEW' && (
+                            <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                              Chờ QL cơ sở duyệt
+                            </span>
+                          )}
+                          {r.status === 'PENDING_SIGNATURE' && (
+                            <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-300 animate-pulse">
+                              Chờ ký phụ lục
+                            </span>
+                          )}
+                          {r.status === 'PENDING_PAYMENT' && (
+                            <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-300">
+                              Chờ thanh toán
+                            </span>
+                          )}
+                          {r.status === 'COMPLETED' && (
+                            <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              Hoàn tất gia hạn
+                            </span>
+                          )}
+                          {r.status === 'REJECTED' && (
+                            <div>
+                              <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                Bị từ chối
+                              </span>
+                              {r.rejectionReason && (
+                                <div className="text-[10px] text-rose-600 mt-0.5 max-w-[160px] truncate" title={r.rejectionReason}>
+                                  Lý do: {r.rejectionReason}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {r.status === 'CANCELLED' && (
+                            <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                              Đã hủy
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                            {r.status === 'PENDING_REVIEW' && (
+                              <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                Chờ QL cơ sở duyệt
+                              </span>
+                            )}
+
+                            {r.status === 'PENDING_SIGNATURE' && (
+                              r.paymentMethod === 'COUNTER' ? (
+                                <div className="flex flex-col items-end gap-1">
+                                  <span className="text-[10px] text-emerald-800 font-bold flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[13px] text-emerald-600">event</span>
+                                    <span>Hẹn quầy: {formatDisplayDate(r.counterAppointmentDate)}{r.counterAppointmentTime ? ` lúc ${r.counterAppointmentTime}` : ''}</span>
+                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenSwitchMethodModal(r, 'ONLINE')}
+                                      className="px-2 py-0.5 bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 rounded text-[11px] font-semibold transition cursor-pointer"
+                                    >
+                                      Ký Online
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenSwitchMethodModal(r, 'COUNTER')}
+                                      className="px-2 py-0.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded text-[11px] font-semibold transition cursor-pointer"
+                                    >
+                                      Đổi hẹn
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setRenewalForSigning(r)}
+                                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-bold text-xs shadow-xs flex items-center gap-1 transition cursor-pointer"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">draw</span>
+                                    <span>Ký online</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenSwitchMethodModal(r, 'COUNTER')}
+                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-medium text-[11px] flex items-center gap-1 transition cursor-pointer"
+                                    title="Chuyển sang đến quầy cơ sở ký và thanh toán"
+                                  >
+                                    <span className="material-symbols-outlined text-[13px] text-emerald-600">storefront</span>
+                                    <span>Đến quầy</span>
+                                  </button>
+                                </div>
+                              )
+                            )}
+
+                            {r.status === 'PENDING_PAYMENT' && (
+                              <button
+                                type="button"
+                                onClick={() => handlePayRenewalVNPay(r)}
+                                disabled={isPayingRenewal}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-bold text-xs shadow-xs flex items-center gap-1 transition cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">credit_card</span>
+                                <span>Thanh toán VNPay</span>
+                              </button>
+                            )}
+
+                            {['PENDING_REVIEW', 'PENDING_SIGNATURE', 'PENDING_PAYMENT'].includes(r.status) && (
+                              <button
+                                type="button"
+                                onClick={() => handleCancelRenewal(r.id)}
+                                className="px-2 py-1 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 rounded-md font-medium text-xs border border-slate-200 hover:border-rose-200 transition cursor-pointer"
+                                title="Hủy yêu cầu gia hạn"
+                              >
+                                Hủy
+                              </button>
+                            )}
+
+                            {r.status === 'COMPLETED' && (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedRenewalForDocModal(r)}
+                                  className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md font-semibold text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                                  title="Xem văn bản phụ lục gia hạn"
+                                >
+                                  <span className="material-symbols-outlined text-[13px]">description</span>
+                                  <span>Xem phụ lục</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const parentContract = contracts.find((c) => c.id === r.contractId) || ({
+                                      id: r.contractId,
+                                      contractCode: r.contractCode,
+                                      unitCode: r.unitCode,
+                                      facilityName: r.facilityName,
+                                      customerName: r.customerName,
+                                      customerEmail: r.customerEmail,
+                                      startDate: r.oldEndDate,
+                                      endDate: r.newEndDate,
+                                      monthlyFee: r.renewalFee / (r.cycleMonths || 1),
+                                      status: 'ACTIVE',
+                                    } as any)
+                                    setSelectedContractForModal(parentContract)
+                                  }}
+                                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-semibold text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                                  title="Xem văn bản hợp đồng gốc"
+                                >
+                                  <span>Xem HĐ gốc</span>
+                                </button>
+                              </div>
+                            )}
+
+                            {r.status === 'REJECTED' && (() => {
+                              const createdAtDate = r.createdAt ? new Date(r.createdAt) : new Date()
+                              const unlockDate = new Date(createdAtDate.getTime() + 3 * 24 * 60 * 60 * 1000)
+                              const now = new Date()
+                              const canReactivate = now >= unlockDate
+                              const diffMs = unlockDate.getTime() - now.getTime()
+                              const hoursRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60)))
+                              const daysRemaining = Math.floor(hoursRemaining / 24)
+                              const remainingHours = hoursRemaining % 24
+
+                              return canReactivate ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleReactivateRenewal(r.id)}
+                                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-md font-bold text-xs shadow-xs flex items-center gap-1 transition cursor-pointer"
+                                  title="Kích hoạt duyệt lại yêu cầu sau 3 ngày"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">replay</span>
+                                  <span>Duyệt lại</span>
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200" title={`Có thể kích hoạt duyệt lại lúc ${unlockDate.toLocaleString('vi-VN')}`}>
+                                  Duyệt lại sau {daysRemaining > 0 ? `${daysRemaining}d ` : ''}{remainingHours}h
+                                </span>
+                              )
+                            })()}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Section 3: Real DB Payments Ledger & VAT E-Invoices */}
           <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col gap-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div className="flex items-center gap-3">
@@ -3291,6 +4200,52 @@ export const CustomerDashboard: React.FC = () => {
                   </div>
                 ) : (
                   <form className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left" onSubmit={handleSupportSubmit}>
+                    {activeContracts.length === 0 && (
+                      <div className="sm:col-span-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[18px] text-amber-600 shrink-0">info</span>
+                        <span>
+                          Quý khách chưa có ngăn kho nào đang ở trạng thái hoạt động (ACTIVE). Báo cáo sự cố chỉ áp dụng cho các cơ sở có kho đã hoàn tất nhận bàn giao (check-in) và đang kích hoạt sử dụng.
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Cơ sở: Chỉ hiển thị cơ sở đang có kho với status là đang hoạt động */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                        <span>Cơ sở lưu trữ</span>
+                        {supportFacilities.length > 0 && (
+                          <span className="text-[10px] text-emerald-600 font-semibold lowercase">
+                            ({supportFacilities.length} cơ sở có kho hoạt động)
+                          </span>
+                        )}
+                      </label>
+                      {supportFacilities.length > 1 ? (
+                        <select
+                          value={ticketFormFacilityId}
+                          onChange={(e) => setTicketFormFacilityId(e.target.value)}
+                          className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
+                        >
+                          {supportFacilities.map(f => (
+                            <option key={f.id} value={f.id}>
+                              {f.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : supportFacilities.length === 1 ? (
+                        <div className="h-10 px-3 bg-slate-100 border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg flex items-center justify-between">
+                          <span className="truncate">{supportFacilities[0].name}</span>
+                          <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-800 font-bold shrink-0">
+                            Đang hoạt động
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="h-10 px-3 bg-slate-100 border border-slate-200 text-slate-500 text-xs font-medium rounded-lg flex items-center">
+                          Chưa có cơ sở nào có kho hoạt động
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Kho lưu trữ liên quan: Chỉ hiển thị các kho đang hoạt động của cơ sở này */}
                     <div className="flex flex-col gap-1.5">
                       <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                         Kho lưu trữ liên quan
@@ -3298,18 +4253,18 @@ export const CustomerDashboard: React.FC = () => {
                       <select
                         value={ticketUnit}
                         onChange={(e) => setTicketUnit(e.target.value)}
-                        className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
+                        disabled={availableActiveUnitsForTicket.length === 0}
+                        className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400 disabled:bg-slate-100 disabled:text-slate-400"
                       >
-                        {activeContracts.length > 0 ? (
-                          activeContracts.map(c => (
+                        {availableActiveUnitsForTicket.length > 0 ? (
+                          availableActiveUnitsForTicket.map(c => (
                             <option key={c.unitCode} value={c.unitCode}>
                               Kho #{c.unitCode} ({c.facilityName})
                             </option>
                           ))
                         ) : (
-                          <option value="general">Chưa có kho hoạt động</option>
+                          <option value="">Chưa có kho hoạt động tại cơ sở này</option>
                         )}
-                        <option value="general">Khác / Thắc mắc chung</option>
                       </select>
                     </div>
 
@@ -3396,7 +4351,7 @@ export const CustomerDashboard: React.FC = () => {
                       </span>
                       <button
                         type="submit"
-                        disabled={isSubmittingTicket}
+                        disabled={isSubmittingTicket || activeContracts.length === 0}
                         className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold text-xs rounded-lg transition-colors shadow-sm cursor-pointer self-end sm:self-auto"
                       >
                         {isSubmittingTicket ? 'Đang gửi...' : 'Gửi Yêu Cầu'}
@@ -3516,7 +4471,7 @@ export const CustomerDashboard: React.FC = () => {
                       <option value="all">
                         {supportFacilities.length > 1
                           ? `Tất cả cơ sở (${supportFacilities.length})`
-                          : supportFacilities[0]?.name || 'Tất cả cơ sở'}
+                          : supportFacilities[0]?.name || 'Chưa có cơ sở hoạt động'}
                       </option>
                       {supportFacilities.length > 1 &&
                         supportFacilities.map((f) => (
@@ -3824,26 +4779,131 @@ export const CustomerDashboard: React.FC = () => {
       {renewModalData && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[92vh] overflow-y-auto">
-            {renewSuccess ? (
-              <div className="py-8 text-center space-y-3">
+            {renewSuccess && createdRenewal ? (
+              <div className="py-4 text-center space-y-4">
                 <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
                   <span className="material-symbols-outlined text-[32px]">check_circle</span>
                 </div>
-                <h3 className="font-headline text-lg font-bold text-slate-900">
-                  Gửi Yêu Cầu Gia Hạn Thành Công!
-                </h3>
-                <p className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed">
-                  Yêu cầu gia hạn thêm <strong>{renewMonths} tháng</strong> cho hợp đồng <strong>#{renewModalData.contractCode}</strong> (Kho #{renewModalData.unitCode}) đã được tiếp nhận và xử lý vào hệ thống Boxora.
-                </p>
-                <button
-                  onClick={() => {
-                    setRenewSuccess(false)
-                    setRenewModalData(null)
-                  }}
-                  className="mt-4 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm"
-                >
-                  Đóng cửa sổ
-                </button>
+                <div className="space-y-1">
+                  <h3 className="font-headline text-lg font-bold text-slate-900">
+                    Khởi Tạo Yêu Cầu Gia Hạn Thành Công!
+                  </h3>
+                  <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
+                    Yêu cầu gia hạn thêm <strong>{createdRenewal.cycleMonths} tháng</strong> cho hợp đồng <strong>#{createdRenewal.contractCode}</strong> (Kho #{createdRenewal.unitCode}) đã được ghi nhận trên hệ thống Boxora.
+                  </p>
+                </div>
+
+                {/* Status Badge */}
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border">
+                  {createdRenewal.status === 'PENDING_REVIEW' && (
+                    <span className="bg-amber-100 text-amber-800 border border-amber-300 px-3 py-1 rounded-full flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px]">pending_actions</span>
+                      <span>Chờ Quản Lý Cơ Sở Phê Duyệt</span>
+                    </span>
+                  )}
+                  {createdRenewal.status === 'PENDING_SIGNATURE' && (
+                    <span className="bg-blue-100 text-blue-800 border border-blue-300 px-3 py-1 rounded-full flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px]">draw</span>
+                      <span>Đã Duyệt • Chờ Ký Phụ Lục Điện Tử</span>
+                    </span>
+                  )}
+                  {createdRenewal.status === 'PENDING_PAYMENT' && (
+                    <span className="bg-indigo-100 text-indigo-800 border border-indigo-300 px-3 py-1 rounded-full flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px]">payments</span>
+                      <span>Đã Ký • Chờ Thanh Toán Phí Gia Hạn</span>
+                    </span>
+                  )}
+                  {createdRenewal.status === 'COMPLETED' && (
+                    <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1 rounded-full flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px]">verified</span>
+                      <span>Gia Hạn Hoàn Tất Thành Công</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Information Card */}
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs text-left space-y-2">
+                  <div className="flex justify-between py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Mã yêu cầu</span>
+                    <span className="font-mono font-bold text-slate-800">#{createdRenewal.id.slice(0, 8)}...</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Thời hạn hiện tại</span>
+                    <span className="font-mono text-slate-700">{formatDisplayDate(createdRenewal.oldEndDate)}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Thời hạn kết thúc mới</span>
+                    <span className="font-mono font-bold text-emerald-700">{formatDisplayDate(createdRenewal.newEndDate)}</span>
+                  </div>
+                  <div className="flex justify-between py-1 pt-1.5">
+                    <span className="font-semibold text-slate-700">Tổng phí gia hạn dự kiến</span>
+                    <span className="font-mono font-extrabold text-blue-700 text-sm">
+                      {Number(createdRenewal.renewalFee || 0).toLocaleString('vi-VN')} ₫
+                    </span>
+                  </div>
+                </div>
+
+                {/* Next Step Action Buttons */}
+                <div className="space-y-2 pt-2">
+                  {createdRenewal.status === 'PENDING_SIGNATURE' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRenewalForSigning(createdRenewal)
+                        setRenewModalData(null)
+                      }}
+                      className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">draw</span>
+                      <span>Ký Phụ Lục Gia Hạn Ngay (DocuSeal)</span>
+                    </button>
+                  )}
+
+                  {createdRenewal.status === 'PENDING_PAYMENT' && (
+                    <button
+                      type="button"
+                      onClick={() => handlePayRenewalVNPay(createdRenewal)}
+                      disabled={isPayingRenewal}
+                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">credit_card</span>
+                      <span>Thanh Toán VNPay ({Number(createdRenewal.renewalFee || 0).toLocaleString('vi-VN')} ₫)</span>
+                    </button>
+                  )}
+
+                  {createdRenewal.status === 'PENDING_REVIEW' && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 text-left flex items-start gap-2">
+                      <span className="material-symbols-outlined text-amber-600 text-[18px] shrink-0 mt-0.5">info</span>
+                      <p className="leading-relaxed">
+                        Yêu cầu gia hạn của bạn đang được Ban Quản Lý cơ sở xem xét theo quy định. Bạn sẽ nhận được thông báo ngay khi có kết quả để ký phụ lục và hoàn tất thanh toán.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRenewSuccess(false)
+                        setRenewModalData(null)
+                        setActiveTab('contracts')
+                      }}
+                      className="flex-1 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl transition cursor-pointer"
+                    >
+                      Xem trong Hợp đồng &amp; Gia hạn
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRenewSuccess(false)
+                        setRenewModalData(null)
+                      }}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition cursor-pointer"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="space-y-4">
@@ -3888,16 +4948,16 @@ export const CustomerDashboard: React.FC = () => {
                     </div>
                     <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
                       <span className="text-slate-500 font-medium">Cơ sở / Kho</span>
-                      <span className="font-bold text-slate-900">{renewModalData.facilityName} / {renewModalData.unitCode}</span>
+                      <span className="font-bold text-slate-900">{renewModalData.facilityName} / #{renewModalData.unitCode}</span>
                     </div>
                     <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
                       <span className="text-slate-500 font-medium">Thời hạn hiện tại</span>
                       <span className="font-mono font-bold text-slate-900">
-                        {formatDisplayDate(renewModalData.startDate)}–{formatDisplayDate(renewModalData.endDate)}
+                        {formatDisplayDate(renewModalData.startDate)} – {formatDisplayDate(renewModalData.endDate)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-slate-500 font-medium">Giá thuê hiện tại</span>
+                      <span className="text-slate-500 font-medium">Giá thuê chính thức</span>
                       <span className="font-mono font-bold text-blue-700">
                         {Number(renewModalData.monthlyPrice || 0).toLocaleString('vi-VN')} ₫/tháng
                       </span>
@@ -3918,7 +4978,7 @@ export const CustomerDashboard: React.FC = () => {
                     {/* Thời gian gia hạn options */}
                     <div>
                       <label className="text-[11px] font-bold text-slate-600 block mb-1.5 uppercase tracking-wider">
-                        Thời gian gia hạn
+                        Thời gian gia hạn thêm
                       </label>
                       <div className="grid grid-cols-4 gap-2">
                         {[1, 3, 6, 12].map((m) => (
@@ -3938,59 +4998,74 @@ export const CustomerDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Inputs for Price, Discount, Other Fee */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-500 block mb-1 uppercase">
-                          Giá thuê mỗi tháng (VND)
-                        </label>
-                        <input
-                          type="number"
-                          value={renewMonthlyPrice}
-                          onChange={(e) => setRenewMonthlyPrice(Math.max(0, parseInt(e.target.value) || 0))}
-                          className="w-full h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
-                        />
+                    {/* Quy trình gia hạn hướng dẫn */}
+                    <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl space-y-1 text-xs text-blue-900 text-left">
+                      <div className="flex items-center gap-1.5 font-bold text-blue-950">
+                        <span className="material-symbols-outlined text-[17px] text-blue-700">info</span>
+                        <span>Quy trình gia hạn hợp đồng Boxora</span>
                       </div>
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-500 block mb-1 uppercase">
-                          Chiết khấu (%)
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={renewDiscountPercent}
-                          onChange={(e) => setRenewDiscountPercent(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
-                          className="w-full h-9 px-2.5 bg-white border border-slate-200 rounded-lg font-mono text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
-                        />
+                      <p className="text-[11px] text-slate-600 leading-relaxed">
+                        Yêu cầu gia hạn của bạn sẽ được chuyển tới Quản lý cơ sở xem xét phê duyệt. Sau khi được duyệt, bạn sẽ chọn hình thức thực hiện (ký điện tử &amp; thanh toán trực tuyến hoặc đến trực tiếp cơ sở) và thanh toán cước phí.
+                      </p>
+                    </div>
+
+                    {/* Pricing breakdown according to business policy */}
+                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 text-xs space-y-1.5">
+                      <div className="flex justify-between text-slate-600">
+                        <span>Giá thuê mỗi tháng:</span>
+                        <span className="font-mono font-bold text-slate-800">
+                          {Number(renewModalData.monthlyPrice || 0).toLocaleString('vi-VN')} ₫
+                        </span>
                       </div>
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-500 block mb-1 uppercase">
-                          Phí khác (VND)
-                        </label>
-                        <input
-                          type="number"
-                          value={renewOtherFee}
-                          onChange={(e) => setRenewOtherFee(Math.max(0, parseInt(e.target.value) || 0))}
-                          className="w-full h-9 px-2.5 bg-white border border-slate-200 rounded-lg font-mono text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
-                        />
+                      <div className="flex justify-between text-slate-600">
+                        <span>Chiết khấu (%):</span>
+                        <span className="font-mono text-emerald-600 font-semibold">0% (theo chính sách)</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600">
+                        <span>Phí khác:</span>
+                        <span className="font-mono text-slate-700">0 ₫</span>
                       </div>
                     </div>
 
+                    {/* Ghi chú */}
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-1 uppercase">
+                        Ghi chú gửi quản lý (tùy chọn)
+                      </label>
+                      <input
+                        type="text"
+                        value={renewNotes}
+                        onChange={(e) => setRenewNotes(e.target.value)}
+                        placeholder="Ví dụ: Mong muốn tiếp tục lưu trữ tài liệu..."
+                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+
                     {/* Tổng tiền dự kiến */}
-                    <div className="mt-2 p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div>
                         <span className="text-xs font-bold text-slate-900 block">
-                          Tổng tiền dự kiến
+                          Tổng tiền gia hạn dự kiến
                         </span>
                         <span className="text-[10px] text-slate-500">
-                          Chưa tính công nợ cũ hoặc khoản điều chỉnh khác
+                          {Number(renewModalData.monthlyPrice || 0).toLocaleString('vi-VN')} ₫ × {renewMonths} tháng
                         </span>
                       </div>
                       <div className="font-mono text-xl sm:text-2xl font-extrabold text-blue-700">
                         {totalRenewEstimate.toLocaleString('vi-VN')} ₫
                       </div>
                     </div>
+
+                    {/* Thông báo lỗi - Đặt ngay dưới Tổng tiền gia hạn dự kiến */}
+                    {renewError && (
+                      <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2.5 animate-in fade-in duration-150">
+                        <span className="material-symbols-outlined text-[20px] text-rose-600 shrink-0 mt-0.5">error</span>
+                        <div className="space-y-0.5">
+                          <div className="font-bold text-rose-900">Không thể gửi yêu cầu gia hạn</div>
+                          <div className="leading-relaxed">{renewError}</div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -4022,6 +5097,206 @@ export const CustomerDashboard: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* DocuSeal Renewal Addendum Modal */}
+      {renewalForSigning && (
+        <DocuSealRenewalModal
+          renewal={renewalForSigning}
+          onClose={() => setRenewalForSigning(null)}
+          onSignedSuccess={async (updated) => {
+            setCreatedRenewal(updated)
+            await fetchMyRenewals()
+            await fetchContracts()
+          }}
+          onProceedToPayment={(ren) => {
+            void handlePayRenewalVNPay(ren)
+          }}
+        />
+      )}
+
+      {/* Switch Renewal Method Modal (Chọn / Đổi sang Trực Tuyến hoặc Trực Tiếp Tại Cơ Sở) */}
+      {switchMethodTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[20px]">swap_horiz</span>
+                </div>
+                <div>
+                  <h3 className="font-headline text-base font-bold text-slate-900">
+                    Chọn Phương Thức Ký &amp; Thanh Toán
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Hợp đồng #{switchMethodTarget.contractCode} • Kho #{switchMethodTarget.unitCode}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSwitchMethodTarget(null)}
+                className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {switchMethodError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2">
+                <span className="material-symbols-outlined text-rose-600 text-[18px] shrink-0 mt-0.5">error</span>
+                <span className="leading-relaxed">{switchMethodError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSwitchMethodSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
+                  Hình thức thực hiện
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSwitchMethodMode('ONLINE')}
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col gap-1 ${
+                      switchMethodMode === 'ONLINE'
+                        ? 'bg-blue-50/90 border-blue-600 ring-1 ring-blue-600 text-blue-900'
+                        : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-xs">
+                      <span className="material-symbols-outlined text-[17px] text-blue-600">draw</span>
+                      <span>Trực tuyến 24/7</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-tight">
+                      Ký phụ lục DocuSeal &amp; thanh toán VNPay online ngay.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const isSigned = !!(switchMethodTarget.signedAt || switchMethodTarget.signatureData || switchMethodTarget.status === 'PENDING_PAYMENT')
+                      if (isSigned) {
+                        setSwitchMethodError('Phụ lục gia hạn đã được ký điện tử trực tuyến, bắt buộc hoàn tất thanh toán trực tuyến qua VNPay và không thể đổi sang hình thức trực tiếp tại quầy.')
+                        return
+                      }
+                      setSwitchMethodMode('COUNTER')
+                    }}
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col gap-1 ${
+                      switchMethodMode === 'COUNTER'
+                        ? 'bg-emerald-50/90 border-emerald-600 ring-1 ring-emerald-600 text-emerald-900'
+                        : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-xs">
+                      <span className="material-symbols-outlined text-[17px] text-emerald-600">storefront</span>
+                      <span>Tại cơ sở Boxora</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-tight">
+                      Đến quầy ký phụ lục giấy &amp; thanh toán cước trực tiếp.
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              {switchMethodMode === 'COUNTER' && (
+                <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-xl space-y-3 text-xs animate-in fade-in duration-150">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="flex items-center gap-1.5 font-bold text-emerald-900">
+                        <span className="material-symbols-outlined text-[16px] text-emerald-700">calendar_month</span>
+                        <span>Ngày hẹn đến cơ sở <span className="text-rose-500">*</span></span>
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={switchAppointmentDate}
+                        min={new Date().toISOString().split('T')[0]}
+                        onChange={(e) => setSwitchAppointmentDate(e.target.value)}
+                        className="w-full h-9 px-3 bg-white border border-emerald-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-400"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="flex items-center gap-1.5 font-bold text-emerald-900">
+                        <span className="material-symbols-outlined text-[16px] text-emerald-700">schedule</span>
+                        <span>Giờ hẹn check-in <span className="text-rose-500">*</span></span>
+                      </label>
+                      <input
+                        type="time"
+                        required
+                        value={switchAppointmentTime}
+                        onChange={(e) => setSwitchAppointmentTime(e.target.value)}
+                        className="w-full h-9 px-3 bg-white border border-emerald-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-400"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Preset quick times for convenience */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    <span className="text-[10px] text-slate-500 font-medium">Khung giờ gợi ý:</span>
+                    {['09:00', '10:30', '14:00', '16:00', '17:30'].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setSwitchAppointmentTime(preset)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold transition cursor-pointer ${
+                          switchAppointmentTime === preset
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        }`}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    Vui lòng chọn ngày và giờ bạn sẽ đến cơ sở <strong>{switchMethodTarget.facilityName}</strong> để ký phụ lục giấy và thanh toán phí.
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                  Ghi chú gửi quản lý / nhân viên (tùy chọn)
+                </label>
+                <input
+                  type="text"
+                  value={switchMethodNotes}
+                  onChange={(e) => setSwitchMethodNotes(e.target.value)}
+                  placeholder="Ví dụ: Tôi sẽ ghé buổi sáng khoảng 10h..."
+                  className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSwitchMethodTarget(null)}
+                  disabled={isSubmittingSwitchMethod}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingSwitchMethod}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isSubmittingSwitchMethod ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
+                      <span>Đang lưu...</span>
+                    </>
+                  ) : (
+                    <span>Xác Nhận Thay Đổi</span>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -4252,6 +5527,31 @@ export const CustomerDashboard: React.FC = () => {
           onClose={() => setSelectedContractForModal(null)}
           onSignNow={handleSignContractNow}
           isSigning={fetchingSigningUrl}
+        />
+      )}
+
+      {/* Renewal Addendum Legal Document Viewer Modal */}
+      {selectedRenewalForDocModal && (
+        <RenewalDocumentModal
+          renewal={selectedRenewalForDocModal}
+          contract={contracts.find((c) => c.id === selectedRenewalForDocModal.contractId) || null}
+          onClose={() => setSelectedRenewalForDocModal(null)}
+          onViewOriginalContract={() => {
+            const parentContract = contracts.find((c) => c.id === selectedRenewalForDocModal.contractId) || ({
+              id: selectedRenewalForDocModal.contractId,
+              contractCode: selectedRenewalForDocModal.contractCode,
+              unitCode: selectedRenewalForDocModal.unitCode,
+              facilityName: selectedRenewalForDocModal.facilityName,
+              customerName: selectedRenewalForDocModal.customerName,
+              customerEmail: selectedRenewalForDocModal.customerEmail,
+              startDate: selectedRenewalForDocModal.oldEndDate,
+              endDate: selectedRenewalForDocModal.newEndDate,
+              monthlyFee: selectedRenewalForDocModal.renewalFee / (selectedRenewalForDocModal.cycleMonths || 1),
+              status: 'ACTIVE',
+            } as any)
+            setSelectedRenewalForDocModal(null)
+            setSelectedContractForModal(parentContract)
+          }}
         />
       )}
 
@@ -4543,13 +5843,33 @@ export const CustomerDashboard: React.FC = () => {
                         <span className="text-[10px] font-bold uppercase text-slate-400 block">
                           {selectedBookingForModal.handoverTime ? 'Thời điểm bàn giao thực tế:' : 'Lịch hẹn check-in nhận kho:'}
                         </span>
-                        <strong className="font-mono text-slate-900 text-xs">
-                          {selectedBookingForModal.handoverTime
-                            ? new Date(selectedBookingForModal.handoverTime).toLocaleString('vi-VN')
-                            : selectedBookingForModal.expectedCheckInAt
-                            ? new Date(selectedBookingForModal.expectedCheckInAt).toLocaleString('vi-VN')
-                            : selectedBookingForModal.startDate}
-                        </strong>
+                        <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                          <strong className="font-mono text-slate-900 text-xs">
+                            {selectedBookingForModal.handoverTime
+                              ? new Date(selectedBookingForModal.handoverTime).toLocaleString('vi-VN')
+                              : selectedBookingForModal.expectedCheckInAt
+                              ? new Date(selectedBookingForModal.expectedCheckInAt).toLocaleString('vi-VN')
+                              : selectedBookingForModal.startDate}
+                          </strong>
+                          {(() => {
+                            const notice = getCheckInNoticeInfo(selectedBookingForModal)
+                            if (!notice) return null
+                            return (
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                notice.type === 'OVERDUE'
+                                  ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                  : notice.type === 'TODAY'
+                                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                  : 'bg-blue-100 text-blue-800 border-blue-300'
+                              }`}>
+                                <span className="material-symbols-outlined text-[11px]">
+                                  {notice.type === 'OVERDUE' ? 'warning' : notice.type === 'TODAY' ? 'schedule' : 'event'}
+                                </span>
+                                <span>{notice.text}</span>
+                              </span>
+                            )
+                          })()}
+                        </div>
                       </div>
                       <div>
                         <span className="text-[10px] font-bold uppercase text-slate-400 block">
@@ -4798,6 +6118,232 @@ export const CustomerDashboard: React.FC = () => {
                     <span>Gửi Yêu Cầu Xử Lý Lại</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CHI TIẾT CÁC HỢP ĐỒNG ĐÃ KÝ TRƯỚC ĐÓ */}
+      {contractHistoryModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shadow-xs">
+                  <span className="material-symbols-outlined text-[24px]">history_edu</span>
+                </div>
+                <div>
+                  <h3 className="font-headline text-base font-bold text-slate-900 flex items-center gap-2">
+                    <span>Lịch Sử Hợp Đồng &amp; Phụ Lục Gia Hạn</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800">
+                      Tổng {contractHistoryModal.renewals.length + 1} Hợp đồng
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Kho #{contractHistoryModal.contract.unitCode} • {contractHistoryModal.contract.facilityName}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setContractHistoryModal(null)}
+                className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Summary Banner */}
+            <div className="p-3.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 rounded-xl flex items-center justify-between text-xs">
+              <div className="space-y-0.5">
+                <span className="text-slate-500 font-medium block text-[11px]">Hiệu lực thuê tích lũy hiện tại:</span>
+                <span className="font-mono font-bold text-blue-900 text-sm">
+                  {formatDisplayDate(contractHistoryModal.contract.startDate)} → {formatDisplayDate(contractHistoryModal.contract.endDate)}
+                </span>
+              </div>
+              <div className="text-right space-y-0.5">
+                <span className="text-slate-500 font-medium block text-[11px]">Trạng thái hợp đồng:</span>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  {contractHistoryModal.contract.status === 'ACTIVE' ? 'Đang hoạt động' : contractHistoryModal.contract.status}
+                </span>
+              </div>
+            </div>
+
+            {/* Timeline of Contracts */}
+            <div className="space-y-4">
+              {/* 1. HỢP ĐỒNG GỐC BAN ĐẦU */}
+              <div className="border border-slate-200 rounded-xl p-4 bg-white shadow-2xs space-y-2.5 relative">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center">
+                      1
+                    </span>
+                    <span className="font-bold text-slate-900 text-xs uppercase tracking-wider">
+                      Hợp Đồng Gốc Ban Đầu
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                      Hợp đồng chính
+                    </span>
+                  </div>
+                  <span className="font-mono font-bold text-slate-800 text-xs">
+                    #{contractHistoryModal.contract.contractCode || `CTR-BX-${contractHistoryModal.contract.id.slice(0, 8)}`}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div className="p-2 bg-slate-50 rounded-lg">
+                    <span className="text-[10px] text-slate-500 block">Ngày bắt đầu</span>
+                    <span className="font-mono font-semibold text-slate-900">
+                      {formatDisplayDate(contractHistoryModal.contract.startDate)}
+                    </span>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded-lg">
+                    <span className="text-[10px] text-slate-500 block">Ngày kết thúc ban đầu</span>
+                    <span className="font-mono font-semibold text-slate-900">
+                      {formatDisplayDate(
+                        contractHistoryModal.renewals.length > 0
+                          ? contractHistoryModal.renewals[0].oldEndDate
+                          : contractHistoryModal.contract.endDate
+                      )}
+                    </span>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded-lg">
+                    <span className="text-[10px] text-slate-500 block">Cước thuê tháng</span>
+                    <span className="font-semibold text-blue-700">
+                      {Number(contractHistoryModal.contract.monthlyFee || 0).toLocaleString('vi-VN')} ₫
+                    </span>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded-lg">
+                    <span className="text-[10px] text-slate-500 block">Tiền cọc lưu ký</span>
+                    <span className="font-semibold text-slate-900">
+                      {getContractDepositHeld(contractHistoryModal.contract).toLocaleString('vi-VN')} ₫
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-xs pt-1">
+                  <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[15px] text-emerald-600">verified_user</span>
+                    <span>Đã hoàn tất ký số &amp; thanh toán kích hoạt kho</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const initialContract = {
+                        ...contractHistoryModal.contract,
+                        endDate:
+                          contractHistoryModal.renewals.length > 0
+                            ? contractHistoryModal.renewals[0].oldEndDate
+                            : contractHistoryModal.contract.endDate,
+                      }
+                      setSelectedContractForModal(initialContract)
+                      setContractHistoryModal(null)
+                    }}
+                    className="text-blue-600 hover:text-blue-800 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Xem văn bản hợp đồng gốc</span>
+                    <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. CÁC PHỤ LỤC GIA HẠN */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Các Phụ Lục Gia Hạn Hợp Đồng ({contractHistoryModal.renewals.length})
+                  </span>
+                </div>
+
+                {contractHistoryModal.renewals.map((r, idx) => (
+                  <div
+                    key={r.id}
+                    className="border border-blue-200/90 rounded-xl p-4 bg-gradient-to-r from-white to-blue-50/30 shadow-2xs space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-[11px] font-bold flex items-center justify-center">
+                          {idx + 2}
+                        </span>
+                        <span className="font-bold text-slate-900 text-xs">
+                          Phụ Lục Gia Hạn Lần {idx + 1}
+                        </span>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[12px]">check</span>
+                          <span>Đã ký &amp; thanh toán</span>
+                        </span>
+                      </div>
+                      <span className="font-mono text-xs font-bold text-blue-700">
+                        + {r.cycleMonths} Tháng
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                      <div className="p-2 bg-white border border-slate-200/70 rounded-lg">
+                        <span className="text-[10px] text-slate-500 block">Thời hạn nối tiếp</span>
+                        <span className="font-mono text-[11px] font-semibold text-slate-800">
+                          {formatDisplayDate(r.oldEndDate)}
+                        </span>
+                      </div>
+                      <div className="p-2 bg-white border border-slate-200/70 rounded-lg">
+                        <span className="text-[10px] text-slate-500 block">Thời hạn gia hạn mới</span>
+                        <span className="font-mono text-[11px] font-bold text-emerald-700">
+                          {formatDisplayDate(r.newEndDate)}
+                        </span>
+                      </div>
+                      <div className="p-2 bg-white border border-slate-200/70 rounded-lg">
+                        <span className="text-[10px] text-slate-500 block">Tổng phí gia hạn</span>
+                        <span className="font-bold text-blue-700">
+                          {Number(r.renewalFee || 0).toLocaleString('vi-VN')} ₫
+                        </span>
+                      </div>
+                      <div className="p-2 bg-white border border-slate-200/70 rounded-lg">
+                        <span className="text-[10px] text-slate-500 block">Phương thức</span>
+                        <span className="font-semibold text-slate-800">
+                          {r.paymentMethod ? r.paymentMethod : 'Ký online + Chuyển khoản'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1 border-t border-slate-100">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[11px] text-slate-500">
+                          {r.notes ? `Ghi chú: ${r.notes}` : 'Phụ lục gia hạn đã được lưu trữ và có giá trị pháp lý tương đương hợp đồng gốc.'}
+                        </span>
+                        {(r.customerName || r.reviewedByName) && (
+                          <span className="text-[11px] text-blue-800 font-medium">
+                            • Người ký: <strong>{r.customerName || r.reviewedByName}</strong>
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedRenewalForDocModal(r)
+                        }}
+                        className="text-blue-600 hover:text-blue-800 font-bold text-xs flex items-center gap-1 cursor-pointer py-1 ml-auto shrink-0"
+                        title="Xem văn bản phụ lục gia hạn"
+                      >
+                        <span>Xem văn bản phụ lục</span>
+                        <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="pt-2 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setContractHistoryModal(null)}
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                Đóng
               </button>
             </div>
           </div>

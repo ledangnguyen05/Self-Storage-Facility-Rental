@@ -105,6 +105,7 @@ export interface StorageUnit {
   status: UnitStatusType
   facilityId: string
   facilityName: string
+  facilityStatus?: string
   unitTypeId: string
   unitTypeName: string
   pricePerMonth: number
@@ -296,6 +297,74 @@ export interface RentalContract {
   signatureData?: string | null
   unitTypeName?: string | null
   unitPricePerMonth?: number | null
+}
+
+export type ContractRenewalStatus =
+  | 'PENDING_REVIEW'
+  | 'PENDING_SIGNATURE'
+  | 'PENDING_PAYMENT'
+  | 'COMPLETED'
+  | 'REJECTED'
+  | 'CANCELLED'
+
+export interface ContractRenewal {
+  id: string
+  contractId: string
+  contractCode: string
+  customerId: string
+  customerName: string
+  customerEmail: string
+  facilityId?: string
+  facilityName: string
+  unitCode: string
+  oldEndDate: string
+  newEndDate: string
+  cycleMonths: number
+  renewalFee: number
+  status: ContractRenewalStatus
+  paymentId?: string
+  paymentStatus?: 'PAID' | 'PENDING' | 'FAILED' | 'EXPIRED'
+  paymentMethod?: string
+  counterAppointmentDate?: string
+  counterAppointmentTime?: string
+  receiptVoucherCode?: string
+  cashierStaffName?: string
+  paidAt?: string
+  docusealSubmissionId?: number
+  docusealSubmitterSlug?: string
+  signingUrl?: string
+  signedDocumentUrl?: string
+  signedAt?: string
+  signatureData?: string
+  reviewedById?: string
+  reviewedByName?: string
+  reviewedAt?: string
+  rejectionReason?: string
+  notes?: string
+  assignedStaffId?: string
+  assignedStaffName?: string
+  assignedStaffEmail?: string
+  assignedStaffAt?: string
+  identityVerified?: boolean
+  identityDocType?: string
+  identityNumber?: string
+  identityNotes?: string
+  unitAudited?: boolean
+  unitAuditNotes?: string
+  noBlockingIssues?: boolean
+  blockingNotes?: string
+  termsConfirmed?: boolean
+  termsNotes?: string
+  paymentConfirmed?: boolean
+  handledById?: string
+  handledByName?: string
+  handledAt?: string
+  receptionNotes?: string
+  checkInTimeMet?: boolean
+  checkInTimeStatus?: 'BEFORE_DATE' | 'BEFORE_TIME' | 'ON_TIME' | 'LATE'
+  checkInTimeMessage?: string
+  createdAt: string
+  updatedAt: string
 }
 
 export interface SupportTicket {
