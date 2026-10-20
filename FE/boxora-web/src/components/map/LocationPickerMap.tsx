@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import {
-  geocodeAddress,
+  searchAddressList,
   autocompleteAddress,
   getGeocodingErrorMessage,
+  GeocodingResult,
   GeocodingSuggestion,
 } from '../../services/nominatimGeocodingService'
 import { applyVietnamSovereignty, createVietnamTileLayer } from '../../utils/vietnamSovereignty'
@@ -65,6 +66,7 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
   const [searchQuery, setSearchQuery] = useState(address)
   const [isSearching, setIsSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
+  const [searchResults, setSearchResults] = useState<GeocodingResult[]>([])
   const [suggestions, setSuggestions] = useState<GeocodingSuggestion[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [isLocating, setIsLocating] = useState(false)
@@ -101,6 +103,7 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
       const lat = Number(event.latlng.lat.toFixed(6))
       const lng = Number(event.latlng.lng.toFixed(6))
       onChangeRef.current(lat, lng)
+      setSearchResults([])
     })
 
     mapInstanceRef.current = map
@@ -142,7 +145,7 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
     }
   }, [latitude, longitude])
 
-  // Search address handler
+  // Search address handler: fetch list of candidate locations (like in ganhmuusinh)
   const handleSearch = async (event?: React.SyntheticEvent) => {
     if (event) {
       event.preventDefault()
@@ -151,20 +154,24 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
     const cleanQuery = searchQuery.trim()
     if (cleanQuery.length < 2) {
       setSearchError('Vui lòng nhập ít nhất 2 ký tự để tìm vị trí.')
+      setSearchResults([])
       return
     }
 
     setIsSearching(true)
     setSearchError('')
     setShowSuggestions(false)
+    setSearchResults([])
 
     try {
-      const result = await geocodeAddress(cleanQuery)
-      onChange(Number(result.lat.toFixed(6)), Number(result.lng.toFixed(6)))
-      if (onAddressSelect && result.displayName) {
-        onAddressSelect(result.displayName)
+      const found = await searchAddressList(cleanQuery)
+      setSearchResults(found)
+
+      if (found.length === 0) {
+        setSearchError('Không tìm thấy vị trí phù hợp. Bạn có thể nhấp trực tiếp lên bản đồ bên dưới để đặt ghim.')
+      } else if (found.length === 1) {
+        selectResult(found[0])
       }
-      setSearchQuery(result.displayName || cleanQuery)
     } catch (err) {
       setSearchError(getGeocodingErrorMessage(err))
     } finally {
@@ -172,7 +179,17 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
     }
   }
 
-  // Live suggestions
+  const selectResult = (result: GeocodingResult) => {
+    onChange(Number(result.lat.toFixed(6)), Number(result.lng.toFixed(6)))
+    if (onAddressSelect && result.displayName) {
+      onAddressSelect(result.displayName)
+    }
+    setSearchQuery(result.displayName)
+    setSearchResults([])
+    setSearchError('')
+  }
+
+  // Live suggestions while typing
   const handleQueryChange = (val: string) => {
     setSearchQuery(val)
     if (val.trim().length >= 3) {
@@ -195,6 +212,7 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
     setShowSuggestions(false)
     setSuggestions([])
     setSearchError('')
+    setSearchResults([])
   }
 
   // Geolocation (GPS browser with IP fallback)
@@ -270,7 +288,7 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
               className="w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 py-2 text-xs text-slate-900 outline-none transition focus:border-cyan-600 focus:ring-2 focus:ring-cyan-600/15 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
             />
 
-            {/* Dropdown suggestions */}
+            {/* Dropdown autocomplete suggestions while typing */}
             {showSuggestions && suggestions.length > 0 && (
               <div className="absolute left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800">
                 {suggestions.map((s, idx) => (
@@ -305,6 +323,43 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
             <span>{isSearching ? 'Đang tìm...' : 'Tìm'}</span>
           </button>
         </div>
+
+        {/* Search Results List (ganhmuusinh style - hiện danh sách lựa chọn cho user bấm chọn) */}
+        {searchResults.length > 0 && (
+          <div className="overflow-hidden rounded-xl border border-cyan-200 bg-white shadow-md dark:border-cyan-900/50 dark:bg-slate-800">
+            <div className="bg-cyan-50/80 px-3 py-1.5 text-[11px] font-semibold text-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-200 border-b border-cyan-100 dark:border-cyan-900/40 flex items-center justify-between">
+              <span>Tìm thấy {searchResults.length} địa điểm phù hợp (bấm để ghim):</span>
+              <button
+                type="button"
+                onClick={() => setSearchResults([])}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs"
+              >
+                ✕
+              </button>
+            </div>
+            <ul className="max-h-48 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700/60">
+              {searchResults.map((result, idx) => (
+                <li key={idx}>
+                  <button
+                    type="button"
+                    onClick={() => selectResult(result)}
+                    className="w-full text-left px-3.5 py-2.5 text-xs hover:bg-cyan-50/60 dark:hover:bg-cyan-950/40 transition cursor-pointer flex flex-col gap-0.5"
+                  >
+                    <div className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-100">
+                      <span className="material-symbols-outlined text-[16px] text-cyan-600 shrink-0">location_on</span>
+                      <span className="truncate">{result.displayName}</span>
+                    </div>
+                    {result.type && (
+                      <span className="pl-5 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                        {result.type} • Tọa độ: {result.lat.toFixed(6)}, {result.lng.toFixed(6)}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {searchError && (
           <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1">

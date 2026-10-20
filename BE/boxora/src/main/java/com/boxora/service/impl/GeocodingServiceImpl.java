@@ -18,8 +18,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.Arrays;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -43,7 +42,7 @@ public class GeocodingServiceImpl implements GeocodingService {
     private final AtomicInteger lastWorkingModelIdx = new AtomicInteger(0);
 
     // Cache to prevent duplicate AI calls
-    private final Map<String, GeocodeResponse> geocodeCache = new ConcurrentHashMap<>();
+    private final Map<String, List<GeocodeResponse>> geocodeCache = new ConcurrentHashMap<>();
 
     public GeocodingServiceImpl(
             @Value("${gemini.api-keys:}") String configuredKeys,
@@ -63,10 +62,10 @@ public class GeocodingServiceImpl implements GeocodingService {
     }
 
     @Override
-    public GeocodeResponse geocode(GeocodeRequest request) {
+    public List<GeocodeResponse> geocode(GeocodeRequest request) {
         String query = request.getQuery() != null ? request.getQuery().trim() : "";
         if (query.isEmpty()) {
-            return null;
+            return Collections.emptyList();
         }
 
         String cacheKey = query.toLowerCase();
@@ -76,17 +75,17 @@ public class GeocodingServiceImpl implements GeocodingService {
 
         if (apiKeys.length == 0) {
             log.warn("No Gemini keys available for geocoding query: {}", query);
-            return null;
+            return Collections.emptyList();
         }
 
         String prompt = String.format(
                 "Bạn là hệ thống định vị & phân giải địa chỉ Việt Nam chuyên nghiệp. " +
-                "Hãy tìm tọa độ GPS (vĩ độ latitude, kinh độ longitude) chính xác nhất cho địa chỉ sau:\n" +
+                "Hãy tìm danh sách từ 1 đến 5 địa điểm / gợi ý địa chỉ GPS (vĩ độ latitude, kinh độ longitude) phù hợp nhất với cụm từ sau:\n" +
                 "\"%s\"\n\n" +
-                "Quy tắc:\n" +
+                "Quy tắc bắt buộc:\n" +
                 "1. Tọa độ phải nằm trong lãnh thổ Việt Nam (Vĩ độ 8.5 đến 23.4, Kinh độ 102.1 đến 109.5).\n" +
-                "2. Trả về DUY NHẤT một đối tượng JSON hợp lệ không có markdown backticks (không dùng ```json hay ```), theo cấu trúc:\n" +
-                "{\"lat\": number, \"lng\": number, \"displayName\": string}",
+                "2. Trả về DUY NHẤT một mảng JSON các đối tượng (không có markdown backticks, không dùng ```json hay ```), theo cấu trúc:\n" +
+                "[{\"lat\": number, \"lng\": number, \"displayName\": string, \"type\": string}]",
                 query
         );
 
@@ -125,18 +124,18 @@ public class GeocodingServiceImpl implements GeocodingService {
 
                     ObjectNode genConfig = root.putObject("generationConfig");
                     genConfig.put("temperature", 0.1);
-                    genConfig.put("maxOutputTokens", 256);
+                    genConfig.put("maxOutputTokens", 512);
 
                     HttpEntity<String> entity = new HttpEntity<>(objectMapper.writeValueAsString(root), headers);
                     ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
 
                     if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                        GeocodeResponse result = parseGeminiResponse(response.getBody(), query);
-                        if (result != null) {
+                        List<GeocodeResponse> results = parseGeminiListResponse(response.getBody(), query);
+                        if (!results.isEmpty()) {
                             lastWorkingKeyIdx.set(keyIndex);
                             lastWorkingModelIdx.set(modelIndex);
-                            geocodeCache.put(cacheKey, result);
-                            return result;
+                            geocodeCache.put(cacheKey, results);
+                            return results;
                         }
                     }
                 } catch (Exception e) {
@@ -146,10 +145,11 @@ public class GeocodingServiceImpl implements GeocodingService {
             }
         }
 
-        return null;
+        return Collections.emptyList();
     }
 
-    private GeocodeResponse parseGeminiResponse(String responseJson, String originalQuery) {
+    private List<GeocodeResponse> parseGeminiListResponse(String responseJson, String originalQuery) {
+        List<GeocodeResponse> results = new ArrayList<>();
         try {
             JsonNode root = objectMapper.readTree(responseJson);
             JsonNode candidates = root.path("candidates");
@@ -161,28 +161,37 @@ public class GeocodingServiceImpl implements GeocodingService {
                         String clean = rawText.replaceAll("(?s)```json\\s*", "")
                                               .replaceAll("(?s)```\\s*", "")
                                               .trim();
-                        // Find first '{' and last '}'
-                        int start = clean.indexOf('{');
-                        int end = clean.lastIndexOf('}');
-                        if (start >= 0 && end > start) {
-                            clean = clean.substring(start, end + 1);
+                        // Find first '[' or '{'
+                        int startArr = clean.indexOf('[');
+                        int endArr = clean.lastIndexOf(']');
+                        int startObj = clean.indexOf('{');
+                        int endObj = clean.lastIndexOf('}');
+
+                        if (startArr >= 0 && endArr > startArr) {
+                            clean = clean.substring(startArr, endArr + 1);
+                        } else if (startObj >= 0 && endObj > startObj) {
+                            clean = "[" + clean.substring(startObj, endObj + 1) + "]";
                         }
 
-                        JsonNode obj = objectMapper.readTree(clean);
-                        double lat = obj.path("lat").asDouble(0);
-                        double lng = obj.path("lng").asDouble(0);
-                        String displayName = obj.path("displayName").asText(originalQuery);
+                        JsonNode arr = objectMapper.readTree(clean);
+                        if (arr.isArray()) {
+                            for (JsonNode item : arr) {
+                                double lat = item.path("lat").asDouble(0);
+                                double lng = item.path("lng").asDouble(0);
+                                String displayName = item.path("displayName").asText(originalQuery);
+                                String type = item.path("type").asText("Địa điểm");
 
-                        // Validate coordinates inside Vietnam bounding box
-                        if (lat >= 8.5 && lat <= 23.4 && lng >= 102.1 && lng <= 109.5) {
-                            return GeocodeResponse.builder()
-                                    .latitude(BigDecimal.valueOf(lat).setScale(6, RoundingMode.HALF_UP))
-                                    .longitude(BigDecimal.valueOf(lng).setScale(6, RoundingMode.HALF_UP))
-                                    .displayName(displayName)
-                                    .source("EXACT")
-                                    .provider("boxora-ai")
-                                    .confidence("AI Verified Location")
-                                    .build();
+                                if (lat >= 8.5 && lat <= 23.4 && lng >= 102.1 && lng <= 109.5) {
+                                    results.add(GeocodeResponse.builder()
+                                            .latitude(BigDecimal.valueOf(lat).setScale(6, RoundingMode.HALF_UP))
+                                            .longitude(BigDecimal.valueOf(lng).setScale(6, RoundingMode.HALF_UP))
+                                            .displayName(displayName)
+                                            .source("EXACT")
+                                            .provider("boxora-ai")
+                                            .confidence(type)
+                                            .build());
+                                }
+                            }
                         }
                     }
                 }
@@ -190,6 +199,6 @@ public class GeocodingServiceImpl implements GeocodingService {
         } catch (Exception e) {
             log.error("Failed to parse Gemini geocoding payload: {}", e.getMessage());
         }
-        return null;
+        return results;
     }
 }
