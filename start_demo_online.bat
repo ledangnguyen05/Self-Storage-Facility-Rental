@@ -39,7 +39,7 @@ powershell -NoProfile -Command "$t = Test-NetConnection -ComputerName 127.0.0.1 
 if %errorlevel% equ 0 goto BACKEND_RUNNING
 
 echo   - Dang khoi dong Backend Spring Boot trong cua so rieng...
-start "BOXORA - BACKEND SPRING BOOT (PORT 8080)" cmd /k "cd /d "%~dp0BE\boxora" && setup_and_run_backend.bat 2"
+start "BOXORA - BACKEND SPRING BOOT (PORT 8080)" /d "%~dp0BE\boxora" cmd /k setup_and_run_backend.bat 2
 echo   - Dang cho Backend khoi tao tren Port 8080...
 
 set /a RETRY_COUNT=0
@@ -76,7 +76,7 @@ set "LOGFILE=%TEMP%\boxora_backend_tunnel.log"
 if exist "!LOGFILE!" del /f /q "!LOGFILE!" >nul 2>&1
 
 echo   - Dang mo Cloudflare Quick Tunnel cho Backend (http://localhost:8080)...
-start "BOXORA - BACKEND TUNNEL" /min "!CLOUDFLARED!" tunnel --url http://localhost:8080 --logfile "!LOGFILE!"
+start "BOXORA - BACKEND TUNNEL" /min "!CLOUDFLARED!" --logfile "!LOGFILE!" tunnel --url http://localhost:8080
 
 echo   - Dang trich xuat public HTTPS tunnel URL...
 set "BACKEND_TUNNEL_URL="
@@ -85,7 +85,7 @@ set /a TUNNEL_TRY=0
 ping 127.0.0.1 -n 2 >nul
 set /a TUNNEL_TRY+=1
 if exist "!LOGFILE!" (
-    for /f "usebackq delims=" %%u in (`powershell -NoProfile -Command "Select-String -Path $env:TEMP\boxora_backend_tunnel.log -Pattern 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' | ForEach-Object { $_.Matches.Value } | Select-Object -First 1"`) do (
+    for /f "usebackq delims=" %%u in (`powershell -NoProfile -Command "try { $m = ((Get-Content -Path $env:TEMP\boxora_backend_tunnel.log -Raw -ErrorAction SilentlyContinue) | Select-String -Pattern 'https://[a-zA-Z0-9-]+\.trycloudflare\.com').Matches[0].Value; if ($m) { Write-Output $m } } catch {}"`) do (
         if not "%%u"=="" (
             set "BACKEND_TUNNEL_URL=%%u"
             goto TUNNEL_SUCCESS

@@ -76,6 +76,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private boolean isPublicPath(String path) {
+        if ("/api/v1/auth/change-password".equals(path) || "/api/v1/auth/profile".equals(path)) {
+            return false;
+        }
         return path.startsWith("/api/v1/auth/") ||
                 path.equals("/api/v1/payments/vnpay-return") ||
                 path.equals("/api/v1/payments/vnpay-ipn") ||

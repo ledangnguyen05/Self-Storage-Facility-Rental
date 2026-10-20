@@ -37,7 +37,7 @@ public class PaymentController {
 
     private final PaymentService paymentService;
 
-    @Value("${app.frontend-url:http://localhost:5173}")
+    @Value("${app.frontend-url:https://boxora-storage.pages.dev}")
     private String frontendUrl;
 
     @PostMapping("vnpay/create")
