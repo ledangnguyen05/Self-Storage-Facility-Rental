@@ -12,6 +12,9 @@ import { WebSettingsModal } from '../../components/common/WebSettingsModal'
 import { UserAvatarDropdown } from '../../components/common/UserAvatarDropdown'
 import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
 import { useLanguage } from '../../context/LanguageContext'
+import { Facility } from '../../types'
+import { facilityService } from '../../services/facilityService'
+import { BoxoraFacilitiesMap } from '../../components/map/BoxoraFacilitiesMap'
 
 // ============================================================================
 // MAIN HOMEPAGE COMPONENT
@@ -52,6 +55,21 @@ export const HomePage: React.FC = () => {
 
   // Policies active tab state
   const [activePolicyTab, setActivePolicyTab] = useState<'deposit' | 'insurance' | 'contract' | 'prohibited'>('deposit')
+
+  // Facilities and Map State
+  const [facilities, setFacilities] = useState<Facility[]>([])
+  const [selectedMapFacilityId, setSelectedMapFacilityId] = useState<string | null>(null)
+
+  useEffect(() => {
+    facilityService
+      .getFacilities({ size: 100 })
+      .then((res) => {
+        if (res?.content) {
+          setFacilities(res.content)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   // FAQ active filter and item state
   const [faqFilter, setFaqFilter] = useState<'ALL' | 'IOT' | 'CONTRACT' | 'FACILITY'>('ALL')
@@ -1271,6 +1289,39 @@ export const HomePage: React.FC = () => {
           </div>
         </div>
 
+      </div>
+    </section>
+
+    {/* ============================================================ */}
+    {/* 9.5. HỆ THỐNG CƠ SỞ & BẢN ĐỒ ĐỊNH VỊ GPS BOXORA             */}
+    {/* ============================================================ */}
+    <section id="facilities-map" className="py-20 lg:py-24 border-b border-slate-200/80 bg-white">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.3 }}
+          variants={sectionFadeIn}
+          className="text-center max-w-3xl mx-auto space-y-3"
+        >
+          <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3.5 py-1 text-xs font-bold text-cyan-800 border border-cyan-200">
+            <span className="material-symbols-outlined text-[16px] text-cyan-600">pin_drop</span>
+            <span>MẠNG LƯỚI CƠ SỞ LƯU TRỮ THÔNG MINH</span>
+          </div>
+          <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+            Vị Trí Các Trung Tâm Kho Boxora Trên Bản Đồ
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-600 max-w-2xl mx-auto leading-relaxed">
+            Hệ thống 4 cơ sở kho tự quản tọa lạc tại các vị trí trọng điểm TP. Hồ Chí Minh, xe tải và container tiếp cận dễ dàng 24/7.
+          </p>
+        </motion.div>
+
+        {/* Map Box */}
+        <BoxoraFacilitiesMap
+          facilities={facilities}
+          selectedFacilityId={selectedMapFacilityId}
+          onSelectFacility={(fac) => setSelectedMapFacilityId(fac.id)}
+        />
       </div>
     </section>
 

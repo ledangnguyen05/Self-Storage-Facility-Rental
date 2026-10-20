@@ -16,6 +16,7 @@ import { DEFAULT_FACILITY_LAYOUT_CONFIG, parseFacilityLayoutConfig } from '../..
 import { FacilityPolicyViewModal } from '../manager/modals/FacilityPolicyViewModal'
 import { FacilityOperatingPoliciesPanel } from './FacilityOperatingPoliciesPanel'
 import { DynamicPricingMatrixPanel } from './DynamicPricingMatrixPanel'
+import { LocationPickerMap } from '../../components/map/LocationPickerMap'
 
 interface FacilityConfigurationPanelProps {
   facilities: Facility[]
@@ -771,89 +772,57 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                       </div>
                     </div>
 
-                    {/* Address input with Autocomplete */}
-                    <div className="relative">
-                      <div className="flex items-center justify-between">
+                    {/* LocationPickerMap (ganhmuusinh style with Google Maps Vietnamese tiles, search, and pin) */}
+                    <LocationPickerMap
+                      latitude={draft.latitude.trim() !== '' ? Number(draft.latitude) : null}
+                      longitude={draft.longitude.trim() !== '' ? Number(draft.longitude) : null}
+                      address={draft.address}
+                      onChange={(lat, lng) => {
+                        setDraft((c) => ({
+                          ...c,
+                          latitude: String(lat),
+                          longitude: String(lng),
+                          geoSource: 'EXACT',
+                          geoConfidenceNote: 'Đã ghim vị trí trên bản đồ',
+                        }))
+                      }}
+                      onAddressSelect={(selectedAddr) => {
+                        setDraft((c) => ({
+                          ...c,
+                          address: selectedAddr,
+                        }))
+                      }}
+                      onClear={() => {
+                        setDraft((c) => ({
+                          ...c,
+                          latitude: '',
+                          longitude: '',
+                          geoSource: 'UNVERIFIED',
+                          geoConfidenceNote: '',
+                        }))
+                      }}
+                    />
+
+                    {/* Address & Coordinate inputs */}
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      <div className="sm:col-span-2 lg:col-span-1">
                         <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          {t('Địa chỉ đầy đủ (Ví dụ: 21 Võ Trường Toản, TP. Hồ Chí Minh)', 'Full Address')} *
+                          {t('Địa chỉ cơ sở hiển thị', 'Facility address')} *
                         </label>
-                        {isSearchingSuggestions && (
-                          <span className="text-[11px] text-cyan-600 flex items-center gap-1">
-                            <span className="h-3 w-3 animate-spin rounded-full border-2 border-cyan-600 border-t-transparent" />
-                            {t('Đang tìm gợi ý...', 'Searching suggestions...')}
-                          </span>
-                        )}
+                        <input
+                          required
+                          maxLength={255}
+                          value={draft.address}
+                          onChange={(e) => setDraft((c) => ({ ...c, address: e.target.value }))}
+                          placeholder="21 Võ Trường Toản, Phường Thảo Điền, TP. Thủ Đức"
+                          className={`${inputClassName} mt-1.5`}
+                        />
                       </div>
 
-                      <div className="relative mt-1.5 flex gap-2">
-                        <div className="relative flex-1">
-                          <input
-                            required
-                            maxLength={255}
-                            value={draft.address}
-                            onChange={(e) => handleAddressChange(e.target.value)}
-                            onFocus={() => {
-                              if (suggestions.length > 0) setShowSuggestions(true)
-                            }}
-                            placeholder="21 Võ Trường Toản, Phường Thảo Điền, TP. Thủ Đức"
-                            className={inputClassName}
-                          />
-                          {draft.address && (
-                            <button
-                              type="button"
-                              onClick={() => handleAddressChange('')}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                            >
-                              <span className="material-symbols-outlined text-[16px]">cancel</span>
-                            </button>
-                          )}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => void lookupCoordinates()}
-                          disabled={isGeocoding}
-                          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-cyan-200 bg-cyan-50 px-4 py-2.5 text-xs font-bold text-cyan-800 hover:bg-cyan-100 disabled:opacity-50 dark:border-cyan-900 dark:bg-cyan-950/60 dark:text-cyan-200 cursor-pointer shadow-xs transition"
-                        >
-                          <span className={`material-symbols-outlined text-[17px] ${isGeocoding ? 'animate-spin' : ''}`}>
-                            {isGeocoding ? 'progress_activity' : 'my_location'}
-                          </span>
-                          {isGeocoding ? t('Đang tra cứu...', 'Searching...') : t('Tìm GPS từ địa chỉ', 'Lookup GPS')}
-                        </button>
-                      </div>
-
-                      {/* Dropdown Suggestions List */}
-                      {showSuggestions && suggestions.length > 0 && (
-                        <div className="absolute left-0 right-0 z-20 mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800">
-                          <div className="border-b border-slate-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:border-slate-700">
-                            {t('Gợi ý địa chỉ từ bản đồ', 'Map suggestions')}
-                          </div>
-                          {suggestions.map((item, idx) => (
-                            <button
-                              key={idx}
-                              type="button"
-                              onClick={() => handleSelectSuggestion(item)}
-                              className="w-full text-left px-3.5 py-2.5 text-xs hover:bg-cyan-50 dark:hover:bg-cyan-950/50 border-b border-slate-100 dark:border-slate-700/50 last:border-0 cursor-pointer flex items-start gap-2"
-                            >
-                              <span className="material-symbols-outlined text-[16px] text-cyan-600 shrink-0 mt-0.5">place</span>
-                              <div className="min-w-0 flex-1">
-                                <p className="font-semibold text-slate-900 dark:text-slate-100 truncate">{item.displayName}</p>
-                                <p className="text-[10px] text-slate-500 font-mono">
-                                  {item.lat.toFixed(5)}, {item.lng.toFixed(5)}
-                                </p>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                      {/* Coordinate inputs with verification indicator */}
-                    <div className="grid gap-3 sm:grid-cols-2">
                       <div>
                         <div className="flex items-center justify-between">
                           <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                            {t('Vĩ độ (Latitude: -90 đến 90)', 'Latitude')}
+                            {t('Vĩ độ (Latitude)', 'Latitude')}
                           </label>
                           {draft.latitude && (
                             <span className="text-[10px] text-slate-400 font-mono">
@@ -876,7 +845,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                       <div>
                         <div className="flex items-center justify-between">
                           <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                            {t('Kinh độ (Longitude: -180 đến 180)', 'Longitude')}
+                            {t('Kinh độ (Longitude)', 'Longitude')}
                           </label>
                           {draft.longitude && (
                             <span className="text-[10px] text-slate-400 font-mono">
@@ -896,80 +865,6 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                         />
                       </div>
                     </div>
-
-                    {/* Interactive Coordinates Map Preview & Controls */}
-                    {hasCoordinates && Number.isFinite(latNum) && Number.isFinite(lngNum) ? (
-                      <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-800/40">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="material-symbols-outlined text-[20px] text-emerald-600">share_location</span>
-                            <div>
-                              <p className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                                {t('Vị trí được định vị trên bản đồ', 'Map Location')}
-                              </p>
-                              <p className="text-[11px] text-slate-500 font-mono">
-                                Lat: {latNum.toFixed(6)} | Lng: {lngNum.toFixed(6)}
-                                {draft.geoConfidenceNote ? ` (${draft.geoConfidenceNote})` : ''}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <a
-                              href={`https://www.openstreetmap.org/?mlat=${latNum}&mlon=${lngNum}#map=17/${latNum}/${lngNum}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-cyan-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-cyan-400"
-                            >
-                              <span className="material-symbols-outlined text-[15px]">open_in_new</span>
-                              {t('Mở OpenStreetMap', 'Open OSM')}
-                            </a>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setDraft((c) => ({
-                                  ...c,
-                                  latitude: '',
-                                  longitude: '',
-                                  geoSource: 'UNVERIFIED',
-                                  geoConfidenceNote: '',
-                                }))
-                              }}
-                              className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300 cursor-pointer"
-                            >
-                              <span className="material-symbols-outlined text-[15px]">delete_sweep</span>
-                              {t('Xóa tọa độ', 'Clear GPS')}
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Visual Map Pin Banner */}
-                        <div className="mt-3 relative h-28 overflow-hidden rounded-xl border border-slate-200 bg-cyan-950 text-white flex items-center justify-center">
-                          <div
-                            className="absolute inset-0 opacity-20 bg-repeat"
-                            style={{
-                              backgroundImage: `radial-gradient(circle, #06b6d4 1px, transparent 1px)`,
-                              backgroundSize: '16px 16px',
-                            }}
-                          />
-                          <div className="relative text-center p-3">
-                            <div className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-cyan-500/30 text-cyan-300 ring-4 ring-cyan-500/20 mb-1">
-                              <span className="material-symbols-outlined text-[18px]">location_on</span>
-                            </div>
-                            <p className="text-xs font-bold truncate max-w-md">{draft.address || draft.name}</p>
-                            <p className="text-[10px] text-cyan-300 font-mono mt-0.5">
-                              {latNum.toFixed(6)}, {lngNum.toFixed(6)}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-xs text-slate-500 dark:border-slate-800">
-                        <span className="material-symbols-outlined text-2xl text-slate-400 mb-1">wrong_location</span>
-                        <p>{t('Chưa có tọa độ GPS. Hãy bấm nút "Tìm GPS từ địa chỉ" hoặc nhập thủ công.', 'No GPS yet.')}</p>
-                      </div>
-                    )}
                   </div>
                 )}
 
