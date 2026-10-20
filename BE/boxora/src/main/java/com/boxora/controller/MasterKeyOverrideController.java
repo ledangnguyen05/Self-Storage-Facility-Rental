@@ -33,7 +33,7 @@ public class MasterKeyOverrideController {
             @Valid @RequestBody MasterKeyOverrideRequest request) {
         MasterKeyOverrideResponse response = masterKeyOverrideService.create(request);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Master key override recorded successfully", response));
+                .body(ApiResponse.success("Ghi nhận mở khóa khẩn cấp Master Key thành công", response));
     }
 
     @GetMapping("/{id}")

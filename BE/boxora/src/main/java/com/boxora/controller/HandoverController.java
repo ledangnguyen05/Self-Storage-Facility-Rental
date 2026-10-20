@@ -39,7 +39,7 @@ public class HandoverController {
     @Operation(summary = "Record check-in and issue an access PIN; physical SmartLock state is not verified by Boxora")
     public ResponseEntity<ApiResponse<HandoverResponse>> checkIn(@Valid @RequestBody HandoverRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Check-in recorded and access PIN issued; physical lock status is unverified.", handoverService.checkIn(request)));
+                .body(ApiResponse.success("Bàn giao nhận kho và cấp mã PIN truy cập thành công", handoverService.checkIn(request)));
     }
 
     @GetMapping("/booking/{bookingId}/return-preview")

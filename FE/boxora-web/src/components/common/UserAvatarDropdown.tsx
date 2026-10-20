@@ -7,6 +7,7 @@ import {
   getWebSettings,
   saveWebSettings,
 } from '../../utils/webSettings'
+import { ChangePasswordModal } from './ChangePasswordModal'
 
 interface UserAvatarDropdownProps {
   user: User | null
@@ -27,6 +28,7 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
 }) => {
   const { t } = useLanguage()
   const [isOpen, setIsOpen] = useState(false)
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false)
   const [webSettings, setWebSettings] = useState<WebSettings>(getWebSettings())
   const [systemIsDark, setSystemIsDark] = useState(() => getResolvedTheme({ theme: 'system' }) === 'dark')
   const isDark = webSettings.theme === 'dark' || (webSettings.theme === 'system' && systemIsDark)
@@ -208,6 +210,31 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
               </span>
             </button>
 
+            {/* Đổi mật khẩu */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false)
+                setIsChangePasswordOpen(true)
+              }}
+              className="w-full flex items-center gap-3 p-2 rounded-xl text-left hover:bg-slate-50 transition-colors cursor-pointer group"
+            >
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                <span className="material-symbols-outlined text-[18px]">key</span>
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-semibold text-slate-900 group-hover:text-emerald-600 transition-colors">
+                  {t('Đổi mật khẩu')}
+                </span>
+                <span className="text-[10px] text-slate-500">
+                  {t('Cập nhật mật khẩu bảo mật mới')}
+                </span>
+              </div>
+              <span className="material-symbols-outlined text-[16px] text-slate-400 ml-auto group-hover:translate-x-0.5 transition-transform">
+                chevron_right
+              </span>
+            </button>
+
             {/* Cài đặt web */}
             <button
               type="button"
@@ -291,6 +318,10 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
           </div>
         </div>
       )}
+      <ChangePasswordModal
+        isOpen={isChangePasswordOpen}
+        onClose={() => setIsChangePasswordOpen(false)}
+      />
     </div>
   )
 }

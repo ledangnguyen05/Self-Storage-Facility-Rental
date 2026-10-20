@@ -60,7 +60,7 @@ public class GlobalExceptionHandler {
         response.put("status", 400);
         response.put("code", ErrorCode.INVALID_REQUEST.getCode());
         response.put("error", "Bad Request");
-        response.put("message", "Validation failed");
+        response.put("message", "Dữ liệu yêu cầu không hợp lệ. Vui lòng kiểm tra lại các trường thông tin.");
         response.put("errors", errors);
 
         return ResponseEntity
@@ -77,7 +77,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleAccessDeniedException(
             org.springframework.security.access.AccessDeniedException ex) {
 
-        ErrorCode errorCode = ErrorCode.FORBIDDEN;
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        boolean isAnonymous = auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal());
+
+        ErrorCode errorCode = isAnonymous ? ErrorCode.UNAUTHORIZED : ErrorCode.FORBIDDEN;
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("timestamp", LocalDateTime.now());
         response.put("status", errorCode.getHttpStatus().value());
@@ -100,7 +103,7 @@ public class GlobalExceptionHandler {
         response.put("status", errorCode.getHttpStatus().value());
         response.put("code", errorCode.getCode());
         response.put("error", errorCode.getHttpStatus().getReasonPhrase());
-        response.put("message", ex.getMessage() != null ? ex.getMessage() : errorCode.getMessage());
+        response.put("message", errorCode.getMessage());
 
         return ResponseEntity
                 .status(errorCode.getHttpStatus())

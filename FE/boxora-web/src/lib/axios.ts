@@ -7,7 +7,9 @@ export const getApiBaseUrl = (): string => {
     const queryApi = params.get('api')
     if (queryApi) {
       const cleanUrl = queryApi.replace(/\/+$/, '')
-      localStorage.setItem('boxora_api_url', cleanUrl)
+      if (localStorage.getItem('boxora_api_url') !== cleanUrl) {
+        localStorage.setItem('boxora_api_url', cleanUrl)
+      }
       return cleanUrl
     }
     if (envUrl) {

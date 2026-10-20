@@ -37,7 +37,7 @@ public class AuthController {
     @GetMapping("/captcha")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.CaptchaResponse>> getCaptcha() {
         com.boxora.dto.response.CaptchaResponse response = captchaService.generateCaptcha();
-        return ResponseEntity.ok(ApiResponse.success("Captcha generated successfully", response));
+        return ResponseEntity.ok(ApiResponse.success("Tạo mã Captcha thành công", response));
     }
 
     @PostMapping("/register")
@@ -50,11 +50,11 @@ public class AuthController {
             return ResponseEntity
                     .status(HttpStatus.CREATED)
                     .header(HttpHeaders.SET_COOKIE, cookie.toString())
-                    .body(ApiResponse.success("Registered successfully", response));
+                    .body(ApiResponse.success("Đăng ký tài khoản thành công", response));
         }
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Registered successfully", response));
+                .body(ApiResponse.success("Đăng ký tài khoản thành công", response));
     }
 
     @PostMapping("/login")
@@ -64,12 +64,12 @@ public class AuthController {
         AuthResponse response = authService.login(request);
         String refreshTokenValue = response.getRefreshToken();
 
-        // Put refresh token in secure HttpOnly cookie instead of exposing in JSON body
+        // Put refresh token in secure HttpOnly cookie while also leaving in body as cross-site fallback
         ResponseCookie cookie = createRefreshTokenCookie(refreshTokenValue, REFRESH_TOKEN_MAX_AGE_SECONDS);
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
-                .body(ApiResponse.success("Logged in successfully", response));
+                .body(ApiResponse.success("Đăng nhập thành công", response));
     }
 
     @PostMapping("/google")
@@ -83,7 +83,7 @@ public class AuthController {
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
-                .body(ApiResponse.success("Logged in with Google successfully", response));
+                .body(ApiResponse.success("Đăng nhập bằng tài khoản Google thành công", response));
     }
 
     @PostMapping("/logout")
@@ -108,7 +108,7 @@ public class AuthController {
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cleanCookie.toString())
-                .body(ApiResponse.success("Logged out successfully", null));
+                .body(ApiResponse.success("Đăng xuất thành công", null));
     }
 
     @PostMapping("/refresh-token")
@@ -135,7 +135,7 @@ public class AuthController {
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
-                .body(ApiResponse.success("Token refreshed successfully", response));
+                .body(ApiResponse.success("Làm mới phiên đăng nhập thành công", response));
     }
 
     @PostMapping("/forgot-password")
@@ -144,7 +144,7 @@ public class AuthController {
     ) {
         authService.forgotPassword(request);
         return ResponseEntity.ok(ApiResponse.success(
-                "If this email exists, a reset link has been sent", null
+                "Nếu email tồn tại trong hệ thống, liên kết đặt lại mật khẩu đã được gửi đến hòm thư của bạn", null
         ));
     }
 
@@ -153,16 +153,20 @@ public class AuthController {
             @Valid @RequestBody ResetPasswordRequest request
     ) {
         authService.resetPassword(request);
-        return ResponseEntity.ok(ApiResponse.success("Password reset successfully", null));
+        return ResponseEntity.ok(ApiResponse.success("Đặt lại mật khẩu thành công", null));
     }
 
     @PutMapping("/change-password")
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<Void>> changePassword(
             @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody ChangePasswordRequest request
     ) {
+        if (userDetails == null) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
         authService.changePassword(userDetails.getUsername(), request);
-        return ResponseEntity.ok(ApiResponse.success("Password changed successfully", null));
+        return ResponseEntity.ok(ApiResponse.success("Đổi mật khẩu thành công", null));
     }
 
     @PutMapping("/profile")
@@ -172,16 +176,17 @@ public class AuthController {
             @Valid @RequestBody ProfileUpdateRequest request
     ) {
         UserResponse response = userService.updateOwnProfile(userDetails.getUsername(), request);
-        return ResponseEntity.ok(ApiResponse.success("Profile updated successfully", response));
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật hồ sơ tài khoản thành công", response));
     }
 
     private ResponseCookie createRefreshTokenCookie(String value, long maxAgeSeconds) {
+        String sameSiteValue = cookieSecure ? "None" : "Lax";
         return ResponseCookie.from(REFRESH_TOKEN_COOKIE_NAME, value)
                 .httpOnly(true)
                 .secure(cookieSecure)
                 .path("/")
                 .maxAge(maxAgeSeconds)
-                .sameSite("Lax")
+                .sameSite(sameSiteValue)
                 .build();
     }
 }

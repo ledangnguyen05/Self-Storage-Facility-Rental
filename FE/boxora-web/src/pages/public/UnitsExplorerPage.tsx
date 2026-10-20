@@ -217,6 +217,7 @@ export const UnitsExplorerPage: React.FC = () => {
     >()
     rawUnits.forEach((unit) => {
       if (!unit.facilityId || inferred.has(unit.facilityId)) return
+      if (unit.facilityStatus && unit.facilityStatus !== 'ACTIVE') return
       const name = unit.facilityName || ''
       inferred.set(unit.facilityId, {
         id: unit.facilityId,
@@ -236,8 +237,8 @@ export const UnitsExplorerPage: React.FC = () => {
     const facMap = new Map(effectiveFacilities.map((facility) => [facility.id, facility]))
     const visibleUnits =
       dbFacilities.length > 0
-        ? rawUnits.filter((unit) => facMap.has(unit.facilityId))
-        : rawUnits
+        ? rawUnits.filter((unit) => facMap.has(unit.facilityId) && (!unit.facilityStatus || unit.facilityStatus === 'ACTIVE'))
+        : rawUnits.filter((unit) => !unit.facilityStatus || unit.facilityStatus === 'ACTIVE')
 
     return visibleUnits.map((unit) => {
       const facility = facMap.get(unit.facilityId)
@@ -333,6 +334,7 @@ export const UnitsExplorerPage: React.FC = () => {
       unitCode: unit.unitCode,
       name: unit.unitTypeName || unit.name,
       facilityName: unit.facilityName || '',
+      facilityStatus: (unit as any).facilityStatus,
       priceFormatted: unit.monthlyPrice,
       priceNumber: unit.monthlyPriceNumeric || 1250000,
       depositNumber: unit.depositAmountNumeric || unit.monthlyPriceNumeric || 1250000,
@@ -546,6 +548,7 @@ export const UnitsExplorerPage: React.FC = () => {
       unitCode: unit.unitCode,
       name: unit.unitTypeName || unit.name,
       facilityName: unit.facilityName || '',
+      facilityStatus: (unit as any).facilityStatus,
       priceFormatted: unit.monthlyPrice,
       priceNumber: unit.monthlyPriceNumeric || 1250000,
       depositNumber: unit.depositAmountNumeric || unit.monthlyPriceNumeric || 1250000,

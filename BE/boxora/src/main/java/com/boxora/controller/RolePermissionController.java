@@ -38,7 +38,7 @@ public class RolePermissionController {
             (@Valid @RequestBody RolePermissionCreateRequest request) {
         RolePermissionResponse response = rolePermissionService.create(request);
         return ResponseEntity.status(HttpStatus.CREATED).
-                body(ApiResponse.success("Assigned permission to role successfully", response));
+                body(ApiResponse.success("Gán quyền cho vai trò thành công", response));
     }
 
     @PostMapping("/bulk-assign")
@@ -47,7 +47,7 @@ public class RolePermissionController {
             @Valid @RequestBody RolePermissionBulkAssignRequest request) {
         log.info("Bulk assigning permissions to role: {}", request.getRoleId());
         List<RolePermissionResponse> response = rolePermissionService.bulkAssign(request);
-        return ResponseEntity.ok(ApiResponse.success("Assigned permissions to role successfully", response));
+        return ResponseEntity.ok(ApiResponse.success("Gán danh sách quyền cho vai trò thành công", response));
     }
 
     @PutMapping("/{id}")
@@ -55,14 +55,14 @@ public class RolePermissionController {
     public ResponseEntity<ApiResponse<RolePermissionResponse>> update
             (@PathVariable UUID id, @Valid @RequestBody RolePermissionUpdateRequest request) {
         RolePermissionResponse response = rolePermissionService.update(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Updated role-permission successfully.", response));
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật quyền của vai trò thành công", response));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('ROLE_PERMISSION_REVOKE') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         rolePermissionService.delete(id);
-        return ResponseEntity.ok(ApiResponse.success("Revoked permission from role successfully.", null));
+        return ResponseEntity.ok(ApiResponse.success("Thu hồi quyền khỏi vai trò thành công", null));
     }
 
     @GetMapping

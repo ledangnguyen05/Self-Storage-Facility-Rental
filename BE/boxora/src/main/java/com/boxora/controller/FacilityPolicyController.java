@@ -60,7 +60,7 @@ public class FacilityPolicyController {
         FacilityPolicyResponse response = facilityPolicyService.create(request);
 
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Created facility policy successfully", response));
+                .body(ApiResponse.success("Thiết lập chính sách cơ sở thành công", response));
     }
 
     @PutMapping("{id}")
@@ -73,7 +73,7 @@ public class FacilityPolicyController {
         FacilityPolicyResponse response = facilityPolicyService.update(id, request);
 
         return ResponseEntity.ok(
-                ApiResponse.success("Updated facility policy successfully.", response));
+                ApiResponse.success("Cập nhật chính sách cơ sở thành công", response));
     }
 
     @GetMapping("{id}/exceptions")
@@ -90,7 +90,7 @@ public class FacilityPolicyController {
             @PathVariable UUID id,
             @Valid @RequestBody FacilityPolicyExceptionGrantRequest request) {
         facilityPolicyService.setExceptionGrant(id, request.getFacilityManagerId(), request.getGranted());
-        return ResponseEntity.ok(ApiResponse.success("Updated policy exception grant successfully.", null));
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật đặc quyền ngoại lệ chính sách thành công", null));
     }
 
     @DeleteMapping("{id}")
@@ -100,7 +100,7 @@ public class FacilityPolicyController {
         facilityPolicyService.delete(id);
 
         return ResponseEntity.ok(
-                ApiResponse.success("Deleted facility policy successfully.", null));
+                ApiResponse.success("Xóa chính sách cơ sở thành công", null));
     }
 
     @GetMapping
