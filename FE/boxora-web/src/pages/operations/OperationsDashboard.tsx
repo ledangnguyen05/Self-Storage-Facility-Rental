@@ -5,6 +5,7 @@ import { reportService } from '../../services/reportService'
 import { facilityService } from '../../services/facilityService'
 import { contractService, RentalContract } from '../../services/contractService'
 import { Facility, RevenueReport, OccupancyReport, OverdueDebtReport } from '../../types'
+import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
 
 const loadAllContracts = async (facilityId?: string): Promise<RentalContract[]> => {
   const firstPage = await contractService.getMyContracts({ facilityId, page: 0, size: 100 })
@@ -1034,12 +1035,31 @@ export const OperationsDashboard: React.FC = () => {
         )}
       </div>
 
+      {/* SECTION: GIÁM SÁT & QUẢN LÝ GIA HẠN HỢP ĐỒNG TOÀN CHUỖI */}
+      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center">
+              <span className="material-symbols-outlined text-[20px]">autorenew</span>
+            </div>
+            <div>
+              <h2 className="text-base font-bold font-headline text-slate-900">
+                {tr('Giám sát & Thẩm định gia hạn toàn chuỗi', 'Chain-wide Renewal Monitoring & Review')}
+              </h2>
+              <p className="text-xs text-slate-500">
+                {tr('Theo dõi tiến độ gia hạn, tỷ lệ hoàn tất, duyệt ngoại lệ và đối soát doanh thu thực thu tại các cơ sở', 'Monitor renewal progress, completion rates, approve exceptions, and reconcile collected revenue')}
+              </p>
+            </div>
+          </div>
+        </div>
 
-
-
-
-
-
+        <ContractRenewalsManagementPanel
+          currentFacilityId={selectedFacilityId === 'all' ? undefined : selectedFacilityId}
+          facilities={facilities}
+          userRole="BUSINESS_MANAGER"
+          showChainWideFilter={true}
+        />
+      </div>
 
     </div>
     </>

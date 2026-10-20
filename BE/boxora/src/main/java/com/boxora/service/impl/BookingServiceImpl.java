@@ -104,6 +104,21 @@ public class BookingServiceImpl implements BookingService {
         StorageUnit unit = storageUnitRepository.findWithDetailsByIdForUpdate(request.getStorageUnitId())
                 .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
 
+        // 1.1 Kiểm tra trạng thái hoạt động của chi nhánh/cơ sở trực thuộc
+        if (unit.getFacility() != null) {
+            Facility facility = unit.getFacility();
+            if (facility.getStatus() == com.boxora.enums.FacilityStatus.INACTIVE) {
+                log.warn("[FACILITY_INACTIVE] Booking rejected. Facility {} ({}) is INACTIVE", facility.getId(), facility.getName());
+                throw new AppException(ErrorCode.FACILITY_INACTIVE,
+                        String.format("Chi nhánh %s hiện đang tạm ngưng hoạt động. Quý khách vui lòng chọn chi nhánh khác.", facility.getName()));
+            }
+            if (facility.getStatus() == com.boxora.enums.FacilityStatus.MAINTENANCE) {
+                log.warn("[FACILITY_MAINTENANCE] Booking rejected. Facility {} ({}) is under MAINTENANCE", facility.getId(), facility.getName());
+                throw new AppException(ErrorCode.FACILITY_UNDER_MAINTENANCE,
+                        String.format("Chi nhánh %s hiện đang trong thời gian bảo trì kỹ thuật. Quý khách vui lòng chọn chi nhánh khác.", facility.getName()));
+            }
+        }
+
         if (unit.getStatus() != UnitStatus.AVAILABLE) {
             log.warn("[UNIT_LOCK] Storage unit {} status is {}, not AVAILABLE", unit.getUnitCode(), unit.getStatus());
             throw new AppException(ErrorCode.STORAGE_UNIT_NOT_AVAILABLE);

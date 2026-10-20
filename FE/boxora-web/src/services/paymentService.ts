@@ -72,6 +72,16 @@ export const paymentService = {
     return (response.data?.data || []) as PaymentItem[]
   },
 
+  async getByTransactionId(transactionId: string) {
+    const response = await api.get(`/api/v1/payments/transaction/${transactionId}`)
+    return response.data?.data as PaymentItem
+  },
+
+  async getPaymentById(paymentId: string) {
+    const response = await api.get(`/api/v1/payments/${paymentId}`)
+    return response.data?.data as PaymentItem
+  },
+
   async getMyPayments() {
     const response = await api.get('/api/v1/payments/my-payments')
     return (response.data?.data || []) as PaymentItem[]

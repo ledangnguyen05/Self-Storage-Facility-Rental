@@ -61,12 +61,23 @@ public class PaymentController {
         try {
             PaymentResponse payment = paymentService.processVNPayReturn(allParams);
             if (redirect) {
-                String targetUrl = frontendUrl + "/payment-result"
-                        + "?status=" + payment.getStatus().name()
-                        + "&txnRef=" + payment.getTransactionId()
-                        + "&bookingId=" + payment.getBookingId()
-                        + "&amount=" + payment.getAmount();
-                return new RedirectView(targetUrl);
+                StringBuilder targetUrl = new StringBuilder(frontendUrl + "/payment-result");
+                targetUrl.append("?status=").append(payment.getStatus().name())
+                        .append("&txnRef=").append(payment.getTransactionId() != null ? payment.getTransactionId() : "")
+                        .append("&amount=").append(payment.getAmount() != null ? payment.getAmount() : "");
+                if (payment.getBookingId() != null) {
+                    targetUrl.append("&bookingId=").append(payment.getBookingId());
+                }
+                if (payment.getContractId() != null) {
+                    targetUrl.append("&contractId=").append(payment.getContractId());
+                }
+                if (payment.getPaymentType() != null) {
+                    targetUrl.append("&paymentType=").append(payment.getPaymentType().name());
+                }
+                if (payment.getId() != null) {
+                    targetUrl.append("&paymentId=").append(payment.getId());
+                }
+                return new RedirectView(targetUrl.toString());
             }
             return ResponseEntity.ok(ApiResponse.success("Thanh toán hoàn tất", payment));
         } catch (Exception e) {
@@ -96,7 +107,7 @@ public class PaymentController {
     }
 
     @GetMapping("{id}")
-    @PreAuthorize("hasAuthority('PAYMENT_VIEW')")
+    @PreAuthorize("hasAuthority('PAYMENT_VIEW') or hasRole('CUSTOMER')")
     @Operation(summary = "Lấy chi tiết thanh toán theo Payment ID")
     public ResponseEntity<ApiResponse<PaymentResponse>> getById(@PathVariable UUID id) {
         PaymentResponse response = paymentService.getById(id);
@@ -104,7 +115,7 @@ public class PaymentController {
     }
 
     @GetMapping("transaction/{transactionId}")
-    @PreAuthorize("hasAuthority('PAYMENT_VIEW')")
+    @PreAuthorize("hasAuthority('PAYMENT_VIEW') or hasRole('CUSTOMER')")
     @Operation(summary = "Lấy chi tiết thanh toán theo mã giao dịch VNPay (transactionId / txnRef)")
     public ResponseEntity<ApiResponse<PaymentResponse>> getByTransactionId(@PathVariable String transactionId) {
         PaymentResponse response = paymentService.getByTransactionId(transactionId);
@@ -112,7 +123,7 @@ public class PaymentController {
     }
 
     @GetMapping("booking/{bookingId}")
-    @PreAuthorize("hasAuthority('PAYMENT_VIEW')")
+    @PreAuthorize("hasAuthority('PAYMENT_VIEW') or hasRole('CUSTOMER')")
     @Operation(summary = "Lấy lịch sử thanh toán của một Booking")
     public ResponseEntity<ApiResponse<List<PaymentResponse>>> getByBookingId(@PathVariable UUID bookingId) {
         List<PaymentResponse> response = paymentService.getByBookingId(bookingId);

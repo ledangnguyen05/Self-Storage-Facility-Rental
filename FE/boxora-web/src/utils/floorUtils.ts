@@ -136,23 +136,17 @@ export function filterArrivals(
       ? `${checkInDateTime.getFullYear()}-${String(checkInDateTime.getMonth() + 1).padStart(2, '0')}-${String(checkInDateTime.getDate()).padStart(2, '0')}`
       : (b.startDate || '')
 
-    // 3. Timeframe / Shift filter
-    if (selectedShiftFilter === 'today') {
-      if (bDateStr !== todayStr) return false
-    } else if (selectedShiftFilter === 'past') {
-      if (!bDateStr || bDateStr >= todayStr) return false
-    } else if (selectedShiftFilter === 'future') {
-      if (!bDateStr || bDateStr <= todayStr) return false
-    } else if (selectedShiftFilter === 'current') {
-      if (bDateStr !== todayStr) return false
-      if (checkInDateTime && !isNaN(checkInDateTime.getTime())) {
-        const getShift = (hour: number) => (hour >= 6 && hour < 14 ? 1 : hour >= 14 && hour < 22 ? 2 : 3)
-        const currentShift = getShift(currentDateObj.getHours())
-        const appointmentShift = getShift(checkInDateTime.getHours())
-        const isPendingOrWaiting = b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT' || b.status === 'PENDING_APPROVAL' || b.status === 'PENDING_SIGNATURE'
-        if (appointmentShift !== currentShift && !(appointmentShift < currentShift && isPendingOrWaiting)) {
-          return false
-        }
+    // 3. Appointment Status filter (Áp dụng trước để bảo toàn kết quả khi nhân viên chủ động lọc theo tab)
+    if (statusFilter && statusFilter !== 'ALL') {
+      if (statusFilter === 'PENDING') {
+        const isPending = b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT' || b.status === 'PENDING_APPROVAL' || b.status === 'PENDING_SIGNATURE'
+        if (!isPending) return false
+      } else if (statusFilter === 'ACTIVE') {
+        if (b.status !== 'ACTIVE') return false
+      } else if (statusFilter === 'COMPLETED') {
+        if (b.status !== 'COMPLETED') return false
+      } else if (statusFilter === 'CANCELLED') {
+        if (b.status !== 'CANCELLED') return false
       }
     }
 
@@ -164,17 +158,39 @@ export function filterArrivals(
       return false
     }
 
-    // 5. Appointment Status filter
-    if (statusFilter && statusFilter !== 'ALL') {
-      if (statusFilter === 'PENDING') {
-        const isPending = b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT' || b.status === 'PENDING_APPROVAL' || b.status === 'PENDING_SIGNATURE'
-        if (!isPending) return false
-      } else if (statusFilter === 'ACTIVE') {
-        if (b.status !== 'ACTIVE') return false
-      } else if (statusFilter === 'COMPLETED') {
-        if (b.status !== 'COMPLETED') return false
-      } else if (statusFilter === 'CANCELLED') {
-        if (b.status !== 'CANCELLED') return false
+    // 5. Timeframe / Shift filter (Backend đã lọc danh sách theo timeframe khi gọi API)
+    // Khi nhân viên đang xem tab "Đã bàn giao" hoặc "Đã hoàn tất", hoặc đơn đã được bàn giao (ACTIVE):
+    // Giữ lại để nhân viên kiểm tra hồ sơ và bàn giao thành công trong ca, không bị loại bỏ do lệch giờ hẹn.
+    if (statusFilter === 'ACTIVE' || statusFilter === 'COMPLETED') {
+      return true
+    }
+
+    if (selectedShiftFilter === 'today') {
+      if (bDateStr && bDateStr !== todayStr && b.status !== 'ACTIVE' && b.status !== 'COMPLETED') {
+        return false
+      }
+    } else if (selectedShiftFilter === 'past') {
+      if (bDateStr && bDateStr >= todayStr && b.status !== 'COMPLETED') return false
+    } else if (selectedShiftFilter === 'future') {
+      if (bDateStr && bDateStr <= todayStr) return false
+    } else if (selectedShiftFilter === 'current') {
+      // Trong ca làm việc: Giữ lại tất cả các đơn đã bàn giao (ACTIVE) hoặc hoàn tất để nhân viên xem hồ sơ tiếp nhận
+      // Chỉ kiểm tra giờ hẹn với các đơn đang chờ đến lượt (PENDING)
+      if (b.status !== 'ACTIVE' && b.status !== 'COMPLETED') {
+        if (bDateStr && bDateStr !== todayStr) {
+          // Nếu đơn hẹn trước đó nhưng chưa check-in (trễ hẹn), vẫn hiển thị cho ca trực để đón tiếp
+          const isPendingLate = b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT'
+          if (!isPendingLate) return false
+        }
+        if (checkInDateTime && !isNaN(checkInDateTime.getTime())) {
+          const getShift = (hour: number) => (hour >= 6 && hour < 14 ? 1 : hour >= 14 && hour < 22 ? 2 : 3)
+          const currentShift = getShift(currentDateObj.getHours())
+          const appointmentShift = getShift(checkInDateTime.getHours())
+          const isPendingOrWaiting = b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT' || b.status === 'PENDING_APPROVAL' || b.status === 'PENDING_SIGNATURE'
+          if (appointmentShift !== currentShift && !(appointmentShift < currentShift && isPendingOrWaiting)) {
+            return false
+          }
+        }
       }
     }
 

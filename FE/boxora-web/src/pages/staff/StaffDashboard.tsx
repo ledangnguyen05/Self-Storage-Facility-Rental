@@ -16,6 +16,7 @@ import { staffAssignmentService, StaffAssignmentResponse } from '../../services/
 import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
 import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
 import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
+import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
 
 const localDateString = (date: Date) => {
   const year = date.getFullYear()
@@ -53,6 +54,7 @@ export const StaffDashboard: React.FC = () => {
   }>() || {}
 
   // Work Shift & Attendance State
+  const [staffActiveTab, setStaffActiveTab] = useState<'reception' | 'renewals'>('reception')
   const [myTodayAssignment, setMyTodayAssignment] = useState<StaffAssignmentResponse | null>(null)
   const [isAttendanceLoading, setIsAttendanceLoading] = useState(false)
   const [showStaffSwapModal, setShowStaffSwapModal] = useState(false)
@@ -677,8 +679,59 @@ export const StaffDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* 2. 4 THẺ THỐNG KÊ / KPI QUẦY */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* OPERATION TAB NAVIGATION FOR STAFF */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+        <button
+          type="button"
+          onClick={() => setStaffActiveTab('reception')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer ${
+            staffActiveTab === 'reception'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">desk</span>
+          <span>1. Bàn Tiếp Đón &amp; Trả Kho</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setStaffActiveTab('renewals')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer ${
+            staffActiveTab === 'renewals'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">autorenew</span>
+          <span>2. Hỗ Trợ Gia Hạn &amp; Thu Cước Tại Quầy</span>
+        </button>
+      </div>
+
+      {staffActiveTab === 'renewals' ? (
+        <section className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200">
+            <div>
+              <h3 className="font-headline text-base font-bold text-slate-900 flex items-center gap-2">
+                <span className="material-symbols-outlined text-blue-600">autorenew</span>
+                Hỗ Trợ Gia Hạn Hợp Đồng &amp; Ghi Nhận Thu Cước Tại Quầy
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Tra cứu yêu cầu gia hạn cơ sở, kiểm tra công nợ và ghi nhận nộp tiền mặt / chuyển khoản / POS
+              </p>
+            </div>
+          </div>
+          <ContractRenewalsManagementPanel
+            currentFacilityId={user?.facilityId || selectedFacility}
+            facilities={contextFacilities}
+            userRole={resolvedRole}
+            showChainWideFilter={false}
+          />
+        </section>
+      ) : (
+        <>
+          {/* 2. 4 THẺ THỐNG KÊ / KPI QUẦY */}
+          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
         {/* KPI 1: Lịch hẹn nhận kho */}
         <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex flex-col justify-between">
@@ -1516,6 +1569,8 @@ export const StaffDashboard: React.FC = () => {
             </table>
         </div>
       </section>
+        </>
+      )}
 
       {/* MODAL QUÉT QR CHECK-IN QUA CAMERA */}
       <QrCameraCheckInModal

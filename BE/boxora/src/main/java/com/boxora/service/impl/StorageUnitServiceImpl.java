@@ -403,6 +403,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .status(u.getStatus() != null ? u.getStatus().name() : UnitStatus.AVAILABLE.name())
                 .facilityId(u.getFacility() != null ? u.getFacility().getId() : null)
                 .facilityName(u.getFacility() != null ? u.getFacility().getName() : null)
+                .facilityStatus(u.getFacility() != null && u.getFacility().getStatus() != null ? u.getFacility().getStatus().name() : null)
                 .unitTypeId(u.getUnitType() != null ? u.getUnitType().getId() : null)
                 .unitTypeName(u.getUnitType() != null ? u.getUnitType().getTypeName() : null)
                 .pricePerMonth(price)

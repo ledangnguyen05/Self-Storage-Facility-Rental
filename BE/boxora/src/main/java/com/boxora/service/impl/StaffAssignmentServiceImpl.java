@@ -99,12 +99,12 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             if (staff.getFacility() != null && !staff.getFacility().getId().equals(facility.getId())) {
                 throw new AppException(ErrorCode.STAFF_ASSIGNMENT_FACILITY_MISMATCH);
             }
-        } else if ("BUSINESS_MANAGER".equalsIgnoreCase(callerRole)) {
-            // BM can ONLY assign FACILITY_MANAGER
-            if (staff.getRole() == null || !"FACILITY_MANAGER".equalsIgnoreCase(staff.getRole().getName())) {
-                throw new AppException(ErrorCode.FORBIDDEN, "Business Manager chỉ được phân công ca cho Quản lý cơ sở (FACILITY_MANAGER)");
+        } else if ("BUSINESS_MANAGER".equalsIgnoreCase(callerRole) || "ADMIN".equalsIgnoreCase(callerRole) || "SYSTEM_ADMIN".equalsIgnoreCase(callerRole)) {
+            // Business Manager / Admin có thể phân công ca cho cả Quản lý cơ sở (FACILITY_MANAGER) và Nhân viên (STAFF)
+            if (staff.getRole() == null || (!"FACILITY_MANAGER".equalsIgnoreCase(staff.getRole().getName()) && !"STAFF".equalsIgnoreCase(staff.getRole().getName()))) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Business Manager chỉ được phân công ca cho Quản lý cơ sở hoặc Nhân viên");
             }
-            // Kiểm tra cơ sở trực thuộc của Quản lý cơ sở
+            // Kiểm tra cơ sở trực thuộc của Quản lý cơ sở / Nhân viên
             if (staff.getFacility() != null && !staff.getFacility().getId().equals(facility.getId())) {
                 throw new AppException(ErrorCode.STAFF_ASSIGNMENT_FACILITY_MISMATCH);
             }
