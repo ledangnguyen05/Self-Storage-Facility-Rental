@@ -40,7 +40,7 @@ public class StorageUnitController {
     @PreAuthorize("hasAuthority('STORAGE_UNIT_CREATE')")
     public ResponseEntity<ApiResponse<StorageUnitResponse>> createUnit(@Valid @RequestBody StorageUnitCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Storage unit created successfully", storageUnitService.createUnit(request)));
+                .body(ApiResponse.success("Tạo ngăn kho thành công", storageUnitService.createUnit(request)));
     }
 
     @PutMapping("/{id}")
@@ -49,19 +49,19 @@ public class StorageUnitController {
             @PathVariable UUID id,
             @Valid @RequestBody StorageUnitUpdateRequest request
     ) {
-        return ResponseEntity.ok(ApiResponse.success("Storage unit updated successfully", storageUnitService.updateUnit(id, request)));
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật thông tin ngăn kho thành công", storageUnitService.updateUnit(id, request)));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('STORAGE_UNIT_DELETE')")
     public ResponseEntity<ApiResponse<Void>> deleteUnit(@PathVariable UUID id) {
         storageUnitService.deleteUnit(id);
-        return ResponseEntity.ok(ApiResponse.success("Storage unit deleted successfully", null));
+        return ResponseEntity.ok(ApiResponse.success("Xóa ngăn kho thành công", null));
     }
 
     @PatchMapping("/{id}/toggle-maintenance")
     @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE')")
     public ResponseEntity<ApiResponse<StorageUnitResponse>> toggleMaintenance(@PathVariable UUID id) {
-        return ResponseEntity.ok(ApiResponse.success("Unit maintenance toggled successfully", storageUnitService.toggleMaintenance(id)));
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật trạng thái bảo trì ngăn kho thành công", storageUnitService.toggleMaintenance(id)));
     }
 }

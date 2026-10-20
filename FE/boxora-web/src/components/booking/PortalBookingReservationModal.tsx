@@ -10,6 +10,7 @@ export interface PortalBookingUnitData {
     name: string
     facilityId?: string
     facilityName: string
+    facilityStatus?: string
     priceFormatted: string
     priceNumber: number
     depositNumber: number
@@ -31,6 +32,10 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
   const selectedBookingUnit = unit
   const { language, t } = useLanguage()
   const displayFacilityName = selectedBookingUnit.facilityName || (language === 'vi' ? 'Hệ thống kho Boxora' : 'Boxora Storage Facility')
+  const isFacilitySuspended = Boolean(selectedBookingUnit.facilityStatus && selectedBookingUnit.facilityStatus !== 'ACTIVE')
+  const facilitySuspendedMessage = selectedBookingUnit.facilityStatus === 'MAINTENANCE'
+    ? (language === 'vi' ? `Chi nhánh ${displayFacilityName} hiện đang trong thời gian bảo trì kỹ thuật, tạm ngưng nhận đơn đặt giữ chỗ mới.` : `The branch ${displayFacilityName} is currently under maintenance and cannot accept new reservations.`)
+    : (language === 'vi' ? `Chi nhánh ${displayFacilityName} hiện đang tạm ngưng hoạt động, tạm ngưng nhận đơn đặt giữ chỗ mới.` : `The branch ${displayFacilityName} is currently inactive/suspended and cannot accept new reservations.`)
   const formatCurrency = (amount: number) => `${Math.round(amount).toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US')} ${language === 'vi' ? String.fromCharCode(8363) : 'VND'}`
   const localizedUnitName = (name: string) => {
     if (language === 'vi') return name
@@ -600,6 +605,19 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
                   </div>
                 </div>
 
+                {/* Facility Suspended Warning Banner */}
+                {isFacilitySuspended && (
+                  <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-3 text-xs text-rose-800 shadow-xs animate-in fade-in">
+                    <span className="material-symbols-outlined text-rose-600 text-[22px] shrink-0 mt-0.5">do_not_disturb_on</span>
+                    <div className="flex-1 leading-relaxed">
+                      <strong className="block font-bold text-sm text-rose-900 mb-0.5">
+                        {selectedBookingUnit.facilityStatus === 'MAINTENANCE' ? 'Chi nhánh đang bảo trì kỹ thuật' : 'Chi nhánh đang tạm ngưng hoạt động'}
+                      </strong>
+                      <span>{facilitySuspendedMessage}</span>
+                    </div>
+                  </div>
+                )}
+
                 {/* 1. Chọn thời hạn thuê */}
                 <div className="space-y-2.5">
                   <div>
@@ -1100,16 +1118,21 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
                   <button
                     type="button"
                     onClick={handleConfirmBooking}
-                    disabled={isSubmittingBooking || !bookingPolicyAccepted || isLoadingQuote || !!quoteError || isCheckInTimeTooSoon}
+                    disabled={isSubmittingBooking || !bookingPolicyAccepted || isLoadingQuote || !!quoteError || isCheckInTimeTooSoon || isFacilitySuspended}
                     className={`flex-1 py-2.5 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                      !bookingPolicyAccepted || isLoadingQuote || !!quoteError || isCheckInTimeTooSoon
+                      !bookingPolicyAccepted || isLoadingQuote || !!quoteError || isCheckInTimeTooSoon || isFacilitySuspended
                         ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
                         : bookingWorkflow === 'HOLD_ONLY'
                         ? 'bg-slate-900 hover:bg-slate-800'
                         : 'bg-blue-600 hover:bg-blue-700'
                     }`}
                   >
-                    {isSubmittingBooking ? (
+                    {isFacilitySuspended ? (
+                      <span className="flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[15px]">block</span>
+                        <span>Chi Nhánh Đang Tạm Ngưng</span>
+                      </span>
+                    ) : isSubmittingBooking ? (
                       <>
                         <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
                         <span>Đang xử lý đặt chỗ...</span>

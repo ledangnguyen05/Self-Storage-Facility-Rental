@@ -135,7 +135,7 @@ export const CustomerDashboard: React.FC = () => {
       const res = await storageUnitService.getUnits()
       if (Array.isArray(res)) {
         setAllUnits(res)
-        setAvailableUnits(res.filter(u => u.status === 'AVAILABLE'))
+        setAvailableUnits(res.filter(u => u.status === 'AVAILABLE' && (!u.facilityStatus || u.facilityStatus === 'ACTIVE')))
       }
     } catch (err) {
       console.error('Failed to load storage units from database:', err)
@@ -3244,8 +3244,8 @@ export const CustomerDashboard: React.FC = () => {
                 onChange={(e) => setFilterFacility(e.target.value)}
                 className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
               >
-                <option value="all">Tất cả cơ sở</option>
-                {facilities.map(f => (
+                <option value="all">Tất cả cơ sở đang hoạt động</option>
+                {facilities.filter(f => !f.status || f.status === 'ACTIVE').map(f => (
                   <option key={f.id} value={f.id}>
                     {f.name} ({f.code})
                   </option>
@@ -3394,6 +3394,7 @@ export const CustomerDashboard: React.FC = () => {
                             name: unit.unitTypeName || `Kho Tiêu Chuẩn #${unit.unitCode}`, 
                             facilityId: unit.facilityId,
                             facilityName: unit.facilityName || 'Hệ thống kho Boxora',
+                            facilityStatus: unit.facilityStatus,
                             priceFormatted: priceFormatted,
                             priceNumber: Number(unit.pricePerMonth || 1250000),
                             depositNumber: Number(unit.depositAmount || unit.pricePerMonth || 1250000),

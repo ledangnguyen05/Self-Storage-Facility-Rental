@@ -39,7 +39,7 @@ public class BookingController {
     @Operation(summary = "Tạo lượt đặt kho kèm phát hành mã PIN bảo mật")
     public ResponseEntity<ApiResponse<BookingResponse>> create(@Valid @RequestBody BookingCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Booking created with access credentials", bookingService.createBooking(request)));
+                .body(ApiResponse.success("Tạo đơn đặt kho và khởi tạo thông tin truy cập thành công", bookingService.createBooking(request)));
     }
 
 @GetMapping("/my-requests")
@@ -191,7 +191,7 @@ public class BookingController {
             @PathVariable UUID id,
             @RequestParam(defaultValue = "1") int extraMonths
     ) {
-        return ResponseEntity.ok(ApiResponse.success("Contract renewed successfully", bookingService.renewBooking(id, extraMonths)));
+        return ResponseEntity.ok(ApiResponse.success("Gia hạn hợp đồng thuê thành công", bookingService.renewBooking(id, extraMonths)));
     }
 
     @PostMapping("/{id}/remote-unlock")
