@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { Booking } from '../../../types'
+import { Booking, RentalContract } from '../../../types'
 import { handoverService, HandoverPrerequisites } from '../../../services/handoverService'
 import { bookingService } from '../../../services/bookingService'
+import { contractService } from '../../../services/contractService'
+import { ContractDocumentModal } from '../../../components/modals/ContractDocumentModal'
 import { useAuth } from '../../../context/AuthContext'
 
 export interface BookingChecklist {
@@ -29,6 +31,7 @@ export interface BookingWorkbenchSession {
 }
 
 export interface HandoverSuccessModalData {
+  bookingId?: string
   bookingCode: string
   unitCode: string
   customerName: string
@@ -177,6 +180,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   // Handover confirmation modal state (Hiển thị giữa màn hình confirm đã bàn giao thành công cho customer)
   const [handoverSuccessModalData, setHandoverSuccessModalData] = useState<HandoverSuccessModalData | null>(null)
   const [copiedSuccessPin, setCopiedSuccessPin] = useState<boolean>(false)
+  const [selectedContractForModal, setSelectedContractForModal] = useState<RentalContract | null>(null)
+  const [isLoadingContract, setIsLoadingContract] = useState<boolean>(false)
 
   const doorInputRef = useRef<HTMLInputElement | null>(null)
   const interiorInputRef = useRef<HTMLInputElement | null>(null)
@@ -425,36 +430,39 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   }, [selectedBookingId, currentSession.photoDoor, currentSession.photoInterior])
 
   const handleSendEmail = async () => {
-    if (!currentBooking) return
-    if (!customerDisplayEmail) {
-      setDispatchFeedback({ text: 'No verified customer email is available.', isError: true })
+    const targetBookingId = currentBooking?.id || handoverSuccessModalData?.bookingId || selectedBookingId
+    const targetEmail = customerDisplayEmail || handoverSuccessModalData?.customerEmail
+    if (!targetBookingId) return
+    if (!targetEmail) {
+      setDispatchFeedback({ text: 'Không tìm thấy địa chỉ email hợp lệ của khách hàng.', isError: true })
       return
     }
     setIsSendingEmail(true)
     setDispatchFeedback(null)
     try {
-      await handoverService.sendPinEmail(currentBooking.id)
+      await handoverService.sendPinEmail(targetBookingId)
       updateCurrentSession({ emailSent: true })
-      setDispatchFeedback({ text: `PIN email sent to ${customerDisplayEmail}.` })
+      setDispatchFeedback({ text: `Đã gửi email thông báo mã PIN thành công đến ${targetEmail}.` })
     } catch (err: any) {
       updateCurrentSession({ emailSent: false })
-      setDispatchFeedback({ text: err?.response?.data?.message || err?.message || 'Could not send PIN email.', isError: true })
+      setDispatchFeedback({ text: err?.response?.data?.message || err?.message || 'Không thể gửi email thông báo mã PIN.', isError: true })
     } finally {
       setIsSendingEmail(false)
       setTimeout(() => setDispatchFeedback(null), 4000)
     }
   }
   const handleSendWebPush = async () => {
-    if (!currentBooking) return
+    const targetBookingId = currentBooking?.id || handoverSuccessModalData?.bookingId || selectedBookingId
+    if (!targetBookingId) return
     setIsSendingWebPush(true)
     setDispatchFeedback(null)
     try {
-      await handoverService.sendWebNotification(currentBooking.id)
+      await handoverService.sendWebNotification(targetBookingId)
       updateCurrentSession({ webPushSent: true })
-      setDispatchFeedback({ text: 'In-app notification saved by the server.' })
+      setDispatchFeedback({ text: 'Đã bắn thông báo trực tiếp đến tài khoản web của khách hàng.' })
     } catch (err: any) {
       updateCurrentSession({ webPushSent: false })
-      setDispatchFeedback({ text: err?.response?.data?.message || err?.message || 'Could not save the in-app notification.', isError: true })
+      setDispatchFeedback({ text: err?.response?.data?.message || err?.message || 'Không thể gửi thông báo web cho khách hàng.', isError: true })
     } finally {
       setIsSendingWebPush(false)
       setTimeout(() => setDispatchFeedback(null), 4000)
@@ -659,7 +667,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   }
 
   const handleOpenAuthorizedDocument = async (fileUrl: string) => {
-    if (!selectedBookingId || !fileUrl) return
+    if (!fileUrl) return
+    if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+      window.open(fileUrl, '_blank')
+      return
+    }
+    if (!selectedBookingId) return
     try {
       setOpeningDocumentUrl(fileUrl)
       const blobUrl = await handoverService.viewAuthorizedDocument(selectedBookingId, fileUrl)
@@ -669,6 +682,66 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       setDispatchFeedback({ text: msg, isError: true })
     } finally {
       setOpeningDocumentUrl(null)
+    }
+  }
+
+  const handleViewElectronicContract = async () => {
+    const targetBookingId = selectedBookingId || currentBooking?.id
+    if (!targetBookingId) return
+    setIsLoadingContract(true)
+    try {
+      let contract = await contractService.getContractByBookingId(targetBookingId)
+      if (!contract && currentPrerequisites) {
+        contract = {
+          id: currentPrerequisites.contractCode || targetBookingId,
+          contractCode: currentPrerequisites.contractCode || `CTR-${bookingDisplayCode}`,
+          customerId: currentBooking?.customerId || '',
+          customerEmail: currentPrerequisites.customerEmail || currentBooking?.customerEmail || '',
+          customerName: currentPrerequisites.customerName || currentBooking?.customerName || customerDisplayName || 'Khách hàng',
+          customerPhone: currentPrerequisites.customerPhone || currentBooking?.customerPhone || customerDisplayPhone || '',
+          unitCode: currentPrerequisites.unitCode || currentBooking?.unitCode || unitDisplayCode,
+          facilityName: currentPrerequisites.facilityName || currentBooking?.facilityName || facilityDisplayName,
+          startDate: currentBooking?.expectedStartDate || new Date().toISOString(),
+          endDate: currentBooking?.expectedEndDate || new Date().toISOString(),
+          monthlyFee: currentPrerequisites.requiredFirstMonthRent || currentBooking?.monthlyRent || 0,
+          depositHeld: currentPrerequisites.depositPaid || currentBooking?.depositAmount || 0,
+          status: (currentPrerequisites.contractStatus as any) || 'PENDING_ACTIVATION',
+          signedDocumentUrl: currentPrerequisites.signedDocumentUrl,
+          signedAt: currentPrerequisites.contractSignedAt,
+          signingMethod: 'ONLINE'
+        }
+      }
+      if (contract) {
+        setSelectedContractForModal(contract)
+      } else {
+        setDispatchFeedback({ text: 'Không tìm thấy hồ sơ hợp đồng điện tử.', isError: true })
+      }
+    } catch (err) {
+      if (currentPrerequisites) {
+        const fallback: RentalContract = {
+          id: currentPrerequisites.contractCode || targetBookingId,
+          contractCode: currentPrerequisites.contractCode || `CTR-${bookingDisplayCode}`,
+          customerId: currentBooking?.customerId || '',
+          customerEmail: currentPrerequisites.customerEmail || currentBooking?.customerEmail || '',
+          customerName: currentPrerequisites.customerName || currentBooking?.customerName || customerDisplayName || 'Khách hàng',
+          customerPhone: currentPrerequisites.customerPhone || currentBooking?.customerPhone || customerDisplayPhone || '',
+          unitCode: currentPrerequisites.unitCode || currentBooking?.unitCode || unitDisplayCode,
+          facilityName: currentPrerequisites.facilityName || currentBooking?.facilityName || facilityDisplayName,
+          startDate: currentBooking?.expectedStartDate || new Date().toISOString(),
+          endDate: currentBooking?.expectedEndDate || new Date().toISOString(),
+          monthlyFee: currentPrerequisites.requiredFirstMonthRent || currentBooking?.monthlyRent || 0,
+          depositHeld: currentPrerequisites.depositPaid || currentBooking?.depositAmount || 0,
+          status: (currentPrerequisites.contractStatus as any) || 'PENDING_ACTIVATION',
+          signedDocumentUrl: currentPrerequisites.signedDocumentUrl,
+          signedAt: currentPrerequisites.contractSignedAt,
+          signingMethod: 'ONLINE'
+        }
+        setSelectedContractForModal(fallback)
+      } else {
+        setDispatchFeedback({ text: 'Lỗi khi tải thông tin hợp đồng điện tử.', isError: true })
+      }
+    } finally {
+      setIsLoadingContract(false)
     }
   }
 
@@ -799,12 +872,13 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         accessPin: generatedPin,
         isCompleted: true,
         completedAt: nowIso,
-        emailSent: false,
-        webPushSent: false
+        emailSent: true,
+        webPushSent: true
       })
 
       // Kích hoạt hiển thị thông báo giữa màn hình confirm đã bàn giao thành công cho customer
       setHandoverSuccessModalData({
+        bookingId: currentBooking.id,
         bookingCode: bookingDisplayCode,
         unitCode: unitDisplayCode,
         customerName: customerDisplayName,
@@ -815,12 +889,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         completedAt: nowIso
       })
 
-      if (onHandoverComplete) {
-        onHandoverComplete(currentBooking.id)
-      }
-      if (onRefreshArrivals) {
-        onRefreshArrivals()
-      }
+      // Lưu trữ chi tiết booking hiện tại vào extraBookingDetails để không bị unmount khi danh sách arrivals làm mới
+      setExtraBookingDetails(prev => ({
+        ...prev,
+        [currentBooking.id]: {
+          ...currentBooking,
+          status: 'ACTIVE',
+          accessPin: generatedPin
+        }
+      }))
     } catch (err: any) {
       const msg =
         err?.response?.data?.message ||
@@ -832,154 +909,372 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
   }
 
+  const handleCloseSuccessModal = () => {
+    const completedBookingId = handoverSuccessModalData?.bookingId || currentBooking?.id || selectedBookingId
+    setHandoverSuccessModalData(null)
+    if (completedBookingId && onHandoverComplete) {
+      onHandoverComplete(completedBookingId)
+    }
+    if (onRefreshArrivals) {
+      onRefreshArrivals()
+    }
+  }
+
+  const renderContractModal = () => {
+    if (!selectedContractForModal) return null
+    return (
+      <ContractDocumentModal
+        contract={selectedContractForModal}
+        booking={currentBooking}
+        onClose={() => setSelectedContractForModal(null)}
+      />
+    )
+  }
+
+  const renderSuccessModal = () => {
+    if (!handoverSuccessModalData) return null
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-fadeIn">
+        <div className="relative max-w-lg w-full bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden transform transition-all flex flex-col text-left">
+          {/* Top Accent Gradient Bar */}
+          <div className="h-2.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 w-full" />
+
+          <div className="p-6 sm:p-7 flex flex-col">
+            {/* Close Icon */}
+            <button
+              type="button"
+              onClick={handleCloseSuccessModal}
+              className="absolute top-5 right-5 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
+
+            {/* Success Badge & Header */}
+            <div className="text-center mb-5">
+              <div className="w-16 h-16 rounded-full bg-emerald-50 border-4 border-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-3 shadow-inner">
+                <span className="material-symbols-outlined text-[36px] animate-bounce">task_alt</span>
+              </div>
+              <span className="inline-flex items-center gap-1 px-3 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono text-[11px] font-bold uppercase tracking-wider mb-1.5">
+                ✓ Bàn Giao Hoàn Tất
+              </span>
+              <h3 className="font-headline text-xl sm:text-2xl font-extrabold text-slate-900">
+                Xác Nhận Bàn Giao Thành Công!
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Đã hoàn thành tiếp nhận và bàn giao phòng kho #{handoverSuccessModalData.unitCode} cho khách hàng{' '}
+                <strong className="text-slate-800">{handoverSuccessModalData.customerName}</strong>.
+              </p>
+            </div>
+
+            {/* Notification Sent Info Alert */}
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 mb-4 flex items-center gap-2 text-xs text-emerald-800">
+              <span className="material-symbols-outlined text-emerald-600 text-[18px] shrink-0">mark_email_read</span>
+              <span>Hệ thống đã tự động gửi email và thông báo tiếp nhận kho đến tài khoản của khách hàng!</span>
+            </div>
+
+            {/* PIN Code Highlight Box */}
+            <div className="p-4 rounded-2xl bg-slate-950 text-white border border-slate-800 shadow-xl mb-5 flex flex-col items-center">
+              <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-cyan-400 tracking-widest uppercase mb-2">
+                <span className="material-symbols-outlined text-[16px]">pin</span>
+                <span>MÃ PIN MỞ KHÓA SMARTLOCK</span>
+              </div>
+              <div className="flex items-center justify-center gap-1.5 sm:gap-2 my-1">
+                {(handoverSuccessModalData.pin || '------').split('').map((digit, idx) => (
+                  <div
+                    key={idx}
+                    className="w-10 h-14 sm:w-12 sm:h-16 rounded-xl bg-slate-900 border border-cyan-500/40 flex items-center justify-center font-mono text-2xl sm:text-3xl font-extrabold text-cyan-300 shadow-inner"
+                  >
+                    {digit}
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-400 text-center mt-2">
+                Mã PIN 6 chữ số dùng để mở ổ khóa điện tử kho và cửa ra vào cơ sở.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(handoverSuccessModalData.pin)
+                  setCopiedSuccessPin(true)
+                  setTimeout(() => setCopiedSuccessPin(false), 2500)
+                }}
+                className="mt-3 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono font-bold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px] text-cyan-400">
+                  {copiedSuccessPin ? 'check' : 'content_copy'}
+                </span>
+                <span>{copiedSuccessPin ? 'Đã sao chép mã PIN!' : 'Sao chép mã PIN'}</span>
+              </button>
+            </div>
+
+            {/* Handover Details Summary Grid */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs mb-5 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Phòng kho:</span>
+                <span className="font-bold text-slate-900 font-mono">
+                  #{handoverSuccessModalData.unitCode} ({handoverSuccessModalData.facilityName})
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Khách hàng:</span>
+                <span className="font-bold text-slate-900">
+                  {handoverSuccessModalData.customerName} • {handoverSuccessModalData.customerPhone}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Email:</span>
+                <span className="font-mono text-slate-800">{handoverSuccessModalData.customerEmail || 'Chưa cập nhật'}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Mã đơn đặt:</span>
+                <span className="font-mono text-slate-700">{handoverSuccessModalData.bookingCode}</span>
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-200/80 pt-2 text-[11px]">
+                <span className="text-slate-500">Thời gian kích hoạt:</span>
+                <span className="text-emerald-700 font-semibold font-mono">
+                  {new Date(handoverSuccessModalData.completedAt).toLocaleString('vi-VN')}
+                </span>
+              </div>
+            </div>
+
+            {/* Quick Communication Actions */}
+            <div className="flex flex-col gap-2 mb-5">
+              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                Gửi mã PIN &amp; Biên bản cho khách:
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleSendEmail}
+                  disabled={isSendingEmail}
+                  className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                    currentSession.emailSent
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-300'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    {currentSession.emailSent ? 'mark_email_read' : 'mail'}
+                  </span>
+                  <span>
+                    {currentSession.emailSent
+                      ? 'Đã Gửi Email'
+                      : isSendingEmail
+                      ? 'Đang gửi...'
+                      : 'Gửi Email Khách'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSendWebPush}
+                  disabled={isSendingWebPush}
+                  className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                    currentSession.webPushSent
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-300'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    {currentSession.webPushSent ? 'notifications_active' : 'notifications'}
+                  </span>
+                  <span>
+                    {currentSession.webPushSent
+                      ? 'Đã Bắn Web Push'
+                      : isSendingWebPush
+                      ? 'Đang bắn...'
+                      : 'Bắn Thông Báo Web'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Main Completion CTA Button */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowPdfModal(true)}
+                className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px]">visibility</span>
+                <span>Xem Biên Bản</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleCloseSuccessModal}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px]">check</span>
+                <span>Xác Nhận &amp; Hoàn Tất</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (!currentBooking) {
     return (
-      <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
-        {/* 1. Process Header Card */}
-        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
-            <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
+      <>
+        {renderSuccessModal()}
+        {renderContractModal()}
+        <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
+          {/* 1. Process Header Card */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
+              <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
+            </div>
+            <div>
+              <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
+                Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
-              Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-              Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+
+          {/* Empty State Card */}
+          <div className="py-12 px-4 flex flex-col items-center justify-center text-center">
+            <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4 shadow-xs">
+              <span className="material-symbols-outlined text-[34px]">person_pin_circle</span>
+            </div>
+            <h3 className="font-headline text-base font-bold text-slate-900">
+              Chưa Chọn Lượt Khách Tiếp Nhận Bàn Giao
+            </h3>
+            <p className="text-xs text-slate-500 mt-2 max-w-md mx-auto leading-relaxed">
+              {arrivalsList.length > 0
+                ? 'Vui lòng bấm "Tiếp nhận" hoặc chọn lượt khách bạn được phân công từ danh sách "Lịch Hẹn Nhận Kho Trong Ca" bên dưới để bắt đầu quy trình đối soát hồ sơ và bàn giao.'
+                : 'Hiện tại chưa có khách hẹn nhận kho trong ca làm việc này.'}
             </p>
           </div>
         </div>
-
-        {/* Empty State Card */}
-        <div className="py-12 px-4 flex flex-col items-center justify-center text-center">
-          <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4 shadow-xs">
-            <span className="material-symbols-outlined text-[34px]">person_pin_circle</span>
-          </div>
-          <h3 className="font-headline text-base font-bold text-slate-900">
-            Chưa Chọn Lượt Khách Tiếp Nhận Bàn Giao
-          </h3>
-          <p className="text-xs text-slate-500 mt-2 max-w-md mx-auto leading-relaxed">
-            {arrivalsList.length > 0
-              ? 'Vui lòng bấm "Tiếp nhận" hoặc chọn lượt khách bạn được phân công từ danh sách "Lịch Hẹn Nhận Kho Trong Ca" bên dưới để bắt đầu quy trình đối soát hồ sơ và bàn giao.'
-              : 'Hiện tại chưa có khách hẹn nhận kho trong ca làm việc này.'}
-          </p>
-        </div>
-      </div>
+      </>
     )
   }
 
   if (isAssignedToOther) {
     return (
-      <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
-        {/* 1. Process Header Card */}
-        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5 mb-5">
-          <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
-            <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
+      <>
+        {renderSuccessModal()}
+        {renderContractModal()}
+        <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
+          {/* 1. Process Header Card */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5 mb-5">
+            <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
+              <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
+            </div>
+            <div>
+              <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
+                Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
-              Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-              Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+
+          <div className="p-6 rounded-2xl bg-amber-50 border border-amber-200 text-center flex flex-col items-center">
+            <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mb-3">
+              <span className="material-symbols-outlined text-[30px]">lock_person</span>
+            </div>
+            <h3 className="font-headline text-base font-bold text-amber-900">
+              Lượt Khách Đang Thuộc Về Nhân Viên Khác
+            </h3>
+            <p className="text-xs text-amber-800 mt-1.5 max-w-md leading-relaxed">
+              Đơn <strong>{currentBooking.bookingCode}</strong> (Khách hàng <strong>{currentBooking.customerName}</strong>) hiện đang do nhân viên <strong>{currentBooking.assignedStaffName || 'khác'}</strong> phụ trách tiếp đón.
             </p>
-          </div>
-        </div>
-
-        <div className="p-6 rounded-2xl bg-amber-50 border border-amber-200 text-center flex flex-col items-center">
-          <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mb-3">
-            <span className="material-symbols-outlined text-[30px]">lock_person</span>
-          </div>
-          <h3 className="font-headline text-base font-bold text-amber-900">
-            Lượt Khách Đang Thuộc Về Nhân Viên Khác
-          </h3>
-          <p className="text-xs text-amber-800 mt-1.5 max-w-md leading-relaxed">
-            Đơn <strong>{currentBooking.bookingCode}</strong> (Khách hàng <strong>{currentBooking.customerName}</strong>) hiện đang do nhân viên <strong>{currentBooking.assignedStaffName || 'khác'}</strong> phụ trách tiếp đón.
-          </p>
-          <p className="text-[11px] text-amber-700 mt-1">
-            Theo quy định phân quyền, bạn chỉ được thao tác trên các đơn do bạn chủ động tiếp nhận hoặc được phân công.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedBookingId('')
-              if (onSelectBooking) onSelectBooking('')
-            }}
-            className="mt-4 px-4 py-2 bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold rounded-xl inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[16px]">close</span>
-            <span>Đóng Chi Tiết &amp; Quay Lại</span>
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  if (isUnassigned) {
-    return (
-      <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
-        {/* 1. Process Header Card */}
-        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5 mb-5">
-          <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
-            <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
-          </div>
-          <div>
-            <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
-              Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-              Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+            <p className="text-[11px] text-amber-700 mt-1">
+              Theo quy định phân quyền, bạn chỉ được thao tác trên các đơn do bạn chủ động tiếp nhận hoặc được phân công.
             </p>
-          </div>
-        </div>
-
-        <div className="p-6 rounded-2xl bg-blue-50 border border-blue-200 text-center flex flex-col items-center">
-          <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center mb-3">
-            <span className="material-symbols-outlined text-[30px]">how_to_reg</span>
-          </div>
-          <h3 className="font-headline text-base font-bold text-blue-900">
-            Chưa Tiếp Nhận Khách Hàng Này
-          </h3>
-          <p className="text-xs text-blue-800 mt-1.5 max-w-md leading-relaxed">
-            Đơn <strong>{currentBooking.bookingCode}</strong> (Khách hàng <strong>{currentBooking.customerName}</strong>) chưa có nhân sự tiếp đón tại quầy.
-          </p>
-          <p className="text-[11px] text-blue-700 mt-1">
-            Vui lòng bấm nút tiếp nhận bên dưới để đăng ký phụ trách khách hàng này trước khi thực hiện đối soát và bàn giao kho.
-          </p>
-          <div className="mt-4 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  const updated = await bookingService.claimCheckInReception(currentBooking.id)
-                  setInternalArrivals(prev => prev.map(b => b.id === currentBooking.id ? {
-                    ...b,
-                    assignedStaffId: updated.assignedStaffId || user?.id,
-                    assignedStaffName: updated.assignedStaffName || user?.fullName || 'Nhân viên quầy'
-                  } : b))
-                  if (onRefreshArrivals) onRefreshArrivals()
-                } catch (err: any) {
-                  alert(err?.response?.data?.message || 'Không thể tiếp nhận đơn này.')
-                }
-              }}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl inline-flex items-center gap-2 shadow-xs cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
-              <span>Tiếp Nhận Đơn Này Ngay</span>
-            </button>
             <button
               type="button"
               onClick={() => {
                 setSelectedBookingId('')
                 if (onSelectBooking) onSelectBooking('')
               }}
-              className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+              className="mt-4 px-4 py-2 bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold rounded-xl inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
             >
-              Quay Lại
+              <span className="material-symbols-outlined text-[16px]">close</span>
+              <span>Đóng Chi Tiết &amp; Quay Lại</span>
             </button>
           </div>
         </div>
-      </div>
+      </>
+    )
+  }
+
+  if (isUnassigned) {
+    return (
+      <>
+        {renderSuccessModal()}
+        {renderContractModal()}
+        <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
+          {/* 1. Process Header Card */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5 mb-5">
+            <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
+              <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
+            </div>
+            <div>
+              <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
+                Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+              </p>
+            </div>
+          </div>
+
+          <div className="p-6 rounded-2xl bg-blue-50 border border-blue-200 text-center flex flex-col items-center">
+            <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center mb-3">
+              <span className="material-symbols-outlined text-[30px]">how_to_reg</span>
+            </div>
+            <h3 className="font-headline text-base font-bold text-blue-900">
+              Chưa Tiếp Nhận Khách Hàng Này
+            </h3>
+            <p className="text-xs text-blue-800 mt-1.5 max-w-md leading-relaxed">
+              Đơn <strong>{currentBooking.bookingCode}</strong> (Khách hàng <strong>{currentBooking.customerName}</strong>) chưa có nhân sự tiếp đón tại quầy.
+            </p>
+            <p className="text-[11px] text-blue-700 mt-1">
+              Vui lòng bấm nút tiếp nhận bên dưới để đăng ký phụ trách khách hàng này trước khi thực hiện đối soát và bàn giao kho.
+            </p>
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const updated = await bookingService.claimCheckInReception(currentBooking.id)
+                    setInternalArrivals(prev => prev.map(b => b.id === currentBooking.id ? {
+                      ...b,
+                      assignedStaffId: updated.assignedStaffId || user?.id,
+                      assignedStaffName: updated.assignedStaffName || user?.fullName || 'Nhân viên quầy'
+                    } : b))
+                    if (onRefreshArrivals) onRefreshArrivals()
+                  } catch (err: any) {
+                    alert(err?.response?.data?.message || 'Không thể tiếp nhận đơn này.')
+                  }
+                }}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl inline-flex items-center gap-2 shadow-xs cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
+                <span>Tiếp Nhận Đơn Này Ngay</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedBookingId('')
+                  if (onSelectBooking) onSelectBooking('')
+                }}
+                className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+              >
+                Quay Lại
+              </button>
+            </div>
+          </div>
+        </div>
+      </>
     )
   }
 
@@ -1367,17 +1662,17 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                           <span>Hợp đồng điện tử hợp lệ (không bắt buộc tải HĐ giấy)</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          {currentPrerequisites?.signedDocumentUrl && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenAuthorizedDocument(currentPrerequisites.signedDocumentUrl!)}
-                              disabled={openingDocumentUrl === currentPrerequisites.signedDocumentUrl}
-                              className="px-2.5 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 font-bold text-xs flex items-center gap-1 cursor-pointer border border-cyan-200"
-                            >
-                              <span className="material-symbols-outlined text-[15px]">description</span>
-                              <span>Xem HĐ Điện Tử</span>
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={handleViewElectronicContract}
+                            disabled={isLoadingContract}
+                            className="px-2.5 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 font-bold text-xs flex items-center gap-1 cursor-pointer border border-cyan-200 transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">
+                              {isLoadingContract ? 'hourglass_top' : 'description'}
+                            </span>
+                            <span>{isLoadingContract ? 'Đang mở...' : 'Xem HĐ Điện Tử'}</span>
+                          </button>
                           <button
                             type="button"
                             onClick={handleOpenPaperContractModal}
@@ -1510,7 +1805,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       </div>
                     )}
                   </div>
-                  <p className="pt-2 border-t border-slate-100 text-[11px] text-slate-500">Payment records are managed through the authorized cashier workflow.</p>
+                  
                 </div>
 
                 {/* Điều kiện 3: Tiền Thuê Tháng Đầu (First Month Rent) */}
@@ -1592,7 +1887,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       </div>
                     )}
                   </div>
-                  <p className="pt-2 border-t border-slate-100 text-[11px] text-slate-500">Payment records are managed through the authorized cashier workflow.</p>
                 </div>
 
                 {/* Điều kiện 4: Đối Chiếu CCCD / Passport Gốc */}
@@ -2775,180 +3069,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       )}
 
       {/* Modal: Xác Nhận Bàn Giao Thành Công & Cấp Mã PIN Giữa Màn Hình */}
-      {handoverSuccessModalData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-fadeIn">
-          <div className="relative max-w-lg w-full bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden transform transition-all flex flex-col text-left">
-            {/* Top Accent Gradient Bar */}
-            <div className="h-2.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 w-full" />
+      {renderSuccessModal()}
 
-            <div className="p-6 sm:p-7 flex flex-col">
-              {/* Close Icon */}
-              <button
-                type="button"
-                onClick={() => setHandoverSuccessModalData(null)}
-                className="absolute top-5 right-5 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[18px]">close</span>
-              </button>
-
-              {/* Success Badge & Header */}
-              <div className="text-center mb-5">
-                <div className="w-16 h-16 rounded-full bg-emerald-50 border-4 border-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-3 shadow-inner">
-                  <span className="material-symbols-outlined text-[36px] animate-bounce">task_alt</span>
-                </div>
-                <span className="inline-flex items-center gap-1 px-3 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono text-[11px] font-bold uppercase tracking-wider mb-1.5">
-                  ✓ Bàn Giao Hoàn Tất
-                </span>
-                <h3 className="font-headline text-xl sm:text-2xl font-extrabold text-slate-900">
-                  Xác Nhận Bàn Giao Thành Công!
-                </h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  Đã bàn giao phòng kho #{handoverSuccessModalData.unitCode} cho khách hàng{' '}
-                  <strong className="text-slate-800">{handoverSuccessModalData.customerName}</strong>.
-                </p>
-              </div>
-
-              {/* PIN Code Highlight Box */}
-              <div className="p-4 rounded-2xl bg-slate-950 text-white border border-slate-800 shadow-xl mb-5 flex flex-col items-center">
-                <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-cyan-400 tracking-widest uppercase mb-2">
-                  <span className="material-symbols-outlined text-[16px]">pin</span>
-                  <span>MÃ PIN MỞ KHÓA SMARTLOCK</span>
-                </div>
-                <div className="flex items-center justify-center gap-1.5 sm:gap-2 my-1">
-                  {(handoverSuccessModalData.pin || '------').split('').map((digit, idx) => (
-                    <div
-                      key={idx}
-                      className="w-10 h-14 sm:w-12 sm:h-16 rounded-xl bg-slate-900 border border-cyan-500/40 flex items-center justify-center font-mono text-2xl sm:text-3xl font-extrabold text-cyan-300 shadow-inner"
-                    >
-                      {digit}
-                    </div>
-                  ))}
-                </div>
-                <p className="text-[11px] text-slate-400 text-center mt-2">
-                  Mã PIN 6 chữ số dùng để mở ổ khóa điện tử kho và cửa ra vào cơ sở.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(handoverSuccessModalData.pin)
-                    setCopiedSuccessPin(true)
-                    setTimeout(() => setCopiedSuccessPin(false), 2500)
-                  }}
-                  className="mt-3 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono font-bold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[16px] text-cyan-400">
-                    {copiedSuccessPin ? 'check' : 'content_copy'}
-                  </span>
-                  <span>{copiedSuccessPin ? 'Đã sao chép mã PIN!' : 'Sao chép mã PIN'}</span>
-                </button>
-              </div>
-
-              {/* Handover Details Summary Grid */}
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs mb-5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Phòng kho:</span>
-                  <span className="font-bold text-slate-900 font-mono">
-                    #{handoverSuccessModalData.unitCode} ({handoverSuccessModalData.facilityName})
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Khách hàng:</span>
-                  <span className="font-bold text-slate-900">
-                    {handoverSuccessModalData.customerName} • {handoverSuccessModalData.customerPhone}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Email:</span>
-                  <span className="font-mono text-slate-800">{handoverSuccessModalData.customerEmail || 'Chưa cập nhật'}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Mã đơn đặt:</span>
-                  <span className="font-mono text-slate-700">{handoverSuccessModalData.bookingCode}</span>
-                </div>
-                <div className="flex items-center justify-between border-t border-slate-200/80 pt-2 text-[11px]">
-                  <span className="text-slate-500">Thời gian kích hoạt:</span>
-                  <span className="text-emerald-700 font-semibold font-mono">
-                    {new Date(handoverSuccessModalData.completedAt).toLocaleString('vi-VN')}
-                  </span>
-                </div>
-              </div>
-
-              {/* Quick Communication Actions */}
-              <div className="flex flex-col gap-2 mb-5">
-                <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                  Gửi mã PIN &amp; Biên bản cho khách:
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={handleSendEmail}
-                    disabled={isSendingEmail}
-                    className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-                      currentSession.emailSent
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                        : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-300'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">
-                      {currentSession.emailSent ? 'mark_email_read' : 'mail'}
-                    </span>
-                    <span>
-                      {currentSession.emailSent
-                        ? 'Đã Gửi Email'
-                        : isSendingEmail
-                        ? 'Đang gửi...'
-                        : 'Gửi Email Khách'}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleSendWebPush}
-                    disabled={isSendingWebPush}
-                    className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-                      currentSession.webPushSent
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                        : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-300'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">
-                      {currentSession.webPushSent ? 'notifications_active' : 'notifications'}
-                    </span>
-                    <span>
-                      {currentSession.webPushSent
-                        ? 'Đã Bắn Web Push'
-                        : isSendingWebPush
-                        ? 'Đang bắn...'
-                        : 'Bắn Thông Báo Web'}
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Main Completion CTA Button */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowPdfModal(true)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[18px]">visibility</span>
-                  <span>Xem Biên Bản</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHandoverSuccessModalData(null)}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[18px]">check</span>
-                  <span>Xác Nhận &amp; Hoàn Tất</span>
-                </button>
-              </div>
-
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Modal: Xem Văn Bản Hợp Đồng Thuê Kho Điện Tử */}
+      {renderContractModal()}
 
     </div>
   )

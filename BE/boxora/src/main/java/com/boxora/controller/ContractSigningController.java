@@ -56,7 +56,7 @@ public class ContractSigningController {
     }
 
     @GetMapping("{contractId}")
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasRole('BUSINESS_MANAGER') or hasRole('CUSTOMER')")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasRole('BUSINESS_MANAGER') or hasRole('FACILITY_MANAGER') or hasRole('FACILITY_STAFF') or hasRole('STAFF') or hasRole('CUSTOMER') or hasRole('ADMIN')")
     @Operation(summary = "Lấy thông tin chi tiết hợp đồng theo ID")
     public ResponseEntity<ApiResponse<RentalContractResponse>> getContractById(
             @PathVariable UUID contractId) {
@@ -65,7 +65,7 @@ public class ContractSigningController {
     }
 
     @GetMapping("booking/{bookingId}")
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasRole('BUSINESS_MANAGER') or hasRole('CUSTOMER')")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasRole('BUSINESS_MANAGER') or hasRole('FACILITY_MANAGER') or hasRole('FACILITY_STAFF') or hasRole('STAFF') or hasRole('CUSTOMER') or hasRole('ADMIN')")
     @Operation(summary = "Lấy hợp đồng thuê theo Booking ID")
     public ResponseEntity<ApiResponse<RentalContractResponse>> getContractByBookingId(
             @PathVariable UUID bookingId) {
@@ -74,7 +74,7 @@ public class ContractSigningController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasRole('BUSINESS_MANAGER') or hasRole('CUSTOMER')")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasRole('BUSINESS_MANAGER') or hasRole('FACILITY_MANAGER') or hasRole('FACILITY_STAFF') or hasRole('STAFF') or hasRole('CUSTOMER') or hasRole('ADMIN')")
     @Operation(summary = "Lấy danh sách hợp đồng phân trang theo bộ lọc")
     public ResponseEntity<ApiResponse<PageResponse<RentalContractResponse>>> getAllContracts(
             @RequestParam(required = false) UUID customerId,

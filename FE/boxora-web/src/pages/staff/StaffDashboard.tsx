@@ -1276,10 +1276,10 @@ export const StaffDashboard: React.FC = () => {
           {/* Timeframe Tabs */}
           <div className="flex items-center gap-1.5 p-1 bg-white border border-slate-200/80 rounded-xl shadow-2xs overflow-x-auto">
             {[
-              { id: 'current', label: 'Hiện tại / Trong ca', icon: 'schedule' },
+              { id: 'current', label: 'Trong ca', icon: 'schedule' },
               { id: 'past', label: 'Quá khứ', icon: 'history' },
               { id: 'future', label: 'Tương lai', icon: 'upcoming' },
-              { id: 'all', label: 'Tất cả thời gian', icon: 'clear_all' },
+              { id: 'all', label: 'Tất cả', icon: 'clear_all' },
             ].map(tab => (
               <button
                 key={tab.id}
