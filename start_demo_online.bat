@@ -73,10 +73,11 @@ if not exist "!CLOUDFLARED!" (
 )
 
 set "LOGFILE=%TEMP%\boxora_backend_tunnel.log"
+taskkill /f /im cloudflared.exe >nul 2>&1
 if exist "!LOGFILE!" del /f /q "!LOGFILE!" >nul 2>&1
 
-echo   - Dang mo Cloudflare Quick Tunnel cho Backend (http://localhost:8080)...
-start "BOXORA - BACKEND TUNNEL" /min "!CLOUDFLARED!" --logfile "!LOGFILE!" tunnel --url http://localhost:8080
+echo   - Dang mo Cloudflare Quick Tunnel cho Backend qua giao thuc HTTP/2 on dinh...
+start "BOXORA - BACKEND TUNNEL" /min "!CLOUDFLARED!" --protocol http2 --logfile "!LOGFILE!" tunnel --url http://localhost:8080
 
 echo   - Dang trich xuat public HTTPS tunnel URL...
 set "BACKEND_TUNNEL_URL="

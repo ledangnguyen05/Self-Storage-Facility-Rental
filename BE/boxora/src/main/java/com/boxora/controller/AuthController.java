@@ -65,9 +65,8 @@ public class AuthController {
         AuthResponse response = authService.login(request);
         String refreshTokenValue = response.getRefreshToken();
 
-        // Put refresh token in secure HttpOnly cookie instead of exposing in JSON body
+        // Put refresh token in secure HttpOnly cookie while also leaving in body as cross-site fallback
         ResponseCookie cookie = createRefreshTokenCookie(refreshTokenValue, REFRESH_TOKEN_MAX_AGE_SECONDS);
-        response.setRefreshToken(null);
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
@@ -82,7 +81,6 @@ public class AuthController {
         String refreshTokenValue = response.getRefreshToken();
 
         ResponseCookie cookie = createRefreshTokenCookie(refreshTokenValue, REFRESH_TOKEN_MAX_AGE_SECONDS);
-        response.setRefreshToken(null);
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
@@ -184,12 +182,13 @@ public class AuthController {
     }
 
     private ResponseCookie createRefreshTokenCookie(String value, long maxAgeSeconds) {
+        String sameSiteValue = cookieSecure ? "None" : "Lax";
         return ResponseCookie.from(REFRESH_TOKEN_COOKIE_NAME, value)
                 .httpOnly(true)
                 .secure(cookieSecure)
                 .path("/")
                 .maxAge(maxAgeSeconds)
-                .sameSite("Lax")
+                .sameSite(sameSiteValue)
                 .build();
     }
 }
