@@ -161,10 +161,14 @@ public class AuthController {
     }
 
     @PutMapping("/change-password")
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<Void>> changePassword(
             @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody ChangePasswordRequest request
     ) {
+        if (userDetails == null) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
         authService.changePassword(userDetails.getUsername(), request);
         return ResponseEntity.ok(ApiResponse.success("Password changed successfully", null));
     }

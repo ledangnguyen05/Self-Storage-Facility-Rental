@@ -60,6 +60,15 @@ export const authService = {
     return response.data
   },
 
+  async changePassword(data: {
+    oldPassword: string
+    newPassword: string
+    confirmPassword: string
+  }): Promise<{ success: boolean; message: string }> {
+    const response = await api.put('/api/v1/auth/change-password', data)
+    return response.data
+  },
+
   async updateProfile(data: { fullName: string; phone: string }): Promise<User> {
     const response = await api.put('/api/v1/auth/profile', data)
     const profile = response.data?.data
