@@ -58,7 +58,8 @@ public class SecurityConfig {
             "/v3/api-docs/**",
             "/uploads/**",
             "/api/v1/chatbot/**",
-            "/api/v1/pricing/**"
+            "/api/v1/pricing/**",
+            "/api/v1/geocoding/**"
     };
 
     @Bean

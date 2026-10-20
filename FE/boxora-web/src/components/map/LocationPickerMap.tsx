@@ -197,14 +197,33 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
     setSearchError('')
   }
 
-  // Geolocation (GPS browser)
-  const locateCurrent = () => {
-    if (!navigator.geolocation) {
-      setLocationError('Trình duyệt không hỗ trợ định vị GPS.')
-      return
-    }
+  // Geolocation (GPS browser with IP fallback)
+  const locateCurrent = async () => {
     setIsLocating(true)
     setLocationError('')
+
+    const tryIpFallback = async (reason: string) => {
+      try {
+        const res = await fetch('https://ipwho.is/', { signal: AbortSignal.timeout(4000) })
+        const data = await res.json()
+        if (data && data.success && typeof data.latitude === 'number' && typeof data.longitude === 'number') {
+          onChange(Number(data.latitude.toFixed(6)), Number(data.longitude.toFixed(6)))
+          setLocationError(`Đã lấy vị trí gần đúng theo mạng (${data.city || data.region || 'Việt Nam'}). Bạn có thể kéo ghim để tinh chỉnh.`)
+          return true
+        }
+      } catch {
+        // Fallback failed
+      }
+      setLocationError(reason)
+      return false
+    }
+
+    if (!navigator.geolocation) {
+      await tryIpFallback('Trình duyệt không hỗ trợ GPS trực tiếp.')
+      setIsLocating(false)
+      return
+    }
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const lat = Number(pos.coords.latitude.toFixed(6))
@@ -212,15 +231,14 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
         onChange(lat, lng)
         setIsLocating(false)
       },
-      (err) => {
-        setLocationError(
-          err.code === err.PERMISSION_DENIED
-            ? 'Bạn chưa cho phép quyền truy cập vị trí trên trình duyệt.'
-            : 'Không thể xác định vị trí hiện tại.'
-        )
+      async (err) => {
+        const reason = err.code === err.PERMISSION_DENIED
+          ? 'Chưa được cấp quyền GPS trên trình duyệt.'
+          : 'Không thể xác định vị trí qua GPS vệ tinh.'
+        await tryIpFallback(reason)
         setIsLocating(false)
       },
-      { timeout: 8000, enableHighAccuracy: true }
+      { timeout: 5000, enableHighAccuracy: true }
     )
   }
 

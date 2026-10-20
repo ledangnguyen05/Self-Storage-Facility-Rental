@@ -1,12 +1,13 @@
 /**
  * Robust Multi-provider Geocoding Service for Boxora
- * - Primary provider: Photon (Komoot OSM Open Geocoder, fast, supports CORS, high coverage in VN)
- * - Secondary provider: Nominatim (Official OSM)
+ * - Primary provider: Boxora Backend AI Geocoding (/api/v1/geocoding/search) powered by Gemini & Vietnam admin dataset
+ * - Secondary provider: Photon (OSM Geocoder) with short 3.5s timeout
+ * - Tertiary provider: Nominatim (Official OSM) with short 3.5s timeout
  * - Automatic Vietnamese address normalization & progressive query fallback
- *   (e.g., "21 Võ Trường Toản, TP. Hồ Chí Minh" -> exact match or fallback to street/ward)
- * - Autocomplete suggestion support
  * - Explicit location source tracking: EXACT, APPROXIMATE, MANUAL, UNVERIFIED
  */
+
+import { api } from '../lib/axios'
 
 export type GeocodingSource = 'EXACT' | 'APPROXIMATE' | 'MANUAL' | 'UNVERIFIED'
 
@@ -15,7 +16,7 @@ export interface GeocodingResult {
   lng: number
   displayName: string
   source: GeocodingSource
-  provider: 'photon' | 'nominatim' | 'manual'
+  provider: 'boxora-ai' | 'photon' | 'nominatim' | 'manual'
   confidence?: string
 }
 
@@ -35,7 +36,7 @@ const NOMINATIM_SEARCH_URL = 'https://nominatim.openstreetmap.org/search'
 let requestQueue: Promise<void> = Promise.resolve()
 let nextAllowedRequestAt = 0
 
-const runThrottledRequest = <T>(request: () => Promise<T>, delayMs = 300): Promise<T> => {
+const runThrottledRequest = <T>(request: () => Promise<T>, delayMs = 200): Promise<T> => {
   const queued = requestQueue.then(async () => {
     const waitMs = Math.max(0, nextAllowedRequestAt - Date.now())
     if (waitMs > 0) await new Promise(r => window.setTimeout(r, waitMs))
@@ -63,9 +64,6 @@ interface PhotonFeature {
   }
 }
 
-/**
- * Format a human-readable display address from Photon properties
- */
 const formatPhotonDisplayName = (props: PhotonFeature['properties']): string => {
   const parts: string[] = []
   if (props.name) parts.push(props.name)
@@ -78,34 +76,65 @@ const formatPhotonDisplayName = (props: PhotonFeature['properties']): string => 
 }
 
 /**
- * Query Photon geocoding API
+ * Stage 1: Query Boxora Backend AI Geocoding
  */
-async function queryPhoton(query: string, limit = 5): Promise<GeocodingResult[]> {
-  const url = `${PHOTON_API_URL}?q=${encodeURIComponent(query)}&limit=${limit}&lang=vi`
-  const response = await fetch(url, {
-    headers: { Accept: 'application/json' },
-    signal: AbortSignal.timeout(8000),
-  })
-  if (!response.ok) throw new Error(`PHOTON_HTTP_${response.status}`)
-  const data = await response.json() as { features?: PhotonFeature[] }
-  const features = data.features || []
+async function queryBoxoraBackend(query: string, cityHint?: string): Promise<GeocodingResult | null> {
+  try {
+    const response = await api.post('/api/v1/geocoding/search', {
+      query,
+      cityHint
+    }, { timeout: 6000 })
 
-  return features.map((f) => {
-    const [lng, lat] = f.geometry.coordinates
-    const displayName = formatPhotonDisplayName(f.properties)
-    const isHouseOrBuilding = f.properties.type === 'house' || Boolean(f.properties.housenumber)
-    return {
-      lat,
-      lng,
-      displayName,
-      source: isHouseOrBuilding ? 'EXACT' : 'APPROXIMATE',
-      provider: 'photon',
+    const resData = response.data?.data
+    if (resData && typeof resData.latitude === 'number' && typeof resData.longitude === 'number') {
+      return {
+        lat: Number(resData.latitude),
+        lng: Number(resData.longitude),
+        displayName: resData.displayName || query,
+        source: resData.source || 'EXACT',
+        provider: 'boxora-ai',
+        confidence: resData.confidence || 'Định vị chính xác'
+      }
     }
-  })
+    return null
+  } catch {
+    return null
+  }
 }
 
 /**
- * Query Nominatim as fallback
+ * Stage 2: Query Photon geocoding API
+ */
+async function queryPhoton(query: string, limit = 5): Promise<GeocodingResult[]> {
+  try {
+    const url = `${PHOTON_API_URL}?q=${encodeURIComponent(query)}&limit=${limit}&lang=vi`
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(3500),
+    })
+    if (!response.ok) return []
+    const data = await response.json() as { features?: PhotonFeature[] }
+    const features = data.features || []
+
+    return features.map((f) => {
+      const [lng, lat] = f.geometry.coordinates
+      const displayName = formatPhotonDisplayName(f.properties)
+      const isHouseOrBuilding = f.properties.type === 'house' || Boolean(f.properties.housenumber)
+      return {
+        lat,
+        lng,
+        displayName,
+        source: isHouseOrBuilding ? 'EXACT' : 'APPROXIMATE',
+        provider: 'photon',
+      }
+    })
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Stage 3: Query Nominatim OSM as fallback
  */
 async function queryNominatim(query: string): Promise<GeocodingResult | null> {
   try {
@@ -123,7 +152,7 @@ async function queryNominatim(query: string): Promise<GeocodingResult | null> {
         Accept: 'application/json',
         'Accept-Language': 'vi',
       },
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(3500),
     })
     if (!response.ok) return null
     const list = await response.json() as Array<{ lat?: string; lon?: string; display_name?: string; type?: string }>
@@ -143,20 +172,19 @@ async function queryNominatim(query: string): Promise<GeocodingResult | null> {
 
 /**
  * Strip house number for progressive fallback
- * e.g., "21 Võ Trường Toản, TP. Hồ Chí Minh" -> "Võ Trường Toản, TP. Hồ Chí Minh"
  */
 function stripHouseNumber(address: string): string | null {
   const cleaned = address.trim()
-  // Match leading numbers like "21", "21A", "Số 21", "21/3B"
   const stripped = cleaned.replace(/^\s*(?:số\s*)?\d+[a-zA-Z0-9\/\-\.]*\s*,?\s*/i, '').trim()
   return stripped && stripped !== cleaned ? stripped : null
 }
 
 /**
  * Geocode an address with progressive fallback:
- * 1. Try full address on Photon
- * 2. If no result, try stripping house number (search street + province)
- * 3. If no result, try Nominatim fallback
+ * 1. Backend AI Geocoding (reliable, high-accuracy VN addresses, fast)
+ * 2. Photon Geocoder
+ * 3. Stripped street on Photon
+ * 4. Nominatim fallback
  */
 export async function geocodeAddress(fullAddress: string, cityHint?: string): Promise<GeocodingResult> {
   const rawQuery = fullAddress.trim()
@@ -167,51 +195,53 @@ export async function geocodeAddress(fullAddress: string, cityHint?: string): Pr
     : rawQuery
 
   return runThrottledRequest(async () => {
-    // Stage 1: Try exact query on Photon
-    try {
-      const results = await queryPhoton(queryWithCity, 3)
-      if (results.length > 0) {
-        return results[0]
-      }
-    } catch {
-      // Continue to fallback
+    // 1. Try Backend Geocoding
+    const backendResult = await queryBoxoraBackend(queryWithCity, cityHint)
+    if (backendResult) {
+      return backendResult
     }
 
-    // Stage 2: Try stripped street query on Photon
+    // 2. Try Photon
+    const photonResults = await queryPhoton(queryWithCity, 3)
+    if (photonResults.length > 0) {
+      return photonResults[0]
+    }
+
+    // 3. Try stripped street query
     const fallbackStreetQuery = stripHouseNumber(queryWithCity)
     if (fallbackStreetQuery) {
-      try {
-        const fallbackResults = await queryPhoton(fallbackStreetQuery, 3)
-        if (fallbackResults.length > 0) {
-          const res = fallbackResults[0]
-          return {
-            ...res,
-            source: 'APPROXIMATE', // Marked as street-level approximate
-            confidence: 'Định vị theo trục đường (chưa có số nhà chi tiết)',
-          }
+      const strippedBackend = await queryBoxoraBackend(fallbackStreetQuery, cityHint)
+      if (strippedBackend) {
+        return {
+          ...strippedBackend,
+          source: 'APPROXIMATE',
+          confidence: 'Định vị theo trục đường'
         }
-      } catch {
-        // Continue
+      }
+
+      const strippedPhoton = await queryPhoton(fallbackStreetQuery, 3)
+      if (strippedPhoton.length > 0) {
+        return {
+          ...strippedPhoton[0],
+          source: 'APPROXIMATE',
+          confidence: 'Định vị theo trục đường'
+        }
       }
     }
 
-    // Stage 3: Try Nominatim
-    try {
-      const nomResult = await queryNominatim(queryWithCity)
-      if (nomResult) return nomResult
+    // 4. Try Nominatim
+    const nomResult = await queryNominatim(queryWithCity)
+    if (nomResult) return nomResult
 
-      if (fallbackStreetQuery) {
-        const nomFallback = await queryNominatim(fallbackStreetQuery)
-        if (nomFallback) {
-          return {
-            ...nomFallback,
-            source: 'APPROXIMATE',
-            confidence: 'Định vị theo trục đường',
-          }
+    if (fallbackStreetQuery) {
+      const nomFallback = await queryNominatim(fallbackStreetQuery)
+      if (nomFallback) {
+        return {
+          ...nomFallback,
+          source: 'APPROXIMATE',
+          confidence: 'Định vị theo trục đường',
         }
       }
-    } catch {
-      // Continue
     }
 
     throw new Error('ADDRESS_NOT_FOUND')
@@ -234,7 +264,7 @@ export async function autocompleteAddress(query: string, cityHint?: string): Pro
       const url = `${PHOTON_API_URL}?q=${encodeURIComponent(searchQuery)}&limit=6&lang=vi`
       const response = await fetch(url, {
         headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(3000),
       })
       if (!response.ok) return []
       const data = await response.json() as { features?: PhotonFeature[] }
@@ -249,7 +279,7 @@ export async function autocompleteAddress(query: string, cityHint?: string): Pro
     } catch {
       return []
     }
-  }, 200)
+  }, 150)
 }
 
 /**
@@ -258,10 +288,9 @@ export async function autocompleteAddress(query: string, cityHint?: string): Pro
 export function getGeocodingErrorMessage(error: unknown): string {
   const code = error instanceof Error ? error.message : ''
   if (code === 'ADDRESS_REQUIRED') return 'Vui lòng nhập địa chỉ trước khi tìm kiếm tọa độ.'
-  if (code === 'ADDRESS_NOT_FOUND') return 'Không tìm thấy tọa độ cho địa chỉ này. Hãy kiểm tra lại tên đường, phường/xã hoặc thành phố, hoặc bạn có thể nhập tọa độ thủ công.'
+  if (code === 'ADDRESS_NOT_FOUND') return 'Không tìm thấy tọa độ cho địa chỉ này. Bạn có thể bấm trực tiếp lên bản đồ hoặc kéo ghim.'
   if (code.includes('TimeoutError') || code.includes('AbortError')) return 'Thời gian tìm kiếm địa chỉ quá lâu. Vui lòng kiểm tra kết nối mạng và thử lại.'
-  if (code.startsWith('PHOTON_HTTP_') || code.startsWith('NOMINATIM_HTTP_')) return 'Dịch vụ bản đồ tạm thời gián đoạn. Vui lòng thử lại sau ít phút.'
-  return 'Chưa thể tìm kiếm tọa độ lúc này. Vui lòng thử lại hoặc gán tọa độ thủ công.'
+  return 'Chưa thể tìm kiếm tọa độ lúc này. Bạn có thể bấm trực tiếp lên bản đồ để chọn vị trí.'
 }
 
 // Backward compatibility export with existing code
