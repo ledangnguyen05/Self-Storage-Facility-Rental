@@ -33,7 +33,7 @@ public class UserController {
         UserResponse response = userService.create(request);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(ApiResponse.success("User created successfully", response));
+                .body(ApiResponse.success("Tạo người dùng thành công", response));
     }
 
     @GetMapping("/{id}")
@@ -71,7 +71,7 @@ public class UserController {
             @Valid @RequestBody UserUpdateRequest request
     ) {
         UserResponse response = userService.update(id, request);
-        return ResponseEntity.ok(ApiResponse.success("User updated successfully", response));
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật thông tin người dùng thành công", response));
     }
 
     @DeleteMapping("/{id}")
@@ -80,7 +80,7 @@ public class UserController {
             @PathVariable UUID id
     ) {
         userService.delete(id);
-        return ResponseEntity.ok(ApiResponse.success("User deleted successfully", null));
+        return ResponseEntity.ok(ApiResponse.success("Xóa người dùng thành công", null));
     }
 
     @PatchMapping("/{id}/toggle-active")
@@ -89,6 +89,6 @@ public class UserController {
             @PathVariable UUID id
     ) {
         UserResponse response = userService.toggleActive(id);
-        return ResponseEntity.ok(ApiResponse.success("User status toggled successfully", response));
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật trạng thái người dùng thành công", response));
     }
 }

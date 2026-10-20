@@ -40,7 +40,14 @@ public class SecurityConfig {
     private String frontendUrl;
 
     private static final String[] PUBLIC_URLS = {
-            "/api/v1/auth/**",
+            "/api/v1/auth/login",
+            "/api/v1/auth/register",
+            "/api/v1/auth/refresh-token",
+            "/api/v1/auth/forgot-password",
+            "/api/v1/auth/reset-password",
+            "/api/v1/auth/captcha",
+            "/api/v1/auth/google",
+            "/api/v1/auth/logout",
             "/api/v1/payments/vnpay-return",
             "/api/v1/payments/vnpay-ipn",
             "/api/v1/payments/vnpay-verify",

@@ -51,7 +51,7 @@ public class UnitTypeController {
     ) {
         UnitTypeResponse response = unitTypeService.createUnitType(request);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Unit type created successfully", response));
+                .body(ApiResponse.success("Tạo loại ngăn kho thành công", response));
     }
 
     @PutMapping("/{id}")
@@ -62,7 +62,7 @@ public class UnitTypeController {
             @Valid @RequestBody UnitTypeUpdateRequest request
     ) {
         UnitTypeResponse response = unitTypeService.updateUnitType(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Unit type updated successfully", response));
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật loại ngăn kho thành công", response));
     }
 
     @PostMapping("/{id}/price-adjustment")
@@ -73,7 +73,7 @@ public class UnitTypeController {
             @Valid @RequestBody UnitTypePriceAdjustmentRequest request
     ) {
         UnitTypeResponse response = unitTypeService.adjustPrice(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Unit type price adjusted successfully under BR-RULE-011", response));
+        return ResponseEntity.ok(ApiResponse.success("Điều chỉnh giá loại ngăn kho thành công", response));
     }
 
     @GetMapping("/{id}/price-history")
@@ -91,7 +91,7 @@ public class UnitTypeController {
     @Operation(summary = "Xóa loại kho (chỉ xóa khi không có kho nào đang thuộc loại này)")
     public ResponseEntity<ApiResponse<Void>> deleteUnitType(@PathVariable UUID id) {
         unitTypeService.deleteUnitType(id);
-        return ResponseEntity.ok(ApiResponse.success("Unit type deleted successfully", null));
+        return ResponseEntity.ok(ApiResponse.success("Xóa loại ngăn kho thành công", null));
     }
 }
 

@@ -41,7 +41,7 @@ public class StaffAssignmentController {
     ) {
         StaffAssignmentResponse response = staffAssignmentService.createAssignment(request);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Staff assignment created successfully", response));
+                .body(ApiResponse.success("Tạo phân công ca trực thành công", response));
     }
 
     @PutMapping("/{id}")
@@ -52,7 +52,7 @@ public class StaffAssignmentController {
             @Valid @RequestBody StaffAssignmentUpdateRequest request
     ) {
         StaffAssignmentResponse response = staffAssignmentService.updateAssignment(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Staff assignment updated successfully", response));
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật phân công ca trực thành công", response));
     }
 
     @PatchMapping("/{id}/status")
@@ -63,7 +63,7 @@ public class StaffAssignmentController {
             @Valid @RequestBody StaffAssignmentStatusUpdateRequest request
     ) {
         StaffAssignmentResponse response = staffAssignmentService.updateStatus(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Staff assignment status updated successfully", response));
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật trạng thái ca trực thành công", response));
     }
 
     @PostMapping("/{id}/check-in")
@@ -74,7 +74,7 @@ public class StaffAssignmentController {
             @RequestBody(required = false) com.boxora.dto.request.StaffCheckInRequest request
     ) {
         StaffAssignmentResponse response = staffAssignmentService.checkIn(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Staff check-in successful", response));
+        return ResponseEntity.ok(ApiResponse.success("Điểm danh vào ca trực thành công", response));
     }
 
     @PostMapping("/{id}/check-out")
@@ -85,7 +85,7 @@ public class StaffAssignmentController {
             @RequestBody(required = false) com.boxora.dto.request.StaffCheckOutRequest request
     ) {
         StaffAssignmentResponse response = staffAssignmentService.checkOut(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Staff check-out successful", response));
+        return ResponseEntity.ok(ApiResponse.success("Điểm danh kết thúc ca trực thành công", response));
     }
 
     @DeleteMapping("/{id}")
@@ -93,7 +93,7 @@ public class StaffAssignmentController {
     @Operation(summary = "Xóa hoặc hủy phân công ca trực")
     public ResponseEntity<ApiResponse<Void>> deleteAssignment(@PathVariable UUID id) {
         staffAssignmentService.deleteAssignment(id);
-        return ResponseEntity.ok(ApiResponse.success("Staff assignment deleted successfully", null));
+        return ResponseEntity.ok(ApiResponse.success("Hủy phân công ca trực thành công", null));
     }
 
     @GetMapping("/{id}")

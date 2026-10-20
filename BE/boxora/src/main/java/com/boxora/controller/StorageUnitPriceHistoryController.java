@@ -36,7 +36,7 @@ public class StorageUnitPriceHistoryController {
     ) {
         StorageUnitPriceHistoryResponse response = storageUnitPriceHistoryService.adjustUnitPrice(unitId, request);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Unit price adjusted successfully under BR-RULE-011", response));
+                .body(ApiResponse.success("Điều chỉnh đơn giá ngăn kho thành công", response));
     }
 
     @GetMapping("/storage-units/{unitId}/price-history")
