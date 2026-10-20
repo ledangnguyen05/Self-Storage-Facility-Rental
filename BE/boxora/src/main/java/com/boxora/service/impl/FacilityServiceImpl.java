@@ -167,5 +167,17 @@ public class FacilityServiceImpl implements FacilityService {
         if ((latitude == null) != (longitude == null)) {
             throw new AppException(ErrorCode.INVALID_REQUEST);
         }
+        if (latitude != null) {
+            double lat = latitude.doubleValue();
+            if (lat < -90.0 || lat > 90.0) {
+                throw new AppException(ErrorCode.INVALID_REQUEST);
+            }
+        }
+        if (longitude != null) {
+            double lng = longitude.doubleValue();
+            if (lng < -180.0 || lng > 180.0) {
+                throw new AppException(ErrorCode.INVALID_REQUEST);
+            }
+        }
     }
 }
