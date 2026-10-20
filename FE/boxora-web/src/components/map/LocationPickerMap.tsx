@@ -16,36 +16,31 @@ interface LocationPickerMapProps {
   onClear?: () => void
 }
 
+/**
+ * High-visibility SVG pin with animated radar pulse
+ */
 const createCustomPinIcon = () =>
   L.divIcon({
     className: 'boxora-map-pin',
     html: `
-      <div style="position: relative; width: 36px; height: 44px; display: flex; align-items: center; justify-content: center;">
-        <div style="
-          width: 34px;
-          height: 34px;
-          background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
-          border: 3px solid #ffffff;
-          border-radius: 50% 50% 50% 0;
-          transform: rotate(-45deg);
-          box-shadow: 0 4px 12px rgba(2, 132, 199, 0.45);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        ">
-          <div style="
-            width: 10px;
-            height: 10px;
-            background: #ffffff;
-            border-radius: 50%;
-            transform: rotate(45deg);
-          "></div>
-        </div>
+      <div style="position: relative; width: 36px; height: 46px; pointer-events: auto;">
+        <div class="boxora-pin-pulse"></div>
+        <svg width="36" height="46" viewBox="0 0 36 46" fill="none" xmlns="http://www.w3.org/2000/svg" style="display: block; filter: drop-shadow(0 4px 10px rgba(2, 132, 199, 0.5));">
+          <path d="M18 0C8.05888 0 0 8.05888 0 18C0 30.5 18 46 18 46C18 46 36 30.5 36 18C36 8.05888 27.9411 0 18 0Z" fill="url(#boxoraPinGrad)"/>
+          <circle cx="18" cy="18" r="8" fill="#ffffff"/>
+          <circle cx="18" cy="18" r="4.5" fill="#0284c7"/>
+          <defs>
+            <linearGradient id="boxoraPinGrad" x1="0" y1="0" x2="36" y2="46" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#0284c7"/>
+              <stop offset="100%" stop-color="#0369a1"/>
+            </linearGradient>
+          </defs>
+        </svg>
       </div>
     `,
-    iconSize: [36, 44],
-    iconAnchor: [18, 44],
-    popupAnchor: [0, -44],
+    iconSize: [36, 46],
+    iconAnchor: [18, 46],
+    popupAnchor: [0, -46],
   })
 
 export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
@@ -76,6 +71,38 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
     setSearchQuery(address)
   }, [address])
 
+  // Direct helper to ensure marker exists, is placed at coordinates, and map pans smoothly
+  const updateMarkerAndMap = (lat: number, lng: number) => {
+    const map = mapInstanceRef.current
+    if (!map) return
+
+    if (!markerRef.current) {
+      const marker = L.marker([lat, lng], {
+        icon: createCustomPinIcon(),
+        draggable: true,
+        zIndexOffset: 1000,
+      }).addTo(map)
+
+      marker.on('dragend', () => {
+        const pos = marker.getLatLng()
+        if (pos) {
+          const newLat = Number(pos.lat.toFixed(6))
+          const newLng = Number(pos.lng.toFixed(6))
+          onChangeRef.current(newLat, newLng)
+        }
+      })
+
+      markerRef.current = marker
+    } else {
+      markerRef.current.setLatLng([lat, lng])
+      if (!map.hasLayer(markerRef.current)) {
+        markerRef.current.addTo(map)
+      }
+    }
+
+    map.flyTo([lat, lng], Math.max(map.getZoom(), 16), { duration: 0.35 })
+  }
+
   // Initialize Leaflet Map
   useEffect(() => {
     if (!mapContainerRef.current) return
@@ -94,48 +121,37 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
     L.control.attribution({ prefix: false, position: 'bottomright' }).addTo(map)
     applyVietnamSovereignty(map)
 
+    mapInstanceRef.current = map
+
+    // If initial coordinates exist, place marker immediately
+    if (latitude != null && longitude != null && Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      updateMarkerAndMap(latitude, longitude)
+    }
+
     // Click anywhere on map to ping/place GPS pin
     map.on('click', (event: L.LeafletMouseEvent) => {
       const lat = Number(event.latlng.lat.toFixed(6))
       const lng = Number(event.latlng.lng.toFixed(6))
+      updateMarkerAndMap(lat, lng)
       onChangeRef.current(lat, lng)
       setSearchResults([])
       setSearchError('')
     })
 
-    mapInstanceRef.current = map
-
     return () => {
       map.remove()
       mapInstanceRef.current = null
+      markerRef.current = null
     }
   }, [])
 
-  // Sync Marker & View when coordinates change
+  // Sync Marker & View when coordinates props change
   useEffect(() => {
     const map = mapInstanceRef.current
     if (!map) return
 
     if (latitude != null && longitude != null && Number.isFinite(latitude) && Number.isFinite(longitude)) {
-      if (!markerRef.current) {
-        const marker = L.marker([latitude, longitude], {
-          icon: createCustomPinIcon(),
-          draggable: true,
-        }).addTo(map)
-
-        marker.on('dragend', () => {
-          const pos = marker.getLatLng()
-          if (pos) {
-            onChangeRef.current(Number(pos.lat.toFixed(6)), Number(pos.lng.toFixed(6)))
-          }
-        })
-
-        markerRef.current = marker
-      } else {
-        markerRef.current.setLatLng([latitude, longitude])
-      }
-
-      map.flyTo([latitude, longitude], Math.max(map.getZoom(), 16), { duration: 0.4 })
+      updateMarkerAndMap(latitude, longitude)
     } else {
       markerRef.current?.remove()
       markerRef.current = null
@@ -176,7 +192,13 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
   }
 
   const selectResult = (result: GeocodingResult) => {
-    onChange(Number(result.lat.toFixed(6)), Number(result.lng.toFixed(6)))
+    const lat = Number(result.lat.toFixed(6))
+    const lng = Number(result.lng.toFixed(6))
+
+    // Place pin and fly map immediately
+    updateMarkerAndMap(lat, lng)
+    onChange(lat, lng)
+
     if (onAddressSelect && result.displayName) {
       onAddressSelect(result.displayName)
     }
@@ -195,7 +217,10 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
         const res = await fetch('https://ipwho.is/', { signal: AbortSignal.timeout(4000) })
         const data = await res.json()
         if (data && data.success && typeof data.latitude === 'number' && typeof data.longitude === 'number') {
-          onChange(Number(data.latitude.toFixed(6)), Number(data.longitude.toFixed(6)))
+          const lat = Number(data.latitude.toFixed(6))
+          const lng = Number(data.longitude.toFixed(6))
+          updateMarkerAndMap(lat, lng)
+          onChange(lat, lng)
           setLocationError(`Đã lấy vị trí gần đúng theo mạng (${data.city || data.region || 'Việt Nam'}). Bạn có thể kéo ghim để tinh chỉnh.`)
           return true
         }
@@ -216,6 +241,7 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
       (pos) => {
         const lat = Number(pos.coords.latitude.toFixed(6))
         const lng = Number(pos.coords.longitude.toFixed(6))
+        updateMarkerAndMap(lat, lng)
         onChange(lat, lng)
         setIsLocating(false)
       },
@@ -228,6 +254,14 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
       },
       { timeout: 5000, enableHighAccuracy: true }
     )
+  }
+
+  const handleClear = () => {
+    markerRef.current?.remove()
+    markerRef.current = null
+    if (onClear) {
+      onClear()
+    }
   }
 
   const hasPin = latitude != null && longitude != null
@@ -342,7 +376,7 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
           {hasPin && onClear && (
             <button
               type="button"
-              onClick={onClear}
+              onClick={handleClear}
               className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[14px]">close</span>
