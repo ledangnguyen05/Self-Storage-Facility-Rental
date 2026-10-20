@@ -79,12 +79,14 @@ public class GeocodingServiceImpl implements GeocodingService {
         }
 
         String prompt = String.format(
-                "Bạn là hệ thống định vị & phân giải địa chỉ Việt Nam chuyên nghiệp. " +
-                "Hãy tìm danh sách từ 1 đến 5 địa điểm / gợi ý địa chỉ GPS (vĩ độ latitude, kinh độ longitude) phù hợp nhất với cụm từ sau:\n" +
+                "Bạn là hệ thống định vị & Geocoding bản đồ GPS Việt Nam có độ chính xác cao như Google Maps và OpenStreetMap.\n" +
+                "Nhiệm vụ: Tìm tọa độ GPS thực tế chính xác (vĩ độ latitude, kinh độ longitude) và tên hiển thị chuẩn xác tại Việt Nam cho truy vấn sau:\n" +
                 "\"%s\"\n\n" +
-                "Quy tắc bắt buộc:\n" +
-                "1. Tọa độ phải nằm trong lãnh thổ Việt Nam (Vĩ độ 8.5 đến 23.4, Kinh độ 102.1 đến 109.5).\n" +
-                "2. Trả về DUY NHẤT một mảng JSON các đối tượng (không có markdown backticks, không dùng ```json hay ```), theo cấu trúc:\n" +
+                "Yêu cầu độ chính xác cao:\n" +
+                "1. Nếu là địa danh cụ thể (trường học, đại học, bệnh viện, tòa nhà, công viên, địa điểm nổi tiếng như Đại học FPT TP.HCM tại Khu Công nghệ cao đường D1 Long Thạnh Mỹ, Landmark 81, v.v.): BẮT BUỘC trả về tọa độ thực tế chính xác của khuôn viên / cổng chính địa điểm đó (ví dụ Đại học FPT TP.HCM là ~10.8414, 106.8100), TUYỆT ĐỐI KHÔNG lấy tọa độ chung chung của tâm Quận hay tâm Phường.\n" +
+                "2. Nếu là số nhà và tên đường: Hãy xác định vị trí chính xác dọc theo tuyến đường thuộc phường/xã, quận/huyện, tỉnh/thành phố tương ứng.\n" +
+                "3. Tọa độ phải nằm trong lãnh thổ Việt Nam (Vĩ độ 8.5 đến 23.4, Kinh độ 102.1 đến 109.5).\n" +
+                "4. Trả về DUY NHẤT một mảng JSON các đối tượng (không có markdown backticks, không dùng ```json hay ```), theo cấu trúc:\n" +
                 "[{\"lat\": number, \"lng\": number, \"displayName\": string, \"type\": string}]",
                 query
         );

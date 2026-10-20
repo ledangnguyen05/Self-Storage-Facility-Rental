@@ -17,30 +17,22 @@ interface LocationPickerMapProps {
 }
 
 /**
- * High-visibility SVG pin with animated radar pulse
+ * High-visibility Gánh Mưu Sinh & Boxora CSS teardrop pin with animated radar pulse
  */
 const createCustomPinIcon = () =>
   L.divIcon({
-    className: 'boxora-map-pin',
+    className: 'picker-marker-icon',
     html: `
-      <div style="position: relative; width: 36px; height: 46px; pointer-events: auto;">
+      <div class="boxora-pin-container">
         <div class="boxora-pin-pulse"></div>
-        <svg width="36" height="46" viewBox="0 0 36 46" fill="none" xmlns="http://www.w3.org/2000/svg" style="display: block; filter: drop-shadow(0 4px 10px rgba(2, 132, 199, 0.5));">
-          <path d="M18 0C8.05888 0 0 8.05888 0 18C0 30.5 18 46 18 46C18 46 36 30.5 36 18C36 8.05888 27.9411 0 18 0Z" fill="url(#boxoraPinGrad)"/>
-          <circle cx="18" cy="18" r="8" fill="#ffffff"/>
-          <circle cx="18" cy="18" r="4.5" fill="#0284c7"/>
-          <defs>
-            <linearGradient id="boxoraPinGrad" x1="0" y1="0" x2="36" y2="46" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stop-color="#0284c7"/>
-              <stop offset="100%" stop-color="#0369a1"/>
-            </linearGradient>
-          </defs>
-        </svg>
+        <div class="gms-marker gms-marker--selected">
+          <span></span>
+        </div>
       </div>
     `,
-    iconSize: [36, 46],
-    iconAnchor: [18, 46],
-    popupAnchor: [0, -46],
+    iconSize: [38, 48],
+    iconAnchor: [19, 44],
+    popupAnchor: [0, -44],
   })
 
 export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
