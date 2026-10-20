@@ -1,10 +1,9 @@
 /**
  * Robust Multi-provider Geocoding Service for Boxora
- * - Primary provider: Boxora Backend AI Geocoding (/api/v1/geocoding/search) powered by Gemini & Vietnam admin dataset
- * - Secondary provider: Photon (OSM Geocoder) with short 3.5s timeout
- * - Tertiary provider: Nominatim (Official OSM) with short 3.5s timeout
- * - Automatic Vietnamese address normalization & progressive query fallback
- * - Explicit location source tracking: EXACT, APPROXIMATE, MANUAL, UNVERIFIED
+ * - Returns list of matches so the user can choose from candidates (like in ganhmuusinh)
+ * - Primary provider: Boxora Backend AI Geocoding (/api/v1/geocoding/search)
+ * - Secondary provider: Photon (OSM Geocoder)
+ * - Tertiary provider: Nominatim (Official OSM)
  */
 
 import { api } from '../lib/axios'
@@ -17,6 +16,7 @@ export interface GeocodingResult {
   displayName: string
   source: GeocodingSource
   provider: 'boxora-ai' | 'photon' | 'nominatim' | 'manual'
+  type?: string
   confidence?: string
 }
 
@@ -27,6 +27,7 @@ export interface GeocodingSuggestion {
   city?: string
   district?: string
   street?: string
+  type?: string
 }
 
 const PHOTON_API_URL = 'https://photon.komoot.io/api/'
@@ -36,7 +37,7 @@ const NOMINATIM_SEARCH_URL = 'https://nominatim.openstreetmap.org/search'
 let requestQueue: Promise<void> = Promise.resolve()
 let nextAllowedRequestAt = 0
 
-const runThrottledRequest = <T>(request: () => Promise<T>, delayMs = 200): Promise<T> => {
+const runThrottledRequest = <T>(request: () => Promise<T>, delayMs = 150): Promise<T> => {
   const queued = requestQueue.then(async () => {
     const waitMs = Math.max(0, nextAllowedRequestAt - Date.now())
     if (waitMs > 0) await new Promise(r => window.setTimeout(r, waitMs))
@@ -78,7 +79,7 @@ const formatPhotonDisplayName = (props: PhotonFeature['properties']): string => 
 /**
  * Stage 1: Query Boxora Backend AI Geocoding
  */
-async function queryBoxoraBackend(query: string, cityHint?: string): Promise<GeocodingResult | null> {
+async function queryBoxoraBackendList(query: string, cityHint?: string): Promise<GeocodingResult[]> {
   try {
     const response = await api.post('/api/v1/geocoding/search', {
       query,
@@ -86,19 +87,30 @@ async function queryBoxoraBackend(query: string, cityHint?: string): Promise<Geo
     }, { timeout: 6000 })
 
     const resData = response.data?.data
-    if (resData && typeof resData.latitude === 'number' && typeof resData.longitude === 'number') {
-      return {
+    if (Array.isArray(resData) && resData.length > 0) {
+      return resData.map((item: any) => ({
+        lat: Number(item.latitude),
+        lng: Number(item.longitude),
+        displayName: item.displayName || query,
+        source: item.source || 'EXACT',
+        provider: 'boxora-ai',
+        type: item.confidence || 'Địa điểm',
+        confidence: item.confidence || 'Định vị chính xác'
+      }))
+    } else if (resData && typeof resData.latitude === 'number' && typeof resData.longitude === 'number') {
+      return [{
         lat: Number(resData.latitude),
         lng: Number(resData.longitude),
         displayName: resData.displayName || query,
         source: resData.source || 'EXACT',
         provider: 'boxora-ai',
+        type: resData.confidence || 'Địa điểm',
         confidence: resData.confidence || 'Định vị chính xác'
-      }
+      }]
     }
-    return null
+    return []
   } catch {
-    return null
+    return []
   }
 }
 
@@ -126,6 +138,7 @@ async function queryPhoton(query: string, limit = 5): Promise<GeocodingResult[]>
         displayName,
         source: isHouseOrBuilding ? 'EXACT' : 'APPROXIMATE',
         provider: 'photon',
+        type: f.properties.type || 'street',
       }
     })
   } catch {
@@ -136,14 +149,14 @@ async function queryPhoton(query: string, limit = 5): Promise<GeocodingResult[]>
 /**
  * Stage 3: Query Nominatim OSM as fallback
  */
-async function queryNominatim(query: string): Promise<GeocodingResult | null> {
+async function queryNominatimList(query: string, limit = 5): Promise<GeocodingResult[]> {
   try {
     const url = new URL(NOMINATIM_SEARCH_URL)
     url.search = new URLSearchParams({
       q: query,
       format: 'jsonv2',
       addressdetails: '1',
-      limit: '1',
+      limit: String(limit),
       countrycodes: 'vn',
     }).toString()
 
@@ -154,25 +167,21 @@ async function queryNominatim(query: string): Promise<GeocodingResult | null> {
       },
       signal: AbortSignal.timeout(3500),
     })
-    if (!response.ok) return null
+    if (!response.ok) return []
     const list = await response.json() as Array<{ lat?: string; lon?: string; display_name?: string; type?: string }>
-    const first = list[0]
-    if (!first?.lat || !first?.lon) return null
-    return {
-      lat: Number(first.lat),
-      lng: Number(first.lon),
-      displayName: first.display_name || query,
-      source: first.type === 'house' ? 'EXACT' : 'APPROXIMATE',
+    return (list || []).filter(item => item.lat && item.lon).map(item => ({
+      lat: Number(item.lat),
+      lng: Number(item.lon),
+      displayName: item.display_name || query,
+      source: item.type === 'house' ? 'EXACT' : 'APPROXIMATE',
       provider: 'nominatim',
-    }
+      type: item.type || 'place',
+    }))
   } catch {
-    return null
+    return []
   }
 }
 
-/**
- * Strip house number for progressive fallback
- */
 function stripHouseNumber(address: string): string | null {
   const cleaned = address.trim()
   const stripped = cleaned.replace(/^\s*(?:số\s*)?\d+[a-zA-Z0-9\/\-\.]*\s*,?\s*/i, '').trim()
@@ -180,72 +189,62 @@ function stripHouseNumber(address: string): string | null {
 }
 
 /**
- * Geocode an address with progressive fallback:
- * 1. Backend AI Geocoding (reliable, high-accuracy VN addresses, fast)
- * 2. Photon Geocoder
- * 3. Stripped street on Photon
- * 4. Nominatim fallback
+ * Search addresses and return a list of candidate results for the user to select
  */
-export async function geocodeAddress(fullAddress: string, cityHint?: string): Promise<GeocodingResult> {
+export async function searchAddressList(fullAddress: string, cityHint?: string): Promise<GeocodingResult[]> {
   const rawQuery = fullAddress.trim()
-  if (!rawQuery) throw new Error('ADDRESS_REQUIRED')
+  if (!rawQuery) return []
 
   const queryWithCity = cityHint && !rawQuery.toLowerCase().includes(cityHint.toLowerCase())
     ? `${rawQuery}, ${cityHint}`
     : rawQuery
 
   return runThrottledRequest(async () => {
-    // 1. Try Backend Geocoding
-    const backendResult = await queryBoxoraBackend(queryWithCity, cityHint)
-    if (backendResult) {
-      return backendResult
+    // 1. Try Backend AI Geocoding (fastest, most accurate for VN addresses)
+    const backendResults = await queryBoxoraBackendList(queryWithCity, cityHint)
+    if (backendResults.length > 0) {
+      return backendResults
     }
 
     // 2. Try Photon
-    const photonResults = await queryPhoton(queryWithCity, 3)
+    const photonResults = await queryPhoton(queryWithCity, 5)
     if (photonResults.length > 0) {
-      return photonResults[0]
+      return photonResults
     }
 
-    // 3. Try stripped street query
+    // 3. Fallback stripped street query
     const fallbackStreetQuery = stripHouseNumber(queryWithCity)
     if (fallbackStreetQuery) {
-      const strippedBackend = await queryBoxoraBackend(fallbackStreetQuery, cityHint)
-      if (strippedBackend) {
-        return {
-          ...strippedBackend,
-          source: 'APPROXIMATE',
-          confidence: 'Định vị theo trục đường'
-        }
+      const strippedBackend = await queryBoxoraBackendList(fallbackStreetQuery, cityHint)
+      if (strippedBackend.length > 0) {
+        return strippedBackend
       }
 
-      const strippedPhoton = await queryPhoton(fallbackStreetQuery, 3)
+      const strippedPhoton = await queryPhoton(fallbackStreetQuery, 5)
       if (strippedPhoton.length > 0) {
-        return {
-          ...strippedPhoton[0],
-          source: 'APPROXIMATE',
-          confidence: 'Định vị theo trục đường'
-        }
+        return strippedPhoton
       }
     }
 
     // 4. Try Nominatim
-    const nomResult = await queryNominatim(queryWithCity)
-    if (nomResult) return nomResult
-
-    if (fallbackStreetQuery) {
-      const nomFallback = await queryNominatim(fallbackStreetQuery)
-      if (nomFallback) {
-        return {
-          ...nomFallback,
-          source: 'APPROXIMATE',
-          confidence: 'Định vị theo trục đường',
-        }
-      }
+    const nomResults = await queryNominatimList(queryWithCity, 5)
+    if (nomResults.length > 0) {
+      return nomResults
     }
 
-    throw new Error('ADDRESS_NOT_FOUND')
+    return []
   })
+}
+
+/**
+ * Single Geocode address with progressive fallback
+ */
+export async function geocodeAddress(fullAddress: string, cityHint?: string): Promise<GeocodingResult> {
+  const list = await searchAddressList(fullAddress, cityHint)
+  if (list.length > 0) {
+    return list[0]
+  }
+  throw new Error('ADDRESS_NOT_FOUND')
 }
 
 /**
@@ -275,6 +274,7 @@ export async function autocompleteAddress(query: string, cityHint?: string): Pro
         city: f.properties.city || f.properties.state,
         district: f.properties.district,
         street: f.properties.street,
+        type: f.properties.type,
       }))
     } catch {
       return []
@@ -289,11 +289,10 @@ export function getGeocodingErrorMessage(error: unknown): string {
   const code = error instanceof Error ? error.message : ''
   if (code === 'ADDRESS_REQUIRED') return 'Vui lòng nhập địa chỉ trước khi tìm kiếm tọa độ.'
   if (code === 'ADDRESS_NOT_FOUND') return 'Không tìm thấy tọa độ cho địa chỉ này. Bạn có thể bấm trực tiếp lên bản đồ hoặc kéo ghim.'
-  if (code.includes('TimeoutError') || code.includes('AbortError')) return 'Thời gian tìm kiếm địa chỉ quá lâu. Vui lòng kiểm tra kết nối mạng và thử lại.'
+  if (code.includes('TimeoutError') || code.includes('AbortError')) return 'Thời gian tìm kiếm địa chỉ quá lâu. Vui lòng thử lại.'
   return 'Chưa thể tìm kiếm tọa độ lúc này. Bạn có thể bấm trực tiếp lên bản đồ để chọn vị trí.'
 }
 
-// Backward compatibility export with existing code
 export const geocodeAddressWithNominatim = async (address: string) => {
   const result = await geocodeAddress(address)
   return {

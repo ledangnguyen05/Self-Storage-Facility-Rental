@@ -3,6 +3,8 @@ package com.boxora.service;
 import com.boxora.dto.request.GeocodeRequest;
 import com.boxora.dto.response.GeocodeResponse;
 
+import java.util.List;
+
 public interface GeocodingService {
-    GeocodeResponse geocode(GeocodeRequest request);
+    List<GeocodeResponse> geocode(GeocodeRequest request);
 }

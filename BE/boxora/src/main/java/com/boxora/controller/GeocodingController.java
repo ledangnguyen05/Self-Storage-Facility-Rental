@@ -12,6 +12,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1/geocoding")
 @Tag(name = "Geocoding", description = "API tìm kiếm và phân giải tọa độ GPS địa chỉ Việt Nam")
@@ -22,14 +24,11 @@ public class GeocodingController {
     private final GeocodingService geocodingService;
 
     @PostMapping("/search")
-    @Operation(summary = "Tìm tọa độ GPS theo tên địa chỉ")
-    public ResponseEntity<ApiResponse<GeocodeResponse>> search(
+    @Operation(summary = "Tìm danh sách tọa độ GPS theo tên địa chỉ")
+    public ResponseEntity<ApiResponse<List<GeocodeResponse>>> search(
             @Valid @RequestBody GeocodeRequest request
     ) {
-        GeocodeResponse response = geocodingService.geocode(request);
-        if (response == null) {
-            return ResponseEntity.ok(ApiResponse.error("Không tìm thấy tọa độ phù hợp cho địa chỉ này"));
-        }
-        return ResponseEntity.ok(ApiResponse.success("Tìm thấy tọa độ GPS thành công", response));
+        List<GeocodeResponse> response = geocodingService.geocode(request);
+        return ResponseEntity.ok(ApiResponse.success("Tìm thấy danh sách tọa độ thành công", response));
     }
 }
