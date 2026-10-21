@@ -1,321 +1,208 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import { useAuth } from '../../../context/AuthContext'
-import { Facility, StorageUnit, UnitType } from '../../../types'
-import { storageUnitService } from '../../../services/storageUnitService'
-import { useLanguage } from '../../../context/LanguageContext'
+import { useMemo, useState, type FormEvent } from 'react'
+import { Alert, Button, DescriptionList, Field, Input, Modal, Select } from '@/components/ui'
+import { useAsyncData } from '@/hooks/useAsyncData'
+import { getApiErrorMessage } from '@/lib/apiError'
+import { formatCurrency, formatNumber } from '@/lib/format'
+import { getUnitTypeLabel } from '@/data/storageUnitsData'
+import { storageUnitService } from '@/services/storageUnitService'
+import type { Facility, StorageUnit } from '@/types'
 
 interface CreateStorageUnitModalProps {
-  isOpen: boolean
-  facilities: Facility[]
-  selectedFacilityId: string
+  open: boolean
   onClose: () => void
+  facilities: Facility[]
+  /** Pre-selected facility (the one the manager is working in). */
+  defaultFacilityId?: string
   onCreated: (unit: StorageUnit) => void
 }
 
-const fieldClassName = 'mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
+const FLOOR_OPTIONS = [
+  { value: 'Tầng 1', label: 'Tầng 1' },
+  { value: 'Tầng 2', label: 'Tầng 2' },
+]
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-  if (typeof error === 'object' && error !== null && 'response' in error) {
-    const response = (error as { response?: { data?: { message?: string } } }).response
-    if (response?.data?.message) return response.data.message
-  }
-  return error instanceof Error ? error.message : fallback
+/** Same rule as the server: letters, digits, dash, underscore or dot, starting with a letter or digit (no spaces, no markup). */
+const UNIT_CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+const UNIT_CODE_MAX_LENGTH = 30
+
+interface FormErrors {
+  unitCode?: string
+  facilityId?: string
+  unitTypeId?: string
+  price?: string
 }
 
-export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
-  isOpen,
-  facilities,
-  selectedFacilityId,
-  onClose,
-  onCreated,
-}) => {
-  const { role, user } = useAuth()
-  const { language, t } = useLanguage()
-  const [unitTypes, setUnitTypes] = useState<UnitType[]>([])
-  const [isLoadingTypes, setIsLoadingTypes] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+/** Adds one storage unit to a facility. Price is optional; the unit type's standard price applies when empty. */
+export function CreateStorageUnitModal(props: CreateStorageUnitModalProps) {
+  if (!props.open) return null
+  return <CreateStorageUnitDialog {...props} />
+}
+
+function CreateStorageUnitDialog({ onClose, facilities, defaultFacilityId, onCreated }: CreateStorageUnitModalProps) {
+  const typesQuery = useAsyncData((signal) => storageUnitService.getUnitTypes({ signal }), [])
+  const unitTypes = useMemo(() => typesQuery.data ?? [], [typesQuery.data])
+
   const [unitCode, setUnitCode] = useState('')
-  const [facilityId, setFacilityId] = useState('')
-  const [unitTypeId, setUnitTypeId] = useState('')
-  const [floorLevel, setFloorLevel] = useState('Tầng 1')
-  const [pricePerMonth, setPricePerMonth] = useState('')
-  const [errorMessage, setErrorMessage] = useState('')
+  const [facilityId, setFacilityId] = useState(defaultFacilityId ?? facilities[0]?.id ?? '')
+  const [chosenTypeId, setChosenTypeId] = useState('')
+  const [floorLevel, setFloorLevel] = useState(FLOOR_OPTIONS[0].value)
+  const [price, setPrice] = useState('')
+  const [errors, setErrors] = useState<FormErrors>({})
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const effectiveFacilityId = user?.facilityId || selectedFacilityId || ''
+  const unitTypeId = chosenTypeId || unitTypes[0]?.id || ''
+  const selectedType = unitTypes.find((type) => type.id === unitTypeId)
 
-  const selectedType = useMemo(
-    () => unitTypes.find(unitType => unitType.id === unitTypeId),
-    [unitTypes, unitTypeId]
-  )
-  const availableFacilities = useMemo(() => {
-    if ((role === 'FACILITY_MANAGER' || role === 'STAFF') && effectiveFacilityId) {
-      const filtered = facilities.filter(facility => facility.id === effectiveFacilityId)
-      if (filtered.length > 0) return filtered
-      if (user?.facilityName) {
-        return [{
-          id: effectiveFacilityId,
-          name: user.facilityName,
-          code: user.facilityCode || 'HCM-D1',
-          address: '',
-          city: '',
-          status: 'ACTIVE' as const,
-          openTime: '',
-          closeTime: '',
-          createdAt: '',
-          updatedAt: ''
-        }]
-      }
+  const validate = (): { values: { code: string; price?: number } } | null => {
+    const next: FormErrors = {}
+    const code = unitCode.trim()
+    if (!code) next.unitCode = 'Nhập mã kho, ví dụ A-101.'
+    else if (code.length > UNIT_CODE_MAX_LENGTH) next.unitCode = `Mã kho tối đa ${UNIT_CODE_MAX_LENGTH} ký tự.`
+    else if (!UNIT_CODE_PATTERN.test(code)) next.unitCode = 'Mã kho chỉ gồm chữ cái, chữ số, dấu gạch ngang, gạch dưới hoặc dấu chấm, không có khoảng trắng.'
+    if (!facilityId) next.facilityId = 'Chọn cơ sở.'
+    if (!unitTypeId) next.unitTypeId = 'Chọn loại kho.'
+    let customPrice: number | undefined
+    if (price.trim()) {
+      customPrice = Number(price)
+      if (!Number.isFinite(customPrice) || customPrice <= 0) next.price = 'Giá thuê phải lớn hơn 0.'
     }
-    return facilities.length > 0 ? facilities : []
-  }, [facilities, role, effectiveFacilityId, user?.facilityName, user?.facilityCode])
-
-  useEffect(() => {
-    if (!isOpen) return
-
-    setUnitCode('')
-    setUnitTypeId('')
-    setFloorLevel('Tầng 1')
-    setPricePerMonth('')
-    setErrorMessage('')
-    const initialFac = effectiveFacilityId || availableFacilities[0]?.id || facilities[0]?.id || ''
-    setFacilityId(initialFac)
-    setIsLoadingTypes(true)
-
-    storageUnitService.getUnitTypes()
-      .then(types => {
-        const availableTypes = Array.isArray(types) ? types : []
-        setUnitTypes(availableTypes)
-        if (availableTypes.length > 0) {
-          setUnitTypeId(availableTypes[0].id)
-        }
-      })
-      .catch(error => {
-        setUnitTypes([])
-        setErrorMessage(getErrorMessage(error, t('Không thể tải danh sách loại kho.', 'Could not load storage types.')))
-      })
-      .finally(() => setIsLoadingTypes(false))
-  }, [isOpen, effectiveFacilityId])
-
-  useEffect(() => {
-    if (isOpen && !facilityId) {
-      const resolved = effectiveFacilityId || availableFacilities[0]?.id || facilities[0]?.id || ''
-      if (resolved) {
-        setFacilityId(resolved)
-      }
-    }
-  }, [isOpen, facilityId, availableFacilities, effectiveFacilityId, facilities])
-
-  const close = () => {
-    if (!isSubmitting) onClose()
+    setErrors(next)
+    return Object.keys(next).length > 0 ? null : { values: { code, price: customPrice } }
   }
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
-    setErrorMessage('')
-
-    const trimmedCode = unitCode.trim()
-    if (!trimmedCode) {
-      setErrorMessage(t('Vui lòng nhập mã kho.', 'Enter a storage unit code.'))
-      return
-    }
-    const targetFacility = facilityId || effectiveFacilityId || availableFacilities[0]?.id || facilities[0]?.id
-    if (!targetFacility) {
-      setErrorMessage(t('Chưa có cơ sở để thêm kho.', 'No facility is available for this storage unit.'))
-      return
-    }
-    if (!unitTypeId) {
-      setErrorMessage(t('Vui lòng chọn loại kho.', 'Select a storage type.'))
-      return
-    }
-
-    const customPrice = pricePerMonth.trim() ? Number(pricePerMonth) : undefined
-    if (customPrice !== undefined && (!Number.isFinite(customPrice) || customPrice <= 0)) {
-      setErrorMessage(t('Giá thuê phải lớn hơn 0.', 'Monthly rent must be greater than 0.'))
-      return
-    }
-
+    // A server error from the previous attempt must not stay on screen next to fresh field errors.
+    setSubmitError(null)
+    const result = validate()
+    if (!result) return
     setIsSubmitting(true)
     try {
-      const createdUnit = await storageUnitService.createUnit({
-        unitCode: trimmedCode,
+      const created = await storageUnitService.createUnit({
+        unitCode: result.values.code,
         floorLevel,
         facilityId,
         unitTypeId,
-        ...(customPrice !== undefined ? { pricePerMonth: customPrice } : {}),
+        ...(result.values.price !== undefined ? { pricePerMonth: result.values.price } : {}),
       })
-      onCreated(createdUnit)
-      onClose()
+      onCreated(created)
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, t('Không thể thêm kho. Vui lòng thử lại.', 'Could not add the storage unit. Please try again.')))
+      setSubmitError(getApiErrorMessage(error, 'Không thể thêm kho. Vui lòng thử lại.'))
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  if (!isOpen) return null
-
-  const formatVnd = (amount: number) => new Intl.NumberFormat(language === 'vi' ? 'vi-VN' : 'en-US', {
-    maximumFractionDigits: 0,
-  }).format(amount) + (language === 'vi' ? ' ₫' : ' VND')
-
   return (
-    <div
-      className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
-      onMouseDown={event => {
-        if (event.target === event.currentTarget) close()
-      }}
-    >
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="create-storage-unit-title"
-        className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
-      >
-        <header className="flex items-start justify-between border-b border-slate-200 px-6 py-5 dark:border-slate-700">
-          <div className="flex items-start gap-3">
-            <span className="material-symbols-outlined rounded-xl bg-blue-50 p-2 text-blue-700 dark:bg-blue-950 dark:text-blue-300">warehouse</span>
-            <div>
-              <h2 id="create-storage-unit-title" className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                {t('Thêm kho mới', 'Add a storage unit')}
-              </h2>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {t('Nhập thông tin kho để đưa vào danh sách của cơ sở.', 'Enter the unit details to add it to a facility.')}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={close}
-            disabled={isSubmitting}
-            aria-label={t('Đóng', 'Close')}
-            className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+    <Modal
+      open
+      onClose={onClose}
+      dismissible={!isSubmitting}
+      title="Tạo kho mới"
+      description="Nhập thông tin kho để đưa vào danh sách của cơ sở."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>
+            Hủy
+          </Button>
+          <Button
+            type="submit"
+            form="create-storage-unit-form"
+            loading={isSubmitting}
+            disabled={typesQuery.isLoading || unitTypes.length === 0}
           >
-            <span className="material-symbols-outlined">close</span>
-          </button>
-        </header>
+            Tạo kho
+          </Button>
+        </>
+      }
+    >
+      <form id="create-storage-unit-form" onSubmit={(event) => void handleSubmit(event)} className="flex flex-col gap-4" noValidate>
+        {submitError ? (
+          <Alert tone="danger" title="Không thể tạo kho" onDismiss={() => setSubmitError(null)}>
+            {submitError}
+          </Alert>
+        ) : null}
+        {typesQuery.error ? (
+          <Alert
+            tone="danger"
+            title="Không tải được danh sách loại kho"
+            action={
+              <Button size="sm" variant="secondary" onClick={() => void typesQuery.reload()}>
+                Thử lại
+              </Button>
+            }
+          >
+            {getApiErrorMessage(typesQuery.error)}
+          </Alert>
+        ) : null}
 
-        <form onSubmit={handleSubmit} className="space-y-4 p-6">
-          {errorMessage && (
-            <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-200">
-              {errorMessage}
-            </div>
-          )}
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              {t('Mã kho', 'Storage unit code')} <span className="text-rose-600">*</span>
-              <input
-                autoFocus
-                required
-                maxLength={40}
-                value={unitCode}
-                onChange={event => setUnitCode(event.target.value)}
-                placeholder={t('Ví dụ: A-101', 'Example: A-101')}
-                className={fieldClassName}
-              />
-            </label>
-
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              {t('Cơ sở', 'Facility')} <span className="text-rose-600">*</span>
-              <select
-                required
-                value={facilityId}
-                onChange={event => setFacilityId(event.target.value)}
-                className={fieldClassName}
-              >
-                <option value="" disabled>{t('Chọn cơ sở', 'Select a facility')}</option>
-                {availableFacilities.map(facility => (
-                  <option key={facility.id} value={facility.id}>{facility.name}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              {t('Loại kho', 'Storage type')} <span className="text-rose-600">*</span>
-              <select
-                required
-                value={unitTypeId}
-                onChange={event => setUnitTypeId(event.target.value)}
-                disabled={isLoadingTypes || unitTypes.length === 0}
-                className={fieldClassName}
-              >
-                <option value="">
-                  {isLoadingTypes
-                    ? t('Đang tải loại kho...', 'Loading storage types...')
-                    : t('Chọn loại kho', 'Select a storage type')}
-                </option>
-                {unitTypes.map(unitType => (
-                  <option key={unitType.id} value={unitType.id}>{unitType.typeName}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              {t('Tầng', 'Floor')} <span className="text-rose-600">*</span>
-              <select
-                required
-                value={floorLevel}
-                onChange={event => setFloorLevel(event.target.value)}
-                className={fieldClassName}
-              >
-                <option value="Tầng 1">{t('Tầng 1', 'Floor 1')}</option>
-                <option value="Tầng 2">{t('Tầng 2', 'Floor 2')}</option>
-              </select>
-            </label>
-          </div>
-
-          {selectedType && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-semibold text-slate-800 dark:text-slate-100">{selectedType.typeName}</span>
-                <span>{selectedType.areaSqm} m² · {selectedType.dimensions}</span>
-              </div>
-              <p className="mt-1">{t('Giá chuẩn theo tháng:', 'Standard monthly price:')} <strong>{formatVnd(selectedType.basePricePerMonth)}</strong></p>
-            </div>
-          )}
-
-          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-            {t('Giá thuê riêng theo tháng (₫, không bắt buộc)', 'Custom monthly rent (VND, optional)')}
-            <input
-              type="number"
-              min="1"
-              step="1000"
-              value={pricePerMonth}
-              onChange={event => setPricePerMonth(event.target.value)}
-              placeholder={selectedType ? String(selectedType.basePricePerMonth) : t('Để trống để dùng giá chuẩn', 'Leave blank to use the standard price')}
-              className={fieldClassName}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Mã kho" required error={errors.unitCode}>
+            <Input
+              value={unitCode}
+              onChange={(event) => {
+                setUnitCode(event.target.value)
+                setErrors((current) => (current.unitCode ? { ...current, unitCode: undefined } : current))
+              }}
+              maxLength={UNIT_CODE_MAX_LENGTH}
+              placeholder="Ví dụ: A-101"
+              className="font-mono"
             />
-            <span className="mt-1 block font-normal text-slate-500 dark:text-slate-400">
-              {t('Để trống nếu áp dụng giá chuẩn của loại kho đã chọn.', 'Leave blank to use the selected storage type’s standard price.')}
-            </span>
-          </label>
+          </Field>
+          <Field label="Tầng" required hint="Tầng quyết định vị trí kho trên sơ đồ, không phụ thuộc mã kho.">
+            <Select value={floorLevel} onChange={(event) => setFloorLevel(event.target.value)} options={FLOOR_OPTIONS} />
+          </Field>
+          <Field label="Cơ sở" required error={errors.facilityId}>
+            <Select
+              value={facilityId}
+              onChange={(event) => setFacilityId(event.target.value)}
+              disabled={facilities.length <= 1}
+              placeholder="Chọn cơ sở"
+              options={facilities.map((facility) => ({ value: facility.id, label: facility.name }))}
+            />
+          </Field>
+          <Field label="Loại kho" required error={errors.unitTypeId}>
+            <Select
+              value={unitTypeId}
+              onChange={(event) => setChosenTypeId(event.target.value)}
+              disabled={typesQuery.isLoading || unitTypes.length === 0}
+              placeholder={typesQuery.isLoading ? 'Đang tải loại kho…' : 'Chọn loại kho'}
+              options={unitTypes.map((type) => ({ value: type.id, label: getUnitTypeLabel(type.typeName) }))}
+            />
+          </Field>
+        </div>
 
-          {!isLoadingTypes && unitTypes.length === 0 && !errorMessage && (
-            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-              {t('Hiện chưa có loại kho để lựa chọn.', 'There are no storage types available to choose from.')}
-            </p>
-          )}
+        {selectedType ? (
+          <div className="rounded-lg border border-line bg-surface-2 p-3">
+            <DescriptionList
+              columns={3}
+              items={[
+                { label: 'Diện tích', value: `${formatNumber(selectedType.areaSqm)} m²` },
+                { label: 'Kích thước', value: selectedType.dimensions },
+                { label: 'Giá chuẩn mỗi tháng', value: formatCurrency(selectedType.basePricePerMonth) },
+              ]}
+            />
+          </div>
+        ) : null}
 
-          <footer className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end dark:border-slate-800">
-            <button
-              type="button"
-              onClick={close}
-              disabled={isSubmitting}
-              className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-            >
-              {t('Hủy', 'Cancel')}
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || isLoadingTypes || !facilityId || !unitTypes.length}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isSubmitting && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
-              {isSubmitting ? t('Đang lưu...', 'Saving...') : t('Thêm kho', 'Add unit')}
-            </button>
-          </footer>
-        </form>
-      </section>
-    </div>
+        {!typesQuery.isLoading && !typesQuery.error && unitTypes.length === 0 ? (
+          <Alert tone="warning">Hệ thống chưa có loại kho nào để chọn.</Alert>
+        ) : null}
+
+        <Field label="Giá thuê riêng mỗi tháng (₫)" optional error={errors.price} hint="Để trống để dùng giá chuẩn của loại kho.">
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            step={1000}
+            value={price}
+            onChange={(event) => setPrice(event.target.value)}
+            placeholder={selectedType ? String(selectedType.basePricePerMonth) : undefined}
+            className="tabular-nums"
+          />
+        </Field>
+      </form>
+    </Modal>
   )
 }
