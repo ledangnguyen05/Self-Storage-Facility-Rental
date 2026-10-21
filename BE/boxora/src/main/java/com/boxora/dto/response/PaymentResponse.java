@@ -26,6 +26,12 @@ public class PaymentResponse {
     private String customerName;
 
     private BigDecimal amount;
+    /**
+     * Part of {@code amount} that is security deposit: the whole amount of a DEPOSIT payment, the deposit share of an online
+     * BOOKING_PAYMENT (which pays deposit and first month together), 0 otherwise. The cashier ledger uses it to split deposit
+     * from rent.
+     */
+    private BigDecimal depositPortion;
     private PaymentType paymentType;
     private PaymentStatus status;
     private String paymentMethod;
@@ -41,4 +47,19 @@ public class PaymentResponse {
     private String confirmedByName;
     private LocalDateTime confirmedAt;
     private String paymentNotes;
+
+    private String contractCode;
+    private BigDecimal lateFeeAmount;
+    private BigDecimal overdueRentAmount;
+    private Integer extensionDays;
+    private Integer renewalMonths;
+    private LocalDateTime createdAt;
+
+    /** VNPay result code of the gateway return (00 = success); null for counter payments. */
+    private String gatewayResponseCode;
+    private String gatewayTransactionStatus;
+    /** Vietnamese reason of a FAILED online payment, e.g. "Bạn đã hủy giao dịch (mã 24)." */
+    private String failureReason;
+    /** True when the bank may have debited the customer although the payment did not succeed. */
+    private Boolean mayHaveBeenCharged;
 }

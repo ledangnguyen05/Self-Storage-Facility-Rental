@@ -22,4 +22,7 @@ public class SupportTicketContactLogRequest {
     private String summary;
 
     private String result; // Kết quả trao đổi / hướng chỉ đạo từ BOM
+
+    /** Vai trò người được liên hệ: BUSINESS_MANAGER (mặc định) hoặc ADMIN. */
+    private String targetRole;
 }

@@ -9,7 +9,7 @@ import lombok.*;
 @Builder
 public class RolePermissionUpdateRequest {
 
-    @Size(max = 255, message = "Description must not exceed 255 characters")
+    @Size(max = 255, message = "Ghi chú tối đa 255 ký tự")
     private String description;
 
     private Boolean isActive;

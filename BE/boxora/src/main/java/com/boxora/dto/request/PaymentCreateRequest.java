@@ -13,17 +13,21 @@ import java.util.UUID;
 @Builder
 public class PaymentCreateRequest {
 
+    @NotNull(message = "Vui lòng chọn đơn đặt kho cần thanh toán")
     private UUID bookingId;
 
     private UUID contractId;
 
-    @NotNull(message = "Payment type is required")
+    /** Only BOOKING_PAYMENT is accepted online; defaults to BOOKING_PAYMENT. */
     private PaymentType paymentType;
 
-    @NotNull(message = "Amount is required")
-    @DecimalMin(value = "1000", message = "Amount must be at least 1,000 VND")
+    /**
+     * Optional amount the customer saw. The server always charges its own computed amount and rejects the
+     * request when this differs by more than 1.000 VND (the price changed since the page was loaded).
+     */
+    @DecimalMin(value = "0", message = "Số tiền không hợp lệ")
     private BigDecimal amount;
 
-    @Size(max = 255, message = "Order info must not exceed 255 characters")
+    @Size(max = 255, message = "Nội dung thanh toán tối đa 255 ký tự")
     private String orderInfo;
 }

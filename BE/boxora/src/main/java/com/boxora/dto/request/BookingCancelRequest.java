@@ -16,7 +16,7 @@ public class BookingCancelRequest {
     @Size(max = 100, message = "Tên ngân hàng không được vượt quá 100 ký tự")
     private String bankName;
 
-    @Size(max = 50, message = "Số tài khoản không được vượt quá 50 ký tự")
+    @jakarta.validation.constraints.Pattern(regexp = "^[0-9 ]{0,24}$", message = "Số tài khoản chỉ gồm 6 đến 20 chữ số")
     private String bankAccountNumber;
 
     @Size(max = 100, message = "Tên chủ tài khoản không được vượt quá 100 ký tự")

@@ -80,4 +80,19 @@ public class SealingRecordResponse {
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    // Printable protocol details
+    private String facilityAddress;
+    private String facilityPhone;
+    private java.time.LocalDate contractStartDate;
+    private java.time.LocalDate contractEndDate;
+    private String sealedByRole;
+    private String witnessRole;
+
+    /** True only when the notice email was accepted by the mail server; null when no email applies. */
+    private Boolean customerNotified;
+    /** Vietnamese explanation of the email outcome (sent to whom, or why not). */
+    private String notificationMessage;
+    /** After unsealing: what happened to the tenant access. */
+    private AccessRestorationResponse accessRestoration;
 }

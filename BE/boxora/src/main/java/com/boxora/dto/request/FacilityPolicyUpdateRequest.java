@@ -15,42 +15,55 @@ public class FacilityPolicyUpdateRequest {
 
     private Boolean isActive;
 
-    @DecimalMin(value = "0.0") @DecimalMax(value = "100.0")
+    @DecimalMin(value = "0.0", message = "Tỷ lệ tiền cọc từ 0 đến 100%")
+    @DecimalMax(value = "100.0", message = "Tỷ lệ tiền cọc từ 0 đến 100%")
     private Double depositPercentage;
 
-    @Min(0)
+    @Min(value = 0, message = "Số ngày mở gia hạn không được âm")
+    @Max(value = 365, message = "Số ngày mở gia hạn tối đa 365")
     private Integer renewalWindowDays;
 
-    @Min(0)
+    @Min(value = 0, message = "Số giờ gia hạn giữ chỗ không được âm")
+    @Max(value = 168, message = "Số giờ gia hạn giữ chỗ tối đa 168")
+    private Integer holdGraceHours;
+
+    @Min(value = 1, message = "Số ngày giữ chỗ tối thiểu là 1")
+    @Max(value = 90, message = "Số ngày giữ chỗ tối đa 90")
+    private Integer maxHoldDays;
+
+    @Min(value = 0, message = "Số giờ không được âm")
     private Integer cancellationFullRefundHours;
 
-    @Min(0)
+    @Min(value = 0, message = "Số giờ không được âm")
     private Integer cancellationPartialRefundHours;
 
-    @DecimalMin(value = "0.0") @DecimalMax(value = "100.0")
+    @DecimalMin(value = "0.0", message = "Tỷ lệ hoàn từ 0 đến 100%")
+    @DecimalMax(value = "100.0", message = "Tỷ lệ hoàn từ 0 đến 100%")
     private Double cancellationPartialRefundPercent;
 
-    @Min(0)
+    @Min(value = 0, message = "Số ngày không được âm")
     private Integer returnNoticeDays;
 
-    @Min(0)
+    @Min(value = 0, message = "Số ngày không được âm")
     private Integer depositRefundSlaDays;
 
-    @DecimalMin(value = "0.0")
+    @DecimalMin(value = "0.0", message = "Phí quá hạn không được âm")
     private BigDecimal dailyLateFee;
 
-    @Min(0)
+    @Min(value = 0, message = "Số ngày không được âm")
     private Integer overdueGraceDays;
 
-    @Min(0)
+    @Min(value = 0, message = "Số ngày không được âm")
     private Integer overdueAccessDisableDays;
 
-    @Min(0)
+    @Min(value = 0, message = "Số ngày không được âm")
     private Integer overdueSealingDays;
 
-    @Min(1)
+    @Min(value = 1, message = "Thời hạn thuê tối thiểu là 1 tháng")
+    @Max(value = 36, message = "Thời hạn thuê tối thiểu tối đa 36 tháng")
     private Integer minimumRentalMonths;
 
+    /** Khi gửi lên (kể cả danh sách rỗng), thay thế toàn bộ bảng giá riêng của cơ sở. Bỏ trống = giữ nguyên. */
     @Valid
     private List<FacilityPolicyPriceRequest> prices;
 }

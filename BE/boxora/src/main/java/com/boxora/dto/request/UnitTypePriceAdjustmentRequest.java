@@ -19,15 +19,15 @@ import java.time.LocalDateTime;
 @Schema(description = "Yêu cầu điều chỉnh giá loại kho theo quy tắc BR-RULE-011")
 public class UnitTypePriceAdjustmentRequest {
 
-    @NotNull(message = "New price is mandatory")
-    @Positive(message = "Price must be greater than zero")
+    @NotNull(message = "Nhập đơn giá mới")
+    @Positive(message = "Đơn giá phải lớn hơn 0")
     @Schema(description = "Đơn giá mới mỗi tháng (VNĐ)", example = "500000.00")
     private BigDecimal newPrice;
 
     @Schema(description = "Thời điểm giá mới bắt đầu có hiệu lực (mặc định là hiện tại)", example = "2026-10-10T00:00:00")
     private LocalDateTime effectiveFrom;
 
-    @NotBlank(message = "Reason for price adjustment is mandatory under BR-RULE-011")
+    @NotBlank(message = "Nhập lý do điều chỉnh giá (BR-RULE-011)")
     @Schema(description = "Lý do điều chỉnh giá (bắt buộc theo quy định BR-RULE-011)",
             example = "Cập nhật giá niêm yết chuẩn theo chiến lược kinh doanh quý 4")
     private String reason;

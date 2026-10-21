@@ -10,13 +10,13 @@ import lombok.*;
 @Builder
 public class ChangePasswordRequest {
 
-    @NotBlank(message = "Old password is required")
+    @NotBlank(message = "Vui lòng nhập mật khẩu hiện tại")
     private String oldPassword;
 
-    @NotBlank(message = "New password is required")
-    @Size(min = 5, message = "New password must be greater than 5 characters")
+    @NotBlank(message = "Vui lòng nhập mật khẩu mới")
+    @Size(min = 5, max = 72, message = "Mật khẩu mới cần từ 5 đến 72 ký tự")
     private String newPassword;
 
-    @NotBlank(message = "Confirm password is required")
+    @NotBlank(message = "Vui lòng nhập lại mật khẩu mới")
     private String confirmPassword;
 }

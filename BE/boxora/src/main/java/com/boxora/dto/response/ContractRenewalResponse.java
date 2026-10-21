@@ -26,6 +26,7 @@ public class ContractRenewalResponse {
     private String customerName;
     private String customerEmail;
 
+    private UUID facilityId;
     private String facilityName;
     private String unitCode;
 
@@ -33,6 +34,10 @@ public class ContractRenewalResponse {
     private LocalDate newEndDate;
     private Integer cycleMonths;
     private BigDecimal renewalFee;
+    /** Rent of the renewal cycle (pricing quote). */
+    private BigDecimal rentalFeeAmount;
+    /** Late fee of an overdue contract included in renewalFee. */
+    private BigDecimal lateFeeAmount;
 
     private ContractRenewalStatus status;
 
@@ -44,6 +49,14 @@ public class ContractRenewalResponse {
     private String signingUrl;
     private String signedDocumentUrl;
     private LocalDateTime signedAt;
+    /** DOCUSEAL or IN_APP_TEST. */
+    private String signingMethod;
+    /** True when the addendum is signed in-app because DocuSeal is not configured (test environment). */
+    private Boolean signingSimulated;
+    private Boolean paid;
+    private Boolean signed;
+    private LocalDateTime cancelledAt;
+    private String cancelReason;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

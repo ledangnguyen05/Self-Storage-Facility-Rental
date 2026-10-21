@@ -40,5 +40,10 @@ public class SupportTicketResponse {
     private LocalDateTime resolvedAt;
     private LocalDateTime closedAt;
     private Integer contactLogCount;
+    /** Số lần phiếu được mở lại để xử lý lại */
+    private Integer reopenCount;
+    /** Lý do của lần mở lại gần nhất */
+    private String reopenReason;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }

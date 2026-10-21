@@ -10,7 +10,7 @@ import lombok.*;
 @Builder
 public class GoogleLoginRequest {
 
-    @NotBlank(message = "Google ID Token is required")
+    @NotBlank(message = "Thiếu mã xác thực Google")
     private String idToken;
 
     /**

@@ -13,26 +13,26 @@ import java.util.UUID;
 @Builder
 public class MasterKeyOverrideRequest {
 
-    @NotNull(message = "Facility id is required")
+    @NotNull(message = "Vui lòng chọn cơ sở")
     private UUID facilityId;
 
-    @NotNull(message = "Override category is required")
+    @NotNull(message = "Vui lòng chọn loại tình huống")
     private MasterKeyOverrideCategory category;
 
-    @NotNull(message = "Override severity is required")
+    @NotNull(message = "Vui lòng chọn mức độ khẩn cấp")
     private OverrideSeverity severity;
 
-    @NotNull(message = "Witness staff id is required")
+    @NotNull(message = "Vui lòng chọn người chứng kiến")
     private UUID witnessUserId;
 
-    @NotBlank(message = "Witness password is required to verify identity for the two-person rule")
+    @NotBlank(message = "Người chứng kiến cần nhập mật khẩu của mình để xác nhận")
     private String witnessPassword;
 
-    @NotBlank(message = "Reason is required")
-    @Size(max = 500, message = "Reason must not exceed 500 characters")
+    @NotBlank(message = "Vui lòng nhập lý do sử dụng chìa khóa tổng")
+    @Size(max = 500, message = "Lý do tối đa 500 ký tự")
     private String reason;
 
-    @Size(max = 100, message = "Document reference must not exceed 100 characters")
+    @Size(max = 100, message = "Số văn bản tham chiếu tối đa 100 ký tự")
     private String documentReference;
 
     // optional - what the override was used to access (e.g., STORAGE_UNIT)

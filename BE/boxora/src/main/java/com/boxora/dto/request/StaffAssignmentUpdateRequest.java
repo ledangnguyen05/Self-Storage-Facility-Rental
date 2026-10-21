@@ -19,11 +19,11 @@ public class StaffAssignmentUpdateRequest {
     @Schema(description = "Ca trực thay đổi (MORNING, AFTERNOON, NIGHT, FULL_DAY)", example = "AFTERNOON")
     private StaffShift shift;
 
-    @Size(max = 50, message = "Assigned zone must not exceed 50 characters")
+    @Size(max = 50, message = "Khu vực phụ trách tối đa 50 ký tự")
     @Schema(description = "Khu vực trực được giao cập nhật", example = "Zone B - Floor 2")
     private String assignedZone;
 
-    @Size(max = 50, message = "Role in shift must not exceed 50 characters")
+    @Size(max = 50, message = "Vai trò trong ca tối đa 50 ký tự")
     @Schema(description = "Vai trò trong ca", example = "PRIMARY_STAFF")
     private String roleInShift;
 

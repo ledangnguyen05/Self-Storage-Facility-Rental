@@ -10,11 +10,11 @@ import lombok.*;
 @Builder
 public class RoleUpdateRequest {
 
-    @NotNull(message = "Role name is required")
-    @Size(min = 2, max=50, message = "Role name must be between 2 and 50 characters")
+    @NotNull(message = "Vui lòng nhập tên vai trò")
+    @Size(min = 2, max = 50, message = "Tên vai trò cần từ 2 đến 50 ký tự")
     private String name;
 
-    @Size(max = 255, message = "Description must not exceed 255 characters")
+    @Size(max = 255, message = "Mô tả tối đa 255 ký tự")
     private String description;
 
     private Boolean isActive;

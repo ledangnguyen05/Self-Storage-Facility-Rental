@@ -17,4 +17,8 @@ public class RefundTransferRequest {
 
     @Size(max = 500, message = "Ghi chú không được quá 500 ký tự")
     private String transferNotes;
+
+    /** URL returned by POST /refunds/{id}/transfer-evidence (bank transfer slip), optional. */
+    @Size(max = 500, message = "Đường dẫn minh chứng tối đa 500 ký tự")
+    private String transferEvidenceUrl;
 }

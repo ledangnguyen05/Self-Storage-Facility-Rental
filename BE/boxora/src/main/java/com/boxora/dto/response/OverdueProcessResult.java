@@ -6,33 +6,47 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Schema(description = "Kết quả thực thi quy trình quét và xử lý hợp đồng quá hạn (+1 phạt 5%, +3 khóa PIN, +7 niêm phong)")
+@Schema(description = "Kết quả một lượt xử lý quá hạn theo chính sách của từng cơ sở (ân hạn, phí trễ hạn, khóa truy cập, mốc niêm phong)")
 public class OverdueProcessResult {
 
-    @Schema(description = "Thời điểm quét", example = "2026-10-07T01:00:00")
+    @Schema(description = "Thời điểm chạy")
     private LocalDateTime executionTime;
 
-    @Schema(description = "Tổng số hợp đồng đang quá hạn được phát hiện", example = "5")
+    @Schema(description = "Ngày dùng để tính số ngày quá hạn")
+    private LocalDate asOfDate;
+
+    @Schema(description = "Cơ sở được xử lý; null khi xử lý toàn hệ thống")
+    private UUID facilityId;
+
+    @Schema(description = "Số hợp đồng quá hạn đã quét")
     private int scannedOverdueContractsCount;
 
-    @Schema(description = "Số trường hợp áp dụng phạt 5% (+1 ngày)", example = "5")
-    private int latePenaltyCount;
+    @Schema(description = "Số hợp đồng được ghi nhận/cập nhật phí trễ hạn")
+    private int lateFeeAssessedCount;
 
-    @Schema(description = "Số trường hợp bị khóa mã PIN truy cập (+3 ngày)", example = "3")
+    @Schema(description = "Số hợp đồng bị khóa truy cập trong lượt này")
     private int pinDisabledCount;
 
-    @Schema(description = "Số trường hợp lập biên bản niêm phong kho BR-RULE-012 (+7 ngày)", example = "1")
-    private int sealedUnitsCount;
+    @Schema(description = "Số hợp đồng vừa đến mốc niêm phong (chờ quản lý lập biên bản)")
+    private int sealingEligibleCount;
 
-    @Schema(description = "Danh sách chi tiết từng ca xử lý quá hạn")
+    @Schema(description = "Số hợp đồng đã gia hạn được tự động mở lại quyền truy cập")
+    private int accessRestoredCount;
+
+    @Schema(description = "Số hợp đồng không bị khóa lại vì đang trong thời gian giữ quyền truy cập do quản lý cho phép")
+    private int onHoldCount;
+
+    @Schema(description = "Chi tiết từng hợp đồng")
     @Builder.Default
     private List<OverdueContractDetail> details = new ArrayList<>();
 }

@@ -10,7 +10,7 @@ import lombok.*;
 @Builder
 public class RefundProcessRequest {
 
-    @NotBlank(message = "transactionReference is required (mã giao dịch ngân hàng / VNPay)")
+    @NotBlank(message = "Vui lòng nhập mã giao dịch ngân hàng của khoản hoàn tiền")
     private String transactionReference;
 
     private String processNotes;

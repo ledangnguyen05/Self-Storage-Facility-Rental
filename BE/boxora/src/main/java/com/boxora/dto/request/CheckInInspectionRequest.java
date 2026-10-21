@@ -13,7 +13,7 @@ import java.util.UUID;
 @Builder
 public class CheckInInspectionRequest {
 
-    @NotNull(message = "Booking ID is required")
+    @NotNull(message = "Thiếu mã đơn đặt kho")
     private UUID bookingId;
 
     private Boolean doorConditionPassed;

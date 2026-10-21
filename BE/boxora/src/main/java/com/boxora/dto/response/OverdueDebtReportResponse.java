@@ -6,6 +6,11 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
+/**
+ * Báo cáo công nợ quá hạn. {@code totalOverdueCount}/{@code totalDebtAmount} tính mọi khoản đã qua hạn hợp đồng
+ * (kể cả đang trong thời gian ân hạn); phần chưa vượt ân hạn được tách riêng trong {@code gracePeriodDebt},
+ * còn {@code delinquentDebtAmount} là nợ đã vượt ân hạn (số nên hiển thị là "nợ quá hạn").
+ */
 @Getter
 @Setter
 @NoArgsConstructor
@@ -17,6 +22,15 @@ public class OverdueDebtReportResponse {
     private BigDecimal totalDebtAmount;
     private BigDecimal totalUnpaidRent;
     private BigDecimal totalLateFees;
+
+    /** Nợ của các khoản vẫn trong thời gian ân hạn (chưa tính là nợ quá hạn). */
+    private BigDecimal gracePeriodDebt;
+    /** Số khoản đã vượt thời gian ân hạn. */
+    private long delinquentCount;
+    /** totalDebtAmount - gracePeriodDebt. */
+    private BigDecimal delinquentDebtAmount;
+    /** Số kho đang bị khóa thực tế (đã thu hồi PIN/QR, khóa hoặc niêm phong). */
+    private long lockedUnitCount;
 
     private long gracePeriodCount;
     private long warningCount;

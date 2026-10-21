@@ -15,7 +15,7 @@ import lombok.NoArgsConstructor;
 @Schema(description = "Yêu cầu cập nhật nhanh trạng thái ca trực (Check-in, Hoàn thành, Vắng mặt)")
 public class StaffAssignmentStatusUpdateRequest {
 
-    @NotNull(message = "Status is mandatory")
+    @NotNull(message = "Vui lòng chọn trạng thái ca trực")
     @Schema(description = "Trạng thái ca trực (ASSIGNED, CHECKED_IN, COMPLETED, ABSENT)", example = "CHECKED_IN")
     private StaffAssignmentStatus status;
 

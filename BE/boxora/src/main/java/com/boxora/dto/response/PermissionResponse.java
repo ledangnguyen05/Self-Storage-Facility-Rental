@@ -13,7 +13,8 @@ public class PermissionResponse {
     private String name;
     private String permissionGroup;
     private String description;
-    private boolean isActive;
+    /** Boxed so Jackson serialises the property as `isActive` (a primitive `isActive` would become `active`). */
+    private Boolean isActive;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

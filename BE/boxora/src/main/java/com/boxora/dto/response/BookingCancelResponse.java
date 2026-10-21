@@ -28,5 +28,9 @@ public class BookingCancelResponse {
     private LocalDateTime cancelledAt;
     private String cancellationReason;
     private String message;
+    /** True when the refund request still needs the customer's bank account. */
+    private boolean bankInfoMissing;
+    private BigDecimal prepaidRentAmount;
+    private Integer refundSlaDays;
 }
 

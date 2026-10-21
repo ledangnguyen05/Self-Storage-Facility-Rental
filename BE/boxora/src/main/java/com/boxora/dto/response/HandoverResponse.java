@@ -39,7 +39,17 @@ public class HandoverResponse {
     private String notes;
     private LocalDateTime recordedAt;
 
-    // --- Cấp quyền truy cập SmartLock phát hành bởi máy chủ ---
+    private String rfidCardNumber;
+
+    // --- Cấp quyền truy cập SmartLock phát hành bởi máy chủ (chỉ có trong phản hồi check-in, không bao giờ trong lịch sử) ---
     private String accessPin;
     private String qrAccessToken;
+
+    // --- Kết quả gửi thông tin bàn giao (chỉ có trong phản hồi check-in) ---
+    /** true chỉ khi máy chủ email đã nhận thư gửi tới email trong hồ sơ khách */
+    private Boolean emailSent;
+    /** true khi thư PIN đã được đưa vào hàng gửi nền (gửi sau khi bàn giao được lưu); kết quả cuối cùng nằm trong nhật ký máy chủ */
+    private Boolean emailQueued;
+    private String emailError;
+    private Boolean inAppNotificationSent;
 }

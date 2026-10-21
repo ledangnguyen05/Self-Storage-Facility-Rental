@@ -11,12 +11,12 @@ import java.util.UUID;
 @Builder
 public class RolePermissionCreateRequest {
 
-    @NotNull(message = "Role id is required")
+    @NotNull(message = "Vui lòng chọn vai trò")
     private UUID roleId;
 
-    @NotNull(message = "Permission id is required")
+    @NotNull(message = "Vui lòng chọn quyền")
     private UUID permissionId;
 
-    @Size(max = 255, message = "Description must not exceed 255 characters")
+    @Size(max = 255, message = "Ghi chú tối đa 255 ký tự")
     private String description;
 }
