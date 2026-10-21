@@ -1,4 +1,4 @@
-import React from 'react'
+﻿import React from 'react'
 import { StorageUnitType } from '../../data/storageUnitsData'
 
 interface UnitDetailModalProps {
@@ -8,17 +8,20 @@ interface UnitDetailModalProps {
   onRent: (unit: StorageUnitType) => void
 }
 
-const getUnitImage = (category: StorageUnitType['category']) => {
+const getUnitImage = (category: StorageUnitType['category'], area?: number) => {
   switch (category) {
     case 'mini':
-      return 'https://images.unsplash.com/photo-1590402494682-cd3fb53b1f70?auto=format&fit=crop&w=900&q=80'
+      return '/images/units/unit-mini.jpg'
     case 'special':
-      return 'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=900&q=80'
+      return '/images/units/unit-chilled.jpg'
     case 'business':
-      return 'https://images.unsplash.com/photo-1587293852726-70cdb56c2866?auto=format&fit=crop&w=900&q=80'
+      return '/images/units/unit-large.jpg'
     case 'personal':
     default:
-      return 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=900&q=80'
+      if (area != null && area > 6) {
+        return '/images/units/unit-large.jpg'
+      }
+      return '/images/units/unit-medium.jpg'
   }
 }
 
@@ -39,7 +42,7 @@ export const UnitDetailModal: React.FC<UnitDetailModalProps> = ({
   if (!isOpen || !unit) return null
 
   const isAvailable = unit.isAvailable ?? (unit.status === 'Sẵn sàng')
-  const unitImage = unit.imageUrl || getUnitImage(unit.category)
+  const unitImage = unit.imageUrl || getUnitImage(unit.category, unit.areaSqMeters)
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">

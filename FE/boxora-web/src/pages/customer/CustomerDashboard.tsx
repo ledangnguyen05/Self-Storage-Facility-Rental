@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+﻿import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { contractService, RentalContract } from '../../services/contractService'
@@ -23,10 +23,10 @@ import { PortalBookingReservationModal, PortalBookingUnitData } from '../../comp
 import { extractFloor } from '../../utils/floorUtils'
 
 const UNIT_CARD_IMAGES = [
-  'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1590247813693-5541d1c609fd?auto=format&fit=crop&w=800&q=80'
+  '/images/units/unit-medium.jpg',
+  '/images/units/unit-mini.jpg',
+  '/images/units/unit-large.jpg',
+  '/images/units/unit-capacity-a108.jpg'
 ]
 
 const safeFormatDateTime = (dateVal?: string | null, fallback = ''): string => {

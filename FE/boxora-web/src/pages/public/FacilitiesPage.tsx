@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Building2, MapPin, Phone, Filter, Loader2 } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
@@ -9,10 +9,10 @@ import { Facility, StorageUnit } from '../../types'
 import { BrandLogo } from '../../components/common/BrandLogo'
 
 const FACILITY_IMAGES = [
-  'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&q=80&w=800',
-  'https://images.unsplash.com/photo-1549488344-1f9b8d2bd1f3?auto=format&fit=crop&q=80&w=800',
-  'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&q=80&w=800',
-  'https://images.unsplash.com/photo-1590247813693-5541d1c609fd?auto=format&fit=crop&q=80&w=800'
+  '/images/units/facility-hallway.jpg',
+  '/images/units/unit-capacity-a108.jpg',
+  '/images/units/unit-large.jpg',
+  '/images/units/unit-chilled.jpg'
 ]
 
 export const FacilitiesPage: React.FC = () => {

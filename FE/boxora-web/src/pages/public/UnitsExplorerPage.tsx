@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react'
+﻿import React, { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import {
@@ -34,17 +34,20 @@ const normalizeSearchText = (value: string) => value
   .replace(/[^a-z0-9]+/g, ' ')
   .trim()
 
-const getCardImage = (category: StorageUnitType['category']) => {
+const getCardImage = (category: StorageUnitType['category'], area?: number) => {
   switch (category) {
     case 'mini':
-      return 'https://images.unsplash.com/photo-1590402494682-cd3fb53b1f70?auto=format&fit=crop&w=600&q=80'
+      return '/images/units/unit-mini.jpg'
     case 'special':
-      return 'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=600&q=80'
+      return '/images/units/unit-chilled.jpg'
     case 'business':
-      return 'https://images.unsplash.com/photo-1587293852726-70cdb56c2866?auto=format&fit=crop&w=600&q=80'
+      return '/images/units/unit-large.jpg'
     case 'personal':
     default:
-      return 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=600&q=80'
+      if (area != null && area > 6) {
+        return '/images/units/unit-large.jpg'
+      }
+      return '/images/units/unit-medium.jpg'
   }
 }
 
@@ -305,7 +308,7 @@ export const UnitsExplorerPage: React.FC = () => {
         facilityAddress: facility?.address || '',
         floorLocation: `${cleanFloor}`,
         coords: facility?.coords || null,
-        imageUrl: getCardImage(category),
+        imageUrl: getCardImage(category, area),
       }
     })
   }, [rawUnits, effectiveFacilities, dbFacilities])
@@ -1106,7 +1109,7 @@ export const UnitsExplorerPage: React.FC = () => {
                   {/* Card Thumbnail Image with Badges */}
                   <div className="relative h-44 w-full bg-slate-100 overflow-hidden">
                     <img
-                      src={unit.imageUrl || getCardImage(unit.category)}
+                      src={unit.imageUrl || getCardImage(unit.category, unit.areaSqMeters)}
                       alt={`Kho ${unit.unitCode}`}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       onError={(e) => {
@@ -1245,7 +1248,7 @@ export const UnitsExplorerPage: React.FC = () => {
                   <div className="flex items-center gap-4 min-w-[280px]">
                     <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-100 shrink-0 relative">
                       <img
-                        src={unit.imageUrl || getCardImage(unit.category)}
+                        src={unit.imageUrl || getCardImage(unit.category, unit.areaSqMeters)}
                         alt={`Kho ${unit.unitCode}`}
                         className="w-full h-full object-cover"
                         onError={(e) => {
