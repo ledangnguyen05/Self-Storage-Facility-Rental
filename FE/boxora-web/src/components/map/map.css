@@ -1,0 +1,103 @@
+/*
+ * Styles for the Leaflet maps (facility map and coordinate picker).
+ * Colours come from the design tokens (--bx-*), so light and dark mode follow the app theme.
+ */
+
+.bx-map.leaflet-container {
+  font: inherit;
+  font-size: 0.875rem;
+  background: var(--bx-surface-2);
+  color: var(--bx-fg);
+  border-radius: inherit;
+}
+
+/* Dark theme: darken the OpenStreetMap raster tiles; pins and popups keep their own colours. */
+.dark .bx-map .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.92);
+}
+
+/* Attribution and zoom controls on surface colours */
+.bx-map .leaflet-control-attribution {
+  background: color-mix(in srgb, var(--bx-surface) 85%, transparent);
+  color: var(--bx-fg-muted);
+  font-size: 0.6875rem;
+}
+.bx-map .leaflet-control-attribution a {
+  color: var(--bx-accent-text);
+}
+.bx-map .leaflet-bar a,
+.bx-map .leaflet-bar a:hover {
+  background: var(--bx-surface);
+  color: var(--bx-fg);
+  border-bottom-color: var(--bx-line);
+}
+.bx-map .leaflet-bar a:hover {
+  background: var(--bx-surface-2);
+}
+.bx-map .leaflet-bar {
+  border: 1px solid var(--bx-line-strong);
+  box-shadow: none;
+}
+
+/* Popup */
+.bx-map .leaflet-popup-content-wrapper {
+  background: var(--bx-overlay);
+  color: var(--bx-fg);
+  border: 1px solid var(--bx-line);
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 8px -2px rgb(16 24 40 / 0.1);
+}
+.bx-map .leaflet-popup-tip {
+  background: var(--bx-overlay);
+  border: 1px solid var(--bx-line);
+  box-shadow: none;
+}
+.bx-map .leaflet-popup-content {
+  margin: 0.75rem 1rem;
+  line-height: 1.4;
+}
+.bx-map .leaflet-popup-content p {
+  margin: 0;
+}
+.bx-map a.leaflet-popup-close-button {
+  color: var(--bx-fg-subtle);
+}
+
+/* Pins are divIcons so the app ships no image assets */
+.bx-pin {
+  background: transparent;
+  border: 0;
+}
+.bx-pin svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 1px 2px rgb(16 24 40 / 0.35));
+}
+.bx-pin-body {
+  fill: var(--bx-accent);
+  stroke: var(--bx-surface);
+  stroke-width: 2;
+}
+.bx-pin-dot {
+  fill: var(--bx-on-accent);
+}
+.bx-pin--nearest .bx-pin-body {
+  fill: var(--bx-success-solid);
+}
+.bx-pin--soldout .bx-pin-body {
+  fill: var(--bx-neutral-solid);
+}
+.bx-pin--selected svg {
+  transform: scale(1.18);
+  transform-origin: 50% 100%;
+}
+
+.bx-user-dot {
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--bx-info-solid);
+  border: 3px solid var(--bx-surface);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--bx-info-solid) 28%, transparent);
+}
