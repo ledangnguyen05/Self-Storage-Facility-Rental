@@ -1,212 +1,143 @@
-import React from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { AuthProvider, useAuth } from './context/AuthContext'
+import React, { Suspense, lazy } from 'react'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { ProtectedRoute, SessionLoading } from './components/auth/ProtectedRoute'
+import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { DashboardLayout } from './components/layout/DashboardLayout'
-import { ProtectedRoute } from './components/auth/ProtectedRoute'
+import { PORTAL_ROUTE_ROLES, getPortalForRole } from './constants/routes'
+import { AuthProvider, useAuth } from './context/AuthContext'
 
-// Public Pages (Authentication & Landing)
-import { LoginPage } from './pages/public/LoginPage'
-import { RegisterPage } from './pages/public/RegisterPage'
-import { HomePage } from './pages/public/HomePage'
-import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
-import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
-import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
-import { PaymentResultPage } from './pages/public/PaymentResultPage'
-
-// StorageOps Pro Portals (Matching Prototype Stitch Files)
-
-import { CustomerDashboard } from './pages/customer/CustomerDashboard'
-import { StaffDashboard } from './pages/staff/StaffDashboard'
-import { ManagerDashboard } from './pages/manager/ManagerDashboard'
-import { OperationsDashboard } from './pages/operations/OperationsDashboard'
-import { AdminDashboard } from './pages/admin/AdminDashboard'
-import { CashierJournalPage } from './pages/staff/CashierJournalPage'
-import { IncidentTicketsPage } from './pages/staff/IncidentTicketsPage'
-import { OverdueManagementPage } from './pages/manager/OverdueManagementPage'
-import { ShiftRosterPage } from './pages/manager/ShiftRosterPage'
-import { checkCustomerPortalAccess } from './utils/rentalAccess'
-import { BoxoraChatWidget } from './components/chat/BoxoraChatWidget'
-
-// Root redirect handler based on user role
-function RootRedirect() {
-  const { isAuthenticated, role, user, isLoading } = useAuth()
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-3 text-white">
-        <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
-        <span className="text-xs text-slate-400 font-medium">Đang kết nối hệ thống Boxora...</span>
-      </div>
-    )
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />
-  }
-
-  switch (role) {
-    case 'ADMIN':
-      return <Navigate to="/portal/admin" replace />
-    case 'BUSINESS_MANAGER':
-      return <Navigate to="/portal/business-manager" replace />
-    case 'FACILITY_MANAGER':
-      return <Navigate to="/portal/facility-manager" replace />
-    case 'STAFF':
-      return <Navigate to="/portal/staff" replace />
-    case 'CUSTOMER':
-    default: {
-      const access = checkCustomerPortalAccess(user)
-      if (!access.hasAccess) {
-        return <Navigate to="/units" replace />
-      }
-      return <Navigate to="/portal/customer" replace />
-    }
-  }
+/** React.lazy for modules that only have named exports. */
+function lazyNamed<K extends string>(loader: () => Promise<Record<K, React.ComponentType>>, name: K) {
+  return lazy(() => loader().then((module) => ({ default: module[name] })))
 }
 
+// Public pages
+const HomePage = lazyNamed(() => import('./pages/public/HomePage'), 'HomePage')
+const LoginPage = lazyNamed(() => import('./pages/public/LoginPage'), 'LoginPage')
+const RegisterPage = lazyNamed(() => import('./pages/public/RegisterPage'), 'RegisterPage')
+const ResetPasswordPage = lazyNamed(() => import('./pages/public/ResetPasswordPage'), 'ResetPasswordPage')
+const UnitsExplorerPage = lazyNamed(() => import('./pages/public/UnitsExplorerPage'), 'UnitsExplorerPage')
+const PaymentResultPage = lazyNamed(() => import('./pages/public/PaymentResultPage'), 'PaymentResultPage')
+const TermsAndStandardsPage = lazyNamed(() => import('./pages/public/TermsAndStandardsPage'), 'TermsAndStandardsPage')
+const NotFoundPage = lazyNamed(() => import('./pages/public/NotFoundPage'), 'NotFoundPage')
+
+// Portal pages
+const CustomerDashboard = lazyNamed(() => import('./pages/customer/CustomerDashboard'), 'CustomerDashboard')
+const StaffDashboard = lazyNamed(() => import('./pages/staff/StaffDashboard'), 'StaffDashboard')
+const ManagerDashboard = lazyNamed(() => import('./pages/manager/ManagerDashboard'), 'ManagerDashboard')
+const OperationsDashboard = lazyNamed(() => import('./pages/operations/OperationsDashboard'), 'OperationsDashboard')
+const AdminDashboard = lazyNamed(() => import('./pages/admin/AdminDashboard'), 'AdminDashboard')
+const CashierJournalPage = lazyNamed(() => import('./pages/staff/CashierJournalPage'), 'CashierJournalPage')
+const IncidentTicketsPage = lazyNamed(() => import('./pages/staff/IncidentTicketsPage'), 'IncidentTicketsPage')
+const OverdueManagementPage = lazyNamed(() => import('./pages/manager/OverdueManagementPage'), 'OverdueManagementPage')
+const ShiftRosterPage = lazyNamed(() => import('./pages/manager/ShiftRosterPage'), 'ShiftRosterPage')
+const RefundsPage = lazyNamed(() => import('./pages/finance/RefundsPage'), 'RefundsPage')
+
+// Global AI assistant
+const BoxoraChatWidget = lazyNamed(() => import('./components/chat/BoxoraChatWidget'), 'BoxoraChatWidget')
+
+const RouteFallback: React.FC = () => <SessionLoading label="Đang tải…" />
+
+/** `/portal` index: send each role to its own portal. */
+function RootRedirect() {
+  const { isAuthenticated, role, isLoading } = useAuth()
+  if (isLoading) return <SessionLoading />
+  if (!isAuthenticated) return <Navigate to="/login" replace />
+  return <Navigate to={getPortalForRole(role)} replace />
+}
+
+/** Portal child routes: path segment, page and the allowed roles from PORTAL_ROUTE_ROLES. */
+const PORTAL_PAGES: ReadonlyArray<{ path: keyof typeof PORTAL_ROUTE_ROLES; Page: React.ComponentType }> = [
+  { path: '/portal/customer', Page: CustomerDashboard },
+  { path: '/portal/staff', Page: StaffDashboard },
+  { path: '/portal/facility-manager', Page: ManagerDashboard },
+  { path: '/portal/business-manager', Page: OperationsDashboard },
+  { path: '/portal/admin', Page: AdminDashboard },
+  { path: '/portal/cashier', Page: CashierJournalPage },
+  { path: '/portal/tickets', Page: IncidentTicketsPage },
+  { path: '/portal/overdue', Page: OverdueManagementPage },
+  { path: '/portal/shifts', Page: ShiftRosterPage },
+  { path: '/portal/finance', Page: RefundsPage },
+]
+
+/** Short public aliases that forward into the portal (guards apply on arrival). */
+const PORTAL_ALIASES: ReadonlyArray<[string, string]> = [
+  ['/customer', '/portal/customer'],
+  ['/staff', '/portal/staff'],
+  ['/facility-manager', '/portal/facility-manager'],
+  ['/manager', '/portal/facility-manager'],
+  ['/cashier', '/portal/cashier'],
+  ['/tickets', '/portal/tickets'],
+  ['/overdue', '/portal/overdue'],
+  ['/shifts', '/portal/shifts'],
+  ['/finance', '/portal/finance'],
+  ['/refunds', '/portal/finance'],
+  ['/operations', '/portal/business-manager'],
+  ['/business', '/portal/business-manager'],
+  ['/admin', '/portal/admin'],
+]
+
 function MainContent() {
+  const location = useLocation()
+
   return (
-    <div className="min-h-screen flex flex-col bg-[var(--background)] font-sans antialiased text-[var(--on-surface)]">
-      <main className="flex-1">
-        <Routes>
-          {/* Public Landing Page & Authentication */}
-          <Route path="/" element={<HomePage />} />
-          <Route path="/landing" element={<HomePage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
+    <div className="flex min-h-screen flex-col bg-canvas font-sans text-fg antialiased">
+      <div className="flex-1">
+        <ErrorBoundary resetKey={location.pathname}>
+          <Suspense fallback={<RouteFallback />}>
+            <Routes>
+              {/* Public */}
+              <Route path="/" element={<HomePage />} />
+              <Route path="/landing" element={<HomePage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/units" element={<UnitsExplorerPage />} />
+              <Route path="/explore-units" element={<UnitsExplorerPage />} />
+              <Route path="/payment-result" element={<PaymentResultPage />} />
+              <Route path="/terms" element={<TermsAndStandardsPage />} />
+              <Route path="/standards" element={<TermsAndStandardsPage />} />
+              <Route path="/policies" element={<TermsAndStandardsPage />} />
 
-          {/* Dedicated Storage Units Explorer & Booking Dashboard */}
-          <Route path="/units" element={<UnitsExplorerPage />} />
-          <Route path="/explore-units" element={<UnitsExplorerPage />} />
-          <Route path="/payment-result" element={<PaymentResultPage />} />
+              {/* Portal (RBAC per child route) */}
+              <Route
+                path="/portal"
+                element={
+                  <ProtectedRoute>
+                    <DashboardLayout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<RootRedirect />} />
+                {PORTAL_PAGES.map(({ path, Page }) => (
+                  <Route
+                    key={path}
+                    path={path.replace('/portal/', '')}
+                    element={
+                      <ProtectedRoute allowedRoles={PORTAL_ROUTE_ROLES[path]}>
+                        <Page />
+                      </ProtectedRoute>
+                    }
+                  />
+                ))}
+              </Route>
 
-          {/* Boxora Terms & Standards Dashboard */}
-          <Route path="/terms" element={<TermsAndStandardsPage />} />
-          <Route path="/standards" element={<TermsAndStandardsPage />} />
-          <Route path="/policies" element={<TermsAndStandardsPage />} />
+              {PORTAL_ALIASES.map(([from, to]) => (
+                <Route key={from} path={from} element={<Navigate to={to} replace />} />
+              ))}
 
-          {/* Core StorageOps Pro Portal with RBAC Route Protection */}
-          <Route
-            path="/portal"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<RootRedirect />} />
+              <Route path="*" element={<NotFoundPage />} />
+            </Routes>
+          </Suspense>
+        </ErrorBoundary>
+      </div>
 
-            {/* 1. Customer Portal: Strictly Customer and Admin */}
-            <Route
-              path="customer"
-              element={
-                <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}>
-                  <CustomerDashboard />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* 2. Staff Portal: Staff, Admin */}
-            <Route
-              path="staff"
-              element={
-                <ProtectedRoute allowedRoles={['STAFF', 'ADMIN']}>
-                  <StaffDashboard />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* 3. Facility Manager Portal: Facility Manager, Business Manager, Admin */}
-            <Route
-              path="facility-manager"
-              element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
-                  <ManagerDashboard />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* 4. Business Manager Portal: Business Manager, Admin */}
-            <Route
-              path="business-manager"
-              element={
-                <ProtectedRoute allowedRoles={['BUSINESS_MANAGER', 'ADMIN']}>
-                  <OperationsDashboard />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* 5. System Admin Portal: Admin and Business Manager (branch configuration) */}
-            <Route
-              path="admin"
-              element={
-                <ProtectedRoute allowedRoles={['ADMIN', 'BUSINESS_MANAGER']}>
-                  <AdminDashboard />
-                </ProtectedRoute>
-              }
-            />
-            {/* 6. Cashier Journal Portal: Staff, Facility Manager, Business Manager, Admin */}
-            <Route
-              path="cashier"
-              element={
-                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
-                  <CashierJournalPage />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* 7. Incident Tickets Portal: Staff, Facility Manager, Business Manager, Admin */}
-            <Route
-              path="tickets"
-              element={
-                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
-                  <IncidentTicketsPage />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* 8. Overdue Delinquency Management: Facility Manager, Business Manager, Admin */}
-            <Route
-              path="overdue"
-              element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
-                  <OverdueManagementPage />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* 9. Shift Roster & Workforce: Facility Manager, Business Manager, Admin */}
-            <Route
-              path="shifts"
-              element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
-                  <ShiftRosterPage />
-                </ProtectedRoute>
-              }
-            />
-          </Route>
-
-          {/* Direct Friendly URLs with Automatic Route Guards */}
-          <Route path="/customer" element={<Navigate to="/portal/customer" replace />} />
-          <Route path="/staff" element={<Navigate to="/portal/staff" replace />} />
-          <Route path="/facility-manager" element={<Navigate to="/portal/facility-manager" replace />} />
-          <Route path="/manager" element={<Navigate to="/portal/facility-manager" replace />} />
-          <Route path="/cashier" element={<Navigate to="/portal/cashier" replace />} />
-          <Route path="/tickets" element={<Navigate to="/portal/tickets" replace />} />
-          <Route path="/overdue" element={<Navigate to="/portal/overdue" replace />} />
-          <Route path="/shifts" element={<Navigate to="/portal/shifts" replace />} />
-          <Route path="/operations" element={<Navigate to="/portal/business-manager" replace />} />
-          <Route path="/business" element={<Navigate to="/portal/business-manager" replace />} />
-          <Route path="/admin" element={<Navigate to="/portal/admin" replace />} />
-
-          {/* Fallback */}
-          <Route path="*" element={<RootRedirect />} />
-        </Routes>
-      </main>
-
-      {/* Boxora AI Smart Assistant Chatbot */}
-      <BoxoraChatWidget />
+      {/* The assistant must never take the page down with it. */}
+      <ErrorBoundary fallback={() => null}>
+        <Suspense fallback={null}>
+          <BoxoraChatWidget />
+        </Suspense>
+      </ErrorBoundary>
     </div>
   )
 }
