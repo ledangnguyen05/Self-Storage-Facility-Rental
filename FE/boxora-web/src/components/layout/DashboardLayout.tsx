@@ -1,696 +1,138 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { X } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import { RoleType, Facility } from '../../types'
-import { facilityService } from '../../services/facilityService'
-import { BrandLogo } from '../common/BrandLogo'
+import { STORAGE_KEYS } from '../../constants/storageKeys'
+import { getString, setString } from '../../lib/storage'
 import { AccountProfileModal } from '../common/AccountProfileModal'
+import { BrandLogo } from '../common/BrandLogo'
 import { LogoutConfirmModal } from '../common/LogoutConfirmModal'
 import { WebSettingsModal } from '../common/WebSettingsModal'
-import { UserAvatarDropdown } from '../common/UserAvatarDropdown'
-import { QuickThemeLanguageToggle } from '../common/QuickThemeLanguageToggle'
-import { FacilityScopingModal } from '../modals/FacilityScopingModal'
-import NotificationCenter from './NotificationCenter'
-import { useLanguage } from '../../context/LanguageContext'
+import { Drawer, IconButton, type BreadcrumbItem } from '../ui'
+import { cn } from '../ui/cn'
+import type { DashboardOutletContext } from './dashboardContext'
+import { FacilitySwitcher } from './FacilitySwitcher'
+import { findActiveNav, getNavigation } from './navigation'
+import { Sidebar, SidebarNav } from './Sidebar'
+import { Topbar } from './Topbar'
+import { useFacilityScope } from './useFacilityScope'
 
+/**
+ * localStorage: "true" when the desktop sidebar is collapsed to the icon rail.
+ */
+const SIDEBAR_COLLAPSED_KEY = STORAGE_KEYS.sidebarCollapsed
+
+/** Portal app shell: sidebar + topbar + content area, and the facility scope for every portal page. */
 export const DashboardLayout: React.FC = () => {
-  const { user, role, logout, isAuthenticated } = useAuth()
-  const { t } = useLanguage()
+  const { user, role, logout } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
-  const isFacilityScopedRole = role === 'FACILITY_MANAGER' || role === 'STAFF'
-  const assignedFacilityId = user?.facilityId
 
-  const [facilities, setFacilities] = useState<Facility[]>([])
-  const [selectedFacility, setSelectedFacility] = useState<string>(
-    isFacilityScopedRole && assignedFacilityId ? assignedFacilityId : 'ALL'
-  )
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const scope = useFacilityScope({ user, role, pathname: location.pathname })
+  const sections = useMemo(() => getNavigation(role), [role])
+  const activeNav = findActiveNav(sections, location)
+
+  // Browser tab / history entries name the portal page ("Quản lý người dùng · Boxora") instead of the static app title.
+  const activeNavLabel = activeNav?.item.label
+  useEffect(() => {
+    if (!activeNavLabel) return undefined
+    const previous = document.title
+    document.title = `${activeNavLabel} · Boxora`
+    return () => {
+      document.title = previous
+    }
+  }, [activeNavLabel])
+
+  const [collapsed, setCollapsed] = useState(() => getString(SIDEBAR_COLLAPSED_KEY) === 'true')
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
-  const [isScopingModalOpen, setIsScopingModalOpen] = useState(false)
-  const isCurrentPath = (path: string) => location.pathname === path
-  const isFacilityManagerPage = location.pathname.includes('/facility-manager')
 
-  useEffect(() => {
-    facilityService.getFacilities()
-      .then(res => {
-        let list = res?.content || []
-        if (isFacilityScopedRole && assignedFacilityId) {
-          const matched = list.filter(f => f.id === assignedFacilityId)
-          if (matched.length > 0) {
-            list = matched
-          } else if (user?.facilityName) {
-            list = [{
-              id: assignedFacilityId,
-              name: user.facilityName,
-              code: user.facilityCode || 'FAC',
-              address: '',
-              city: '',
-              phone: '',
-              email: '',
-              status: 'ACTIVE' as const
-            } as unknown as Facility]
-          }
-        }
-        setFacilities(list)
-
-        if (isFacilityScopedRole && assignedFacilityId) {
-          setSelectedFacility(assignedFacilityId)
-        } else if (list.length > 0) {
-          setSelectedFacility(current => {
-            if (location.pathname.includes('/facility-manager')) {
-              if (current && current !== 'ALL' && list.some(f => f.id === current)) return current
-              return list[0].id
-            }
-            if (current && (current === 'ALL' || list.some(f => f.id === current))) return current
-            return 'ALL'
-          })
-        }
-      })
-      .catch(err => {
-        console.warn('Failed to load facilities in DashboardLayout:', err)
-      })
-  }, [location.pathname, isFacilityScopedRole, assignedFacilityId, user?.facilityName, user?.facilityCode])
-
-  useEffect(() => {
-    if (isFacilityScopedRole && assignedFacilityId) {
-      if (selectedFacility !== assignedFacilityId) {
-        setSelectedFacility(assignedFacilityId)
-      }
-    } else if (isFacilityManagerPage && selectedFacility === 'ALL' && facilities.length > 0) {
-      setSelectedFacility(facilities[0].id)
-    }
-  }, [isFacilityScopedRole, assignedFacilityId, isFacilityManagerPage, selectedFacility, facilities])
-
-  const handleSetSelectedFacility = (facId: string) => {
-    if (isFacilityScopedRole && assignedFacilityId) {
-      setSelectedFacility(assignedFacilityId)
-      return
-    }
-    setSelectedFacility(facId)
+  // Close the mobile drawer whenever the route changes (adjusting state during render, no effect needed).
+  const routeKey = `${location.pathname}${location.search}`
+  const [lastRouteKey, setLastRouteKey] = useState(routeKey)
+  if (routeKey !== lastRouteKey) {
+    setLastRouteKey(routeKey)
+    if (mobileNavOpen) setMobileNavOpen(false)
   }
 
-  const assignedFacilityDisplayName = useMemo(() => {
-    if (user?.facilityName) {
-      return `${user.facilityName.replace(/StoreHub\s*/gi, 'Boxora ')}${user.facilityCode ? ` (${user.facilityCode})` : ''}`
-    }
-    const found = facilities.find(f => f.id === assignedFacilityId)
-    if (found) {
-      return `${found.name.replace(/StoreHub\s*/gi, 'Boxora ')} (${found.code})`
-    }
-    return t('Cơ sở được phân công', 'Assigned Facility')
-  }, [user?.facilityName, user?.facilityCode, facilities, assignedFacilityId, t])
-
-  useEffect(() => {
-    setIsMobileMenuOpen(false)
-  }, [location.pathname, location.search])
-
-  const getRoleBadge = (r: RoleType | null) => {
-    switch (r) {
-      case 'ADMIN':
-        return { label: t('Quản trị viên Hệ thống'), bg: 'bg-rose-50 text-rose-700 border-rose-200' }
-      case 'BUSINESS_MANAGER':
-        return { label: t('Giám đốc Vận hành'), bg: 'bg-slate-100 text-slate-800 border-slate-300' }
-      case 'FACILITY_MANAGER':
-        return { label: t('Quản lý Cơ sở'), bg: 'bg-blue-50 text-blue-700 border-blue-200' }
-      case 'STAFF':
-        return { label: t('Nhân viên Quầy'), bg: 'bg-amber-50 text-amber-800 border-amber-200' }
-      case 'CUSTOMER':
-      default:
-        return { label: t('Khách hàng Thuê kho'), bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
-    }
+  const toggleCollapsed = () => {
+    const next = !collapsed
+    setCollapsed(next)
+    setString(SIDEBAR_COLLAPSED_KEY, String(next))
   }
 
-  const roleBadge = getRoleBadge(role)
+  const breadcrumbs: BreadcrumbItem[] = activeNav
+    ? [...(activeNav.section.label ? [{ label: activeNav.section.label }] : []), { label: activeNav.item.label }]
+    : []
+
+  const { selectedFacility, setSelectedFacility, facilities, isFacilityScoped, isLoadingFacilities } = scope
+  const outletContext = useMemo<DashboardOutletContext>(
+    () => ({ selectedFacility, setSelectedFacility, facilities, isFacilityScoped, isLoadingFacilities }),
+    [selectedFacility, setSelectedFacility, facilities, isFacilityScoped, isLoadingFacilities],
+  )
+
+  const facilitySlot =
+    role && role !== 'CUSTOMER' ? (
+      <FacilitySwitcher
+        facilities={scope.facilities}
+        selectedFacility={scope.selectedFacility}
+        onSelect={scope.setSelectedFacility}
+        isFacilityScoped={scope.isFacilityScoped}
+        assignedFacilityLabel={scope.assignedFacilityLabel}
+        requiresConcreteFacility={scope.requiresConcreteFacility}
+        isLoading={scope.isLoadingFacilities}
+        hasError={scope.facilitiesError}
+        onRetry={scope.reloadFacilities}
+      />
+    ) : null
 
   return (
-    <div className="min-h-screen bg-[var(--background)] text-[var(--on-surface)] flex flex-col antialiased">
-      {/* Fixed Top Header (80px) */}
-      <header className="fixed top-0 left-0 right-0 h-20 bg-white z-50 shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-slate-200">
-        <div className="w-full h-full px-4 sm:px-6 flex items-center justify-between gap-3">
-          
-          {/* Logo & Mobile Menu Toggle */}
-          <div className="flex items-center gap-3 sm:gap-6 shrink-0">
-            {/* Mobile Hamburger Button */}
-            <button
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="lg:hidden p-2 rounded-xl text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer flex items-center justify-center"
-              aria-label="Mở menu điều hướng"
-            >
-              <span className="material-symbols-outlined text-[24px]">
-                {isMobileMenuOpen ? 'close' : 'menu'}
-              </span>
-            </button>
+    <div className="min-h-screen bg-canvas text-fg">
+      <a
+        href="#main-content"
+        className="sr-only z-400 rounded-md bg-surface px-3 py-2 text-sm font-medium text-fg shadow-md focus:not-sr-only focus:fixed focus:left-4 focus:top-3"
+      >
+        Bỏ qua điều hướng
+      </a>
 
-            <BrandLogo size="md" subtitle={t('KHO TỰ QUẢN THÔNG MINH', 'SMART SELF-STORAGE')} />
+      <Sidebar sections={sections} collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
 
-            <div className="h-8 w-[1px] bg-slate-200 hidden md:block"></div>
-
-            {/* Facility Selector & Scoping Modal Trigger (Only for internal staff/managers) */}
-            {role && role !== 'CUSTOMER' && (
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
-                <span className="material-symbols-outlined text-blue-600 text-[18px]">location_on</span>
-                <div className="flex flex-col text-left">
-                  <span className="text-[10px] font-semibold text-slate-400">
-                    {t('Cơ sở trực thuộc', 'Assigned Facility')}
-                  </span>
-                  {isFacilityScopedRole ? (
-                    <div className="text-xs text-slate-900 font-semibold pr-1 flex items-center gap-1.5">
-                      <span>{assignedFacilityDisplayName}</span>
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">
-                        {t('Cố định', 'Fixed')}
-                      </span>
-                    </div>
-                  ) : (
-                    <select
-                      value={selectedFacility}
-                      onChange={(e) => handleSetSelectedFacility(e.target.value)}
-                      className="bg-transparent text-xs text-slate-900 font-semibold focus:outline-none cursor-pointer pr-1"
-                    >
-                      {!isFacilityManagerPage && (
-                        <option value="ALL">{t('Toàn hệ thống (Tất cả cơ sở)', 'All Facilities System')}</option>
-                      )}
-                      {facilities.length > 0 ? (
-                        facilities.map(f => (
-                          <option key={f.id} value={f.id}>
-                            {f.name.replace(/StoreHub\s*/gi, 'Boxora ')} ({f.code})
-                          </option>
-                        ))
-                      ) : (
-                        <option value="">{t('Đang tải danh sách cơ sở...', 'Loading facilities...')}</option>
-                      )}
-                    </select>
-                  )}
-                </div>
-                {!isFacilityScopedRole && (
-                  <button
-                    type="button"
-                    onClick={() => setIsScopingModalOpen(true)}
-                    title={t('Mở bảng phân công cơ sở')}
-                    className="ml-1 p-1 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">domain_verification</span>
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
-
-          {/* Right Tools: Notifications, User Profile */}
-          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-            <QuickThemeLanguageToggle />
-            <NotificationCenter userId={user?.id} />
-
-            <div className="h-8 w-[1px] bg-slate-200 hidden sm:block"></div>
-
-            {/* User Profile Dropdown & Logout */}
-            {isAuthenticated && user ? (
-              <UserAvatarDropdown
-                user={user}
-                role={role}
-                onOpenProfile={() => setIsProfileModalOpen(true)}
-                onOpenSettings={() => setIsSettingsModalOpen(true)}
-                onOpenLogoutConfirm={() => setIsLogoutConfirmOpen(true)}
-              />
-            ) : (
-              <Link
-                to="/login"
-                className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition-colors flex items-center gap-1.5"
-              >
-                <span className="material-symbols-outlined text-[16px]">login</span>
-                <span>Đăng nhập</span>
-              </Link>
-            )}
-
-          </div>
-
+      <Drawer
+        open={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+        side="left"
+        size="sm"
+        hideCloseButton
+        aria-label="Điều hướng"
+        bodyClassName="flex flex-col p-0"
+      >
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-line px-4">
+          <BrandLogo size="sm" showText={false} imgClassName="h-8" onClick={() => setMobileNavOpen(false)} />
+          <IconButton icon={X} size="sm" aria-label="Đóng menu điều hướng" onClick={() => setMobileNavOpen(false)} />
         </div>
-      </header>
+        <SidebarNav sections={sections} onNavigate={() => setMobileNavOpen(false)} />
+      </Drawer>
 
-      {/* Mobile Backdrop Overlay */}
-      {isMobileMenuOpen && (
-        <div
-          onClick={() => setIsMobileMenuOpen(false)}
-          className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-xs lg:hidden transition-opacity"
+      <div className={cn('flex min-h-screen min-w-0 flex-col transition-[padding] duration-200', collapsed ? 'lg:pl-14' : 'lg:pl-60')}>
+        <Topbar
+          breadcrumbs={breadcrumbs}
+          facilitySlot={facilitySlot}
+          user={user}
+          role={role}
+          onOpenMobileNav={() => setMobileNavOpen(true)}
+          onOpenProfile={() => setIsProfileModalOpen(true)}
+          onOpenSettings={() => setIsSettingsModalOpen(true)}
+          onOpenLogoutConfirm={() => setIsLogoutConfirmOpen(true)}
         />
-      )}
-
-      {/* Sidebar (Responsive drawer on mobile, fixed column on lg) */}
-      <aside className={`fixed left-0 top-20 bottom-0 w-64 bg-white z-40 border-r border-slate-200 flex flex-col py-4 shadow-[0_1px_8px_rgba(0,0,0,0.02)] transition-transform duration-200 ease-in-out ${
-        isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-      }`}>
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4">
-          
-          {/* Active Account Summary Card */}
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-left">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] font-semibold text-slate-400">
-                Phiên đăng nhập
-              </span>
-              <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${roleBadge.bg}`}>
-                {role || 'ANONYMOUS'}
-              </span>
-            </div>
-            <div className="text-xs font-semibold text-slate-900 truncate">
-              {user?.fullName || 'Khách vãng lai'}
-            </div>
-            <div className="text-[11px] text-slate-500 truncate">
-              {user?.email || 'Chưa đăng nhập'}
-            </div>
-          </div>
-
-          {/* Mobile Facility Selector */}
-          {role && role !== 'CUSTOMER' && (
-            <div className="sm:hidden p-3 rounded-xl bg-slate-50 border border-slate-200 text-left">
-              <span className="text-[10px] font-semibold text-slate-400 block mb-1">
-                Cơ sở trực thuộc
-              </span>
-              {isFacilityScopedRole ? (
-                <div className="text-xs text-slate-900 font-semibold p-2 bg-white rounded-lg border border-slate-200 flex items-center justify-between">
-                  <span>{assignedFacilityDisplayName}</span>
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800">
-                    {t('Cố định', 'Fixed')}
-                  </span>
-                </div>
-              ) : (
-                <select
-                  value={selectedFacility}
-                  onChange={(e) => handleSetSelectedFacility(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-xs text-slate-900 font-bold focus:outline-none cursor-pointer"
-                >
-                  {!isFacilityManagerPage && (
-                    <option value="ALL">Toàn hệ thống (Tất cả cơ sở)</option>
-                  )}
-                  {facilities.length > 0 && facilities.map(f => (
-                    <option key={f.id} value={f.id}>
-                      {f.name.replace(/StoreHub\s*/gi, 'Boxora ')} ({f.code})
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-          )}
-
-          {/* CUSTOMER NAVIGATION */}
-          {role === 'CUSTOMER' && (
-            <div>
-              <div className="px-3 pb-2">
-                <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                  Dịch Vụ Khách Thuê
-                </span>
-              </div>
-              <nav className="flex flex-col gap-1 text-left">
-                <Link
-                  to="/portal/customer?tab=my-units"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-                    isCurrentPath('/portal/customer') && (!new URLSearchParams(location.search).get('tab') || new URLSearchParams(location.search).get('tab') === 'my-units')
-                      ? 'bg-slate-100 text-slate-900 font-bold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">inventory_2</span>
-                  <span>Kho của tôi &amp; Mã PIN</span>
-                </Link>
-
-                <Link
-                  to="/portal/customer?tab=explore"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'explore'
-                      ? 'bg-slate-100 text-slate-900 font-bold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">travel_explore</span>
-                  <span>Tìm &amp; Thuê kho mới</span>
-                </Link>
-
-                <Link
-                  to="/portal/customer?tab=contracts"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'contracts'
-                      ? 'bg-slate-100 text-slate-900 font-bold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">receipt_long</span>
-                  <span>Hợp đồng &amp; Hóa đơn</span>
-                </Link>
-
-                <Link
-                  to="/portal/customer?tab=support"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'support'
-                      ? 'bg-slate-100 text-slate-900 font-bold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">support_agent</span>
-                  <span>Trung tâm hỗ trợ</span>
-                </Link>
-
-                <div className="pt-2 mt-2 border-t border-slate-100">
-                  <Link
-                    to="/"
-                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition-all"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">home</span>
-                    <span>Về trang chủ</span>
-                  </Link>
-                </div>
-              </nav>
-            </div>
-          )}
-
-          {/* STAFF NAVIGATION */}
-          {role === 'STAFF' && (
-            <div>
-              <div className="px-3 pb-2">
-                <span className="text-[11px] font-semibold tracking-wide text-slate-400">
-                  Nghiệp vụ quầy
-                </span>
-              </div>
-              <nav className="flex flex-col gap-1 text-left">
-                <Link
-                  to="/portal/staff"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/staff')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">badge</span>
-                  <span>{t('Bàn vận hành quầy & tiếp đón')}</span>
-                </Link>
-
-                <Link
-                  to="/portal/cashier"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/cashier')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
-                  <span>{t('Báo cáo thu ngân')}</span>
-                </Link>
-
-                <Link
-                  to="/portal/tickets"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/tickets')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">build_circle</span>
-                  <span>{t('Xử lý sự cố tại chỗ')}</span>
-                </Link>
-              </nav>
-            </div>
-          )}
-
-          {/* FACILITY_MANAGER NAVIGATION (QUẢN LÝ CƠ SỞ ĐỒNG BỘ) */}
-          {role === 'FACILITY_MANAGER' && (
-            <div>
-              <div className="px-3 pb-2">
-                <span className="text-[11px] font-semibold tracking-wide text-slate-400">
-                  Quản lý cơ sở
-                </span>
-              </div>
-              <nav className="flex flex-col gap-1 text-left">
-                <Link
-                  to="/portal/facility-manager"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/facility-manager')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">analytics</span>
-                  <span>{t('Tổng quan quản lý cơ sở')}</span>
-                </Link>
-
-                <Link
-                  to="/portal/overdue"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/overdue')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">money_off</span>
-                  <span>{t('Xử lý nợ cước quá hạn')}</span>
-                </Link>
-
-                <Link
-                  to="/portal/shifts"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/shifts')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">schedule</span>
-                  <span>{t('Xử lý trực ca')}</span>
-                </Link>
-
-                <Link
-                  to="/portal/cashier"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/cashier')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
-                  <span>{t('Báo cáo thu ngân')}</span>
-                </Link>
-
-                <Link
-                  to="/portal/tickets"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/tickets')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">build_circle</span>
-                  <span>{t('Xử lý sự cố tại chỗ')}</span>
-                </Link>
-              </nav>
-            </div>
-          )}
-
-          {/* BUSINESS_MANAGER NAVIGATION */}
-          {role === 'BUSINESS_MANAGER' && (
-            <div>
-              <div className="px-3 pb-2">
-                <span className="text-[11px] font-semibold tracking-wide text-slate-400">
-                  Điều hành &amp; kinh doanh
-                </span>
-              </div>
-              <nav className="flex flex-col gap-1 text-left">
-                <Link
-                  to="/portal/business-manager"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/business-manager')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">query_stats</span>
-                  <span>{t('Báo cáo doanh thu')}</span>
-                </Link>
-
-                <Link
-                  to="/portal/admin?tab=facilities"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/admin') && new URLSearchParams(location.search).get('tab') === 'facilities'
-                      ? 'bg-blue-50 text-blue-800 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">domain</span>
-                  <span>{t('Cấu hình chi nhánh', 'Branch configuration')}</span>
-                </Link>
-
-                <Link
-                  to="/portal/facility-manager"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/facility-manager')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">apartment</span>
-                  <span>{t('Sơ đồ cơ sở kho')}</span>
-                </Link>
-              </nav>
-            </div>
-          )}
-
-          {/* ADMIN NAVIGATION */}
-          {role === 'ADMIN' && (
-            <>
-              <div>
-                <div className="px-3 pb-2">
-                  <span className="text-[11px] font-semibold tracking-wide text-slate-400">
-                    Quản trị hệ thống
-                  </span>
-                </div>
-                <nav className="flex flex-col gap-1 text-left">
-                  <Link
-                    to="/portal/admin?tab=facilities"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/admin') && new URLSearchParams(location.search).get('tab') === 'facilities'
-                        ? 'bg-blue-50 text-blue-800 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">domain</span>
-                    <span>{t('Cấu hình chi nhánh', 'Branch configuration')}</span>
-                  </Link>
-                  <Link
-                    to="/portal/admin?tab=users"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/admin') && new URLSearchParams(location.search).get('tab') !== 'facilities'
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">admin_panel_settings</span>
-                    <span>{t('Phân quyền RBAC & người dùng')}</span>
-                  </Link>
-                </nav>
-              </div>
-
-              <div>
-                <div className="px-3 pb-2 pt-2 border-t border-slate-100">
-                  <span className="text-[11px] font-semibold tracking-wide text-slate-400">
-                    Vận hành toàn chuỗi
-                  </span>
-                </div>
-                <nav className="flex flex-col gap-1 text-left">
-                  <Link
-                    to="/portal/business-manager"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/business-manager')
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">query_stats</span>
-                    <span>{t('Báo cáo doanh thu')}</span>
-                  </Link>
-                  <Link
-                    to="/portal/facility-manager"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/facility-manager')
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">grid_view</span>
-                    <span>{t('Sơ đồ cơ sở kho')}</span>
-                  </Link>
-
-                  <Link
-                    to="/portal/overdue"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/overdue')
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">money_off</span>
-                    <span>{t('Xử lý nợ cước quá hạn')}</span>
-                  </Link>
-
-                  <Link
-                    to="/portal/shifts"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/shifts')
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">schedule</span>
-                    <span>{t('Xử lý trực ca')}</span>
-                  </Link>
-                  <Link
-                    to="/portal/staff"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/staff')
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">badge</span>
-                    <span>{t('Vận hành quầy bàn giao')}</span>
-                  </Link>
-                  <Link
-                    to="/portal/cashier"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/cashier')
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
-                    <span>{t('Báo cáo thu ngân')}</span>
-                  </Link>
-                  <Link
-                    to="/portal/tickets"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/tickets')
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">build_circle</span>
-                    <span>{t('Xử lý sự cố tại chỗ')}</span>
-                  </Link>
-                </nav>
-              </div>
-            </>
-          )}
-
-        </div>
-
-        {/* Bottom Status Widget */}
-        <div className="mt-auto px-4 pt-3">
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-1 text-left">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[10px] text-slate-500 font-bold uppercase">
-                {role === 'CUSTOMER' ? t('An Ninh Kho') : t('Trạng Thái Hệ Thống')}
-              </span>
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            </div>
-            <span className="font-unit-code text-xs text-slate-900 font-bold">
-              {role === 'CUSTOMER' ? t('Khóa bảo mật: Hoạt động') : t('Hệ thống trực tuyến')}
-            </span>
-            <span className="text-[11px] text-slate-500">
-              {role === 'CUSTOMER' ? t('Hỗ trợ khách: 1900 6828') : t('Kết nối máy chủ ổn định')}
-            </span>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Canvas Area */}
-      <div className="lg:pl-64 pt-20 flex-1 min-w-0">
-        <main className="min-h-[calc(100vh-5rem)] w-full bg-slate-50 p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto w-full max-w-[1600px]">
-            <Outlet context={{
-              selectedFacility: isFacilityScopedRole && assignedFacilityId ? assignedFacilityId : selectedFacility,
-              setSelectedFacility: handleSetSelectedFacility,
-              facilities
-            }} />
+        <main id="main-content" data-slot="main" tabIndex={-1} className="flex-1 bg-canvas p-4 outline-none md:p-6">
+          <div className="mx-auto w-full min-w-0 max-w-content">
+            <Outlet context={outletContext} />
           </div>
         </main>
       </div>
+
       <AccountProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
       <WebSettingsModal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} />
       <LogoutConfirmModal
@@ -704,23 +146,8 @@ export const DashboardLayout: React.FC = () => {
         userEmail={user?.email}
         userRole={role || 'USER'}
       />
-      {!isFacilityScopedRole && (
-        <FacilityScopingModal
-          isOpen={isScopingModalOpen}
-          onClose={() => setIsScopingModalOpen(false)}
-          initialUser={{
-            id: user?.id || 'u-active',
-            fullName: user?.fullName || 'Người dùng hiện tại',
-            email: user?.email || '',
-            roleName: role || 'STAFF',
-            facilityId: selectedFacility,
-          }}
-          onSave={(data) => {
-            handleSetSelectedFacility(data.facilityId)
-          }}
-        />
-      )}
     </div>
   )
 }
+
 export default DashboardLayout

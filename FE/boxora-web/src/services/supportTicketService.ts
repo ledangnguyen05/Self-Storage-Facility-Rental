@@ -1,4 +1,5 @@
 import { api } from '../lib/axios'
+import type { FileUploadResponse, RequestOptions } from '../types'
 
 export type SupportTicketCategory =
   | 'PIN_CODE'
@@ -37,7 +38,9 @@ export interface SupportTicketRecord {
   slaDueAt?: string
   isOverdue?: boolean
   isOverdueSla?: boolean
+  /** How many times the ticket was reopened (0 when never). */
   reopenCount?: number
+  /** Reason of the latest reopen. */
   reopenReason?: string
   resolvedAt?: string
   closedAt?: string
@@ -98,8 +101,12 @@ export interface SupportTicketStats {
   reopenedTickets: number
   overdueTickets: number
   overdueSlaTickets?: number
-  slaCompliancePercent: number
-  avgResolutionMinutes: number
+  resolvedOnTimeTickets?: number
+  resolvedLateTickets?: number
+  /** Share of tickets within SLA (0-100); null when there are no tickets yet. */
+  slaCompliancePercent: number | null
+  /** Average minutes from creation to resolution; null when nothing has been resolved yet. */
+  avgResolutionMinutes: number | null
   countByFacility: Record<string, number>
   countByCategory: Record<string, number>
   countByPriority: Record<string, number>
@@ -111,28 +118,28 @@ export const supportTicketService = {
     return response.data?.data as SupportTicketRecord
   },
 
-  async create(data: CreateSupportTicketRequest) {
-    return this.createTicket(data)
-  },
-
-  async getQueue(params?: {
-    facilityId?: string
-    status?: string
-    category?: string
-    priority?: string
-  }) {
-    const response = await api.get('/api/v1/support-tickets/queue', { params })
+  async getQueue(
+    params?: {
+      facilityId?: string
+      status?: string
+      category?: string
+      priority?: string
+    },
+    opts?: RequestOptions
+  ) {
+    const response = await api.get('/api/v1/support-tickets/queue', { params, signal: opts?.signal })
     return (response.data?.data || []) as SupportTicketRecord[]
   },
 
-  async getTicketById(id: string) {
-    const response = await api.get(`/api/v1/support-tickets/${id}`)
+  async getTicketById(id: string, opts?: RequestOptions) {
+    const response = await api.get(`/api/v1/support-tickets/${id}`, { signal: opts?.signal })
     return response.data?.data as SupportTicketRecord
   },
 
-  async getMyTickets(customerId?: string) {
+  async getMyTickets(customerId?: string, opts?: RequestOptions) {
     const response = await api.get('/api/v1/support-tickets/my-tickets', {
       params: customerId ? { customerId } : undefined,
+      signal: opts?.signal,
     })
     return (response.data?.data || []) as SupportTicketRecord[]
   },
@@ -142,18 +149,14 @@ export const supportTicketService = {
     return response.data?.data as SupportTicketRecord
   },
 
+  /** The manager's note and a changed priority are applied by the backend (the SLA is recalculated). */
   async assignTicket(
     id: string,
     data: string | { assignedStaffId: string; notes?: string; priority?: string }
   ) {
     const payload = typeof data === 'string'
-      ? { assignedStaffId: data, staffId: data }
-      : {
-          assignedStaffId: data.assignedStaffId,
-          staffId: data.assignedStaffId,
-          notes: data.notes,
-          priority: data.priority,
-        }
+      ? { staffId: data }
+      : { staffId: data.assignedStaffId, notes: data.notes, priority: data.priority }
     const response = await api.post(`/api/v1/support-tickets/${id}/assign`, payload)
     return response.data?.data as SupportTicketRecord
   },
@@ -171,18 +174,12 @@ export const supportTicketService = {
     return response.data?.data as SupportTicketRecord
   },
 
-  async resolveTicket(
-    id: string,
-    resolutionNote = 'Đã kiểm tra hiện trường và xử lý xong tại chỗ bởi nhân viên'
-  ) {
+  /** The backend requires a ticket that is IN_PROGRESS, held by the caller (or a manager), and a non-empty note. */
+  async resolveTicket(id: string, resolutionNote: string) {
     const response = await api.patch(`/api/v1/support-tickets/${id}/resolve`, null, {
       params: { resolutionNote },
     })
     return response.data?.data as SupportTicketRecord
-  },
-
-  async resolve(id: string, resolutionNote: string) {
-    return this.resolveTicket(id, resolutionNote)
   },
 
   async closeTicket(id: string, note = 'Khách hàng / Quản lý xác nhận đóng ticket') {
@@ -197,8 +194,8 @@ export const supportTicketService = {
     return response.data?.data as SupportTicketRecord
   },
 
-  async getContactLogs(ticketId: string) {
-    const response = await api.get(`/api/v1/support-tickets/${ticketId}/contact-logs`)
+  async getContactLogs(ticketId: string, opts?: RequestOptions) {
+    const response = await api.get(`/api/v1/support-tickets/${ticketId}/contact-logs`, { signal: opts?.signal })
     return (response.data?.data || []) as ContactLogRecord[]
   },
 
@@ -216,29 +213,26 @@ export const supportTicketService = {
     return response.data?.data as ContactLogRecord
   },
 
-  async getEscalationContacts() {
-    const response = await api.get('/api/v1/support-tickets/escalation-contacts')
+  async getEscalationContacts(opts?: RequestOptions) {
+    const response = await api.get('/api/v1/support-tickets/escalation-contacts', { signal: opts?.signal })
     return (response.data?.data || []) as EscalationContactResponse[]
   },
 
-  async getStats(facilityId?: string) {
+  async getStats(facilityId?: string, opts?: RequestOptions) {
     const response = await api.get('/api/v1/support-tickets/stats', {
       params: facilityId ? { facilityId } : undefined,
+      signal: opts?.signal,
     })
     return response.data?.data as SupportTicketStats
   },
 
-  async uploadEvidence(file: File) {
+  /** Uploads one evidence image (JPG, PNG, WEBP, max 10MB). Use `fileUrl` in `evidenceUrls`. */
+  async uploadEvidence(file: File): Promise<FileUploadResponse> {
     const formData = new FormData()
     formData.append('file', file)
     const response = await api.post('/api/v1/support-tickets/upload-evidence', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
-    return response.data?.data
-  },
-
-  async uploadAttachment(file: File): Promise<string> {
-    const result = await this.uploadEvidence(file)
-    return (result?.url || result || '') as string
+    return response.data?.data as FileUploadResponse
   },
 }

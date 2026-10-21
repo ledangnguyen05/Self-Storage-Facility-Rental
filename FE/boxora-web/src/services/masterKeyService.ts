@@ -1,9 +1,22 @@
 import { api } from '../lib/axios'
+import type { PageResult, RequestOptions } from '../types'
 
+/** `MasterKeyOverrideCategory` (backend enum). */
+export type MasterKeyOverrideCategory =
+  | 'LIFE_AND_SAFETY'
+  | 'LAW_ENFORCEMENT'
+  | 'POLICY_ENFORCEMENT'
+  | 'TECHNICAL_INCIDENT'
+  | 'SPECIAL_CIRCUMSTANCE'
+
+/** `OverrideSeverity` (backend enum). */
+export type MasterKeyOverrideSeverity = 'CRITICAL' | 'HIGH' | 'STANDARD'
+
+/** `MasterKeyOverrideRequest`. */
 export interface MasterKeyOverridePayload {
   facilityId: string
-  category: 'MAINTENANCE_EMERGENCY' | 'FIRE_HAZARD' | 'POLICE_WARRANT' | 'ABANDONED_AUCTION' | 'INTERNAL_AUDIT'
-  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+  category: MasterKeyOverrideCategory
+  severity: MasterKeyOverrideSeverity
   witnessUserId: string
   witnessPassword: string
   reason: string
@@ -12,13 +25,17 @@ export interface MasterKeyOverridePayload {
   resourceId?: string
 }
 
+/** `MasterKeyOverrideResponse`. */
 export interface MasterKeyOverrideRecord {
   id: string
   facilityId: string
-  category: string
-  severity: string
-  performerUserId: string
-  witnessUserId: string
+  facilityName?: string
+  performedById?: string
+  performedByName?: string
+  witnessId?: string
+  witnessName?: string
+  category: MasterKeyOverrideCategory | string
+  severity: MasterKeyOverrideSeverity | string
   reason: string
   documentReference?: string
   resourceType?: string
@@ -32,13 +49,13 @@ export const masterKeyService = {
     return response.data?.data as MasterKeyOverrideRecord
   },
 
-  async getById(id: string) {
-    const response = await api.get(`/api/v1/master-key/${id}`)
+  async getById(id: string, opts?: RequestOptions) {
+    const response = await api.get(`/api/v1/master-key/${id}`, { signal: opts?.signal })
     return response.data?.data as MasterKeyOverrideRecord
   },
 
-  async getAll(params?: { facilityId?: string; page?: number; size?: number }) {
-    const response = await api.get('/api/v1/master-key', { params })
-    return response.data?.data
-  }
+  async getAll(params?: { facilityId?: string; page?: number; size?: number }, opts?: RequestOptions) {
+    const response = await api.get('/api/v1/master-key', { params, signal: opts?.signal })
+    return response.data?.data as PageResult<MasterKeyOverrideRecord>
+  },
 }

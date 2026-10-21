@@ -1,5 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
+import { cn } from '../ui/cn'
 
 interface BrandLogoProps {
   to?: string
@@ -11,44 +12,43 @@ interface BrandLogoProps {
   onClick?: () => void
 }
 
+const sizeMap = {
+  sm: 'h-7',
+  md: 'h-8 sm:h-9',
+  lg: 'h-12',
+  xl: 'h-16',
+} as const
+
+/** Subtitles are shown in sentence case ("KHO TỰ QUẢN" -> "Kho tự quản"); product UI has no all-caps labels. */
+const toSentenceCase = (value: string) => {
+  if (value !== value.toLocaleUpperCase('vi')) return value
+  const lower = value.toLocaleLowerCase('vi')
+  return lower.charAt(0).toLocaleUpperCase('vi') + lower.slice(1)
+}
+
 export const BrandLogo: React.FC<BrandLogoProps> = ({
   to = '/',
   size = 'md',
   showText = true,
-  subtitle = 'KHO TỰ QUẢN THÔNG MINH',
+  subtitle = 'Kho tự quản thông minh',
   className = '',
   imgClassName = '',
   onClick,
 }) => {
-  const sizeMap = {
-    sm: { img: 'h-7 w-auto', sub: 'text-[8px]' },
-    md: { img: 'h-9 sm:h-10 w-auto', sub: 'text-[9px] sm:text-[10px]' },
-    lg: { img: 'h-12 sm:h-14 w-auto', sub: 'text-[11px]' },
-    xl: { img: 'h-16 sm:h-20 w-auto', sub: 'text-xs' },
-  }
-
-  const { img, sub } = sizeMap[size]
-
   const content = (
-    <div className={`flex items-center gap-2.5 sm:gap-3 group select-none ${className}`} onClick={onClick}>
-      <img
-        src="/logo.png"
-        alt="BOXORA Smart Storage"
-        className={`${img} object-contain group-hover:scale-105 transition-transform shrink-0 ${imgClassName}`}
-      />
-      {showText && subtitle && (
-        <div className="hidden md:flex flex-col text-left leading-none">
-          <span className={`font-mono text-blue-800/80 font-bold tracking-wider uppercase ${sub}`}>
-            {subtitle}
-          </span>
-        </div>
-      )}
-    </div>
+    <span className={cn('flex select-none items-center gap-3', className)} onClick={to ? undefined : onClick}>
+      <img src="/logo.png" alt="Boxora" className={cn('w-auto shrink-0 object-contain', sizeMap[size], imgClassName)} />
+      {showText && subtitle ? (
+        <span className="hidden border-l border-line pl-3 text-xs font-medium leading-4 text-fg-subtle md:block">
+          {toSentenceCase(subtitle)}
+        </span>
+      ) : null}
+    </span>
   )
 
   if (to) {
     return (
-      <Link to={to} className="inline-flex items-center">
+      <Link to={to} onClick={onClick} className="inline-flex shrink-0 items-center rounded-md">
         {content}
       </Link>
     )

@@ -1,6 +1,5 @@
 import { api } from '../lib/axios'
-import { Permission } from '../types'
-import { PageResult } from './userService'
+import type { PageResult, Permission } from '../types'
 
 export const permissionService = {
   async getAll(params?: { search?: string; isActive?: boolean; page?: number; size?: number }) {
@@ -13,12 +12,14 @@ export const permissionService = {
     return response.data?.data as Permission
   },
 
-  async create(data: { name: string; code?: string; description?: string }) {
+  /** `PermissionCreateRequest`: name (code) and permissionGroup are required. */
+  async create(data: { name: string; permissionGroup: string; description?: string }) {
     const response = await api.post('/api/v1/permissions', data)
     return response.data?.data as Permission
   },
 
-  async update(id: string, data: { name: string; code?: string; description?: string }) {
+  /** `PermissionUpdateRequest`: name and permissionGroup are required. */
+  async update(id: string, data: { name: string; permissionGroup: string; description?: string; isActive?: boolean }) {
     const response = await api.put(`/api/v1/permissions/${id}`, data)
     return response.data?.data as Permission
   },

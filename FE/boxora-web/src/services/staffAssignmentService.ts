@@ -1,30 +1,55 @@
 import { api } from '../lib/axios'
+import type { PageResult, RequestOptions } from '../types'
+
+export type StaffShiftValue = 'MORNING' | 'AFTERNOON' | 'NIGHT' | 'FULL_DAY'
 
 export interface StaffAssignmentCreatePayload {
   staffId: string
   facilityId: string
   assignedDate: string
-  shift: 'MORNING' | 'AFTERNOON' | 'NIGHT' | 'FULL_DAY'
+  shift: StaffShiftValue
   assignedZone?: string
   roleInShift?: string
   notes?: string
 }
 
+/** `StaffAssignmentUpdateRequest`: only the fields present are considered; shift, zone and role are locked once the shift started. */
+export interface StaffAssignmentUpdatePayload {
+  shift?: StaffShiftValue
+  /** Empty text clears the zone. */
+  assignedZone?: string
+  roleInShift?: string
+  status?: 'ASSIGNED' | 'CHECKED_IN' | 'COMPLETED' | 'ABSENT'
+  notes?: string
+}
+
+/** `StaffAssignmentResponse` (field names match the backend DTO). */
 export interface StaffAssignmentResponse {
   id: string
   staffId: string
-  staffName?: string
   staffUsername?: string
+  staffFullName?: string
+  staffEmail?: string
+  staffPhone?: string
   staffAvatar?: string
   facilityId: string
   facilityName?: string
+  facilityCode?: string
   assignedDate: string
-  shift: string
+  shift: StaffShiftValue | string
   assignedZone?: string
   roleInShift?: string
   status: string
+  assignedById?: string
+  assignedByName?: string
   notes?: string
+  createdAt?: string
+  updatedAt?: string
 }
+
+/** Display name of the assigned person: full name, then username. */
+export const getAssignmentStaffName = (assignment: Pick<StaffAssignmentResponse, 'staffFullName' | 'staffUsername'>) =>
+  assignment.staffFullName || assignment.staffUsername || 'Nhân viên'
 
 export const staffAssignmentService = {
   async createAssignment(data: StaffAssignmentCreatePayload) {
@@ -32,11 +57,19 @@ export const staffAssignmentService = {
     return response.data?.data as StaffAssignmentResponse
   },
 
-  async getDailyBoard(facilityId?: string, date?: string) {
+  /** PUT /staff-assignments/{id}: change shift, zone, notes or status (409 when the shift overlaps another one of the person). */
+  async updateAssignment(id: string, data: StaffAssignmentUpdatePayload) {
+    const response = await api.put(`/api/v1/staff-assignments/${id}`, data)
+    return response.data?.data as StaffAssignmentResponse
+  },
+
+  /** Assignments of one day. Without `facilityId`, system-wide roles get every facility. */
+  async getDailyBoard(facilityId?: string, date?: string, opts?: RequestOptions) {
     const response = await api.get('/api/v1/staff-assignments/daily-board', {
-      params: { facilityId, date }
+      params: { facilityId, date },
+      signal: opts?.signal,
     })
-    return response.data?.data as StaffAssignmentResponse[]
+    return (response.data?.data ?? []) as StaffAssignmentResponse[]
   },
 
   async getAllAssignments(params?: {
@@ -47,9 +80,9 @@ export const staffAssignmentService = {
     status?: string
     page?: number
     size?: number
-  }) {
-    const response = await api.get('/api/v1/staff-assignments', { params })
-    return response.data?.data
+  }, opts?: RequestOptions) {
+    const response = await api.get('/api/v1/staff-assignments', { params, signal: opts?.signal })
+    return response.data?.data as PageResult<StaffAssignmentResponse>
   },
 
   async deleteAssignment(id: string) {
@@ -57,4 +90,3 @@ export const staffAssignmentService = {
     return response.data
   }
 }
-
