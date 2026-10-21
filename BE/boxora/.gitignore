@@ -36,3 +36,6 @@ build/
 .env
 .env.*
 !.env.example
+
+### Uploaded evidence (customer documents: never commit) ###
+/uploads/

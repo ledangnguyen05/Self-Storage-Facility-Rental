@@ -1,6 +1,7 @@
 package com.boxora.config;
 
 import com.boxora.service.impl.JwtServiceImpl;
+import io.jsonwebtoken.ExpiredJwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,6 +23,17 @@ import java.io.IOException;
 @RequiredArgsConstructor
 @Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    /**
+     * Request attribute set when a Bearer token was sent but did not authenticate the call. The entry point turns it
+     * into {@code WWW-Authenticate: Bearer error="invalid_token"}, the only signal on which the web app refreshes
+     * its session and replays the request.
+     */
+    public static final String AUTH_FAILURE_ATTRIBUTE = "boxora.auth.failure";
+    /** The access token is well-formed but past its expiry. */
+    public static final String FAILURE_EXPIRED = "expired";
+    /** Unreadable, wrongly signed, not an access token, or the account is gone / locked. */
+    public static final String FAILURE_INVALID = "invalid";
 
     private final JwtServiceImpl jwtService;
     private final UserDetailsService userDetailsService;
@@ -65,18 +77,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             );
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authToken);
+                } else {
+                    request.setAttribute(AUTH_FAILURE_ATTRIBUTE, FAILURE_INVALID);
                 }
             }
+        } catch (ExpiredJwtException e) {
+            log.debug("Access token expired: {}", e.getMessage());
+            request.setAttribute(AUTH_FAILURE_ATTRIBUTE, FAILURE_EXPIRED);
+            // Don't throw — let Spring Security handle the unauthenticated request
         } catch (Exception e) {
             log.warn("JWT validation failed: {}", e.getMessage());
+            request.setAttribute(AUTH_FAILURE_ATTRIBUTE, FAILURE_INVALID);
             // Don't throw — let Spring Security handle the unauthenticated request
         }
 
         filterChain.doFilter(request, response);
     }
 
+    /** Truly anonymous auth endpoints. /auth/profile and /auth/change-password must be authenticated, so they are parsed. */
+    private static final java.util.Set<String> ANONYMOUS_AUTH_PATHS = java.util.Set.of(SecurityConfig.ANONYMOUS_AUTH_URLS);
+
     private boolean isPublicPath(String path) {
-        return path.startsWith("/api/v1/auth/") ||
+        return ANONYMOUS_AUTH_PATHS.contains(path) ||
                 path.equals("/api/v1/payments/vnpay-return") ||
                 path.equals("/api/v1/payments/vnpay-ipn") ||
                 path.equals("/api/v1/payments/vnpay-verify") ||
