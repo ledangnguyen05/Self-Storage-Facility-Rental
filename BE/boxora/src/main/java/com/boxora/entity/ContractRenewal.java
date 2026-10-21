@@ -53,4 +53,27 @@ public class ContractRenewal extends BaseEntity {
 
     @Column(name = "signed_at")
     private LocalDateTime signedAt;
+
+    /** Rent of the renewal cycle from the pricing quote (renewalFee = rentalFeeAmount + lateFeeAmount). */
+    @Column(name = "rental_fee_amount", precision = 15, scale = 2)
+    private BigDecimal rentalFeeAmount;
+
+    /** Late fee of an overdue contract settled together with the renewal. */
+    @Column(name = "late_fee_amount", nullable = false, precision = 15, scale = 2)
+    @Builder.Default
+    private BigDecimal lateFeeAmount = BigDecimal.ZERO;
+
+    /** Signature image drawn in the portal when DocuSeal is not configured (test environment). */
+    @Column(name = "signature_data", columnDefinition = "TEXT")
+    private String signatureData;
+
+    /** DOCUSEAL or IN_APP_TEST. */
+    @Column(name = "signing_method", length = 30)
+    private String signingMethod;
+
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
+
+    @Column(name = "cancel_reason", length = 500)
+    private String cancelReason;
 }

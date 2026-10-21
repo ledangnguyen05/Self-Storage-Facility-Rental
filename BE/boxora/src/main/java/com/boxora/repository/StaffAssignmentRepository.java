@@ -29,6 +29,11 @@ public interface StaffAssignmentRepository extends JpaRepository<StaffAssignment
     @EntityGraph(attributePaths = {"staff", "facility", "assignedBy"})
     List<StaffAssignment> findByFacility_IdAndAssignedDateOrderByShiftAscCreatedAtAsc(UUID facilityId, LocalDate assignedDate);
 
+    /** Every facility's assignments of one day (system-wide roles in the "all facilities" scope). */
+    @EntityGraph(attributePaths = {"staff", "facility", "assignedBy"})
+    @Query("SELECT a FROM StaffAssignment a WHERE a.assignedDate = :assignedDate ORDER BY a.facility.name ASC, a.shift ASC, a.createdAt ASC")
+    List<StaffAssignment> findAllFacilitiesBoard(@Param("assignedDate") LocalDate assignedDate);
+
     @EntityGraph(attributePaths = {"staff", "facility", "assignedBy"})
     List<StaffAssignment> findByStaff_IdAndAssignedDate(UUID staffId, LocalDate assignedDate);
 

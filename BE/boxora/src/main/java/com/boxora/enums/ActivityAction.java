@@ -4,8 +4,9 @@ import java.util.Arrays;
 import java.util.List;
 
 public enum ActivityAction {
-    // Authentication
-    LOGIN_SUCCESS(true), LOGIN_FAILED(true), LOGOUT(false),
+    // Authentication. A routine sign-in is not "critical" (it would drown the filter: most rows are sign-ins);
+    // a failed one is, because repeated failures are what an operator looks for.
+    LOGIN_SUCCESS(false), LOGIN_FAILED(true), LOGOUT(false),
     PASSWORD_CHANGE(true), PASSWORD_RESET_REQUESTED(false), PASSWORD_RESET_COMPLETED(true),
     REFRESH_TOKEN_REVOKED(false),
 
@@ -21,6 +22,7 @@ public enum ActivityAction {
     UNIT_TYPE_CREATE(false), UNIT_TYPE_UPDATE(false), UNIT_TYPE_DELETE(false),
     PRICE_CREATE(false), PRICE_UPDATE(true),
     FACILITY_POLICY_CREATE(false), FACILITY_POLICY_UPDATE(true),
+    FACILITY_POLICY_DELETE(true), FACILITY_POLICY_EXCEPTION(true),
     FEE_CREATE(false), FEE_UPDATE(false), FEE_WAIVE(true),
     DISCOUNT_CREATE(false), DISCOUNT_UPDATE(false), DISCOUNT_ACTIVATE(false), DISCOUNT_DEACTIVATE(false),
 
@@ -42,7 +44,7 @@ public enum ActivityAction {
     // Renewal & Overdue
     RENEWAL_REQUEST(false), RENEWAL_PAID(false), CONTRACT_EXTENDED(false),
     OVERDUE_DETECTED(false), OVERDUE_ACCESS_DISABLED(true), OVERDUE_SEALING_APPROVED(true),
-    OVERDUE_UNIT_LOCKED(true),
+    OVERDUE_UNIT_LOCKED(true), OVERDUE_REMINDER_SENT(false),
 
     // Checkout & Refund
     CHECKOUT_REQUEST(false), CHECKOUT_INSPECTION_COMPLETE(false), DAMAGE_FEE_RECORDED(true),

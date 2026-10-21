@@ -7,5 +7,7 @@ public enum NotificationType {
     SEALING_NOTICE,
     UNSEALING_NOTICE,
     REFUND_STATUS,
-    HANDOVER_PIN
+    HANDOVER_PIN,
+    MASTER_KEY_ALERT,
+    TICKET_UPDATE
 }

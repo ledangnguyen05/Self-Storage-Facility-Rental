@@ -34,4 +34,8 @@ public interface RefundRequestRepository extends JpaRepository<RefundRequest, UU
     List<RefundRequest> findByContractId(UUID contractId);
 
     List<RefundRequest> findByStatus(RefundStatus status);
+
+    long countByStatus(RefundStatus status);
+
+    long countByFacility_IdAndStatus(UUID facilityId, RefundStatus status);
 }

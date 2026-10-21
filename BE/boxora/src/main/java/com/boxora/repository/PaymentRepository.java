@@ -1,7 +1,5 @@
 package com.boxora.repository;
 
-import com.boxora.dto.response.FacilityRevenueResponse;
-import com.boxora.dto.response.SystemRevenueSummaryResponse;
 import com.boxora.entity.Payment;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -25,61 +23,21 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
 
     java.util.List<Payment> findAllByBooking_Id(UUID bookingId);
 
-    // Revenue grouped by facility - only PAID payments count as real revenue.
-    // fromDate/toDate are inclusive bounds on payment_time; pass null to leave a side open.
-    @Query("""
-            SELECT new com.boxora.dto.response.FacilityRevenueResponse(
-                f.id,
-                f.name,
-                SUM(p.amount),
-                SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.DEPOSIT THEN p.amount ELSE 0 END),
-                SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENTAL_FEE THEN p.amount ELSE 0 END),
-                SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENEWAL_FEE THEN p.amount ELSE 0 END),
-                SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.EXTRA_CHARGE THEN p.amount ELSE 0 END),
-                COUNT(p)
-            )
-            FROM Payment p
-            LEFT JOIN p.booking b
-            LEFT JOIN b.storageUnit bSu
-            LEFT JOIN p.contract c
-            JOIN Facility f ON (f.id = bSu.facility.id OR (bSu.facility.id IS NULL AND f.id = c.facility.id))
-            WHERE p.status = com.boxora.enums.PaymentStatus.PAID
-            AND (CAST(:fromDate AS timestamp) IS NULL OR p.paymentTime >= :fromDate)
-            AND (CAST(:toDate AS timestamp) IS NULL OR p.paymentTime <= :toDate)
-            AND (:facilityId IS NULL OR f.id = :facilityId)
-            GROUP BY f.id, f.name
-            ORDER BY f.name
-            """)
-    List<FacilityRevenueResponse> sumRevenueByFacility(
-            @Param("fromDate") LocalDateTime fromDate,
-            @Param("toDate") LocalDateTime toDate,
-            @Param("facilityId") UUID facilityId
-    );
+    java.util.List<Payment> findAllByContract_Id(UUID contractId);
 
-    // Same breakdown but collapsed to one system-wide or facility-specific row; COALESCE guards against
-    // a null SUM when there are no matching payments in the period.
-    @Query("""
-            SELECT new com.boxora.dto.response.SystemRevenueSummaryResponse(
-                COALESCE(SUM(p.amount), 0),
-                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.DEPOSIT THEN p.amount ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENTAL_FEE THEN p.amount ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENEWAL_FEE THEN p.amount ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.EXTRA_CHARGE THEN p.amount ELSE 0 END), 0),
-                COUNT(p)
-            )
-            FROM Payment p
-            LEFT JOIN p.booking b
-            LEFT JOIN b.storageUnit bSu
-            LEFT JOIN p.contract c
-            LEFT JOIN Facility f ON (f.id = bSu.facility.id OR (bSu.facility.id IS NULL AND f.id = c.facility.id))
-            WHERE p.status = com.boxora.enums.PaymentStatus.PAID
-            AND (CAST(:fromDate AS timestamp) IS NULL OR p.paymentTime >= :fromDate)
-            AND (CAST(:toDate AS timestamp) IS NULL OR p.paymentTime <= :toDate)
-            AND (:facilityId IS NULL OR f.id = :facilityId)
-            """)
-    SystemRevenueSummaryResponse sumSystemRevenue(
-            @Param("fromDate") LocalDateTime fromDate,
-            @Param("toDate") LocalDateTime toDate,
-            @Param("facilityId") UUID facilityId
-    );
+    /** Online payments still PENDING after their gateway link expired (cleaned up by PaymentServiceImpl). */
+    java.util.List<Payment> findAllByStatusAndPaymentMethodAndPaymentTimeBefore(com.boxora.enums.PaymentStatus status, String paymentMethod, LocalDateTime before);
+
+    java.util.List<Payment> findAllByBooking_IdAndStatusAndPaymentType(UUID bookingId, com.boxora.enums.PaymentStatus status,
+                                                                        com.boxora.enums.PaymentType paymentType);
+
+    java.util.List<Payment> findAllByContract_IdAndStatusAndPaymentType(UUID contractId, com.boxora.enums.PaymentStatus status,
+                                                                         com.boxora.enums.PaymentType paymentType);
+
+    // Counter payments (handover domain): one bank reference / paper receipt may back only one payment.
+    boolean existsByReferenceCodeIgnoreCase(String referenceCode);
+
+    boolean existsByReceiptVoucherCodeIgnoreCase(String receiptVoucherCode);
+
+    // Revenue, monthly trend and payment-channel aggregates for the reports live in PaymentReportRepository.
 }

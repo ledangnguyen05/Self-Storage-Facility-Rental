@@ -16,9 +16,22 @@ public interface NotificationLogRepository extends JpaRepository<NotificationLog
 
     boolean existsByNotificationTypeAndReferenceId(NotificationType notificationType, UUID referenceId);
 
+    boolean existsByNotificationTypeAndReferenceIdAndStatus(NotificationType notificationType, UUID referenceId, String status);
+
     Page<NotificationLog> findByRecipientId(UUID recipientId, Pageable pageable);
 
     Page<NotificationLog> findByFacilityId(UUID facilityId, Pageable pageable);
 
     List<NotificationLog> findByNotificationTypeAndReferenceId(NotificationType notificationType, UUID referenceId);
+
+    long countByRecipient_IdAndReadAtIsNull(UUID recipientId);
+
+    java.util.Optional<NotificationLog> findFirstByNotificationTypeAndReferenceIdAndChannelOrderByCreatedAtDesc(
+            NotificationType notificationType, UUID referenceId, com.boxora.enums.NotificationChannel channel);
+
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true)
+    @org.springframework.data.jpa.repository.Query("UPDATE NotificationLog n SET n.readAt = :now "
+            + "WHERE n.recipient.id = :recipientId AND n.readAt IS NULL")
+    int markAllRead(@org.springframework.data.repository.query.Param("recipientId") UUID recipientId,
+                    @org.springframework.data.repository.query.Param("now") java.time.LocalDateTime now);
 }

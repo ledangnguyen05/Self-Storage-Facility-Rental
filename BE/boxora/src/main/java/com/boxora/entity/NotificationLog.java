@@ -62,4 +62,8 @@ public class NotificationLog extends BaseEntity {
 
     @Column(name = "error_message", length = 1000)
     private String errorMessage;
+
+    /** When the recipient opened the notification; null while unread. */
+    @Column(name = "read_at")
+    private java.time.LocalDateTime readAt;
 }

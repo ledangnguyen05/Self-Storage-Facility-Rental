@@ -46,13 +46,13 @@ public class RefundRequest extends BaseEntity {
     @Column(name = "final_refund_amount", nullable = false, precision = 15, scale = 2)
     private BigDecimal finalRefundAmount;
 
-    @Column(name = "bank_name", nullable = false, length = 100)
+    @Column(name = "bank_name", length = 100)
     private String bankName;
 
-    @Column(name = "bank_account_number", nullable = false, length = 50)
+    @Column(name = "bank_account_number", length = 50)
     private String bankAccountNumber;
 
-    @Column(name = "bank_account_name", nullable = false, length = 100)
+    @Column(name = "bank_account_name", length = 100)
     private String bankAccountName;
 
     @Column(nullable = false, length = 500)
@@ -118,4 +118,11 @@ public class RefundRequest extends BaseEntity {
 
     @Column(name = "reconciliation_notes", length = 500)
     private String reconciliationNotes;
+
+    /** Bank transfer slip / screenshot uploaded when the transfer is started. */
+    @Column(name = "transfer_evidence_url", length = 500)
+    private String transferEvidenceUrl;
+
+    @Column(name = "bank_info_updated_at")
+    private LocalDateTime bankInfoUpdatedAt;
 }

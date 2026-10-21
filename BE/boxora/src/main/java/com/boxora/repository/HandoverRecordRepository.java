@@ -13,6 +13,9 @@ public interface HandoverRecordRepository extends JpaRepository<HandoverRecord, 
 
     boolean existsByBooking_IdAndRecordType(UUID bookingId, String recordType);
 
+    /** Newest record of one type for a booking (e.g. the latest CHECK_IN_INSPECTION). */
+    java.util.Optional<HandoverRecord> findFirstByBooking_IdAndRecordTypeOrderByRecordedAtDesc(UUID bookingId, String recordType);
+
     default List<HandoverRecord> findByBookingId(UUID bookingId) {
         return findByBooking_Id(bookingId);
     }

@@ -21,6 +21,15 @@ public interface FacilityRepository extends JpaRepository<Facility, UUID> {
 
     boolean existsByCodeAndIdNot(String code, UUID id);
 
+    /** Mã cơ sở là duy nhất KHÔNG phân biệt hoa thường: {@code QA-01} và {@code qa-01} là cùng một mã. */
+    boolean existsByCodeIgnoreCase(String code);
+
+    boolean existsByCodeIgnoreCaseAndIdNot(String code, UUID id);
+
+    boolean existsByNameIgnoreCase(String name);
+
+    boolean existsByNameIgnoreCaseAndIdNot(String name, UUID id);
+
     @Query("""
         SELECT f FROM Facility f
         WHERE (:search IS NULL

@@ -27,6 +27,18 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
 
     List<Booking> findByCustomer_Id(UUID customerId);
 
+    boolean existsByBookingCode(String bookingCode);
+
+    Optional<Booking> findByBookingCode(String bookingCode);
+
+    // Support tickets without a unit are routed to the facility of the customer's latest booking.
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"storageUnit", "storageUnit.facility"})
+    Optional<Booking> findFirstByCustomer_IdOrderByCreatedAtDesc(UUID customerId);
+
+    // Front-desk QR / manual code lookup (handover domain).
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "storageUnit", "storageUnit.facility"})
+    Optional<Booking> findByBookingCodeIgnoreCase(String bookingCode);
+
     @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "storageUnit", "storageUnit.facility"})
     List<Booking> findByStatusOrderByCreatedAtAsc(BookingStatus status);
 
@@ -37,6 +49,27 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     List<Booking> findByStatusAndPaymentExpiresAtBefore(BookingStatus status, Instant expiresAt);
 
     boolean existsByStorageUnit_Id(UUID storageUnitId);
+
+    /**
+     * [unitId, bookingStatus] của mọi đặt kho còn hiệu lực (chưa hoàn tất hoặc hủy) trên một nhóm kho. Dùng để suy ra trạng thái
+     * hiệu lực của kho ({@code UnitAvailability}) bằng một truy vấn cho cả danh sách.
+     */
+    @Query("""
+            SELECT b.storageUnit.id, b.status FROM Booking b
+            WHERE b.storageUnit.id IN :unitIds
+              AND b.status NOT IN (com.boxora.enums.BookingStatus.COMPLETED, com.boxora.enums.BookingStatus.CANCELLED)
+            """)
+    List<Object[]> findLiveBookingStatusesByUnitIds(@Param("unitIds") Collection<UUID> unitIds);
+
+    /** Đặt kho chưa kết thúc (chưa hoàn tất hoặc hủy) của một nhóm kho, mới nhất trước. */
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer"})
+    @Query("""
+            SELECT b FROM Booking b
+            WHERE b.storageUnit.id IN :unitIds
+              AND b.status NOT IN (com.boxora.enums.BookingStatus.COMPLETED, com.boxora.enums.BookingStatus.CANCELLED)
+            ORDER BY b.createdAt DESC
+            """)
+    List<Booking> findCurrentTenancyByUnitIds(@Param("unitIds") Collection<UUID> unitIds);
 
     boolean existsByStorageUnit_IdAndStatusIn(UUID storageUnitId, Collection<BookingStatus> statuses);
 
