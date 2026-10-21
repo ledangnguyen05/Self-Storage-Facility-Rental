@@ -1,46 +1,45 @@
 import React from 'react'
-import { cn } from '../../lib/utils'
+import { cn } from './cn'
+import { renderIcon, type IconProp } from './icon'
+import { toneBorder, toneSoft, toneSolidBg, toneText, type ToneWithAccent } from './tones'
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
-  variant?: 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'accent' | 'outline' | 'primary' | 'brand'
+  tone?: ToneWithAccent
+  variant?: 'soft' | 'outline' | 'solid'
   size?: 'sm' | 'md'
+  /** Leading status dot. */
+  dot?: boolean
+  icon?: IconProp
 }
 
-export const Badge: React.FC<BadgeProps> = ({
-  variant = 'neutral',
-  size = 'md',
-  className,
-  children,
-  ...props
-}) => {
-  const variantStyles = {
-    neutral: 'bg-[#F2F2EF] text-[#555555] border border-[#E5E5E1]',
-    success: 'bg-[#EAF7F0] text-[#168A55] border border-[#168A55]/20',
-    warning: 'bg-[#FFF6E5] text-[#B7791F] border border-[#B7791F]/20',
-    danger: 'bg-[#FDECEC] text-[#D64545] border border-[#D64545]/20',
-    info: 'bg-[#EDF3FF] text-[#3269D8] border border-[#3269D8]/20',
-    accent: 'bg-[#EAF0FF] text-[#2457FF] border border-[#2457FF]/20',
-    outline: 'bg-transparent text-[#111111] border border-[#D5D5D0]',
-    primary: 'bg-[#2457FF] text-white border border-[#2457FF]',
-    brand: 'bg-[#111111] text-white border border-[#111111]',
-  }
-
-  const sizeStyles = {
-    sm: 'text-[11px] px-2 py-0.5 font-medium rounded-[4px] tracking-wide uppercase',
-    md: 'text-[12px] px-2.5 py-1 font-medium rounded-[6px]',
-  }
+/** Non-interactive status label. Always carries text; colour is never the only signal. */
+export function Badge({ tone = 'neutral', variant = 'soft', size = 'md', dot = false, icon, className, children, ...props }: BadgeProps) {
+  const variantClasses =
+    variant === 'solid'
+      ? cn(toneSolidBg[tone], 'border-transparent text-on-accent')
+      : variant === 'outline'
+        ? cn('bg-transparent', toneBorder[tone], toneText[tone])
+        : toneSoft[tone]
 
   return (
     <span
+      data-slot="badge"
       className={cn(
-        'inline-flex items-center gap-1.5 shrink-0 transition-colors select-none',
-        variantStyles[variant],
-        sizeStyles[size],
-        className
+        'inline-flex max-w-full shrink-0 select-none items-center gap-1 whitespace-nowrap rounded-md border font-medium',
+        size === 'sm' ? 'h-5 px-1.5 text-xs' : 'h-6 px-2 text-xs',
+        variantClasses,
+        className,
       )}
       {...props}
     >
-      {children}
+      {dot ? (
+        <span
+          aria-hidden="true"
+          className={cn('size-1.5 shrink-0 rounded-full', variant === 'solid' ? 'bg-on-accent' : toneSolidBg[tone])}
+        />
+      ) : null}
+      {renderIcon(icon, { size: 12, className: 'shrink-0' })}
+      <span className="truncate">{children}</span>
     </span>
   )
 }

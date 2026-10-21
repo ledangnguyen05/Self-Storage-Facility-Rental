@@ -1,52 +1,94 @@
 import React from 'react'
-import { cn } from '../../lib/utils'
+import { cn } from './cn'
+import { buttonVariants, type ButtonSize, type ButtonVariant } from './buttonVariants'
+import { renderIcon, type IconProp } from './icon'
+import { Spinner } from './Spinner'
+import { Tooltip, type TooltipProps } from './Tooltip'
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'text'
-  size?: 'sm' | 'md' | 'lg'
-  isLoading?: boolean
-  icon?: React.ReactNode
+  variant?: ButtonVariant
+  size?: ButtonSize
+  /** Shows a spinner, disables the button and keeps its width. */
+  loading?: boolean
+  leftIcon?: IconProp
+  rightIcon?: IconProp
+  fullWidth?: boolean
 }
 
-export const Button: React.FC<ButtonProps> = ({
-  variant = 'primary',
-  size = 'md',
-  isLoading = false,
-  icon,
-  className,
-  children,
-  disabled,
-  ...props
-}) => {
-  const baseClasses =
-    'inline-flex items-center justify-center font-medium rounded-[8px] btn-tactile focus:outline-none transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none select-none'
-
-  const sizeClasses = {
-    sm: 'h-[36px] px-3 text-[13px] gap-1.5',
-    md: 'h-[44px] px-5 text-[14px] gap-2',
-    lg: 'h-[50px] px-6 text-[15px] gap-2.5',
-  }
-
-  const variantClasses = {
-    primary: 'bg-[#111111] text-[#FFFFFF] hover:bg-[#222222] border border-[#111111] shadow-subtle',
-    secondary: 'bg-[#FFFFFF] text-[#111111] border border-[#D5D5D0] hover:bg-[#F2F2EF] hover:border-[#111111]',
-    ghost: 'bg-transparent text-[#111111] hover:bg-[#F2F2EF]',
-    danger: 'bg-[#D64545] text-white hover:bg-[#C0392B]',
-    text: 'bg-transparent text-[#2457FF] hover:underline p-0 h-auto font-medium',
-  }
-
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  {
+    variant = 'primary',
+    size = 'md',
+    loading = false,
+    leftIcon,
+    rightIcon,
+    fullWidth = false,
+    type = 'button',
+    disabled,
+    className,
+    children,
+    ...props
+  },
+  ref,
+) {
+  const iconSize = size === 'sm' ? 14 : 16
   return (
     <button
-      className={cn(baseClasses, sizeClasses[size], variantClasses[variant], className)}
-      disabled={disabled || isLoading}
+      ref={ref}
+      type={type}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      data-slot="button"
+      className={buttonVariants({ variant, size, fullWidth, className })}
       {...props}
     >
-      {isLoading ? (
-        <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-      ) : (
-        icon && <span className="shrink-0">{icon}</span>
-      )}
-      <span>{children}</span>
+      {loading ? (
+        <span className="absolute inset-0 flex items-center justify-center">
+          <Spinner size={size === 'sm' ? 'xs' : 'sm'} label="" />
+        </span>
+      ) : null}
+      <span className={cn('contents', loading && 'invisible')}>
+        {renderIcon(leftIcon, { size: iconSize, className: 'shrink-0' })}
+        {children}
+        {renderIcon(rightIcon, { size: iconSize, className: 'shrink-0' })}
+      </span>
     </button>
   )
+})
+
+export interface IconButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
+  /** Required: the accessible name of the button. */
+  'aria-label': string
+  icon: IconProp
+  variant?: 'ghost' | 'secondary' | 'primary' | 'danger'
+  size?: ButtonSize
+  loading?: boolean
+  /** Show a tooltip on hover/focus. `true` reuses the aria-label. */
+  tooltip?: boolean | React.ReactNode
+  tooltipSide?: TooltipProps['side']
 }
+
+export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
+  { icon, variant = 'ghost', size = 'md', loading = false, tooltip, tooltipSide = 'bottom', type = 'button', disabled, className, ...props },
+  ref,
+) {
+  const button = (
+    <button
+      ref={ref}
+      type={type}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      data-slot="icon-button"
+      className={buttonVariants({ variant, size, iconOnly: true, className })}
+      {...props}
+    >
+      {loading ? <Spinner size="sm" label="" /> : renderIcon(icon, { size: size === 'lg' ? 20 : 16 })}
+    </button>
+  )
+  if (!tooltip) return button
+  return (
+    <Tooltip content={tooltip === true ? props['aria-label'] : tooltip} side={tooltipSide}>
+      {button}
+    </Tooltip>
+  )
+})
