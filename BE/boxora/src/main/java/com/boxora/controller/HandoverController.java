@@ -2,6 +2,10 @@ package com.boxora.controller;
 
 import com.boxora.common.response.ApiResponse;
 import com.boxora.dto.request.HandoverRequest;
+import com.boxora.dto.request.CustomerDebtResolveRequest;
+import com.boxora.dto.response.CustomerDebtResponse;
+import com.boxora.dto.response.FileUploadResponse;
+import com.boxora.dto.response.HandoverLookupResponse;
 import com.boxora.dto.response.HandoverPrerequisitesResponse;
 import com.boxora.dto.response.HandoverResponse;
 import com.boxora.dto.response.ReturnSettlementPreviewResponse;
@@ -12,9 +16,11 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
@@ -28,7 +34,7 @@ public class HandoverController {
     private final HandoverService handoverService;
 
     @GetMapping("/booking/{bookingId}/prerequisites")
-    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
     @Operation(summary = "Đối soát 4 điều kiện tiên quyết trước khi check-in bàn giao (BR-RULE-005: Cọc + Tiền thuê tháng đầu + Ký hợp đồng + Đối soát CCCD)")
     public ResponseEntity<ApiResponse<HandoverPrerequisitesResponse>> getCheckInPrerequisites(@PathVariable UUID bookingId) {
         HandoverPrerequisitesResponse response = handoverService.getCheckInPrerequisites(bookingId);
@@ -44,7 +50,7 @@ public class HandoverController {
     }
 
     @GetMapping("/booking/{bookingId}/return-preview")
-    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN', 'CUSTOMER')")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN', 'CUSTOMER')")
     @Operation(summary = "Xem trước quyết toán tiền cọc, hạn thuê và 5 tiêu chí thẩm định trả kho (BR-RULE-013/014/015)")
     public ResponseEntity<ApiResponse<ReturnSettlementPreviewResponse>> getReturnSettlementPreview(@PathVariable UUID bookingId) {
         ReturnSettlementPreviewResponse response = handoverService.getReturnSettlementPreview(bookingId);
@@ -84,29 +90,63 @@ public class HandoverController {
     }
 
     @GetMapping("/booking/{bookingId}")
-    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN', 'CUSTOMER')")
-    @Operation(summary = "Lấy lịch sử các biên bản bàn giao của đơn đặt kho")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN', 'CUSTOMER')")
+    @Operation(summary = "Lấy lịch sử các biên bản bàn giao của đơn đặt kho (khách chỉ xem đơn của mình, nhân viên chỉ xem cơ sở của mình, không trả về mã PIN)")
     public ResponseEntity<ApiResponse<List<HandoverResponse>>> getByBookingId(@PathVariable UUID bookingId) {
         return ResponseEntity.ok(ApiResponse.success(handoverService.getByBookingId(bookingId)));
     }
 
     @PostMapping("/booking/{bookingId}/send-pin-email")
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
-    @Operation(summary = "Gửi mã PIN và thông tin bàn giao đến email khách hàng")
-    public ResponseEntity<ApiResponse<Void>> sendPinEmail(
-            @PathVariable UUID bookingId,
-            @RequestParam(required = false) String customEmail) {
-        handoverService.sendHandoverPinEmail(bookingId, customEmail);
-        return ResponseEntity.ok(ApiResponse.success("Đã gửi mã PIN và thông tin bàn giao đến email khách hàng thành công", null));
+    @Operation(summary = "Gửi lại mã PIN và thông tin bàn giao tới email khách hàng đã lưu trong hồ sơ (gửi đồng bộ, chỉ báo thành công khi máy chủ email nhận thư)")
+    public ResponseEntity<ApiResponse<String>> sendPinEmail(@PathVariable UUID bookingId) {
+        String sentTo = handoverService.sendHandoverPinEmail(bookingId);
+        return ResponseEntity.ok(ApiResponse.success("Đã gửi mã PIN và thông tin bàn giao tới " + sentTo, sentTo));
     }
 
     @PostMapping("/booking/{bookingId}/send-web-notification")
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
-    @Operation(summary = "Bắn thông báo web đến tài khoản khách hàng")
+    @Operation(summary = "Thông báo trong ứng dụng cho khách hàng (không chứa mã PIN, gọi lại không tạo thông báo trùng)")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.NotificationLogResponse>> sendWebNotification(
             @PathVariable UUID bookingId) {
         return ResponseEntity.ok(ApiResponse.success("Đã bắn thông báo web thành công",
                 handoverService.sendHandoverWebNotification(bookingId)));
+    }
+
+    @PostMapping(value = "/uploads", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @Operation(summary = "Tải lên ảnh nghiệm thu, bản scan hợp đồng giấy hoặc biên lai chuyển khoản (JPG, PNG, WEBP, PDF, tối đa 10 MB). Dùng fileUrl trả về trong các API bàn giao")
+    public ResponseEntity<ApiResponse<FileUploadResponse>> uploadEvidence(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "bookingId", required = false) UUID bookingId) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Tải tệp lên thành công", handoverService.uploadEvidence(file, bookingId)));
+    }
+
+    @GetMapping("/lookup")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @Operation(summary = "Tra cứu đơn đặt kho tại quầy theo mã QR (BOXORA-CHECKIN:<mã đặt chỗ>), mã đặt chỗ hoặc UUID. Chỉ trong phạm vi cơ sở của nhân viên")
+    public ResponseEntity<ApiResponse<HandoverLookupResponse>> lookup(@RequestParam("code") String code) {
+        return ResponseEntity.ok(ApiResponse.success(handoverService.lookupBooking(code)));
+    }
+
+    @GetMapping("/customer-debts")
+    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @Operation(summary = "Danh sách công nợ khách còn nợ sau quyết toán trả kho (khấu trừ vượt tiền cọc)")
+    public ResponseEntity<ApiResponse<List<CustomerDebtResponse>>> getCustomerDebts(
+            @RequestParam(required = false) UUID facilityId,
+            @RequestParam(required = false) String status) {
+        return ResponseEntity.ok(ApiResponse.success(handoverService.getCustomerDebts(facilityId, status)));
+    }
+
+    @PostMapping("/customer-debts/{debtId}/resolve")
+    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @Operation(summary = "Ghi nhận đã thu hồi hoặc xóa một khoản công nợ khách hàng")
+    public ResponseEntity<ApiResponse<CustomerDebtResponse>> resolveCustomerDebt(
+            @PathVariable UUID debtId,
+            @Valid @RequestBody CustomerDebtResolveRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Đã cập nhật công nợ",
+                handoverService.resolveCustomerDebt(debtId, request.getStatus(), request.getNote())));
     }
 
     // =========================================================================

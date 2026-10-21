@@ -4,6 +4,8 @@ import com.boxora.common.response.ApiResponse;
 import com.boxora.common.response.PageResponse;
 import com.boxora.dto.response.ActivityLogResponse;
 import com.boxora.enums.*;
+import com.boxora.exception.AppException;
+import com.boxora.exception.ErrorCode;
 import com.boxora.security.FacilityAccessGuard;
 import com.boxora.service.ActivityLogService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -50,6 +52,7 @@ public class ActivityLogController {
             @RequestParam(required = false) UUID facilityId,
             @RequestParam(required = false) ActivityLogType logType,
             @RequestParam(required = false) ActivityAction action,
+            @RequestParam(required = false) ActivityDomain domain,
             @RequestParam(required = false) ActivityLogStatus status,
             @RequestParam(required = false) Boolean isCriticalOnly,
             @RequestParam(required = false) String resourceType,
@@ -67,9 +70,13 @@ public class ActivityLogController {
             effectiveFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
         }
 
+        if (fromDate != null && toDate != null && toDate.isBefore(fromDate)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Ngày kết thúc không được trước ngày bắt đầu.");
+        }
+
         PageResponse<ActivityLogResponse> response = activityLogService.getAll(
-                userId, effectiveFacilityId, logType, action, status, isCriticalOnly,
-                resourceType, resourceId, fromDate, toDate, search, page, size, sortBy, sortDir);
+                userId, effectiveFacilityId, logType, action, domain != null ? domain.actions() : null,
+                status, isCriticalOnly, resourceType, resourceId, fromDate, toDate, search, page, size, sortBy, sortDir);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 

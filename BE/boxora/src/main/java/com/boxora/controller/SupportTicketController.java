@@ -95,7 +95,7 @@ public class SupportTicketController {
 
     @GetMapping("/my-tickets")
     @PreAuthorize("hasAnyRole('CUSTOMER', 'STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
-    @Operation(summary = "Lấy danh sách tickets sự cố của khách hàng")
+    @Operation(summary = "Khách hàng xem ticket của mình; nhân viên và quản lý cơ sở xem ticket trong phạm vi cơ sở của mình; BOM và Admin xem toàn hệ thống (lọc theo customerId nếu cần)")
     public ResponseEntity<ApiResponse<List<SupportTicketResponse>>> getMyTickets(@RequestParam(required = false) UUID customerId) {
         return ResponseEntity.ok(ApiResponse.success(supportTicketService.getMyTickets(customerId)));
     }
@@ -114,7 +114,7 @@ public class SupportTicketController {
             @PathVariable UUID id,
             @Valid @RequestBody TicketAssignRequest request
     ) {
-        return ResponseEntity.ok(ApiResponse.success("Phân công nhân viên xử lý thành công", supportTicketService.assignTicket(id, request.getStaffId())));
+        return ResponseEntity.ok(ApiResponse.success("Phân công nhân viên xử lý thành công", supportTicketService.assignTicket(id, request)));
     }
 
     @PatchMapping("/{id}/status")
@@ -129,10 +129,10 @@ public class SupportTicketController {
 
     @PatchMapping("/{id}/resolve")
     @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER')")
-    @Operation(summary = "Xác nhận đã xử lý hoàn tất sự cố kèm ghi chú khắc phục")
+    @Operation(summary = "Xác nhận đã xử lý hoàn tất sự cố: phiếu phải đang xử lý, người gọi là người được phân công (hoặc quản lý cơ sở) và phải có ghi chú khắc phục")
     public ResponseEntity<ApiResponse<SupportTicketResponse>> resolve(
             @PathVariable UUID id,
-            @RequestParam(defaultValue = "Đã kiểm tra hiện trường và xử lý xong tại chỗ bởi nhân viên") String resolutionNote
+            @RequestParam(required = false) String resolutionNote
     ) {
         return ResponseEntity.ok(ApiResponse.success("Sự cố đã được xử lý hoàn tất", supportTicketService.resolveTicket(id, resolutionNote)));
     }

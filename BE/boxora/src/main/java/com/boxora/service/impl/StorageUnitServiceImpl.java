@@ -3,11 +3,16 @@ package com.boxora.service.impl;
 import com.boxora.dto.request.StorageUnitCreateRequest;
 import com.boxora.dto.request.StorageUnitUpdateRequest;
 import com.boxora.dto.response.StorageUnitResponse;
+import com.boxora.entity.Booking;
 import com.boxora.entity.Facility;
 import com.boxora.entity.FacilityPolicy;
+import com.boxora.entity.RentalContract;
 import com.boxora.entity.StorageUnit;
 import com.boxora.entity.UnitType;
+import com.boxora.entity.User;
 import com.boxora.enums.ActivityAction;
+import com.boxora.enums.BookingStatus;
+import com.boxora.enums.FacilityStatus;
 import com.boxora.enums.UnitStatus;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
@@ -18,17 +23,25 @@ import com.boxora.repository.RentalContractRepository;
 import com.boxora.repository.StorageUnitRepository;
 import com.boxora.repository.UnitTypeRepository;
 import com.boxora.security.FacilityAccessGuard;
+import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
+import com.boxora.service.PricingRules;
 import com.boxora.service.StorageUnitService;
+import com.boxora.service.UnitAvailability;
+import com.boxora.util.FloorLabels;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.Collections;
-import java.util.Map;
+import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -39,6 +52,15 @@ import java.util.stream.Collectors;
 @Transactional
 public class StorageUnitServiceImpl implements StorageUnitService {
 
+    /** Vai trò nội bộ được xem thông tin người thuê/hợp đồng của kho (trong phạm vi cơ sở của mình). */
+    private static final Set<String> INTERNAL_ROLES =
+            Set.of("ADMIN", "SYSTEM_ADMIN", "BUSINESS_MANAGER", "BUSINESS_OPERATIONS_MANAGER", "FACILITY_MANAGER", "STAFF");
+
+    private static final Set<UnitStatus> TENANT_STATUSES =
+            EnumSet.of(UnitStatus.RESERVED, UnitStatus.OCCUPIED, UnitStatus.OVERDUE_LOCKED);
+
+    private static final int IN_CLAUSE_CHUNK = 1000;
+
     private final StorageUnitRepository storageUnitRepository;
     private final FacilityRepository facilityRepository;
     private final FacilityPolicyRepository facilityPolicyRepository;
@@ -48,11 +70,16 @@ public class StorageUnitServiceImpl implements StorageUnitService {
     private final FacilityAccessGuard facilityAccessGuard;
     private final com.boxora.service.StorageUnitPriceHistoryService storageUnitPriceHistoryService;
     private final ActivityLogService activityLogService;
+    private final RequestContext requestContext;
+
+    /** Người thuê hiện tại của một kho: hợp đồng chưa kết thúc và/hoặc đặt kho chưa kết thúc. */
+    private record Tenancy(RentalContract contract, Booking booking) {
+    }
 
     @Override
     @Transactional(readOnly = true)
-    public List<StorageUnitResponse> getUnits(UUID facilityId, String floorLevel, String status) {
-        if (facilityAccessGuard.isFacilityScoped()) {
+    public List<StorageUnitResponse> getUnits(UUID facilityId, String floorLevel, String status, boolean publicScope) {
+        if (!publicScope && facilityAccessGuard.isFacilityScoped()) {
             UUID scopedId = facilityAccessGuard.scopedFacilityIdOrNull();
             if (facilityId != null && !facilityId.equals(scopedId)) {
                 throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
@@ -70,25 +97,40 @@ public class StorageUnitServiceImpl implements StorageUnitService {
             }
         }
 
-        List<StorageUnit> units;
-        if (facilityId != null && floorLevel != null && !floorLevel.isBlank() && unitStatus != null) {
-            units = storageUnitRepository.findByFacility_IdAndFloorLevelAndStatus(facilityId, floorLevel, unitStatus);
-        } else if (facilityId != null && floorLevel != null && !floorLevel.isBlank()) {
-            units = storageUnitRepository.findByFacility_IdAndFloorLevel(facilityId, floorLevel);
-        } else if (facilityId != null && unitStatus != null) {
-            units = storageUnitRepository.findByFacility_IdAndStatus(facilityId, unitStatus);
-        } else if (facilityId != null) {
-            units = storageUnitRepository.findByFacility_Id(facilityId);
-        } else if (unitStatus != null) {
-            units = storageUnitRepository.findByStatus(unitStatus);
-        } else {
-            units = storageUnitRepository.findAll();
+        // Tầng được so khớp theo khóa chuẩn hóa nên "Floor 1", "Tầng 1" và "tang 1" là cùng một tầng
+        String floorKey = floorLevel != null && !floorLevel.isBlank() ? FloorLabels.key(floorLevel) : null;
+        boolean internal = !publicScope && isInternalCaller();
+
+        List<StorageUnit> candidates = facilityId != null
+                ? storageUnitRepository.findByFacility_Id(facilityId)
+                : storageUnitRepository.findAllWithDetails();
+        // Khách vãng lai và khách hàng chỉ thấy kho của cơ sở đang hoạt động (cơ sở bảo trì/ngừng hoạt động không nhận đặt kho)
+        candidates = candidates.stream()
+                .filter(unit -> internal || (unit.getFacility() != null && unit.getFacility().getStatus() == FacilityStatus.ACTIVE))
+                .filter(unit -> floorKey == null || floorKey.equals(FloorLabels.key(unit.getFloorLevel())))
+                .toList();
+
+        // Trạng thái hiệu lực: kho có đặt kho còn hiệu lực không bao giờ hiện là "Sẵn sàng" (xem UnitAvailability)
+        Map<UUID, List<BookingStatus>> liveBookings = loadLiveBookings(candidates);
+        Map<UUID, UnitStatus> effective = new HashMap<>();
+        for (StorageUnit unit : candidates) {
+            effective.put(unit.getId(), effectiveStatusOf(unit, liveBookings));
         }
 
+        // Lọc trạng thái trên trạng thái hiệu lực; với khách, kho khóa do quá hạn hiển thị như kho đã thuê
+        final UnitStatus requested = unitStatus;
+        List<StorageUnit> units = candidates.stream()
+                .filter(unit -> requested == null
+                        || (internal
+                        ? effective.get(unit.getId()) == requested
+                        : publicStatusOf(effective.get(unit.getId())) == publicStatusOf(requested)))
+                .toList();
+
         Map<UUID, FacilityPolicy> activePolicies = facilityPolicyRepository.findByIsActiveTrue().stream()
-                .collect(Collectors.toMap(policy -> policy.getFacility().getId(), Function.identity()));
+                .collect(Collectors.toMap(policy -> policy.getFacility().getId(), Function.identity(), (first, second) -> first));
+        Map<UUID, Tenancy> tenancies = internal ? loadTenancies(units, effective) : Collections.emptyMap();
         return units.stream()
-                .map(unit -> mapToResponse(unit, activePolicies.get(unit.getFacility().getId())))
+                .map(unit -> toResponse(unit, effective.get(unit.getId()), activePolicies.get(unit.getFacility().getId()), tenancies.get(unit.getId()), internal))
                 .collect(Collectors.toList());
     }
 
@@ -102,10 +144,11 @@ public class StorageUnitServiceImpl implements StorageUnitService {
             facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
         }
 
-        FacilityPolicy activePolicy = unit.getFacility() == null
-                ? null
-                : facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(unit.getFacility().getId()).orElse(null);
-        return mapToResponse(unit, activePolicy);
+        boolean internal = isInternalCaller();
+        FacilityPolicy activePolicy = activePolicyOf(unit);
+        UnitStatus effective = effectiveStatusOf(unit, loadLiveBookings(List.of(unit)));
+        Tenancy tenancy = internal ? loadTenancies(List.of(unit), Map.of(unit.getId(), effective)).get(unit.getId()) : null;
+        return toResponse(unit, effective, activePolicy, tenancy, internal);
     }
 
     @Override
@@ -119,7 +162,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND));
 
         String trimmedCode = request.getUnitCode().trim();
-        if (storageUnitRepository.existsByFacility_IdAndUnitCode(request.getFacilityId(), trimmedCode)) {
+        if (storageUnitRepository.existsByFacility_IdAndUnitCodeIgnoreCase(request.getFacilityId(), trimmedCode)) {
             throw new AppException(ErrorCode.STORAGE_UNIT_CODE_EXISTED);
         }
 
@@ -129,7 +172,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
 
         StorageUnit unit = StorageUnit.builder()
                 .unitCode(trimmedCode)
-                .floorLevel(request.getFloorLevel().trim())
+                .floorLevel(FloorLabels.normalize(request.getFloorLevel()))
                 .status(UnitStatus.AVAILABLE)
                 .facility(facility)
                 .unitType(unitType)
@@ -152,7 +195,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 unit.getStatus()
         );
 
-        return mapToResponse(unit);
+        return toInternalResponse(unit);
     }
 
     @Override
@@ -163,7 +206,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
         facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
 
         String trimmedCode = request.getUnitCode().trim();
-        if (storageUnitRepository.existsByFacility_IdAndUnitCodeAndIdNot(unit.getFacility().getId(), trimmedCode, id)) {
+        if (storageUnitRepository.existsByFacility_IdAndUnitCodeIgnoreCaseAndIdNot(unit.getFacility().getId(), trimmedCode, id)) {
             throw new AppException(ErrorCode.STORAGE_UNIT_CODE_EXISTED);
         }
 
@@ -171,7 +214,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND));
 
         unit.setUnitCode(trimmedCode);
-        unit.setFloorLevel(request.getFloorLevel().trim());
+        unit.setFloorLevel(FloorLabels.normalize(request.getFloorLevel()));
         unit.setUnitType(unitType);
 
         // BR-RULE-011: Nếu có cập nhật đơn giá, thực hiện quy trình điều chỉnh và ghi nhận lịch sử giá
@@ -201,7 +244,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 unit.getStatus()
         );
 
-        return mapToResponse(unit);
+        return toInternalResponse(unit);
     }
 
     @Override
@@ -246,6 +289,12 @@ public class StorageUnitServiceImpl implements StorageUnitService {
             throw new AppException(ErrorCode.STORAGE_UNIT_CANNOT_MAINTAIN);
         }
 
+        // Kho đang ghi "trống" nhưng đã có đặt kho còn hiệu lực thì không được chuyển sang bảo trì
+        if (unit.getStatus() == UnitStatus.AVAILABLE
+                && bookingRepository.existsByStorageUnit_IdAndStatusIn(id, UnitAvailability.LIVE_BOOKING_STATUSES)) {
+            throw new AppException(ErrorCode.STORAGE_UNIT_CANNOT_MAINTAIN);
+        }
+
         UnitStatus oldStatus = unit.getStatus();
         if (unit.getStatus() == UnitStatus.AVAILABLE) {
             unit.setStatus(UnitStatus.UNDER_MAINTENANCE);
@@ -260,103 +309,150 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 ActivityAction.STORAGE_UNIT_STATUS_CHANGE,
                 "StorageUnit",
                 unit.getId(),
-                String.format("Chuyển trạng thái bảo trì ngăn kho %s từ %s sang %s", unit.getUnitCode(), oldStatus, unit.getStatus()),
+                String.format("Chuyển trạng thái ngăn kho %s từ \"%s\" sang \"%s\"", unit.getUnitCode(), UnitAvailability.label(oldStatus), UnitAvailability.label(unit.getStatus())),
                 oldStatus,
                 unit.getStatus()
         );
 
-        return mapToResponse(unit);
+        return toInternalResponse(unit);
     }
 
-    private StorageUnitResponse mapToResponse(StorageUnit u) {
-        FacilityPolicy policy = (u.getFacility() != null && u.getFacility().getId() != null)
-                ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(u.getFacility().getId()).orElse(null)
+    // ------------------------------------------------------------------ mapping
+
+    private boolean isInternalCaller() {
+        String role = requestContext.currentUserRole();
+        return role != null && INTERNAL_ROLES.contains(role);
+    }
+
+    private FacilityPolicy activePolicyOf(StorageUnit unit) {
+        return (unit.getFacility() != null && unit.getFacility().getId() != null)
+                ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(unit.getFacility().getId()).orElse(null)
                 : null;
-        return mapToResponse(u, policy);
     }
 
-    private StorageUnitResponse mapToResponse(StorageUnit u, FacilityPolicy activePolicy) {
-        BigDecimal price = activePolicy == null || u.getUnitType() == null
-                ? null
-                : activePolicy.getPrices().stream()
-                        .filter(policyPrice -> policyPrice.getUnitType().getId().equals(u.getUnitType().getId()))
-                        .map(policyPrice -> policyPrice.getMonthlyPrice())
-                        .findFirst()
-                        .orElse(null);
-        if (price == null) price = u.getEffectiveBasePrice();
-        Double area = (u.getUnitType() != null) ? u.getUnitType().getAreaSqm() : null;
+    /** Phản hồi của các thao tác ghi (chỉ nhân viên nội bộ gọi được): đầy đủ thông tin thuê. */
+    private StorageUnitResponse toInternalResponse(StorageUnit unit) {
+        UnitStatus effective = effectiveStatusOf(unit, loadLiveBookings(List.of(unit)));
+        return toResponse(unit, effective, activePolicyOf(unit), loadTenancies(List.of(unit), Map.of(unit.getId(), effective)).get(unit.getId()), true);
+    }
 
-        UUID bookingId = null;
-        String tenantName = null;
-        String contractCode = null;
-        UUID contractId = null;
-        String startDate = null;
-        String dueDate = null;
+    /** Trạng thái hiển thị công khai: kho bị khóa do quá hạn chỉ hiện là "đã có người thuê". */
+    private static UnitStatus publicStatusOf(UnitStatus status) {
+        return status == UnitStatus.OVERDUE_LOCKED ? UnitStatus.OCCUPIED : status;
+    }
 
-        if (u.getStatus() == UnitStatus.OCCUPIED || u.getStatus() == UnitStatus.OVERDUE_LOCKED || u.getStatus() == UnitStatus.RESERVED) {
-            var optContract = rentalContractRepository.findFirstByUnit_IdOrderByCreatedAtDesc(u.getId());
-            if (optContract.isPresent()) {
-                var contract = optContract.get();
-                contractId = contract.getId();
-                contractCode = contract.getContractCode();
-                if (contract.getCustomer() != null) {
-                    tenantName = contract.getCustomer().getFullName() != null ? contract.getCustomer().getFullName() : contract.getCustomer().getUsername();
-                }
-                if (contract.getStartDate() != null) {
-                    startDate = contract.getStartDate().toString();
-                }
-                if (contract.getEndDate() != null) {
-                    dueDate = contract.getEndDate().toString();
-                }
-                if (contract.getBooking() != null) {
-                    bookingId = contract.getBooking().getId();
-                }
+    /**
+     * Tìm người thuê hiện tại của các kho đang được giữ chỗ hoặc thuê bằng 2 truy vấn cho cả danh sách (không N+1).
+     * Chỉ lấy hợp đồng/đặt kho chưa kết thúc, nên kho vừa được đặt lại không hiện nhầm người thuê cũ.
+     */
+    private Map<UUID, Tenancy> loadTenancies(Collection<StorageUnit> units, Map<UUID, UnitStatus> effective) {
+        List<UUID> unitIds = units.stream()
+                .filter(unit -> TENANT_STATUSES.contains(effective.getOrDefault(unit.getId(), unit.getStatus())))
+                .map(StorageUnit::getId)
+                .toList();
+        if (unitIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<UUID, RentalContract> contracts = new HashMap<>();
+        Map<UUID, Booking> bookings = new HashMap<>();
+        for (int from = 0; from < unitIds.size(); from += IN_CLAUSE_CHUNK) {
+            List<UUID> chunk = unitIds.subList(from, Math.min(from + IN_CLAUSE_CHUNK, unitIds.size()));
+            // Kết quả đã sắp xếp mới nhất trước nên putIfAbsent giữ bản ghi mới nhất của mỗi kho
+            for (RentalContract contract : rentalContractRepository.findCurrentTenancyByUnitIds(chunk)) {
+                contracts.putIfAbsent(contract.getUnit().getId(), contract);
             }
-
-            if (bookingId == null || tenantName == null || contractCode == null || startDate == null || dueDate == null) {
-                var optBooking = bookingRepository.findFirstByStorageUnit_IdOrderByCreatedAtDesc(u.getId());
-                if (optBooking.isPresent()) {
-                    var booking = optBooking.get();
-                    if (bookingId == null) {
-                        bookingId = booking.getId();
-                    }
-                    if (tenantName == null && booking.getCustomer() != null) {
-                        tenantName = booking.getCustomer().getFullName() != null ? booking.getCustomer().getFullName() : booking.getCustomer().getUsername();
-                    }
-                    if (contractCode == null) {
-                        contractCode = booking.getBookingCode();
-                    }
-                    if (startDate == null && booking.getStartDate() != null) {
-                        startDate = booking.getStartDate().toString();
-                    }
-                    if (dueDate == null && booking.getEndDate() != null) {
-                        dueDate = booking.getEndDate().toString();
-                    }
-                }
+            for (Booking booking : bookingRepository.findCurrentTenancyByUnitIds(chunk)) {
+                bookings.putIfAbsent(booking.getStorageUnit().getId(), booking);
             }
         }
 
-        return StorageUnitResponse.builder()
+        Map<UUID, Tenancy> result = new HashMap<>();
+        for (UUID unitId : unitIds) {
+            RentalContract contract = contracts.get(unitId);
+            Booking booking = bookings.get(unitId);
+            if (contract != null || booking != null) {
+                result.put(unitId, new Tenancy(contract, booking != null ? booking : (contract != null ? contract.getBooking() : null)));
+            }
+        }
+        return result;
+    }
+
+    /** Đặt kho còn hiệu lực của các kho đang ghi "trống", bằng một truy vấn cho cả danh sách: unitId -> trạng thái các đặt kho. */
+    private Map<UUID, List<BookingStatus>> loadLiveBookings(Collection<StorageUnit> units) {
+        List<UUID> availableIds = units.stream()
+                .filter(unit -> unit.getStatus() == UnitStatus.AVAILABLE)
+                .map(StorageUnit::getId)
+                .toList();
+        if (availableIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<UUID, List<BookingStatus>> live = new HashMap<>();
+        for (int from = 0; from < availableIds.size(); from += IN_CLAUSE_CHUNK) {
+            List<UUID> chunk = availableIds.subList(from, Math.min(from + IN_CLAUSE_CHUNK, availableIds.size()));
+            for (Object[] row : bookingRepository.findLiveBookingStatusesByUnitIds(chunk)) {
+                live.computeIfAbsent((UUID) row[0], key -> new java.util.ArrayList<>()).add((BookingStatus) row[1]);
+            }
+        }
+        return live;
+    }
+
+    private static UnitStatus effectiveStatusOf(StorageUnit unit, Map<UUID, List<BookingStatus>> liveBookings) {
+        return UnitAvailability.effectiveStatus(unit.getStatus(), liveBookings.get(unit.getId()));
+    }
+
+    private StorageUnitResponse toResponse(StorageUnit u, UnitStatus effectiveStatus, FacilityPolicy activePolicy, Tenancy tenancy, boolean internal) {
+        // Cùng quy tắc giá với báo giá: giá riêng của cơ sở -> giá của kho -> giá niêm yết loại kho
+        BigDecimal price = PricingRules.resolveMonthlyPrice(u, activePolicy);
+        BigDecimal deposit = PricingRules.depositFor(price, activePolicy);
+        Double area = (u.getUnitType() != null) ? u.getUnitType().getAreaSqm() : null;
+        UnitStatus status = effectiveStatus != null ? effectiveStatus : UnitStatus.AVAILABLE;
+
+        StorageUnitResponse.StorageUnitResponseBuilder builder = StorageUnitResponse.builder()
                 .id(u.getId())
                 .unitCode(u.getUnitCode())
-                .floorLevel(u.getFloorLevel())
-                .status(u.getStatus() != null ? u.getStatus().name() : UnitStatus.AVAILABLE.name())
+                .floorLevel(FloorLabels.normalize(u.getFloorLevel()))
+                .status((internal ? status : publicStatusOf(status)).name())
                 .facilityId(u.getFacility() != null ? u.getFacility().getId() : null)
                 .facilityName(u.getFacility() != null ? u.getFacility().getName() : null)
                 .unitTypeId(u.getUnitType() != null ? u.getUnitType().getId() : null)
                 .unitTypeName(u.getUnitType() != null ? u.getUnitType().getTypeName() : null)
                 .pricePerMonth(price)
-                .depositAmount(u.getUnitType() != null ? u.getUnitType().getDepositAmount() : price)
-                .areaSqMeters(area)
-                .batteryLevel("98%")
-                .smartLockSerial("SL-" + (u.getUnitCode() != null ? u.getUnitCode().replace("-", "") : "8841"))
-                .lastAccessTime(null)
-                .bookingId(bookingId)
-                .tenantName(tenantName)
-                .contractCode(contractCode)
-                .contractId(contractId)
-                .startDate(startDate)
-                .dueDate(dueDate)
-                .build();
+                .depositAmount(deposit)
+                .areaSqMeters(area);
+
+        if (internal && tenancy != null) {
+            applyTenancy(builder, tenancy);
+        }
+        return builder.build();
+    }
+
+    private void applyTenancy(StorageUnitResponse.StorageUnitResponseBuilder builder, Tenancy tenancy) {
+        RentalContract contract = tenancy.contract();
+        Booking booking = tenancy.booking();
+
+        User tenant = contract != null && contract.getCustomer() != null
+                ? contract.getCustomer()
+                : (booking != null ? booking.getCustomer() : null);
+        if (tenant != null) {
+            builder.tenantName(tenant.getFullName() != null ? tenant.getFullName() : tenant.getUsername());
+        }
+        if (contract != null) {
+            builder.contractId(contract.getId())
+                    .contractCode(contract.getContractCode());
+        }
+        if (booking != null) {
+            builder.bookingId(booking.getId())
+                    .bookingCode(booking.getBookingCode());
+        }
+
+        java.time.LocalDate start = contract != null && contract.getStartDate() != null
+                ? contract.getStartDate()
+                : (booking != null ? booking.getStartDate() : null);
+        java.time.LocalDate end = contract != null && contract.getEndDate() != null
+                ? contract.getEndDate()
+                : (booking != null ? booking.getEndDate() : null);
+        builder.startDate(start != null ? start.toString() : null)
+                .dueDate(end != null ? end.toString() : null);
     }
 }

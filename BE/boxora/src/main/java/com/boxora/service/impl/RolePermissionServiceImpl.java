@@ -73,7 +73,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                     ActivityAction.ROLE_PERMISSION_ASSIGN,
                     "RolePermission",
                     updated.getId(),
-                    "Kich hoat lai quyen " + permission.getName() + " cho role " + role.getName(),
+                    "Kích hoạt lại quyền " + permission.getName() + " cho vai trò " + role.getName(),
                     null,
                     role.getName()
             );
@@ -94,7 +94,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                 ActivityAction.ROLE_PERMISSION_ASSIGN,
                 "RolePermission",
                 saved.getId(),
-                "Gan quyen " + permission.getName() + " cho role " + role.getName(),
+                "Gán quyền " + permission.getName() + " cho vai trò " + role.getName(),
                 null,
                 role.getName()
         );
@@ -121,8 +121,8 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                 ActivityAction.ROLE_PERMISSION_REVOKE,
                 "RolePermission",
                 rolePermission.getId(),
-                "Thu hoi quyen " + (rolePermission.getPermission() != null ? rolePermission.getPermission().getName() : "")
-                        + " khoi role " + (rolePermission.getRole() != null ? rolePermission.getRole().getName() : ""),
+                "Thu hồi quyền " + (rolePermission.getPermission() != null ? rolePermission.getPermission().getName() : "")
+                        + " khỏi vai trò " + (rolePermission.getRole() != null ? rolePermission.getRole().getName() : ""),
                 null,
                 null
         );
@@ -155,58 +155,78 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                 .toList();
     }
 
+    /**
+     * Replace semantics: after the call the role holds exactly {@code permissionIds}. Listed permissions are
+     * created or re-activated; every other permission of the role is deactivated (the row is kept for history).
+     * An empty list is valid and revokes everything. Returns the role's resulting ACTIVE permissions.
+     */
     @Override
     public List<RolePermissionResponse> bulkAssign(RolePermissionBulkAssignRequest request) {
         Role role = roleRepository.findById(request.getRoleId())
                 .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
 
-        List<UUID> permissionIds = request.getPermissionIds();
-        if (permissionIds == null || permissionIds.isEmpty()) {
-            return Collections.emptyList();
+        Set<UUID> wantedIds = request.getPermissionIds() == null
+                ? new LinkedHashSet<>()
+                : request.getPermissionIds().stream().filter(Objects::nonNull).collect(Collectors.toCollection(LinkedHashSet::new));
+
+        List<Permission> permissions = wantedIds.isEmpty() ? List.of() : permissionRepository.findAllById(wantedIds);
+        if (permissions.size() != wantedIds.size()) {
+            throw new AppException(ErrorCode.PERMISSION_NOT_FOUND);
         }
 
-        List<Permission> permissions = permissionRepository.findAllById(permissionIds);
-        if (permissions.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<RolePermission> existingList = rolePermissionRepository
-                .findAllByRole_IdAndPermission_IdIn(role.getId(), permissionIds);
-
-        Map<UUID, RolePermission> existingMap = existingList.stream()
+        Map<UUID, RolePermission> existingByPermission = rolePermissionRepository.findAllByRole_Id(role.getId()).stream()
                 .collect(Collectors.toMap(rp -> rp.getPermission().getId(), rp -> rp, (a, b) -> a));
 
         List<RolePermission> toSave = new ArrayList<>();
+        List<String> granted = new ArrayList<>();
+        List<String> revoked = new ArrayList<>();
 
         for (Permission permission : permissions) {
-            RolePermission rp = existingMap.get(permission.getId());
-            if (rp != null) {
-                if (!Boolean.TRUE.equals(rp.getIsActive())) {
-                    rp.setIsActive(true);
-                }
+            RolePermission rp = existingByPermission.get(permission.getId());
+            if (rp == null) {
+                toSave.add(RolePermission.builder().role(role).permission(permission).isActive(true).build());
+                granted.add(permission.getName());
+            } else if (!Boolean.TRUE.equals(rp.getIsActive())) {
+                rp.setIsActive(true);
                 toSave.add(rp);
-            } else {
-                RolePermission newRp = RolePermission.builder()
-                        .role(role)
-                        .permission(permission)
-                        .isActive(true)
-                        .build();
-                toSave.add(newRp);
+                granted.add(permission.getName());
             }
         }
 
-        List<RolePermission> saved = rolePermissionRepository.saveAll(toSave);
+        for (RolePermission rp : existingByPermission.values()) {
+            if (!wantedIds.contains(rp.getPermission().getId()) && Boolean.TRUE.equals(rp.getIsActive())) {
+                rp.setIsActive(false);
+                toSave.add(rp);
+                revoked.add(rp.getPermission().getName());
+            }
+        }
 
-        activityLogService.record(
-                ActivityAction.ROLE_PERMISSION_ASSIGN,
-                "RolePermission",
-                role.getId(),
-                "Gan hang loat " + saved.size() + " quyen cho role " + role.getName(),
-                null,
-                saved.size()
-        );
+        if (!toSave.isEmpty()) {
+            rolePermissionRepository.saveAll(toSave);
+        }
 
-        return saved.stream()
+        if (!granted.isEmpty()) {
+            activityLogService.record(
+                    ActivityAction.ROLE_PERMISSION_ASSIGN,
+                    "RolePermission",
+                    role.getId(),
+                    "Cấp thêm " + granted.size() + " quyền cho vai trò " + role.getName(),
+                    null,
+                    granted
+            );
+        }
+        if (!revoked.isEmpty()) {
+            activityLogService.record(
+                    ActivityAction.ROLE_PERMISSION_REVOKE,
+                    "RolePermission",
+                    role.getId(),
+                    "Thu hồi " + revoked.size() + " quyền khỏi vai trò " + role.getName(),
+                    revoked,
+                    null
+            );
+        }
+
+        return rolePermissionRepository.findAllByRole_IdAndIsActiveTrueAndPermission_IsActiveTrue(role.getId()).stream()
                 .map(rolePermissionMapper::toResponse)
                 .toList();
     }

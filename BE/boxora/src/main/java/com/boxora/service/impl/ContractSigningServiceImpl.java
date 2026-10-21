@@ -76,9 +76,57 @@ public class ContractSigningServiceImpl implements ContractSigningService {
 
     @Lazy
     private final ContractRenewalService contractRenewalService;
+    private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractBillingService> contractBillingServiceProvider;
+    private final com.boxora.repository.ContractRenewalRepository contractRenewalRepository;
 
-    @org.springframework.beans.factory.annotation.Value("${app.frontend-url:http://localhost:5173}")
+    @org.springframework.beans.factory.annotation.Value("${app.frontend-url:}")
     private String frontendUrl;
+
+    private static final String DEFAULT_FRONTEND_URL = "http://localhost:5173";
+    /** Contracts signed in-app while DocuSeal is not configured (test environment). */
+    public static final String SIGNING_METHOD_IN_APP_TEST = "ELECTRONIC_TEST";
+    /** Signed through DocuSeal. */
+    public static final String SIGNING_METHOD_ELECTRONIC = "ELECTRONIC";
+    /** Counter booking: the contract is signed on paper at the facility and uploaded by staff. */
+    public static final String SIGNING_METHOD_IN_PERSON = "IN_PERSON";
+
+    private String frontendBase() {
+        String base = frontendUrl != null ? frontendUrl.trim() : "";
+        if (base.isEmpty()) {
+            base = DEFAULT_FRONTEND_URL;
+        }
+        return base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
+    }
+
+    /** Response with the fields the portal needs: renewal window, open renewal, real deposit, signing mode. */
+    private RentalContractResponse toPortalResponse(RentalContract contract) {
+        RentalContractResponse response = rentalContractMapper.toResponse(contract);
+        if (contract.getBooking() != null && contract.getBooking().getDepositPaid() != null) {
+            BigDecimal held = response.getDepositHeld() != null ? response.getDepositHeld() : BigDecimal.ZERO;
+            if (contract.getBooking().getDepositPaid().compareTo(held) > 0) {
+                response.setDepositHeld(contract.getBooking().getDepositPaid());
+            }
+        }
+        response.setSigningSimulated(docuSealConfig.isMockActive());
+        com.boxora.service.ContractBillingService billing = contractBillingServiceProvider.getIfAvailable();
+        if (billing != null) {
+            com.boxora.service.ContractBillingService.RenewalWindow window = billing.renewalWindow(contract, java.time.LocalDate.now());
+            response.setRenewable(window.renewable());
+            response.setRenewalOpensOn(window.opensOn());
+            response.setRenewalClosesOn(window.closesOn());
+            response.setRenewalBlockedReason(window.blockedReason());
+            response.setRenewalWindowDays(window.windowDays());
+        }
+        if (contract.getId() != null) {
+            contractRenewalRepository.findFirstByContract_IdAndStatusInOrderByCreatedAtDesc(contract.getId(),
+                            List.of(com.boxora.enums.ContractRenewalStatus.PENDING_SIGNATURE, com.boxora.enums.ContractRenewalStatus.PENDING_PAYMENT))
+                    .ifPresent(renewal -> response.setPendingRenewalId(renewal.getId()));
+        }
+        // The DocuSeal signing link acts as the customer's signature: it is never handed to staff. The customer
+        // obtains it themselves after verifying the OTP (POST /contracts/{id}/otp/verify).
+        response.setSigningUrl(null);
+        return response;
+    }
 
     @Override
     @Transactional
@@ -150,12 +198,7 @@ public class ContractSigningServiceImpl implements ContractSigningService {
             }
         }
 
-        RentalContractResponse response = rentalContractMapper.toResponse(contract);
-        if (!"CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())
-                && contract.getDocusealSubmitterSlug() != null) {
-            response.setSigningUrl(signingUrl(contract, contract.getDocusealSubmitterSlug()));
-        }
-        return response;
+        return toPortalResponse(contract);
     }
 
     @Override
@@ -165,34 +208,30 @@ public class ContractSigningServiceImpl implements ContractSigningService {
             throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
         }
 
-        RentalContract contract = rentalContractRepository.findByBookingId(bookingId)
-                .orElseGet(() -> {
-                    // Nếu hợp đồng chưa được khởi tạo trước đó, tự động tạo hợp đồng cho booking hợp lệ
-                    Booking booking = bookingRepository.findById(bookingId)
-                            .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
-                    return ensureContractForBooking(booking);
-                });
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            UUID currentUserId = requestContext.currentUserId();
+            if (currentUserId == null || booking.getCustomer() == null || !currentUserId.equals(booking.getCustomer().getId())) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        } else if (facilityAccessGuard.isFacilityScoped() && booking.getStorageUnit() != null
+                && booking.getStorageUnit().getFacility() != null) {
+            facilityAccessGuard.checkFacilityAccess(booking.getStorageUnit().getFacility().getId());
+        }
 
+        RentalContract contract = rentalContractRepository.findByBookingId(bookingId).orElse(null);
+        if (contract == null) {
+            // A contract exists only for reservations that are confirmed (paid online or held for the counter).
+            if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.ACTIVE) {
+                throw new AppException(ErrorCode.CONTRACT_NOT_FOUND, "Đơn đặt kho này chưa có hợp đồng.");
+            }
+            contract = ensureContractForBooking(booking);
+        }
         if (contract == null) {
             throw new AppException(ErrorCode.CONTRACT_NOT_FOUND);
         }
-
-        if (facilityAccessGuard.isFacilityScoped()) {
-            facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
-        }
-        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
-            UUID currentUserId = requestContext.currentUserId();
-            if (currentUserId == null || contract.getCustomer() == null || !currentUserId.equals(contract.getCustomer().getId())) {
-                throw new AppException(ErrorCode.FORBIDDEN);
-            }
-        }
-
-        RentalContractResponse response = rentalContractMapper.toResponse(contract);
-        if (!"CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())
-                && contract.getDocusealSubmitterSlug() != null) {
-            response.setSigningUrl(signingUrl(contract, contract.getDocusealSubmitterSlug()));
-        }
-        return response;
+        return toPortalResponse(contract);
     }
 
     @Override
@@ -201,9 +240,10 @@ public class ContractSigningServiceImpl implements ContractSigningService {
             UUID customerId, UUID facilityId, RentalContractStatus status,
             int page, int size, String sortBy, String sortDir) {
 
-        Sort sort = Sort.by(Sort.Direction.fromString(sortDir != null ? sortDir : "desc"),
-                sortBy != null ? sortBy : "createdAt");
-        Pageable pageable = PageRequest.of(page, size, sort);
+        String sortField = sortBy != null && java.util.Set.of("createdAt", "startDate", "endDate", "status", "contractCode").contains(sortBy)
+                ? sortBy : "createdAt";
+        Sort sort = Sort.by("asc".equalsIgnoreCase(sortDir) ? Sort.Direction.ASC : Sort.Direction.DESC, sortField);
+        Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 200), sort);
 
         UUID effectiveFacilityId = facilityId;
         if (facilityAccessGuard.isFacilityScoped()) {
@@ -237,14 +277,7 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         };
 
         Page<RentalContract> result = rentalContractRepository.findAll(spec, pageable);
-        return PageResponse.from(result.map(c -> {
-            RentalContractResponse res = rentalContractMapper.toResponse(c);
-            if (!"CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())
-                    && c.getDocusealSubmitterSlug() != null) {
-                res.setSigningUrl(signingUrl(c, c.getDocusealSubmitterSlug()));
-            }
-            return res;
-        }));
+        return PageResponse.from(result.map(this::toPortalResponse));
     }
 
     @Override
@@ -289,7 +322,7 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         DocuSealSubmissionRequest request = DocuSealSubmissionRequest.builder()
                 .template_id(docuSealConfig.getTemplateId())
                 .send_email(false)
-                .completed_redirect_url(frontendUrl + "/portal/customer?tab=contracts&signed=true")
+                .completed_redirect_url(frontendBase() + "/portal/customer?tab=contracts&signed=true")
                 .submitters(List.of(
                         DocuSealSubmissionRequest.Submitter.builder()
                                 .role("Customer")
@@ -362,7 +395,7 @@ public class ContractSigningServiceImpl implements ContractSigningService {
 
     private String signingUrl(RentalContract contract, String slug) {
         if (slug != null && slug.startsWith("mock-")) {
-            return frontendUrl + "/portal/customer?tab=contracts&mockSignContractId=" + contract.getId();
+            return frontendBase() + "/portal/customer?tab=contracts&mockSignContractId=" + contract.getId();
         }
         return docuSealConfig.getWebBaseUrl() + "/s/" + slug;
     }
@@ -446,17 +479,18 @@ public class ContractSigningServiceImpl implements ContractSigningService {
     @Override
     @Transactional
     public RentalContractResponse mockSign(UUID contractId, String signatureData) {
+        if (!docuSealConfig.isMockActive()) {
+            throw new AppException(ErrorCode.CONTRACT_MOCK_SIGN_DISABLED);
+        }
         RentalContract contract = rentalContractRepository.findById(contractId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
 
-        if (facilityAccessGuard.isFacilityScoped()) {
-            facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
-        }
-        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
-            UUID currentUserId = requestContext.currentUserId();
-            if (currentUserId != null && !currentUserId.equals(contract.getCustomer().getId())) {
-                throw new AppException(ErrorCode.FORBIDDEN);
-            }
+        // Only the customer named on the contract signs it, in their own session (the controller also requires
+        // the OTP sent to their email). Staff never sign electronically on a customer's behalf.
+        UUID currentUserId = requestContext.currentUserId();
+        if (!"CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole()) || currentUserId == null
+                || contract.getCustomer() == null || !currentUserId.equals(contract.getCustomer().getId())) {
+            throw new AppException(ErrorCode.CONTRACT_SIGNER_NOT_CUSTOMER);
         }
 
         if (signatureData != null && !signatureData.isBlank()) {
@@ -472,30 +506,51 @@ public class ContractSigningServiceImpl implements ContractSigningService {
             return rentalContractMapper.toResponse(contract);
         }
 
-        String sampleDocUrl = "https://docuseal.com/documents/contract-" + contract.getContractCode() + "-signed.pdf";
-        completeContractSigning(contract, sampleDocUrl);
-        return rentalContractMapper.toResponse(contract);
+        if (contract.getStatus() != RentalContractStatus.PENDING_SIGNATURE) {
+            throw new AppException(ErrorCode.CONTRACT_NOT_ACTIVE, "Hợp đồng không ở trạng thái chờ ký.");
+        }
+        if (signatureData == null || signatureData.isBlank()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Vui lòng ký tên trước khi xác nhận hợp đồng.");
+        }
+        // Test environment: there is no signed PDF; the portal renders the contract with the stored signature.
+        contract.setSigningMethod(SIGNING_METHOD_IN_APP_TEST);
+        completeContractSigning(contract, null);
+        return toPortalResponse(contract);
     }
 
     private void completeContractSigning(RentalContract contract, String documentUrl) {
-        contract.setSignedDocumentUrl(documentUrl != null ? documentUrl : "https://docuseal.com/documents/contract-" + contract.getContractCode() + "-signed.pdf");
+        contract.setSignedDocumentUrl(documentUrl);
         contract.setSignedAt(LocalDateTime.now());
+        // Signed electronically (DocuSeal or the in-app test signature): no longer a counter / paper contract,
+        // even when the customer had first chosen to sign at the counter.
+        if (!SIGNING_METHOD_IN_APP_TEST.equals(contract.getSigningMethod())) {
+            contract.setSigningMethod(SIGNING_METHOD_ELECTRONIC);
+        }
         boolean isBookingPendingCheckIn = contract.getBooking() != null && contract.getBooking().getStatus() != BookingStatus.ACTIVE;
         contract.setStatus(isBookingPendingCheckIn ? RentalContractStatus.PENDING_ACTIVATION : RentalContractStatus.ACTIVE);
         rentalContractRepository.save(contract);
 
-        // 1. Maintain booking in CONFIRMED state awaiting physical staff handover
+        // 1. Maintain booking in CONFIRMED state awaiting physical staff handover; the booking now reads
+        //    "signed online" so the portal and the check-in workbench stop asking for a paper contract.
         if (contract.getBooking() != null) {
             Booking booking = contract.getBooking();
+            boolean changed = false;
             if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
                 booking.setStatus(BookingStatus.CONFIRMED);
+                changed = true;
+            }
+            if (!"ONLINE".equalsIgnoreCase(booking.getSigningMethod())) {
+                booking.setSigningMethod("ONLINE");
+                changed = true;
+            }
+            if (changed) {
                 bookingRepository.save(booking);
             }
         }
 
         // 3. Decrypt PIN and dispatch confirmation email
         try {
-            String accessPin = "N/A";
+            String accessPin = "Được cấp khi nhận bàn giao kho";
             if (contract.getBooking() != null && contract.getBooking().getAccessPin() != null) {
                 accessPin = encryptionService.decrypt(contract.getBooking().getAccessPin());
             }
@@ -507,7 +562,8 @@ public class ContractSigningServiceImpl implements ContractSigningService {
                         contract.getContractCode(),
                         contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A",
                         accessPin,
-                        contract.getSignedDocumentUrl()
+                        contract.getSignedDocumentUrl() != null ? contract.getSignedDocumentUrl()
+                                : frontendBase() + "/portal/customer?tab=contracts"
                 );
             }
         } catch (Exception e) {
@@ -519,7 +575,9 @@ public class ContractSigningServiceImpl implements ContractSigningService {
                 ActivityAction.CONTRACT_SIGNED,
                 "RentalContract",
                 contract.getId(),
-                "Hop dong e-Contract da duoc khach hang ky qua DocuSeal: " + contract.getContractCode()
+                (SIGNING_METHOD_IN_APP_TEST.equals(contract.getSigningMethod())
+                        ? "Khách hàng đã ký hợp đồng điện tử trong cổng Boxora (môi trường thử nghiệm, chưa kết nối DocuSeal): "
+                        : "Khách hàng đã ký hợp đồng điện tử qua DocuSeal: ") + contract.getContractCode()
         );
     }
 
@@ -534,11 +592,10 @@ public class ContractSigningServiceImpl implements ContractSigningService {
 
         StorageUnit unit = booking.getStorageUnit();
         Facility facility = unit != null ? unit.getFacility() : null;
-        BigDecimal monthlyFee = (unit != null && unit.getEffectiveBasePrice() != null)
-                ? unit.getEffectiveBasePrice()
-                : (booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
-                ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), java.math.RoundingMode.HALF_UP)
-                : BigDecimal.valueOf(1500000));
+        // Monthly fee = the discounted monthly rent of the PricingService quote stored on the booking.
+        BigDecimal monthlyFee = booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
+                ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP)
+                : (unit != null && unit.getEffectiveBasePrice() != null ? unit.getEffectiveBasePrice() : BigDecimal.ZERO);
 
         RentalContract contract = RentalContract.builder()
                 .contractCode("CTR-" + booking.getBookingCode())
@@ -551,6 +608,8 @@ public class ContractSigningServiceImpl implements ContractSigningService {
                 .monthlyFee(monthlyFee)
                 .depositHeld(booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO)
                 .status(booking.getStatus() == BookingStatus.ACTIVE ? RentalContractStatus.ACTIVE : RentalContractStatus.PENDING_SIGNATURE)
+                // A counter booking is signed on paper at the facility; online bookings are signed electronically.
+                .signingMethod("IN_PERSON".equalsIgnoreCase(booking.getSigningMethod()) ? SIGNING_METHOD_IN_PERSON : SIGNING_METHOD_ELECTRONIC)
                 .build();
 
         contract = rentalContractRepository.save(contract);

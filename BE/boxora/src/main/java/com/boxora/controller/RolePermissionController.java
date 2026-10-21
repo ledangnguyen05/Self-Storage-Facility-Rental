@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,10 +22,14 @@ import java.util.UUID;
 @RequestMapping("/api/v1/role-permissions")
 @RequiredArgsConstructor
 @Slf4j
+// Changing what a role may do is an administrator-only operation; reading the mapping is also open to
+// business managers (same as /roles and /permissions). Everything else, including CUSTOMER tokens, gets 403.
+@PreAuthorize("hasRole('ADMIN')")
 public class RolePermissionController {
     private final RolePermissionService rolePermissionService;
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     public ResponseEntity<ApiResponse<RolePermissionResponse>> getById(@PathVariable UUID id) {
         RolePermissionResponse response = rolePermissionService.getById(id);
         return ResponseEntity.ok(ApiResponse.success(response));
@@ -35,31 +40,34 @@ public class RolePermissionController {
             (@Valid @RequestBody RolePermissionCreateRequest request) {
         RolePermissionResponse response = rolePermissionService.create(request);
         return ResponseEntity.status(HttpStatus.CREATED).
-                body(ApiResponse.success("Assigned permission to role successfully", response));
+                body(ApiResponse.success("Đã gán quyền cho vai trò", response));
     }
 
+    /** Replaces the whole permission set of the role (permissions not listed are revoked; an empty list revokes all). */
     @PostMapping("/bulk-assign")
     public ResponseEntity<ApiResponse<List<RolePermissionResponse>>> bulkAssign(
             @Valid @RequestBody RolePermissionBulkAssignRequest request) {
-        log.info("Bulk assigning permissions to role: {}", request.getRoleId());
+        log.info("Replacing permission set of role {} ({} permissions)", request.getRoleId(),
+                request.getPermissionIds() == null ? 0 : request.getPermissionIds().size());
         List<RolePermissionResponse> response = rolePermissionService.bulkAssign(request);
-        return ResponseEntity.ok(ApiResponse.success("Assigned permissions to role successfully", response));
+        return ResponseEntity.ok(ApiResponse.success("Đã lưu phân quyền của vai trò", response));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<RolePermissionResponse>> update
             (@PathVariable UUID id, @Valid @RequestBody RolePermissionUpdateRequest request) {
         RolePermissionResponse response = rolePermissionService.update(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Updated role-permission successfully.", response));
+        return ResponseEntity.ok(ApiResponse.success("Đã cập nhật phân quyền", response));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         rolePermissionService.delete(id);
-        return ResponseEntity.ok(ApiResponse.success("Revoked permission from role successfully.", null));
+        return ResponseEntity.ok(ApiResponse.success("Đã thu hồi quyền khỏi vai trò", null));
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     public ResponseEntity<ApiResponse<PageResponse<RolePermissionResponse>>> getAll(
             @RequestParam(required = false) UUID roleId,
             @RequestParam(required = false) UUID permissionId,
@@ -76,6 +84,7 @@ public class RolePermissionController {
     }
 
     @GetMapping("/by-role/{roleId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     public ResponseEntity<ApiResponse<List<RolePermissionResponse>>> getByRoleId(@PathVariable UUID roleId) {
         List<RolePermissionResponse> response = rolePermissionService.getByRoleId(roleId);
         return ResponseEntity.ok(ApiResponse.success(response));

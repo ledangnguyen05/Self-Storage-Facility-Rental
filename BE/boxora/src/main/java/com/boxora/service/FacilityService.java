@@ -13,5 +13,14 @@ public interface FacilityService {
     FacilityResponse create(FacilityCreateRequest request);
     FacilityResponse update(UUID id, FacilityUpdateRequest request);
     void delete(UUID id);
-    PageResponse<FacilityResponse> getAll(String search, FacilityStatus status, int page, int size, String sortBy, String sortDir);
+
+    default PageResponse<FacilityResponse> getAll(String search, FacilityStatus status, int page, int size, String sortBy, String sortDir) {
+        return getAll(search, status, page, size, sortBy, sortDir, false);
+    }
+
+    /**
+     * @param publicScope {@code true} cho trang công khai (Thuê kho, trang chủ, nút liên hệ): luôn trả mọi cơ sở ĐANG HOẠT ĐỘNG,
+     *                    không giới hạn theo cơ sở của nhân viên và không lộ thông tin người quản lý.
+     */
+    PageResponse<FacilityResponse> getAll(String search, FacilityStatus status, int page, int size, String sortBy, String sortDir, boolean publicScope);
 }

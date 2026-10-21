@@ -41,7 +41,7 @@ public class StaffAssignmentController {
     ) {
         StaffAssignmentResponse response = staffAssignmentService.createAssignment(request);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Staff assignment created successfully", response));
+                .body(ApiResponse.success("Đã phân công ca trực", response));
     }
 
     @PutMapping("/{id}")
@@ -52,7 +52,7 @@ public class StaffAssignmentController {
             @Valid @RequestBody StaffAssignmentUpdateRequest request
     ) {
         StaffAssignmentResponse response = staffAssignmentService.updateAssignment(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Staff assignment updated successfully", response));
+        return ResponseEntity.ok(ApiResponse.success("Đã cập nhật phân công ca trực", response));
     }
 
     @PatchMapping("/{id}/status")
@@ -63,7 +63,7 @@ public class StaffAssignmentController {
             @Valid @RequestBody StaffAssignmentStatusUpdateRequest request
     ) {
         StaffAssignmentResponse response = staffAssignmentService.updateStatus(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Staff assignment status updated successfully", response));
+        return ResponseEntity.ok(ApiResponse.success("Đã cập nhật trạng thái ca trực", response));
     }
 
     @DeleteMapping("/{id}")
@@ -71,7 +71,7 @@ public class StaffAssignmentController {
     @Operation(summary = "Xóa hoặc hủy phân công ca trực")
     public ResponseEntity<ApiResponse<Void>> deleteAssignment(@PathVariable UUID id) {
         staffAssignmentService.deleteAssignment(id);
-        return ResponseEntity.ok(ApiResponse.success("Staff assignment deleted successfully", null));
+        return ResponseEntity.ok(ApiResponse.success("Đã hủy phân công ca trực", null));
     }
 
     @GetMapping("/{id}")

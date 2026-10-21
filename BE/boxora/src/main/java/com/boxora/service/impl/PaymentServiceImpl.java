@@ -2,27 +2,39 @@ package com.boxora.service.impl;
 
 import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.PaymentCreateRequest;
+import com.boxora.dto.response.ContractOutstandingResponse;
 import com.boxora.dto.response.PaymentResponse;
 import com.boxora.dto.response.VNPayIpnResponse;
 import com.boxora.dto.response.VNPayPaymentResponse;
 import com.boxora.entity.Booking;
+import com.boxora.entity.Facility;
 import com.boxora.entity.Payment;
+import com.boxora.entity.RefundRequest;
 import com.boxora.entity.RentalContract;
+import com.boxora.entity.StorageUnit;
+import com.boxora.entity.User;
 import com.boxora.enums.ActivityAction;
 import com.boxora.enums.BookingStatus;
 import com.boxora.enums.PaymentStatus;
 import com.boxora.enums.PaymentType;
+import com.boxora.enums.RefundStatus;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.PaymentMapper;
 import com.boxora.repository.BookingRepository;
 import com.boxora.repository.PaymentRepository;
+import com.boxora.repository.RefundRequestRepository;
+import com.boxora.repository.RentalContractRepository;
+import com.boxora.security.FacilityAccessGuard;
 import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
+import com.boxora.service.ContractBillingService;
 import com.boxora.service.ContractRenewalService;
+import com.boxora.service.ContractSigningService;
+import com.boxora.service.EmailService;
 import com.boxora.service.PaymentService;
+import com.boxora.service.StorageUnitLockService;
 import com.boxora.service.VNPayService;
-import com.boxora.entity.StorageUnit;
 import com.boxora.util.VNPayUtil;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
@@ -30,6 +42,7 @@ import jakarta.persistence.criteria.Predicate;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -39,10 +52,30 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.text.NumberFormat;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 
+/**
+ * VNPay payments. Every amount is computed on the server:
+ * <ul>
+ *   <li>BOOKING_PAYMENT - first month + deposit of the booking (PricingService amounts stored on the booking)
+ *       minus what was already paid; allowed for PENDING_PAYMENT bookings in their payment window and for
+ *       CONFIRMED in-person holds that are not paid yet and not handed over.</li>
+ *   <li>RENTAL_FEE - outstanding rent / overdue settlement of a contract ({@link ContractBillingService}).</li>
+ *   <li>RENEWAL_FEE - created by the renewal flow ({@link ContractRenewalService}).</li>
+ * </ul>
+ * DEPOSIT and EXTRA_CHARGE are collected at the counter (handover manual payments), never online.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -50,7 +83,8 @@ import java.util.*;
 public class PaymentServiceImpl implements PaymentService {
 
     private static final DateTimeFormatter VNP_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
-    private static final java.security.SecureRandom SECURE_RANDOM = new java.security.SecureRandom();
+    private static final Set<String> SORTABLE = Set.of("paymentTime", "amount", "createdAt", "status", "paymentType");
+    private static final BigDecimal AMOUNT_TOLERANCE = BigDecimal.valueOf(1000);
 
     private final PaymentRepository paymentRepository;
     private final BookingRepository bookingRepository;
@@ -58,85 +92,221 @@ public class PaymentServiceImpl implements PaymentService {
     private final VNPayService vnPayService;
     private final ActivityLogService activityLogService;
     private final RequestContext requestContext;
-    private final com.boxora.security.FacilityAccessGuard facilityAccessGuard;
-    private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractRenewalService> contractRenewalServiceProvider;
-    private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractSigningService> contractSigningServiceProvider;
-    private final com.boxora.service.StorageUnitLockService storageUnitLockService;
+    private final FacilityAccessGuard facilityAccessGuard;
+    private final ObjectProvider<ContractRenewalService> contractRenewalServiceProvider;
+    private final ObjectProvider<ContractSigningService> contractSigningServiceProvider;
+    private final ObjectProvider<ContractBillingService> contractBillingServiceProvider;
+    private final ObjectProvider<EmailService> emailServiceProvider;
+    private final StorageUnitLockService storageUnitLockService;
+    private final RentalContractRepository rentalContractRepository;
+    private final RefundRequestRepository refundRequestRepository;
 
-    private UUID extractFacilityId(Payment payment) {
-        if (payment == null) return null;
-        if (payment.getContract() != null && payment.getContract().getFacility() != null) {
-            return payment.getContract().getFacility().getId();
-        }
-        if (payment.getBooking() != null && payment.getBooking().getStorageUnit() != null && payment.getBooking().getStorageUnit().getFacility() != null) {
-            return payment.getBooking().getStorageUnit().getFacility().getId();
-        }
-        return null;
-    }
+    // =====================================================================================
+    // Create
+    // =====================================================================================
 
     @Override
     public VNPayPaymentResponse createVNPayPayment(PaymentCreateRequest request, HttpServletRequest httpRequest) {
+        if (request.getBookingId() == null) {
+            throw new AppException(ErrorCode.PAYMENT_TARGET_REQUIRED);
+        }
+        PaymentType type = request.getPaymentType() != null ? request.getPaymentType() : PaymentType.BOOKING_PAYMENT;
+        if (type != PaymentType.BOOKING_PAYMENT) {
+            throw new AppException(ErrorCode.PAYMENT_TYPE_NOT_ALLOWED, type == PaymentType.RENEWAL_FEE
+                    ? "Phí gia hạn được thanh toán từ yêu cầu gia hạn trong mục Kho của tôi."
+                    : type == PaymentType.RENTAL_FEE
+                    ? "Tiền thuê được thanh toán từ mục Công nợ của hợp đồng trong cổng khách hàng."
+                    : "Tiền cọc bổ sung và phụ phí được thu tại quầy của cơ sở.");
+        }
+
         Booking booking = bookingRepository.findById(request.getBookingId())
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        assertBookingAccess(booking);
 
-        BigDecimal authoritativeAmount;
-        if (request.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
-            if (booking.getStatus() != BookingStatus.PENDING_PAYMENT && booking.getStatus() != BookingStatus.PENDING_APPROVAL) {
-                throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED);
-            }
-            if (booking.getPaymentExpiresAt() == null || !booking.getPaymentExpiresAt().isAfter(java.time.Instant.now())) {
+        BigDecimal amount = bookingPaymentDue(booking);
+        if (request.getAmount() != null && request.getAmount().signum() > 0
+                && request.getAmount().subtract(amount).abs().compareTo(AMOUNT_TOLERANCE) > 0) {
+            log.warn("Booking {} payment amount changed: client={}, server={}", booking.getBookingCode(), request.getAmount(), amount);
+            throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH, "Số tiền cần thanh toán hiện là " + vnd(amount)
+                    + ". Vui lòng tải lại trang và thử lại.");
+        }
+
+        expirePendingPayments(paymentRepository.findAllByBooking_IdAndStatusAndPaymentType(
+                booking.getId(), PaymentStatus.PENDING, PaymentType.BOOKING_PAYMENT));
+
+        String orderInfo = "Thanh toan dat kho " + booking.getBookingCode();
+        Payment payment = Payment.builder()
+                .transactionId(newTxnRef())
+                .booking(booking)
+                .contract(rentalContractRepository.findByBookingId(booking.getId()).orElse(null))
+                .amount(amount)
+                .paymentType(PaymentType.BOOKING_PAYMENT)
+                .status(PaymentStatus.PENDING)
+                .paymentMethod("VNPAY")
+                .paymentTime(LocalDateTime.now())
+                .build();
+        payment = paymentRepository.save(payment);
+
+        activityLogService.record(
+                facilityIdOf(booking),
+                ActivityAction.PAYMENT_INITIATED,
+                "PAYMENT",
+                payment.getId(),
+                "Khởi tạo thanh toán VNPay cho đơn " + booking.getBookingCode() + ", số tiền " + vnd(amount),
+                null,
+                payment.getId()
+        );
+
+        String paymentUrl = buildPaymentUrl(payment, orderInfo, httpRequest);
+        return VNPayPaymentResponse.builder()
+                .paymentUrl(paymentUrl)
+                .transactionId(payment.getTransactionId())
+                .paymentId(payment.getId())
+                .bookingId(booking.getId())
+                .contractId(payment.getContract() != null ? payment.getContract().getId() : null)
+                .amount(payment.getAmount())
+                .orderInfo(orderInfo)
+                .build();
+    }
+
+    /** Amount the customer still has to pay online for the booking's initial payment (first month + deposit). */
+    BigDecimal bookingPaymentDue(Booking booking) {
+        Instant now = Instant.now();
+        BookingStatus status = booking.getStatus();
+        if (status == BookingStatus.PENDING_PAYMENT || status == BookingStatus.PENDING_APPROVAL) {
+            if (booking.getPaymentExpiresAt() == null || !booking.getPaymentExpiresAt().isAfter(now)) {
                 throw new AppException(ErrorCode.BOOKING_PAYMENT_EXPIRED);
             }
-            BigDecimal monthlyFee = booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
-                    ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP)
-                    : BigDecimal.ZERO;
-            BigDecimal expectedInitialAmount = monthlyFee.add(booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO);
-            BigDecimal totalExpected = (booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO)
-                    .add(booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO);
-            BigDecimal depositOnly = booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO;
-            BigDecimal rentalFeeOnly = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO;
-
-            if (request.getAmount() != null && request.getAmount().compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal reqAmt = request.getAmount();
-                boolean matchesInitial = reqAmt.compareTo(expectedInitialAmount) == 0 || reqAmt.subtract(expectedInitialAmount).abs().compareTo(BigDecimal.valueOf(1000)) <= 0;
-                boolean matchesTotal = reqAmt.compareTo(totalExpected) == 0 || reqAmt.subtract(totalExpected).abs().compareTo(BigDecimal.valueOf(1000)) <= 0;
-                boolean matchesDeposit = reqAmt.compareTo(depositOnly) == 0 || reqAmt.subtract(depositOnly).abs().compareTo(BigDecimal.valueOf(1000)) <= 0;
-                boolean matchesRental = reqAmt.compareTo(rentalFeeOnly) == 0 || reqAmt.subtract(rentalFeeOnly).abs().compareTo(BigDecimal.valueOf(1000)) <= 0;
-
-                if (!matchesInitial && !matchesTotal && !matchesDeposit && !matchesRental) {
-                    log.warn("VNPay payment amount mismatch. Received={}, ExpectedInitial={}, TotalExpected={}, DepositOnly={}",
-                            request.getAmount(), expectedInitialAmount, totalExpected, depositOnly);
-                    throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
-                }
-
-                if (matchesTotal) {
-                    authoritativeAmount = totalExpected;
-                } else if (matchesInitial) {
-                    authoritativeAmount = expectedInitialAmount;
-                } else if (matchesDeposit) {
-                    authoritativeAmount = depositOnly;
-                } else {
-                    authoritativeAmount = rentalFeeOnly;
-                }
-            } else {
-                authoritativeAmount = totalExpected.compareTo(BigDecimal.ZERO) > 0 ? totalExpected : expectedInitialAmount;
+        } else if (status == BookingStatus.CONFIRMED) {
+            if (booking.getHandoverTime() != null) {
+                throw new AppException(ErrorCode.PAYMENT_BOOKING_NOT_PAYABLE, "Kho đã được bàn giao. Các khoản tiếp theo được thanh toán theo hợp đồng.");
+            }
+            if ("PAID".equalsIgnoreCase(booking.getPaymentStatus())) {
+                throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED, "Đơn đặt kho đã được thanh toán khoản ban đầu.");
+            }
+            if (booking.getHoldExpiresAt() != null && !booking.getHoldExpiresAt().isAfter(now)) {
+                throw new AppException(ErrorCode.BOOKING_PAYMENT_EXPIRED, "Thời gian giữ chỗ của đơn đã kết thúc nên không thể thanh toán trực tuyến.");
             }
         } else {
-            if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
-                throw new AppException(ErrorCode.INVALID_REQUEST);
-            }
-            authoritativeAmount = request.getAmount();
+            throw new AppException(ErrorCode.PAYMENT_BOOKING_NOT_PAYABLE);
         }
 
-        if (authoritativeAmount == null || authoritativeAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            log.warn("Payment amount is 0 or negative for booking {}", booking.getBookingCode());
+        BigDecimal initial = initialPaymentAmount(booking);
+        BigDecimal paid = paymentRepository.findAllByBooking_Id(booking.getId()).stream()
+                .filter(p -> p.getStatus() == PaymentStatus.PAID && p.getAmount() != null)
+                .filter(p -> p.getPaymentType() == PaymentType.BOOKING_PAYMENT || p.getPaymentType() == PaymentType.DEPOSIT
+                        || p.getPaymentType() == PaymentType.RENTAL_FEE)
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal due = initial.subtract(paid).setScale(0, RoundingMode.HALF_UP);
+        if (due.signum() <= 0) {
+            throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED, "Đơn đặt kho đã được thanh toán khoản ban đầu.");
+        }
+        return due;
+    }
+
+    /** Same formula as the pricing quote: first month of the discounted total + deposit. */
+    static BigDecimal initialPaymentAmount(Booking booking) {
+        BigDecimal deposit = booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO;
+        BigDecimal firstMonth = booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
+                ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+        return firstMonth.add(deposit);
+    }
+
+    @Override
+    public VNPayPaymentResponse createOutstandingPayment(UUID contractId, Integer upcomingMonths, HttpServletRequest httpRequest) {
+        ContractBillingService billing = contractBillingServiceProvider.getObject();
+        RentalContract contract = rentalContractRepository.findById(contractId)
+                .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
+        billing.assertContractAccess(contract);
+
+        ContractOutstandingResponse outstanding = billing.computeOutstanding(contract, java.time.LocalDate.now());
+        if (!outstanding.isCanPayOnline()) {
+            throw new AppException(ErrorCode.PAYMENT_NOT_DUE, outstanding.getBlockedReason());
+        }
+        int extra = upcomingMonths != null ? upcomingMonths : 0;
+        if (extra < 0 || extra > outstanding.getRemainingTermMonths()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, String.format(
+                    "Có thể trả trước tối đa %d tháng còn lại của hợp đồng.", outstanding.getRemainingTermMonths()));
+        }
+        BigDecimal amount = outstanding.getTotalDueNow()
+                .add(outstanding.getMonthlyRent().multiply(BigDecimal.valueOf(extra)))
+                .setScale(0, RoundingMode.HALF_UP);
+        if (amount.signum() <= 0) {
+            throw new AppException(ErrorCode.PAYMENT_NOT_DUE);
+        }
+
+        expirePendingPayments(paymentRepository.findAllByContract_IdAndStatusAndPaymentType(
+                contract.getId(), PaymentStatus.PENDING, PaymentType.RENTAL_FEE));
+
+        String orderInfo = (outstanding.getOverdueDays() > 0 ? "Thanh toan cong no qua han hop dong " : "Thanh toan tien thue hop dong ")
+                + (contract.getContractCode() != null ? contract.getContractCode() : contract.getId());
+        return createContractPayment(contract, contract.getBooking(), PaymentType.RENTAL_FEE, amount, null,
+                outstanding.getLateFee(), outstanding.getOverdueRent(), outstanding.getExtensionDays(), orderInfo, httpRequest);
+    }
+
+    @Override
+    @Transactional
+    public VNPayPaymentResponse createContractPayment(
+            RentalContract contract, PaymentType type, BigDecimal amount,
+            Integer renewalMonths, String orderInfo, HttpServletRequest httpRequest) {
+        return createContractPayment(contract, null, type, amount, renewalMonths, BigDecimal.ZERO, BigDecimal.ZERO, 0, orderInfo, httpRequest);
+    }
+
+    @Override
+    @Transactional
+    public VNPayPaymentResponse createContractPayment(
+            RentalContract contract, Booking booking, PaymentType type, BigDecimal amount, Integer renewalMonths,
+            BigDecimal lateFeeAmount, BigDecimal overdueRentAmount, int extensionDays,
+            String orderInfo, HttpServletRequest httpRequest) {
+        if (amount == null || amount.signum() <= 0) {
             throw new AppException(ErrorCode.PAYMENT_AMOUNT_INVALID);
         }
+        if (orderInfo == null || orderInfo.isBlank()) {
+            orderInfo = "Thanh toan hop dong " + (contract.getContractCode() != null ? contract.getContractCode() : contract.getId());
+        }
 
-        // Generate unique transaction reference (e.g. BOX + timestamp + 6 random chars)
-        String txnRef = "BOX" + System.currentTimeMillis() + VNPayUtil.randomAlphaNumeric(6);
+        Payment payment = Payment.builder()
+                .transactionId(newTxnRef())
+                .contract(contract)
+                .booking(booking)
+                .amount(amount.setScale(0, RoundingMode.HALF_UP))
+                .paymentType(type)
+                .renewalMonths(renewalMonths)
+                .lateFeeAmount(lateFeeAmount != null ? lateFeeAmount : BigDecimal.ZERO)
+                .overdueRentAmount(overdueRentAmount != null ? overdueRentAmount : BigDecimal.ZERO)
+                .extensionDays(Math.max(0, extensionDays))
+                .status(PaymentStatus.PENDING)
+                .paymentMethod("VNPAY")
+                .paymentTime(LocalDateTime.now())
+                .build();
+        payment = paymentRepository.save(payment);
 
-        // Determine client IP
+        UUID facilityId = contract.getFacility() != null ? contract.getFacility().getId() : null;
+        activityLogService.record(
+                facilityId,
+                ActivityAction.PAYMENT_INITIATED,
+                "PAYMENT",
+                payment.getId(),
+                "Khởi tạo thanh toán VNPay " + paymentTypeLabel(type) + " cho hợp đồng " + contract.getContractCode() + ", số tiền " + vnd(payment.getAmount()),
+                null,
+                payment.getId()
+        );
+
+        String paymentUrl = buildPaymentUrl(payment, orderInfo, httpRequest);
+        return VNPayPaymentResponse.builder()
+                .paymentUrl(paymentUrl)
+                .transactionId(payment.getTransactionId())
+                .paymentId(payment.getId())
+                .bookingId(booking != null ? booking.getId() : null)
+                .contractId(contract.getId())
+                .amount(payment.getAmount())
+                .orderInfo(orderInfo)
+                .build();
+    }
+
+    private String buildPaymentUrl(Payment payment, String orderInfo, HttpServletRequest httpRequest) {
         String ipAddress = null;
         if (httpRequest != null) {
             ipAddress = httpRequest.getHeader("X-Forwarded-For");
@@ -147,56 +317,48 @@ public class PaymentServiceImpl implements PaymentService {
         if (ipAddress == null || ipAddress.isBlank()) {
             ipAddress = requestContext.currentIpAddress();
         }
-        ipAddress = VNPayUtil.normalizeIp(ipAddress);
-
-        String orderInfo = request.getOrderInfo();
-        if (orderInfo == null || orderInfo.isBlank()) {
-            orderInfo = "Thanh toan don dat cho " + booking.getBookingCode();
+        try {
+            return vnPayService.createPaymentUrl(payment.getTransactionId(), payment.getAmount(), orderInfo, VNPayUtil.normalizeIp(ipAddress));
+        } catch (AppException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Cannot build VNPay URL for {}: {}", payment.getTransactionId(), e.getMessage());
+            throw new AppException(ErrorCode.PAYMENT_GATEWAY_UNAVAILABLE);
         }
-
-        // Create PENDING payment entity with server-verified authoritative amount
-        Payment payment = Payment.builder()
-                .transactionId(txnRef)
-                .booking(booking)
-                .amount(authoritativeAmount)
-                .paymentType(request.getPaymentType())
-                .status(PaymentStatus.PENDING)
-                .paymentMethod("VNPAY")
-                .paymentTime(LocalDateTime.now())
-                .build();
-
-        payment = paymentRepository.save(payment);
-
-        UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
-                ? booking.getStorageUnit().getFacility().getId() : null;
-        activityLogService.record(
-                facilityId,
-                ActivityAction.PAYMENT_INITIATED,
-                "PAYMENT",
-                payment.getId(),
-                "Khoi tao giao dich thanh toan VNPAY cho booking " + booking.getBookingCode() + ", so tien: " + authoritativeAmount,
-                null,
-                payment.getId()
-        );
-
-        // Generate VNPay checkout URL
-        String paymentUrl = vnPayService.createPaymentUrl(txnRef, authoritativeAmount, orderInfo, ipAddress);
-
-        return VNPayPaymentResponse.builder()
-                .paymentUrl(paymentUrl)
-                .transactionId(txnRef)
-                .paymentId(payment.getId())
-                .bookingId(booking.getId())
-                .amount(payment.getAmount())
-                .orderInfo(orderInfo)
-                .build();
     }
+
+    private void expirePendingPayments(List<Payment> pending) {
+        for (Payment old : pending) {
+            old.setStatus(PaymentStatus.EXPIRED);
+            paymentRepository.save(old);
+        }
+    }
+
+    /**
+     * A VNPay link expires 15 minutes after it was created (vnp_ExpireDate). A payment still PENDING an hour later
+     * was abandoned: it is marked EXPIRED so the portal stops listing it as "waiting for payment". A late gateway
+     * callback for it is still applied (EXPIRED is not a settled state).
+     */
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 600_000L, initialDelay = 120_000L)
+    public void expireAbandonedOnlinePayments() {
+        List<Payment> stale = paymentRepository.findAllByStatusAndPaymentMethodAndPaymentTimeBefore(
+                PaymentStatus.PENDING, "VNPAY", LocalDateTime.now().minusHours(1));
+        for (Payment payment : stale) {
+            payment.setStatus(PaymentStatus.EXPIRED);
+            paymentRepository.save(payment);
+        }
+        if (!stale.isEmpty()) {
+            log.info("[PAYMENT_EXPIRE] Marked {} abandoned VNPay payment(s) as EXPIRED", stale.size());
+        }
+    }
+
+    // =====================================================================================
+    // VNPay callbacks
+    // =====================================================================================
 
     @Override
     public PaymentResponse processVNPayReturn(Map<String, String> params) {
-        // 1. Verify digital signature
-        boolean isValid = vnPayService.verifySignature(params);
-        if (!isValid) {
+        if (!vnPayService.verifySignature(params)) {
             log.warn("VNPay return callback signature invalid: {}", params);
             throw new AppException(ErrorCode.INVALID_PAYMENT_SIGNATURE);
         }
@@ -205,138 +367,24 @@ public class PaymentServiceImpl implements PaymentService {
         Payment payment = paymentRepository.findByTransactionId(txnRef)
                 .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND));
 
-        String amountStr = params.get("vnp_Amount");
-        if (amountStr != null && !amountStr.isBlank()) {
-            try {
-                BigDecimal vnpAmount = new BigDecimal(amountStr).divide(BigDecimal.valueOf(100));
-                if (payment.getAmount().compareTo(vnpAmount) != 0) {
-                    throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
-                }
-            } catch (NumberFormatException e) {
-                throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
-            }
+        if (!amountMatches(payment, params.get("vnp_Amount"))) {
+            throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
         }
 
-        // 2. Idempotency check: if already confirmed as PAID, return existing
-        if (payment.getStatus() == PaymentStatus.PAID) {
-            log.info("Payment with txnRef={} has already been marked as PAID.", txnRef);
+        // Idempotent: the IPN may already have settled this payment.
+        if (payment.getStatus() == PaymentStatus.PAID || payment.getStatus() == PaymentStatus.REFUND_PENDING
+                || payment.getStatus() == PaymentStatus.REFUNDED) {
+            log.info("Payment with txnRef={} already settled ({}).", txnRef, payment.getStatus());
             return paymentMapper.toResponse(payment);
         }
 
-        String responseCode = params.get("vnp_ResponseCode");
-        String transactionStatus = params.get("vnp_TransactionStatus");
-        String payDateStr = params.get("vnp_PayDate");
-
-        if (payDateStr != null && payDateStr.length() == 14) {
-            try {
-                payment.setPaymentTime(LocalDateTime.parse(payDateStr, VNP_DATE_FORMAT));
-            } catch (Exception e) {
-                payment.setPaymentTime(LocalDateTime.now());
-            }
-        }
-
-        boolean isSuccess = "00".equals(responseCode) && ("00".equals(transactionStatus) || transactionStatus == null);
-
-        if (isSuccess) {
-            payment.setStatus(PaymentStatus.PAID);
-
-            // Update Booking status & deposit amount if applicable
-            Booking booking = payment.getBooking();
-            if (booking != null) {
-                // Pessimistic lock on booking to prevent race condition with expiration jobs
-                booking = bookingRepository.findByIdForUpdate(booking.getId()).orElse(booking);
-                // Nếu thanh toán thành công sau khi reservation hết hạn/bị hủy, đưa vào đối soát thay vì tự cấp kho
-                if (booking.getStatus() == BookingStatus.CANCELLED) {
-                    log.warn("[PAYMENT_EXPIRED] Payment {} received after booking {} was already CANCELLED. Flagged for refund/reconciliation.",
-                            txnRef, booking.getBookingCode());
-                    payment.setStatus(PaymentStatus.REFUND_PENDING);
-                    paymentRepository.save(payment);
-                    return paymentMapper.toResponse(payment);
-                }
-
-                if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
-                    booking.setStatus(BookingStatus.CONFIRMED);
-                    booking.setPaymentExpiresAt(null);
-                    booking.setHoldExpiresAt(null);
-                    if (payment.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
-                        booking.setDepositPaid(booking.getDepositAmount() != null ? booking.getDepositAmount() : payment.getAmount());
-                        booking.setPaymentStatus("PAID");
-                    } else if (payment.getPaymentType() == PaymentType.DEPOSIT) {
-                        BigDecimal cur = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
-                        booking.setDepositPaid(cur.add(payment.getAmount()));
-                        booking.setPaymentStatus("PARTIALLY_PAID");
-                    }
-                    if (booking.getStorageUnit() != null) {
-                        storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
-                    }
-                } else if (payment.getPaymentType() == PaymentType.DEPOSIT) {
-                    BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
-                    booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
-                    booking.setHoldExpiresAt(null);
-                    booking.setPaymentStatus("PARTIALLY_PAID");
-                }
-
-                // Lưu ý (P0-03 & BR-RULE-005): Không cấp mã PIN/QR ở bước thanh toán.
-                // Quyền truy cập PIN/QR chỉ được cấp phát chính thức khi nhân viên hoàn tất thủ tục bàn giao check-in.
-                bookingRepository.save(booking);
-
-                com.boxora.service.ContractSigningService contractSigningService = contractSigningServiceProvider.getIfAvailable();
-                if (contractSigningService != null) {
-                    try {
-                        contractSigningService.ensureContractForBooking(booking);
-                    } catch (Exception ex) {
-                        log.warn("Khong the tu dong khoi tao hop dong DocuSeal cho booking {}: {}", booking.getBookingCode(), ex.getMessage());
-                    }
-                }
-            }
-
-            if (payment.getPaymentType() == PaymentType.RENEWAL_FEE) {
-                ContractRenewalService renewalService = contractRenewalServiceProvider.getIfAvailable();
-                if (renewalService != null) {
-                    renewalService.handleRenewalPaid(payment);
-                }
-            }
-
-            String targetDesc = payment.getBooking() != null
-                    ? "booking " + payment.getBooking().getBookingCode()
-                    : "hop dong " + (payment.getContract() != null ? payment.getContract().getId() : "N/A");
-
-            UUID facilityId = extractFacilityId(payment);
-            activityLogService.record(
-                    facilityId,
-                    ActivityAction.PAYMENT_CONFIRMED,
-                    "PAYMENT",
-                    payment.getId(),
-                    "Thanh toan VNPAY thanh cong cho " + targetDesc + ", ma GD: " + txnRef,
-                    PaymentStatus.PENDING,
-                    PaymentStatus.PAID
-            );
-        } else {
-            payment.setStatus(PaymentStatus.FAILED);
-
-            String targetDesc = payment.getBooking() != null
-                    ? "booking " + payment.getBooking().getBookingCode()
-                    : "hop dong " + (payment.getContract() != null ? payment.getContract().getId() : "N/A");
-
-            UUID facilityId = extractFacilityId(payment);
-            activityLogService.record(
-                    facilityId,
-                    ActivityAction.PAYMENT_FAILED,
-                    "PAYMENT",
-                    payment.getId(),
-                    "Thanh toan VNPAY that bai hoac bi huy cho " + targetDesc + ", responseCode: " + responseCode,
-                    PaymentStatus.PENDING,
-                    PaymentStatus.FAILED
-            );
-        }
-
+        settle(payment, params, false);
         payment = paymentRepository.save(payment);
         return paymentMapper.toResponse(payment);
     }
 
     @Override
     public VNPayIpnResponse processVNPayIPN(Map<String, String> params) {
-        // 1. Verify Checksum
         if (!vnPayService.verifySignature(params)) {
             log.warn("VNPay IPN checksum verification failed for params: {}", params);
             return VNPayIpnResponse.invalidSignature();
@@ -348,35 +396,38 @@ public class PaymentServiceImpl implements PaymentService {
             log.warn("VNPay IPN order not found: txnRef={}", txnRef);
             return VNPayIpnResponse.orderNotFound();
         }
-
         Payment payment = optPayment.get();
 
-        // 2. Check Amount
-        String amountStr = params.get("vnp_Amount");
-        if (amountStr != null && !amountStr.isBlank()) {
-            try {
-                BigDecimal vnpAmount = new BigDecimal(amountStr).divide(BigDecimal.valueOf(100));
-                if (payment.getAmount().compareTo(vnpAmount) != 0) {
-                    log.warn("VNPay IPN amount mismatch for txnRef={}. DB={}, VNPay={}",
-                            txnRef, payment.getAmount(), vnpAmount);
-                    return VNPayIpnResponse.invalidAmount();
-                }
-            } catch (Exception e) {
-                log.error("Failed to parse VNPay IPN amount: {}", amountStr, e);
-                return VNPayIpnResponse.invalidAmount();
-            }
+        if (!amountMatches(payment, params.get("vnp_Amount"))) {
+            log.warn("VNPay IPN amount mismatch for txnRef={}. DB={}, VNPay={}", txnRef, payment.getAmount(), params.get("vnp_Amount"));
+            return VNPayIpnResponse.invalidAmount();
         }
-
-        // 3. Check if already confirmed
-        if (payment.getStatus() == PaymentStatus.PAID) {
+        if (payment.getStatus() == PaymentStatus.PAID || payment.getStatus() == PaymentStatus.REFUND_PENDING
+                || payment.getStatus() == PaymentStatus.REFUNDED) {
             return VNPayIpnResponse.alreadyConfirmed();
         }
 
-        // 4. Update status
+        settle(payment, params, true);
+        paymentRepository.save(payment);
+        return VNPayIpnResponse.success();
+    }
+
+    private boolean amountMatches(Payment payment, String amountStr) {
+        if (amountStr == null || amountStr.isBlank()) {
+            return true;
+        }
+        try {
+            BigDecimal vnpAmount = new BigDecimal(amountStr).divide(BigDecimal.valueOf(100));
+            return payment.getAmount().compareTo(vnpAmount) == 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    /** Applies the gateway result to the payment and to what it pays for. */
+    private void settle(Payment payment, Map<String, String> params, boolean fromIpn) {
         String responseCode = params.get("vnp_ResponseCode");
         String transactionStatus = params.get("vnp_TransactionStatus");
-        boolean isSuccess = "00".equals(responseCode) && ("00".equals(transactionStatus) || transactionStatus == null);
-
         String payDateStr = params.get("vnp_PayDate");
         if (payDateStr != null && payDateStr.length() == 14) {
             try {
@@ -385,90 +436,168 @@ public class PaymentServiceImpl implements PaymentService {
                 payment.setPaymentTime(LocalDateTime.now());
             }
         }
+        boolean isSuccess = "00".equals(responseCode) && ("00".equals(transactionStatus) || transactionStatus == null);
+        String txnRef = payment.getTransactionId();
+        UUID facilityId = extractFacilityId(payment);
+        payment.setGatewayResponseCode(truncate(responseCode, 10));
+        payment.setGatewayTransactionStatus(truncate(transactionStatus, 10));
 
-        if (isSuccess) {
-            payment.setStatus(PaymentStatus.PAID);
-
-            Booking booking = payment.getBooking();
-            if (booking != null) {
-                // Pessimistic lock on booking to prevent race condition with expiration jobs
-                booking = bookingRepository.findByIdForUpdate(booking.getId()).orElse(booking);
-                if (booking.getStatus() == BookingStatus.CANCELLED) {
-                    log.warn("[PAYMENT_EXPIRED] VNPay IPN payment {} received after booking {} was already CANCELLED. Flagged for refund/reconciliation.",
-                            txnRef, booking.getBookingCode());
-                    payment.setStatus(PaymentStatus.REFUND_PENDING);
-                    paymentRepository.save(payment);
-                    return VNPayIpnResponse.success();
-                }
-
-                if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
-                    booking.setStatus(BookingStatus.CONFIRMED);
-                    booking.setPaymentExpiresAt(null);
-                    if (payment.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
-                        booking.setDepositPaid(booking.getDepositAmount() != null ? booking.getDepositAmount() : payment.getAmount());
-                    } else if (payment.getPaymentType() == PaymentType.DEPOSIT) {
-                        BigDecimal cur = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
-                        booking.setDepositPaid(cur.add(payment.getAmount()));
-                    }
-                    if (booking.getStorageUnit() != null) {
-                        storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
-                    }
-                } else if (payment.getPaymentType() == PaymentType.DEPOSIT) {
-                    BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
-                    booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
-                }
-
-                // Lưu ý (P0-03 & BR-RULE-005): Không cấp mã PIN/QR ở bước thanh toán.
-                // Quyền truy cập PIN/QR chỉ được cấp phát chính thức khi nhân viên hoàn tất thủ tục bàn giao check-in.
-                bookingRepository.save(booking);
-
-                com.boxora.service.ContractSigningService contractSigningService = contractSigningServiceProvider.getIfAvailable();
-                if (contractSigningService != null) {
-                    try {
-                        contractSigningService.ensureContractForBooking(booking);
-                    } catch (Exception ex) {
-                        log.warn("Khong the tu dong khoi tao hop dong DocuSeal cho booking qua IPN {}: {}", booking.getBookingCode(), ex.getMessage());
-                    }
-                }
+        if (!isSuccess) {
+            payment.setStatus(PaymentStatus.FAILED);
+            String reason = com.boxora.util.VNPayResponseCodes.failureReason(responseCode, transactionStatus);
+            String description = "Thanh toán VNPay không thành công cho giao dịch " + txnRef
+                    + (reason != null ? ": " + reason : " (mã " + responseCode + ").");
+            if (fromIpn) {
+                activityLogService.recordSystem(facilityId, ActivityAction.PAYMENT_FAILED, "PAYMENT", payment.getId(), description);
+            } else {
+                activityLogService.record(facilityId, ActivityAction.PAYMENT_FAILED, "PAYMENT", payment.getId(), description,
+                        PaymentStatus.PENDING, PaymentStatus.FAILED);
             }
+            return;
+        }
 
-            if (payment.getPaymentType() == PaymentType.RENEWAL_FEE) {
+        payment.setStatus(PaymentStatus.PAID);
+        switch (payment.getPaymentType()) {
+            case BOOKING_PAYMENT, DEPOSIT -> applyBookingPayment(payment);
+            case RENTAL_FEE -> {
+                paymentRepository.save(payment);
+                contractBillingServiceProvider.getObject().applyRentalPayment(payment);
+            }
+            case RENEWAL_FEE -> {
+                paymentRepository.save(payment);
                 ContractRenewalService renewalService = contractRenewalServiceProvider.getIfAvailable();
                 if (renewalService != null) {
                     renewalService.handleRenewalPaid(payment);
                 }
             }
-
-            UUID facilityId = extractFacilityId(payment);
-            activityLogService.recordSystem(
-                    facilityId,
-                    ActivityAction.PAYMENT_CONFIRMED,
-                    "PAYMENT",
-                    payment.getId(),
-                    "IPN VNPAY xac nhan thanh cong cho txnRef=" + txnRef
-            );
-        } else {
-            payment.setStatus(PaymentStatus.FAILED);
-
-            UUID facilityId = extractFacilityId(payment);
-            activityLogService.recordSystem(
-                    facilityId,
-                    ActivityAction.PAYMENT_FAILED,
-                    "PAYMENT",
-                    payment.getId(),
-                    "IPN VNPAY xac nhan that bai cho txnRef=" + txnRef + ", responseCode=" + responseCode
-            );
+            default -> log.info("Payment {} of type {} recorded without side effects", txnRef, payment.getPaymentType());
         }
 
-        paymentRepository.save(payment);
-        return VNPayIpnResponse.success();
+        if (payment.getStatus() == PaymentStatus.PAID) {
+            String description = "Thanh toán VNPay thành công " + vnd(payment.getAmount()) + " cho " + describeTarget(payment) + ", mã GD " + txnRef;
+            if (fromIpn) {
+                activityLogService.recordSystem(facilityId, ActivityAction.PAYMENT_CONFIRMED, "PAYMENT", payment.getId(), description);
+            } else {
+                activityLogService.record(facilityId, ActivityAction.PAYMENT_CONFIRMED, "PAYMENT", payment.getId(), description,
+                        PaymentStatus.PENDING, PaymentStatus.PAID);
+            }
+            sendReceipt(payment);
+        }
     }
+
+    /**
+     * Initial payment of a booking. A payment that arrives after the booking was cancelled / expired is
+     * kept as REFUND_PENDING and a refund request is opened so the money can be returned.
+     */
+    private void applyBookingPayment(Payment payment) {
+        Booking booking = payment.getBooking();
+        if (booking == null) {
+            return;
+        }
+        booking = bookingRepository.findByIdForUpdate(booking.getId()).orElse(booking);
+
+        if (booking.getStatus() == BookingStatus.CANCELLED || booking.getStatus() == BookingStatus.COMPLETED) {
+            log.warn("[PAYMENT_EXPIRED] Payment {} received after booking {} was {}. Flagged for refund.",
+                    payment.getTransactionId(), booking.getBookingCode(), booking.getStatus());
+            payment.setStatus(PaymentStatus.REFUND_PENDING);
+            paymentRepository.save(payment);
+            openLatePaymentRefund(payment, booking);
+            return;
+        }
+
+        boolean wasPending = booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL;
+        if (wasPending) {
+            booking.setStatus(BookingStatus.CONFIRMED);
+            booking.setPaymentExpiresAt(null);
+            booking.setHoldExpiresAt(null);
+        }
+        BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
+        if (payment.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
+            BigDecimal required = booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO;
+            booking.setDepositPaid(currentDeposit.max(required));
+            booking.setPaymentStatus("PAID");
+        } else {
+            booking.setDepositPaid(currentDeposit.add(payment.getAmount()));
+            booking.setPaymentStatus("PARTIALLY_PAID");
+        }
+        if (wasPending && booking.getStorageUnit() != null) {
+            storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
+        }
+        // PIN / QR are issued only at the physical check-in (BR-RULE-005), never at payment time.
+        bookingRepository.save(booking);
+
+        ContractSigningService contractSigningService = contractSigningServiceProvider.getIfAvailable();
+        if (contractSigningService != null) {
+            try {
+                contractSigningService.ensureContractForBooking(booking);
+            } catch (Exception ex) {
+                log.warn("Cannot ensure contract for booking {}: {}", booking.getBookingCode(), ex.getMessage());
+            }
+        }
+        ContractBillingService billing = contractBillingServiceProvider.getIfAvailable();
+        if (billing != null) {
+            billing.syncContractDeposit(booking);
+        }
+    }
+
+    private void openLatePaymentRefund(Payment payment, Booking booking) {
+        Facility facility = booking.getStorageUnit() != null ? booking.getStorageUnit().getFacility() : null;
+        User customer = booking.getCustomer();
+        if (facility == null || customer == null) {
+            log.warn("Cannot open refund for late payment {}: missing facility or customer", payment.getTransactionId());
+            return;
+        }
+        String marker = "giao dịch " + payment.getTransactionId();
+        boolean exists = refundRequestRepository.findByBookingId(booking.getId()).stream()
+                .anyMatch(r -> r.getReason() != null && r.getReason().contains(marker));
+        if (exists) {
+            return;
+        }
+        RefundRequest refund = RefundRequest.builder()
+                .requestCode("REF-" + System.currentTimeMillis() + "-" + VNPayUtil.randomAlphaNumeric(4).toUpperCase())
+                .customer(customer)
+                .facility(facility)
+                .booking(booking)
+                .contract(rentalContractRepository.findByBookingId(booking.getId()).orElse(null))
+                .requestedAmount(payment.getAmount())
+                .deductionAmount(BigDecimal.ZERO)
+                .finalRefundAmount(payment.getAmount())
+                .reason("Hoàn tiền " + marker + " (VNPay) được thanh toán sau khi đơn " + booking.getBookingCode() + " đã hủy hoặc hết hạn giữ chỗ")
+                .status(RefundStatus.PENDING_REVIEW)
+                .requestedBy(customer)
+                .build();
+        refund = refundRequestRepository.save(refund);
+        activityLogService.recordSystem(facility.getId(), ActivityAction.REFUND_REQUEST_CREATE, "RefundRequest", refund.getId(),
+                "Tự động mở yêu cầu hoàn tiền " + refund.getRequestCode() + " cho khoản thanh toán đến sau khi đơn "
+                        + booking.getBookingCode() + " đã hủy");
+    }
+
+    private void sendReceipt(Payment payment) {
+        try {
+            User customer = payment.getBooking() != null ? payment.getBooking().getCustomer()
+                    : payment.getContract() != null ? payment.getContract().getCustomer() : null;
+            EmailService emailService = emailServiceProvider.getIfAvailable();
+            if (customer == null || customer.getEmail() == null || emailService == null) {
+                return;
+            }
+            emailService.sendPaymentSuccessEmail(customer.getEmail(),
+                    customer.getFullName() != null ? customer.getFullName() : customer.getUsername(),
+                    payment.getTransactionId(), payment.getAmount(), describeTarget(payment));
+        } catch (Exception e) {
+            log.warn("Payment receipt email for {} not sent: {}", payment.getTransactionId(), e.getMessage());
+        }
+    }
+
+    // =====================================================================================
+    // Read
+    // =====================================================================================
 
     @Override
     @Transactional(readOnly = true)
     public PaymentResponse getById(UUID id) {
         Payment payment = paymentRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND));
+        assertPaymentAccess(payment);
         return paymentMapper.toResponse(payment);
     }
 
@@ -477,6 +606,7 @@ public class PaymentServiceImpl implements PaymentService {
     public PaymentResponse getByTransactionId(String transactionId) {
         Payment payment = paymentRepository.findByTransactionId(transactionId)
                 .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND));
+        assertPaymentAccess(payment);
         return paymentMapper.toResponse(payment);
     }
 
@@ -486,26 +616,10 @@ public class PaymentServiceImpl implements PaymentService {
         if (bookingId == null) {
             throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
         }
-
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
-
-        if (facilityAccessGuard.isFacilityScoped()) {
-            UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
-                    ? booking.getStorageUnit().getFacility().getId() : null;
-            if (facilityId != null) {
-                facilityAccessGuard.checkFacilityAccess(facilityId);
-            }
-        }
-        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
-            UUID currentUserId = requestContext.currentUserId();
-            if (currentUserId == null || booking.getCustomer() == null || !currentUserId.equals(booking.getCustomer().getId())) {
-                throw new AppException(ErrorCode.FORBIDDEN);
-            }
-        }
-
-        List<Payment> payments = paymentRepository.findAllByBooking_Id(bookingId);
-        return payments.stream().map(paymentMapper::toResponse).toList();
+        assertBookingAccess(booking);
+        return paymentRepository.findAllByBooking_Id(bookingId).stream().map(paymentMapper::toResponse).toList();
     }
 
     @Override
@@ -515,73 +629,55 @@ public class PaymentServiceImpl implements PaymentService {
         if (currentUserId == null) {
             return List.of();
         }
-
         Specification<Payment> spec = (root, query, cb) -> {
             query.orderBy(cb.desc(cb.coalesce(root.get("paymentTime"), root.get("createdAt"))));
             Join<Payment, Booking> bookingJoin = root.join("booking", JoinType.LEFT);
             Join<Payment, RentalContract> contractJoin = root.join("contract", JoinType.LEFT);
-
             return cb.or(
                     cb.equal(bookingJoin.get("customer").get("id"), currentUserId),
                     cb.equal(contractJoin.get("customer").get("id"), currentUserId)
             );
         };
-
         return paymentRepository.findAll(spec).stream().map(paymentMapper::toResponse).toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public PageResponse<PaymentResponse> getAll(
-            UUID bookingId,
-            UUID facilityId,
-            UUID customerId,
-            PaymentStatus status,
-            PaymentType paymentType,
-            LocalDateTime fromDate,
-            LocalDateTime toDate,
-            int page,
-            int size,
-            String sortBy,
-            String sortDir
-    ) {
-        Sort sort = sortDir.equalsIgnoreCase("asc") ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
-        Pageable pageable = PageRequest.of(page, size, sort);
+            UUID bookingId, UUID facilityId, UUID customerId, PaymentStatus status, PaymentType paymentType,
+            LocalDateTime fromDate, LocalDateTime toDate, int page, int size, String sortBy, String sortDir) {
+        String sortField = sortBy != null && SORTABLE.contains(sortBy) ? sortBy : "paymentTime";
+        Sort sort = "asc".equalsIgnoreCase(sortDir) ? Sort.by(sortField).ascending() : Sort.by(sortField).descending();
+        Pageable pageable = PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 500), sort);
 
         UUID scopedFacilityId = facilityId;
         if (facilityAccessGuard.isFacilityScoped()) {
             scopedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
         }
-
         UUID effectiveCustomerId = customerId;
         if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
             effectiveCustomerId = requestContext.currentUserId();
         }
-
         final UUID queryFacilityId = scopedFacilityId;
         final UUID queryCustomerId = effectiveCustomerId;
 
         Specification<Payment> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
-
             Join<Payment, Booking> bookingJoin = root.join("booking", JoinType.LEFT);
             Join<Booking, StorageUnit> suJoin = bookingJoin.join("storageUnit", JoinType.LEFT);
             Join<Payment, RentalContract> contractJoin = root.join("contract", JoinType.LEFT);
-
             if (queryFacilityId != null) {
                 predicates.add(cb.or(
                         cb.equal(suJoin.get("facility").get("id"), queryFacilityId),
                         cb.equal(contractJoin.get("facility").get("id"), queryFacilityId)
                 ));
             }
-
             if (queryCustomerId != null) {
                 predicates.add(cb.or(
                         cb.equal(bookingJoin.get("customer").get("id"), queryCustomerId),
                         cb.equal(contractJoin.get("customer").get("id"), queryCustomerId)
                 ));
             }
-
             if (bookingId != null) {
                 predicates.add(cb.equal(root.get("booking").get("id"), bookingId));
             }
@@ -597,7 +693,6 @@ public class PaymentServiceImpl implements PaymentService {
             if (toDate != null) {
                 predicates.add(cb.lessThanOrEqualTo(root.get("paymentTime"), toDate));
             }
-
             return cb.and(predicates.toArray(new Predicate[0]));
         };
 
@@ -605,62 +700,99 @@ public class PaymentServiceImpl implements PaymentService {
         return PageResponse.from(result.map(paymentMapper::toResponse));
     }
 
-    @Override
-    @Transactional
-    public VNPayPaymentResponse createContractPayment(
-            RentalContract contract, PaymentType type, BigDecimal amount,
-            Integer renewalMonths, String orderInfo, HttpServletRequest httpRequest) {
+    // =====================================================================================
+    // Helpers
+    // =====================================================================================
 
-        String txnRef = "BOX" + System.currentTimeMillis() + VNPayUtil.randomAlphaNumeric(6);
-
-        String ipAddress = null;
-        if (httpRequest != null) {
-            ipAddress = httpRequest.getHeader("X-Forwarded-For");
-            if (ipAddress == null || ipAddress.isBlank()) {
-                ipAddress = httpRequest.getRemoteAddr();
+    private void assertBookingAccess(Booking booking) {
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            UUID currentUserId = requestContext.currentUserId();
+            if (currentUserId == null || booking.getCustomer() == null || !currentUserId.equals(booking.getCustomer().getId())) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+            return;
+        }
+        if (facilityAccessGuard.isFacilityScoped()) {
+            UUID facilityId = facilityIdOf(booking);
+            if (facilityId != null) {
+                facilityAccessGuard.checkFacilityAccess(facilityId);
             }
         }
-        if (ipAddress == null || ipAddress.isBlank()) {
-            ipAddress = requestContext.currentIpAddress();
+    }
+
+    private void assertPaymentAccess(Payment payment) {
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            UUID currentUserId = requestContext.currentUserId();
+            User owner = payment.getBooking() != null ? payment.getBooking().getCustomer()
+                    : payment.getContract() != null ? payment.getContract().getCustomer() : null;
+            if (currentUserId == null || owner == null || !currentUserId.equals(owner.getId())) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+            return;
         }
-        ipAddress = VNPayUtil.normalizeIp(ipAddress);
-
-        if (orderInfo == null || orderInfo.isBlank()) {
-            orderInfo = "Thanh toan phi gia han hop dong " + (contract.getContractCode() != null ? contract.getContractCode() : contract.getId());
+        if (facilityAccessGuard.isFacilityScoped()) {
+            UUID facilityId = extractFacilityId(payment);
+            if (facilityId != null) {
+                facilityAccessGuard.checkFacilityAccess(facilityId);
+            }
         }
+    }
 
-        Payment payment = Payment.builder()
-                .transactionId(txnRef)
-                .contract(contract)
-                .amount(amount)
-                .paymentType(type)
-                .renewalMonths(renewalMonths)
-                .status(PaymentStatus.PENDING)
-                .paymentMethod("VNPAY")
-                .paymentTime(LocalDateTime.now())
-                .build();
-        payment = paymentRepository.save(payment);
+    private UUID facilityIdOf(Booking booking) {
+        return booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null
+                ? booking.getStorageUnit().getFacility().getId() : null;
+    }
 
-        UUID facilityId = contract.getFacility() != null ? contract.getFacility().getId() : null;
-        activityLogService.record(
-                facilityId,
-                ActivityAction.PAYMENT_INITIATED,
-                "PAYMENT",
-                payment.getId(),
-                "Khoi tao thanh toan phi gia han hop dong " + contract.getId() + ", so tien: " + amount,
-                null,
-                payment.getId()
-        );
+    private UUID extractFacilityId(Payment payment) {
+        if (payment == null) return null;
+        if (payment.getContract() != null && payment.getContract().getFacility() != null) {
+            return payment.getContract().getFacility().getId();
+        }
+        if (payment.getBooking() != null) {
+            return facilityIdOf(payment.getBooking());
+        }
+        return null;
+    }
 
-        String paymentUrl = vnPayService.createPaymentUrl(txnRef, amount, orderInfo, ipAddress);
+    private String describeTarget(Payment payment) {
+        if (payment.getPaymentType() == PaymentType.RENEWAL_FEE && payment.getContract() != null) {
+            return "phí gia hạn hợp đồng " + payment.getContract().getContractCode();
+        }
+        if (payment.getPaymentType() == PaymentType.RENTAL_FEE && payment.getContract() != null) {
+            return "tiền thuê hợp đồng " + payment.getContract().getContractCode();
+        }
+        if (payment.getBooking() != null) {
+            return "đơn đặt kho " + payment.getBooking().getBookingCode();
+        }
+        return payment.getContract() != null ? "hợp đồng " + payment.getContract().getContractCode() : "giao dịch " + payment.getTransactionId();
+    }
 
-        return VNPayPaymentResponse.builder()
-                .paymentUrl(paymentUrl)
-                .transactionId(txnRef)
-                .paymentId(payment.getId())
-                .contractId(contract.getId())
-                .amount(payment.getAmount())
-                .orderInfo(orderInfo)
-                .build();
+    private static String truncate(String value, int max) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.length() > max ? trimmed.substring(0, max) : trimmed;
+    }
+
+    private static String newTxnRef() {
+        return "BOX" + System.currentTimeMillis() + VNPayUtil.randomAlphaNumeric(6);
+    }
+
+    private static String vnd(BigDecimal amount) {
+        return com.boxora.util.VndFormat.format(amount);
+    }
+
+    private static String paymentTypeLabel(PaymentType type) {
+        if (type == null) {
+            return "";
+        }
+        return switch (type) {
+            case BOOKING_PAYMENT -> "khoản đặt kho";
+            case DEPOSIT -> "tiền cọc";
+            case RENTAL_FEE -> "tiền thuê";
+            case RENEWAL_FEE -> "phí gia hạn";
+            case EXTRA_CHARGE -> "phụ phí";
+        };
     }
 }

@@ -48,6 +48,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
     private final ActivityLogService activityLogService;
     private final RequestContext requestContext;
     private final StorageUnitLockService storageUnitLockService;
+    private final com.boxora.security.FacilityAccessGuard facilityAccessGuard;
 
     @Value("${app.scheduling.pending-payment-timeout-minutes:15}")
     private int defaultPendingPaymentTimeoutMinutes;
@@ -87,9 +88,11 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
+        assertBookingAccess(booking);
         validateBookingForCancellation(booking);
 
         FacilityPolicy policy = getFacilityPolicy(booking);
+        Integer refundSlaDays = policy != null ? policy.getDepositRefundSlaDays() : null;
         int fullRefundHours = (policy != null && policy.getCancellationFullRefundHours() != null)
                 ? policy.getCancellationFullRefundHours() : 48;
         int partialRefundHours = (policy != null && policy.getCancellationPartialRefundHours() != null)
@@ -110,8 +113,12 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         long hoursUntilCheckin = durationUntilCheckin.toHours();
         String timeRemainingLabel = formatCalmRemainingTime(durationUntilCheckin, hoursUntilCheckin);
 
-        // Nếu booking ở trạng thái PENDING_PAYMENT hoặc PENDING_APPROVAL: chưa thanh toán cọc -> không có tiền hoàn và không phạt
-        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
+        // Nếu booking ở trạng thái PENDING_PAYMENT hoặc PENDING_APPROVAL, hoặc là lượt giữ chỗ chưa thanh toán khoản nào:
+        // không có tiền hoàn và không phạt (không hiển thị "mốc 1 / hoàn 100%" cho một khoản 0 ₫).
+        boolean pendingPayment = booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL;
+        BigDecimal prepaidRent = pendingPayment ? BigDecimal.ZERO : prepaidRent(booking, depositPaid);
+        boolean nothingPaid = depositPaid.signum() <= 0 && prepaidRent.signum() <= 0;
+        if (pendingPayment || nothingPaid) {
             return BookingCancellationPreviewResponse.builder()
                     .bookingId(booking.getId())
                     .bookingCode(booking.getBookingCode())
@@ -126,8 +133,13 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     .refundPercentage(0.0)
                     .refundAmount(BigDecimal.ZERO)
                     .penaltyAmount(BigDecimal.ZERO)
-                    .policyDescription("Đơn đặt kho đang chờ thanh toán. Hủy đơn không phát sinh chi phí và không hoàn tiền.")
+                    .policyDescription(pendingPayment
+                            ? "Đơn đặt kho đang chờ thanh toán. Hủy đơn không phát sinh chi phí và không hoàn tiền."
+                            : "Bạn chưa thanh toán khoản nào cho lượt giữ chỗ này. Hủy đơn không phát sinh chi phí.")
                     .refundable(false)
+                    .depositRefundAmount(BigDecimal.ZERO)
+                    .prepaidRentAmount(BigDecimal.ZERO)
+                    .refundSlaDays(refundSlaDays)
                     .build();
         }
 
@@ -163,6 +175,13 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     partialRefundHours);
         }
 
+        // Rent paid in advance for a period that never started is always returned in full.
+        BigDecimal depositRefund = refundAmount;
+        refundAmount = refundAmount.add(prepaidRent);
+        if (prepaidRent.compareTo(BigDecimal.ZERO) > 0) {
+            policyDescription = policyDescription + String.format(" Tiền thuê đã trả trước %s được hoàn 100%%.", vnd(prepaidRent));
+        }
+
         boolean refundable = refundAmount.compareTo(BigDecimal.ZERO) > 0;
 
         return BookingCancellationPreviewResponse.builder()
@@ -181,7 +200,80 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                 .penaltyAmount(penaltyAmount)
                 .policyDescription(policyDescription)
                 .refundable(refundable)
+                .depositRefundAmount(depositRefund)
+                .prepaidRentAmount(prepaidRent)
+                .refundSlaDays(refundSlaDays)
                 .build();
+    }
+
+    /** Rent part of the PAID booking payments (everything paid minus the deposit collected). */
+    private BigDecimal prepaidRent(Booking booking, BigDecimal depositPaid) {
+        if (booking.getId() == null) {
+            return BigDecimal.ZERO;
+        }
+        List<Payment> payments = paymentRepository.findAllByBooking_Id(booking.getId());
+        if (payments == null || payments.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal paid = payments.stream()
+                .filter(p -> p.getStatus() == PaymentStatus.PAID && p.getAmount() != null)
+                .filter(p -> p.getPaymentType() == PaymentType.BOOKING_PAYMENT || p.getPaymentType() == PaymentType.DEPOSIT
+                        || p.getPaymentType() == PaymentType.RENTAL_FEE)
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return paid.subtract(depositPaid != null ? depositPaid : BigDecimal.ZERO).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /** Vietnamese label of a milestone stage; the enum-like code never reaches customer-facing text. */
+    static String milestoneLabel(BookingCancellationPreviewResponse preview) {
+        String stage = preview.getMilestoneStage();
+        String percent = String.format("%.0f%%", preview.getRefundPercentage());
+        if (stage == null) {
+            return "theo chính sách hủy";
+        }
+        return switch (stage) {
+            case "STAGE_1_FULL_REFUND" -> "mốc 1: hoàn " + percent + " tiền cọc";
+            case "STAGE_2_PARTIAL_REFUND" -> "mốc 2: hoàn " + percent + " tiền cọc";
+            case "STAGE_3_NO_REFUND" -> "mốc 3: không hoàn tiền cọc";
+            case "STAGE_PENDING_NO_PAYMENT" -> "chưa thanh toán, không phát sinh chi phí";
+            default -> "theo chính sách hủy";
+        };
+    }
+
+    /** "mốc 2: hoàn 50% tiền cọc, tiền cọc 250.000 ₫, tiền thuê trả trước 465.000 ₫ hoàn 100%" */
+    private static String refundBreakdown(BookingCancellationPreviewResponse preview) {
+        StringBuilder text = new StringBuilder(milestoneLabel(preview));
+        BigDecimal deposit = nz(preview.getDepositPaid());
+        if (deposit.signum() > 0) {
+            text.append(", tiền cọc ").append(vnd(deposit));
+        }
+        BigDecimal prepaidRent = nz(preview.getPrepaidRentAmount());
+        if (prepaidRent.signum() > 0) {
+            text.append(", tiền thuê trả trước ").append(vnd(prepaidRent)).append(" hoàn 100%");
+        }
+        return text.toString();
+    }
+
+    private static BigDecimal nz(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
+    }
+
+    static String vnd(BigDecimal amount) {
+        return com.boxora.util.VndFormat.format(amount);
+    }
+
+    private void assertBookingAccess(Booking booking) {
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            UUID currentUserId = requestContext.currentUserId();
+            if (currentUserId == null || booking.getCustomer() == null || !currentUserId.equals(booking.getCustomer().getId())) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+            return;
+        }
+        if (facilityAccessGuard != null && facilityAccessGuard.isFacilityScoped()
+                && booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null) {
+            facilityAccessGuard.checkFacilityAccess(booking.getStorageUnit().getFacility().getId());
+        }
     }
 
     /**
@@ -196,15 +288,12 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
+        // Quyền trước, kiểm tra trạng thái sau: khách hàng chỉ hủy đơn của chính mình, nhân viên / quản lý cơ sở chỉ
+        // hủy đơn thuộc cơ sở được phân công.
+        assertBookingAccess(booking);
         validateBookingForCancellation(booking);
 
-        // Kiểm tra quyền: nếu là CUSTOMER thì chỉ được hủy booking của chính mình
         UUID currentUserId = requestContext.currentUserId();
-        String currentRole = requestContext.currentUserRole();
-        if ("CUSTOMER".equalsIgnoreCase(currentRole) && booking.getCustomer() != null
-                && currentUserId != null && !booking.getCustomer().getId().equals(currentUserId)) {
-            throw new AppException(ErrorCode.FORBIDDEN);
-        }
 
         User cancelledByUser = currentUserId != null
                 ? userRepository.findById(currentUserId).orElse(null)
@@ -228,7 +317,14 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         // Giải phóng StorageUnit về AVAILABLE nếu không còn booking active nào khác
         boolean unitReleased = false;
         StorageUnit unit = booking.getStorageUnit();
-        if (unit != null) {
+        boolean unitHeldByAnotherBooking = unit != null && booking.getId() != null
+                && bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(unit.getId(),
+                        List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT,
+                                BookingStatus.PENDING_APPROVAL, BookingStatus.CHECKOUT_REQUESTED, BookingStatus.INSPECTED),
+                        booking.getId());
+        // Never release a unit another booking still holds, nor one that is under maintenance or locked.
+        if (unit != null && !unitHeldByAnotherBooking
+                && unit.getStatus() != UnitStatus.UNDER_MAINTENANCE && unit.getStatus() != UnitStatus.OVERDUE_LOCKED) {
             unit.setStatus(UnitStatus.AVAILABLE);
             storageUnitRepository.save(unit);
             storageUnitLockService.releaseLock(unit.getId());
@@ -248,20 +344,29 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         // Nếu có hoàn tiền cọc (refundAmount > 0), khởi tạo RefundRequest chính thức thay vì ghi nhận thanh toán giả
         UUID refundRequestId = null;
         String refundRequestCode = null;
+        boolean bankInfoMissing = false;
         if (preview.getRefundAmount() != null && preview.getRefundAmount().compareTo(BigDecimal.ZERO) > 0) {
             Facility facility = (unit != null) ? unit.getFacility() : null;
             if (facility == null && linkedContract != null) {
                 facility = linkedContract.getFacility();
             }
 
-            String bankName = (request != null && request.getBankName() != null && !request.getBankName().isBlank())
-                    ? request.getBankName().trim() : "CHỜ_CẬP_NHẬT";
-            String bankAccountNumber = (request != null && request.getBankAccountNumber() != null && !request.getBankAccountNumber().isBlank())
-                    ? request.getBankAccountNumber().trim() : "CHỜ_CẬP_NHẬT";
-            String bankAccountName = (request != null && request.getBankAccountName() != null && !request.getBankAccountName().isBlank())
-                    ? request.getBankAccountName().trim()
-                    : (booking.getCustomer() != null && booking.getCustomer().getFullName() != null
-                    ? booking.getCustomer().getFullName() : "KHACH_HANG");
+            // The bank account is optional here: the customer can add it later from the portal.
+            // Nothing is invented: missing values stay empty and the transfer is blocked until they exist.
+            String bankName = request != null && request.getBankName() != null && !request.getBankName().isBlank()
+                    ? request.getBankName().trim() : null;
+            String bankAccountNumber = request != null && request.getBankAccountNumber() != null && !request.getBankAccountNumber().isBlank()
+                    ? request.getBankAccountNumber().replaceAll("\\s+", "") : null;
+            String bankAccountName = request != null && request.getBankAccountName() != null && !request.getBankAccountName().isBlank()
+                    ? request.getBankAccountName().trim() : null;
+            boolean anyBank = bankName != null || bankAccountNumber != null || bankAccountName != null;
+            if (anyBank && (bankName == null || bankAccountNumber == null || bankAccountName == null)) {
+                throw new AppException(ErrorCode.REFUND_BANK_INFO_INVALID, "Vui lòng nhập đủ tên ngân hàng, số tài khoản và tên chủ tài khoản, hoặc để trống để bổ sung sau.");
+            }
+            if (bankAccountNumber != null && !bankAccountNumber.matches("\\d{6,20}")) {
+                throw new AppException(ErrorCode.REFUND_BANK_INFO_INVALID, "Số tài khoản chỉ gồm 6 đến 20 chữ số.");
+            }
+            bankInfoMissing = !anyBank;
 
             refundRequestCode = "REF-" + System.currentTimeMillis() + "-" + VNPayUtil.randomAlphaNumeric(4).toUpperCase();
             RefundRequest refundRequest = RefundRequest.builder()
@@ -270,14 +375,17 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     .facility(facility)
                     .booking(booking)
                     .contract(linkedContract)
-                    .requestedAmount(booking.getDepositPaid() != null ? booking.getDepositPaid() : preview.getRefundAmount())
-                    .deductionAmount(preview.getPenaltyAmount())
+                    // Everything that was paid (deposit + rent paid in advance), minus the cancellation deduction,
+                    // equals the amount refunded: the three figures always add up for the finance team.
+                    .requestedAmount(preview.getRefundAmount().add(nz(preview.getPenaltyAmount())))
+                    .deductionAmount(nz(preview.getPenaltyAmount()))
                     .finalRefundAmount(preview.getRefundAmount())
                     .bankName(bankName)
                     .bankAccountNumber(bankAccountNumber)
                     .bankAccountName(bankAccountName)
-                    .reason(String.format("Hoàn cọc khi hủy đơn %s (%s). Lý do: %s",
-                            booking.getBookingCode(), preview.getMilestoneStage(), reason))
+                    .bankInfoUpdatedAt(bankInfoMissing ? null : LocalDateTime.now())
+                    .reason(String.format("Hoàn tiền khi hủy đơn %s (%s). Lý do: %s",
+                            booking.getBookingCode(), refundBreakdown(preview), reason))
                     .status(RefundStatus.PENDING_REVIEW)
                     .requestedBy(cancelledByUser != null ? cancelledByUser : booking.getCustomer())
                     .build();
@@ -296,8 +404,8 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                 ActivityAction.RESERVATION_CANCEL,
                 "Booking",
                 booking.getId(),
-                String.format("Hủy đơn đặt kho %s theo %s. Hoàn cọc: %s VNĐ, Phạt giữ chỗ: %s VNĐ. Lý do: %s",
-                        booking.getBookingCode(), preview.getMilestoneStage(), preview.getRefundAmount(), preview.getPenaltyAmount(), reason),
+                String.format("Hủy đơn đặt kho %s (%s). Hoàn khách: %s, khấu trừ giữ chỗ: %s. Lý do: %s",
+                        booking.getBookingCode(), milestoneLabel(preview), vnd(preview.getRefundAmount()), vnd(preview.getPenaltyAmount()), reason),
                 oldStatus,
                 BookingStatus.CANCELLED
         );
@@ -308,7 +416,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     ActivityAction.STORAGE_UNIT_RELEASE,
                     "StorageUnit",
                     unit.getId(),
-                    String.format("Giải phóng ngăn kho %s về trạng thái AVAILABLE do đơn đặt kho %s bị hủy",
+                    String.format("Giải phóng ngăn kho %s về trạng thái Sẵn sàng do đơn đặt kho %s bị hủy",
                             unit.getUnitCode(), booking.getBookingCode()),
                     null,
                     UnitStatus.AVAILABLE
@@ -331,8 +439,8 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     ActivityAction.REFUND_REQUEST_CREATE,
                     "RefundRequest",
                     refundRequestId,
-                    String.format("Khởi tạo yêu cầu hoàn cọc %s cho đơn %s (Số tiền: %s VNĐ, Mốc: %s)",
-                            refundRequestCode, booking.getBookingCode(), preview.getRefundAmount(), preview.getMilestoneStage()),
+                    String.format("Khởi tạo yêu cầu hoàn tiền %s cho đơn %s (số tiền: %s, %s)",
+                            refundRequestCode, booking.getBookingCode(), vnd(preview.getRefundAmount()), milestoneLabel(preview)),
                     null,
                     RefundStatus.PENDING_REVIEW.name()
             );
@@ -351,7 +459,11 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                 .unitReleased(unitReleased)
                 .cancelledAt(cancelNow)
                 .cancellationReason(reason)
-                .message("Đã hủy đơn đặt kho thành công. " + preview.getPolicyDescription())
+                .bankInfoMissing(bankInfoMissing)
+                .prepaidRentAmount(preview.getPrepaidRentAmount())
+                .refundSlaDays(preview.getRefundSlaDays())
+                .message("Đã hủy đơn đặt kho. " + preview.getPolicyDescription()
+                        + (bankInfoMissing ? " Vui lòng bổ sung tài khoản nhận hoàn tiền trong mục Hợp đồng và thanh toán." : ""))
                 .build();
     }
 

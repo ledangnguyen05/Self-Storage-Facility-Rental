@@ -6,6 +6,7 @@ import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.UserCreateRequest;
 import com.boxora.dto.request.UserUpdateRequest;
 import com.boxora.dto.response.UserResponse;
+import com.boxora.dto.response.UserSummaryResponse;
 import com.boxora.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -33,7 +34,7 @@ public class UserController {
         UserResponse response = userService.create(request);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(ApiResponse.success("User created successfully", response));
+                .body(ApiResponse.success("Đã tạo tài khoản", response));
     }
 
     @GetMapping("/{id}")
@@ -64,6 +65,19 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
+    @GetMapping("/summary")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    public ResponseEntity<ApiResponse<UserSummaryResponse>> getSummary(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Boolean isActive,
+            @RequestParam(required = false) UUID roleId,
+            @RequestParam(required = false) String role,
+            @RequestParam(required = false) UUID facilityId
+    ) {
+        UserSummaryResponse response = userService.getSummary(search, isActive, roleId, role, facilityId);
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<UserResponse>> update(
@@ -71,7 +85,7 @@ public class UserController {
             @Valid @RequestBody UserUpdateRequest request
     ) {
         UserResponse response = userService.update(id, request);
-        return ResponseEntity.ok(ApiResponse.success("User updated successfully", response));
+        return ResponseEntity.ok(ApiResponse.success("Đã cập nhật tài khoản", response));
     }
 
     @DeleteMapping("/{id}")
@@ -80,7 +94,7 @@ public class UserController {
             @PathVariable UUID id
     ) {
         userService.delete(id);
-        return ResponseEntity.ok(ApiResponse.success("User deleted successfully", null));
+        return ResponseEntity.ok(ApiResponse.success("Đã xóa tài khoản", null));
     }
 
     @PatchMapping("/{id}/toggle-active")
@@ -89,6 +103,6 @@ public class UserController {
             @PathVariable UUID id
     ) {
         UserResponse response = userService.toggleActive(id);
-        return ResponseEntity.ok(ApiResponse.success("User status toggled successfully", response));
+        return ResponseEntity.ok(ApiResponse.success("Đã đổi trạng thái tài khoản", response));
     }
 }

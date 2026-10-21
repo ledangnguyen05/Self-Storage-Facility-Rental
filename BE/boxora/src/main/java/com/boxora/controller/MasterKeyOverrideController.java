@@ -20,7 +20,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/master-key")
 @Tag(name = "Master Key", description = "API ghi nhận việc sử dụng chìa khóa cơ tổng khẩn cấp (BR-RULE-009)")
-@PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+@PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
 @RequiredArgsConstructor
 @Slf4j
 public class MasterKeyOverrideController {
@@ -33,7 +33,7 @@ public class MasterKeyOverrideController {
             @Valid @RequestBody MasterKeyOverrideRequest request) {
         MasterKeyOverrideResponse response = masterKeyOverrideService.create(request);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Master key override recorded successfully", response));
+                .body(ApiResponse.success("Đã ghi nhận lần sử dụng chìa khóa tổng", response));
     }
 
     @GetMapping("/{id}")

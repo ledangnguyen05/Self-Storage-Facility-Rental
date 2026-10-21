@@ -3,7 +3,6 @@ package com.boxora.service.impl;
 import com.boxora.common.response.PageResponse;
 import com.boxora.dto.response.NotificationLogResponse;
 import com.boxora.dto.response.RenewalReminderScanResponse;
-import com.boxora.entity.Facility;
 import com.boxora.entity.NotificationLog;
 import com.boxora.entity.RentalContract;
 import com.boxora.entity.User;
@@ -44,6 +43,8 @@ import java.util.UUID;
 @Slf4j
 public class NotificationServiceImpl implements NotificationService {
 
+    private static final int MAX_PAGE_SIZE = 100;
+
     private final NotificationLogRepository notificationLogRepository;
     private final RentalContractRepository rentalContractRepository;
     private final EmailService emailService;
@@ -70,19 +71,15 @@ public class NotificationServiceImpl implements NotificationService {
 
             // Mốc 7 ngày trước khi hết hạn
             if (daysRemaining == 7) {
-                boolean alreadySent = notificationLogRepository
-                        .existsByNotificationTypeAndReferenceId(NotificationType.RENEWAL_REMINDER_7D, contract.getId());
-                if (!alreadySent) {
-                    sendReminder(contract, customer, 7, NotificationType.RENEWAL_REMINDER_7D);
+                if (!alreadySent(NotificationType.RENEWAL_REMINDER_7D, contract)
+                        && sendReminder(contract, customer, 7, NotificationType.RENEWAL_REMINDER_7D).getStatus().equals("SENT")) {
                     count7d++;
                 }
             }
             // Mốc 3 ngày trước khi hết hạn (Khẩn cấp)
             else if (daysRemaining == 3) {
-                boolean alreadySent = notificationLogRepository
-                        .existsByNotificationTypeAndReferenceId(NotificationType.RENEWAL_REMINDER_3D, contract.getId());
-                if (!alreadySent) {
-                    sendReminder(contract, customer, 3, NotificationType.RENEWAL_REMINDER_3D);
+                if (!alreadySent(NotificationType.RENEWAL_REMINDER_3D, contract)
+                        && sendReminder(contract, customer, 3, NotificationType.RENEWAL_REMINDER_3D).getStatus().equals("SENT")) {
                     count3d++;
                 }
             }
@@ -99,65 +96,80 @@ public class NotificationServiceImpl implements NotificationService {
                 .build();
     }
 
-    private void sendReminder(RentalContract contract, User customer, long daysRemaining, NotificationType type) {
+    /** A reminder that failed to send does not count: the next scan may try again. */
+    private boolean alreadySent(NotificationType type, RentalContract contract) {
+        return notificationLogRepository.existsByNotificationTypeAndReferenceIdAndStatus(type, contract.getId(), "SENT");
+    }
+
+    /**
+     * Sends one reminder synchronously and records the real outcome: SENT only when the mail server accepted the
+     * message, otherwise FAILED with the reason.
+     */
+    private NotificationLog sendReminder(RentalContract contract, User customer, long daysRemaining, NotificationType type) {
         String unitCode = contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A";
         BigDecimal monthlyFee = contract.getMonthlyFee() != null ? contract.getMonthlyFee() : BigDecimal.ZERO;
+        String customerName = customer.getFullName() != null ? customer.getFullName() : customer.getUsername();
 
+        String status = "SENT";
+        String error = null;
         try {
-            emailService.sendRenewalReminderEmail(
-                    customer.getEmail(),
-                    customer.getFullName() != null ? customer.getFullName() : customer.getUsername(),
-                    contract.getContractCode(),
-                    unitCode,
-                    contract.getEndDate(),
-                    daysRemaining,
-                    monthlyFee
-            );
+            if (!emailService.isMailConfigured()) {
+                status = "FAILED";
+                error = "Hệ thống chưa cấu hình dịch vụ gửi email (SMTP).";
+            } else {
+                emailService.sendNow(customer.getEmail(),
+                        NotificationMessageTemplates.renewalSubject(contract.getContractCode(), daysRemaining),
+                        NotificationMessageTemplates.renewalHtml(customerName, contract.getContractCode(), unitCode,
+                                contract.getEndDate(), daysRemaining, monthlyFee));
+            }
         } catch (Exception e) {
             log.warn("Failed to send renewal reminder email to {}: {}", customer.getEmail(), e.getMessage());
+            status = "FAILED";
+            error = e instanceof AppException ? e.getMessage() : "Không gửi được email nhắc gia hạn.";
         }
 
-        String title = (daysRemaining <= 3 ? "⚠ [Khẩn cấp] Nhắc hạn hợp đồng " : "🔔 Nhắc gia hạn hợp đồng ") + contract.getContractCode();
-        String content = "Hợp đồng thuê kho " + contract.getContractCode() + " (vị trí: " + unitCode + ") sẽ hết hạn sau " + daysRemaining + " ngày. Vui lòng gia hạn trên hệ thống.";
-
-        notificationLogRepository.save(NotificationLog.builder()
+        NotificationLog saved = notificationLogRepository.save(NotificationLog.builder()
                 .recipient(customer)
                 .recipientEmail(customer.getEmail())
-                .recipientName(customer.getFullName() != null ? customer.getFullName() : customer.getUsername())
+                .recipientName(customerName)
                 .facility(contract.getFacility())
                 .channel(NotificationChannel.EMAIL)
                 .notificationType(type)
                 .referenceType("RentalContract")
                 .referenceId(contract.getId())
-                .title(title)
-                .content(content)
-                .status("SENT")
+                .title(NotificationMessageTemplates.renewalTitle(contract.getContractCode(), daysRemaining))
+                .content(NotificationMessageTemplates.renewalContent(contract.getContractCode(), unitCode, daysRemaining))
+                .status(status)
+                .errorMessage(error != null && error.length() > 1000 ? error.substring(0, 1000) : error)
                 .build());
 
-        activityLogService.record(
-                contract.getFacility() != null ? contract.getFacility().getId() : null,
-                ActivityAction.RENEWAL_REQUEST,
-                "RentalContract",
-                contract.getId(),
-                "Phát hành email thông báo nhắc gia hạn (" + daysRemaining + " ngày trước hạn) tới: " + customer.getEmail(),
-                null,
-                contract.getContractCode()
-        );
+        if ("SENT".equals(status)) {
+            activityLogService.record(
+                    contract.getFacility() != null ? contract.getFacility().getId() : null,
+                    ActivityAction.RENEWAL_REQUEST,
+                    "RentalContract",
+                    contract.getId(),
+                    "Đã gửi email nhắc gia hạn (" + daysRemaining + " ngày trước hạn) tới: " + customer.getEmail(),
+                    null,
+                    contract.getContractCode()
+            );
+        }
+        return saved;
     }
 
     @Override
     @Transactional
-    public void sendSingleContractRenewalReminder(UUID contractId) {
+    public NotificationLogResponse sendSingleContractRenewalReminder(UUID contractId) {
         RentalContract contract = rentalContractRepository.findById(contractId)
-                .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
+                .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND, "Không tìm thấy hợp đồng"));
 
         if (contract.getFacility() != null && facilityAccessGuard.isFacilityScoped()) {
             facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
         }
 
         User customer = contract.getCustomer();
-        if (customer == null || customer.getEmail() == null) {
-            throw new AppException(ErrorCode.USER_NOT_FOUND);
+        if (customer == null || customer.getEmail() == null || customer.getEmail().isBlank()) {
+            throw new AppException(ErrorCode.USER_NOT_FOUND, "Khách hàng chưa có email trong hồ sơ nên không gửi được nhắc gia hạn");
         }
 
         LocalDate today = LocalDate.now();
@@ -166,7 +178,7 @@ public class NotificationServiceImpl implements NotificationService {
                 : 0;
 
         NotificationType type = (daysRemaining <= 3) ? NotificationType.RENEWAL_REMINDER_3D : NotificationType.RENEWAL_REMINDER_7D;
-        sendReminder(contract, customer, daysRemaining, type);
+        return toResponse(sendReminder(contract, customer, daysRemaining, type));
     }
 
     @Override
@@ -175,7 +187,13 @@ public class NotificationServiceImpl implements NotificationService {
         NotificationLog logEntry = notificationLogRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.NOTIFICATION_NOT_FOUND));
 
-        if (logEntry.getFacility() != null && facilityAccessGuard.isFacilityScoped()) {
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            // Customers only read their own; anything else looks like it does not exist.
+            UUID me = requestContext.currentUserId();
+            if (me == null || logEntry.getRecipient() == null || !me.equals(logEntry.getRecipient().getId())) {
+                throw new AppException(ErrorCode.NOTIFICATION_NOT_FOUND);
+            }
+        } else if (logEntry.getFacility() != null && facilityAccessGuard.isFacilityScoped()) {
             facilityAccessGuard.checkFacilityAccess(logEntry.getFacility().getId());
         }
         return toResponse(logEntry);
@@ -184,7 +202,7 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional(readOnly = true)
     public PageResponse<NotificationLogResponse> getLogs(UUID recipientId, UUID facilityId, NotificationType type, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Pageable pageable = pageable(page, size);
 
         UUID effectiveFacilityId = facilityId;
         if (facilityAccessGuard.isFacilityScoped()) {
@@ -217,6 +235,56 @@ public class NotificationServiceImpl implements NotificationService {
         return PageResponse.from(pageResult.map(this::toResponse));
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<NotificationLogResponse> getMine(int page, int size) {
+        UUID me = requireCurrentUser();
+        Page<NotificationLog> pageResult = notificationLogRepository.findByRecipientId(me, pageable(page, size));
+        return PageResponse.from(pageResult.map(this::toResponse));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public long countMyUnread() {
+        return notificationLogRepository.countByRecipient_IdAndReadAtIsNull(requireCurrentUser());
+    }
+
+    @Override
+    @Transactional
+    public NotificationLogResponse markRead(UUID id) {
+        UUID me = requireCurrentUser();
+        NotificationLog logEntry = notificationLogRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.NOTIFICATION_NOT_FOUND));
+        if (logEntry.getRecipient() == null || !me.equals(logEntry.getRecipient().getId())) {
+            throw new AppException(ErrorCode.NOTIFICATION_NOT_FOUND);
+        }
+        if (logEntry.getReadAt() == null) {
+            logEntry.setReadAt(LocalDateTime.now());
+            logEntry = notificationLogRepository.save(logEntry);
+        }
+        return toResponse(logEntry);
+    }
+
+    @Override
+    @Transactional
+    public int markAllRead() {
+        return notificationLogRepository.markAllRead(requireCurrentUser(), LocalDateTime.now());
+    }
+
+    private UUID requireCurrentUser() {
+        UUID me = requestContext.currentUserId();
+        if (me == null) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
+        return me;
+    }
+
+    private static Pageable pageable(int page, int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(Math.max(1, size), MAX_PAGE_SIZE);
+        return PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
+    }
+
     private NotificationLogResponse toResponse(NotificationLog n) {
         return NotificationLogResponse.builder()
                 .id(n.getId())
@@ -235,6 +303,8 @@ public class NotificationServiceImpl implements NotificationService {
                 .retryCount(n.getRetryCount())
                 .errorMessage(n.getErrorMessage())
                 .createdAt(n.getCreatedAt())
+                .readAt(n.getReadAt())
+                .read(n.getReadAt() != null)
                 .build();
     }
 }

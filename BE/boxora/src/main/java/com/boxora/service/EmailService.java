@@ -1,7 +1,25 @@
 package com.boxora.service;
 
 public interface EmailService {
+
+    /** True when an SMTP host is set and (if the server needs authentication) credentials exist. */
+    boolean isMailConfigured();
+
+    /**
+     * Sends an HTML mail synchronously, so callers can report the real outcome.
+     *
+     * @throws com.boxora.exception.AppException EMAIL_SEND_FAILED when mail is not configured or sending fails
+     */
+    void sendNow(String to, String subject, String htmlContent);
+
     void sendPasswordResetEmail(String toEmail, String fullName, String resetToken);
+
+    /**
+     * Same mail, delivered by the background mailer: the caller returns immediately and a delivery failure is
+     * logged instead of thrown. Used by forgot-password, whose response time must not depend on whether the
+     * address is registered.
+     */
+    void sendPasswordResetEmailAsync(String toEmail, String fullName, String resetToken);
     void sendWelcomeEmail(String toEmail, String fullName);
     void sendContractSigningOtp(String toEmail, String otp);
 

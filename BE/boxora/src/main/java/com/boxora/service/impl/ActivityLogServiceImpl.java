@@ -77,7 +77,7 @@ public class ActivityLogServiceImpl implements ActivityLogService {
                 .logType(action.category())
                 .action(action)
                 .emailAttempted(emailAttempted)
-                .description(success ? "User login successful" : failureReason)
+                .description(success ? (failureReason != null ? failureReason : "Đăng nhập thành công") : failureReason)
                 .status(success ? ActivityLogStatus.SUCCESS : ActivityLogStatus.FAILED)
                 .ipAddress(requestContext.currentIpAddress())
                 .userAgent(requestContext.currentUserAgent())
@@ -97,7 +97,7 @@ public class ActivityLogServiceImpl implements ActivityLogService {
                 .facility(user.getFacility())
                 .logType(ActivityAction.LOGOUT.category())
                 .action(ActivityAction.LOGOUT)
-                .description("User logged out")
+                .description("Đăng xuất")
                 .status(ActivityLogStatus.SUCCESS)
                 .ipAddress(requestContext.currentIpAddress())
                 .userAgent(requestContext.currentUserAgent())
@@ -222,6 +222,18 @@ public class ActivityLogServiceImpl implements ActivityLogService {
 
     @Override
     @Transactional(readOnly = true)
+    public PageResponse<ActivityLogResponse> getAll(
+            UUID userId, UUID facilityId, ActivityLogType logType, ActivityAction action, List<ActivityAction> actions,
+            ActivityLogStatus status, Boolean criticalOnly, String resourceType, UUID resourceId,
+            LocalDate fromDate, LocalDate toDate, String search,
+            int page, int size, String sortBy, String sortDir) {
+
+        return query(userId, facilityId, logType, action, actions, status, criticalOnly, resourceType, resourceId,
+                fromDate, toDate, search, page, size, sortBy, sortDir);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public PageResponse<ActivityLogResponse> getLoginHistory(
             UUID userId, ActivityLogStatus status, LocalDate fromDate, LocalDate toDate,
             int page, int size, String sortBy, String sortDir) {
@@ -243,6 +255,15 @@ public class ActivityLogServiceImpl implements ActivityLogService {
             Boolean criticalOnly, String resourceType, UUID resourceId,
             LocalDate fromDate, LocalDate toDate, String search,
             int page, int size, String sortBy, String sortDir) {
+        return query(userId, facilityId, logType, action, null, status, criticalOnly, resourceType, resourceId,
+                fromDate, toDate, search, page, size, sortBy, sortDir);
+    }
+
+    private PageResponse<ActivityLogResponse> query(
+            UUID userId, UUID facilityId, ActivityLogType logType, ActivityAction action, List<ActivityAction> actions,
+            ActivityLogStatus status, Boolean criticalOnly, String resourceType, UUID resourceId,
+            LocalDate fromDate, LocalDate toDate, String search,
+            int page, int size, String sortBy, String sortDir) {
         LocalDateTime from = fromDate != null ? fromDate.atStartOfDay() : null;
         LocalDateTime to = toDate != null ? toDate.atTime(LocalTime.MAX) : null;
 
@@ -257,7 +278,7 @@ public class ActivityLogServiceImpl implements ActivityLogService {
                 Boolean.TRUE.equals(criticalOnly) ? ActivityAction.criticalActions() : null;
 
         Specification<ActivityLog> spec = ActivityLogSpecification.build(
-                userId, facilityId, logType, action, status, criticalActions, resourceType, resourceId, from, to, search);
+                userId, facilityId, logType, action, actions, status, criticalActions, resourceType, resourceId, from, to, search);
 
         Page<ActivityLogResponse> result = activityLogRepository
                 .findAll(spec, pageable)

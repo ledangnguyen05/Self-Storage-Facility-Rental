@@ -22,13 +22,20 @@ public class StorageUnitController {
 
     private final StorageUnitService storageUnitService;
 
+    /**
+     * Công khai nhưng không lộ dữ liệu khách: người gọi không thuộc nội bộ chỉ nhận bản rút gọn.
+     * {@code scope=public} dành cho trang "Thuê kho": mọi kho của các cơ sở đang hoạt động (kể cả kho đã thuê, hiển thị
+     * "Đã có người thuê"), không bị giới hạn theo cơ sở của nhân viên đang đăng nhập.
+     */
     @GetMapping
     public ResponseEntity<ApiResponse<List<StorageUnitResponse>>> getUnits(
             @RequestParam(required = false) UUID facilityId,
             @RequestParam(required = false) String floorLevel,
-            @RequestParam(required = false) String status
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String scope
     ) {
-        return ResponseEntity.ok(ApiResponse.success(storageUnitService.getUnits(facilityId, floorLevel, status)));
+        return ResponseEntity.ok(ApiResponse.success(
+                storageUnitService.getUnits(facilityId, floorLevel, status, "public".equalsIgnoreCase(scope))));
     }
 
     @GetMapping("/{id}")
@@ -40,7 +47,7 @@ public class StorageUnitController {
     @PreAuthorize("hasAuthority('STORAGE_UNIT_CREATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     public ResponseEntity<ApiResponse<StorageUnitResponse>> createUnit(@Valid @RequestBody StorageUnitCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Storage unit created successfully", storageUnitService.createUnit(request)));
+                .body(ApiResponse.success("Đã tạo kho mới", storageUnitService.createUnit(request)));
     }
 
     @PutMapping("/{id}")
@@ -49,19 +56,19 @@ public class StorageUnitController {
             @PathVariable UUID id,
             @Valid @RequestBody StorageUnitUpdateRequest request
     ) {
-        return ResponseEntity.ok(ApiResponse.success("Storage unit updated successfully", storageUnitService.updateUnit(id, request)));
+        return ResponseEntity.ok(ApiResponse.success("Đã cập nhật kho", storageUnitService.updateUnit(id, request)));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('STORAGE_UNIT_DELETE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     public ResponseEntity<ApiResponse<Void>> deleteUnit(@PathVariable UUID id) {
         storageUnitService.deleteUnit(id);
-        return ResponseEntity.ok(ApiResponse.success("Storage unit deleted successfully", null));
+        return ResponseEntity.ok(ApiResponse.success("Đã xóa kho", null));
     }
 
     @PatchMapping("/{id}/toggle-maintenance")
     @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
     public ResponseEntity<ApiResponse<StorageUnitResponse>> toggleMaintenance(@PathVariable UUID id) {
-        return ResponseEntity.ok(ApiResponse.success("Unit maintenance toggled successfully", storageUnitService.toggleMaintenance(id)));
+        return ResponseEntity.ok(ApiResponse.success("Đã cập nhật trạng thái bảo trì của kho", storageUnitService.toggleMaintenance(id)));
     }
 }

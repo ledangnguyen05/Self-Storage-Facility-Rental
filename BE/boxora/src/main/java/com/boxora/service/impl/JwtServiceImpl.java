@@ -120,6 +120,7 @@ public class JwtServiceImpl implements JwtService {
             Map<String, Object> extraClaims
     ) {
         var builder = Jwts.builder()
+                .id(java.util.UUID.randomUUID().toString()) // unique jti: two tokens issued in the same second must differ
                 .subject(email)
                 .claim("type", tokenType.name())
                 .issuedAt(new Date())

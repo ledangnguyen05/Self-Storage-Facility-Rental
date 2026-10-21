@@ -26,6 +26,12 @@ public interface ContractRenewalService {
     /** Xử lý khi khách hàng hoàn tất ký phụ lục gia hạn trên DocuSeal (qua webhook form.completed). */
     void handleRenewalSigned(UUID renewalId, String documentUrl);
 
+    /** Ký phụ lục gia hạn trong cổng Boxora khi chưa cấu hình DocuSeal (môi trường thử nghiệm). */
+    ContractRenewalResponse mockSignRenewal(UUID renewalId, String signatureData);
+
+    /** Khách hàng / nhân viên hủy yêu cầu gia hạn chưa thanh toán. */
+    ContractRenewalResponse cancelRenewal(UUID renewalId, String reason);
+
     /** Lấy thông tin gia hạn theo renewalId. */
     ContractRenewalResponse getById(UUID renewalId);
 

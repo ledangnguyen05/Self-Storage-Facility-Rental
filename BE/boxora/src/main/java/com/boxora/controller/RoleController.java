@@ -37,7 +37,7 @@ public class RoleController {
         log.info("Creating new role : {}", request.getName());
         RoleResponse response= roleService.create(request);
         return ResponseEntity.status(HttpStatus.CREATED).
-                body(ApiResponse.success("Created role successfully",response));
+                body(ApiResponse.success("Đã tạo vai trò",response));
     }
 
     @PutMapping("/{id}")
@@ -46,7 +46,7 @@ public class RoleController {
             (@PathVariable UUID id,@Valid @RequestBody RoleUpdateRequest request){
         log.info("Updating role : {}", request.getName());
         RoleResponse response=roleService.update(id,request);
-        return ResponseEntity.ok(ApiResponse.success("Updated role successfully.", response));
+        return ResponseEntity.ok(ApiResponse.success("Đã cập nhật vai trò", response));
     }
 
     @DeleteMapping("/{id}")
@@ -54,7 +54,7 @@ public class RoleController {
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id){
         log.info("Deleting role with id : {}",id);
         roleService.delete(id);
-        return ResponseEntity.ok(ApiResponse.success("Deleted role successfully.",null));
+        return ResponseEntity.ok(ApiResponse.success("Đã xóa vai trò",null));
     }
 
     @GetMapping

@@ -144,7 +144,7 @@ public class ContractSigningController {
 
     @PostMapping("{contractId}/renew")
     @PreAuthorize("hasAuthority('RENEWAL_CREATE') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
-    @Operation(summary = "Yêu cầu gia hạn hợp đồng, tạo phụ lục và gửi link ký qua DocuSeal")
+    @Operation(summary = "Yêu cầu gia hạn hợp đồng (trong cửa sổ gia hạn của cơ sở hoặc khi đang quá hạn): phí tính qua PricingService + phí trễ hạn, tạo phụ lục để ký")
     public ResponseEntity<ApiResponse<ContractRenewalResponse>> requestRenewal(
             @PathVariable UUID contractId,
             @Valid @RequestBody ContractRenewalCreateRequest request) {
@@ -154,7 +154,7 @@ public class ContractSigningController {
     }
 
     @GetMapping("{contractId}/renewals")
-    @PreAuthorize("hasAuthority('RENEWAL_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('RENEWAL_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Lấy lịch sử gia hạn của một hợp đồng")
     public ResponseEntity<ApiResponse<List<ContractRenewalResponse>>> getRenewalsByContractId(
             @PathVariable UUID contractId) {
@@ -163,7 +163,7 @@ public class ContractSigningController {
     }
 
     @GetMapping("renewals/{renewalId}")
-    @PreAuthorize("hasAuthority('RENEWAL_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('RENEWAL_VIEW') or hasAnyRole('CUSTOMER', 'ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Lấy chi tiết yêu cầu gia hạn")
     public ResponseEntity<ApiResponse<ContractRenewalResponse>> getRenewalById(
             @PathVariable UUID renewalId) {
@@ -217,9 +217,52 @@ public class ContractSigningController {
     public ResponseEntity<ApiResponse<RentalContractResponse>> mockSign(
             @PathVariable UUID contractId,
             @RequestBody(required = false) com.boxora.dto.request.ContractMockSignRequest request) {
+        if (!docuSealConfig.isMockActive()) {
+            throw new AppException(ErrorCode.CONTRACT_MOCK_SIGN_DISABLED);
+        }
+        // Same rule as the DocuSeal path: the customer must have verified the OTP sent to their email.
+        contractOtpService.requireVerified(contractId);
         String signatureData = request != null ? request.getSignatureData() : null;
         RentalContractResponse response = contractSigningService.mockSign(contractId, signatureData);
-        return ResponseEntity.ok(ApiResponse.success("Ký hợp đồng điện tử thành công", response));
+        return ResponseEntity.ok(ApiResponse.success("Đã ký hợp đồng điện tử (môi trường thử nghiệm)", response));
+    }
+
+    @GetMapping("signing-config")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Chế độ ký điện tử hiện tại: DOCUSEAL (đã cấu hình) hoặc SIMULATION (môi trường thử nghiệm, ký trong cổng Boxora)")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getSigningConfig() {
+        boolean simulated = docuSealConfig.isMockActive();
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "mode", simulated ? "SIMULATION" : "DOCUSEAL",
+                "simulated", simulated,
+                "otpRequired", true
+        )));
+    }
+
+    // =========================================================================
+    // RENEWAL ADDENDUM: IN-APP SIGNING (TEST ENVIRONMENT) AND CANCELLATION
+    // =========================================================================
+
+    @PostMapping("renewals/{renewalId}/mock-sign")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN')")
+    @Operation(summary = "Ký phụ lục gia hạn trong cổng Boxora khi chưa cấu hình DocuSeal (môi trường thử nghiệm)")
+    public ResponseEntity<ApiResponse<ContractRenewalResponse>> mockSignRenewal(
+            @PathVariable UUID renewalId,
+            @RequestBody(required = false) com.boxora.dto.request.ContractMockSignRequest request) {
+        String signatureData = request != null ? request.getSignatureData() : null;
+        ContractRenewalResponse response = contractRenewalService.mockSignRenewal(renewalId, signatureData);
+        return ResponseEntity.ok(ApiResponse.success("Đã ký phụ lục gia hạn (môi trường thử nghiệm)", response));
+    }
+
+    @PostMapping("renewals/{renewalId}/cancel")
+    @PreAuthorize("hasAuthority('RENEWAL_CREATE') or hasAnyRole('CUSTOMER', 'ADMIN', 'FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Hủy yêu cầu gia hạn chưa thanh toán")
+    public ResponseEntity<ApiResponse<ContractRenewalResponse>> cancelRenewal(
+            @PathVariable UUID renewalId,
+            @RequestBody(required = false) Map<String, String> body) {
+        String reason = body != null ? body.get("reason") : null;
+        ContractRenewalResponse response = contractRenewalService.cancelRenewal(renewalId, reason);
+        return ResponseEntity.ok(ApiResponse.success("Đã hủy yêu cầu gia hạn", response));
     }
 
     // =========================================================================

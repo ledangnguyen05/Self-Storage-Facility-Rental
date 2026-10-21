@@ -71,7 +71,7 @@ public class DocuSealClient {
             throw e;
         } catch (Exception e) {
             log.error("Failed to create DocuSeal submission: {}", e.getMessage(), e);
-            throw new AppException(ErrorCode.CONTRACT_SIGNING_FAILED);
+            throw new AppException(ErrorCode.CONTRACT_SIGNING_PROVIDER_UNAVAILABLE);
         }
     }
 }

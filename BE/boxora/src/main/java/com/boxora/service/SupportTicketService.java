@@ -27,6 +27,8 @@ public interface SupportTicketService {
 
     SupportTicketResponse takeOwnership(UUID id);
     SupportTicketResponse assignTicket(UUID id, UUID staffId);
+    /** Phân công kèm mức ưu tiên mới (tính lại SLA) và chỉ đạo của quản lý. */
+    SupportTicketResponse assignTicket(UUID id, com.boxora.dto.request.TicketAssignRequest request);
     SupportTicketResponse updateStatus(UUID id, TicketStatusUpdateRequest request);
     SupportTicketResponse resolveTicket(UUID id, String resolutionNote);
     SupportTicketResponse closeTicket(UUID id, String closingNote);

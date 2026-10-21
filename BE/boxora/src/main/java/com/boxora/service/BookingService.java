@@ -16,7 +16,13 @@ public interface BookingService {
     List<BookingResponse> getMyBookings(UUID customerId);
     List<BookingResponse> getMyActiveBookings(UUID customerId);
     List<BookingResponse> getUpcomingArrivals();
-    BookingResponse renewBooking(UUID id, int extraMonths);
+    /**
+     * Role-scoped, paged booking list (GET /bookings): CUSTOMER sees own bookings; STAFF / FACILITY_MANAGER are
+     * forced to their assigned facility; BUSINESS_MANAGER / ADMIN see every facility or {@code facilityId}.
+     * {@code statusCsv} accepts one or more BookingStatus names separated by commas. PIN / QR are never included.
+     */
+    com.boxora.common.response.PageResponse<BookingResponse> searchBookings(
+            UUID customerId, UUID facilityId, String statusCsv, String q, int page, int size);
     BookingResponse remoteUnlock(UUID id);
     BookingResponse getById(UUID id);
     com.boxora.dto.response.BookingPinResponse getBookingPin(UUID id, String currentUserEmail);
