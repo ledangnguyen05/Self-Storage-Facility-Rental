@@ -74,6 +74,9 @@ class BookingCancellationServiceTest {
     @Mock
     private StorageUnitLockService storageUnitLockService;
 
+    @Mock
+    private com.boxora.security.FacilityAccessGuard facilityAccessGuard;
+
     @InjectMocks
     private BookingCancellationServiceImpl cancellationService;
 
@@ -159,6 +162,8 @@ class BookingCancellationServiceTest {
         @DisplayName("Mốc 2 (24h - 48h): Hoàn 50% tiền cọc, phạt 50%")
         void preview_Stage2_PartialRefund() {
             testBooking.setStartDate(LocalDate.now().plusDays(2));
+            // Time-of-day independent: the policy is evaluated against the appointment, not the 08:00 opening hour.
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(36));
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
             when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));
@@ -475,6 +480,7 @@ class BookingCancellationServiceTest {
         @DisplayName("Hủy đơn Mốc 3 (< 24h): Không hoàn cọc, không tạo RefundRequest")
         void cancelBooking_Stage3_NoRefund_DoesNotCreateRefundRequest() {
             testBooking.setStartDate(LocalDate.now().plusDays(1));
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(12));
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
             when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));
@@ -512,6 +518,23 @@ class BookingCancellationServiceTest {
                     cancellationService.cancelBooking(bookingId, request));
 
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("Nhân viên cơ sở khác không được hủy đơn: FACILITY_ACCESS_DENIED và đơn giữ nguyên")
+        void cancelBooking_StaffOfAnotherFacility_ThrowsFacilityAccessDenied() {
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(facilityAccessGuard.isFacilityScoped()).thenReturn(true);
+            doThrow(new AppException(ErrorCode.FACILITY_ACCESS_DENIED))
+                    .when(facilityAccessGuard).checkFacilityAccess(testFacility.getId());
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    cancellationService.cancelBooking(bookingId, new BookingCancelRequest()));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FACILITY_ACCESS_DENIED);
+            assertThat(testBooking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+            verify(bookingRepository, never()).save(any());
         }
     }
 
@@ -629,5 +652,69 @@ class BookingCancellationServiceTest {
             verify(bookingRepository).save(testBooking);
             verify(storageUnitLockService).releaseLock(testUnit.getId());
         }
+    }
+
+    @Test
+    @DisplayName("Refund amounts add up and the reason has no technical stage code (QA t4#3, t4#10)")
+    void cancelPaidBooking_RefundAmountsAddUpAndReasonIsReadable() {
+        testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(5)); // < 24h: deposit kept, prepaid rent returned
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+        when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(testPolicy));
+        when(requestContext.currentUserId()).thenReturn(customerId);
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
+        Payment online = Payment.builder().paymentType(com.boxora.enums.PaymentType.BOOKING_PAYMENT)
+                .status(PaymentStatus.PAID).amount(new BigDecimal("3000000")).build();
+        when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of(online));
+        when(refundRequestRepository.save(any(RefundRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        BookingCancelResponse response = cancellationService.cancelBooking(bookingId,
+                BookingCancelRequest.builder().cancellationReason("Đổi kế hoạch").build());
+
+        assertThat(response.getMilestoneStage()).isEqualTo("STAGE_3_NO_REFUND");
+        verify(refundRequestRepository).save(argThat(r ->
+                r.getRequestedAmount().compareTo(new BigDecimal("3000000")) == 0
+                        && r.getDeductionAmount().compareTo(new BigDecimal("1000000")) == 0
+                        && r.getFinalRefundAmount().compareTo(new BigDecimal("2000000")) == 0
+                        && !r.getReason().contains("STAGE_")
+                        && r.getReason().contains("mốc 3")
+                        && r.getReason().contains("2.000.000 ₫")));
+        assertThat(response.getMessage()).contains("2.000.000 ₫").doesNotContain("2000000.00");
+    }
+
+    @Test
+    @DisplayName("Unpaid counter hold: cancelling costs nothing and shows no 'mốc 1 / hoàn 100%' (QA t3#20)")
+    void preview_UnpaidConfirmedHold_NoPaymentStage() {
+        testBooking.setDepositPaid(BigDecimal.ZERO);
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+        when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(testPolicy));
+        when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+
+        BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+        assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_PENDING_NO_PAYMENT");
+        assertThat(preview.getRefundAmount()).isEqualByComparingTo("0");
+        assertThat(preview.isRefundable()).isFalse();
+        assertThat(preview.getPolicyDescription()).contains("chưa thanh toán");
+    }
+
+    @Test
+    @DisplayName("Cancelling never frees a unit that another booking still holds")
+    void cancelBooking_DoesNotReleaseAUnitHeldByAnotherBooking() {
+        testBooking.setDepositPaid(BigDecimal.ZERO);
+        testUnit.setStatus(UnitStatus.RESERVED);
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+        when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(testPolicy));
+        when(requestContext.currentUserId()).thenReturn(customerId);
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
+        when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+        when(bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(eq(testUnit.getId()), any(), eq(bookingId))).thenReturn(true);
+
+        BookingCancelResponse response = cancellationService.cancelBooking(bookingId, BookingCancelRequest.builder().build());
+
+        assertThat(response.isUnitReleased()).isFalse();
+        assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.RESERVED);
+        verify(storageUnitRepository, never()).save(testUnit);
     }
 }

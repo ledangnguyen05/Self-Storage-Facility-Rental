@@ -395,12 +395,12 @@ class BookingServiceTest {
         }
 
         @Test
-        @DisplayName("expireUnpaidBookings: Booking CONFIRMED quá hạn lịch check-in -> Tự động chuyển sang OVERDUE và giải phóng kho")
+        @DisplayName("expireUnpaidBookings: Booking CONFIRMED đã thanh toán quá hạn lịch check-in -> OVERDUE (cơ sở xử lý tiếp) và giải phóng kho")
         void expireUnpaidBookings_ConfirmedPastAppointment_TransitionsToOverdueAndReleasesUnit() {
             com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
                     .bookingCode("BX-2025-6291")
                     .status(BookingStatus.CONFIRMED)
-                    .paymentStatus("UNPAID")
+                    .paymentStatus("PAID")
                     .expectedCheckInAt(LocalDateTime.now().minusDays(3))
                     .storageUnit(testUnit)
                     .build();
@@ -411,7 +411,7 @@ class BookingServiceTest {
                     .thenReturn(java.util.List.of(booking));
             when(bookingRepository.findByIdForUpdate(booking.getId())).thenReturn(Optional.of(booking));
             when(paymentRepository.existsByBooking_IdAndStatus(booking.getId(), com.boxora.enums.PaymentStatus.PAID))
-                    .thenReturn(false);
+                    .thenReturn(true);
 
             when(storageUnitRepository.findWithDetailsByIdForUpdate(testUnit.getId())).thenReturn(Optional.of(testUnit));
             when(bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(eq(testUnit.getId()), any(), eq(booking.getId())))

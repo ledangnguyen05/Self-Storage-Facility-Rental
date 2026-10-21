@@ -81,6 +81,9 @@ class PaymentServiceTest {
     @Mock
     private com.boxora.service.StorageUnitLockService storageUnitLockService;
 
+    @Mock
+    private com.boxora.repository.RefundRequestRepository refundRequestRepository;
+
     @InjectMocks
     private PaymentServiceImpl paymentService;
 
@@ -98,7 +101,10 @@ class PaymentServiceTest {
                 .bookingCode("BK-2026-001")
                 .status(BookingStatus.PENDING_PAYMENT)
                 .depositPaid(BigDecimal.ZERO)
+                .depositAmount(new BigDecimal("500000"))
+                .rentalMonths(1)
                 .totalRentalFee(new BigDecimal("1000000"))
+                .paymentExpiresAt(java.time.Instant.now().plusSeconds(3600))
                 .build();
         mockBooking.setId(bookingId);
 
@@ -117,13 +123,11 @@ class PaymentServiceTest {
     }
 
     @Test
-    @DisplayName("createVNPayPayment should create PENDING payment and return checkout URL")
+    @DisplayName("createVNPayPayment charges the server-computed first month + deposit and returns the checkout URL")
     void testCreateVNPayPaymentSuccess() {
         PaymentCreateRequest request = PaymentCreateRequest.builder()
                 .bookingId(bookingId)
-                .paymentType(PaymentType.DEPOSIT)
-                .amount(new BigDecimal("500000"))
-                .orderInfo("Thanh toan tien coc")
+                .paymentType(PaymentType.BOOKING_PAYMENT)
                 .build();
 
         when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(mockBooking));
@@ -140,7 +144,7 @@ class PaymentServiceTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getPaymentUrl()).contains("vpcpay.html");
-        assertThat(response.getAmount()).isEqualByComparingTo("500000");
+        assertThat(response.getAmount()).isEqualByComparingTo("1500000");
         assertThat(response.getBookingId()).isEqualTo(bookingId);
 
         verify(paymentRepository).save(any(Payment.class));
@@ -152,8 +156,7 @@ class PaymentServiceTest {
     void testCreateVNPayPaymentBookingNotFound() {
         PaymentCreateRequest request = PaymentCreateRequest.builder()
                 .bookingId(UUID.randomUUID())
-                .paymentType(PaymentType.DEPOSIT)
-                .amount(new BigDecimal("500000"))
+                .paymentType(PaymentType.BOOKING_PAYMENT)
                 .build();
 
         when(bookingRepository.findById(any())).thenReturn(Optional.empty());
@@ -352,5 +355,114 @@ class PaymentServiceTest {
         doThrow(new AppException(ErrorCode.FACILITY_ACCESS_DENIED)).when(facilityAccessGuard).checkFacilityAccess(facilityId);
 
         assertThrows(AppException.class, () -> paymentService.getByBookingId(bookingId));
+    }
+
+    @Test
+    @DisplayName("createVNPayPayment rejects client-chosen payment types (DEPOSIT / EXTRA_CHARGE ...) before touching the booking")
+    void createVNPayPayment_RejectsNonBookingTypes() {
+        for (PaymentType type : new PaymentType[]{PaymentType.DEPOSIT, PaymentType.EXTRA_CHARGE, PaymentType.RENTAL_FEE, PaymentType.RENEWAL_FEE}) {
+            PaymentCreateRequest request = PaymentCreateRequest.builder()
+                    .bookingId(bookingId)
+                    .paymentType(type)
+                    .amount(new BigDecimal("1000"))
+                    .build();
+            AppException ex = assertThrows(AppException.class, () -> paymentService.createVNPayPayment(request, null));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_TYPE_NOT_ALLOWED);
+        }
+        verify(paymentRepository, never()).save(any(Payment.class));
+    }
+
+    @Test
+    @DisplayName("createVNPayPayment: a customer cannot pay (and confirm) another customer's booking")
+    void createVNPayPayment_OtherCustomer_Forbidden() {
+        com.boxora.entity.User owner = com.boxora.entity.User.builder().email("owner@boxora.vn").build();
+        owner.setId(UUID.randomUUID());
+        mockBooking.setCustomer(owner);
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(mockBooking));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(UUID.randomUUID());
+
+        AppException ex = assertThrows(AppException.class, () -> paymentService.createVNPayPayment(
+                PaymentCreateRequest.builder().bookingId(bookingId).build(), null));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        verify(paymentRepository, never()).save(any(Payment.class));
+    }
+
+    @Test
+    @DisplayName("createVNPayPayment: a client amount far from the server amount is rejected (no 1.000 VND confirmations)")
+    void createVNPayPayment_TamperedAmount_Rejected() {
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(mockBooking));
+
+        AppException ex = assertThrows(AppException.class, () -> paymentService.createVNPayPayment(
+                PaymentCreateRequest.builder().bookingId(bookingId).amount(new BigDecimal("1000")).build(), null));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
+        verify(paymentRepository, never()).save(any(Payment.class));
+    }
+
+    @Test
+    @DisplayName("createVNPayPayment: a free in-person hold (CONFIRMED, unpaid) can be paid online; the return keeps it CONFIRMED and PAID")
+    void createVNPayPayment_ConfirmedHold_PaidOnline() {
+        mockBooking.setStatus(BookingStatus.CONFIRMED);
+        mockBooking.setPaymentStatus("UNPAID");
+        mockBooking.setPaymentExpiresAt(null);
+        mockBooking.setHoldExpiresAt(java.time.Instant.now().plusSeconds(7200));
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(mockBooking));
+        when(requestContext.currentIpAddress()).thenReturn("127.0.0.1");
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(vnPayService.createPaymentUrl(anyString(), any(BigDecimal.class), anyString(), anyString()))
+                .thenReturn("https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?vnp_TxnRef=X");
+
+        VNPayPaymentResponse response = paymentService.createVNPayPayment(PaymentCreateRequest.builder().bookingId(bookingId).build(), null);
+        assertThat(response.getAmount()).isEqualByComparingTo("1500000");
+
+        Payment created = Payment.builder()
+                .transactionId("BOXHOLD1")
+                .booking(mockBooking)
+                .amount(new BigDecimal("1500000"))
+                .paymentType(PaymentType.BOOKING_PAYMENT)
+                .status(PaymentStatus.PENDING)
+                .paymentTime(LocalDateTime.now())
+                .build();
+        Map<String, String> params = new HashMap<>();
+        params.put("vnp_TxnRef", "BOXHOLD1");
+        params.put("vnp_Amount", "150000000");
+        params.put("vnp_ResponseCode", "00");
+        params.put("vnp_TransactionStatus", "00");
+        when(vnPayService.verifySignature(params)).thenReturn(true);
+        when(paymentRepository.findByTransactionId("BOXHOLD1")).thenReturn(Optional.of(created));
+
+        paymentService.processVNPayReturn(params);
+
+        assertThat(created.getStatus()).isEqualTo(PaymentStatus.PAID);
+        assertThat(mockBooking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+        assertThat(mockBooking.getPaymentStatus()).isEqualTo("PAID");
+        assertThat(mockBooking.getDepositPaid()).isEqualByComparingTo("500000");
+    }
+
+    @Test
+    @DisplayName("createVNPayPayment: nothing left to pay when the initial amount is already covered")
+    void createVNPayPayment_AlreadyPaid_Rejected() {
+        Payment paid = Payment.builder().amount(new BigDecimal("1500000")).paymentType(PaymentType.BOOKING_PAYMENT)
+                .status(PaymentStatus.PAID).build();
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(mockBooking));
+        when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(java.util.List.of(paid));
+
+        AppException ex = assertThrows(AppException.class, () -> paymentService.createVNPayPayment(
+                PaymentCreateRequest.builder().bookingId(bookingId).build(), null));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_ALREADY_PROCESSED);
+    }
+
+    @Test
+    @DisplayName("getByTransactionId: a customer cannot read another customer's payment")
+    void getByTransactionId_OtherCustomer_Forbidden() {
+        com.boxora.entity.User owner = com.boxora.entity.User.builder().email("owner@boxora.vn").build();
+        owner.setId(UUID.randomUUID());
+        mockBooking.setCustomer(owner);
+        when(paymentRepository.findByTransactionId("BOX123456789")).thenReturn(Optional.of(mockPayment));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(UUID.randomUUID());
+
+        AppException ex = assertThrows(AppException.class, () -> paymentService.getByTransactionId("BOX123456789"));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
     }
 }

@@ -86,6 +86,12 @@ class ContractSigningServiceTest {
     @Mock
     private RequestContext requestContext;
 
+    @Mock
+    private org.springframework.beans.factory.ObjectProvider<ContractBillingService> contractBillingServiceProvider;
+
+    @Mock
+    private com.boxora.repository.ContractRenewalRepository contractRenewalRepository;
+
     @InjectMocks
     private ContractSigningServiceImpl contractSigningService;
 
@@ -204,10 +210,22 @@ class ContractSigningServiceTest {
         verifyNoInteractions(rentalContractRepository);
     }
 
+    private com.boxora.entity.Booking bookingOf(UUID bookingId) {
+        com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                .bookingCode("BX-2026-OWN001")
+                .customer(mockUser)
+                .storageUnit(com.boxora.entity.StorageUnit.builder().unitCode("U-1").facility(mockFacility).build())
+                .status(com.boxora.enums.BookingStatus.CONFIRMED)
+                .build();
+        booking.setId(bookingId);
+        return booking;
+    }
+
     @Test
     @DisplayName("getContractByBookingId: Chủ sở hữu booking được phép lấy hợp đồng")
     void getContractByBookingId_AuthorizedOwner_ReturnsContract() {
         UUID bookingId = UUID.randomUUID();
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(bookingOf(bookingId)));
         when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(mockContract));
         when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
         when(requestContext.currentUserId()).thenReturn(mockUser.getId());
@@ -225,28 +243,114 @@ class ContractSigningServiceTest {
     }
 
     @Test
-    @DisplayName("getContractByBookingId: Khách hàng khác cố truy cập hợp đồng -> Bị từ chối FORBIDDEN (403)")
+    @DisplayName("getContractByBookingId: Khách hàng khác bị từ chối trước khi hệ thống tạo hợp đồng (FORBIDDEN)")
     void getContractByBookingId_UnauthorizedCustomer_ThrowsForbidden() {
         UUID bookingId = UUID.randomUUID();
-        UUID attackerId = UUID.randomUUID();
-
-        when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(mockContract));
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(bookingOf(bookingId)));
         when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
-        when(requestContext.currentUserId()).thenReturn(attackerId);
+        when(requestContext.currentUserId()).thenReturn(UUID.randomUUID());
 
-        assertThrows(AppException.class, () -> contractSigningService.getContractByBookingId(bookingId));
+        AppException ex = assertThrows(AppException.class, () -> contractSigningService.getContractByBookingId(bookingId));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        verify(rentalContractRepository, never()).save(any());
     }
 
     @Test
     @DisplayName("getContractByBookingId: Nhân viên ngoài phạm vi cơ sở -> Bị từ chối FACILITY_ACCESS_DENIED (403)")
     void getContractByBookingId_OutOfScopeStaff_ThrowsFacilityAccessDenied() {
         UUID bookingId = UUID.randomUUID();
-
-        when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(mockContract));
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(bookingOf(bookingId)));
         when(facilityAccessGuard.isFacilityScoped()).thenReturn(true);
         doThrow(new AppException(ErrorCode.FACILITY_ACCESS_DENIED))
                 .when(facilityAccessGuard).checkFacilityAccess(mockFacility.getId());
 
         assertThrows(AppException.class, () -> contractSigningService.getContractByBookingId(bookingId));
+    }
+
+    @Test
+    @DisplayName("mockSign is refused when DocuSeal is configured (no fake signed contracts in production)")
+    void mockSign_RefusedWhenDocuSealConfigured() {
+        when(docuSealConfig.isMockActive()).thenReturn(false);
+        AppException ex = assertThrows(AppException.class, () -> contractSigningService.mockSign(mockContract.getId(), "data:image/png;base64,AA"));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_MOCK_SIGN_DISABLED);
+        verify(rentalContractRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("mockSign (test environment) stores the signature without inventing a signed document URL")
+    void mockSign_TestEnvironment_NoFakeDocumentUrl() {
+        when(docuSealConfig.isMockActive()).thenReturn(true);
+        mockContract.setStatus(RentalContractStatus.PENDING_SIGNATURE);
+        when(rentalContractRepository.findById(mockContract.getId())).thenReturn(Optional.of(mockContract));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(mockUser.getId());
+        when(rentalContractMapper.toResponse(mockContract)).thenReturn(com.boxora.dto.response.RentalContractResponse.builder().id(mockContract.getId()).build());
+
+        contractSigningService.mockSign(mockContract.getId(), "data:image/png;base64,AA");
+
+        assertThat(mockContract.getSignedAt()).isNotNull();
+        assertThat(mockContract.getSignedDocumentUrl()).isNull();
+        assertThat(mockContract.getSignatureData()).isEqualTo("data:image/png;base64,AA");
+        assertThat(mockContract.getSigningMethod()).isEqualTo("ELECTRONIC_TEST");
+    }
+
+    @Test
+    @DisplayName("Staff can never e-sign a customer's contract, even in the test environment")
+    void mockSign_RefusedForStaff() {
+        when(docuSealConfig.isMockActive()).thenReturn(true);
+        when(rentalContractRepository.findById(mockContract.getId())).thenReturn(Optional.of(mockContract));
+        when(requestContext.currentUserRole()).thenReturn("STAFF");
+        when(requestContext.currentUserId()).thenReturn(UUID.randomUUID());
+
+        AppException ex = assertThrows(AppException.class, () -> contractSigningService.mockSign(mockContract.getId(), "data:image/png;base64,AA"));
+
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_SIGNER_NOT_CUSTOMER);
+        assertThat(mockContract.getSignedAt()).isNull();
+        verify(rentalContractRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("A counter booking gets a counter (IN_PERSON) contract; online bookings an ELECTRONIC one")
+    void ensureContract_UsesTheBookingSigningMethod() {
+        com.boxora.entity.Booking counter = com.boxora.entity.Booking.builder()
+                .bookingCode("BX-2026-NJDA8C").customer(mockUser).storageUnit(mockUnit)
+                .status(com.boxora.enums.BookingStatus.CONFIRMED).signingMethod("IN_PERSON")
+                .startDate(LocalDate.of(2026, 10, 25)).endDate(LocalDate.of(2026, 11, 25))
+                .rentalMonths(1).totalRentalFee(new BigDecimal("1500000")).build();
+        counter.setId(UUID.randomUUID());
+        com.boxora.entity.Booking online = com.boxora.entity.Booking.builder()
+                .bookingCode("BX-2026-6NCL2S").customer(mockUser).storageUnit(mockUnit)
+                .status(com.boxora.enums.BookingStatus.CONFIRMED).signingMethod("ONLINE")
+                .startDate(LocalDate.of(2026, 10, 25)).endDate(LocalDate.of(2026, 11, 25))
+                .rentalMonths(1).totalRentalFee(new BigDecimal("1500000")).build();
+        online.setId(UUID.randomUUID());
+        when(rentalContractRepository.findByBookingId(any())).thenReturn(Optional.empty());
+        when(rentalContractRepository.save(any(RentalContract.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThat(contractSigningService.ensureContractForBooking(counter).getSigningMethod()).isEqualTo("IN_PERSON");
+        assertThat(contractSigningService.ensureContractForBooking(online).getSigningMethod()).isEqualTo("ELECTRONIC");
+    }
+
+    @Test
+    @DisplayName("Signing online a contract first planned for the counter marks the booking as signed online")
+    void mockSign_CounterBookingSignedOnlineBecomesOnline() {
+        when(docuSealConfig.isMockActive()).thenReturn(true);
+        com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                .bookingCode("BX-2026-CONF-D101").customer(mockUser).storageUnit(mockUnit)
+                .status(com.boxora.enums.BookingStatus.CONFIRMED).signingMethod("IN_PERSON").build();
+        booking.setId(UUID.randomUUID());
+        mockContract.setBooking(booking);
+        mockContract.setSigningMethod("IN_PERSON");
+        when(rentalContractRepository.findById(mockContract.getId())).thenReturn(Optional.of(mockContract));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(mockUser.getId());
+        when(rentalContractMapper.toResponse(mockContract)).thenReturn(com.boxora.dto.response.RentalContractResponse.builder().id(mockContract.getId()).build());
+
+        contractSigningService.mockSign(mockContract.getId(), "data:image/png;base64,AA");
+
+        assertThat(mockContract.getStatus()).isEqualTo(RentalContractStatus.PENDING_ACTIVATION);
+        assertThat(mockContract.getSigningMethod()).isEqualTo("ELECTRONIC_TEST");
+        assertThat(booking.getSigningMethod()).isEqualTo("ONLINE");
+        verify(bookingRepository).save(booking);
     }
 }

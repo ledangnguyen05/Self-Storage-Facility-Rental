@@ -40,6 +40,12 @@ class BookingAccessServiceTest {
     @Mock
     private RequestContext requestContext;
 
+    @Mock
+    private EncryptionService encryptionService;
+
+    @Mock
+    private com.boxora.security.FacilityAccessGuard facilityAccessGuard;
+
     @InjectMocks
     private BookingServiceImpl bookingService;
 
@@ -51,13 +57,14 @@ class BookingAccessServiceTest {
     void setUp() {
         customerId = UUID.randomUUID();
         bookingId = UUID.randomUUID();
-        User customer = User.builder().fullName("Customer").email("customer@example.com").build();
+        User customer = User.builder().fullName("Customer").email("customer@example.com")
+                .role(com.boxora.entity.Role.builder().name("CUSTOMER").build()).build();
         customer.setId(customerId);
         booking = Booking.builder()
                 .customer(customer)
                 .bookingCode("BK-TEST")
                 .status(BookingStatus.ACTIVE)
-                .accessPin("123456")
+                .accessPin("ENCRYPTED-PIN")
                 .qrAccessToken("QR-TEST")
                 .build();
         booking.setId(bookingId);
@@ -95,17 +102,24 @@ class BookingAccessServiceTest {
     void credentialsAreReturnedOnlyToTheOwningCustomer() {
         when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
         when(requestContext.currentUserId()).thenReturn(customerId);
+        when(userRepository.findById(customerId)).thenReturn(Optional.of(booking.getCustomer()));
+        when(encryptionService.decrypt("ENCRYPTED-PIN")).thenReturn("123456");
 
         var credentials = bookingService.getAccessCredentials(bookingId);
 
+        // The decrypted PIN, never the AES ciphertext stored in the database.
         assertThat(credentials.getAccessPin()).isEqualTo("123456");
         assertThat(credentials.getQrAccessToken()).isEqualTo("QR-TEST");
     }
 
     @Test
     void credentialsAreDeniedToOtherCustomers() {
+        UUID otherId = UUID.randomUUID();
+        User other = User.builder().email("other@example.com").role(com.boxora.entity.Role.builder().name("CUSTOMER").build()).build();
+        other.setId(otherId);
         when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
-        when(requestContext.currentUserId()).thenReturn(UUID.randomUUID());
+        when(requestContext.currentUserId()).thenReturn(otherId);
+        when(userRepository.findById(otherId)).thenReturn(Optional.of(other));
 
         AppException exception = assertThrows(AppException.class,
                 () -> bookingService.getAccessCredentials(bookingId));

@@ -1,6 +1,10 @@
 package com.boxora.service;
 
+import com.boxora.dto.response.NotificationLogResponse;
 import com.boxora.dto.response.RenewalReminderScanResponse;
+import com.boxora.exception.AppException;
+import com.boxora.exception.ErrorCode;
+import org.mockito.ArgumentCaptor;
 import com.boxora.entity.Facility;
 import com.boxora.entity.NotificationLog;
 import com.boxora.entity.RentalContract;
@@ -24,7 +28,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -116,12 +123,15 @@ class NotificationServiceTest {
         when(rentalContractRepository.findByStatus(RentalContractStatus.ACTIVE))
                 .thenReturn(List.of(contract7d, contract3d, contractFar));
 
+        when(emailService.isMailConfigured()).thenReturn(true);
+        when(notificationLogRepository.save(any(NotificationLog.class))).thenAnswer(inv -> inv.getArgument(0));
+
         // contract7d chưa gửi mốc 7d
-        when(notificationLogRepository.existsByNotificationTypeAndReferenceId(eq(NotificationType.RENEWAL_REMINDER_7D), eq(contract7d.getId())))
+        when(notificationLogRepository.existsByNotificationTypeAndReferenceIdAndStatus(eq(NotificationType.RENEWAL_REMINDER_7D), eq(contract7d.getId()), eq("SENT")))
                 .thenReturn(false);
 
         // contract3d chưa gửi mốc 3d
-        when(notificationLogRepository.existsByNotificationTypeAndReferenceId(eq(NotificationType.RENEWAL_REMINDER_3D), eq(contract3d.getId())))
+        when(notificationLogRepository.existsByNotificationTypeAndReferenceIdAndStatus(eq(NotificationType.RENEWAL_REMINDER_3D), eq(contract3d.getId()), eq("SENT")))
                 .thenReturn(false);
 
         RenewalReminderScanResponse response = notificationService.scanAndSendRenewalReminders();
@@ -130,8 +140,8 @@ class NotificationServiceTest {
         assertThat(response.getSevenDayRemindersSent()).isEqualTo(1);
         assertThat(response.getThreeDayRemindersSent()).isEqualTo(1);
 
-        // Verify emailService called twice (1 for 7d, 1 for 3d)
-        verify(emailService, times(2)).sendRenewalReminderEmail(anyString(), anyString(), anyString(), anyString(), any(), anyLong(), any());
+        // Verify the mails were sent synchronously (1 for 7d, 1 for 3d)
+        verify(emailService, times(2)).sendNow(eq("d.vu@example.com"), anyString(), anyString());
         // Verify notificationLog saved twice
         verify(notificationLogRepository, times(2)).save(any(NotificationLog.class));
     }
@@ -143,7 +153,7 @@ class NotificationServiceTest {
                 .thenReturn(List.of(contract7d));
 
         // contract7d ĐÃ gửi trước đó
-        when(notificationLogRepository.existsByNotificationTypeAndReferenceId(eq(NotificationType.RENEWAL_REMINDER_7D), eq(contract7d.getId())))
+        when(notificationLogRepository.existsByNotificationTypeAndReferenceIdAndStatus(eq(NotificationType.RENEWAL_REMINDER_7D), eq(contract7d.getId()), eq("SENT")))
                 .thenReturn(true);
 
         RenewalReminderScanResponse response = notificationService.scanAndSendRenewalReminders();
@@ -151,7 +161,96 @@ class NotificationServiceTest {
         assertThat(response.getScannedContractsCount()).isEqualTo(1);
         assertThat(response.getSevenDayRemindersSent()).isEqualTo(0);
 
-        verify(emailService, never()).sendRenewalReminderEmail(anyString(), anyString(), anyString(), anyString(), any(), anyLong(), any());
+        verify(emailService, never()).sendNow(anyString(), anyString(), anyString());
         verify(notificationLogRepository, never()).save(any(NotificationLog.class));
+    }
+
+    @Test
+    @DisplayName("Chưa cấu hình SMTP: không báo đã gửi, ghi nhận FAILED kèm lý do và không tính vào số email đã gửi")
+    void testScanWithoutMailConfigurationDoesNotClaimSuccess() {
+        when(rentalContractRepository.findByStatus(RentalContractStatus.ACTIVE)).thenReturn(List.of(contract7d));
+        when(emailService.isMailConfigured()).thenReturn(false);
+        when(notificationLogRepository.save(any(NotificationLog.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        RenewalReminderScanResponse response = notificationService.scanAndSendRenewalReminders();
+
+        assertThat(response.getSevenDayRemindersSent()).isEqualTo(0);
+        ArgumentCaptor<NotificationLog> saved = ArgumentCaptor.forClass(NotificationLog.class);
+        verify(notificationLogRepository).save(saved.capture());
+        assertThat(saved.getValue().getStatus()).isEqualTo("FAILED");
+        assertThat(saved.getValue().getErrorMessage()).contains("SMTP");
+        verify(emailService, never()).sendNow(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Gửi nhắc gia hạn thủ công: lỗi gửi thư trả về bản ghi FAILED thay vì báo thành công")
+    void testManualReminderReportsFailure() {
+        when(rentalContractRepository.findById(contract7d.getId())).thenReturn(Optional.of(contract7d));
+        when(emailService.isMailConfigured()).thenReturn(true);
+        doThrow(new AppException(ErrorCode.EMAIL_SEND_FAILED)).when(emailService).sendNow(anyString(), anyString(), anyString());
+        when(notificationLogRepository.save(any(NotificationLog.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        NotificationLogResponse response = notificationService.sendSingleContractRenewalReminder(contract7d.getId());
+
+        assertThat(response.getStatus()).isEqualTo("FAILED");
+        assertThat(response.getErrorMessage()).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("Đánh dấu đã đọc: chỉ thông báo của chính mình, gọi lại không đổi thời điểm đọc")
+    void testMarkReadOnlyOwnNotification() {
+        UUID me = mockCustomer.getId();
+        NotificationLog mine = NotificationLog.builder().recipient(mockCustomer).recipientEmail("d.vu@example.com")
+                .notificationType(NotificationType.HANDOVER_PIN).title("Bàn giao kho").build();
+        mine.setId(UUID.randomUUID());
+        User other = User.builder().fullName("Người khác").build();
+        other.setId(UUID.randomUUID());
+        NotificationLog notMine = NotificationLog.builder().recipient(other).recipientEmail("x@example.com")
+                .notificationType(NotificationType.HANDOVER_PIN).title("Của người khác").build();
+        notMine.setId(UUID.randomUUID());
+
+        when(requestContext.currentUserId()).thenReturn(me);
+        when(notificationLogRepository.findById(mine.getId())).thenReturn(Optional.of(mine));
+        when(notificationLogRepository.findById(notMine.getId())).thenReturn(Optional.of(notMine));
+        when(notificationLogRepository.save(any(NotificationLog.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        NotificationLogResponse first = notificationService.markRead(mine.getId());
+        assertThat(first.isRead()).isTrue();
+        assertThat(first.getReadAt()).isNotNull();
+        java.time.LocalDateTime firstReadAt = mine.getReadAt();
+        notificationService.markRead(mine.getId());
+        assertThat(mine.getReadAt()).isEqualTo(firstReadAt);
+
+        AppException ex = assertThrows(AppException.class, () -> notificationService.markRead(notMine.getId()));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.NOTIFICATION_NOT_FOUND);
+        assertThat(notMine.getReadAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("Khách không đọc được thông báo của người khác theo ID")
+    void testCustomerCannotReadOthersNotificationById() {
+        User other = User.builder().fullName("Người khác").build();
+        other.setId(UUID.randomUUID());
+        NotificationLog notMine = NotificationLog.builder().recipient(other).recipientEmail("x@example.com")
+                .notificationType(NotificationType.REFUND_STATUS).title("Hoàn tiền").build();
+        notMine.setId(UUID.randomUUID());
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(mockCustomer.getId());
+        when(notificationLogRepository.findById(notMine.getId())).thenReturn(Optional.of(notMine));
+
+        AppException ex = assertThrows(AppException.class, () -> notificationService.getById(notMine.getId()));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.NOTIFICATION_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("Số chưa đọc và đọc tất cả dùng id của tài khoản đang đăng nhập")
+    void testUnreadCountAndReadAll() {
+        UUID me = mockCustomer.getId();
+        when(requestContext.currentUserId()).thenReturn(me);
+        when(notificationLogRepository.countByRecipient_IdAndReadAtIsNull(me)).thenReturn(3L);
+        when(notificationLogRepository.markAllRead(eq(me), any())).thenReturn(3);
+
+        assertThat(notificationService.countMyUnread()).isEqualTo(3L);
+        assertThat(notificationService.markAllRead()).isEqualTo(3);
     }
 }

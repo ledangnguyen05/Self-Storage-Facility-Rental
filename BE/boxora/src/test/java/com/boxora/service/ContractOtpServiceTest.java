@@ -83,11 +83,13 @@ class ContractOtpServiceTest {
         var response = contractOtpService.sendOtp(contractId);
 
         ArgumentCaptor<ContractSigningOtp> challengeCaptor = ArgumentCaptor.forClass(ContractSigningOtp.class);
-        ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
         verify(otpRepository).save(challengeCaptor.capture());
-        verify(emailService).sendContractSigningOtp(eq("customer@example.com"), codeCaptor.capture());
-        assertThat(codeCaptor.getValue()).matches("\\d{6}");
-        assertThat(challengeCaptor.getValue().getOtpHash()).isEqualTo("hash:" + codeCaptor.getValue());
+        // Sent synchronously so the API only reports "sent" when the mail server accepted it.
+        verify(emailService).sendNow(eq("customer@example.com"), anyString(), htmlCaptor.capture());
+        java.util.regex.Matcher code = java.util.regex.Pattern.compile(">(\\d{6})<").matcher(htmlCaptor.getValue());
+        assertThat(code.find()).isTrue();
+        assertThat(challengeCaptor.getValue().getOtpHash()).isEqualTo("hash:" + code.group(1));
         assertThat(response.getExpiresInSeconds()).isEqualTo(300);
         assertThat(response.getResendInSeconds()).isEqualTo(60);
     }
@@ -100,7 +102,20 @@ class ContractOtpServiceTest {
         AppException exception = assertThrows(AppException.class, () -> contractOtpService.resendOtp(contractId));
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_OTP_RESEND_TOO_SOON);
-        verify(emailService, never()).sendContractSigningOtp(anyString(), anyString());
+        verify(emailService, never()).sendNow(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void sendOtpFailureIsAClearErrorNotA500() {
+        when(otpRepository.findByContract_Id(contractId)).thenReturn(Optional.empty());
+        when(passwordEncoder.encode(anyString())).thenReturn("hash");
+        when(otpRepository.save(any(ContractSigningOtp.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        doThrow(new AppException(ErrorCode.EMAIL_SEND_FAILED)).when(emailService).sendNow(anyString(), anyString(), anyString());
+
+        AppException exception = assertThrows(AppException.class, () -> contractOtpService.sendOtp(contractId));
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_OTP_SEND_FAILED);
+        assertThat(exception.getErrorCode().getHttpStatus().value()).isEqualTo(503);
     }
 
     @Test
@@ -129,6 +144,36 @@ class ContractOtpServiceTest {
         assertThat(response.getSigningUrl()).isEqualTo("https://sign.example.com/token");
         assertThat(challenge.getVerifiedAt()).isNotNull();
         verify(otpRepository).save(challenge);
+    }
+
+    @Test
+    void staffCanNeverPassTheSigningOtpCheckForACustomer() {
+        when(requestContext.currentUserRole()).thenReturn("STAFF");
+
+        AppException exception = assertThrows(AppException.class, () -> contractOtpService.requireVerified(contractId));
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_SIGNER_NOT_CUSTOMER);
+        verify(otpRepository, never()).findByContract_Id(any());
+    }
+
+    @Test
+    void anotherCustomerCannotSignThisContract() {
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(UUID.randomUUID());
+
+        AppException exception = assertThrows(AppException.class, () -> contractOtpService.requireVerified(contractId));
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_SIGNER_NOT_CUSTOMER);
+    }
+
+    @Test
+    void customerStillNeedsAVerifiedOtp() {
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(otpRepository.findByContract_Id(contractId)).thenReturn(Optional.of(challenge(LocalDateTime.now())));
+
+        AppException exception = assertThrows(AppException.class, () -> contractOtpService.requireVerified(contractId));
+
+        assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_OTP_INVALID);
     }
 
     private ContractSigningOtp challenge(LocalDateTime lastSentAt) {

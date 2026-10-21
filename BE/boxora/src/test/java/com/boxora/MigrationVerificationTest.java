@@ -12,8 +12,23 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class MigrationVerificationTest {
 
-    private static final String POSTGRES_USER = "postgres";
-    private static final String POSTGRES_PASSWORD = "12345";
+    private static final String POSTGRES_USER = envOr("DB_USERNAME", "postgres");
+    private static final String POSTGRES_PASSWORD = envOr("DB_PASSWORD", "postgres");
+
+    private static String envOr(String name, String fallback) {
+        String value = System.getenv(name);
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    /** Highest V<n>__ script on the classpath, so the test never needs updating when a migration is added. */
+    private static String latestMigrationVersion(Flyway flyway) {
+        return java.util.Arrays.stream(flyway.info().all())
+                .map(info -> info.getVersion())
+                .filter(java.util.Objects::nonNull)
+                .max(org.flywaydb.core.api.MigrationVersion::compareTo)
+                .orElseThrow()
+                .getVersion();
+    }
 
     @Test
     @DisplayName("Phase E: Verify all Flyway migrations succeed cleanly on a disposable clean database")
@@ -35,7 +50,8 @@ public class MigrationVerificationTest {
         MigrateResult result = flyway.migrate();
         assertTrue(result.success, "Clean database migration should succeed");
         assertTrue(result.migrationsExecuted > 0, "Should execute all migrations on a clean database");
-        assertEquals("42", flyway.info().current().getVersion().getVersion(), "Current version should be 42");
+        assertEquals(latestMigrationVersion(flyway), flyway.info().current().getVersion().getVersion(),
+                "Database should be at the latest migration version");
     }
 
     @Test
@@ -52,7 +68,8 @@ public class MigrationVerificationTest {
 
         MigrateResult result = flyway.migrate();
         assertTrue(result.success, "Migration on existing database copy should succeed");
-        assertEquals("42", flyway.info().current().getVersion().getVersion(), "Current version should be 42");
+        assertEquals(latestMigrationVersion(flyway), flyway.info().current().getVersion().getVersion(),
+                "Database should be at the latest migration version");
     }
 
     @Test

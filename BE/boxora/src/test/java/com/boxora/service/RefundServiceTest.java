@@ -63,6 +63,12 @@ class RefundServiceTest {
     @Mock
     private RequestContext requestContext;
 
+    @Mock
+    private com.boxora.repository.FacilityPolicyRepository facilityPolicyRepository;
+
+    @Mock
+    private com.boxora.service.FileStorageService fileStorageService;
+
     @InjectMocks
     private RefundServiceImpl refundService;
 
@@ -101,6 +107,7 @@ class RefundServiceTest {
         mockBooking = Booking.builder()
                 .bookingCode("BK-REF-100")
                 .customer(mockCustomer)
+                .storageUnit(com.boxora.entity.StorageUnit.builder().unitCode("Q7-A01").facility(mockFacility).build())
                 .depositPaid(new BigDecimal("1000000"))
                 .build();
         mockBooking.setId(bookingId);
@@ -178,6 +185,9 @@ class RefundServiceTest {
                 .requestCode("REF-12345")
                 .customer(mockCustomer)
                 .facility(mockFacility)
+                .bankName("MB Bank")
+                .bankAccountNumber("99999999")
+                .bankAccountName("LE VAN C")
                 .status(RefundStatus.APPROVED)
                 .build();
         refund.setId(refundId);
@@ -206,6 +216,9 @@ class RefundServiceTest {
                 .requestCode("REF-12345")
                 .customer(mockCustomer)
                 .facility(mockFacility)
+                .bankName("MB Bank")
+                .bankAccountNumber("99999999")
+                .bankAccountName("LE VAN C")
                 .booking(mockBooking)
                 .requestedAmount(new BigDecimal("500000"))
                 .finalRefundAmount(new BigDecimal("500000"))
@@ -345,6 +358,71 @@ class RefundServiceTest {
                 .build();
 
         AppException ex = assertThrows(AppException.class, () -> refundService.confirmCustomerReceived(refundId, confirmRequest));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("startTransfer is blocked while the customer has not provided a bank account")
+    void testStartTransferBlockedWithoutBankAccount() {
+        UUID refundId = UUID.randomUUID();
+        RefundRequest refund = RefundRequest.builder()
+                .requestCode("REF-NOBANK")
+                .customer(mockCustomer)
+                .facility(mockFacility)
+                .status(RefundStatus.APPROVED)
+                .bankAccountNumber("N/A")
+                .build();
+        refund.setId(refundId);
+        when(refundRequestRepository.findById(refundId)).thenReturn(Optional.of(refund));
+
+        AppException ex = assertThrows(AppException.class, () -> refundService.startTransfer(refundId,
+                RefundTransferRequest.builder().transferReference("UNC-1").build()));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.REFUND_BANK_INFO_REQUIRED);
+        verify(refundRequestRepository, never()).save(any(RefundRequest.class));
+    }
+
+    @Test
+    @DisplayName("updateBankAccount: the owner provides the account; customers see it masked, the request is flagged complete")
+    void testUpdateBankAccountByCustomer() {
+        UUID refundId = UUID.randomUUID();
+        RefundRequest refund = RefundRequest.builder()
+                .requestCode("REF-ADD-BANK")
+                .customer(mockCustomer)
+                .facility(mockFacility)
+                .status(RefundStatus.PENDING_REVIEW)
+                .finalRefundAmount(new BigDecimal("500000"))
+                .build();
+        refund.setId(refundId);
+        when(refundRequestRepository.findById(refundId)).thenReturn(Optional.of(refund));
+        when(refundRequestRepository.save(any(RefundRequest.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(customerId);
+
+        RefundRequestResponse response = refundService.updateBankAccount(refundId, com.boxora.dto.request.RefundBankAccountRequest.builder()
+                .bankName("Vietcombank").bankAccountNumber("0123 4567 89").bankAccountName("LE VAN C").build());
+
+        assertThat(refund.getBankAccountNumber()).isEqualTo("0123456789");
+        assertThat(response.isBankInfoMissing()).isFalse();
+        assertThat(response.getBankAccountNumber()).isEqualTo("****6789");
+    }
+
+    @Test
+    @DisplayName("updateBankAccount: another customer cannot change the account of a refund")
+    void testUpdateBankAccountOtherCustomerForbidden() {
+        UUID refundId = UUID.randomUUID();
+        RefundRequest refund = RefundRequest.builder()
+                .requestCode("REF-OTHER")
+                .customer(mockCustomer)
+                .facility(mockFacility)
+                .status(RefundStatus.PENDING_REVIEW)
+                .build();
+        refund.setId(refundId);
+        when(refundRequestRepository.findById(refundId)).thenReturn(Optional.of(refund));
+        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        when(requestContext.currentUserId()).thenReturn(UUID.randomUUID());
+
+        AppException ex = assertThrows(AppException.class, () -> refundService.updateBankAccount(refundId,
+                com.boxora.dto.request.RefundBankAccountRequest.builder().bankName("ACB").bankAccountNumber("12345678").bankAccountName("X Y").build()));
         assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
     }
 }
