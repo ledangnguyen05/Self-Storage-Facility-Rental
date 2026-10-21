@@ -19,7 +19,8 @@ import {
   Eye,
   EyeOff,
   X,
-  ExternalLink
+  ExternalLink,
+  Home
 } from 'lucide-react'
 import { authService } from '../../services/authService'
 import { useAuth } from '../../context/AuthContext'
@@ -246,8 +247,19 @@ export const RegisterPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Quick Language & Theme Controls */}
-        <QuickThemeLanguageToggle />
+        {/* Right Header Controls: Về Trang chủ tổng quan & Language/Theme */}
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-2xl bg-white/90 dark:bg-slate-900/90 hover:bg-white dark:hover:bg-slate-900 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 shadow-xs hover:shadow-sm transition-all group"
+            title="Về Trang chủ tổng quan Boxora"
+          >
+            <Home className="w-4 h-4 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform" />
+            <span>Về Trang chủ tổng quan</span>
+          </Link>
+
+          <QuickThemeLanguageToggle />
+        </div>
       </header>
 
       {/* ============================================================ */}
@@ -683,9 +695,9 @@ export const RegisterPage: React.FC = () => {
               </div>
             )}
 
-            {/* Back to Login Link */}
-            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-center">
-              <span className="text-xs text-slate-500 dark:text-slate-400">
+            {/* Back to Login Link & Return to Home */}
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-center space-y-2.5">
+              <span className="text-xs text-slate-500 dark:text-slate-400 block">
                 Đã có tài khoản lưu kho?{' '}
                 <Link
                   to="/login"
@@ -695,6 +707,16 @@ export const RegisterPage: React.FC = () => {
                   <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </span>
+
+              <div>
+                <Link
+                  to="/"
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/90 dark:bg-slate-800/90 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 text-xs font-bold border border-slate-200/70 dark:border-slate-700/70 transition-all w-full group shadow-2xs hover:shadow-xs"
+                >
+                  <Home className="w-4 h-4 text-blue-600 dark:text-blue-400 group-hover:-translate-x-0.5 transition-transform" />
+                  <span>Về Trang chủ tổng quan</span>
+                </Link>
+              </div>
             </div>
 
           </div>
