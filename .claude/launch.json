@@ -1,0 +1,30 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "boxora-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "FE/boxora-web", "run", "dev", "--", "--port", "8889", "--strictPort"],
+      "port": 8889
+    },
+    {
+      "name": "boxora-api",
+      "runtimeExecutable": "java",
+      "runtimeArgs": [
+        "-jar", "BE/boxora/target/boxora-backend-0.0.1-SNAPSHOT.jar",
+        "--spring.profiles.active=demo",
+        "--app.frontend-url=http://localhost:8889",
+        "--app.upload.dir=BE/boxora/uploads",
+        "--spring.mail.host=localhost",
+        "--spring.mail.port=1025",
+        "--spring.mail.username=no-reply@boxora.local",
+        "--spring.mail.properties.mail.smtp.auth=false",
+        "--spring.mail.properties.mail.smtp.starttls.enable=false",
+        "--spring.mail.properties.mail.smtp.starttls.required=false",
+        "--spring.jpa.show-sql=false"
+      ],
+      "port": 8080,
+      "url": "http://localhost:8080"
+    }
+  ]
+}
