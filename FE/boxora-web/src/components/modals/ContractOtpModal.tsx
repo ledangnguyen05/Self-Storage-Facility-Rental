@@ -1,27 +1,50 @@
 import { FormEvent, useEffect, useState } from 'react'
-import { RentalContract } from '../../types'
+import { Mail } from 'lucide-react'
+import type { RentalContract } from '../../types'
 import { contractService } from '../../services/contractService'
+import { getApiErrorCode, getApiErrorMessage } from '../../lib/apiError'
+import { Alert, Button, Field, Input, Modal } from '../ui'
 
 interface ContractOtpModalProps {
   contract: RentalContract
   onClose: () => void
+  /**
+   * Called when the backend answers with the in-app signing link (DocuSeal not configured, test
+   * environment). The caller swaps this dialog for the signature pad; the OTP stays verified.
+   */
   onOpenSimulationSign?: (contract: RentalContract) => void
 }
 
-function getErrorMessage(error: unknown) {
-  if (typeof error === 'object' && error !== null && 'response' in error) {
-    const response = (error as { response?: { data?: { message?: string } } }).response
-    if (response?.data?.message) return response.data.message
-  }
-  return 'Không thể xử lý yêu cầu OTP. Vui lòng thử lại.'
-}
+const OTP_LENGTH = 6
+const FORM_ID = 'contract-otp-form'
+/** Marker of the in-app signing link returned by the backend in the test environment. */
+const IN_APP_SIGNING_MARKER = 'mockSignContractId='
+/** ErrorCode.CONTRACT_OTP_ALREADY_VERIFIED: the customer verified earlier and can go straight to signing. */
+const OTP_ALREADY_VERIFIED = 1513
 
-function maskEmail(email: string) {
+function maskEmail(email: string | undefined) {
+  if (!email) return ''
   const [name, domain] = email.split('@')
   if (!domain) return email
   return `${name.slice(0, 2)}${'*'.repeat(Math.max(2, name.length - 2))}@${domain}`
 }
 
+/** Only http(s) links (absolute or same-origin) may be navigated to. */
+function isNavigableUrl(url: string) {
+  try {
+    const parsed = new URL(url, window.location.origin)
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:'
+  } catch {
+    return false
+  }
+}
+
+const formatCountdown = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+
+/**
+ * Step 1 of electronic signing: a 6-digit OTP is emailed to the customer and verified before the
+ * signing link (DocuSeal, or the in-app pad in the test environment) is released.
+ */
 export function ContractOtpModal({ contract, onClose, onOpenSimulationSign }: ContractOtpModalProps) {
   const [otp, setOtp] = useState('')
   const [hasSentOtp, setHasSentOtp] = useState(false)
@@ -31,6 +54,7 @@ export function ContractOtpModal({ contract, onClose, onOpenSimulationSign }: Co
   const [isVerifying, setIsVerifying] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const countdownActive = hasSentOtp && (resendInSeconds > 0 || expiresInSeconds > 0)
+  const busy = isSending || isVerifying
 
   useEffect(() => {
     if (!countdownActive) return
@@ -40,6 +64,17 @@ export function ContractOtpModal({ contract, onClose, onOpenSimulationSign }: Co
     }, 1000)
     return () => window.clearInterval(timer)
   }, [countdownActive])
+
+  /** Opens the signing step for a link returned by the backend. */
+  const openSigning = (signingUrl: string | undefined) => {
+    if (!signingUrl) throw new Error('Không nhận được liên kết ký hợp đồng.')
+    if (signingUrl.includes(IN_APP_SIGNING_MARKER) && onOpenSimulationSign) {
+      onOpenSimulationSign(contract)
+      return
+    }
+    if (!isNavigableUrl(signingUrl)) throw new Error('Liên kết ký hợp đồng không hợp lệ.')
+    window.location.assign(signingUrl)
+  }
 
   const sendOtp = async (resend = false) => {
     setIsSending(true)
@@ -53,7 +88,16 @@ export function ContractOtpModal({ contract, onClose, onOpenSimulationSign }: Co
       setResendInSeconds(result.resendInSeconds)
       setExpiresInSeconds(result.expiresInSeconds)
     } catch (requestError) {
-      setError(getErrorMessage(requestError))
+      if (getApiErrorCode(requestError) === OTP_ALREADY_VERIFIED) {
+        try {
+          openSigning(await contractService.getSigningUrl(contract.id))
+          return
+        } catch (signingError) {
+          setError(getApiErrorMessage(signingError, 'Không lấy được liên kết ký hợp đồng. Vui lòng thử lại.'))
+          return
+        }
+      }
+      setError(getApiErrorMessage(requestError, 'Không thể gửi mã OTP. Vui lòng thử lại.'))
     } finally {
       setIsSending(false)
     }
@@ -61,112 +105,105 @@ export function ContractOtpModal({ contract, onClose, onOpenSimulationSign }: Co
 
   const handleVerify = async (event: FormEvent) => {
     event.preventDefault()
-    if (!/^\d{6}$/.test(otp)) {
-      setError('Vui lòng nhập mã OTP gồm 6 chữ số.')
+    if (!new RegExp(`^\\d{${OTP_LENGTH}}$`).test(otp)) {
+      setError(`Vui lòng nhập mã OTP gồm ${OTP_LENGTH} chữ số.`)
       return
     }
     setIsVerifying(true)
     setError(null)
     try {
       const result = await contractService.verifySigningOtp(contract.id, otp)
-      if (!result.signingUrl) {
-        throw new Error('Không nhận được liên kết ký hợp đồng.')
-      }
-
-      if (result.signingUrl.includes('mockSignContractId=') && onOpenSimulationSign) {
-        onOpenSimulationSign(contract)
-        onClose()
-      } else {
-        window.location.assign(result.signingUrl)
-      }
+      openSigning(result.signingUrl)
     } catch (requestError) {
-      setError(getErrorMessage(requestError))
+      setError(getApiErrorMessage(requestError, 'Mã OTP không đúng hoặc đã hết hạn. Vui lòng thử lại.'))
     } finally {
       setIsVerifying(false)
     }
   }
 
+  const maskedEmail = maskEmail(contract.customerEmail)
+
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="contract-otp-title"
-        className="w-full max-w-md space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700">
-              <span className="material-symbols-outlined">verified_user</span>
-            </div>
-            <h2 id="contract-otp-title" className="text-lg font-bold text-slate-900">
-              Xác thực ký hợp đồng
-            </h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Hợp đồng <strong className="text-slate-700">{contract.contractCode}</strong>
-            </p>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Đóng" className="text-slate-400 hover:text-slate-700">
-            <span className="material-symbols-outlined">close</span>
-          </button>
-        </div>
+    <Modal
+      open
+      onClose={onClose}
+      size="sm"
+      title="Xác thực ký hợp đồng"
+      description={`Hợp đồng ${contract.contractCode}`}
+      dismissible={!busy}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Hủy
+          </Button>
+          {hasSentOtp ? (
+            <Button type="submit" form={FORM_ID} loading={isVerifying} disabled={otp.length !== OTP_LENGTH || isSending}>
+              Xác thực và ký
+            </Button>
+          ) : (
+            <Button onClick={() => void sendOtp()} loading={isSending}>
+              Gửi mã OTP
+            </Button>
+          )}
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <Alert tone="info" icon={Mail} title="Mã xác thực gửi qua email">
+          <span className="font-mono text-fg">{maskedEmail || 'Email trong hồ sơ của bạn'}</span>
+          <span className="mt-1 block text-dense">
+            {hasSentOtp
+              ? 'Nhập mã gồm 6 chữ số trong email để tiếp tục ký hợp đồng điện tử.'
+              : 'Nhấn "Gửi mã OTP" để nhận mã xác thực qua email, sau đó tiếp tục ký hợp đồng điện tử.'}
+          </span>
+        </Alert>
 
-        <div className="rounded-xl border border-cyan-100 bg-cyan-50/70 p-4 text-sm text-slate-700">
-          <p className="font-semibold">Mã xác thực gửi tới email</p>
-          <p className="mt-1 font-mono text-cyan-800">{maskEmail(contract.customerEmail)}</p>
-          <p className="mt-2 text-xs leading-relaxed text-slate-600">
-            Mã OTP có hiệu lực 5 phút. Sau khi xác thực, bạn sẽ tiếp tục ký hợp đồng điện tử trực tuyến.
-          </p>
-        </div>
-
-        {!hasSentOtp ? (
-          <button
-            type="button"
-            onClick={() => void sendOtp()}
-            disabled={isSending}
-            className="w-full rounded-lg bg-cyan-700 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSending ? 'Đang gửi mã...' : 'Gửi mã OTP'}
-          </button>
-        ) : (
-          <form onSubmit={handleVerify} className="space-y-4">
-            <label htmlFor="contract-otp" className="block text-xs font-semibold text-slate-700">
-              Nhập mã OTP gồm 6 chữ số
-            </label>
-            <input
-              id="contract-otp"
-              autoComplete="one-time-code"
-              inputMode="numeric"
-              maxLength={6}
-              value={otp}
-              onChange={event => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
-              className="h-12 w-full rounded-lg border border-slate-300 text-center font-mono text-xl tracking-[0.5em] text-slate-900 outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100"
-              placeholder="••••••"
-              aria-invalid={Boolean(error)}
-            />
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>{expiresInSeconds > 0 ? `Mã hết hạn sau ${Math.ceil(expiresInSeconds / 60)} phút` : 'Mã OTP đã hết hạn'}</span>
-              <button
-                type="button"
-                disabled={isSending || resendInSeconds > 0}
-                onClick={() => void sendOtp(true)}
-                className="font-semibold text-cyan-700 hover:text-cyan-900 disabled:cursor-not-allowed disabled:text-slate-400"
-              >
-                {isSending ? 'Đang gửi...' : resendInSeconds > 0 ? `Gửi lại sau ${resendInSeconds}s` : 'Gửi lại mã'}
-              </button>
-            </div>
-            <button
-              type="submit"
-              disabled={isVerifying || otp.length !== 6}
-              className="w-full rounded-lg bg-cyan-700 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-60"
+        {hasSentOtp ? (
+          <form id={FORM_ID} onSubmit={event => void handleVerify(event)} className="flex flex-col gap-3" noValidate>
+            <Field
+              label={`Mã OTP gồm ${OTP_LENGTH} chữ số`}
+              required
+              hint={
+                expiresInSeconds > 0 ? (
+                  <>
+                    Mã hết hạn sau <span className="tabular-nums">{formatCountdown(expiresInSeconds)}</span>
+                  </>
+                ) : (
+                  'Mã OTP đã hết hạn. Hãy gửi lại mã mới.'
+                )
+              }
             >
-              {isVerifying ? 'Đang xác thực...' : 'Xác thực và tiếp tục ký'}
-            </button>
+              <Input
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                maxLength={OTP_LENGTH}
+                value={otp}
+                onChange={event => setOtp(event.target.value.replace(/\D/g, '').slice(0, OTP_LENGTH))}
+                placeholder="000000"
+                size="lg"
+                className="text-center font-mono tracking-widest tabular-nums"
+              />
+            </Field>
+            <div className="flex justify-end">
+              <Button
+                variant="link"
+                size="sm"
+                disabled={isSending || resendInSeconds > 0}
+                loading={isSending}
+                onClick={() => void sendOtp(true)}
+              >
+                {resendInSeconds > 0 ? `Gửi lại sau ${resendInSeconds} giây` : 'Gửi lại mã'}
+              </Button>
+            </div>
           </form>
-        )}
+        ) : null}
 
-        {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-xs font-medium text-rose-700">{error}</p>}
-      </section>
-    </div>
+        {error ? (
+          <Alert tone="danger" title={hasSentOtp ? 'Chưa xác thực được mã OTP' : 'Chưa gửi được mã OTP'}>
+            {error}
+          </Alert>
+        ) : null}
+      </div>
+    </Modal>
   )
 }

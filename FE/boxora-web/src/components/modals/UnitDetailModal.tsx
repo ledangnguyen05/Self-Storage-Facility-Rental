@@ -1,5 +1,15 @@
 import React from 'react'
-import { StorageUnitType } from '../../data/storageUnitsData'
+import { ArrowRight, CalendarClock, Camera, Clock, ExternalLink, FileSignature, KeyRound, MapPin, Percent, ShieldCheck } from 'lucide-react'
+import { getUnitStatusMeta } from '../../constants/statusMeta'
+import { UNIT_CATEGORY_LABELS, buildDirectionsUrl, type StorageUnitType } from '../../data/storageUnitsData'
+import { useAsyncData } from '../../hooks/useAsyncData'
+import { getApiErrorStatus, isRequestCanceled } from '../../lib/apiError'
+import { formatCurrency, formatNumber } from '../../lib/format'
+import { facilityPolicyService } from '../../services/facilityPolicyService'
+import { pricingService } from '../../services/pricingService'
+import type { FacilityPolicy } from '../../types'
+import { BOOKING_HOLD_DEFAULTS, resolvePolicy } from '../../utils/facilityPolicyDefaults'
+import { Alert, Badge, Button, DescriptionList, Modal } from '../ui'
 
 interface UnitDetailModalProps {
   unit: StorageUnitType | null
@@ -8,254 +18,247 @@ interface UnitDetailModalProps {
   onRent: (unit: StorageUnitType) => void
 }
 
-const getUnitImage = (category: StorageUnitType['category']) => {
-  switch (category) {
-    case 'mini':
-      return 'https://images.unsplash.com/photo-1590402494682-cd3fb53b1f70?auto=format&fit=crop&w=900&q=80'
-    case 'special':
-      return 'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=900&q=80'
-    case 'business':
-      return 'https://images.unsplash.com/photo-1587293852726-70cdb56c2866?auto=format&fit=crop&w=900&q=80'
-    case 'personal':
+/** Advisory capacity hint by area. Marketing guidance, not a guarantee. */
+function getCapacityText(area?: number): string {
+  if (area == null) return 'Linh hoạt cho nhiều nhu cầu lưu trữ cá nhân hoặc doanh nghiệp.'
+  if (area < 3) return 'Phù hợp với thùng carton, tài liệu, vali, xe đạp và đồ dùng cá nhân gọn nhẹ.'
+  if (area <= 8) return 'Phù hợp với đồ đạc của một căn hộ nhỏ: bàn ghế, tủ kệ, nệm và đồ gia dụng.'
+  if (area <= 15) return 'Phù hợp với nội thất căn hộ 2 – 3 phòng ngủ, hàng mẫu và thiết bị văn phòng cỡ vừa.'
+  return 'Phù hợp với hàng hóa thương mại, máy móc và pallet số lượng lớn.'
+}
+
+const AMENITIES = [
+  { icon: KeyRound, text: 'Khóa điện tử riêng, mở bằng mã PIN hoặc mã QR' },
+  { icon: Clock, text: 'Ra vào 24/7, không cần đặt lịch trước' },
+  { icon: Camera, text: 'Camera giám sát khu vực chung, không quay vào bên trong kho' },
+  { icon: ShieldCheck, text: 'Hệ thống phòng cháy chữa cháy theo quy định' },
+] as const
+
+/** Why this unit cannot be booked, per status. Every message points the visitor to a free unit of the same type. */
+function unavailableNotice(status: StorageUnitType['status']): string {
+  switch (status) {
+    case 'UNDER_MAINTENANCE':
+      return 'Kho đang bảo trì nên tạm thời chưa thể thuê. Bạn có thể chọn một kho còn trống cùng loại.'
+    case 'RESERVED':
+      return 'Kho này đang được một khách hàng khác giữ chỗ. Nếu họ không hoàn tất đặt kho, kho sẽ được mở lại. Bạn có thể chọn một kho còn trống cùng loại.'
+    case 'OCCUPIED':
+    case 'OVERDUE_LOCKED':
+      return 'Kho này đã có người thuê nên chưa thể đặt. Bạn có thể chọn một kho còn trống cùng loại.'
     default:
-      return 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=900&q=80'
+      return 'Kho này hiện chưa thể đặt. Bạn có thể chọn một kho còn trống cùng loại.'
   }
 }
 
-const getCapacityText = (area?: number) => {
-  if (area == null) return 'Linh hoạt cho nhiều nhu cầu lưu trữ cá nhân hoặc doanh nghiệp.'
-  if (area < 3) return 'Chứa khoảng 10–15 thùng carton, tài liệu, vali, xe đạp và đồ dùng cá nhân gọn nhẹ.'
-  if (area <= 8) return 'Chứa trọn gói đồ đạc căn hộ 1 phòng ngủ, bàn ghế, tủ kệ, nệm và đồ gia dụng.'
-  if (area <= 15) return 'Chứa nội thất căn hộ 2–3 phòng ngủ, hàng mẫu, thiết bị văn phòng cỡ vừa.'
-  return 'Chứa hàng hóa thương mại, máy móc, pallet phân phối số lượng lớn cho doanh nghiệp.'
+/** Loaded policy of the facility. `null` = the facility has no active policy (system defaults apply); `'error'` = lookup failed. */
+type PolicyLookup = FacilityPolicy | null | 'error'
+
+/** Unit specifications and rental conditions. Policy numbers are the facility's own; the page says so when it falls back to defaults. */
+export const UnitDetailModal: React.FC<UnitDetailModalProps> = ({ unit, isOpen, onClose, onRent }) => {
+  if (!isOpen || !unit) return null
+  return <UnitDetailDialog unit={unit} onClose={onClose} onRent={onRent} />
 }
 
-export const UnitDetailModal: React.FC<UnitDetailModalProps> = ({
-  unit,
-  isOpen,
-  onClose,
-  onRent,
-}) => {
-  if (!isOpen || !unit) return null
+function UnitDetailDialog({ unit, onClose, onRent }: { unit: StorageUnitType; onClose: () => void; onRent: (unit: StorageUnitType) => void }) {
+  const statusMeta = getUnitStatusMeta(unit.status)
 
-  const isAvailable = unit.isAvailable ?? (unit.status === 'Sẵn sàng')
-  const unitImage = unit.imageUrl || getUnitImage(unit.category)
+  // The policy endpoint is public, so visitors see the facility's real numbers. Only a missing policy (404) means "defaults".
+  const { data: lookup } = useAsyncData<PolicyLookup>(
+    async signal => {
+      try {
+        return await facilityPolicyService.getByFacilityId(unit.facilityId, { signal })
+      } catch (error) {
+        if (isRequestCanceled(error)) throw error
+        return getApiErrorStatus(error) === 404 ? null : 'error'
+      }
+    },
+    [unit.facilityId],
+    { enabled: Boolean(unit.facilityId) },
+  )
+  const policyRecord = lookup && lookup !== 'error' ? lookup : null
+  const policy = resolvePolicy(policyRecord, unit.facilityId)
+  const holdGraceHours = policyRecord?.holdGraceHours ?? BOOKING_HOLD_DEFAULTS.holdGraceHours
+
+  // Term discounts that apply to THIS facility (its price list, or the system tiers).
+  const { data: termDiscounts } = useAsyncData(
+    async signal => {
+      try {
+        return await pricingService.getTermDiscounts(unit.id, { signal })
+      } catch (error) {
+        if (isRequestCanceled(error)) throw error
+        return []
+      }
+    },
+    [unit.id],
+  )
+  const discountsWithValue = (termDiscounts ?? []).filter(item => item.percent > 0)
+
+  const handleRent = () => {
+    onClose()
+    onRent(unit)
+  }
+
+  const directionsTarget = unit.coords ?? unit.facilityAddress
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div
-        className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden text-left animate-in fade-in zoom-in-95 duration-200"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="modal-unit-title"
-      >
-        {/* Header with image */}
-        <div className="relative h-48 sm:h-56 w-full bg-slate-100 overflow-hidden">
-          <img
-            src={unitImage}
-            alt={`Kho ${unit.unitCode}`}
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).src = '/smart-warehouse-clean.jpg'
-            }}
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/30 to-transparent" />
-
-          {/* Close button */}
-          <button
-            type="button"
-            onClick={onClose}
-            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-slate-900/60 hover:bg-slate-900 text-white flex items-center justify-center backdrop-blur-md transition-all cursor-pointer"
-            aria-label="Đóng"
-          >
-            <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
-
-          {/* Unit code & badges on image */}
-          <div className="absolute bottom-4 left-5 right-5 flex items-end justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="font-mono text-xs font-bold px-2.5 py-0.5 rounded-md bg-white/20 text-white backdrop-blur-md">
-                  Mã kho: {unit.unitCode}
-                </span>
-                <span
-                  className={`px-2.5 py-0.5 rounded-full text-xs font-bold border backdrop-blur-md flex items-center gap-1 ${
-                    isAvailable
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
-                      : 'bg-slate-500/20 text-slate-300 border-slate-400/30'
-                  }`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full ${isAvailable ? 'bg-emerald-400' : 'bg-slate-400'}`} />
-                  {unit.status}
-                </span>
-              </div>
-              <h2 id="modal-unit-title" className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-                Kho {unit.unitCode} · {unit.unitTypeName || 'Kho lưu trữ'}
-              </h2>
-            </div>
-
-            {unit.distanceKm != null && (
-              <span className="hidden sm:inline-flex items-center gap-1 px-3 py-1 rounded-full bg-cyan-500/20 text-cyan-200 border border-cyan-400/30 text-xs font-semibold backdrop-blur-md shrink-0">
-                <span className="material-symbols-outlined text-[14px]">near_me</span>
-                Khoảng {unit.distanceKm} km
-              </span>
-            )}
-          </div>
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      title={`Kho ${unit.unitCode}`}
+      description={`${unit.facilityName} · ${unit.floorLabel}`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Đóng
+          </Button>
+          {unit.isAvailable ? (
+            <Button rightIcon={ArrowRight} onClick={handleRent}>
+              Thuê kho này
+            </Button>
+          ) : (
+            <Button disabled>Kho không khả dụng</Button>
+          )}
+        </>
+      }
+    >
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone={statusMeta.tone} dot>
+            {statusMeta.label}
+          </Badge>
+          <Badge variant="outline">{unit.unitTypeName || UNIT_CATEGORY_LABELS[unit.category]}</Badge>
+          {unit.distanceKm != null ? (
+            <Badge tone="accent">~{formatNumber(unit.distanceKm, { maximumFractionDigits: 1 })} km</Badge>
+          ) : null}
+          {unit.isNearest ? <Badge tone="success">Gần bạn nhất</Badge> : null}
         </div>
 
-        {/* Modal body content */}
-        <div className="p-6 space-y-6 max-h-[calc(85vh-200px)] overflow-y-auto">
-          {/* Key Specifications Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-              <span className="text-[11px] font-medium text-slate-500 block">Diện tích</span>
-              <span className="font-headline text-lg font-bold text-slate-900">
-                {unit.areaSqMeters != null ? `${unit.areaSqMeters} m²` : 'Tiêu chuẩn'}
-              </span>
-            </div>
+        {!unit.isAvailable ? <Alert tone="info">{unavailableNotice(unit.status)}</Alert> : null}
 
-            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-              <span className="text-[11px] font-medium text-slate-500 block">Vị trí buồng</span>
-              <span className="font-headline text-sm font-bold text-slate-900 truncate block" title={unit.floorLocation}>
-                {unit.floorLocation}
-              </span>
-            </div>
+        <DescriptionList
+          columns={2}
+          items={[
+            { label: 'Giá thuê', value: <span className="tabular-nums">{formatCurrency(unit.monthlyPrice)} / tháng</span> },
+            {
+              label: 'Tiền đặt cọc',
+              value: (
+                <span className="tabular-nums">
+                  {formatCurrency(unit.depositAmount)}
+                  <span className="text-fg-subtle"> ({formatNumber(policy.depositPercentage)}% tiền thuê tháng)</span>
+                </span>
+              ),
+            },
+            { label: 'Diện tích', value: unit.areaSqMeters != null ? `${formatNumber(unit.areaSqMeters, { maximumFractionDigits: 1 })} m²` : null },
+            { label: 'Vị trí', value: unit.floorLabel },
+          ]}
+        />
 
-            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-              <span className="text-[11px] font-medium text-slate-500 block">Giá thuê tháng</span>
-              <span className="font-headline text-base font-bold text-blue-600 truncate block">
-                {Number(unit.monthlyPriceNumeric).toLocaleString('vi-VN')} ₫
-              </span>
-            </div>
+        {discountsWithValue.length > 0 ? (
+          <section aria-labelledby="unit-discounts" className="rounded-lg border border-success-line bg-success-subtle p-4">
+            <h3 id="unit-discounts" className="flex items-center gap-2 text-sm font-semibold text-fg">
+              <Percent size={16} strokeWidth={1.75} aria-hidden="true" className="text-success" />
+              Chiết khấu theo kỳ hạn thuê
+            </h3>
+            <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-dense text-fg-muted">
+              {discountsWithValue.map(item => (
+                <li key={item.months} className="tabular-nums">
+                  Từ {item.months} tháng: giảm <span className="font-medium text-fg">{formatNumber(item.percent, { maximumFractionDigits: 1 })}%</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
-            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-              <span className="text-[11px] font-medium text-slate-500 block">Tiền đặt cọc</span>
-              <span className="font-headline text-sm font-bold text-slate-800 truncate block">
-                {Number(unit.depositAmountNumeric || unit.monthlyPriceNumeric).toLocaleString('vi-VN')} ₫
-              </span>
+        <section aria-label="Địa điểm" className="rounded-lg border border-line bg-surface-2 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-fg">{unit.facilityName}</p>
+              <p className="mt-1 flex items-start gap-1.5 text-dense text-fg-muted">
+                <MapPin size={14} strokeWidth={1.75} aria-hidden="true" className="mt-0.5 shrink-0 text-fg-subtle" />
+                <span>{unit.facilityAddress || '—'}</span>
+              </p>
             </div>
-          </div>
-
-          {/* Facility location details */}
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 font-bold text-slate-900">
-                <span className="material-symbols-outlined text-[18px] text-blue-600">domain</span>
-                <span>{unit.facilityName}</span>
-              </div>
+            {directionsTarget ? (
               <a
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(unit.facilityAddress)}`}
+                href={buildDirectionsUrl(directionsTarget)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 text-[11px] hover:underline"
+                className="inline-flex items-center gap-1 text-dense font-medium text-accent-text hover:underline"
               >
-                <span>Chỉ đường trên Google Maps</span>
-                <span className="material-symbols-outlined text-[13px]">open_in_new</span>
+                Chỉ đường
+                <ExternalLink size={14} strokeWidth={1.75} aria-hidden="true" />
               </a>
-            </div>
-            <p className="text-slate-600 flex items-center gap-1 text-[11px]">
-              <span className="material-symbols-outlined text-[15px] text-slate-400">location_on</span>
-              <span>{unit.facilityAddress}</span>
-            </p>
+            ) : null}
           </div>
+        </section>
 
-          {/* Storage Capacity Guidance */}
-          <div className="space-y-2">
-            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[16px] text-emerald-600">inventory</span>
-              <span>Sức chứa &amp; Gợi ý lưu trữ</span>
-            </h3>
-            <p className="text-xs text-slate-600 bg-emerald-50/60 p-3 rounded-xl border border-emerald-100/80 leading-relaxed">
-              {getCapacityText(unit.areaSqMeters)}
-            </p>
-          </div>
+        <section aria-labelledby="unit-capacity">
+          <h3 id="unit-capacity" className="text-sm font-semibold text-fg">
+            Sức chứa gợi ý
+          </h3>
+          <p className="mt-1.5 text-sm text-fg-muted">{getCapacityText(unit.areaSqMeters)}</p>
+        </section>
 
-          {/* Features and Safety */}
-          <div className="space-y-2">
-            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[16px] text-blue-600">verified_user</span>
-              <span>Tiêu chuẩn an ninh &amp; Tiện ích cơ sở</span>
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-600">
-              <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 border border-slate-100">
-                <span className="material-symbols-outlined text-[16px] text-emerald-500">videocam</span>
-                <span>CCTV giám sát an ninh 24/7 toàn khu vực</span>
-              </div>
-              <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 border border-slate-100">
-                <span className="material-symbols-outlined text-[16px] text-emerald-500">key</span>
-                <span>Khóa tự quản (Mã PIN kích hoạt sau bàn giao)</span>
-              </div>
-              <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 border border-slate-100">
-                <span className="material-symbols-outlined text-[16px] text-emerald-500">ac_unit</span>
-                <span>Không gian khô ráo, thông gió tiêu chuẩn</span>
-              </div>
-              <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 border border-slate-100">
-                <span className="material-symbols-outlined text-[16px] text-emerald-500">fire_extinguisher</span>
-                <span>Hệ thống PCCC tự động đạt chuẩn thẩm duyệt</span>
-              </div>
-            </div>
-          </div>
+        <section aria-labelledby="unit-amenities">
+          <h3 id="unit-amenities" className="text-sm font-semibold text-fg">
+            An ninh và tiện ích
+          </h3>
+          <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+            {AMENITIES.map(({ icon: Icon, text }) => (
+              <li key={text} className="flex items-start gap-2 text-dense text-fg-muted">
+                <Icon size={16} strokeWidth={1.75} aria-hidden="true" className="mt-0.5 shrink-0 text-success" />
+                {text}
+              </li>
+            ))}
+          </ul>
+        </section>
 
-          {/* Rental Terms and Conditions */}
-          <div className="space-y-2">
-            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[16px] text-amber-600">contract</span>
-              <span>Điều kiện &amp; Quy trình thuê kho</span>
-            </h3>
-            <ul className="text-[11px] text-slate-600 space-y-1.5 bg-amber-50/50 p-3.5 rounded-xl border border-amber-100/80 list-disc list-inside">
-              <li><strong>Thời hạn thuê:</strong> Tối thiểu từ 1 tháng, thanh toán linh hoạt và có chiết khấu khi trả trước dài hạn.</li>
-              <li><strong>Tiền đặt cọc:</strong> Tương đương 1 tháng tiền thuê, được hoàn trả đầy đủ khi hoàn tất bàn giao và thanh lý hợp đồng.</li>
-              <li><strong>Hợp đồng pháp lý:</strong> Ký hợp đồng điện tử trực tuyến hoặc trực tiếp tại cơ sở Boxora.</li>
-              <li><strong>Bàn giao &amp; Kích hoạt mã PIN:</strong> Mã PIN tự quản được hệ thống kích hoạt sau khi hợp đồng ký kết và nhân viên cơ sở hoàn tất biên bản bàn giao.</li>
-            </ul>
-          </div>
-        </div>
-
-        {/* Footer Actions */}
-        <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50/70 flex items-center justify-between gap-3">
-          <div>
-            <span className="text-[11px] text-slate-500 block">Giá thuê niêm yết</span>
-            <div className="flex items-baseline gap-1">
-              <span className="font-mono text-xl font-bold text-slate-900">
-                {Number(unit.monthlyPriceNumeric).toLocaleString('vi-VN')} ₫
+        <section aria-labelledby="unit-terms">
+          <h3 id="unit-terms" className="text-sm font-semibold text-fg">
+            Điều kiện thuê
+          </h3>
+          {lookup === 'error' ? (
+            <Alert tone="warning" className="mt-2">
+              Chưa tải được chính sách riêng của cơ sở, nên các con số dưới đây là quy định mặc định của hệ thống. Số liệu chính xác sẽ hiển thị khi bạn đặt kho.
+            </Alert>
+          ) : lookup === null ? (
+            <p className="mt-2 text-xs text-fg-subtle">Cơ sở này áp dụng quy định mặc định của hệ thống.</p>
+          ) : null}
+          <ul className="mt-2 space-y-2 text-dense text-fg-muted">
+            <li className="flex items-start gap-2">
+              <CalendarClock size={16} strokeWidth={1.75} aria-hidden="true" className="mt-0.5 shrink-0 text-fg-subtle" />
+              <span>
+                <strong className="font-medium text-fg">Thời hạn thuê:</strong> tối thiểu {policy.minimumRentalMonths} tháng.
               </span>
-              <span className="text-xs text-slate-500">/ tháng</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
-            >
-              Đóng
-            </button>
-
-            {isAvailable ? (
-              <button
-                type="button"
-                onClick={() => {
-                  onClose()
-                  onRent(unit)
-                }}
-                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
-              >
-                <span>Đặt thuê kho này</span>
-                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled
-                className="px-5 py-2.5 rounded-xl bg-slate-200 text-slate-400 text-xs font-bold cursor-not-allowed flex items-center gap-1.5"
-              >
-                <span>Kho không khả dụng</span>
-              </button>
-            )}
-          </div>
-        </div>
+            </li>
+            <li className="flex items-start gap-2">
+              <FileSignature size={16} strokeWidth={1.75} aria-hidden="true" className="mt-0.5 shrink-0 text-fg-subtle" />
+              <span>
+                <strong className="font-medium text-fg">Hợp đồng:</strong> ký điện tử trực tuyến, xác thực bằng mã OTP gửi tới email.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <KeyRound size={16} strokeWidth={1.75} aria-hidden="true" className="mt-0.5 shrink-0 text-fg-subtle" />
+              <span>
+                <strong className="font-medium text-fg">Bàn giao:</strong> mã PIN được kích hoạt sau khi hợp đồng có hiệu lực và nhân viên cơ sở hoàn tất bàn giao.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <Clock size={16} strokeWidth={1.75} aria-hidden="true" className="mt-0.5 shrink-0 text-fg-subtle" />
+              <span>
+                <strong className="font-medium text-fg">Giữ chỗ:</strong> kho được giữ đến giờ hẹn nhận kho cộng thêm {holdGraceHours} giờ, quá hạn kho sẽ được mở lại cho người khác.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <ShieldCheck size={16} strokeWidth={1.75} aria-hidden="true" className="mt-0.5 shrink-0 text-fg-subtle" />
+              <span>
+                <strong className="font-medium text-fg">Hủy đặt kho:</strong> hoàn đầy đủ nếu hủy trước {policy.cancellationFullRefundHours} giờ,
+                hoàn {policy.cancellationPartialRefundPercent}% nếu hủy trước {policy.cancellationPartialRefundHours} giờ so với giờ hẹn nhận kho.
+              </span>
+            </li>
+          </ul>
+        </section>
       </div>
-    </div>
+    </Modal>
   )
 }
