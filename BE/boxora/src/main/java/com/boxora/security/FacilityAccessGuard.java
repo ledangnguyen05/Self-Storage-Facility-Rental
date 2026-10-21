@@ -15,6 +15,9 @@ public class FacilityAccessGuard {
     // roles that see every facility's data, unscoped
     private static final Set<String> SYSTEM_WIDE_ROLES = Set.of("ADMIN", "BUSINESS_MANAGER", "BUSINESS_OPERATIONS_MANAGER", "SYSTEM_ADMIN");
 
+    static final String NOT_ASSIGNED_MESSAGE =
+            "Tài khoản của bạn chưa được phân công cơ sở nào. Vui lòng liên hệ quản trị viên để được phân công.";
+
     private final RequestContext requestContext;
 
     /**
@@ -30,7 +33,10 @@ public class FacilityAccessGuard {
         }
 
         UUID userFacilityId = requestContext.currentUserFacilityId();
-        if (userFacilityId == null || !userFacilityId.equals(targetFacilityId)) {
+        if (userFacilityId == null) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED, NOT_ASSIGNED_MESSAGE);
+        }
+        if (!userFacilityId.equals(targetFacilityId)) {
             throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
         }
     }
@@ -41,8 +47,21 @@ public class FacilityAccessGuard {
         return role != null && !SYSTEM_WIDE_ROLES.contains(role) && !"CUSTOMER".equalsIgnoreCase(role);
     }
 
-    /** Facility to filter list queries by when isFacilityScoped() is true; null otherwise. */
+    /**
+     * Facility to filter list queries by when isFacilityScoped() is true; null (= no filter) only for
+     * system-wide roles, customers and anonymous callers.
+     *
+     * <p>Fails CLOSED: a STAFF / FACILITY_MANAGER account that has not been assigned to a facility gets
+     * FACILITY_ACCESS_DENIED instead of null, so an unassigned account can never read the whole chain's data.
+     */
     public UUID scopedFacilityIdOrNull() {
-        return isFacilityScoped() ? requestContext.currentUserFacilityId() : null;
+        if (!isFacilityScoped()) {
+            return null;
+        }
+        UUID facilityId = requestContext.currentUserFacilityId();
+        if (facilityId == null) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED, NOT_ASSIGNED_MESSAGE);
+        }
+        return facilityId;
     }
 }
