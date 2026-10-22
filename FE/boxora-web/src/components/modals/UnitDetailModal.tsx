@@ -53,7 +53,7 @@ export const UnitDetailModal: React.FC<UnitDetailModalProps> = ({
         <div className="relative h-48 sm:h-56 w-full bg-slate-100 overflow-hidden">
           <img
             src={unitImage}
-            alt={`Kho ${unit.unitCode}`}
+            alt={unit.unitTypeName || 'Kho lưu trữ Boxora'}
             className="w-full h-full object-cover"
             onError={(e) => {
               (e.currentTarget as HTMLImageElement).src = '/smart-warehouse-clean.jpg'
@@ -75,9 +75,6 @@ export const UnitDetailModal: React.FC<UnitDetailModalProps> = ({
           <div className="absolute bottom-4 left-5 right-5 flex items-end justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="font-mono text-xs font-bold px-2.5 py-0.5 rounded-md bg-white/20 text-white backdrop-blur-md">
-                  Mã kho: {unit.unitCode}
-                </span>
                 <span
                   className={`px-2.5 py-0.5 rounded-full text-xs font-bold border backdrop-blur-md flex items-center gap-1 ${
                     isAvailable
@@ -90,7 +87,7 @@ export const UnitDetailModal: React.FC<UnitDetailModalProps> = ({
                 </span>
               </div>
               <h2 id="modal-unit-title" className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-                Kho {unit.unitCode} · {unit.unitTypeName || 'Kho lưu trữ'}
+                {unit.unitTypeName || 'Kho lưu trữ Boxora'}
               </h2>
             </div>
 
@@ -115,9 +112,9 @@ export const UnitDetailModal: React.FC<UnitDetailModalProps> = ({
             </div>
 
             <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-              <span className="text-[11px] font-medium text-slate-500 block">Vị trí buồng</span>
+              <span className="text-[11px] font-medium text-slate-500 block">Mã kho</span>
               <span className="font-headline text-sm font-bold text-slate-900 truncate block" title={unit.floorLocation}>
-                {unit.floorLocation}
+                Chọn khi check-in
               </span>
             </div>
 
@@ -241,7 +238,7 @@ export const UnitDetailModal: React.FC<UnitDetailModalProps> = ({
                 }}
                 className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
               >
-                <span>Đặt thuê kho này</span>
+                <span>Xem giá &amp; đặt lịch</span>
                 <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
               </button>
             ) : (

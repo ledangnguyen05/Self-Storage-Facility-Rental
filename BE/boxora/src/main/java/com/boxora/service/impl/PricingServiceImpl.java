@@ -158,9 +158,9 @@ public class PricingServiceImpl implements PricingService {
                 ? policy.getDepositRefundSlaDays()
                 : 5;
 
-        int holdGraceHours = (policy != null && policy.getHoldGraceHours() != null)
-                ? policy.getHoldGraceHours()
-                : 24;
+        int holdGraceHours = policy != null && policy.getHoldGraceHours() != null
+                ? Math.max(0, Math.min(policy.getHoldGraceHours(), 1))
+                : 1;
 
         int maxHoldDays = (policy != null && policy.getMaxHoldDays() != null)
                 ? policy.getMaxHoldDays()

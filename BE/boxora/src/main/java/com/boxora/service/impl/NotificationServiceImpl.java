@@ -4,17 +4,24 @@ import com.boxora.common.response.PageResponse;
 import com.boxora.dto.response.NotificationLogResponse;
 import com.boxora.dto.response.RenewalReminderScanResponse;
 import com.boxora.entity.Facility;
+import com.boxora.entity.Booking;
 import com.boxora.entity.NotificationLog;
 import com.boxora.entity.RentalContract;
+import com.boxora.entity.StaffAssignment;
 import com.boxora.entity.User;
 import com.boxora.enums.ActivityAction;
+import com.boxora.enums.BookingStatus;
 import com.boxora.enums.NotificationChannel;
 import com.boxora.enums.NotificationType;
 import com.boxora.enums.RentalContractStatus;
+import com.boxora.enums.StaffAssignmentStatus;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.repository.NotificationLogRepository;
+import com.boxora.repository.BookingRepository;
 import com.boxora.repository.RentalContractRepository;
+import com.boxora.repository.StaffAssignmentRepository;
+import com.boxora.repository.UserRepository;
 import com.boxora.security.FacilityAccessGuard;
 import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
@@ -29,6 +36,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -36,7 +44,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -45,7 +55,10 @@ import java.util.UUID;
 public class NotificationServiceImpl implements NotificationService {
 
     private final NotificationLogRepository notificationLogRepository;
+    private final BookingRepository bookingRepository;
     private final RentalContractRepository rentalContractRepository;
+    private final StaffAssignmentRepository staffAssignmentRepository;
+    private final UserRepository userRepository;
     private final EmailService emailService;
     private final ActivityLogService activityLogService;
     private final FacilityAccessGuard facilityAccessGuard;
@@ -170,10 +183,170 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyBookingCreated(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId).orElse(null);
+        if (booking == null) {
+            log.warn("Skipping booking notifications; booking {} no longer exists", bookingId);
+            return;
+        }
+
+        Facility facility = booking.getStorageUnit() != null ? booking.getStorageUnit().getFacility() : null;
+        User customer = booking.getCustomer();
+        String unitCode = booking.getStorageUnit() != null ? booking.getStorageUnit().getUnitCode() : "N/A";
+        String facilityName = facility != null && facility.getName() != null ? facility.getName() : "cơ sở Boxora";
+        String expectedArrival = booking.getExpectedArrivalAt() != null
+                ? booking.getExpectedArrivalAt().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy 'lúc' HH:mm"))
+                : (booking.getStartDate() != null
+                    ? booking.getStartDate().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                    : "chưa xác định");
+        String customerContent = booking.getStatus() == BookingStatus.PENDING_APPROVAL
+                ? "Yêu cầu giữ chỗ kho " + unitCode + " tại " + facilityName
+                    + " của bạn đã được ghi nhận. Dự kiến đến: " + expectedArrival
+                    + ". Vui lòng theo dõi mục Yêu cầu đặt chỗ; cơ sở sẽ phản hồi trong khoảng 15–30 phút."
+                : "Yêu cầu giữ chỗ kho " + unitCode + " tại " + facilityName
+                    + " của bạn đã được ghi nhận. Dự kiến đến: " + expectedArrival
+                    + ". Kho đang được giữ chỗ; vui lòng hoàn tất bước thanh toán để tiếp tục.";
+
+        if (customer != null) {
+            saveBookingNotice(
+                    customer,
+                    facility,
+                    NotificationType.BOOKING_CREATED,
+                    booking,
+                    "Đã ghi nhận yêu cầu giữ chỗ " + booking.getBookingCode(),
+                    customerContent
+            );
+        }
+
+        if (facility == null) {
+            log.warn("Booking {} has no facility; facility notifications were skipped", booking.getBookingCode());
+            return;
+        }
+
+        Map<UUID, User> facilityManagers = new LinkedHashMap<>();
+        Map<UUID, User> facilityStaff = new LinkedHashMap<>();
+        User assignedManager = facility.getManager();
+        if (isActiveRole(assignedManager, "FACILITY_MANAGER")) {
+            facilityManagers.put(assignedManager.getId(), assignedManager);
+        }
+
+        for (User user : userRepository.findAllByRole_NameInAndIsActiveTrue(List.of("FACILITY_MANAGER", "STAFF"))) {
+            if (user.getFacility() == null || !facility.getId().equals(user.getFacility().getId())) {
+                continue;
+            }
+            String roleName = user.getRole() != null ? user.getRole().getName() : "";
+            if ("FACILITY_MANAGER".equalsIgnoreCase(roleName)) {
+                facilityManagers.put(user.getId(), user);
+            } else if ("STAFF".equalsIgnoreCase(roleName)) {
+                facilityStaff.put(user.getId(), user);
+            }
+        }
+
+        LocalDate staffAssignmentDate = booking.getExpectedArrivalAt() != null
+                ? booking.getExpectedArrivalAt().toLocalDate()
+                : booking.getStartDate();
+        List<LocalDate> assignmentDates = new ArrayList<>();
+        assignmentDates.add(LocalDate.now());
+        if (staffAssignmentDate != null && !staffAssignmentDate.equals(LocalDate.now())) {
+            assignmentDates.add(staffAssignmentDate);
+        }
+        for (LocalDate assignmentDate : assignmentDates) {
+            for (StaffAssignment assignment : staffAssignmentRepository.findByFacility_IdAndAssignedDate(
+                    facility.getId(), assignmentDate)) {
+                if (assignment.getStatus() != StaffAssignmentStatus.ASSIGNED
+                        && assignment.getStatus() != StaffAssignmentStatus.CHECKED_IN) {
+                    continue;
+                }
+                User assignedStaff = assignment.getStaff();
+                if (isActiveRole(assignedStaff, "STAFF")) {
+                    facilityStaff.putIfAbsent(assignedStaff.getId(), assignedStaff);
+                }
+            }
+        }
+
+        if (facilityStaff.isEmpty()) {
+            log.warn("No active staff found for booking {} at facility {}", booking.getBookingCode(), facility.getId());
+        }
+
+        if (booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
+            for (User manager : facilityManagers.values()) {
+                saveBookingNotice(
+                        manager,
+                        facility,
+                        NotificationType.BOOKING_APPROVAL_REQUEST,
+                        booking,
+                        "Yêu cầu đặt kho mới cần duyệt",
+                        "Cơ sở " + facilityName + " có yêu cầu mới #" + booking.getBookingCode()
+                                + " cho kho " + unitCode + ". Khách dự kiến đến " + expectedArrival
+                                + ". Vui lòng xem xét và duyệt hoặc từ chối yêu cầu."
+                );
+            }
+        }
+
+        for (User staff : facilityStaff.values()) {
+            saveBookingNotice(
+                    staff,
+                    facility,
+                    NotificationType.BOOKING_PREPARATION,
+                    booking,
+                    "Chuẩn bị kho " + unitCode + " đang được giữ chỗ",
+                    "Kho " + unitCode + " tại " + facilityName + " vừa được giữ chỗ theo yêu cầu #"
+                            + booking.getBookingCode() + ". Khách dự kiến đến " + expectedArrival
+                            + ". Vui lòng kiểm tra vệ sinh, ổ khóa và thiết bị IoT; thông báo này chỉ để chuẩn bị vận hành."
+            );
+        }
+    }
+
+    private boolean isActiveRole(User user, String expectedRole) {
+        return user != null
+                && Boolean.TRUE.equals(user.getIsActive())
+                && user.getRole() != null
+                && expectedRole.equalsIgnoreCase(user.getRole().getName());
+    }
+
+    private void saveBookingNotice(
+            User recipient,
+            Facility facility,
+            NotificationType type,
+            Booking booking,
+            String title,
+            String content
+    ) {
+        if (recipient.getEmail() == null || recipient.getEmail().isBlank()) {
+            log.warn("Skipping {} notification for user {} without an email", type, recipient.getId());
+            return;
+        }
+        notificationLogRepository.save(NotificationLog.builder()
+                .recipient(recipient)
+                .recipientEmail(recipient.getEmail())
+                .recipientName(recipient.getFullName() != null ? recipient.getFullName() : recipient.getUsername())
+                .facility(facility)
+                .channel(NotificationChannel.IN_APP)
+                .notificationType(type)
+                .referenceType("Booking")
+                .referenceId(booking.getId())
+                .title(title)
+                .content(content)
+                .status("SENT")
+                .build());
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public NotificationLogResponse getById(UUID id) {
         NotificationLog logEntry = notificationLogRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.NOTIFICATION_NOT_FOUND));
+
+        String role = requestContext.currentUserRole();
+        if ("CUSTOMER".equalsIgnoreCase(role) || "STAFF".equalsIgnoreCase(role)
+                || "FACILITY_MANAGER".equalsIgnoreCase(role)) {
+            UUID currentUserId = requestContext.currentUserId();
+            UUID recipientId = logEntry.getRecipient() != null ? logEntry.getRecipient().getId() : null;
+            if (currentUserId == null || !currentUserId.equals(recipientId)) {
+                throw new AppException(ErrorCode.NOTIFICATION_NOT_FOUND);
+            }
+        }
 
         if (logEntry.getFacility() != null && facilityAccessGuard.isFacilityScoped()) {
             facilityAccessGuard.checkFacilityAccess(logEntry.getFacility().getId());
@@ -192,7 +365,9 @@ public class NotificationServiceImpl implements NotificationService {
         }
 
         UUID effectiveRecipientId = recipientId;
-        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+        String currentRole = requestContext.currentUserRole();
+        if ("CUSTOMER".equalsIgnoreCase(currentRole) || "STAFF".equalsIgnoreCase(currentRole)
+                || "FACILITY_MANAGER".equalsIgnoreCase(currentRole)) {
             effectiveRecipientId = requestContext.currentUserId();
         }
 

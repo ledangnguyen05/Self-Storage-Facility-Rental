@@ -1,9 +1,8 @@
-import React, { useState } from 'react'
-import { Booking, RentalContract } from '../../types'
+import React from 'react'
+import { RentalContract } from '../../types'
 
 interface ContractDocumentModalProps {
   contract: RentalContract | null
-  booking?: Booking | null
   onClose: () => void
   onSignNow?: (contract: RentalContract) => void
   isSigning?: boolean
@@ -11,25 +10,14 @@ interface ContractDocumentModalProps {
 
 export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
   contract,
-  booking,
   onClose,
   onSignNow,
   isSigning = false,
 }) => {
   if (!contract) return null
 
-  const isPaperContract = Boolean(contract.paperContractUrl || contract.signingMethod === 'IN_PERSON')
-  const [activeViewTab, setActiveViewTab] = useState<'scan' | 'terms'>(isPaperContract && contract.paperContractUrl ? 'scan' : 'terms')
-  const [imageError, setImageError] = useState<boolean>(false)
-
   const isPendingSignature = contract.status === 'PENDING_SIGNATURE'
-  const isPendingActivation = contract.status === 'PENDING_ACTIVATION'
   const isActive = contract.status === 'ACTIVE'
-  const isSigned = Boolean(contract.signedAt || contract.paperVerifiedAt || contract.paperContractUrl)
-
-  const isBookingPaid = booking
-    ? (booking.paymentStatus === 'PAID' || (booking.depositPaid && Number(booking.depositPaid) > 0))
-    : (contract.depositHeld && Number(contract.depositHeld) > 0)
 
   const handlePrint = () => {
     window.print()
@@ -42,77 +30,29 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
         {/* Modal Top Bar - Hidden when printing */}
         <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white print:hidden shrink-0">
           <div className="flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-              isPaperContract
-                ? 'bg-teal-500/20 border border-teal-500/40 text-teal-400'
-                : 'bg-blue-600/30 border border-blue-500/40 text-blue-400'
-            }`}>
-              <span className="material-symbols-outlined text-[20px]">
-                {isPaperContract ? 'document_scanner' : 'description'}
-              </span>
+            <div className="w-9 h-9 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-blue-400">
+              <span className="material-symbols-outlined text-[20px]">description</span>
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className={`font-mono text-xs font-bold ${isPaperContract ? 'text-teal-400' : 'text-blue-400'}`}>
-                  #{contract.contractCode}
-                </span>
+                <span className="font-mono text-xs font-bold text-blue-400">#{contract.contractCode}</span>
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                  isPaperContract
-                    ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
-                    : isActive
+                  isActive
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                    : isPendingActivation
-                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
                     : isPendingSignature
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'
                     : 'bg-slate-700 text-slate-300'
                 }`}>
-                  {isPaperContract
-                    ? 'HỢP ĐỒNG GIẤY TIẾP NHẬN TẠI CƠ SỞ'
-                    : isActive
-                    ? 'ĐANG HIỆU LỰC (ACTIVE)'
-                    : isPendingActivation
-                    ? isSigned ? 'ĐÃ KÝ • CHỜ KÍCH HOẠT NHẬN KHO' : 'CHỜ XÁC MINH CHỮ KÝ'
-                    : isPendingSignature
-                    ? 'CHỜ KÝ SỐ (PENDING)'
-                    : contract.status}
+                  {isActive ? 'ĐANG HIỆU LỰC (ACTIVE)' : isPendingSignature ? 'CHỜ KÝ SỐ (PENDING)' : contract.status}
                 </span>
               </div>
               <h2 className="text-sm font-bold text-slate-100">
-                {isPaperContract
-                  ? 'Hồ Sơ Hợp Đồng Thuê Kho Ký Trực Tiếp Tại Cơ Sở'
-                  : 'Văn Bản Hợp Đồng Thuê Kho Tự Quản Thông Minh'}
+                Văn Bản Hợp Đồng Thuê Kho Tự Quản Thông Minh
               </h2>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* View Switcher for paper contracts */}
-            {isPaperContract && contract.paperContractUrl && (
-              <div className="hidden sm:flex items-center bg-slate-800 rounded-lg p-0.5 border border-slate-700 mr-2 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setActiveViewTab('scan')}
-                  className={`px-3 py-1.5 rounded-md font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
-                    activeViewTab === 'scan' ? 'bg-teal-600 text-white' : 'text-slate-300 hover:text-white'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[15px]">image</span>
-                  <span>Bản Scan Gốc</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveViewTab('terms')}
-                  className={`px-3 py-1.5 rounded-md font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
-                    activeViewTab === 'terms' ? 'bg-teal-600 text-white' : 'text-slate-300 hover:text-white'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[15px]">article</span>
-                  <span>Điều Khoản Văn Bản</span>
-                </button>
-              </div>
-            )}
-
             <button
               type="button"
               onClick={handlePrint}
@@ -123,8 +63,7 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
               <span className="hidden sm:inline">In Hợp Đồng</span>
             </button>
 
-            {/* Ký ngay chỉ hiển thị cho HỢP ĐỒNG ĐIỆN TỬ khi ĐÃ THANH TOÁN */}
-            {!isPaperContract && isPendingSignature && onSignNow && isBookingPaid && (
+            {isPendingSignature && onSignNow && (
               <button
                 type="button"
                 onClick={() => onSignNow(contract)}
@@ -146,127 +85,226 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
           </div>
         </div>
 
-        {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-6 sm:p-10 text-slate-800 leading-relaxed print:p-0 print:overflow-visible">
+        {/* Contract Content - Formatted as Legal Document */}
+        <div className="flex-1 overflow-y-auto p-6 sm:p-12 text-slate-800 font-serif leading-relaxed print:p-0 print:overflow-visible">
           
-          {/* A. PAPER CONTRACT VIEW (HIỂN THỊ HÌNH ẢNH SCAN ĐÃ ĐƯỢC TIẾP NHẬN TẠI QUẦY) */}
-          {isPaperContract && activeViewTab === 'scan' ? (
-            <div className="space-y-6">
-              {/* Paper verification summary card */}
-              <div className="bg-gradient-to-r from-teal-50 to-emerald-50/50 border border-teal-200 rounded-2xl p-5 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-teal-100">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center shadow-sm">
-                      <span className="material-symbols-outlined text-[22px]">verified</span>
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-sm text-teal-950 font-sans">
-                        Hồ Sơ Hợp Đồng Giấy Đã Tiếp Nhận &amp; Đối Chiếu Tại Cơ Sở
-                      </h3>
-                      <p className="text-xs text-teal-700 mt-0.5">
-                        Bản số hóa scan hợp đồng có chữ ký tay trực tiếp được nhân viên quầy tiếp nhận và lưu trữ vào hệ thống Boxora Cloud.
-                      </p>
-                    </div>
-                  </div>
-                  {contract.paperContractUrl && (
-                    <a
-                      href={contract.paperContractUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3.5 py-1.5 bg-white hover:bg-teal-50 text-teal-800 border border-teal-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs w-fit"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                      <span>Mở Ảnh Gốc</span>
-                    </a>
-                  )}
-                </div>
+          {/* Header Quốc Hiệu */}
+          <div className="text-center pb-6 border-b border-slate-300">
+            <h3 className="font-bold text-xs uppercase tracking-widest text-slate-900 font-sans">
+              CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
+            </h3>
+            <p className="font-bold text-xs text-slate-800 mt-1 font-sans">
+              Độc lập – Tự do – Hạnh phúc
+            </p>
+            <div className="w-32 h-[1px] bg-slate-400 mx-auto mt-2"></div>
 
-                {/* Details Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-3.5 text-xs">
-                  <div>
-                    <span className="text-slate-500 block mb-0.5">Cơ sở tiếp nhận:</span>
-                    <strong className="text-slate-900 font-semibold">{contract.facilityName || 'Boxora Facility'}</strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block mb-0.5">Nhân viên tiếp nhận:</span>
-                    <strong className="text-teal-900 font-semibold">
-                      {contract.paperVerifiedByName || 'Ban Quản Lý Cơ Sở Boxora'}
-                    </strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block mb-0.5">Thời gian tiếp nhận:</span>
-                    <strong className="text-slate-900 font-mono">
-                      {contract.paperVerifiedAt
-                        ? new Date(contract.paperVerifiedAt).toLocaleString('vi-VN')
-                        : contract.signedAt
-                        ? new Date(contract.signedAt).toLocaleString('vi-VN')
-                        : 'Đã xác minh khi check-in'}
-                    </strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block mb-0.5">Vị trí lưu trữ bản gốc:</span>
-                    <strong className="text-slate-900 font-semibold">
-                      {contract.paperOriginalLocation || 'Tủ hồ sơ hợp đồng cơ sở Boxora'}
-                    </strong>
-                  </div>
-                </div>
-
-                {contract.paperNotes && (
-                  <div className="mt-3 pt-3 border-t border-teal-100 text-xs flex items-center gap-1.5 text-teal-800">
-                    <span className="material-symbols-outlined text-[15px] shrink-0">info</span>
-                    <span><strong>Ghi chú:</strong> {contract.paperNotes}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Scanned Image Display */}
-              <div className="bg-slate-100/80 rounded-2xl p-4 sm:p-6 border border-slate-200 flex flex-col items-center justify-center min-h-[420px]">
-                {contract.paperContractUrl && !imageError ? (
-                  <div className="relative max-w-full flex flex-col items-center">
-                    <img
-                      src={contract.paperContractUrl}
-                      alt={`Bản scan hợp đồng #${contract.contractCode}`}
-                      onError={() => setImageError(true)}
-                      className="max-h-[750px] w-auto max-w-full object-contain rounded-xl shadow-lg border border-slate-200 bg-white"
-                    />
-                    <div className="mt-3 flex items-center gap-3 text-xs text-slate-500 font-sans">
-                      <span className="flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[15px] text-teal-600">verified_user</span>
-                        <span>Dấu mộc và chữ ký hợp lệ đã được xác thực</span>
-                      </span>
-                      <span>&bull;</span>
-                      <a
-                        href={contract.paperContractUrl}
-                        download={`Hop-Dong-${contract.contractCode}.png`}
-                        className="text-teal-700 hover:text-teal-800 font-semibold underline flex items-center gap-0.5"
-                      >
-                        <span className="material-symbols-outlined text-[14px]">download</span>
-                        <span>Tải file ảnh</span>
-                      </a>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-12 px-4 max-w-md">
-                    <div className="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mx-auto mb-3">
-                      <span className="material-symbols-outlined text-[32px]">inventory_2</span>
-                    </div>
-                    <h4 className="font-bold text-slate-800 text-sm mb-1 font-sans">
-                      Hợp Đồng Giấy Đang Lưu Trữ Tại Cơ Sở
-                    </h4>
-                    <p className="text-xs text-slate-500 mb-4 font-sans leading-relaxed">
-                      Bản hợp đồng giấy gốc đã được ký và bàn giao trong quá trình check-in nhận kho. Quý khách có thể xem điều khoản chi tiết bằng cách chuyển qua tab bên dưới.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setActiveViewTab('terms')}
-                      className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                    >
-                      Xem Điều Khoản Văn Bản Pháp Lý
-                    </button>
-                  </div>
-                )}
+            <div className="mt-8 mb-2">
+              <h1 className="font-bold text-xl sm:text-2xl text-slate-900 uppercase font-sans tracking-tight">
+                HỢP ĐỒNG THUÊ KHO TỰ QUẢN THÔNG MINH
+              </h1>
+              <p className="font-sans text-xs text-slate-500 mt-1">
+                (SMART SELF-STORAGE LEASE CONTRACT &bull; BOXORA CLOUD)
+              </p>
+              <div className="inline-block mt-3 px-3 py-1 bg-slate-100 rounded-md font-mono text-xs font-bold text-slate-700">
+                Số HĐ: {contract.contractCode} &bull; Hệ thống mã hóa Boxora Cloud
               </div>
             </div>
+          </div>
+
+          {/* Legal preamble */}
+          <div className="my-6 text-xs text-slate-600 italic">
+            Căn cứ Bộ luật Dân sự số 91/2015/QH13 và Luật Giao dịch Điện tử số 20/2023/QH15 của Quốc hội Nước CHXHCN Việt Nam;
+            Hôm nay, các bên tham gia giao kết hợp đồng dịch vụ lưu trữ tự quản thông minh gồm có:
+          </div>
+
+          {/* Party A & Party B */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 my-6 p-4 bg-slate-50 rounded-xl border border-slate-200 font-sans text-xs print:bg-white print:border-slate-300">
+            {/* Party A */}
+            <div className="space-y-1.5">
+              <div className="font-bold text-blue-900 uppercase tracking-wide border-b border-slate-200 pb-1">
+                BÊN CHO THUÊ (BÊN A)
+              </div>
+              <div className="font-bold text-slate-900 text-sm">CÔNG TY CỔ PHẦN DỊCH VỤ LƯU TRỮ BOXORA</div>
+              <div><strong>Cơ sở chi nhánh:</strong> {contract.facilityName || 'Boxora Facility'}</div>
+              <div><strong>Đại diện pháp lý:</strong> Giám Đốc Chi Nhánh / Quản Lý Cơ Sở</div>
+              <div><strong>Mã số doanh nghiệp:</strong> 0317892345 &bull; Cấp bởi Sở KH&amp;ĐT TP.HCM</div>
+              <div><strong>Hotline an ninh 24/7:</strong> 1900 6868 &bull; <strong>Email:</strong> support@boxora.vn</div>
+            </div>
+
+            {/* Party B */}
+            <div className="space-y-1.5">
+              <div className="font-bold text-slate-900 uppercase tracking-wide border-b border-slate-200 pb-1">
+                BÊN THUÊ KHO (BÊN B)
+              </div>
+              <div className="font-bold text-slate-900 text-sm">{contract.customerName || 'Khách hàng Boxora'}</div>
+              <div><strong>Email định danh:</strong> {contract.customerEmail}</div>
+              <div><strong>Số điện thoại:</strong> {contract.customerPhone || '0901 234 567'}</div>
+              <div><strong>Mã khách hàng:</strong> {contract.customerId ? `KH-${contract.customerId.slice(0, 8).toUpperCase()}` : 'CUST-VERIFIED'}</div>
+              <div><strong>Tài khoản hệ thống:</strong> Đã xác thực CCCD/E-KYC số trên Boxora Portal</div>
+            </div>
+          </div>
+
+          {/* Terms Articles */}
+          <div className="space-y-6 text-xs text-slate-800">
+            {/* Article 1 */}
+            <div>
+              <h4 className="font-bold text-slate-900 font-sans uppercase text-xs mb-1.5 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center font-bold text-[10px]">1</span>
+                Điều 1: ĐỐI TƯỢNG VÀ MỤC ĐÍCH THUÊ
+              </h4>
+              <p className="text-justify leading-relaxed pl-7">
+                1.1. Bên A đồng ý cho Bên B thuê và Bên B đồng ý thuê vị trí ô kho lưu trữ cá nhân tự quản thông minh có mã số định danh <strong>#{contract.unitCode}</strong> đặt tại cơ sở <strong>{contract.facilityName}</strong>.
+              </p>
+              <p className="text-justify leading-relaxed pl-7 mt-1">
+                1.2. Ô kho được trang bị hệ thống khóa thông minh Smart Lock điều khiển điện tử kết nối máy chủ Boxora Cloud, tích hợp cảm biến an toàn, giám sát phòng cháy chữa cháy và camera an ninh phân khu 24/7.
+              </p>
+            </div>
+
+            {/* Article 2 */}
+            <div>
+              <h4 className="font-bold text-slate-900 font-sans uppercase text-xs mb-1.5 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center font-bold text-[10px]">2</span>
+                Điều 2: THỜI HẠN THUÊ KHO
+              </h4>
+              <p className="text-justify leading-relaxed pl-7">
+                2.1. Thời hạn thuê tính từ ngày <strong>{contract.startDate}</strong> đến hết ngày <strong>{contract.endDate}</strong>.
+              </p>
+              <p className="text-justify leading-relaxed pl-7 mt-1">
+                2.2. Hợp đồng có thể được gia hạn tự động hoặc gia hạn chủ động theo chu kỳ trên Boxora Portal khi Bên B hoàn thành việc đóng phí thuê kỳ mới.
+              </p>
+            </div>
+
+            {/* Article 3 */}
+            <div>
+              <h4 className="font-bold text-slate-900 font-sans uppercase text-xs mb-1.5 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center font-bold text-[10px]">3</span>
+                Điều 3: GIÁ THUÊ, TIỀN KÝ QUỸ ĐẶT CỌC VÀ THANH TOÁN
+              </h4>
+              <div className="pl-7 grid grid-cols-1 sm:grid-cols-2 gap-3 my-2 font-sans">
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                  <span className="text-slate-500 block text-[11px]">Đơn giá thuê hàng tháng:</span>
+                  <strong className="text-blue-700 text-sm font-mono">
+                    {Number(contract.monthlyFee || 0).toLocaleString('vi-VN')} ₫ / tháng
+                  </strong>
+                </div>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                  <span className="text-slate-500 block text-[11px]">Tiền đặt cọc lưu ký bảo chứng:</span>
+                  <strong className="text-slate-900 text-sm font-mono">
+                    {Number(contract.depositHeld || 0).toLocaleString('vi-VN')} ₫
+                  </strong>
+                </div>
+              </div>
+              <p className="text-justify leading-relaxed pl-7">
+                3.1. Tiền đặt cọc được lưu ký an toàn tại tài khoản bảo chứng Boxora Cloud và được hoàn trả cho Bên B sau khi thanh lý hợp đồng và nghiệm thu hoàn trả kho nguyên trạng.
+              </p>
+              <p className="text-justify leading-relaxed pl-7 mt-1">
+                3.2. Phương thức thanh toán: Cổng thanh toán trực tuyến VNPay Sandbox / Thẻ thanh toán quốc tế / Chuyển khoản QR Napas.
+              </p>
+            </div>
+
+            {/* Article 4 */}
+            <div>
+              <h4 className="font-bold text-slate-900 font-sans uppercase text-xs mb-1.5 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center font-bold text-[10px]">4</span>
+                Điều 4: PHƯƠNG THỨC KÝ KẾT VĂN BẢN &amp; XÁC THỰC DOCUSEAL
+              </h4>
+              <p className="text-justify leading-relaxed pl-7">
+                4.1. Hợp đồng này được tạo lập và ký kết bằng hình thức điện tử thông qua hạ tầng DocuSeal e-Signature Verification theo tiêu chuẩn mã hóa PKI SHA-256 hoặc ký trực tiếp tại quầy tiếp đón cơ sở.
+              </p>
+              <p className="text-justify leading-relaxed pl-7 mt-1">
+                4.2. Chữ ký số và con dấu điện tử được chứng thực số liệu toàn vẹn trên hệ thống Boxora Cloud, có đầy đủ giá trị pháp lý ràng buộc quyền và nghĩa vụ của hai bên.
+              </p>
+            </div>
+
+            {/* Article 5 */}
+            <div>
+              <h4 className="font-bold text-slate-900 font-sans uppercase text-xs mb-1.5 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center font-bold text-[10px]">5</span>
+                Điều 5: QUYỀN RA VÀO VÀ NGHĨA VỤ BẢO VỆ TÀI SẢN
+              </h4>
+              <p className="text-justify leading-relaxed pl-7">
+                5.1. Bên B được cấp quyền ra vào phân khu kho 24/7 thông qua mã PIN bảo mật cá nhân hoặc mã QR Access Token do Boxora sinh tự động trên ứng dụng.
+              </p>
+              <p className="text-justify leading-relaxed pl-7 mt-1">
+                5.2. Nghiêm cấm lưu trữ chất cháy nổ, vũ khí, chất độc hại, động vật sống hoặc hàng cấm theo quy định của pháp luật Việt Nam.
+              </p>
+            </div>
+          </div>
+
+          {/* Signatures & Seal Section */}
+          <div className="mt-12 pt-8 border-t border-slate-300 font-sans">
+            <div className="grid grid-cols-2 gap-8 text-center text-xs">
+              
+              {/* Representative Party A */}
+              <div className="flex flex-col items-center">
+                <span className="font-bold uppercase text-slate-900">ĐẠI DIỆN BÊN CHO THUÊ (BÊN A)</span>
+                <span className="text-[11px] text-slate-500 italic mt-0.5">Ký tên, đóng dấu điện tử</span>
+
+                {/* Digital Stamp of Boxora */}
+                <div className="my-4 relative w-36 h-36 rounded-full border-4 border-dashed border-red-600 flex flex-col items-center justify-center text-red-600 p-2 shadow-inner select-none rotate-[-6deg]">
+                  <div className="w-full text-center text-[8px] font-black uppercase tracking-tighter">
+                    CÔNG TY CP BOXORA
+                  </div>
+                  <div className="material-symbols-outlined text-2xl my-0.5">verified_user</div>
+                  <div className="text-[9px] font-extrabold uppercase">DOCUSEAL VERIFIED</div>
+                  <div className="text-[7px] font-mono tracking-widest text-red-500">PKI #SHA256</div>
+                  <div className="text-[7px] text-red-700 font-bold mt-0.5">BOXORA CLOUD</div>
+                </div>
+
+                <span className="font-bold text-slate-900">BOXORA FACILITY AUTHORITY</span>
+                <span className="text-[10px] text-slate-500 font-mono">Đã chứng thực điện tử</span>
+              </div>
+
+              {/* Representative Party B */}
+              <div className="flex flex-col items-center">
+                <span className="font-bold uppercase text-slate-900">ĐẠI DIỆN BÊN THUÊ KHO (BÊN B)</span>
+                <span className="text-[11px] text-slate-500 italic mt-0.5">Khách hàng xác thực chữ ký</span>
+
+                {isActive ? (
+                  <div className="my-4 w-48 h-36 rounded-xl border border-slate-200 bg-slate-50 flex flex-col items-center justify-center p-3">
+                    <span className="font-serif italic text-2xl text-blue-900 select-none">
+                      {contract.customerName || 'Customer Signature'}
+                    </span>
+                    <div className="mt-2 flex items-center gap-1 text-[10px] text-emerald-600 font-bold font-sans">
+                      <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                      <span>Ký số DocuSeal thành công</span>
+                    </div>
+                    {contract.signedAt && (
+                      <span className="text-[9px] text-slate-400 font-mono mt-0.5">
+                        {new Date(contract.signedAt).toLocaleString('vi-VN')}
+                      </span>
+                    )}
+                  </div>
+                ) : isPendingSignature ? (
+                  <div className="my-4 w-48 h-36 rounded-xl border-2 border-dashed border-amber-300 bg-amber-50/60 flex flex-col items-center justify-center p-3 text-center">
+                    <span className="material-symbols-outlined text-3xl text-amber-500 mb-1">draw</span>
+                    <span className="text-[11px] font-bold text-amber-900">Chờ Quý khách ký số</span>
+                    <span className="text-[9px] text-amber-700 mt-0.5">Nhấp nút &ldquo;Ký Ngay&rdquo; để hoàn tất</span>
+                    {onSignNow && (
+                      <button
+                        type="button"
+                        onClick={() => onSignNow(contract)}
+                        disabled={isSigning}
+                        className="mt-2 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[12px]">edit</span>
+                        <span>{isSigning ? 'Đang mở...' : 'Ký Ngay'}</span>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="my-4 w-48 h-36 rounded-xl border border-slate-200 bg-slate-50 flex flex-col items-center justify-center p-3 text-slate-400 text-xs">
+                    {contract.status}
+                  </div>
+                )}
+
+                <span className="font-bold text-slate-900">{contract.customerName || 'Khách hàng'}</span>
+                <span className="text-[10px] text-slate-500 font-mono">{contract.customerEmail}</span>
+              </div>
+            </div>
+<<<<<<< Updated upstream
+          </div>
+=======
           ) : (
             /* B. STANDARD LEGAL DOCUMENT TEXT TERMS */
             <div className="font-serif">
@@ -348,8 +386,8 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
                     ĐIỀU 1: ĐỐI TƯỢNG VÀ THỜI HẠN THUÊ KHO
                   </h4>
                   <p className="mb-2">
-                    1.1. Bên A đồng ý cho Bên B thuê ô không gian tự quản thông minh mã số{' '}
-                    <strong className="font-mono text-blue-700">#{contract.unitCode}</strong> tại cơ sở{' '}
+                    1.1. Bên A đồng ý cho Bên B thuê ô không gian tự quản thông minh{' '}
+                    {contract.unitCode ? <>mã số <strong className="font-mono text-blue-700">#{contract.unitCode}</strong></> : 'với vị trí kho được xác nhận khi khách hàng nhận kho'} tại cơ sở{' '}
                     <strong>{contract.facilityName}</strong>.
                   </p>
                   <p className="mb-2">
@@ -438,22 +476,19 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
               </div>
             </div>
           )}
+>>>>>>> Stashed changes
 
           {/* Footer note */}
           <div className="mt-8 pt-4 border-t border-slate-200 text-center font-sans text-[10px] text-slate-400">
-            Bản hợp đồng số #{contract.contractCode} được số hóa và bảo mật trên hạ tầng Boxora Cloud.
+            Bản hợp đồng số #{contract.contractCode} được số hóa và lưu trữ bảo mật trên hạ tầng Boxora Cloud. Chứng thư DocuSeal PKI.
           </div>
         </div>
 
         {/* Modal Bottom Bar - Hidden when printing */}
         <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 print:hidden shrink-0">
           <div className="flex items-center gap-2 text-xs text-slate-600">
-            <span className="material-symbols-outlined text-[18px] text-teal-600">verified</span>
-            <span>
-              {isPaperContract
-                ? 'Hợp đồng giấy đã được BQL cơ sở tiếp nhận và lưu trữ an toàn.'
-                : 'Hợp đồng được lưu trữ an toàn trên máy chủ đám mây Boxora.'}
-            </span>
+            <span className="material-symbols-outlined text-[18px] text-blue-600">verified</span>
+            <span>Hợp đồng được lưu trữ an toàn trên máy chủ đám mây Boxora.</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -466,7 +501,7 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
               <span>In Hợp Đồng</span>
             </button>
 
-            {!isPaperContract && isPendingSignature && onSignNow && isBookingPaid && (
+            {isPendingSignature && onSignNow && (
               <button
                 type="button"
                 onClick={() => onSignNow(contract)}

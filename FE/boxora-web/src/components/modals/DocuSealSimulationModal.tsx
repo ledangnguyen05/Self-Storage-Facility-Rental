@@ -1,11 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react'
-import { Booking, RentalContract } from '../../types'
+import React, { useState, useRef } from 'react'
+import { RentalContract } from '../../types'
 import { contractService } from '../../services/contractService'
 import { useAuth } from '../../context/AuthContext'
 
 interface DocuSealSimulationModalProps {
   contract: RentalContract
-  booking?: Booking | null
   onClose: () => void
   onSignedSuccess: (updated: RentalContract) => void
 }
@@ -27,69 +26,22 @@ function formatVnd(val?: number) {
 
 export function DocuSealSimulationModal({
   contract,
-  booking,
   onClose,
   onSignedSuccess,
 }: DocuSealSimulationModalProps) {
   const { user } = useAuth()
   const customerDisplayName = contract.customerName || user?.fullName || 'Khách hàng'
   const customerDisplayPhone = contract.customerPhone || user?.phone || 'Theo hồ sơ'
-  const customerIdentityNumber = contract.identityCardNumber || booking?.identityCardNumber || ''
-  const customerIdentityType = contract.identityCardType || booking?.identityCardType || 'CCCD'
   const [agreed, setAgreed] = useState(false)
   const [signatureMode, setSignatureMode] = useState<'type' | 'draw'>('draw')
   const [signerName, setSignerName] = useState(customerDisplayName)
   const [isSigning, setIsSigning] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Success Confirmation State
-  const [signedResult, setSignedResult] = useState<RentalContract | null>(null)
-  const [savedSignatureData, setSavedSignatureData] = useState<string | null>(null)
-
   // Canvas drawing state
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [hasDrawn, setHasDrawn] = useState(false)
-
-  // Synchronize internal canvas resolution with displayed CSS box
-  const updateCanvasResolution = () => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const rect = canvas.getBoundingClientRect()
-    if (rect.width > 0 && rect.height > 0) {
-      if (!hasDrawn) {
-        canvas.width = Math.round(rect.width)
-        canvas.height = Math.round(rect.height)
-      }
-    }
-  }
-
-  useEffect(() => {
-    if (signatureMode !== 'draw') return
-    const timer = setTimeout(updateCanvasResolution, 60)
-    window.addEventListener('resize', updateCanvasResolution)
-    return () => {
-      clearTimeout(timer)
-      window.removeEventListener('resize', updateCanvasResolution)
-    }
-  }, [signatureMode, hasDrawn])
-
-  // Mathematically accurate coordinate mapping taking into account bounding rect and canvas scale ratio
-  const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current
-    if (!canvas) return { x: 0, y: 0 }
-    const rect = canvas.getBoundingClientRect()
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
-
-    const scaleX = rect.width > 0 ? canvas.width / rect.width : 1
-    const scaleY = rect.height > 0 ? canvas.height / rect.height : 1
-
-    return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY,
-    }
-  }
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
@@ -98,7 +50,9 @@ export function DocuSealSimulationModal({
     if (!ctx) return
     setIsDrawing(true)
     setHasDrawn(true)
-    const { x, y } = getCoordinates(e)
+    const rect = canvas.getBoundingClientRect()
+    const x = 'touches' in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left
+    const y = 'touches' in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top
     ctx.beginPath()
     ctx.moveTo(x, y)
   }
@@ -109,7 +63,9 @@ export function DocuSealSimulationModal({
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    const { x, y } = getCoordinates(e)
+    const rect = canvas.getBoundingClientRect()
+    const x = 'touches' in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left
+    const y = 'touches' in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top
     ctx.lineWidth = 2.8
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
@@ -129,7 +85,6 @@ export function DocuSealSimulationModal({
     if (!ctx) return
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     setHasDrawn(false)
-    updateCanvasResolution()
   }
 
   const handleConfirmSign = async () => {
@@ -145,36 +100,8 @@ export function DocuSealSimulationModal({
     setIsSigning(true)
     setError(null)
     try {
-      let signatureData: string | undefined = undefined
-
-      if (signatureMode === 'draw' && canvasRef.current && hasDrawn) {
-        // Lấy chính xác nét vẽ chữ ký tay thực tế của khách hàng từ canvas
-        signatureData = canvasRef.current.toDataURL('image/png')
-      } else if (signatureMode === 'type') {
-        // Tạo chữ ký nét vẽ tay vector chân thực thay vì chữ in font thẳng
-        const nameToUse = (signerName || customerDisplayName || 'nguyen').toLowerCase()
-        const svgContent = nameToUse.includes('nguyen')
-          ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 85" width="260" height="85"><path d="M 26 55 C 30 38 36 20 44 15 C 50 11 55 18 58 32 C 63 50 69 58 75 38 C 79 26 85 22 91 30 C 97 38 101 52 108 48 C 114 44 118 32 123 30 C 129 28 131 42 135 48 C 139 54 144 48 148 38 C 152 26 156 22 160 34 C 164 46 170 76 158 84 C 146 91 140 78 148 64 C 158 48 168 40 178 38 C 186 36 191 44 196 46 C 203 48 210 36 217 34 C 224 32 228 42 234 40 C 240 38 244 32 248 34" fill="none" stroke="%231e3a8a" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="218" cy="23" r="2.2" fill="%231e3a8a"/><path d="M 34 68 C 74 65 132 67 198 59 C 220 56 236 55 248 57" fill="none" stroke="%232563eb" stroke-width="2.2" stroke-linecap="round"/></svg>`
-          : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 85" width="260" height="85"><path d="M 28 58 C 32 40 36 22 45 16 C 52 12 58 20 62 38 C 66 54 72 56 78 36 C 82 24 88 20 94 36 C 98 52 104 56 110 38 C 114 26 120 28 126 44 C 132 60 138 60 144 42 C 148 30 154 28 158 38 C 162 48 166 74 172 16 C 174 12 178 14 180 24 C 182 38 188 56 196 48 C 204 40 210 34 218 36" fill="none" stroke="%231e3a8a" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="127" cy="20" r="2.2" fill="%231e3a8a"/><path d="M 32 70 C 72 68 135 69 205 60 C 226 57 242 56 250 58" fill="none" stroke="%232563eb" stroke-width="2.2" stroke-linecap="round"/></svg>`
-        signatureData = `data:image/svg+xml;utf8,${encodeURIComponent(svgContent)}`
-      }
-
-      if (signatureData) {
-        try {
-          localStorage.setItem('boxora_sig_' + contract.id, signatureData)
-        } catch {
-          // ignore quota error
-        }
-      }
-
-      const updated = await contractService.mockSignContract(contract.id, signatureData)
-      if (signatureData && !updated.signatureData) {
-        updated.signatureData = signatureData
-      }
-
-      // Transition to the success confirmation view
-      setSavedSignatureData(signatureData || updated.signatureData || null)
-      setSignedResult(updated)
+      const updated = await contractService.mockSignContract(contract.id)
+      onSignedSuccess(updated)
     } catch (err: unknown) {
       let msg = 'Ký hợp đồng thất bại. Vui lòng thử lại.'
       if (typeof err === 'object' && err !== null && 'response' in err) {
@@ -187,6 +114,8 @@ export function DocuSealSimulationModal({
     }
   }
 
+<<<<<<< Updated upstream
+=======
   // Render Confirmation Modal View upon successful signing
   if (signedResult) {
     return (
@@ -259,7 +188,7 @@ export function DocuSealSimulationModal({
                 </div>
                 <div className="space-y-1">
                   <span className="text-[11px] text-slate-500">Ngăn kho & Cơ sở:</span>
-                  <p className="font-bold text-slate-800">{signedResult.unitCode || contract.unitCode} · {signedResult.facilityName || contract.facilityName || 'Boxora Storage'}</p>
+                  <p className="font-bold text-slate-800">{contract.unitCode || (contract.status === 'ACTIVE' ? signedResult.unitCode : '') || 'Vị trí kho sẽ được xác nhận khi nhận kho'} · {signedResult.facilityName || contract.facilityName || 'Boxora Storage'}</p>
                 </div>
                 <div className="space-y-1">
                   <span className="text-[11px] text-slate-500">Kỳ hạn thuê dự kiến:</span>
@@ -337,11 +266,12 @@ export function DocuSealSimulationModal({
     )
   }
 
+>>>>>>> Stashed changes
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-3 md:p-6 backdrop-blur-md overflow-y-auto">
       <div className="w-full max-w-3xl my-auto space-y-4 rounded-2xl border border-slate-700 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
-        {/* Header ký hợp đồng điện tử trực tuyến */}
+        {/* Header mô phỏng DocuSeal */}
         <div className="bg-gradient-to-r from-slate-900 via-cyan-950 to-slate-900 px-6 py-4 text-white flex items-center justify-between border-b border-cyan-800/40">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
@@ -350,10 +280,10 @@ export function DocuSealSimulationModal({
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[11px] font-bold tracking-widest text-cyan-400 uppercase">
-                  Xác Thực Chữ Ký Điện Tử
+                  DocuSeal e-Sign Verification
                 </span>
                 <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[10px] font-semibold text-cyan-300 border border-cyan-500/30">
-                  Ký Hợp Đồng Trực Tuyến
+                  Mô Phỏng Ký Số Trực Tuyến
                 </span>
               </div>
               <h2 className="text-base font-bold text-white tracking-tight">
@@ -405,7 +335,6 @@ export function DocuSealSimulationModal({
                 <p><strong>Họ và tên:</strong> {customerDisplayName}</p>
                 <p><strong>Email:</strong> {contract.customerEmail || user?.email || 'Chưa cập nhật'}</p>
                 <p><strong>Số điện thoại:</strong> {customerDisplayPhone}</p>
-                <p><strong>Số {customerIdentityType}:</strong> <span className="font-mono font-semibold">{customerIdentityNumber || 'Chưa cập nhật'}</span></p>
               </div>
             </div>
 
@@ -414,7 +343,7 @@ export function DocuSealSimulationModal({
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1 text-[11px]">
                 <div className="bg-slate-50 p-2 rounded border border-slate-100">
                   <span className="text-slate-500 block">Ngăn kho:</span>
-                  <strong className="text-cyan-800 font-mono">{contract.unitCode}</strong>
+                  <strong className="text-cyan-800 font-mono">{contract.unitCode || 'Vị trí kho sẽ được xác nhận khi nhận kho'}</strong>
                 </div>
                 <div className="bg-slate-50 p-2 rounded border border-slate-100">
                   <span className="text-slate-500 block">Thời hạn thuê:</span>
@@ -435,7 +364,7 @@ export function DocuSealSimulationModal({
               <strong className="text-slate-900 block font-semibold">Cam kết & Điều khoản chung:</strong>
               <ul className="list-disc pl-4 space-y-0.5 text-slate-600">
                 <li>Bên B cam đoan không chứa hàng cấm, vũ khí, chất cháy nổ hoặc động vật sống.</li>
-                <li>Mã PIN bảo mật cá nhân chỉ được kích hoạt và cấp phát sau khi hoàn tất đối soát đủ 4 điều kiện check-in và bàn giao kho tại cơ sở.</li>
+                <li>Hệ thống cấp mã PIN bảo mật cá nhân qua email ngay sau khi chữ ký điện tử được hoàn tất.</li>
                 <li>Thời gian thanh toán định kỳ hàng tháng tuân thủ theo chính sách tự quản Boxora.</li>
               </ul>
             </div>
@@ -449,7 +378,7 @@ export function DocuSealSimulationModal({
                   <span className="material-symbols-outlined text-sm text-cyan-700">draw</span>
                   Chữ ký điện tử của Bên Thuê (E-Signature)
                 </h4>
-                <p className="text-[11px] text-slate-500">Được chứng thực điện tử theo quy chuẩn an toàn Boxora e-Signature</p>
+                <p className="text-[11px] text-slate-500">Được chứng thực điện tử theo chuẩn DocuSeal e-Signature</p>
               </div>
 
               {/* Toggle chế độ ký */}
@@ -513,7 +442,7 @@ export function DocuSealSimulationModal({
                   {!hasDrawn && (
                     <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-xs text-slate-400 gap-1">
                       <span className="material-symbols-outlined text-2xl text-cyan-500/60 animate-bounce">draw</span>
-                      <span className="font-medium text-slate-500">Vẽ chữ ký của bạn vào đây</span>
+                      <span className="font-medium text-slate-500">Nhấn giữ chuột trái và vẽ trực tiếp chữ ký của bạn vào đây</span>
                     </div>
                   )}
                   <div className="absolute bottom-3 left-6 right-6 border-b border-dashed border-slate-200 pointer-events-none"></div>
@@ -542,7 +471,7 @@ export function DocuSealSimulationModal({
                 className="mt-0.5 h-4 w-4 rounded border-slate-300 text-cyan-700 focus:ring-cyan-500"
               />
               <span className="text-xs text-slate-700">
-                Tôi xác nhận rằng tôi đã đọc, hiểu và đồng ý toàn bộ điều khoản của Hợp đồng thuê kho tự quản Boxora. Chữ ký điện tử này có giá trị pháp lý đầy đủ. Thời hạn thuê và hiệu lực hợp đồng sẽ chính thức kích hoạt vào ngày tôi đến cơ sở hoàn tất check-in và nhận mã PIN.
+                Tôi xác nhận rằng tôi đã đọc, hiểu và đồng ý toàn bộ điều khoản của Hợp đồng thuê kho tự quản Boxora. Chữ ký điện tử này có giá trị pháp lý đầy đủ.
               </span>
             </label>
           </div>
@@ -572,7 +501,7 @@ export function DocuSealSimulationModal({
             {isSigning ? (
               <>
                 <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Đang xác thực chữ ký điện tử...</span>
+                <span>Đang xác thực chữ ký DocuSeal...</span>
               </>
             ) : (
               <>

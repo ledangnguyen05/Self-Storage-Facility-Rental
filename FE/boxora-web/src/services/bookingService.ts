@@ -13,6 +13,8 @@ export interface BookingCreatePayload {
   storageUnitId: string
   customerId?: string
   startDate: string
+  expectedArrivalAt?: string
+  requiresManagerApproval?: boolean
   rentalMonths: number
   totalRentalFee?: number
   depositPaid?: number
@@ -44,7 +46,9 @@ export interface BookingPinData {
 export const bookingService = {
   async create(data: BookingCreatePayload) {
     const response = await api.post('/api/v1/bookings', data)
-    return response.data?.data as Booking
+    const booking = response.data?.data as Booking
+    window.dispatchEvent(new Event('boxora:notifications-refresh'))
+    return booking
   },
 
   async createBooking(data: BookingCreatePayload) {

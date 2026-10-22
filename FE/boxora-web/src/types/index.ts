@@ -6,6 +6,8 @@ export interface User {
   email: string
   fullName?: string
   phone?: string
+  identityCardNumber?: string
+  identityCardType?: string
   avatar?: string
   role?: {
     id?: string
@@ -105,7 +107,6 @@ export interface StorageUnit {
   status: UnitStatusType
   facilityId: string
   facilityName: string
-  facilityStatus?: string
   unitTypeId: string
   unitTypeName: string
   pricePerMonth: number
@@ -120,9 +121,15 @@ export interface StorageUnit {
   bookingId?: string
   startDate?: string
   dueDate?: string
+  images?: string[]
+  primaryImageUrl?: string
 }
 
-export type BookingStatusType = 'PENDING_APPROVAL' | 'PENDING_PAYMENT' | 'CONFIRMED' | 'PENDING_SIGNATURE' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
+<<<<<<< Updated upstream
+export type BookingStatusType = 'PENDING_APPROVAL' | 'PENDING_PAYMENT' | 'CONFIRMED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
+=======
+export type BookingStatusType = 'PENDING_APPROVAL' | 'PENDING_CONTACT' | 'PENDING_PAYMENT' | 'CONFIRMED' | 'PENDING_SIGNATURE' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
+>>>>>>> Stashed changes
 
 export interface Booking {
   id: string
@@ -132,11 +139,14 @@ export interface Booking {
   customerEmail: string
   customerPhone: string
   storageUnitId: string
+  unitTypeId?: string
+  unitTypeName?: string
   unitCode: string
   facilityId?: string
   facilityName: string
   floorLevel?: string
   startDate: string
+  expectedArrivalAt?: string | null
   endDate: string
   rentalMonths: number
   totalRentalFee: number
@@ -144,12 +154,6 @@ export interface Booking {
   depositAmount?: number
   initialPaymentAmount?: number
   paymentExpiresAt?: string | null
-  holdStartedAt?: string | null
-  holdExpiresAt?: string | null
-  expectedCheckInAt?: string | null
-  checkInTime?: string | null
-  paymentStatus?: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | string
-  holdGraceHours?: number
   status: BookingStatusType
   accessCode: string // e.g. "BX-88219"
   accessPin?: string | null
@@ -160,110 +164,11 @@ export interface Booking {
   assignedStaffId?: string | null
   assignedStaffName?: string | null
   staffAssignmentNotes?: string | null
-  identityCardNumber?: string | null
-  identityCardType?: string | null
-}
-
-export interface BookingCancellationPreview {
-  bookingId: string
-  bookingCode: string
-  unitCode?: string
-  startDate: string
-  checkInDateTime?: string
-  depositPaid: number
-  totalRentalFee: number
-  hoursUntilCheckin: number
-  timeRemainingLabel?: string
-  milestoneStage: 'STAGE_1_FULL_REFUND' | 'STAGE_2_PARTIAL_REFUND' | 'STAGE_3_NO_REFUND' | 'STAGE_PENDING_NO_PAYMENT' | string
-  refundPercentage: number
-  refundAmount: number
-  penaltyAmount: number
-  policyDescription: string
-  refundable: boolean
-}
-
-export interface BookingCancelResponse {
-  bookingId: string
-  bookingCode: string
-  status: BookingStatusType
-  milestoneStage: string
-  refundPercentage: number
-  refundAmount: number
-  penaltyAmount: number
-  refundTransactionId?: string
-  unitReleased: boolean
-  cancelledAt: string
-  cancellationReason?: string
-  message: string
-}
-
-export interface BookingRescheduleEligibility {
-  bookingId: string
-  bookingCode: string
-  unitCode: string | null
-  facilityName: string | null
-  eligible: boolean
-  reasonIfNotEligible: string | null
-  restrictions: string[]
-  currentAppointmentAt: string
-  expectedStartDate: string
-  expectedEndDate: string
-  rentalMonths: number
-  monthlyFee: number
-  depositAmount: number
-  paymentStatus: string
-  contractStatus: string
-  contractSigned: boolean
-  holdExpiresAt: string | null
-  allowedMinDate: string
-  allowedMaxDate: string
-  facilityOpenTime: string
-  facilityCloseTime: string
-}
-
-export interface BookingRescheduleHistory {
-  id: string
-  bookingId: string
-  bookingCode: string
-  changeType: string
-  previousAppointmentAt: string
-  requestedAppointmentAt: string
-  acceptedAppointmentAt: string
-  previousExpectedStartDate: string
-  previousExpectedEndDate: string
-  newExpectedStartDate: string
-  newExpectedEndDate: string
-  previousHoldExpiresAt: string | null
-  newHoldExpiresAt: string | null
-  requesterId: string | null
-  requesterName: string
-  requesterRole: string
-  requestTimestamp: string
-  reason: string | null
-  processorId: string | null
-  processorName: string
-  processorRole: string
-  processedAt: string
-  outcome: string
-  rejectionReason: string | null
-  previousBookingStatus: string
-  resultingBookingStatus: string
-  contractAmendmentRequired: boolean
-  contractAmendmentNotes: string | null
-  createdAt: string
-}
-
-export interface BookingRescheduleResponse {
-  booking: Booking
-  historyRecord: BookingRescheduleHistory
-  message: string
 }
 
 export type RentalContractStatus =
   | 'DRAFT'
   | 'PENDING_SIGNATURE'
-  | 'PENDING_VERIFICATION'
-  | 'PENDING_ACTIVATION'
   | 'ACTIVE'
   | 'EXPIRED'
   | 'TERMINATED'
@@ -277,8 +182,6 @@ export interface RentalContract {
   customerEmail: string
   customerName?: string
   customerPhone?: string
-  identityCardNumber?: string | null
-  identityCardType?: string | null
   bookingId?: string
   storageUnitId?: string
   facilityId?: string
@@ -293,84 +196,9 @@ export interface RentalContract {
   docusealSubmissionId?: string | null
   docusealSubmitterSlug?: string | null
   signedAt?: string | null
-  signingMethod?: 'ONLINE' | 'IN_PERSON' | string
-  signatureData?: string | null
+  signingMethod?: 'ONLINE' | 'IN_PERSON'
   unitTypeName?: string | null
   unitPricePerMonth?: number | null
-  paperContractUrl?: string | null
-  paperOriginalLocation?: string | null
-  paperVerifiedById?: string | null
-  paperVerifiedByName?: string | null
-  paperVerifiedAt?: string | null
-  paperNotes?: string | null
-}
-
-export type ContractRenewalStatus =
-  | 'PENDING_REVIEW'
-  | 'PENDING_SIGNATURE'
-  | 'PENDING_PAYMENT'
-  | 'COMPLETED'
-  | 'REJECTED'
-  | 'CANCELLED'
-
-export interface ContractRenewal {
-  id: string
-  contractId: string
-  contractCode: string
-  customerId: string
-  customerName: string
-  customerEmail: string
-  facilityId?: string
-  facilityName: string
-  unitCode: string
-  oldEndDate: string
-  newEndDate: string
-  cycleMonths: number
-  renewalFee: number
-  status: ContractRenewalStatus
-  paymentId?: string
-  paymentStatus?: 'PAID' | 'PENDING' | 'FAILED' | 'EXPIRED'
-  paymentMethod?: string
-  counterAppointmentDate?: string
-  counterAppointmentTime?: string
-  receiptVoucherCode?: string
-  cashierStaffName?: string
-  paidAt?: string
-  docusealSubmissionId?: number
-  docusealSubmitterSlug?: string
-  signingUrl?: string
-  signedDocumentUrl?: string
-  signedAt?: string
-  signatureData?: string
-  reviewedById?: string
-  reviewedByName?: string
-  reviewedAt?: string
-  rejectionReason?: string
-  notes?: string
-  assignedStaffId?: string
-  assignedStaffName?: string
-  assignedStaffEmail?: string
-  assignedStaffAt?: string
-  identityVerified?: boolean
-  identityDocType?: string
-  identityNumber?: string
-  identityNotes?: string
-  unitAudited?: boolean
-  unitAuditNotes?: string
-  noBlockingIssues?: boolean
-  blockingNotes?: string
-  termsConfirmed?: boolean
-  termsNotes?: string
-  paymentConfirmed?: boolean
-  handledById?: string
-  handledByName?: string
-  handledAt?: string
-  receptionNotes?: string
-  checkInTimeMet?: boolean
-  checkInTimeStatus?: 'BEFORE_DATE' | 'BEFORE_TIME' | 'ON_TIME' | 'LATE'
-  checkInTimeMessage?: string
-  createdAt: string
-  updatedAt: string
 }
 
 export interface SupportTicket {
@@ -402,9 +230,6 @@ export interface HandoverRecord {
   recordType: 'CHECK_IN' | 'RETURN'
   status?: 'PENDING_CHECKIN' | 'HANDED_OVER' | 'RETURN_INSPECTED'
   accessCode?: string
-  accessPin?: string
-  rfidCardNumber?: string
-  qrAccessToken?: string
   handoverDate?: string
   unitCondition: string
   notes?: string
@@ -467,23 +292,10 @@ export interface FacilityPolicy {
   id: string
   facilityId: string
   facilityName?: string
-  isActive?: boolean
-  depositPercentage?: number
-  renewalWindowDays?: number
-  minimumRentalMonths?: number
-  cancellationFullRefundHours?: number
-  cancellationPartialRefundHours?: number
-  cancellationPartialRefundPercent?: number
-  returnNoticeDays?: number
-  depositRefundSlaDays?: number
-  dailyLateFee?: number
-  overdueGraceDays?: number
-  overdueAccessDisableDays?: number
-  overdueSealingDays?: number
-  // Legacy / UI helper aliases
   depositPercent?: number
   lateFeePerDay?: number
   gracePeriodDays?: number
+  overdueSealingDays?: number
   overdueAuctionDays?: number
   discount3Months?: number
   discount6Months?: number
@@ -491,66 +303,17 @@ export interface FacilityPolicy {
   updatedAt?: string
 }
 
-
-export interface FacilityPolicyCreateRequest {
-  facilityId: string
-  isActive?: boolean
-  depositPercentage: number
-  renewalWindowDays: number
-  cancellationFullRefundHours: number
-  cancellationPartialRefundHours: number
-  cancellationPartialRefundPercent: number
-  returnNoticeDays: number
-  depositRefundSlaDays: number
-  dailyLateFee: number
-  overdueGraceDays: number
-  overdueAccessDisableDays: number
-  overdueSealingDays: number
-  minimumRentalMonths: number
-}
-
-export interface FacilityPolicyUpdateRequest {
-  isActive?: boolean
-  depositPercentage?: number
-  renewalWindowDays?: number
-  cancellationFullRefundHours?: number
-  cancellationPartialRefundHours?: number
-  cancellationPartialRefundPercent?: number
-  returnNoticeDays?: number
-  depositRefundSlaDays?: number
-  dailyLateFee?: number
-  overdueGraceDays?: number
-  overdueAccessDisableDays?: number
-  overdueSealingDays?: number
-  minimumRentalMonths?: number
-}
-
-export interface MonthlyRevenueBreakdown {
-  monthKey: string
-  label: string
-  rentalFee: number
-  deposit: number
-  renewalFee: number
-  extraCharge: number
-  total: number
-}
-
 export interface RevenueReport {
   fromDate?: string
   toDate?: string
   totalRevenue?: number
-  refundedAmount?: number
-  monthlyBreakdown?: MonthlyRevenueBreakdown[]
   systemSummary?: {
     totalRevenue: number
     rentalFeeRevenue: number
     depositRevenue: number
     renewalFeeRevenue?: number
     extraChargeRevenue?: number
-    bookingPaymentRevenue?: number
     paymentCount: number
-    netRevenue?: number
-    totalCollected?: number
   }
   byFacility?: Array<{
     facilityId: string
@@ -560,38 +323,20 @@ export interface RevenueReport {
     depositRevenue: number
     renewalFeeRevenue?: number
     extraChargeRevenue?: number
-    bookingPaymentRevenue?: number
     paymentCount?: number
-    netRevenue?: number
-    totalCollected?: number
   }>
-    monthlyRevenue?: Array<{
-      month: string | null
-      totalRevenue: number
-      rentalFeeRevenue: number
-      depositRevenue: number
-      renewalFeeRevenue: number
-      extraChargeRevenue: number
-      bookingPaymentRevenue: number
-      paymentCount: number
-    }>
-    paymentsByMethod?: Array<{
-      paymentMethod: string | null
-      paymentCount: number
-    }>
 }
 
 export interface OverdueDebtReport {
   asOfDate?: string
   totalOverdueCount: number
-  totalDebtAmount?: number | null
-  totalUnpaidRent?: number | null
-  totalLateFees?: number | null
+  totalDebtAmount: number
+  totalUnpaidRent: number
+  totalLateFees: number
   gracePeriodCount: number
   warningCount: number
   accessBlockedCount: number
   eligibleForSealingCount: number
-  policyUnconfiguredCount: number
   aging1To3DaysDebt?: number
   aging4To7DaysDebt?: number
   aging8To14DaysDebt?: number
@@ -600,8 +345,8 @@ export interface OverdueDebtReport {
 }
 
 export interface OverdueDebtItem {
-  contractId?: string | null
-  contractCode?: string | null
+  contractId: string
+  contractCode: string
   bookingId?: string
   bookingCode?: string
   customerId?: string
@@ -615,10 +360,10 @@ export interface OverdueDebtItem {
   startDate?: string
   dueDate?: string
   daysOverdue: number
-  unpaidRent?: number | null
-  dailyLateFee?: number | null
-  totalLateFee?: number | null
-  totalDebt?: number | null
+  unpaidRent: number
+  dailyLateFee: number
+  totalLateFee: number
+  totalDebt: number
   debtAmount?: number
   overdueStage?: string
   smartLockStatus?: string
@@ -639,8 +384,7 @@ export interface OccupancyReport {
     totalUnits: number
     occupiedUnits: number
     availableUnits: number
-    reservedUnits: number
-    maintenanceUnits: number
     occupancyRate: number
   }>
 }
+

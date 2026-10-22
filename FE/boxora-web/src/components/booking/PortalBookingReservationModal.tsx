@@ -59,7 +59,6 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
   const [bookingSuccess, setBookingSuccess] = useState(false)
   const [createdBookingResult, setCreatedBookingResult] = useState<{
     bookingCode: string
-    unitCode: string
     facilityName: string
     expectedCheckInAt?: string | null
     holdExpiresAt?: string | null
@@ -220,7 +219,7 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
         initialPayment: 0,
         endDate: '',
         condition: '',
-        holdGraceHours: 24,
+        holdGraceHours: 1,
         maxHoldDays: 14,
         refundSlaDays: 5,
         cancellationPolicy: ''
@@ -279,7 +278,7 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
         initialPayment: serverBookingQuote.initialPaymentAmount,
         endDate: serverBookingQuote.endDate,
         condition,
-        holdGraceHours: serverBookingQuote.holdGraceHours || 24,
+        holdGraceHours: serverBookingQuote.holdGraceHours ?? 1,
         maxHoldDays: serverBookingQuote.maxHoldDays || 14,
         refundSlaDays: serverBookingQuote.refundSlaDays || 5,
         cancellationPolicy: serverBookingQuote.cancellationPolicy
@@ -314,7 +313,7 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
       initialPayment: Math.round(rentAfterDiscount / months) + deposit,
       endDate,
       condition,
-      holdGraceHours: 24,
+      holdGraceHours: 1,
       maxHoldDays: 14,
       refundSlaDays: 5,
       cancellationPolicy: ''
@@ -403,7 +402,7 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
             bookingId: bookingId,
             paymentType: 'BOOKING_PAYMENT',
             amount: paymentAmount,
-            orderInfo: `Thanh toan giu cho kho ${selectedBookingUnit.unitCode}`
+            orderInfo: `Thanh toan dat cho ${selectedBookingUnit.name}`
           })
           if (payment?.paymentUrl) {
             window.location.href = payment.paymentUrl
@@ -413,7 +412,16 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
         } catch (payErr: any) {
           console.error('VNPay create payment error:', payErr)
           const errorMsg = payErr?.response?.data?.message || payErr?.message || 'Không thể khởi tạo giao dịch VNPay. Vui lòng thử lại.'
-          setBookingModalError(`Đơn đặt kho đã được tạo (Mã: ${createdBooking?.bookingCode || bookingId}) nhưng chưa thể mở cổng thanh toán: ${errorMsg}\nBạn có thể vào tab "Đơn đặt chỗ" để thanh toán lại bất cứ lúc nào.`)
+          let bookingReleased = false
+          try {
+            await bookingService.cancelBooking(bookingId, 'Không khởi tạo được cổng thanh toán trực tuyến')
+            bookingReleased = true
+          } catch (cancelErr) {
+            console.warn('Could not immediately release the unpaid booking after payment setup failed:', cancelErr)
+          }
+          setBookingModalError(bookingReleased
+            ? `Không thể mở cổng thanh toán: ${errorMsg} Đơn chưa hoàn tất đã được hủy và vị trí kho được trả lại kho trống.`
+            : `Không thể mở cổng thanh toán: ${errorMsg} Đơn chưa hoàn tất sẽ tự hết hạn theo thời hạn thanh toán.`)
           await onRefresh?.()
         }
         return
@@ -438,7 +446,6 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
         }
         setCreatedBookingResult({
           bookingCode: res.bookingCode,
-          unitCode: selectedBookingUnit.unitCode,
           facilityName: selectedBookingUnit.facilityName,
           expectedCheckInAt: res.expectedCheckInAt,
           holdExpiresAt: res.holdExpiresAt,
@@ -481,10 +488,6 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
 
                 <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl text-left text-xs space-y-2">
                   <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
-                    <span className="text-slate-500">Mã kho giữ chỗ:</span>
-                    <span className="font-mono font-bold text-blue-600 text-sm">#{createdBookingResult?.unitCode || selectedBookingUnit.unitCode}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
                     <span className="text-slate-500">Cơ sở trực thuộc:</span>
                     <span className="font-semibold text-slate-800">{createdBookingResult?.facilityName || displayFacilityName}</span>
                   </div>
@@ -505,7 +508,7 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
                     <span className="font-mono font-bold text-amber-700">
                       {createdBookingResult?.holdExpiresAt
                         ? new Date(createdBookingResult.holdExpiresAt).toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US')
-                        : 'Sau giờ hẹn 24 giờ (Theo chính sách cơ sở)'}
+                        : 'Theo thời gian hẹn nhận kho và chính sách cơ sở'}
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
@@ -524,7 +527,7 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
 
                 <p className="text-xs text-slate-600 leading-relaxed max-w-md mx-auto">
                   {bookingWorkflow === 'HOLD_ONLY' 
-                    ? 'Vị trí kho đã được bảo lưu riêng cho bạn đến lịch hẹn và thời gian gia hạn theo chính sách. Quý khách vui lòng đến trực tiếp cơ sở để xem kho thực tế, ký biên bản và thanh toán nhận bàn giao.'
+                    ? 'Đơn đặt chỗ đã được ghi nhận theo loại kho và cơ sở. Vị trí cụ thể sẽ được xác nhận cùng nhân viên khi check-in.'
                     : 'Hợp đồng điện tử và yêu cầu thanh toán đã sẵn sàng. Mã PIN sẽ được kích hoạt sau khi hoàn tất thủ tục bàn giao theo quy định.'}
                 </p>
 
@@ -570,7 +573,7 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
                       Đặt giữ chỗ kho
                     </h3>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Mã kho: <strong className="font-mono text-slate-800">#{selectedBookingUnit.unitCode}</strong> · {selectedBookingUnit.facilityName}
+                      {selectedBookingUnit.facilityName}
                     </p>
                   </div>
                   <button
@@ -593,7 +596,7 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
                       {localizedUnitName(selectedBookingUnit.name)}
                     </div>
                     <div className="text-slate-500 text-xs mt-1">
-                      Diện tích: <span className="font-semibold text-slate-800">{selectedBookingUnit.areaSqMeters || 6} m²</span> · Vị trí: <span className="font-semibold text-slate-800">{t(selectedBookingUnit.floorLevel || 'Tầng 1')}</span>
+                      Diện tích: <span className="font-semibold text-slate-800">{selectedBookingUnit.areaSqMeters || 6} m²</span> · Vị trí cụ thể được chọn khi check-in
                     </div>
                   </div>
                   <div className="sm:text-right">
@@ -1019,7 +1022,7 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-600 leading-normal">
-                          Bảo lưu vị trí kho riêng cho bạn đến giờ hẹn ({formatDisplayDate(bookingCheckInDate)} lúc {bookingCheckInTime}) và cộng thêm {bookingEstimate.holdGraceHours} giờ gia hạn theo chính sách cơ sở.
+                          Đơn đặt chỗ được ghi nhận theo loại kho và cơ sở. Vị trí cụ thể sẽ được xác nhận khi check-in; thời gian giữ chỗ quá lịch hẹn tối đa {bookingEstimate.holdGraceHours} giờ.
                         </p>
                         <div className="mt-2 text-[10px] text-slate-500 bg-white/80 p-2 rounded-lg border border-slate-100">
                           Quy trình tại cơ sở: Đến xem kho thực tế, ký biên bản bàn giao tại quầy và thanh toán cọc + tiền thuê nhận mã SmartLock.

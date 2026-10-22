@@ -1,14 +1,24 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import axios from 'axios'
 import { Link, useSearchParams } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
 import { bookingService } from '../../services/bookingService'
-import { paymentService, PaymentItem } from '../../services/paymentService'
+import { paymentService } from '../../services/paymentService'
 import { contractService } from '../../services/contractService'
+<<<<<<< Updated upstream
+import { activateCustomerRental } from '../../utils/rentalAccess'
+import { Booking, RentalContract } from '../../types'
+import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
+
+export const PaymentResultPage: React.FC = () => {
+=======
 import { Booking, RentalContract, ContractRenewal } from '../../types'
 import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
 import { RenewalDocumentModal } from '../../components/modals/RenewalDocumentModal'
 import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
 import { LayoutDashboard } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
+import { activateCustomerRental } from '../../utils/rentalAccess'
 
 const money = (value?: number | string | null) => `${Number(value || 0).toLocaleString('vi-VN')} ₫`
 const date = (value?: string | null) => value ? new Date(value).toLocaleDateString('vi-VN') : 'Chưa lên lịch'
@@ -17,155 +27,146 @@ const dateTime = (value?: string | null) => value
   : 'Chưa lên lịch'
 
 export const PaymentResultPage = () => {
+  const { user } = useAuth()
+>>>>>>> Stashed changes
   const [searchParams] = useSearchParams()
-  const rawBookingId = searchParams.get('bookingId') || ''
-  const bookingId = rawBookingId && rawBookingId !== 'null' && rawBookingId !== 'undefined' ? rawBookingId : ''
-  const rawContractId = searchParams.get('contractId') || ''
-  const contractIdParam = rawContractId && rawContractId !== 'null' && rawContractId !== 'undefined' ? rawContractId : ''
-  const paymentTypeParam = searchParams.get('paymentType') || ''
-  const amountParam = searchParams.get('amount') || ''
+  const { user } = useAuth()
+  const status = searchParams.get('status')
+  const bookingId = searchParams.get('bookingId')
   const txnRef = searchParams.get('txnRef') || searchParams.get('vnp_TxnRef') || ''
-  const gatewayStatus = searchParams.get('status') || ''
+  const amountParam = searchParams.get('amount') || searchParams.get('vnp_Amount') || ''
 
   const [booking, setBooking] = useState<Booking | null>(null)
-  const [contract, setContract] = useState<RentalContract | null>(null)
-  const [matchingRenewal, setMatchingRenewal] = useState<ContractRenewal | null>(null)
-  const [payments, setPayments] = useState<PaymentItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(searchParams.get('error') || '')
-  const [retrying, setRetrying] = useState(false)
-  const [attempts, setAttempts] = useState(0)
-  const [showContract, setShowContract] = useState(false)
-  const [showRenewalDoc, setShowRenewalDoc] = useState(false)
+  const [isLoading, setIsLoading] = useState(Boolean(bookingId))
+  const [isRetrying, setIsRetrying] = useState(false)
+  const [errorMessage, setErrorMessage] = useState(searchParams.get('error') || '')
 
-  const refresh = useCallback(async (initial = false) => {
-    if (initial) setLoading(true)
-    try {
-      let resolvedPayment: PaymentItem | null = null
-      let targetContractId = contractIdParam
-      let targetBookingId = bookingId
+  // DocuSeal electronic signature modal
+  const [contractForDocuSealModal, setContractForDocuSealModal] = useState<RentalContract | null>(null)
+  const [signedContractSuccess, setSignedContractSuccess] = useState<boolean>(false)
 
-      // 1. Try to lookup payment by txnRef first
-      if (txnRef) {
-        try {
-          const p = await paymentService.getByTransactionId(txnRef)
-          if (p) {
-            resolvedPayment = p
-            setPayments([p])
-            if (p.contractId) targetContractId = p.contractId
-            if (p.bookingId) targetBookingId = p.bookingId
-          }
-        } catch (err) {
-          console.warn('Cannot fetch payment by txnRef:', err)
-        }
-      }
-
-      // 2. Fetch booking details if targetBookingId is available
-      if (targetBookingId && !targetBookingId.startsWith('mock-')) {
-        try {
-          const [bookingResult, bookingPayments, contractResult] = await Promise.all([
-            bookingService.getById(targetBookingId).catch(() => null),
-            paymentService.getByBookingId(targetBookingId).catch(() => [] as PaymentItem[]),
-            contractService.getContractByBookingId(targetBookingId).catch(() => null),
-          ])
-          if (bookingResult) setBooking(bookingResult)
-          if (bookingPayments.length > 0) {
-            setPayments(prev => {
-              const ids = new Set(prev.map(item => item.id || item.transactionId))
-              const merged = [...prev]
-              bookingPayments.forEach(item => {
-                if (!ids.has(item.id || item.transactionId)) merged.push(item)
-              })
-              return merged
-            })
-          }
-          if (contractResult) setContract(contractResult)
-        } catch (err) {
-          console.warn('Failed to load booking info:', err)
-        }
-      }
-
-      // 3. Fetch contract & renewal details if targetContractId is available
-      if (targetContractId) {
-        try {
-          const [cRes, renewalsRes] = await Promise.all([
-            contractService.getContractById(targetContractId).catch(() => null),
-            contractService.getRenewalsByContract(targetContractId).catch(() => [] as ContractRenewal[]),
-          ])
-          if (cRes) setContract(cRes)
-          if (renewalsRes && renewalsRes.length > 0) {
-            const matched = renewalsRes.find(r =>
-              (resolvedPayment && r.paymentId === resolvedPayment.id) ||
-              r.status === 'COMPLETED' ||
-              r.status === 'PENDING_PAYMENT' ||
-              r.status === 'PENDING_SIGNATURE'
-            ) || renewalsRes[0]
-            if (matched) setMatchingRenewal(matched)
-          }
-        } catch (err) {
-          console.warn('Failed to load contract/renewals info:', err)
-        }
-      }
-
-      // 4. Fallback payment object from URL params if direct backend payment query was unauthenticated
-      if (!resolvedPayment && txnRef && gatewayStatus.toUpperCase() === 'PAID') {
-        const fallbackPayment: PaymentItem = {
-          id: txnRef,
-          transactionId: txnRef,
-          amount: Number(amountParam || 0),
-          status: 'PAID',
-          paymentType: paymentTypeParam || (targetContractId ? 'RENEWAL_FEE' : 'BOOKING_PAYMENT'),
-          paymentMethod: 'VNPAY',
-          contractId: targetContractId || undefined,
-          bookingId: targetBookingId || undefined,
-        }
-        setPayments([fallbackPayment])
-      }
-
-      setError('')
-    } catch (requestError) {
-      if (axios.isAxiosError<{ message?: string }>(requestError)) {
-        if (requestError.response?.status === 401 || requestError.response?.status === 403) {
-          setError('Vui lòng đăng nhập đúng tài khoản khách hàng để xem chi tiết đối soát.')
-        } else {
-          setError(requestError.response?.data?.message || 'Không thể tải thông tin giao dịch từ máy chủ.')
-        }
-      } else {
-        setError(requestError instanceof Error ? requestError.message : 'Không thể đối soát giao dịch.')
-      }
-    } finally {
-      if (initial) setLoading(false)
+  useEffect(() => {
+    let isCurrent = true
+    if (!bookingId) {
+      setIsLoading(false)
+      return
     }
-  }, [bookingId, contractIdParam, txnRef, gatewayStatus, amountParam, paymentTypeParam])
 
-  useEffect(() => {
-    void refresh(true)
-  }, [refresh])
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (attempts < 6) {
-        setAttempts(value => value + 1)
-        void refresh()
+    if (bookingId.startsWith('mock-')) {
+      const mockUnitCode = searchParams.get('unitCode') || 'BX-101'
+      const mockFacility = searchParams.get('facilityName') || 'Boxora District 1'
+      const mockResult: any = {
+        id: bookingId,
+        bookingCode: `BX-2026-${mockUnitCode.replace(/[^0-9]/g, '') || Math.floor(1000 + Math.random() * 9000)}`,
+        unitCode: mockUnitCode,
+        facilityName: mockFacility,
+        status: 'CONFIRMED',
+        initialPaymentAmount: Number(amountParam) || 2400000,
+        createdAt: new Date().toISOString()
       }
-    }, 3000)
-    return () => window.clearInterval(timer)
-  }, [attempts, refresh])
+      setBooking(mockResult)
+      setIsLoading(false)
+      return
+    }
 
-  const authoritativePayment = useMemo(() => {
-    if (txnRef) return payments.find(payment => payment.transactionId === txnRef) || null
-    return payments.find(payment => payment.status === 'PAID') || payments[0] || null
-  }, [payments, txnRef])
+    setIsLoading(true)
+    bookingService.getById(bookingId)
+      .then((result) => {
+        if (!isCurrent) return
+        setBooking(result)
+        if (status === 'PAID') {
+          if (user?.role?.name === 'CUSTOMER') {
+            activateCustomerRental(user, result.unitCode, `Kho ${result.unitCode} • ${result.facilityName}`)
+          }
+        }
+      })
+      .catch((error: unknown) => {
+        if (!isCurrent) return
+        const message = axios.isAxiosError<{ message?: string }>(error) ? error.response?.data?.message : undefined
+        setErrorMessage(message || (error instanceof Error ? error.message : 'Không thể tải thông tin booking.'))
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoading(false)
+      })
 
-  const paid = authoritativePayment?.status === 'PAID' || gatewayStatus.toUpperCase() === 'PAID'
-  
-  const isRenewal = authoritativePayment?.paymentType === 'RENEWAL_FEE'
-    || paymentTypeParam === 'RENEWAL_FEE'
-    || Boolean(matchingRenewal)
-    || Boolean(contract && !booking)
+    return () => {
+      isCurrent = false
+    }
+  }, [bookingId, status, user, amountParam])
 
-  const contractSigned = Boolean(contract?.signedAt)
-    && (contract?.status === 'PENDING_ACTIVATION' || contract?.status === 'ACTIVE')
+  const retryPayment = async () => {
+    if (!booking?.initialPaymentAmount) return
+    setIsRetrying(true)
+    setErrorMessage('')
+    try {
+      const payment = await paymentService.createVNPayPayment({
+        bookingId: booking.id,
+        paymentType: 'BOOKING_PAYMENT',
+        amount: booking.initialPaymentAmount,
+        orderInfo: `Thanh toan booking ${booking.bookingCode}`,
+      })
+      window.location.assign(payment.paymentUrl)
+    } catch (error) {
+      const message = axios.isAxiosError<{ message?: string }>(error) ? error.response?.data?.message : undefined
+      setErrorMessage(message || (error instanceof Error ? error.message : 'Không thể tạo lại giao dịch VNPay.'))
+      setIsRetrying(false)
+    }
+  }
+
+<<<<<<< Updated upstream
+  const handleOpenDocuSealModal = async () => {
+    try {
+      const res = await contractService.getMyContracts()
+      const found = res?.content?.find(c => c.bookingId === bookingId || c.unitCode === booking?.unitCode)
+      if (found) {
+        setContractForDocuSealModal(found)
+        return
+      }
+    } catch (err) {
+      console.warn('Could not fetch existing contract:', err)
+    }
+
+    // Fallback contract data for immediate signature simulation
+    const uCode = booking?.unitCode || searchParams.get('unitCode') || 'TD-B101'
+    const fName = booking?.facilityName || searchParams.get('facilityName') || 'Boxora Thu Duc'
+    const rawAmt = Number(amountParam) || Number(booking?.initialPaymentAmount) || 2400000
+
+    setContractForDocuSealModal({
+      id: booking?.id || `CTR-${Date.now()}`,
+      contractCode: `CTR-2026-${uCode.replace(/[^0-9A-Z]/g, '') || '9042'}`,
+      customerId: user?.id || 'CUST-DEMO',
+      customerEmail: user?.email || 'customer@boxora.vn',
+      customerName: user?.fullName || 'Khách hàng Boxora',
+      customerPhone: user?.phone || '0912 345 678',
+      unitCode: uCode,
+      facilityName: fName,
+      startDate: booking?.startDate || new Date().toISOString().split('T')[0],
+      endDate: booking?.endDate || new Date(Date.now() + 90 * 86400000).toISOString().split('T')[0],
+      monthlyFee: Math.round(rawAmt / 2),
+      depositHeld: Math.round(rawAmt / 2),
+      status: 'PENDING_SIGNATURE',
+      signingMethod: 'ONLINE'
+    })
+  }
+
+  const handleContractSignedSuccess = (signed: RentalContract) => {
+    setContractForDocuSealModal(null)
+    setSignedContractSuccess(true)
+    if (user?.role?.name === 'CUSTOMER' && booking?.id && !booking.id.startsWith('mock-')) {
+      const uCode = booking?.unitCode || searchParams.get('unitCode') || signed.unitCode
+      activateCustomerRental(user, uCode, `Kho ${uCode} • ${signed.facilityName || 'Boxora'}`)
+    }
+  }
+
+  const isPaid = status === 'PAID'
+=======
+  useEffect(() => {
+    if (paid && contractSigned && user) {
+      const uCode = booking?.unitCode || contract?.unitCode || 'KHO-BX'
+      const fName = booking?.facilityName || contract?.facilityName || 'Boxora Smart Storage'
+      activateCustomerRental(user, uCode, fName, contract?.contractCode)
+    }
+  }, [paid, contractSigned, user, booking, contract])
 
   const pendingReconciliation = !paid && (
     gatewayStatus.toUpperCase() === 'PAID'
@@ -173,162 +174,81 @@ export const PaymentResultPage = () => {
     || Boolean(txnRef && !authoritativePayment)
   )
   const paymentFailed = authoritativePayment?.status === 'FAILED' || authoritativePayment?.status === 'EXPIRED'
+>>>>>>> Stashed changes
   const paymentExpired = booking?.paymentExpiresAt
     ? new Date(booking.paymentExpiresAt).getTime() <= Date.now()
     : false
 
-  const retryPayment = async () => {
-    if (!booking || !contractSigned || paymentExpired) return
-    setRetrying(true)
-    setError('')
-    try {
-      const result = await paymentService.createVNPayPayment({
-        bookingId: booking.id,
-        paymentType: 'BOOKING_PAYMENT',
-        amount: Number(booking.totalRentalFee || 0) + Number(booking.depositAmount || 0),
-        orderInfo: `Thanh toan booking ${booking.bookingCode}`,
-      })
-      window.location.assign(result.paymentUrl)
-    } catch (requestError) {
-      if (axios.isAxiosError<{ message?: string }>(requestError)) {
-        setError(requestError.response?.data?.message || 'Không thể tạo giao dịch thanh toán. Vui lòng tải lại để đối soát.')
-      } else {
-        setError(requestError instanceof Error ? requestError.message : 'Không thể tạo lại giao dịch thanh toán.')
-      }
-      setRetrying(false)
-      void refresh()
-    }
-  }
+  const displayPaidAmount = Number(amountParam) 
+    ? (Number(amountParam) > 100000000 ? Math.round(Number(amountParam) / 100) : Number(amountParam))
+    : (booking?.initialPaymentAmount || 2400000)
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-8">
-      <div className="mx-auto mb-5 flex max-w-2xl items-center justify-end">
-        <QuickThemeLanguageToggle />
-      </div>
-      <section className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl sm:p-8">
-        {loading ? (
-          <div className="py-12 text-center text-sm text-slate-600">Đang đối soát thông tin giao dịch với Boxora…</div>
-        ) : paid ? (
-          isRenewal ? (
-            /* =========================================================================
-               1. GIAO DIỆN XÁC NHẬN GIA HẠN HỢP ĐỒNG & THANH TOÁN THÀNH CÔNG
-               ========================================================================= */
-            <div className="space-y-5">
-              <header className="text-center">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 shadow-sm">
-                  <span className="material-symbols-outlined text-3xl">check_circle</span>
-                </div>
-                <p className="mt-3 text-xs font-bold uppercase tracking-wider text-emerald-700">
-                  Thanh toán phụ lục gia hạn đã được Boxora xác nhận
-                </p>
-                <h1 className="mt-1 text-2xl font-extrabold text-slate-900">
-                  Gia Hạn Hợp Đồng &amp; Thanh Toán Thành Công!
-                </h1>
-              </header>
+    <main className="flex min-h-screen items-center justify-center bg-slate-100/80 px-4 py-10">
+      <section className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 text-center shadow-xl">
+        {isLoading ? (
+          <div className="space-y-3 py-10">
+            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
+            <p className="text-sm font-semibold text-slate-700">Đang xác minh kết quả thanh toán từ cổng VNPay Sandbox...</p>
+          </div>
+        ) : isPaid ? (
+          <div className="space-y-5">
+            {/* Success Icon */}
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 shadow-xs">
+              <span className="material-symbols-outlined text-4xl">check_circle</span>
+            </div>
 
-              <dl className="grid gap-3 text-sm sm:grid-cols-2">
-                <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
-                  <dt className="text-xs text-slate-500 font-medium">Mã hợp đồng thuê</dt>
-                  <dd className="mt-1 font-mono font-bold text-blue-700 text-sm">
-                    #{contract?.contractCode || matchingRenewal?.contractCode || 'CTR-BX'}
-                  </dd>
-                </div>
-                <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
-                  <dt className="text-xs text-slate-500 font-medium">Kho &amp; Cơ sở</dt>
-                  <dd className="mt-1 font-semibold text-slate-800 text-sm">
-                    Kho #{contract?.unitCode || matchingRenewal?.unitCode || authoritativePayment?.unitCode || '—'} · {contract?.facilityName || matchingRenewal?.facilityName || authoritativePayment?.facilityName || 'Boxora'}
-                  </dd>
-                </div>
-                <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
-                  <dt className="text-xs text-slate-500 font-medium">Trạng thái phụ lục gia hạn</dt>
-                  <dd className="mt-1 font-semibold text-emerald-700 flex items-center gap-1">
-                    <span className="material-symbols-outlined text-base">verified</span>
-                    <span>Đã hoàn tất ký số &amp; có hiệu lực</span>
-                  </dd>
-                  {matchingRenewal && (
-                    <dd className="font-mono text-xs text-slate-500 mt-0.5">
-                      +{matchingRenewal.cycleMonths} Tháng (Mới: {date(matchingRenewal.newEndDate)})
-                    </dd>
-                  )}
-                </div>
-                <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
-                  <dt className="text-xs text-slate-500 font-medium">Trạng thái thanh toán</dt>
-                  <dd className="mt-1 font-semibold text-emerald-700 flex items-center gap-1">
-                    <span className="material-symbols-outlined text-base">check</span>
-                    <span>Đã xác nhận thành công</span>
-                  </dd>
-                </div>
-                <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
-                  <dt className="text-xs text-slate-500 font-medium">Mã giao dịch VNPay</dt>
-                  <dd className="mt-1 break-all font-mono text-xs font-semibold text-slate-700">
-                    {authoritativePayment?.transactionId || txnRef || 'Đã xác nhận'}
-                  </dd>
-                </div>
-                <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
-                  <dt className="text-xs text-slate-500 font-medium">Số tiền cước gia hạn</dt>
-                  <dd className="mt-1 font-mono font-bold text-emerald-700 text-base">
-                    {money(authoritativePayment?.amount || amountParam)}
-                  </dd>
-                </div>
-              </dl>
+            <div>
+              <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold uppercase tracking-wider inline-block">
+                Giao Dịch Thành Công
+              </span>
+              <h1 className="mt-2 text-2xl font-extrabold text-slate-900 tracking-tight">
+                Thanh Toán Thành Công Qua VNPay!
+              </h1>
+              <p className="mt-1 text-xs text-slate-500 max-w-md mx-auto">
+                Hệ thống Boxora đã nhận được tiền đặt cọc và tiền thuê kho từ cổng thanh toán trực tuyến.
+              </p>
+            </div>
 
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm text-emerald-950">
-                <div className="flex flex-wrap justify-between gap-2">
-                  <strong className="flex items-center gap-1.5 text-emerald-900">
-                    <span className="material-symbols-outlined text-lg text-emerald-600">task_alt</span>
-                    <span>Hiệu lực gia hạn kho</span>
-                  </strong>
-                  <span className="font-bold text-emerald-800">
-                    {matchingRenewal?.newEndDate ? `Hiệu lực đến ${date(matchingRenewal.newEndDate)}` : (contract?.endDate ? `Hiệu lực đến ${date(contract.endDate)}` : 'Đang hoạt động')}
-                  </span>
-                </div>
-                <p className="mt-2 text-xs leading-relaxed text-emerald-900">
-                  Giao dịch thanh toán cước gia hạn đã được đối soát thành công. Thời hạn hợp đồng của bạn đã được Boxora cập nhật tự động nối tiếp. Mã PIN và quyền ra vào kho của bạn tiếp tục hoạt động liên tục mà không bị gián đoạn.
-                </p>
+            {/* Financial & Unit Details Sheet */}
+            <div className="rounded-xl border border-slate-200/90 bg-slate-50/70 p-4 text-left text-xs space-y-2">
+              <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                <span className="text-slate-500">Mã giao dịch VNPay:</span>
+                <span className="font-mono font-bold text-slate-800">{txnRef || 'BOX-VNPAY-ONLINE'}</span>
               </div>
-
-              <div className="flex flex-col gap-2.5 sm:flex-row">
-                {matchingRenewal && (
-                  <button
-                    type="button"
-                    onClick={() => setShowRenewalDoc(true)}
-                    className="flex-1 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100 text-blue-800 px-4 py-3 text-sm font-bold transition cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">history_edu</span>
-                    <span>Xem văn bản phụ lục đã ký</span>
-                  </button>
-                )}
-                {contract && (
-                  <button
-                    type="button"
-                    onClick={() => setShowContract(true)}
-                    className="flex-1 rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold text-slate-800 hover:bg-slate-50 transition cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <span className="material-symbols-outlined text-[18px] text-slate-600">description</span>
-                    <span>Xem hợp đồng gốc</span>
-                  </button>
-                )}
-                <Link
-                  to="/portal/customer"
-                  className="flex-1 rounded-xl bg-blue-700 hover:bg-blue-800 px-4 py-3 text-center text-sm font-bold text-white transition cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
-                >
-                  <LayoutDashboard className="h-4 w-4" />
-                  <span>Về trang tổng quan</span>
-                </Link>
+              <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                <span className="text-slate-500">Số tiền đã thanh toán:</span>
+                <span className="font-mono font-bold text-emerald-600 text-sm">
+                  {displayPaidAmount.toLocaleString('vi-VN')} ₫
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                <span className="text-slate-500">Mã đặt chỗ:</span>
+                <span className="font-mono font-semibold text-slate-800">
+                  #{booking?.bookingCode || searchParams.get('bookingId') || 'BX-2026-9042'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1">
+                <span className="text-slate-500">Ngăn kho tiếp nhận:</span>
+                <span className="font-bold text-blue-600">
+                  Kho #{booking?.unitCode || searchParams.get('unitCode') || 'TD-B101'} · {booking?.facilityName || searchParams.get('facilityName') || 'Boxora Smart Storage'}
+                </span>
               </div>
             </div>
-          ) : (
-            /* =========================================================================
-               2. GIAO DIỆN XÁC NHẬN ĐẶT THUÊ GIỮ CHỖ & THANH TOÁN THÀNH CÔNG
-               ========================================================================= */
-            <div className="space-y-5">
-              <header className="text-center">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                  <span className="material-symbols-outlined text-3xl">check_circle</span>
+
+            {/* Signature Status or Contract Signed Box */}
+            {signedContractSuccess ? (
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-left space-y-2">
+                <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                  <span className="material-symbols-outlined text-lg text-emerald-600">verified</span>
+                  Hợp Đồng Đã Ký Số DocuSeal Thành Công!
                 </div>
-                <p className="mt-3 text-xs font-bold uppercase tracking-wider text-emerald-700">
-                  Thanh toán đã được backend xác nhận
+                <p className="text-[11px] text-emerald-700 leading-relaxed">
+                  Chữ ký tay điện tử của bạn đã được chứng thực toàn vẹn số liệu và lưu trữ an toàn trên Boxora Cloud. Mã PIN mở kho thông minh đã sẵn sàng.
                 </p>
+<<<<<<< Updated upstream
+                <div className="pt-2">
+=======
                 <h1 className="mt-1 text-2xl font-extrabold text-slate-900">
                   Đặt thuê và thanh toán thành công!
                 </h1>
@@ -336,7 +256,7 @@ export const PaymentResultPage = () => {
 
               <dl className="grid gap-3 text-sm sm:grid-cols-2">
                 <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Mã đặt thuê</dt><dd className="mt-1 font-mono font-bold">{booking?.bookingCode || bookingId}</dd></div>
-                <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Kho và cơ sở</dt><dd className="mt-1 font-semibold">{booking?.unitCode || '—'} · {booking?.facilityName || '—'}</dd></div>
+                <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Kho và cơ sở</dt><dd className="mt-1 font-semibold">{booking?.unitCode ? `#${booking.unitCode}` : 'Vị trí kho xác nhận khi nhận kho'} · {booking?.facilityName || '—'}</dd></div>
                 <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Trạng thái hợp đồng</dt><dd className="mt-1 font-semibold text-emerald-700">{contractSigned ? 'Đã ký điện tử' : 'Chờ ký điện tử'}</dd>{contract?.contractCode && <dd className="font-mono text-xs text-slate-500">{contract.contractCode}</dd>}</div>
                 <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Trạng thái thanh toán</dt><dd className="mt-1 font-semibold text-emerald-700">Đã xác nhận</dd></div>
                 <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Mã giao dịch</dt><dd className="mt-1 break-all font-mono text-xs font-semibold">{authoritativePayment?.transactionId || txnRef || 'Đã xác nhận'}</dd></div>
@@ -380,65 +300,94 @@ export const PaymentResultPage = () => {
                       Xem hợp đồng đã ký
                     </button>
                   )}
+>>>>>>> Stashed changes
                   <Link
-                    to="/portal/customer"
-                    className="flex-1 rounded-xl bg-blue-700 hover:bg-blue-800 px-4 py-3 text-center text-sm font-bold text-white transition cursor-pointer"
+                    to="/portal/customer?tab=my-units"
+                    className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors cursor-pointer"
                   >
-                    Về trang tổng quan
+                    <span>Vào Danh Sách Kho Của Tôi &amp; Lấy Mã PIN</span>
+                    <span className="material-symbols-outlined text-sm">arrow_forward</span>
                   </Link>
                 </div>
-              )}
-            </div>
-          )
-        ) : pendingReconciliation ? (
-          <div className="py-8 text-center">
-            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-amber-100 border-t-amber-600" />
-            <h1 className="mt-4 text-xl font-bold text-slate-900">Đang xác minh giao dịch</h1>
-            <p className="mx-auto mt-2 max-w-md text-sm text-slate-600">Boxora chưa nhận được xác nhận cuối cùng từ cổng thanh toán. Trang quay về không được xem là bằng chứng đã thanh toán. Vui lòng chờ đối soát hoặc kiểm tra lại sau.</p>
-            {txnRef && <p className="mt-3 font-mono text-xs text-slate-500">Mã giao dịch: {txnRef}</p>}
-            <button type="button" onClick={() => { setAttempts(0); void refresh(true) }} className="mt-5 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white cursor-pointer">Kiểm tra lại</button>
+              </div>
+            ) : (
+              <div className="p-4 bg-blue-50/80 border border-blue-200 rounded-xl text-left space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-blue-950 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-base text-blue-600">draw</span>
+                    Bước 2: Ký Hợp Đồng Điện Tử DocuSeal
+                  </span>
+                  <span className="text-[10px] font-semibold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
+                    Chờ ký tay bằng chuột
+                  </span>
+                </div>
+                <p className="text-[11px] text-blue-800 leading-relaxed">
+                  Vui lòng ký tay trực tiếp bằng chuột hoặc màn hình cảm ứng để kích hoạt hợp đồng điện tử và nhận mã PIN mở kho thông minh ngay lập tức.
+                </p>
+                <div className="pt-2 flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={handleOpenDocuSealModal}
+                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-lg">draw</span>
+                    <span>Ký Hợp Đồng DocuSeal Ngay (Ký Chuột)</span>
+                  </button>
+                  <Link
+                    to="/portal/customer?tab=contracts"
+                    className="px-4 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-xl flex items-center justify-center transition-colors"
+                  >
+                    Vào Customer Portal
+                  </Link>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
-          <div className="py-4 text-center">
-            <div className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full ${paymentFailed || gatewayStatus === 'FAILED' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}><span className="material-symbols-outlined text-3xl">{paymentFailed ? 'error' : 'schedule'}</span></div>
-            <h1 className="mt-3 text-xl font-extrabold text-slate-900">{paymentFailed ? 'Thanh toán chưa thành công' : 'Chưa xác nhận được thanh toán'}</h1>
-            <p className="mx-auto mt-2 max-w-md text-sm text-slate-600">{error || 'Không ghi nhận thanh toán thành công. Nếu bạn vừa hoàn tất giao dịch, hãy chờ đối soát trước khi thử lại.'}</p>
-            {booking && <p className="mt-3 text-sm text-slate-600">Mã đặt thuê: <strong className="font-mono text-slate-900">{booking.bookingCode}</strong></p>}
-            {booking?.status === 'PENDING_PAYMENT' && !paymentExpired && (paymentFailed || !txnRef) && (
-              <button type="button" disabled={retrying} onClick={() => void retryPayment()} className="mt-5 w-full rounded-xl bg-blue-700 px-4 py-3 text-sm font-bold text-white disabled:opacity-50 sm:w-auto cursor-pointer">
-                {retrying ? 'Đang mở cổng thanh toán…' : 'Thử thanh toán lại'}
+          <div className="space-y-4">
+            <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${status === 'FAILED' || errorMessage ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'}`}>
+              <span className="material-symbols-outlined text-4xl">{status === 'FAILED' || errorMessage ? 'error' : 'schedule'}</span>
+            </div>
+            <h1 className="text-xl font-extrabold text-slate-900">
+              {status === 'FAILED' ? 'Giao dịch thanh toán chưa thành công' : 'Chưa xác nhận được thanh toán'}
+            </h1>
+            <p className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed">
+              {errorMessage || 'Giao dịch qua cổng VNPay chưa hoàn tất. Bạn có thể thử lại trong thời gian giữ chỗ còn hiệu lực.'}
+            </p>
+            {booking && (
+              <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-left text-xs text-slate-600 space-y-1.5">
+                <div className="flex justify-between"><span>Mã booking:</span><strong className="font-mono text-slate-900">#{booking.bookingCode}</strong></div>
+                <div className="flex justify-between"><span>Trạng thái:</span><strong className="text-amber-600">{booking.status}</strong></div>
+              </div>
+            )}
+            {booking?.status === 'PENDING_PAYMENT' && !paymentExpired && (
+              <button
+                type="button"
+                disabled={isRetrying}
+                onClick={retryPayment}
+                className="mt-4 w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer"
+              >
+                {isRetrying ? 'Đang khởi tạo lại...' : 'Thử thanh toán lại qua VNPay'}
               </button>
             )}
-            {paymentExpired && <p className="mt-3 text-xs text-amber-800">Thời hạn giữ kho/thanh toán đã kết thúc. Vui lòng liên hệ Boxora để được đối soát.</p>}
-            <div className="mt-5">
-              <Link to="/portal/customer" className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-xs hover:bg-slate-50 transition cursor-pointer">
-                <LayoutDashboard className="h-4 w-4 text-slate-500" />
-                <span>Về trang tổng quan</span>
+            <div className="pt-2">
+              <Link to="/portal/customer" className="text-xs font-semibold text-slate-600 hover:text-slate-900 underline">
+                Quay lại Customer Portal
               </Link>
             </div>
           </div>
         )}
       </section>
 
-      {showContract && contract && (
-        <ContractDocumentModal
-          contract={contract}
-          booking={booking}
-          onClose={() => setShowContract(false)}
-        />
-      )}
-
-      {showRenewalDoc && matchingRenewal && (
-        <RenewalDocumentModal
-          renewal={matchingRenewal}
-          contract={contract}
-          onClose={() => setShowRenewalDoc(false)}
-          onViewOriginalContract={() => {
-            setShowRenewalDoc(false)
-            setShowContract(true)
-          }}
+      {/* DocuSeal Electronic Signature Modal with Mouse Drawing Canvas */}
+      {contractForDocuSealModal && (
+        <DocuSealSimulationModal
+          contract={contractForDocuSealModal}
+          onClose={() => setContractForDocuSealModal(null)}
+          onSignedSuccess={handleContractSignedSuccess}
         />
       )}
     </main>
   )
 }
+

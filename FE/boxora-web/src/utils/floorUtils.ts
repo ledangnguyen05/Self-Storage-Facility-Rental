@@ -95,7 +95,7 @@ export function resolveBookingFloor(
  * - Selected shift / timeframe ('current' | 'today' | 'past' | 'future' | 'all')
  * - Optional fromDateStr / toDateStr ('YYYY-MM-DD')
  */
-export type AppointmentStatusFilter = 'ALL' | 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
+export type AppointmentStatusFilter = 'ALL' | 'PENDING' | 'PENDING_CONTACT' | 'CONFIRMED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
 
 export function filterArrivals(
   arrivals: Booking[],
@@ -138,8 +138,15 @@ export function filterArrivals(
 
     // 3. Appointment Status filter (Áp dụng trước để bảo toàn kết quả khi nhân viên chủ động lọc theo tab)
     if (statusFilter && statusFilter !== 'ALL') {
-      if (statusFilter === 'PENDING') {
-        const isPending = b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT' || b.status === 'PENDING_APPROVAL' || b.status === 'PENDING_SIGNATURE'
+      if (statusFilter === 'PENDING_CONTACT') {
+        const isPendingContact = (b.status as string) === 'PENDING_CONTACT' || (b.status as string) === 'PENDING_CONFIRMATION'
+        if (!isPendingContact) return false
+        return true // Khi xem Đơn chờ xác nhận, hiển thị ngay không bị chặn bởi timeframe ca
+      } else if (statusFilter === 'CONFIRMED') {
+        const isConfirmed = b.status === 'CONFIRMED' || (b.status as string) === 'AWAITING_CHECKIN'
+        if (!isConfirmed) return false
+      } else if (statusFilter === 'PENDING') {
+        const isPending = b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT' || b.status === 'PENDING_APPROVAL' || b.status === 'PENDING_SIGNATURE' || (b.status as string) === 'PENDING_CONTACT'
         if (!isPending) return false
       } else if (statusFilter === 'ACTIVE') {
         if (b.status !== 'ACTIVE') return false

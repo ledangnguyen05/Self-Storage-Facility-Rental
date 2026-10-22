@@ -24,11 +24,14 @@ public class BookingResponse {
     private String customerPhone;
     private String customerEmail;
     private UUID storageUnitId;
+    private UUID unitTypeId;
+    private String unitTypeName;
     private String unitCode;
     private UUID facilityId;
     private String facilityName;
     private String floorLevel;
     private LocalDate startDate;
+    private LocalDateTime expectedArrivalAt;
     private LocalDate endDate;
     private Integer rentalMonths;
     private BigDecimal totalRentalFee;

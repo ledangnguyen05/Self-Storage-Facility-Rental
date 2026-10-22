@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { LayoutDashboard } from 'lucide-react'
 import axios from 'axios'
+import { useAuth } from '../../context/AuthContext'
+import { activateCustomerRental } from '../../utils/rentalAccess'
 import { Booking, RentalContract } from '../../types'
 import { bookingService } from '../../services/bookingService'
 import { contractService } from '../../services/contractService'
@@ -24,6 +26,7 @@ function isSigned(contract: RentalContract | null) {
 }
 
 export const OnlineBookingContractPage = () => {
+  const { user } = useAuth()
   const [searchParams] = useSearchParams()
   const bookingId = searchParams.get('bookingId') || ''
   const [booking, setBooking] = useState<Booking | null>(null)
@@ -97,6 +100,17 @@ export const OnlineBookingContractPage = () => {
   const paymentConfirmed = booking?.paymentStatus?.toUpperCase() === 'PAID'
   const signed = isSigned(contract)
   const payableTotal = Number(booking?.totalRentalFee || 0) + Number(booking?.depositAmount || 0)
+
+  useEffect(() => {
+    if (signed && paymentConfirmed && booking && user) {
+      activateCustomerRental(
+        user,
+        booking.unitCode || 'KHO-BX',
+        booking.facilityName || 'Boxora Smart Storage',
+        contract?.contractCode
+      )
+    }
+  }, [signed, paymentConfirmed, booking, user, contract?.contractCode])
   const paymentDeadline = booking?.paymentExpiresAt || booking?.holdExpiresAt
   const paymentExpired = booking?.status === 'PENDING_PAYMENT'
     && (!paymentDeadline || new Date(paymentDeadline).getTime() <= Date.now())
@@ -139,7 +153,7 @@ export const OnlineBookingContractPage = () => {
           <p className="mt-3 text-sm text-rose-700">{error || 'Không tìm thấy hợp đồng cho đơn đặt thuê này.'}</p>
           <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
             <button onClick={() => void refresh(true)} className="rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-800 transition">Thử tải lại</button>
-            <Link to="/portal/customer" className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-xs hover:bg-slate-50 transition">
+            <Link to="/my-bookings" className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-xs hover:bg-slate-50 transition">
               <LayoutDashboard className="h-4 w-4 text-slate-500" />
               <span>Về trang tổng quan</span>
             </Link>
@@ -193,6 +207,18 @@ export const OnlineBookingContractPage = () => {
         {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          {/* Staff Handling Policy Notice */}
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/90 p-4 text-sm text-amber-950 flex items-start gap-3 shadow-xs">
+            <span className="material-symbols-outlined text-amber-700 text-2xl shrink-0 mt-0.5">verified_user</span>
+            <div className="space-y-1">
+              <p className="font-bold text-amber-900 text-sm">Quy định thủ tục ký hợp đồng &amp; thanh toán tại Boxora</p>
+              <p className="text-xs leading-relaxed text-amber-800">
+                Theo quy chuẩn an ninh và kiểm soát kho tự quản, <strong>thủ tục ký hợp đồng và thu phí thanh toán (tiền cọc + tiền thuê) do nhân viên tiếp đón (Staff) trực tiếp thực hiện tại cơ sở</strong> khi quý khách đến nhận buồng kho theo lịch hẹn. Khách hàng không cần và không được phép tự ký hoặc thanh toán trực tuyến.
+              </p>
+            </div>
+          </div>
+
+
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
               <p className="text-xs text-slate-500">Mã đặt thuê</p>
@@ -204,7 +230,7 @@ export const OnlineBookingContractPage = () => {
           </div>
 
           <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-            <div className="rounded-xl bg-slate-50 p-3"><span className="text-xs text-slate-500">Kho và cơ sở</span><p className="mt-1 font-semibold text-slate-900">{booking.unitCode} · {booking.facilityName}</p></div>
+            <div className="rounded-xl bg-slate-50 p-3"><span className="text-xs text-slate-500">Kho và cơ sở</span><p className="mt-1 font-semibold text-slate-900">{booking.unitCode ? `#${booking.unitCode}` : 'Vị trí kho sẽ được xác nhận khi nhận kho'} · {booking.facilityName}</p></div>
             <div className="rounded-xl bg-slate-50 p-3"><span className="text-xs text-slate-500">Mã hợp đồng</span><p className="mt-1 font-mono font-semibold text-slate-900">{contract.contractCode}</p></div>
             <div className="rounded-xl bg-slate-50 p-3"><span className="text-xs text-slate-500">Kỳ hạn thuê</span><p className="mt-1 font-semibold text-slate-900">{booking.rentalMonths} tháng · {date(booking.startDate)} – {date(booking.endDate)}</p></div>
             <div className="rounded-xl bg-slate-50 p-3"><span className="text-xs text-slate-500">Lịch hẹn nhận kho</span><p className="mt-1 font-semibold text-slate-900">{dateTime(booking.expectedCheckInAt)}</p></div>
@@ -231,38 +257,37 @@ export const OnlineBookingContractPage = () => {
           </div>
 
           <div className="mt-3 rounded-xl border border-slate-200 bg-white p-4 text-sm">
-            <p className="font-bold text-slate-900">Hủy, chấm dứt và hoàn tiền</p>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-slate-600">
-              <li>Hủy trước lịch nhận kho từ {policy?.cancellationFullRefundHours ?? 48} giờ: hoàn 100% tiền cọc đã thanh toán.</li>
-              <li>Từ {policy?.cancellationPartialRefundHours ?? 24} đến dưới {policy?.cancellationFullRefundHours ?? 48} giờ: hoàn {policy?.cancellationPartialRefundPercent ?? 50}% tiền cọc đã thanh toán.</li>
-              <li>Dưới {policy?.cancellationPartialRefundHours ?? 24} giờ hoặc sau lịch hẹn: không hoàn tiền cọc theo chính sách hủy hiện hành.</li>
-              <li>Chấm dứt sau khi thuê và hoàn cọc tuân theo hợp đồng đã ký, quy trình trả kho/kiểm tra hiện trạng và hồ sơ hoàn tiền của Boxora.</li>
+            <p className="font-bold text-slate-900">Hủy đơn đặt giữ chỗ &amp; Chính sách thanh toán</p>
+            <ul className="mt-2 list-disc space-y-1.5 pl-5 text-xs leading-relaxed text-slate-600">
+              <li><strong>Hủy đơn đặt chỗ:</strong> Quý khách chưa thanh toán tiền cọc khi tạo đơn đặt chỗ online. Việc hủy đơn đặt chỗ trước khi check-in là <strong>hoàn toàn miễn phí và không có hoàn cọc</strong>.</li>
+              <li><strong>Thanh toán cọc &amp; tiền thuê:</strong> Nhân viên Boxora sẽ trực tiếp đối soát CCCD, lập hợp đồng và thu tiền cọc cùng tiền thuê tại quầy khi quý khách đến check-in.</li>
+              <li><strong>Hoàn cọc sau khi kết thúc hợp đồng:</strong> Tiền cọc được hoàn trả vào tài khoản của quý khách sau khi chấm dứt hợp đồng thuê và hoàn tất biên bản nghiệm thu trả kho.</li>
             </ul>
-            <p className="mt-2 text-[11px] text-slate-500">Mốc hủy được tính theo lịch hẹn nhận kho; số tiền hoàn chỉ áp dụng với khoản cọc đã thanh toán và được backend tính lại khi gửi yêu cầu hủy.</p>
+            <p className="mt-2 text-[11px] text-slate-500">Quý khách có thể hủy hoặc đổi lịch hẹn tiếp đón bất cứ lúc nào trong mục Quản lý đơn đặt chỗ.</p>
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
             <button type="button" onClick={() => setShowDocument(true)} className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50 cursor-pointer">
               {signed ? 'Xem hợp đồng đã ký' : 'Xem nội dung hợp đồng'}
             </button>
-            {!signed && contract.status !== 'CANCELLED' && (
-              <button
-                type="button"
-                onClick={() => setContractForSimulation(contract)}
-                className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 cursor-pointer"
-              >
-                Tiếp tục ký điện tử
-              </button>
-            )}
-            {signed && (
-              <Link to="/portal/customer" className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 transition">
+            <Link to="/my-bookings" className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 transition">
+              <LayoutDashboard className="h-4 w-4" />
+              <span>Về đơn đặt chỗ của tôi</span>
+            </Link>
+            {signed && paymentConfirmed ? (
+              <Link to="/portal/customer" className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 transition">
                 <LayoutDashboard className="h-4 w-4" />
-                <span>Về trang tổng quan</span>
+                <span>Vào Portal Quản Lý Kho (Khóa IoT)</span>
               </Link>
-            )}
+            ) : signed ? (
+              <Link to="/my-bookings" className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 transition">
+                <LayoutDashboard className="h-4 w-4" />
+                <span>Về đơn đặt chỗ của tôi</span>
+              </Link>
+            ) : null}
           </div>
           {!signed && (
-            <p className="mt-3 text-xs leading-relaxed text-slate-500">Sau khi thanh toán qua VNPay, bạn có thể tiếp tục ký hợp đồng điện tử trực tuyến ngay trên hệ thống Boxora.</p>
+            <p className="mt-3 text-xs leading-relaxed text-slate-500">Quý khách vui lòng mang theo CCCD bản gốc khi đến nhận kho để nhân viên đối soát và hoàn tất thủ tục bàn giao.</p>
           )}
         </section>
 
@@ -297,9 +322,10 @@ export const OnlineBookingContractPage = () => {
                 <p className="mt-1 text-xs">Trạng thái nhận kho: chờ hoàn tất bàn giao tại cơ sở. PIN chỉ được cấp theo quy trình check-in.</p>
               </div>
             ) : (
-              <button type="button" disabled={!canPay || paying} onClick={() => void startPayment()} className="mt-5 w-full rounded-xl bg-blue-700 px-5 py-3 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">
-                {paying ? 'Đang chuyển đến VNPay…' : payments.some(p => p.status === 'PENDING') ? 'Tiếp tục thanh toán trực tuyến' : 'Thanh toán trực tuyến'}
-              </button>
+              <div className="mt-4 p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-relaxed flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-blue-600">storefront</span>
+                <span>Thanh toán sẽ được thực hiện trực tiếp tại quầy cơ sở Boxora cùng nhân viên Staff khi quý khách đến nhận buồng kho.</span>
+              </div>
             )}
             {!paymentConfirmed && !canPay && <p className="mt-3 text-xs text-amber-800">Đơn đặt thuê hiện không ở trạng thái có thể thanh toán. Vui lòng liên hệ Boxora để được đối soát.</p>}
           </section>

@@ -8,11 +8,17 @@ import { ProtectedRoute } from './components/auth/ProtectedRoute'
 import { LoginPage } from './pages/public/LoginPage'
 import { RegisterPage } from './pages/public/RegisterPage'
 import { HomePage } from './pages/public/HomePage'
+import { BookingPage } from './pages/public/BookingPage'
 import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
 import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
 import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
 import { PaymentResultPage } from './pages/public/PaymentResultPage'
+<<<<<<< Updated upstream
+import { FacilitiesPage } from './pages/public/FacilitiesPage'
+=======
 import { OnlineBookingContractPage } from './pages/customer/OnlineBookingContractPage'
+import { MyBookingsPage } from './pages/customer/MyBookingsPage'
+>>>>>>> Stashed changes
 
 // StorageOps Pro Portals (Matching Prototype Stitch Files)
 
@@ -25,14 +31,11 @@ import { CashierJournalPage } from './pages/staff/CashierJournalPage'
 import { IncidentTicketsPage } from './pages/staff/IncidentTicketsPage'
 import { OverdueManagementPage } from './pages/manager/OverdueManagementPage'
 import { ShiftRosterPage } from './pages/manager/ShiftRosterPage'
-import { StaffMyShiftsPage } from './pages/staff/StaffMyShiftsPage'
-import { checkCustomerPortalAccess } from './utils/rentalAccess'
 import { BoxoraChatWidget } from './components/chat/BoxoraChatWidget'
-import { ErrorBoundary } from './components/common/ErrorBoundary'
 
 // Root redirect handler based on user role
 function RootRedirect() {
-  const { isAuthenticated, role, user, isLoading } = useAuth()
+  const { isAuthenticated, role, isLoading } = useAuth()
 
   if (isLoading) {
     return (
@@ -57,13 +60,16 @@ function RootRedirect() {
     case 'STAFF':
       return <Navigate to="/portal/staff" replace />
     case 'CUSTOMER':
+<<<<<<< Updated upstream
+    default:
+=======
     default: {
       const access = checkCustomerPortalAccess(user)
       if (!access.hasAccess) {
-        return <Navigate to="/units" replace />
+        return <Navigate to="/my-bookings" replace />
       }
+>>>>>>> Stashed changes
       return <Navigate to="/portal/customer" replace />
-    }
   }
 }
 
@@ -75,6 +81,8 @@ function MainContent() {
           {/* Public Landing Page & Authentication */}
           <Route path="/" element={<HomePage />} />
           <Route path="/landing" element={<HomePage />} />
+          <Route path="/booking" element={<BookingPage />} />
+          <Route path="/dat-kho" element={<BookingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
@@ -82,17 +90,30 @@ function MainContent() {
           {/* Dedicated Storage Units Explorer & Booking Dashboard */}
           <Route path="/units" element={<UnitsExplorerPage />} />
           <Route path="/explore-units" element={<UnitsExplorerPage />} />
-          <Route path="/payment-result" element={<PaymentResultPage />} />
+          <Route path="/facilities" element={<FacilitiesPage />} />
+          <Route path="/branches" element={<FacilitiesPage />} />
+          <Route path="/my-requests" element={<Navigate to="/portal/customer?tab=requests" replace />} />
           <Route
-            path="/online-booking-contract"
+            path="/reserve"
             element={
-              <ProtectedRoute allowedRoles={['CUSTOMER']}>
-                <OnlineBookingContractPage />
+              <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}>
+                <CustomerDashboard bookingOnly />
               </ProtectedRoute>
             }
           />
+          <Route path="/payment-result" element={<PaymentResultPage />} />
 
           {/* Boxora Terms & Standards Dashboard */}
+          <Route
+            path="/my-bookings"
+            element={
+              <ProtectedRoute allowedRoles={['CUSTOMER']}>
+                <MyBookingsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/customer/bookings" element={<Navigate to="/my-bookings" replace />} />
+
           <Route path="/terms" element={<TermsAndStandardsPage />} />
           <Route path="/standards" element={<TermsAndStandardsPage />} />
           <Route path="/policies" element={<TermsAndStandardsPage />} />
@@ -118,30 +139,21 @@ function MainContent() {
               }
             />
 
-            {/* 2. Staff Portal: operational access is reserved for Staff */}
+            {/* 2. Staff Portal: Staff, Facility Manager, Admin */}
             <Route
               path="staff"
               element={
-                <ProtectedRoute allowedRoles={['STAFF']}>
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'ADMIN']}>
                   <StaffDashboard />
                 </ProtectedRoute>
               }
             />
 
-            <Route
-              path="staff/shifts"
-              element={
-                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER']}>
-                  <StaffMyShiftsPage />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* 3. Facility operations and storage diagram */}
+            {/* 3. Facility Manager Portal: Facility Manager, Business Manager, Admin */}
             <Route
               path="facility-manager"
               element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'STAFF', 'BUSINESS_MANAGER', 'ADMIN']}>
+                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
                   <ManagerDashboard />
                 </ProtectedRoute>
               }
@@ -157,11 +169,11 @@ function MainContent() {
               }
             />
 
-            {/* 5. System Admin Portal: Admin and Business Manager (branch configuration) */}
+            {/* 5. System Admin Portal: Strictly Admin */}
             <Route
               path="admin"
               element={
-                <ProtectedRoute allowedRoles={['ADMIN', 'BUSINESS_MANAGER']}>
+                <ProtectedRoute allowedRoles={['ADMIN']}>
                   <AdminDashboard />
                 </ProtectedRoute>
               }
@@ -186,21 +198,21 @@ function MainContent() {
               }
             />
 
-            {/* 8. Overdue actions are operational facility work */}
+            {/* 8. Overdue Delinquency Management: Facility Manager, Business Manager, Admin */}
             <Route
               path="overdue"
               element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER']}>
+                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
                   <OverdueManagementPage />
                 </ProtectedRoute>
               }
             />
 
-            {/* 9. Facility managers administer schedules; Business managers oversee chain-wide; Staff see their own shifts in their portal */}
+            {/* 9. Shift Roster & Workforce: Facility Manager, Business Manager, Admin */}
             <Route
               path="shifts"
               element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER']}>
+                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
                   <ShiftRosterPage />
                 </ProtectedRoute>
               }
@@ -210,8 +222,6 @@ function MainContent() {
           {/* Direct Friendly URLs with Automatic Route Guards */}
           <Route path="/customer" element={<Navigate to="/portal/customer" replace />} />
           <Route path="/staff" element={<Navigate to="/portal/staff" replace />} />
-          <Route path="/staff/shifts" element={<Navigate to="/portal/staff/shifts" replace />} />
-          <Route path="/my-shifts" element={<Navigate to="/portal/staff/shifts" replace />} />
           <Route path="/facility-manager" element={<Navigate to="/portal/facility-manager" replace />} />
           <Route path="/manager" element={<Navigate to="/portal/facility-manager" replace />} />
           <Route path="/cashier" element={<Navigate to="/portal/cashier" replace />} />
@@ -236,11 +246,9 @@ function MainContent() {
 export function App() {
   return (
     <BrowserRouter>
-      <ErrorBoundary>
-        <AuthProvider>
-          <MainContent />
-        </AuthProvider>
-      </ErrorBoundary>
+      <AuthProvider>
+        <MainContent />
+      </AuthProvider>
     </BrowserRouter>
   )
 }

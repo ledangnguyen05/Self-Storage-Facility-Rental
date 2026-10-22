@@ -141,7 +141,7 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
             }`}
           >
             <span className="material-symbols-outlined text-[16px]">cancel</span>
-            <span>3. Hủy &amp; Hoàn cọc</span>
+            <span>3. Hủy đơn đặt chỗ</span>
           </button>
           <button
             type="button"
@@ -257,34 +257,37 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
               <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
                 <h4 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wide mb-3 flex items-center gap-2">
                   <span className="material-symbols-outlined text-amber-600 text-[18px]">rule</span>
-                  Mốc thời gian hủy đơn giữ chỗ &amp; Tỷ lệ hoàn cọc
+                  Chính sách hủy đơn đặt giữ chỗ trực tuyến
                 </h4>
                 <div className="space-y-2.5 text-xs">
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60">
-                    <span className="font-semibold text-emerald-900 dark:text-emerald-200">
-                      Hủy trước giờ nhận kho &ge; {cancelFullHours} giờ:
-                    </span>
-                    <strong className="font-mono font-bold text-emerald-700 dark:text-emerald-400">
-                      Hoàn lại 100% tiền cọc
-                    </strong>
+                  <div className="p-3.5 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 space-y-1">
+                    <p className="font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                      Đặt giữ chỗ trực tuyến 100% miễn phí
+                    </p>
+                    <p className="text-emerald-800/90 dark:text-emerald-300/80 leading-relaxed text-[11px]">
+                      Khi tạo đơn đặt trước online, quý khách chưa cần thanh toán bất kỳ chi phí nào (chưa thanh toán tiền cọc hoặc tiền thuê).
+                    </p>
                   </div>
 
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60">
-                    <span className="font-semibold text-amber-900 dark:text-amber-200">
-                      Hủy trước giờ nhận kho từ {cancelPartHours}h đến &lt; {cancelFullHours}h:
-                    </span>
-                    <strong className="font-mono font-bold text-amber-700 dark:text-amber-400">
-                      Hoàn lại {cancelPartPercent}% tiền cọc
-                    </strong>
+                  <div className="p-3.5 rounded-lg bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/60 space-y-1">
+                    <p className="font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px]">info</span>
+                      Hủy đơn miễn phí &amp; Không có hoàn cọc
+                    </p>
+                    <p className="text-blue-800/90 dark:text-blue-300/80 leading-relaxed text-[11px]">
+                      Quý khách có thể hủy đơn đặt giữ chỗ bất kỳ lúc nào nếu thay đổi kế hoạch. Việc hủy đơn là hoàn toàn miễn phí, không phát sinh chi phí phạt và không có hoàn cọc do chưa có khoản thanh toán nào được thực hiện trước đó.
+                    </p>
                   </div>
 
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-rose-50/60 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60">
-                    <span className="font-semibold text-rose-900 dark:text-rose-200">
-                      Hủy dưới {cancelPartHours} giờ hoặc không đến nhận kho:
-                    </span>
-                    <strong className="font-mono font-bold text-rose-700 dark:text-rose-400">
-                      Không hoàn tiền cọc
-                    </strong>
+                  <div className="p-3.5 rounded-lg bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 space-y-1">
+                    <p className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px]">payments</span>
+                      Thanh toán và ký hợp đồng trực tiếp tại quầy
+                    </p>
+                    <p className="text-amber-800/90 dark:text-amber-300/80 leading-relaxed text-[11px]">
+                      Tiền cọc và tiền thuê tháng đầu chỉ được thu trực tiếp khi quý khách đến cơ sở check-in và ký hợp đồng cùng nhân viên Staff. Tiền cọc sẽ được bảo toàn và hoàn trả theo quy chuẩn nghiệm thu trả kho (Mục 4).
+                    </p>
                   </div>
                 </div>
               </div>

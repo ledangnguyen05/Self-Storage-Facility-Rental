@@ -7,7 +7,6 @@ import {
   getWebSettings,
   saveWebSettings,
 } from '../../utils/webSettings'
-import { ChangePasswordModal } from './ChangePasswordModal'
 
 interface UserAvatarDropdownProps {
   user: User | null
@@ -26,9 +25,8 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
   onOpenLogoutConfirm,
   extraActions,
 }) => {
-  const { t } = useLanguage()
+  const { language, setLanguage, t } = useLanguage()
   const [isOpen, setIsOpen] = useState(false)
-  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false)
   const [webSettings, setWebSettings] = useState<WebSettings>(getWebSettings())
   const [systemIsDark, setSystemIsDark] = useState(() => getResolvedTheme({ theme: 'system' }) === 'dark')
   const isDark = webSettings.theme === 'dark' || (webSettings.theme === 'system' && systemIsDark)
@@ -81,6 +79,9 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
     setWebSettings(updated)
   }
 
+  const handleSwitchLanguage = (lang: 'vi' | 'en') => {
+    setLanguage(lang)
+  }
 
   const userInitials = user?.fullName
     ? user.fullName
@@ -185,7 +186,7 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
 
           {/* Main Action Items */}
           <div className="flex flex-col gap-1">
-            {/* Chỉnh sửa hồ sơ */}
+            {/* Account and security */}
             <button
               type="button"
               onClick={() => {
@@ -199,35 +200,10 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
               </div>
               <div className="flex flex-col min-w-0">
                 <span className="text-xs font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">
-                  {t('Chỉnh sửa hồ sơ')}
+                  {t('Tài khoản & Bảo mật')}
                 </span>
                 <span className="text-[10px] text-slate-500">
-                  {t('Cập nhật họ tên, số điện thoại')}
-                </span>
-              </div>
-              <span className="material-symbols-outlined text-[16px] text-slate-400 ml-auto group-hover:translate-x-0.5 transition-transform">
-                chevron_right
-              </span>
-            </button>
-
-            {/* Đổi mật khẩu */}
-            <button
-              type="button"
-              onClick={() => {
-                setIsOpen(false)
-                setIsChangePasswordOpen(true)
-              }}
-              className="w-full flex items-center gap-3 p-2 rounded-xl text-left hover:bg-slate-50 transition-colors cursor-pointer group"
-            >
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                <span className="material-symbols-outlined text-[18px]">key</span>
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs font-semibold text-slate-900 group-hover:text-emerald-600 transition-colors">
-                  {t('Đổi mật khẩu')}
-                </span>
-                <span className="text-[10px] text-slate-500">
-                  {t('Cập nhật mật khẩu bảo mật mới')}
+                  {t('Hồ sơ cá nhân và mật khẩu')}
                 </span>
               </div>
               <span className="material-symbols-outlined text-[16px] text-slate-400 ml-auto group-hover:translate-x-0.5 transition-transform">
@@ -252,7 +228,7 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
                   {t('Cài đặt web & hệ thống')}
                 </span>
                 <span className="text-[10px] text-slate-500">
-                  {t('Chủ đề, thông báo & cảnh báo IoT')}
+                  {t('Chủ đề, phông chữ, ngôn ngữ')}
                 </span>
               </div>
               <span className="material-symbols-outlined text-[16px] text-slate-400 ml-auto group-hover:translate-x-0.5 transition-transform">
@@ -294,7 +270,43 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
               </button>
             </div>
 
-
+            {/* Language switch */}
+            <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+              <span className="text-[11px] font-medium text-slate-700 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[15px] text-slate-500">language</span>
+                {t('Ngôn ngữ')}
+              </span>
+              <div className="flex items-center gap-1 bg-slate-200/70 p-0.5 rounded-lg text-[10px] font-bold">
+                <button
+                  type="button"
+                  onClick={() => handleSwitchLanguage('vi')}
+                  aria-pressed={language === 'vi'}
+                  aria-label={t('Tiếng Việt', 'Vietnamese')}
+                  title={t('Tiếng Việt', 'Vietnamese')}
+                  className={`min-w-9 px-2 py-1 rounded cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                    language === 'vi'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  VI
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchLanguage('en')}
+                  aria-pressed={language === 'en'}
+                  aria-label={t('Tiếng Anh', 'English')}
+                  title={t('Tiếng Anh', 'English')}
+                  className={`min-w-9 px-2 py-1 rounded cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                    language === 'en'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  EN
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Logout Action */}
@@ -318,10 +330,6 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
           </div>
         </div>
       )}
-      <ChangePasswordModal
-        isOpen={isChangePasswordOpen}
-        onClose={() => setIsChangePasswordOpen(false)}
-      />
     </div>
   )
 }

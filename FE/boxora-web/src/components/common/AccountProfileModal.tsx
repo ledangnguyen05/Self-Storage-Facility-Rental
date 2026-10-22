@@ -59,8 +59,8 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({ isOpen
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Thông tin hồ sơ"
-      description="Cập nhật tên và số điện thoại cho tài khoản của bạn."
+      title="Tài khoản & Bảo mật"
+      description="Quản lý thông tin hồ sơ và bảo mật tài khoản của bạn."
       maxWidth="sm"
     >
       <form onSubmit={handleSubmit} className="space-y-5">

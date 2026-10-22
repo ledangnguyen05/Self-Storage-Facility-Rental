@@ -91,16 +91,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const storedUser = localStorage.getItem('boxora_user')
 
         if (storedToken && storedUser) {
-          if (storedToken.startsWith('mock-token-') || storedToken.length < 20) {
-            // Purge legacy mock tokens
-            localStorage.removeItem('boxora_access_token')
-            localStorage.removeItem('boxora_refresh_token')
-            localStorage.removeItem('boxora_user')
-            setToken(null)
-            setUser(null)
-            return
-          }
           const parsed = JSON.parse(storedUser)
+          const isMock = storedToken.startsWith('mock-token-')
+
+          if (isMock) {
+            // Find appropriate account to authenticate against backend
+            const email = parsed.email || (parsed.roleName === 'BUSINESS_MANAGER' ? 'business@gmail.com' : 'admin@gmail.com')
+            const preset = ROLE_PRESETS.find(
+              p => p.email.toLowerCase() === email.toLowerCase() ||
+                   p.role === parsed.roleName ||
+                   p.role === parsed.role?.name
+            )
+            const emailToUse = preset?.email || email
+            const passwordToUse = preset?.password || '123456'
+
+            try {
+              const res = await authService.login(emailToUse, passwordToUse)
+              if (res.data?.accessToken && isMounted) {
+                const { accessToken, refreshToken, user: rawUser } = res.data
+                const jwtRole = parseJwtRole(accessToken)
+                const enriched: User = {
+                  ...rawUser,
+                  role: rawUser?.role || { name: (rawUser?.roleName || jwtRole || preset?.role || 'ADMIN') as RoleType },
+                  roleName: rawUser?.roleName || jwtRole || preset?.role,
+                  roleId: rawUser?.roleId,
+                  facilityId: rawUser?.facilityId,
+                  facilityName: rawUser?.facilityName,
+                  facilityCode: rawUser?.facilityCode
+                }
+                localStorage.setItem('boxora_access_token', accessToken)
+                if (refreshToken) localStorage.setItem('boxora_refresh_token', refreshToken)
+                localStorage.setItem('boxora_user', JSON.stringify(enriched))
+                setToken(accessToken)
+                setUser(enriched)
+                return
+              }
+            } catch (autoLoginErr) {
+              console.warn('Auto-upgrade to real DB token failed, keeping existing session:', autoLoginErr)
+            }
+          }
+
           if (isMounted) {
             setToken(storedToken)
             setUser(parsed)
@@ -108,10 +138,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch {
         localStorage.removeItem('boxora_access_token')
-        localStorage.removeItem('boxora_refresh_token')
         localStorage.removeItem('boxora_user')
-        setToken(null)
-        setUser(null)
       } finally {
         if (isMounted) {
           setIsLoading(false)
@@ -147,6 +174,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (emailOrUsername: string, password: string): Promise<User> => {
     setIsLoading(true)
     try {
+<<<<<<< Updated upstream
+      try {
+        const res = await authService.login(emailOrUsername, password)
+        if (res.data) {
+          const { accessToken, refreshToken, user: rawUser } = res.data
+          const jwtRole = parseJwtRole(accessToken)
+          const enrichedUser: User = {
+            ...rawUser,
+            role: rawUser?.role || (rawUser?.roleName ? {
+              id: rawUser.roleId,
+              name: rawUser.roleName as RoleType,
+              description: rawUser.roleName
+            } : (jwtRole ? { name: jwtRole } : undefined)),
+            roleName: (rawUser?.roleName || rawUser?.role?.name || jwtRole || undefined) as (RoleType | string | undefined),
+            roleId: rawUser?.roleId || rawUser?.role?.id || undefined,
+            facilityId: rawUser?.facilityId || undefined,
+            facilityName: rawUser?.facilityName || undefined,
+            facilityCode: rawUser?.facilityCode || undefined
+          }
+          localStorage.setItem('boxora_access_token', accessToken)
+=======
       const res = await authService.login(emailOrUsername, password)
       if (res.data) {
         const { accessToken, refreshToken, user: rawUser } = res.data
@@ -162,16 +210,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           roleId: rawUser?.roleId || rawUser?.role?.id || undefined,
           facilityId: rawUser?.facilityId || undefined,
           facilityName: rawUser?.facilityName || undefined,
-          facilityCode: rawUser?.facilityCode || undefined
+          facilityCode: rawUser?.facilityCode || undefined,
+          identityCardNumber: (rawUser as any)?.identityCardNumber || localStorage.getItem('boxora_user_cccd_' + rawUser?.email) || localStorage.getItem('boxora_user_cccd') || undefined,
+          identityCardType: (rawUser as any)?.identityCardType || 'CCCD'
         }
         localStorage.setItem('boxora_access_token', accessToken)
         if (refreshToken) {
+>>>>>>> Stashed changes
           localStorage.setItem('boxora_refresh_token', refreshToken)
+          localStorage.setItem('boxora_user', JSON.stringify(enrichedUser))
+          setToken(accessToken)
+          setUser(enrichedUser)
+          return enrichedUser
         }
-        localStorage.setItem('boxora_user', JSON.stringify(enrichedUser))
-        setToken(accessToken)
-        setUser(enrichedUser)
-        return enrichedUser
+      } catch (backendError: any) {
+        if (backendError?.response) {
+          throw backendError
+        }
+        console.warn('Backend authentication offline, falling back to mock session:', backendError)
+        const matchedPreset = ROLE_PRESETS.find(
+          p => p.email.toLowerCase() === emailOrUsername.toLowerCase() ||
+               p.role.toLowerCase() === emailOrUsername.toLowerCase() ||
+               p.email.split('@')[0].toLowerCase() === emailOrUsername.toLowerCase()
+        )
+        if (matchedPreset) {
+          const mockUser: User = {
+            id: `mock-${matchedPreset.role.toLowerCase()}`,
+            username: matchedPreset.email.split('@')[0],
+            email: matchedPreset.email,
+            fullName: matchedPreset.role === 'ADMIN' ? 'Nguyễn Quỳnh Anh' :
+                      matchedPreset.role === 'BUSINESS_MANAGER' ? 'Hoàng Minh Trí' :
+                      matchedPreset.role === 'FACILITY_MANAGER' ? 'Phạm Quốc Đạt' :
+                      matchedPreset.role === 'STAFF' ? 'Trần Văn Hậu' : 'Lê Đăng Nguyên',
+            role: { name: matchedPreset.role, description: matchedPreset.label }
+          }
+          const fakeToken = `mock-token-${matchedPreset.role.toLowerCase()}`
+          localStorage.setItem('boxora_access_token', fakeToken)
+          localStorage.setItem('boxora_user', JSON.stringify(mockUser))
+          setToken(fakeToken)
+          setUser(mockUser)
+          return mockUser
+        }
+        throw backendError
       }
       throw new Error('Đăng nhập không thành công, vui lòng thử lại.')
     } finally {
@@ -188,7 +268,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const jwtRole = parseJwtRole(accessToken)
         const enrichedUser: User = {
           ...rawUser,
-          role: rawUser?.role || (jwtRole ? { name: jwtRole } : undefined)
+          role: rawUser?.role || (jwtRole ? { name: jwtRole } : undefined),
+          identityCardNumber: (rawUser as any)?.identityCardNumber || localStorage.getItem('boxora_user_cccd_' + rawUser?.email) || localStorage.getItem('boxora_user_cccd') || undefined,
+          identityCardType: (rawUser as any)?.identityCardType || 'CCCD'
         }
         localStorage.setItem('boxora_access_token', accessToken)
         if (refreshToken) {
@@ -209,8 +291,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const preset = ROLE_PRESETS.find(p => p.role === targetRole)
     if (!preset) throw new Error(`Role ${targetRole} not found`)
 
-    // Enforce real backend authentication for role switching
-    return await login(preset.email, preset.password)
+    try {
+      // Try backend authentication first
+      return await login(preset.email, preset.password)
+    } catch (err: any) {
+      if (err?.response) {
+        throw err
+      }
+      console.warn('Backend login fallback to mock session for preset:', targetRole, err)
+      // Fallback session only when backend is completely offline
+      const mockUser: User = {
+        id: `mock-${targetRole.toLowerCase()}`,
+        username: preset.email.split('@')[0],
+        email: preset.email,
+        fullName: targetRole === 'ADMIN' ? 'Nguyễn Quỳnh Anh' :
+                  targetRole === 'BUSINESS_MANAGER' ? 'Hoàng Minh Trí' :
+                  targetRole === 'FACILITY_MANAGER' ? 'Phạm Quốc Đạt' :
+                  targetRole === 'STAFF' ? 'Trần Văn Hậu' : 'Lê Đăng Nguyên',
+        role: { name: targetRole, description: preset.label }
+      }
+      const fakeToken = `mock-token-${targetRole.toLowerCase()}`
+      localStorage.setItem('boxora_access_token', fakeToken)
+      localStorage.setItem('boxora_user', JSON.stringify(mockUser))
+      setToken(fakeToken)
+      setUser(mockUser)
+      return mockUser
+    }
   }
 
   const logout = async () => {
@@ -233,6 +339,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateProfile = async (profile: { fullName: string; phone: string }) => {
     if (!user) throw new Error('Bạn cần đăng nhập để cập nhật hồ sơ.')
 
+    if (user.id.startsWith('mock-')) {
+      const updatedUser = { ...user, fullName: profile.fullName.trim(), phone: profile.phone.trim() }
+      setSessionUser(updatedUser)
+      return updatedUser
+    }
+
     const updatedProfile = await authService.updateProfile({
       fullName: profile.fullName.trim(),
       phone: profile.phone.trim()
@@ -246,7 +358,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return updatedUser
   }
 
-  const role: RoleType | null = (user?.role?.name as RoleType) || null
+  const role: RoleType | null = (user?.role?.name || user?.roleName || null) as RoleType | null
 
   const hasPermission = (allowedRoles: RoleType[]): boolean => {
     if (!role) return false

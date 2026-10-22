@@ -18,6 +18,9 @@ public class HandoverRequest {
     @NotNull(message = "Booking ID is required")
     private UUID bookingId;
 
+    /** Mã kho khách chọn tại cơ sở; được xác nhận và gắn vào booking khi bàn giao hoàn tất. */
+    private String requestedUnitCode;
+
     private UUID staffId;
 
     private String recordType; // "CHECK_IN" or "RETURN"
