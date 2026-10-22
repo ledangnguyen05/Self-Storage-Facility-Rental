@@ -532,12 +532,6 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             String sortBy,
             String sortDir
     ) {
-        try {
-            autoMarkAbsentShifts();
-        } catch (Exception e) {
-            log.debug("autoMarkAbsentShifts invocation skipped: {}", e.getMessage());
-        }
-
         if (fromDate != null && toDate != null && toDate.isBefore(fromDate)) {
             throw new AppException(ErrorCode.INVALID_REQUEST, "toDate must be on or after fromDate");
         }
@@ -598,12 +592,6 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
     @Override
     @Transactional(readOnly = true)
     public List<StaffAssignmentResponse> getDailyBoard(UUID facilityId, LocalDate date) {
-        try {
-            autoMarkAbsentShifts();
-        } catch (Exception e) {
-            log.debug("autoMarkAbsentShifts invocation skipped: {}", e.getMessage());
-        }
-
         UUID targetFacilityId = facilityAccessGuard.isFacilityScoped()
                 ? facilityAccessGuard.scopedFacilityIdOrNull()
                 : facilityId;

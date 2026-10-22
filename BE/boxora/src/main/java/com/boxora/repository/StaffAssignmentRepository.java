@@ -72,7 +72,7 @@ public interface StaffAssignmentRepository extends JpaRepository<StaffAssignment
             @Param("toDate") LocalDate toDate,
             Pageable pageable
     );
-    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true)
     @Query("""
             UPDATE StaffAssignment a
             SET a.status = com.boxora.enums.StaffAssignmentStatus.ABSENT
@@ -82,7 +82,7 @@ public interface StaffAssignmentRepository extends JpaRepository<StaffAssignment
             """)
     int markPastUncheckedInAsAbsent(@Param("today") LocalDate today);
 
-    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true)
     @Query("""
             UPDATE StaffAssignment a
             SET a.status = com.boxora.enums.StaffAssignmentStatus.ABSENT
