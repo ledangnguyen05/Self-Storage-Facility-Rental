@@ -17,6 +17,7 @@ import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
 import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
 import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
 import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
+import { getAssignmentWindow } from '../../constants/shiftConstants'
 
 const localDateString = (date: Date) => {
   const year = date.getFullYear()
@@ -26,12 +27,7 @@ const localDateString = (date: Date) => {
 }
 
 const assignmentWindow = (assignment: StaffAssignmentResponse) => {
-  if (!assignment.startTime || !assignment.endTime) return null
-  const start = new Date(`${assignment.assignedDate}T${assignment.startTime}`)
-  const end = new Date(`${assignment.assignedDate}T${assignment.endTime}`)
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
-  if (end <= start) end.setDate(end.getDate() + 1)
-  return { start, end }
+  return getAssignmentWindow(assignment)
 }
 
 const isWithinAssignmentWindow = (assignment: StaffAssignmentResponse, now = new Date()) => {
@@ -1276,7 +1272,7 @@ export const StaffDashboard: React.FC = () => {
                     : myTodayAssignment.shift === 'AFTERNOON'
                     ? 'Ca Chiều'
                     : myTodayAssignment.shift === 'NIGHT'
-                    ? 'Ca Tối'
+                    ? 'Ca Đêm'
                     : 'Cả Ngày'
                   : 'Chưa vào ca'}
               </span>

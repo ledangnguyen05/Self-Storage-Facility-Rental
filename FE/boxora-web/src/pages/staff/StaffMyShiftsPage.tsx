@@ -9,6 +9,7 @@ import {
 } from '../../services/staffAssignmentService'
 import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
 import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
+import { canCheckInShift, BOXORA_SHIFTS } from '../../constants/shiftConstants'
 import {
   Calendar,
   Clock,
@@ -321,8 +322,8 @@ export const StaffMyShiftsPage: React.FC = () => {
   // Check-In Action
   const handleConfirmCheckIn = async () => {
     if (!checkInModalShift) return
-    if (checkInModalShift.assignedDate !== todayStr) {
-      showToast('Chỉ có thể điểm danh vào ca trực của ngày hôm nay.')
+    if (!canCheckInShift(checkInModalShift)) {
+      showToast('Chỉ có thể điểm danh trong khung giờ của ca trực được phân công.')
       setCheckInModalShift(null)
       return
     }
@@ -836,7 +837,7 @@ export const StaffMyShiftsPage: React.FC = () => {
 
                             <td className="py-3.5 px-4 text-right">
                               <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                                {item.status === 'ASSIGNED' && !isAbsent && item.assignedDate === todayStr && (
+                                {item.status === 'ASSIGNED' && !isAbsent && canCheckInShift(item) && (
                                   <button
                                     type="button"
                                     onClick={() => setCheckInModalShift(item)}

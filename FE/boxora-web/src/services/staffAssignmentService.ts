@@ -1,4 +1,5 @@
 import { api } from '../lib/axios'
+import { getAssignmentWindow } from '../constants/shiftConstants'
 
 export interface StaffAssignmentCreatePayload {
   staffId: string
@@ -52,53 +53,13 @@ export const isShiftAbsent = (assignment?: {
   checkedInAt?: string | null
   checkedOutAt?: string | null
   shift?: string | null
-} | null): boolean => {
+} | null, now = new Date()): boolean => {
   if (!assignment) return false
   if (assignment.status === 'ABSENT') return true
   if (assignment.status === 'ASSIGNED' && !assignment.checkedInAt && !assignment.checkedOutAt) {
-    const today = new Date()
-    const y = today.getFullYear()
-    const m = String(today.getMonth() + 1).padStart(2, '0')
-    const d = String(today.getDate()).padStart(2, '0')
-    const todayStr = `${y}-${m}-${d}`
-
-    // 1. Ngày ca trong quá khứ
-    if (assignment.assignedDate < todayStr) return true
-
-    // 2. Ca hôm nay nhưng giờ kết thúc đã qua
-    if (assignment.assignedDate === todayStr) {
-      let endTimeStr = assignment.endTime
-      let startTimeStr = assignment.startTime
-      if (!endTimeStr || !startTimeStr) {
-        if (assignment.shift === 'MORNING') {
-          startTimeStr = '06:00'
-          endTimeStr = '14:00'
-        } else if (assignment.shift === 'AFTERNOON') {
-          startTimeStr = '14:00'
-          endTimeStr = '22:00'
-        } else if (assignment.shift === 'NIGHT') {
-          startTimeStr = '22:00'
-          endTimeStr = '06:00'
-        } else if (assignment.shift === 'FULL_DAY') {
-          startTimeStr = '08:00'
-          endTimeStr = '17:00'
-        }
-      }
-
-      if (endTimeStr) {
-        const [endH, endM] = endTimeStr.split(':').map(Number)
-        const [startH] = (startTimeStr || '00:00').split(':').map(Number)
-        if (!isNaN(endH)) {
-          // Ca trong ngày (endTime > startTime)
-          if (!isNaN(startH) && endH > startH) {
-            const shiftEndTime = new Date(today)
-            shiftEndTime.setHours(endH, endM || 0, 0, 0)
-            if (today.getTime() > shiftEndTime.getTime()) {
-              return true
-            }
-          }
-        }
-      }
+    const win = getAssignmentWindow(assignment)
+    if (win) {
+      return now.getTime() >= win.end.getTime()
     }
   }
   return false

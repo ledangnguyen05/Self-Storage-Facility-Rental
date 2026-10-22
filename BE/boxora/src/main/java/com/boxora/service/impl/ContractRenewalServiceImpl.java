@@ -513,32 +513,19 @@ public class ContractRenewalServiceImpl implements ContractRenewalService {
 
         // Xác định ca trực tương ứng với giờ hẹn check-in của khách
         StaffShift shift = StaffShift.MORNING;
-        LocalTime startTime = LocalTime.of(6, 0);
-        LocalTime endTime = LocalTime.of(14, 0);
-        String shiftLabel = "Ca Sáng (06:00 - 14:00)";
-
         if (renewal.getCounterAppointmentTime() != null && !renewal.getCounterAppointmentTime().isBlank()) {
             try {
                 String[] parts = renewal.getCounterAppointmentTime().split(":");
                 int hour = Integer.parseInt(parts[0].trim());
-                if (hour >= 6 && hour < 14) {
-                    shift = StaffShift.MORNING;
-                    startTime = LocalTime.of(6, 0);
-                    endTime = LocalTime.of(14, 0);
-                    shiftLabel = "Ca Sáng (06:00 - 14:00)";
-                } else if (hour >= 14 && hour < 22) {
-                    shift = StaffShift.AFTERNOON;
-                    startTime = LocalTime.of(14, 0);
-                    endTime = LocalTime.of(22, 0);
-                    shiftLabel = "Ca Chiều (14:00 - 22:00)";
-                } else {
-                    shift = StaffShift.NIGHT;
-                    startTime = LocalTime.of(22, 0);
-                    endTime = LocalTime.of(6, 0);
-                    shiftLabel = "Ca Đêm (22:00 - 06:00)";
-                }
+                shift = StaffShift.fromTime(LocalTime.of(hour, 0));
             } catch (Exception ignored) {}
         }
+        LocalTime startTime = shift.getDefaultStartTime();
+        LocalTime endTime = shift.getDefaultEndTime();
+        String shiftLabel = String.format("%s (%02d:00 - %02d:00)",
+                shift.getDisplayName(),
+                startTime.getHour(),
+                endTime.getHour());
 
         LocalDate appointmentDate = renewal.getCounterAppointmentDate() != null
                 ? renewal.getCounterAppointmentDate()
