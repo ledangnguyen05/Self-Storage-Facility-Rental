@@ -25,7 +25,10 @@ import { FacilityPolicyViewModal } from './modals/FacilityPolicyViewModal'
 import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
 import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
 import { HandoverCheckInWorkbench } from '../staff/components/HandoverCheckInWorkbench'
+<<<<<<< HEAD
 >>>>>>> Stashed changes
+=======
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
 
 interface InspectedUnit {
   id: string
@@ -45,6 +48,7 @@ interface InspectedUnit {
   pricePerMonth?: number
   facilityId?: string
   facilityName?: string
+  imageUrl?: string
 }
 
 const UnitMapSkeleton: React.FC<{ count?: number }> = ({ count = 12 }) => (
@@ -110,7 +114,20 @@ export const ManagerDashboard: React.FC = () => {
   const [checkinFromDate, setCheckinFromDate] = useState<string>('')
   const [checkinToDate, setCheckinToDate] = useState<string>('')
   const [claimingBookingId, setClaimingBookingId] = useState<string | null>(null)
+<<<<<<< HEAD
   const [activeHandoverBookingId, setActiveHandoverBookingId] = useState<string>('')
+=======
+  const [activeBookingId, setActiveBookingId] = useState<string>(
+    searchParams.get('bookingId') || searchParams.get('checkinBookingId') || ''
+  )
+
+  useEffect(() => {
+    const bId = searchParams.get('bookingId') || searchParams.get('checkinBookingId')
+    if (bId) {
+      setActiveBookingId(bId)
+    }
+  }, [searchParams])
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
 
   // Tickets queue pagination
   const [ticketCurrentPage, setTicketCurrentPage] = useState<number>(1)
@@ -307,7 +324,8 @@ export const ManagerDashboard: React.FC = () => {
             floorLevel: su.floorLevel || 'Floor 1',
             pricePerMonth: su.pricePerMonth,
             facilityId: su.facilityId,
-            facilityName: su.facilityName
+            facilityName: su.facilityName,
+            imageUrl: su.imageUrl
           }
         })
         mapped.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }))
@@ -519,8 +537,13 @@ export const ManagerDashboard: React.FC = () => {
         assignedStaffId: updated.assignedStaffId || user?.id,
         assignedStaffName: updated.assignedStaffName || user?.fullName || 'Quản lý cơ sở'
       } : b))
-      setActionSuccessMessage(`Đã tiếp nhận lượt đón khách của đơn ${booking.bookingCode} thành công!`)
+      setActiveBookingId(booking.id)
+      setActionSuccessMessage(`Đã tiếp nhận lượt đón khách của đơn ${booking.bookingCode} thành công! Bàn vận hành quầy đã sẵn sàng để đối soát & bàn giao.`)
       setTimeout(() => setActionSuccessMessage(null), 4000)
+      setTimeout(() => {
+        const el = document.getElementById('handover-workbench-section')
+        if (el) el.scrollIntoView({ behavior: 'smooth' })
+      }, 100)
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Không thể tiếp nhận khách: Bạn chỉ có thể tiếp nhận khi có ca làm việc vào ngày hẹn check-in tại cơ sở và đã điểm danh vào ca trực.'
       setReceptionAlertData({
@@ -1171,6 +1194,7 @@ export const ManagerDashboard: React.FC = () => {
         </div>
       </section>
 
+<<<<<<< HEAD
       {/* INTERACTIVE FLOOR GRID MAP & CONTEXTUAL SLIDE DRAWER CONTAINER */}
       <section className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
         {/* LEFT & CENTER: FLOOR MATRIX CANVAS (xl:col-span-8) */}
@@ -1211,6 +1235,173 @@ export const ManagerDashboard: React.FC = () => {
                   {isLoading ? <span aria-hidden="true" className="inline-block h-3 w-5 rounded bg-slate-400/50 animate-pulse motion-reduce:animate-none" /> : (isAnyFilterActive ? `${floor2MatchingCount}/${permanentFloor2.length}` : permanentFloor2.length)}
                 </span>
               </button>
+=======
+      {/* 7 MANAGEMENT-LEVEL SUMMARIES: TABS NAVIGATION */}
+      <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto pb-1">
+        <button
+          type="button"
+          onClick={() => setActiveTab('overview')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'overview'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">grid_view</span>
+          <span>1. Sơ Đồ Kho &amp; Thiết Bị</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('renewals')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'renewals'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">autorenew</span>
+          <span>2. Xử Lý Gia Hạn Hợp Đồng</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('handovers-returns')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'handovers-returns'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">badge</span>
+          <span>3. Bàn Vận Hành Quầy &amp; Tiếp Đón ({upcomingHandovers.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('tickets')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'tickets'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">build_circle</span>
+          <span>4. Sự Cố &amp; SLA ({tickets.filter(t => t.status !== 'RESOLVED').length})</span>
+        </button>
+
+        {role !== 'STAFF' && (
+          <>
+            <button
+              type="button"
+              onClick={() => setActiveTab('performance')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'performance'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[18px]">trending_up</span>
+              <span>4. Hiệu Suất &amp; Ngoại Lệ</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('policy')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'policy'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[18px]">policy</span>
+              <span>5. Chính Sách Vận Hành Cơ Sở</span>
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* ============================================================== */}
+      {/* TAB 1: SƠ ĐỒ KHO & GIÁM SÁT THIẾT BỊ (SUMMARY 1) */}
+      {/* ============================================================== */}
+      {activeTab === 'overview' && (
+        <section className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+          
+          {/* FLOOR MATRIX CANVAS (xl:col-span-8) */}
+          <div className="xl:col-span-8 flex flex-col gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+            {/* Controls Toolbar */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200">
+              {/* Floor Selector Tabs */}
+              <div className="inline-flex p-1 bg-white rounded-lg border border-slate-200 shadow-2xs">
+                <button 
+                  type="button" 
+                  onClick={() => setSelectedFloor('floor1')}
+                  className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-semibold text-xs transition cursor-pointer ${
+                    selectedFloor === 'floor1' 
+                      ? 'bg-slate-900 text-white shadow-xs' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <span>{facilityProfile.floor1Name}</span>
+                  <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
+                    selectedFloor === 'floor1' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    {isAnyFilterActive ? `${floor1MatchingCount}/${permanentFloor1.length}` : permanentFloor1.length}
+                  </span>
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => setSelectedFloor('floor2')}
+                  className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-semibold text-xs transition cursor-pointer ${
+                    selectedFloor === 'floor2' 
+                      ? 'bg-slate-900 text-white shadow-xs' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <span>{facilityProfile.floor2Name}</span>
+                  <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
+                    selectedFloor === 'floor2' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    {isAnyFilterActive ? `${floor2MatchingCount}/${permanentFloor2.length}` : permanentFloor2.length}
+                  </span>
+                </button>
+              </div>
+
+              {/* Filter and Search Matrix */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <select 
+                  value={sizeFilter}
+                  onChange={(e) => setSizeFilter(e.target.value as any)}
+                  className="px-3 py-1.5 bg-white rounded-lg text-slate-800 text-xs border border-slate-200 focus:outline-none shadow-2xs font-medium cursor-pointer"
+                >
+                  <option value="all">Tất cả kích thước</option>
+                  <option value="s">Kho nhỏ S (≤ 6.5m²)</option>
+                  <option value="m">Kho vừa M (8m² - 12m²)</option>
+                  <option value="l">Kho lớn L (15m² - 20m²)</option>
+                </select>
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-slate-400">search</span>
+                  <input 
+                    type="text" 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Tìm mã kho (#A-101), khách..." 
+                    className="pl-8 pr-3 py-1.5 bg-white text-slate-800 text-xs rounded-lg placeholder:text-slate-400 focus:outline-none border border-slate-200 shadow-2xs w-44 sm:w-52 font-mono"
+                  />
+                </div>
+                {statusFilter !== 'all' && (
+                  <button 
+                    type="button" 
+                    onClick={() => setStatusFilter('all')}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 text-white text-xs font-semibold cursor-pointer"
+                    title="Xóa lọc"
+                  >
+                    <span>Lọc: {statusFilter}</span>
+                    <span className="material-symbols-outlined text-[13px]">close</span>
+                  </button>
+                )}
+              </div>
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
             </div>
 
             {/* Filter and Search Matrix */}
@@ -1388,6 +1579,108 @@ export const ManagerDashboard: React.FC = () => {
                 <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">Chi tiết kho giám sát</span>
                 <h2 className="text-xl font-bold text-slate-900 font-mono">#{selectedUnit.id}</h2>
               </div>
+<<<<<<< HEAD
+=======
+
+              {/* SmartLock Telemetry */}
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-700">Khóa điện tử:</span>
+                  <span className="font-mono font-bold text-slate-900">
+                    {selectedUnit.smartlock === 'Not reported' ? 'No device ID reported' : selectedUnit.smartlock}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2 bg-white rounded-lg border border-slate-200">
+                    <span className="text-[10px] text-slate-400 uppercase font-mono block">Pin SmartLock</span>
+                    <span className="font-mono font-bold text-emerald-700 mt-0.5 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">battery_full</span>
+                      {selectedUnit.battery || 'Not reported'}
+                    </span>
+                  </div>
+                  <div className="p-2 bg-white rounded-lg border border-slate-200">
+                    <span className="text-[10px] text-slate-400 uppercase font-mono block">Truy cập gần nhất</span>
+                    <span className="font-mono text-[11px] font-bold text-slate-800 mt-0.5 truncate block">
+                      {selectedUnit.lastAccess}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Manager Actions (Read-only / Exception Workflow) */}
+              <div className="flex flex-col gap-2 pt-1">
+                
+                {selectedUnit.status === 'Pending' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReadOnlyTargetBookingId(undefined)
+                      setShowReadOnlyBookingModal(true)
+                    }}
+                    className="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">verified</span>
+                    <span>Xem Hồ Sơ &amp; 3 Điều Kiện Bàn Giao</span>
+                  </button>
+                )}
+
+                {role === 'FACILITY_MANAGER' && selectedUnit.status === 'Rented' && (
+                  <button
+                    type="button"
+                    onClick={() => setShowDoorAccessModal(true)}
+                    className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center gap-1.5 border border-slate-200 transition cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">history</span>
+                    <span>Lịch Sử Mở Cửa &amp; Nhật Ký SmartLock</span>
+                  </button>
+                )}
+
+                {selectedUnit.status === 'Overdue' && selectedUnitOverdue
+                  && selectedUnitOverdue.contractId
+                  && selectedUnitOverdue.overdueStage === 'ELIGIBLE_FOR_SEALING' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSealingModalData({
+                        unitCode: selectedUnit.id,
+                        unitId: selectedUnit.backendId,
+                        tenantName: selectedUnitOverdue.customerName || selectedUnit.tenant,
+                        contractCode: selectedUnitOverdue.contractCode || 'N/A',
+                        contractId: selectedUnitOverdue.contractId || undefined,
+                        overdueDays: selectedUnitOverdue.daysOverdue,
+                        totalDebt: selectedUnitOverdue.totalDebt != null
+                          ? `${selectedUnitOverdue.totalDebt.toLocaleString('vi-VN')} ₫`
+                          : 'Chưa đối soát'
+                      })
+                    }}
+                    className="w-full py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">gavel</span>
+                    <span>Xử Lý Nợ / Lập Hồ Sơ Niêm Phong Pháp Lý</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleToggleMaintenance}
+                  disabled={selectedUnit.status !== 'Available' && selectedUnit.status !== 'Maintenance'}
+                  className={`w-full py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition border ${
+                    selectedUnit.status === 'Maintenance'
+                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200 cursor-pointer'
+                      : selectedUnit.status === 'Available'
+                      ? 'bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200 cursor-pointer'
+                      : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60 cursor-not-allowed'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[16px]">
+                    {selectedUnit.status === 'Maintenance' ? 'check_circle' : 'build'}
+                  </span>
+                  <span>{selectedUnit.status === 'Maintenance' ? 'Hoàn tất bảo trì (Mở lại kho)' : 'Chuyển bảo trì kỹ thuật'}</span>
+                </button>
+
+              </div>
+
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
             </div>
             <span className={`px-2.5 py-1 rounded-full font-mono text-xs font-bold border ${getStatusBadgeStyle(selectedUnit.status)}`}>
               {selectedUnit.status === 'Available' ? 'Kho trống' :
@@ -1501,18 +1794,56 @@ export const ManagerDashboard: React.FC = () => {
       )}
 
       {/* ============================================================== */}
-      {/* TAB 2: BÀN GIAO & TRẢ KHO (GIÁM SÁT TIẾN ĐỘ) */}
+      {/* TAB 3: BÀN VẬN HÀNH QUẦY & TIẾP ĐÓN BÀN GIAO */}
       {/* ============================================================== */}
       {activeTab === 'handovers-returns' && (
         <section className="flex flex-col gap-6">
           
-          {/* Supervisory Notice Banner */}
-          <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex items-start gap-3">
-            <span className="material-symbols-outlined text-blue-600 text-[24px] shrink-0 mt-0.5">policy</span>
-            <div className="text-xs text-blue-900 leading-relaxed">
-              <strong className="block text-sm font-bold mb-0.5">Phân định thẩm quyền vận hành:</strong>
-              Màn hình này cung cấp <strong>chế độ giám sát tiến độ</strong> dành cho Quản lý cơ sở. Toàn bộ quy trình tiếp đón khách, đối soát CCCD, nghiệm thu hiện trường 5 hạng mục và phát hành mã PIN bàn giao được thực hiện trực tiếp bởi <strong>Nhân viên quầy (Facility Staff)</strong> tại Bàn Vận Hành Quầy &amp; Tiếp Đón.
+          {/* Header Bàn Vận Hành Quầy & Tiếp Đón */}
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center border border-cyan-400/30 shrink-0">
+                <span className="material-symbols-outlined text-[26px]">badge</span>
+              </div>
+              <div>
+                <h3 className="font-headline text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                  Bàn Vận Hành Quầy &amp; Tiếp Đón Bàn Giao
+                  <span className="px-2 py-0.5 rounded-full bg-cyan-400/20 text-cyan-300 text-[10px] font-mono font-bold border border-cyan-400/30">
+                    Facility Manager Desk
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
+                  Quản lý cơ sở trực tiếp tiếp nhận khách hàng, đối soát CCCD / giấy tờ tùy thân, nghiệm thu hiện trường 5 hạng mục và cấp phát mã PIN bảo mật bàn giao kho.
+                </p>
+              </div>
             </div>
+            {activeBookingId && (
+              <button
+                type="button"
+                onClick={() => setActiveBookingId('')}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[15px]">close</span>
+                <span>Thu gọn bàn thao tác</span>
+              </button>
+            )}
+          </div>
+
+          {/* BÀN THAO TÁC CHECK-IN & BÀN GIAO KHO */}
+          <div id="handover-workbench-section" className="scroll-mt-6">
+            <HandoverCheckInWorkbench
+              facilityId={selectedFacilityId || user?.facilityId}
+              arrivals={upcomingHandovers}
+              activeBookingId={activeBookingId}
+              onSelectBooking={setActiveBookingId}
+              onHandoverComplete={(bookingId) => {
+                setActiveBookingId('')
+                fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, checkinFromDate, checkinToDate)
+                const targetFac = selectedFacilityId || user?.facilityId
+                if (targetFac) void fetchUnits(targetFac)
+                triggerAction('Đã hoàn tất bàn giao kho và cấp phát mã PIN cho khách hàng thành công!')
+              }}
+            />
           </div>
 
           {/* Upcoming Handovers Table */}
@@ -1655,6 +1986,7 @@ export const ManagerDashboard: React.FC = () => {
                         </td>
                         <td className="py-3 px-3 text-right">
                           <div className="flex items-center justify-end gap-2 flex-wrap">
+<<<<<<< HEAD
                             {(b.status as string) === 'PENDING_CONTACT' || (b.status as string) === 'PENDING_CONFIRMATION' ? (
                               <button
                                 type="button"
@@ -1672,6 +2004,34 @@ export const ManagerDashboard: React.FC = () => {
                               >
                                 <span className="material-symbols-outlined text-[14px] text-emerald-600">person_check</span>
                                 <span>{b.assignedStaffName}</span>
+=======
+                            {b.assignedStaffName ? (
+                              <div className="flex items-center gap-1.5">
+                                <div
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold"
+                                  title={b.staffAssignmentNotes || undefined}
+                                >
+                                  <span className="material-symbols-outlined text-[14px] text-emerald-600">person_check</span>
+                                  <span>{b.assignedStaffName}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveBookingId(b.id)
+                                    const el = document.getElementById('handover-workbench-section')
+                                    if (el) el.scrollIntoView({ behavior: 'smooth' })
+                                  }}
+                                  className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 shadow-xs ${
+                                    activeBookingId === b.id
+                                      ? 'bg-cyan-700 text-white ring-2 ring-cyan-300'
+                                      : 'bg-cyan-600 hover:bg-cyan-700 text-white'
+                                  }`}
+                                  title="Mở bàn vận hành tiếp đón & bàn giao cho đơn này"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">desktop_windows</span>
+                                  <span>{activeBookingId === b.id ? 'Đang mở bàn' : 'Vận hành bàn giao'}</span>
+                                </button>
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
                               </div>
                             ) : role === 'FACILITY_MANAGER' || role === 'STAFF' ? (
                               <button
@@ -1681,7 +2041,7 @@ export const ManagerDashboard: React.FC = () => {
                                 className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
                               >
                                 <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
-                                <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận'}</span>
+                                <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận & Mở bàn'}</span>
                               </button>
                             ) : (
                               <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-500">

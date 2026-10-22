@@ -660,11 +660,29 @@ public class ContractSigningServiceImpl implements ContractSigningService {
 
         StorageUnit unit = booking.getStorageUnit();
         Facility facility = unit != null ? unit.getFacility() : null;
+<<<<<<< HEAD
         BigDecimal monthlyFee = (unit != null && unit.getEffectiveBasePrice() != null)
                 ? unit.getEffectiveBasePrice()
                 : (booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
                 ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), java.math.RoundingMode.HALF_UP)
                 : BigDecimal.valueOf(1500000));
+=======
+        BigDecimal monthlyFee = booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
+                ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP)
+                : (unit != null && unit.getEffectiveBasePrice() != null ? unit.getEffectiveBasePrice() : BigDecimal.valueOf(1500000));
+
+        BigDecimal depositHeld = BigDecimal.ZERO;
+        if (booking.getDepositPaid() != null) {
+            depositHeld = booking.getDepositPaid();
+        } else if (booking.getDepositAmount() != null && booking.getDepositAmount().compareTo(BigDecimal.ZERO) > 0) {
+            depositHeld = booking.getDepositAmount();
+        } else if (unit != null && unit.getUnitType() != null && unit.getUnitType().getDepositAmount() != null
+                && unit.getUnitType().getDepositAmount().compareTo(BigDecimal.ZERO) > 0) {
+            depositHeld = unit.getUnitType().getDepositAmount();
+        } else {
+            depositHeld = monthlyFee;
+        }
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
 
         RentalContract contract = RentalContract.builder()
                 .contractCode("CTR-" + booking.getBookingCode())
@@ -684,6 +702,56 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         return contract;
     }
 
+<<<<<<< HEAD
+=======
+    private BigDecimal resolveEffectiveDepositHeld(RentalContract contract) {
+        if (contract == null) return BigDecimal.ZERO;
+        if (contract.getDepositHeld() != null && contract.getDepositHeld().compareTo(BigDecimal.ZERO) > 0) {
+            return contract.getDepositHeld();
+        }
+        Booking booking = contract.getBooking();
+        if (booking != null) {
+            if (booking.getDepositPaid() != null) {
+                return booking.getDepositPaid();
+            }
+            if (booking.getDepositAmount() != null && booking.getDepositAmount().compareTo(BigDecimal.ZERO) > 0) {
+                return booking.getDepositAmount();
+            }
+        }
+        StorageUnit unit = contract.getUnit();
+        if (unit != null && unit.getUnitType() != null && unit.getUnitType().getDepositAmount() != null
+                && unit.getUnitType().getDepositAmount().compareTo(BigDecimal.ZERO) > 0) {
+            return unit.getUnitType().getDepositAmount();
+        }
+        if (contract.getMonthlyFee() != null && contract.getMonthlyFee().compareTo(BigDecimal.ZERO) > 0) {
+            return contract.getMonthlyFee();
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private RentalContractResponse toResponseWithResolvedFields(RentalContract c) {
+        RentalContractResponse res = rentalContractMapper.toResponse(c);
+        if (res == null) return null;
+        BigDecimal effectiveDeposit = resolveEffectiveDepositHeld(c);
+        if (effectiveDeposit.compareTo(BigDecimal.ZERO) > 0) {
+            res.setDepositHeld(effectiveDeposit);
+            if (c.getDepositHeld() == null || c.getDepositHeld().compareTo(BigDecimal.ZERO) <= 0) {
+                try {
+                    c.setDepositHeld(effectiveDeposit);
+                    rentalContractRepository.save(c);
+                } catch (Exception e) {
+                    log.debug("Notice saving resolved depositHeld for contract {}: {}", c.getId(), e.getMessage());
+                }
+            }
+        }
+        if (!"CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())
+                && c.getDocusealSubmitterSlug() != null) {
+            res.setSigningUrl(signingUrl(c, c.getDocusealSubmitterSlug()));
+        }
+        return res;
+    }
+
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
     private void autoGenerateContractsForOrphanConfirmedBookings(UUID customerId) {
         try {
             List<Booking> bookings = bookingRepository.findByCustomer_Id(customerId);

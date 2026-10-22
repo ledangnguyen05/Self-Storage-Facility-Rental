@@ -126,32 +126,23 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             assignedBy = userRepository.findById(currentUserId).orElse(null);
         }
 
-        // 6. Xác định giờ bắt đầu / kết thúc ca (hỗ trợ ca qua đêm)
-        java.time.LocalTime startTime = request.getStartTime();
-        java.time.LocalTime endTime = request.getEndTime();
-        if ((startTime == null) != (endTime == null)) {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Both shift start and end times must be provided together");
+        // 6. Xác định giờ bắt đầu / kết thúc ca chuẩn hóa
+        if (request.getShift() == StaffShift.FULL_DAY) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    "Hệ thống chỉ cho phép phân công 3 ca chuẩn: Ca Sáng (06:00 - 14:00), Ca Chiều (14:00 - 22:00), Ca Đêm (22:00 - 06:00)");
         }
-        if (startTime == null || endTime == null) {
-            switch (request.getShift()) {
-                case MORNING -> {
-                    startTime = java.time.LocalTime.of(6, 0);
-                    endTime = java.time.LocalTime.of(14, 0);
-                }
-                case AFTERNOON -> {
-                    startTime = java.time.LocalTime.of(14, 0);
-                    endTime = java.time.LocalTime.of(22, 0);
-                }
-                case NIGHT -> {
-                    startTime = java.time.LocalTime.of(22, 0);
-                    endTime = java.time.LocalTime.of(6, 0);
-                }
-                case FULL_DAY -> {
-                    startTime = java.time.LocalTime.of(8, 0);
-                    endTime = java.time.LocalTime.of(17, 0);
-                }
-            }
+        java.time.LocalTime standardStart = request.getShift().getDefaultStartTime();
+        java.time.LocalTime standardEnd = request.getShift().getDefaultEndTime();
+        if (request.getStartTime() != null && !request.getStartTime().equals(standardStart)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    String.format("Giờ bắt đầu cho ca %s phải là %s", request.getShift().getDisplayName(), standardStart));
         }
+        if (request.getEndTime() != null && !request.getEndTime().equals(standardEnd)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    String.format("Giờ kết thúc cho ca %s phải là %s", request.getShift().getDisplayName(), standardEnd));
+        }
+        java.time.LocalTime startTime = standardStart;
+        java.time.LocalTime endTime = standardEnd;
         ensureNoOverlappingAssignment(staff.getId(), request.getAssignedDate(), startTime, endTime, null);
 
         // 7. Tạo thực thể phân công ca
@@ -223,24 +214,27 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
                     "Attendance records cannot be edited as a schedule");
         }
 
+        if (request.getShift() == StaffShift.FULL_DAY) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    "Hệ thống chỉ cho phép phân công 3 ca chuẩn: Ca Sáng (06:00 - 14:00), Ca Chiều (14:00 - 22:00), Ca Đêm (22:00 - 06:00)");
+        }
         StaffShift effectiveShift = request.getShift() != null ? request.getShift() : assignment.getShift();
-        java.time.LocalTime effectiveStartTime = request.getStartTime() != null
-                ? request.getStartTime() : assignment.getStartTime();
-        java.time.LocalTime effectiveEndTime = request.getEndTime() != null
-                ? request.getEndTime() : assignment.getEndTime();
-        if (request.getShift() != null && request.getShift() != assignment.getShift()
-                && request.getStartTime() == null && request.getEndTime() == null) {
-            java.time.LocalTime[] times = defaultShiftTimes(effectiveShift);
-            effectiveStartTime = times[0];
-            effectiveEndTime = times[1];
+        java.time.LocalTime standardStart = effectiveShift.getDefaultStartTime();
+        java.time.LocalTime standardEnd = effectiveShift.getDefaultEndTime();
+        if (request.getStartTime() != null && !request.getStartTime().equals(standardStart)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    String.format("Giờ bắt đầu cho ca %s phải là %s", effectiveShift.getDisplayName(), standardStart));
         }
+        if (request.getEndTime() != null && !request.getEndTime().equals(standardEnd)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    String.format("Giờ kết thúc cho ca %s phải là %s", effectiveShift.getDisplayName(), standardEnd));
+        }
+        java.time.LocalTime effectiveStartTime = standardStart;
+        java.time.LocalTime effectiveEndTime = standardEnd;
 
-        if ((request.getShift() != null && request.getShift() != assignment.getShift())
-                || request.getStartTime() != null || request.getEndTime() != null) {
-            ensureNoOverlappingAssignment(
-                    assignment.getStaff().getId(), assignment.getAssignedDate(),
-                    effectiveStartTime, effectiveEndTime, assignment.getId());
-        }
+        ensureNoOverlappingAssignment(
+                assignment.getStaff().getId(), assignment.getAssignedDate(),
+                effectiveStartTime, effectiveEndTime, assignment.getId());
 
         // Kiểm tra trùng ca nếu có thay đổi shift
         if (request.getShift() != null && request.getShift() != assignment.getShift()) {
@@ -312,13 +306,19 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             throw new AppException(ErrorCode.INVALID_REQUEST, "Only an assigned shift can be checked in");
         }
 
-        if (assignment.getStartTime() == null || assignment.getEndTime() == null
-                || assignment.getStartTime().equals(assignment.getEndTime())) {
+        java.time.LocalTime startTime = assignment.getStartTime();
+        java.time.LocalTime endTime = assignment.getEndTime();
+        if (startTime == null || endTime == null) {
+            java.time.LocalTime[] defaults = defaultShiftTimes(assignment.getShift());
+            startTime = defaults[0];
+            endTime = defaults[1];
+        }
+        if (startTime.equals(endTime)) {
             throw new AppException(ErrorCode.INVALID_REQUEST, "The assigned shift has no valid check-in window");
         }
-        java.time.LocalDateTime shiftStart = assignment.getAssignedDate().atTime(assignment.getStartTime());
-        java.time.LocalDateTime shiftEnd = assignment.getAssignedDate().atTime(assignment.getEndTime());
-        if (!assignment.getEndTime().isAfter(assignment.getStartTime())) {
+        java.time.LocalDateTime shiftStart = assignment.getAssignedDate().atTime(startTime);
+        java.time.LocalDateTime shiftEnd = assignment.getAssignedDate().atTime(endTime);
+        if (!endTime.isAfter(startTime)) {
             shiftEnd = shiftEnd.plusDays(1);
         }
         java.time.LocalDateTime now = java.time.LocalDateTime.now(BUSINESS_ZONE);
@@ -505,12 +505,15 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void autoMarkAbsentShifts() {
         LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        LocalDate yesterday = today.minusDays(1);
         java.time.LocalTime nowTime = java.time.LocalTime.now(BUSINESS_ZONE);
         try {
-            int pastCount = staffAssignmentRepository.markPastUncheckedInAsAbsent(today);
+            int priorCount = staffAssignmentRepository.markPriorToYesterdayUncheckedInAsAbsent(yesterday);
+            int yesterdayCount = staffAssignmentRepository.markYesterdayEndedUncheckedInAsAbsent(yesterday, nowTime);
             int todayCount = staffAssignmentRepository.markTodayEndedUncheckedInAsAbsent(today, nowTime);
-            if (pastCount > 0 || todayCount > 0) {
-                log.info("Auto-marked unchecked-in shifts as ABSENT: {} past, {} today", pastCount, todayCount);
+            if (priorCount > 0 || yesterdayCount > 0 || todayCount > 0) {
+                log.info("Auto-marked unchecked-in shifts as ABSENT: {} prior, {} yesterday, {} today",
+                        priorCount, yesterdayCount, todayCount);
             }
         } catch (Exception e) {
             log.warn("Failed to auto-mark absent shifts: {}", e.getMessage());
@@ -532,12 +535,6 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             String sortBy,
             String sortDir
     ) {
-        try {
-            autoMarkAbsentShifts();
-        } catch (Exception e) {
-            log.debug("autoMarkAbsentShifts invocation skipped: {}", e.getMessage());
-        }
-
         if (fromDate != null && toDate != null && toDate.isBefore(fromDate)) {
             throw new AppException(ErrorCode.INVALID_REQUEST, "toDate must be on or after fromDate");
         }
@@ -598,12 +595,6 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
     @Override
     @Transactional(readOnly = true)
     public List<StaffAssignmentResponse> getDailyBoard(UUID facilityId, LocalDate date) {
-        try {
-            autoMarkAbsentShifts();
-        } catch (Exception e) {
-            log.debug("autoMarkAbsentShifts invocation skipped: {}", e.getMessage());
-        }
-
         UUID targetFacilityId = facilityAccessGuard.isFacilityScoped()
                 ? facilityAccessGuard.scopedFacilityIdOrNull()
                 : facilityId;
@@ -680,11 +671,9 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
     }
 
     private java.time.LocalTime[] defaultShiftTimes(StaffShift shift) {
-        return switch (shift) {
-            case MORNING -> new java.time.LocalTime[]{java.time.LocalTime.of(6, 0), java.time.LocalTime.of(14, 0)};
-            case AFTERNOON -> new java.time.LocalTime[]{java.time.LocalTime.of(14, 0), java.time.LocalTime.of(22, 0)};
-            case NIGHT -> new java.time.LocalTime[]{java.time.LocalTime.of(22, 0), java.time.LocalTime.of(6, 0)};
-            case FULL_DAY -> new java.time.LocalTime[]{java.time.LocalTime.of(8, 0), java.time.LocalTime.of(17, 0)};
-        };
+        if (shift == null) {
+            return new java.time.LocalTime[]{java.time.LocalTime.of(6, 0), java.time.LocalTime.of(14, 0)};
+        }
+        return new java.time.LocalTime[]{shift.getDefaultStartTime(), shift.getDefaultEndTime()};
     }
 }

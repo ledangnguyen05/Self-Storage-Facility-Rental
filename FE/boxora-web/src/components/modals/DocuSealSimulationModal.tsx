@@ -364,7 +364,11 @@ export function DocuSealSimulationModal({
               <strong className="text-slate-900 block font-semibold">Cam kết & Điều khoản chung:</strong>
               <ul className="list-disc pl-4 space-y-0.5 text-slate-600">
                 <li>Bên B cam đoan không chứa hàng cấm, vũ khí, chất cháy nổ hoặc động vật sống.</li>
+<<<<<<< HEAD
                 <li>Hệ thống cấp mã PIN bảo mật cá nhân qua email ngay sau khi chữ ký điện tử được hoàn tất.</li>
+=======
+                <li>Mã PIN bảo mật cá nhân chỉ được kích hoạt và cấp phát sau khi hoàn tất đối soát đủ 3 điều kiện check-in và bàn giao kho tại cơ sở.</li>
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
                 <li>Thời gian thanh toán định kỳ hàng tháng tuân thủ theo chính sách tự quản Boxora.</li>
               </ul>
             </div>

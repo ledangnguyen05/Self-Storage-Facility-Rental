@@ -30,6 +30,7 @@ public class FacilityResponse {
     private BigDecimal latitude;
     private BigDecimal longitude;
     private String layoutConfig;
+    private String imageUrl;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

@@ -44,24 +44,46 @@ export interface Facility {
   status?: string
 }
 
+export interface FloorOperationPoint {
+  id: string
+  name: string
+}
+
+export interface FloorFunctionalZone {
+  id: string
+  code: string
+  name: string
+  description?: string
+}
+
+export interface FacilityFloorConfig {
+  id: string
+  floorNumber: number
+  name: string
+  totalArea?: string
+  operationPoints: FloorOperationPoint[]
+  zones: FloorFunctionalZone[]
+}
+
 export interface FacilityLayoutConfig {
   title: string
-  floor1Name: string
-  floor2Name: string
-  zoneAName: string
-  zoneADesc: string
-  zoneBName: string
-  zoneBDesc: string
-  zoneCName: string
-  zoneCDesc: string
-  loadingBayFloor1: string
-  corridorNorth: string
-  exitFloor1: string
-  loadingBayFloor2: string
-  corridorClimate: string
-  exitFloor2: string
-  totalAreaFloor1: string
-  totalAreaFloor2: string
+  floors?: FacilityFloorConfig[]
+  floor1Name?: string
+  floor2Name?: string
+  zoneAName?: string
+  zoneADesc?: string
+  zoneBName?: string
+  zoneBDesc?: string
+  zoneCName?: string
+  zoneCDesc?: string
+  loadingBayFloor1?: string
+  corridorNorth?: string
+  exitFloor1?: string
+  loadingBayFloor2?: string
+  corridorClimate?: string
+  exitFloor2?: string
+  totalAreaFloor1?: string
+  totalAreaFloor2?: string
 }
 
 export interface UnitType {
@@ -121,8 +143,12 @@ export interface StorageUnit {
   bookingId?: string
   startDate?: string
   dueDate?: string
+<<<<<<< HEAD
   images?: string[]
   primaryImageUrl?: string
+=======
+  imageUrl?: string
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
 }
 
 <<<<<<< Updated upstream

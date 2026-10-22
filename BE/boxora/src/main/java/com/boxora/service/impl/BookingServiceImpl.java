@@ -25,6 +25,23 @@ import com.boxora.service.ActivityLogService;
 import com.boxora.service.BookingService;
 import com.boxora.service.EncryptionService;
 import com.boxora.service.StorageUnitLockService;
+<<<<<<< HEAD
+=======
+import com.boxora.dto.request.BookingRescheduleRequest;
+import com.boxora.dto.response.BookingRescheduleEligibilityResponse;
+import com.boxora.dto.response.BookingRescheduleHistoryResponse;
+import com.boxora.dto.response.BookingRescheduleResponse;
+import com.boxora.entity.BookingRescheduleHistory;
+import com.boxora.entity.Facility;
+import com.boxora.entity.RentalContract;
+import com.boxora.entity.StaffAssignment;
+import com.boxora.enums.RentalContractStatus;
+import com.boxora.enums.StaffAssignmentStatus;
+import com.boxora.enums.StaffShift;
+import com.boxora.repository.BookingRescheduleHistoryRepository;
+import com.boxora.repository.RentalContractRepository;
+import com.boxora.repository.StaffAssignmentRepository;
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -509,6 +526,7 @@ public class BookingServiceImpl implements BookingService {
                 ? booking.getStorageUnit().getFacility().getId()
                 : null;
 
+<<<<<<< HEAD
         List<StaffAssignment> myAssignments = staffAssignmentRepository.findByStaff_IdAndAssignedDate(currentUserId, checkInDate);
         boolean hasCheckedInShift = myAssignments.stream().anyMatch(a -> {
             boolean facMatch = facId == null || a.getFacility() == null || facId.equals(a.getFacility().getId());
@@ -516,6 +534,27 @@ public class BookingServiceImpl implements BookingService {
                     || (a.getCheckedInAt() != null && a.getCheckedOutAt() == null);
             return facMatch && checkedIn;
         });
+=======
+            List<StaffAssignment> myAssignments = new ArrayList<>(
+                    staffAssignmentRepository.findByStaff_IdAndAssignedDate(currentUserId, checkInDate));
+            List<StaffAssignment> prevDayAssignments = staffAssignmentRepository.findByStaff_IdAndAssignedDate(
+                    currentUserId, checkInDate.minusDays(1));
+            for (StaffAssignment prev : prevDayAssignments) {
+                boolean isOvernight = prev.getShift() == StaffShift.NIGHT
+                        || (prev.getStartTime() != null && prev.getEndTime() != null
+                            && !prev.getEndTime().isAfter(prev.getStartTime()));
+                if (isOvernight) {
+                    myAssignments.add(prev);
+                }
+            }
+
+            boolean hasCheckedInShift = myAssignments.stream().anyMatch(a -> {
+                boolean facMatch = facId == null || a.getFacility() == null || facId.equals(a.getFacility().getId());
+                boolean checkedIn = a.getStatus() == StaffAssignmentStatus.CHECKED_IN
+                        || (a.getCheckedInAt() != null && a.getCheckedOutAt() == null);
+                return facMatch && checkedIn;
+            });
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
 
         if (!hasCheckedInShift) {
             throw new AppException(ErrorCode.FORBIDDEN,

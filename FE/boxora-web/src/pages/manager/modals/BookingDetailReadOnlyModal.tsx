@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { handoverService, HandoverPrerequisites } from '../../../services/handoverService'
 import { bookingService } from '../../../services/bookingService'
 import { Booking } from '../../../types'
@@ -22,12 +22,19 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
   const [prereq, setPrereq] = useState<HandoverPrerequisites | null>(null)
   const [booking, setBooking] = useState<Booking | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [uploadingProof, setUploadingProof] = useState<boolean>(false)
+  const [uploadedProofUrl, setUploadedProofUrl] = useState<string | null>(null)
+  const [openingDocUrl, setOpeningDocUrl] = useState<string | null>(null)
+  const [proofMessage, setProofMessage] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!isOpen) {
       setPrereq(null)
       setBooking(null)
       setError(null)
+      setUploadedProofUrl(null)
+      setProofMessage(null)
       return
     }
 
@@ -74,11 +81,65 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
     void loadData()
   }, [isOpen, bookingId, unitBackendId, unitCode])
 
+  const activeBookingId = bookingId || booking?.id || prereq?.bookingId
+
+  const handleUploadProof = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!activeBookingId) {
+      setProofMessage('Không tìm thấy mã đặt chỗ để tải ảnh.')
+      return
+    }
+    const MAX_SIZE = 10 * 1024 * 1024
+    if (file.size > MAX_SIZE) {
+      setProofMessage('Dung lượng tệp vượt quá giới hạn 10MB.')
+      return
+    }
+
+    setUploadingProof(true)
+    setProofMessage(null)
+    try {
+      const res = await handoverService.uploadHandoverDocument(activeBookingId, file, 'PAYMENT_PROOF')
+      if (res?.fileUrl) {
+        setUploadedProofUrl(res.fileUrl)
+        setProofMessage('Đã tải lên ảnh chuyển khoản thành công!')
+        const fresh = await handoverService.getCheckInPrerequisites(activeBookingId)
+        setPrereq(fresh)
+      }
+    } catch (err: any) {
+      setProofMessage(err?.response?.data?.message || err?.message || 'Lỗi khi tải ảnh chuyển khoản lên hệ thống.')
+    } finally {
+      setUploadingProof(false)
+      e.target.value = ''
+    }
+  }
+
+  const handleOpenDoc = async (url: string) => {
+    if (!activeBookingId || !url) return
+    setOpeningDocUrl(url)
+    try {
+      const blobUrl = await handoverService.viewAuthorizedDocument(activeBookingId, url)
+      window.open(blobUrl, '_blank')
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || 'Không thể xem tài liệu đối soát.')
+    } finally {
+      setOpeningDocUrl(null)
+    }
+  }
+
   if (!isOpen) return null
+
+  const isDepositMet = prereq ? prereq.depositSatisfied : false
+  const isRentMet = prereq ? prereq.firstMonthRentSatisfied : false
+  const isPaymentMet = isDepositMet && isRentMet
+
+  const totalRequired = ((prereq?.requiredDeposit || 0) + (prereq?.requiredFirstMonthRent || 0))
+  const totalPaid = ((prereq?.depositPaid || 0) + (prereq?.firstMonthRentPaid || 0))
+  const totalRemaining = ((prereq?.depositRemaining || 0) + (prereq?.firstMonthRentRemaining || 0))
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 max-h-[90vh] overflow-y-auto text-left">
+      <div className="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 max-h-[90vh] overflow-y-auto text-left">
         
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -89,7 +150,7 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-headline text-base font-bold text-slate-900">
-                  Hồ Sơ Đặt Kho &amp; Điều Kiện Bàn Giao
+                  Hồ Sơ Đặt Kho &amp; Đối Soát 3 Điều Kiện Bàn Giao
                 </h3>
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200">
                   CHẾ ĐỘ GIÁM SÁT
@@ -113,7 +174,7 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
         {loading ? (
           <div className="py-12 flex flex-col items-center justify-center gap-2">
             <span className="material-symbols-outlined text-3xl text-blue-600 animate-spin">progress_activity</span>
-            <span className="text-xs text-slate-500 font-medium">Đang tải đối soát 4 điều kiện tiên quyết...</span>
+            <span className="text-xs text-slate-500 font-medium">Đang tải đối soát 3 điều kiện tiên quyết...</span>
           </div>
         ) : error ? (
           <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
@@ -152,8 +213,8 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
                 </span>
                 <span className="font-bold">
                   {prereq.eligibleForCheckIn 
-                    ? 'Đơn đặt kho đã đủ 4 điều kiện sẵn sàng bàn giao thực địa' 
-                    : 'Đơn đặt kho chưa hoàn tất đủ 4 điều kiện tiên quyết'}
+                    ? 'Đơn đặt kho đã đủ 3 điều kiện sẵn sàng bàn giao thực địa' 
+                    : 'Đơn đặt kho chưa hoàn tất đủ 3 điều kiện tiên quyết'}
                 </span>
               </div>
               <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${
@@ -163,75 +224,21 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
               </span>
             </div>
 
-            {/* 4 Prerequisites Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* 3 Prerequisites Cards */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
               
-              {/* Điều kiện 1: Đủ tiền cọc */}
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-white flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between text-xs mb-1.5">
-                    <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px] text-blue-600">savings</span>
-                      1. Tiền đặt cọc giữ chỗ
-                    </span>
-                    <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                      prereq.depositSatisfied ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                    }`}>
-                      {prereq.depositSatisfied ? 'Đã thu đủ' : 'Chưa đủ'}
-                    </span>
-                  </div>
-                  <div className="text-xs text-slate-600 space-y-1">
-                    <div className="flex justify-between">
-                      <span>Đã nộp:</span>
-                      <strong className="font-mono text-slate-900">{(prereq.depositPaid || 0).toLocaleString('vi-VN')} đ</strong>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Yêu cầu:</span>
-                      <span className="font-mono text-slate-500">{(prereq.requiredDeposit || 0).toLocaleString('vi-VN')} đ</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Điều kiện 2: Đủ tiền thuê tháng đầu */}
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-white flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between text-xs mb-1.5">
-                    <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px] text-cyan-600">calendar_month</span>
-                      2. Tiền thuê tháng đầu
-                    </span>
-                    <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                      prereq.firstMonthRentSatisfied ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                    }`}>
-                      {prereq.firstMonthRentSatisfied ? 'Đã thu đủ' : 'Chưa đóng'}
-                    </span>
-                  </div>
-                  <div className="text-xs text-slate-600 space-y-1">
-                    <div className="flex justify-between">
-                      <span>Đã nộp:</span>
-                      <strong className="font-mono text-slate-900">{(prereq.firstMonthRentPaid || 0).toLocaleString('vi-VN')} đ</strong>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Yêu cầu:</span>
-                      <span className="font-mono text-slate-500">{(prereq.requiredFirstMonthRent || 0).toLocaleString('vi-VN')} đ</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Điều kiện 3: Hợp đồng điện tử */}
+              {/* Điều kiện 1: Hợp đồng thuê kho */}
               <div className="p-3.5 rounded-xl border border-slate-200 bg-white flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-xs mb-1.5">
                     <span className="font-bold text-slate-800 flex items-center gap-1.5">
                       <span className="material-symbols-outlined text-[16px] text-purple-600">history_edu</span>
-                      3. Hợp đồng điện tử
+                      1. Hợp đồng thuê kho
                     </span>
                     <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
                       prereq.contractSigned ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                     }`}>
-                      {prereq.contractSigned ? 'Đã ký xác thực điện tử' : 'Chưa ký xác nhận'}
+                      {prereq.contractSigned ? 'Đã ký hợp lệ' : 'Chưa ký xác nhận'}
                     </span>
                   </div>
                   <div className="text-xs text-slate-600 space-y-1">
@@ -240,20 +247,156 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
                       <strong className="font-mono text-slate-900">{prereq.contractCode || 'Chưa tạo'}</strong>
                     </div>
                     <div className="flex justify-between">
+                      <span>Phương thức:</span>
+                      <span className="font-medium text-slate-700">
+                        {prereq.contractSigningMethod === 'PAPER' ? '🏢 Ký Giấy Tại Quầy' : '✍️ Ký Điện Tử'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
                       <span>Trạng thái:</span>
                       <span className="font-mono text-slate-500">{prereq.contractStatus || 'N/A'}</span>
                     </div>
+                    {prereq.paperContractUrl && (
+                      <div className="pt-1 border-t border-slate-100 flex justify-between items-center">
+                        <span className="text-slate-500 text-[11px]">Bản scan:</span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDoc(prereq.paperContractUrl!)}
+                          disabled={openingDocUrl === prereq.paperContractUrl}
+                          className="text-cyan-700 hover:text-cyan-800 font-bold text-[11px] inline-flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[13px]">attachment</span>
+                          <span>{openingDocUrl === prereq.paperContractUrl ? '...' : 'Xem scan'}</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Điều kiện 4: Đối soát CCCD */}
+              {/* Điều kiện 2: Bằng chứng chuyển khoản toàn bộ tiền cọc & thuê trong toàn bộ thời hạn */}
+              <div className="p-3.5 rounded-xl border border-slate-200 bg-white flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px] text-cyan-600">payments</span>
+                      2. Chuyển khoản cọc &amp; thuê
+                    </span>
+                    <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                      isPaymentMet ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                    }`}>
+                      {isPaymentMet ? 'Đã thu đủ' : 'Chưa đủ'}
+                    </span>
+                  </div>
+
+                  <div className="text-xs text-slate-600 space-y-1">
+                    <div className="flex justify-between">
+                      <span>Tổng phải thu:</span>
+                      <strong className="font-mono text-slate-900">{totalRequired.toLocaleString('vi-VN')} đ</strong>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Đã nộp:</span>
+                      <strong className="font-mono text-emerald-700">{totalPaid.toLocaleString('vi-VN')} đ</strong>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Còn thiếu:</span>
+                      <strong className={`font-mono ${totalRemaining > 0 ? 'text-rose-600' : 'text-slate-700'}`}>
+                        {totalRemaining.toLocaleString('vi-VN')} đ
+                      </strong>
+                    </div>
+                    <div className="pt-1 border-t border-slate-100 space-y-0.5 text-[11px] text-slate-500">
+                      <div className="flex justify-between">
+                        <span>• Tiền cọc:</span>
+                        <span className="font-mono font-medium">{(prereq.depositPaid || 0).toLocaleString('vi-VN')}đ / {(prereq.requiredDeposit || 0).toLocaleString('vi-VN')}đ {isDepositMet ? '✓' : ''}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>• Tiền thuê toàn hạn:</span>
+                        <span className="font-mono font-medium">{(prereq.firstMonthRentPaid || 0).toLocaleString('vi-VN')}đ / {(prereq.requiredFirstMonthRent || 0).toLocaleString('vi-VN')}đ {isRentMet ? '✓' : ''}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Upload message if any */}
+                  {proofMessage && (
+                    <div className="mt-2 p-1.5 rounded bg-blue-50 border border-blue-200 text-blue-800 text-[11px]">
+                      {proofMessage}
+                    </div>
+                  )}
+
+                  {/* Uploaded proof pill */}
+                  {uploadedProofUrl && (
+                    <div className="mt-2 p-1.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] flex items-center justify-between">
+                      <span>Ảnh vừa tải lên:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenDoc(uploadedProofUrl)}
+                        disabled={openingDocUrl === uploadedProofUrl}
+                        className="px-1.5 py-0.5 rounded bg-emerald-600 text-white font-bold text-[10px] cursor-pointer"
+                      >
+                        {openingDocUrl === uploadedProofUrl ? '...' : 'Xem ảnh'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Existing payment receipts */}
+                  {prereq.paymentHistory && prereq.paymentHistory.length > 0 && (
+                    <div className="mt-2 space-y-1 max-h-20 overflow-y-auto">
+                      {prereq.paymentHistory.map((p) => (
+                        <div key={p.id} className="p-1 rounded bg-slate-50 text-[10px] flex items-center justify-between">
+                          <span className="font-mono font-bold text-slate-700">
+                            {p.paymentType === 'DEPOSIT' ? '[Cọc]' : '[Thuê]'} {p.amount.toLocaleString('vi-VN')}đ
+                          </span>
+                          <div className="flex items-center gap-1">
+                            {p.proofDocumentUrl && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDoc(p.proofDocumentUrl!)}
+                                disabled={openingDocUrl === p.proofDocumentUrl}
+                                className="px-1 py-0.2 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[9px] cursor-pointer"
+                              >
+                                {openingDocUrl === p.proofDocumentUrl ? '...' : 'Xem UNC'}
+                              </button>
+                            )}
+                            <span className={`px-1 py-0.2 rounded font-bold text-[9px] ${p.status === 'PAID' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                              {p.status === 'PAID' ? 'Đã thu' : p.status}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Upload Button */}
+                <div className="mt-2.5 pt-2 border-t border-slate-100">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,application/pdf"
+                    className="hidden"
+                    onChange={handleUploadProof}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingProof}
+                    className="w-full py-1.5 px-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-[11px] flex items-center justify-center gap-1 transition cursor-pointer disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">
+                      {uploadingProof ? 'hourglass_top' : 'upload_file'}
+                    </span>
+                    <span>{uploadingProof ? 'Đang Tải...' : 'Upload Ảnh Chuyển Khoản'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Điều kiện 3: Đối soát CCCD */}
               <div className="p-3.5 rounded-xl border border-slate-200 bg-white flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-xs mb-1.5">
                     <span className="font-bold text-slate-800 flex items-center gap-1.5">
                       <span className="material-symbols-outlined text-[16px] text-teal-600">badge</span>
-                      4. Đối soát CCCD gốc
+                      3. Đối soát CCCD gốc
                     </span>
                     <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
                       prereq.identityVerified ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
@@ -267,9 +410,19 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
                       <strong className="font-mono text-slate-900">{prereq.idCardNumber || 'N/A'}</strong>
                     </div>
                     <div className="flex justify-between">
+                      <span>Loại thẻ:</span>
+                      <span className="font-mono text-slate-700">{prereq.idCardType || 'CCCD'}</span>
+                    </div>
+                    <div className="flex justify-between">
                       <span>Thực hiện tại:</span>
                       <span className="text-slate-500">Quầy tiếp đón cơ sở</span>
                     </div>
+                    {prereq.identityVerifiedByName && (
+                      <div className="flex justify-between">
+                        <span>Nhân viên:</span>
+                        <span className="font-medium text-emerald-700">{prereq.identityVerifiedByName}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

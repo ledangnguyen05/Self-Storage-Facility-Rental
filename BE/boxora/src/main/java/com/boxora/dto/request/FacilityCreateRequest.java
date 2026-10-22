@@ -54,4 +54,5 @@ public class FacilityCreateRequest {
     private BigDecimal longitude;
 
     private String layoutConfig;
+    private String imageUrl;
 }

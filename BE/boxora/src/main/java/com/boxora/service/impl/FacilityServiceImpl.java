@@ -102,6 +102,11 @@ public class FacilityServiceImpl implements FacilityService {
             facility.setLatitude(null);
             facility.setLongitude(null);
         }
+        if (Boolean.TRUE.equals(request.getClearImageUrl())) {
+            facility.setImageUrl(null);
+        } else if (request.getImageUrl() != null) {
+            facility.setImageUrl(request.getImageUrl().trim().isEmpty() ? null : request.getImageUrl().trim());
+        }
         validateCoordinates(facility.getLatitude(), facility.getLongitude());
 
         if (request.getManagerId() != null) {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { staffAssignmentService, StaffAssignmentResponse } from '../../../services/staffAssignmentService'
+import { STANDARD_SHIFTS_LIST } from '../../../constants/shiftConstants'
 
 interface ShiftEditModalProps {
   isOpen: boolean
@@ -14,7 +15,7 @@ export const ShiftEditModal: React.FC<ShiftEditModalProps> = ({
   assignment,
   onSave
 }) => {
-  const [shiftType, setShiftType] = useState<'MORNING' | 'AFTERNOON' | 'NIGHT' | 'FULL_DAY'>('AFTERNOON')
+  const [shiftType, setShiftType] = useState<'MORNING' | 'AFTERNOON' | 'NIGHT'>('AFTERNOON')
   const [targetZone, setTargetZone] = useState('Phân khu A (Hành lang Aisle North)')
   const [roleInShift, setRoleInShift] = useState('PRIMARY_STAFF')
   const [notes, setNotes] = useState('')
@@ -23,7 +24,8 @@ export const ShiftEditModal: React.FC<ShiftEditModalProps> = ({
 
   useEffect(() => {
     if (assignment) {
-      setShiftType(assignment.shift || 'AFTERNOON')
+      const initialShift = assignment.shift === 'FULL_DAY' ? 'MORNING' : (assignment.shift || 'AFTERNOON')
+      setShiftType(initialShift as 'MORNING' | 'AFTERNOON' | 'NIGHT')
       setTargetZone(assignment.assignedZone || 'Phân khu A (Hành lang Aisle North)')
       setRoleInShift(assignment.roleInShift || 'PRIMARY_STAFF')
       setNotes(assignment.notes || '')
@@ -94,24 +96,20 @@ export const ShiftEditModal: React.FC<ShiftEditModalProps> = ({
               Ca làm việc
             </label>
             <div className="grid grid-cols-3 gap-2">
-              {[
-                { type: 'MORNING' as const, label: 'Ca Sáng', time: '06:00 - 14:00' },
-                { type: 'AFTERNOON' as const, label: 'Ca Chiều', time: '14:00 - 22:00' },
-                { type: 'NIGHT' as const, label: 'Ca Đêm', time: '22:00 - 06:00' }
-              ].map(s => (
+              {STANDARD_SHIFTS_LIST.map(s => (
                 <button
                   key={s.type}
                   type="button"
-                  onClick={() => setShiftType(s.type)}
+                  onClick={() => setShiftType(s.type as 'MORNING' | 'AFTERNOON' | 'NIGHT')}
                   className={`p-2 rounded-lg border text-center transition-all cursor-pointer ${
                     shiftType === s.type
                       ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="font-bold block">{s.label}</span>
+                  <span className="font-bold block">{s.shortLabel}</span>
                   <span className={`text-[10px] block mt-0.5 ${shiftType === s.type ? 'text-slate-300' : 'text-slate-500'}`}>
-                    {s.time}
+                    {s.timeRange}
                   </span>
                 </button>
               ))}

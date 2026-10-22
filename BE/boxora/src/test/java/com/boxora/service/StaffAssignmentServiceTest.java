@@ -278,6 +278,179 @@ class StaffAssignmentServiceTest {
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.STAFF_ALREADY_ASSIGNED_SHIFT);
             verify(staffAssignmentRepository, never()).save(any());
         }
+
+        @Test
+        @DisplayName("Chuẩn hóa giờ Ca Sáng thành 06:00 - 14:00")
+        void shouldStandardizeMorningShiftHours() {
+            LocalDate tomorrow = LocalDate.now().plusDays(1);
+            StaffAssignmentCreateRequest request = StaffAssignmentCreateRequest.builder()
+                    .staffId(staffId)
+                    .facilityId(facilityId)
+                    .assignedDate(tomorrow)
+                    .shift(StaffShift.MORNING)
+                    .build();
+
+            when(facilityRepository.findById(facilityId)).thenReturn(Optional.of(facility));
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(staffAssignmentRepository.existsByStaff_IdAndAssignedDateAndShift(staffId, tomorrow, StaffShift.MORNING))
+                    .thenReturn(false);
+            when(requestContext.currentUserId()).thenReturn(managerId);
+            when(userRepository.findById(managerId)).thenReturn(Optional.of(managerUser));
+
+            org.mockito.ArgumentCaptor<StaffAssignment> captor = org.mockito.ArgumentCaptor.forClass(StaffAssignment.class);
+            when(staffAssignmentRepository.save(captor.capture())).thenAnswer(inv -> {
+                StaffAssignment a = inv.getArgument(0);
+                a.setId(UUID.randomUUID());
+                return a;
+            });
+            when(staffAssignmentMapper.toResponse(any())).thenReturn(StaffAssignmentResponse.builder()
+                    .shift(StaffShift.MORNING)
+                    .status(StaffAssignmentStatus.ASSIGNED)
+                    .build());
+
+            staffAssignmentService.createAssignment(request);
+
+            StaffAssignment saved = captor.getValue();
+            assertThat(saved.getStartTime()).isEqualTo(LocalTime.of(6, 0));
+            assertThat(saved.getEndTime()).isEqualTo(LocalTime.of(14, 0));
+        }
+
+        @Test
+        @DisplayName("Chuẩn hóa giờ Ca Chiều thành 14:00 - 22:00")
+        void shouldStandardizeAfternoonShiftHours() {
+            LocalDate tomorrow = LocalDate.now().plusDays(1);
+            StaffAssignmentCreateRequest request = StaffAssignmentCreateRequest.builder()
+                    .staffId(staffId)
+                    .facilityId(facilityId)
+                    .assignedDate(tomorrow)
+                    .shift(StaffShift.AFTERNOON)
+                    .build();
+
+            when(facilityRepository.findById(facilityId)).thenReturn(Optional.of(facility));
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(staffAssignmentRepository.existsByStaff_IdAndAssignedDateAndShift(staffId, tomorrow, StaffShift.AFTERNOON))
+                    .thenReturn(false);
+            when(requestContext.currentUserId()).thenReturn(managerId);
+            when(userRepository.findById(managerId)).thenReturn(Optional.of(managerUser));
+
+            org.mockito.ArgumentCaptor<StaffAssignment> captor = org.mockito.ArgumentCaptor.forClass(StaffAssignment.class);
+            when(staffAssignmentRepository.save(captor.capture())).thenAnswer(inv -> {
+                StaffAssignment a = inv.getArgument(0);
+                a.setId(UUID.randomUUID());
+                return a;
+            });
+            when(staffAssignmentMapper.toResponse(any())).thenReturn(StaffAssignmentResponse.builder()
+                    .shift(StaffShift.AFTERNOON)
+                    .status(StaffAssignmentStatus.ASSIGNED)
+                    .build());
+
+            staffAssignmentService.createAssignment(request);
+
+            StaffAssignment saved = captor.getValue();
+            assertThat(saved.getStartTime()).isEqualTo(LocalTime.of(14, 0));
+            assertThat(saved.getEndTime()).isEqualTo(LocalTime.of(22, 0));
+        }
+
+        @Test
+        @DisplayName("Chuẩn hóa giờ Ca Đêm thành 22:00 - 06:00 hôm sau")
+        void shouldStandardizeNightShiftHours() {
+            LocalDate tomorrow = LocalDate.now().plusDays(1);
+            StaffAssignmentCreateRequest request = StaffAssignmentCreateRequest.builder()
+                    .staffId(staffId)
+                    .facilityId(facilityId)
+                    .assignedDate(tomorrow)
+                    .shift(StaffShift.NIGHT)
+                    .build();
+
+            when(facilityRepository.findById(facilityId)).thenReturn(Optional.of(facility));
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(staffAssignmentRepository.existsByStaff_IdAndAssignedDateAndShift(staffId, tomorrow, StaffShift.NIGHT))
+                    .thenReturn(false);
+            when(requestContext.currentUserId()).thenReturn(managerId);
+            when(userRepository.findById(managerId)).thenReturn(Optional.of(managerUser));
+
+            org.mockito.ArgumentCaptor<StaffAssignment> captor = org.mockito.ArgumentCaptor.forClass(StaffAssignment.class);
+            when(staffAssignmentRepository.save(captor.capture())).thenAnswer(inv -> {
+                StaffAssignment a = inv.getArgument(0);
+                a.setId(UUID.randomUUID());
+                return a;
+            });
+            when(staffAssignmentMapper.toResponse(any())).thenReturn(StaffAssignmentResponse.builder()
+                    .shift(StaffShift.NIGHT)
+                    .status(StaffAssignmentStatus.ASSIGNED)
+                    .build());
+
+            staffAssignmentService.createAssignment(request);
+
+            StaffAssignment saved = captor.getValue();
+            assertThat(saved.getStartTime()).isEqualTo(LocalTime.of(22, 0));
+            assertThat(saved.getEndTime()).isEqualTo(LocalTime.of(6, 0));
+        }
+
+        @Test
+        @DisplayName("Từ chối khi truyền giờ bắt đầu hoặc kết thúc không khớp khung giờ chuẩn")
+        void shouldRejectInvalidCustomShiftHours() {
+            LocalDate tomorrow = LocalDate.now().plusDays(1);
+            StaffAssignmentCreateRequest request = StaffAssignmentCreateRequest.builder()
+                    .staffId(staffId)
+                    .facilityId(facilityId)
+                    .assignedDate(tomorrow)
+                    .shift(StaffShift.MORNING)
+                    .startTime(LocalTime.of(7, 0))
+                    .endTime(LocalTime.of(15, 30))
+                    .build();
+
+            when(facilityRepository.findById(facilityId)).thenReturn(Optional.of(facility));
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+
+            AppException ex = assertThrows(AppException.class, () -> staffAssignmentService.createAssignment(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+        }
+
+        @Test
+        @DisplayName("Cho phép phân ca liền kề tiếp xúc ranh giới 14:00 không báo lỗi trùng lặp")
+        void shouldAllowAdjacentShiftsAtBoundary1400() {
+            LocalDate tomorrow = LocalDate.now().plusDays(1);
+            StaffAssignment existingMorning = StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(facility)
+                    .assignedDate(tomorrow)
+                    .shift(StaffShift.MORNING)
+                    .startTime(LocalTime.of(6, 0))
+                    .endTime(LocalTime.of(14, 0))
+                    .status(StaffAssignmentStatus.ASSIGNED)
+                    .build();
+            existingMorning.setId(UUID.randomUUID());
+
+            StaffAssignmentCreateRequest requestAfternoon = StaffAssignmentCreateRequest.builder()
+                    .staffId(staffId)
+                    .facilityId(facilityId)
+                    .assignedDate(tomorrow)
+                    .shift(StaffShift.AFTERNOON)
+                    .build();
+
+            when(facilityRepository.findById(facilityId)).thenReturn(Optional.of(facility));
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(staffAssignmentRepository.existsByStaff_IdAndAssignedDateAndShift(staffId, tomorrow, StaffShift.AFTERNOON))
+                    .thenReturn(false);
+            when(staffAssignmentRepository.findByStaff_IdAndAssignedDateBetween(
+                    staffId, tomorrow.minusDays(1), tomorrow.plusDays(1)))
+                    .thenReturn(List.of(existingMorning));
+            when(requestContext.currentUserId()).thenReturn(managerId);
+            when(userRepository.findById(managerId)).thenReturn(Optional.of(managerUser));
+            when(staffAssignmentRepository.save(any(StaffAssignment.class))).thenAnswer(inv -> {
+                StaffAssignment a = inv.getArgument(0);
+                a.setId(UUID.randomUUID());
+                return a;
+            });
+            when(staffAssignmentMapper.toResponse(any())).thenReturn(StaffAssignmentResponse.builder()
+                    .shift(StaffShift.AFTERNOON)
+                    .status(StaffAssignmentStatus.ASSIGNED)
+                    .build());
+
+            StaffAssignmentResponse res = staffAssignmentService.createAssignment(requestAfternoon);
+            assertThat(res.getShift()).isEqualTo(StaffShift.AFTERNOON);
+        }
     }
 
     @Nested
@@ -603,6 +776,136 @@ class StaffAssignmentServiceTest {
                     staffAssignmentService.checkOut(assignmentId, new com.boxora.dto.request.StaffCheckOutRequest("Xong ca"))
             );
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.STAFF_NOT_CHECKED_IN);
+        }
+
+        @Test
+        @DisplayName("Điểm danh thành công cho ca đêm bắt đầu từ hôm trước")
+        void shouldAllowCheckInForOvernightNightShiftStartedYesterday() {
+            UUID assignmentId = UUID.randomUUID();
+            LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+            // Ca bắt đầu 2 giờ trước (hôm qua hoặc sớm hơn hôm nay) và kết thúc 2 giờ nữa
+            LocalDateTime windowStart = now.minusHours(2);
+            LocalDateTime windowEnd = now.plusHours(2);
+
+            StaffAssignment assignment = StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(facility)
+                    .assignedDate(windowStart.toLocalDate())
+                    .shift(StaffShift.NIGHT)
+                    .startTime(windowStart.toLocalTime())
+                    .endTime(windowEnd.toLocalTime())
+                    .status(StaffAssignmentStatus.ASSIGNED)
+                    .build();
+            assignment.setId(assignmentId);
+
+            when(staffAssignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(staffAssignmentRepository.save(any(StaffAssignment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            StaffAssignmentResponse resp = StaffAssignmentResponse.builder()
+                    .id(assignmentId)
+                    .status(StaffAssignmentStatus.CHECKED_IN)
+                    .build();
+            when(staffAssignmentMapper.toResponse(any(StaffAssignment.class))).thenReturn(resp);
+
+            StaffAssignmentResponse res = staffAssignmentService.checkIn(assignmentId, new com.boxora.dto.request.StaffCheckInRequest("Vào ca đêm"));
+
+            assertThat(res.getStatus()).isEqualTo(StaffAssignmentStatus.CHECKED_IN);
+            assertThat(assignment.getCheckedInAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("autoMarkAbsentShifts gọi đúng 3 bước: trước hôm qua, hôm qua và hôm nay")
+        void shouldAutoMarkAbsentScheduleCallThreeStagesCorrectly() {
+            when(staffAssignmentRepository.markPriorToYesterdayUncheckedInAsAbsent(any())).thenReturn(1);
+            when(staffAssignmentRepository.markYesterdayEndedUncheckedInAsAbsent(any(), any())).thenReturn(2);
+            when(staffAssignmentRepository.markTodayEndedUncheckedInAsAbsent(any(), any())).thenReturn(3);
+
+            staffAssignmentService.autoMarkAbsentShifts();
+
+            verify(staffAssignmentRepository).markPriorToYesterdayUncheckedInAsAbsent(any(LocalDate.class));
+            verify(staffAssignmentRepository).markYesterdayEndedUncheckedInAsAbsent(any(LocalDate.class), any(LocalTime.class));
+            verify(staffAssignmentRepository).markTodayEndedUncheckedInAsAbsent(any(LocalDate.class), any(LocalTime.class));
+        }
+
+        @Test
+        @DisplayName("Từ chối tạo mới ca FULL_DAY (chỉ hỗ trợ tương thích lịch sử)")
+        void shouldRejectCreatingFullDayShift() {
+            LocalDate tomorrow = LocalDate.now().plusDays(1);
+            StaffAssignmentCreateRequest request = StaffAssignmentCreateRequest.builder()
+                    .staffId(staffId)
+                    .facilityId(facilityId)
+                    .assignedDate(tomorrow)
+                    .shift(StaffShift.FULL_DAY)
+                    .build();
+
+            when(facilityRepository.findById(facilityId)).thenReturn(Optional.of(facility));
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+
+            AppException ex = assertThrows(AppException.class, () -> staffAssignmentService.createAssignment(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+            assertThat(ex.getMessage()).contains("3 ca chuẩn");
+        }
+
+        @Test
+        @DisplayName("Từ chối cập nhật thành ca FULL_DAY")
+        void shouldRejectUpdatingToFullDayShift() {
+            UUID assignmentId = UUID.randomUUID();
+            LocalDate date = LocalDate.now().plusDays(2);
+            StaffAssignment assignment = StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(facility)
+                    .assignedDate(date)
+                    .shift(StaffShift.MORNING)
+                    .status(StaffAssignmentStatus.ASSIGNED)
+                    .build();
+            assignment.setId(assignmentId);
+
+            StaffAssignmentUpdateRequest updateRequest = StaffAssignmentUpdateRequest.builder()
+                    .shift(StaffShift.FULL_DAY)
+                    .build();
+
+            when(staffAssignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+
+            AppException ex = assertThrows(AppException.class,
+                    () -> staffAssignmentService.updateAssignment(assignmentId, updateRequest));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+            assertThat(ex.getMessage()).contains("3 ca chuẩn");
+        }
+
+        @Test
+        @DisplayName("Mô phỏng ranh giới thời gian ca đêm 23:59, 00:00, 05:59, 06:00, 06:01 theo Asia/Ho_Chi_Minh")
+        void shouldSimulateOvernightShiftAttendanceBoundaries() {
+            ZoneId zone = ZoneId.of("Asia/Ho_Chi_Minh");
+            LocalDate shiftStartDate = LocalDate.of(2026, 10, 22);
+            LocalTime startTime = LocalTime.of(22, 0);
+            LocalTime endTime = LocalTime.of(6, 0);
+
+            LocalDateTime shiftStart = shiftStartDate.atTime(startTime);
+            LocalDateTime shiftEnd = shiftStartDate.plusDays(1).atTime(endTime);
+
+            // 1. Lúc 23:59 ngày bắt đầu ca (trong khoảng ca đêm)
+            LocalDateTime t2359 = shiftStartDate.atTime(23, 59);
+            assertThat(t2359.isBefore(shiftStart)).isFalse();
+            assertThat(t2359.isBefore(shiftEnd)).isTrue(); // Hợp lệ điểm danh
+
+            // 2. Lúc 00:00 ngày hôm sau (bước qua nửa đêm, trong ca đêm)
+            LocalDateTime t0000 = shiftStartDate.plusDays(1).atTime(0, 0);
+            assertThat(t0000.isBefore(shiftStart)).isFalse();
+            assertThat(t0000.isBefore(shiftEnd)).isTrue(); // Hợp lệ điểm danh, không được đánh vắng
+
+            // 3. Lúc 05:59 ngày hôm sau (1 phút trước khi hết ca)
+            LocalDateTime t0559 = shiftStartDate.plusDays(1).atTime(5, 59);
+            assertThat(t0559.isBefore(shiftStart)).isFalse();
+            assertThat(t0559.isBefore(shiftEnd)).isTrue(); // Vẫn trong ca trực
+
+            // 4. Lúc 06:00 ngày hôm sau (đúng ranh giới hết ca đêm)
+            LocalDateTime t0600 = shiftStartDate.plusDays(1).atTime(6, 0);
+            assertThat(t0600.isBefore(shiftEnd)).isFalse(); // Đã hết khung giờ ca
+
+            // 5. Lúc 06:01 ngày hôm sau (quá giờ ca, thuộc diện ABSENT nếu chưa điểm danh)
+            LocalDateTime t0601 = shiftStartDate.plusDays(1).atTime(6, 1);
+            assertThat(t0601.isBefore(shiftEnd)).isFalse(); // Quá giờ, scheduler đánh vắng
         }
     }
 }

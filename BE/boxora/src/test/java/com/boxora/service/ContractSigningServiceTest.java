@@ -180,6 +180,8 @@ class ContractSigningServiceTest {
                 .storageUnit(mockUnit)
                 .startDate(LocalDate.of(2026, 11, 1))
                 .endDate(LocalDate.of(2026, 12, 1))
+                .paymentStatus("PAID")
+                .depositPaid(new BigDecimal("500000"))
                 .signingMethod("ONLINE")
                 .build();
         booking.setId(UUID.randomUUID());

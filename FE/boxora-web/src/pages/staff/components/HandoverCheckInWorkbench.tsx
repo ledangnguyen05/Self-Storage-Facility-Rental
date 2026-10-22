@@ -146,6 +146,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const [idCardNumber, setIdCardNumber] = useState('')
   const [identityVerified, setIdentityVerified] = useState(true)
 
+<<<<<<< HEAD
   // 5-Point On-Site Handover Checklist
   const [checklist, setChecklist] = useState({
     doorRoll: true,
@@ -154,6 +155,48 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     fireSafety: true,
     sealPlate: true
   })
+=======
+  // Paper Contract Form States
+  const [paperContractCode, setPaperContractCode] = useState('')
+  const [paperOriginalLocation, setPaperOriginalLocation] = useState('')
+  const [paperContractUrl, setPaperContractUrl] = useState('')
+  const [paperFileName, setPaperFileName] = useState('')
+  const [isUploadingPaperFile, setIsUploadingPaperFile] = useState(false)
+  const [paperNotes, setPaperNotes] = useState('')
+  const [isSavingPaperContract, setIsSavingPaperContract] = useState(false)
+  const [isVerifyingPaperContract, setIsVerifyingPaperContract] = useState(false)
+  const paperFileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Payment Proof Upload States
+  const [isUploadingPaymentProof, setIsUploadingPaymentProof] = useState<boolean>(false)
+  const [uploadedPaymentProofUrl, setUploadedPaymentProofUrl] = useState<string | null>(null)
+  const paymentProofInputRef = useRef<HTMLInputElement | null>(null)
+
+  const [openingDocumentUrl, setOpeningDocumentUrl] = useState<string | null>(null)
+  // Identity Form States
+  const [idCardType, setIdCardType] = useState<string>('CCCD')
+  const [idCardInputNumber, setIdCardInputNumber] = useState<string>('')
+  const [idOriginalSeen, setIdOriginalSeen] = useState<boolean>(false)
+  const [idNotes, setIdNotes] = useState<string>('')
+  const [isVerifyingIdentity, setIsVerifyingIdentity] = useState<boolean>(false)
+
+  // Step Transitions
+  const [isCompletingStep1, setIsCompletingStep1] = useState(false)
+  const [isRecordingInspection, setIsRecordingInspection] = useState(false)
+
+  // Evidence Photos preview & lightbox modal states
+  const [doorPreviewUrl, setDoorPreviewUrl] = useState<string>('')
+  const [interiorPreviewUrl, setInteriorPreviewUrl] = useState<string>('')
+  const [isUploadingDoor, setIsUploadingDoor] = useState<boolean>(false)
+  const [isUploadingInterior, setIsUploadingInterior] = useState<boolean>(false)
+  const [previewModalImage, setPreviewModalImage] = useState<{ url: string; title: string } | null>(null)
+
+  // Handover confirmation modal state (Hiển thị giữa màn hình confirm đã bàn giao thành công cho customer)
+  const [handoverSuccessModalData, setHandoverSuccessModalData] = useState<HandoverSuccessModalData | null>(null)
+  const [copiedSuccessPin, setCopiedSuccessPin] = useState<boolean>(false)
+  const [selectedContractForModal, setSelectedContractForModal] = useState<RentalContract | null>(null)
+  const [isLoadingContract, setIsLoadingContract] = useState<boolean>(false)
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
 
   // Condition Photos
   const [photoDoor, setPhotoDoor] = useState<string>('https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=600&q=80')
@@ -423,13 +466,385 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const isIdMet = identityVerified && (idCardNumber.trim().length > 0)
   const isReadyForCheckIn = isDepositMet && isRentMet && isContractMet && isIdMet
 
+<<<<<<< HEAD
   // Submit Handover Check-in
+=======
+    // 1. Tạo ngay local object URL để hiển thị tức thời cho nhân viên kiểm tra, không bị đen/lỗi
+    const localBlobUrl = URL.createObjectURL(file)
+    if (type === 'door') {
+      setDoorPreviewUrl(localBlobUrl)
+      setIsUploadingDoor(true)
+    } else {
+      setInteriorPreviewUrl(localBlobUrl)
+      setIsUploadingInterior(true)
+    }
+
+    try {
+      if (!selectedBookingId) throw new Error('Vui lòng chọn lượt nhận kho trước khi tải ảnh hiện trường.')
+      const stored = await handoverService.uploadHandoverDocument(selectedBookingId, file, 'CHECKIN_EVIDENCE')
+      const fileUrl = stored?.fileUrl
+      if (!fileUrl) throw new Error('Upload thành công nhưng máy chủ không trả về đường dẫn tệp.')
+
+      if (type === 'door') {
+        updateCurrentSession({ photoDoor: fileUrl })
+      } else {
+        updateCurrentSession({ photoInterior: fileUrl })
+      }
+      setDispatchFeedback({ text: `Đã lưu ảnh hiện trạng ${type === 'door' ? 'cửa ngoài' : 'nền sàn bên trong'} thành công!` })
+    } catch (err: any) {
+      setCheckInError(err?.response?.data?.message || err?.message || 'Không thể tải ảnh nghiệm thu lên hệ thống.')
+    } finally {
+      if (type === 'door') setIsUploadingDoor(false)
+      else setIsUploadingInterior(false)
+      input.value = ''
+    }
+  }
+  // Overall check-in readiness (P0-02 & BR-RULE-005: Backend là nguồn chân lý duy nhất)
+  const isDepositMet = currentPrerequisites ? currentPrerequisites.depositSatisfied : false
+  const isRentMet = currentPrerequisites ? currentPrerequisites.firstMonthRentSatisfied : false
+  const isPaymentMet = isDepositMet && isRentMet
+  const isContractMet = currentPrerequisites ? currentPrerequisites.contractSigned : false
+  const isIdMet = currentPrerequisites ? currentPrerequisites.identityVerified : false
+  const isCheckInTimeMet = currentPrerequisites ? (currentPrerequisites.checkInTimeMet ?? true) : false
+  const isReadyForCheckIn = isPaymentMet && isContractMet && isIdMet && isCheckInTimeMet && (currentPrerequisites?.eligibleForInspection ?? false)
+
+  // Sync identity input with loaded prerequisites
+  useEffect(() => {
+    if (currentPrerequisites) {
+      setIdCardInputNumber(currentPrerequisites.idCardNumber || currentPrerequisites.registeredIdCardNumber || '')
+      setIdCardType(currentPrerequisites.idCardType || currentPrerequisites.registeredIdCardType || 'CCCD')
+      setIdOriginalSeen(Boolean(currentPrerequisites.identityVerified))
+    } else {
+      setIdCardInputNumber('')
+      setIdOriginalSeen(false)
+    }
+    setUploadedPaymentProofUrl(null)
+  }, [selectedBookingId, currentPrerequisites])
+
+  // Step Tab Navigation Guards (Protect business conditions)
+  const handleSelectTab = (tab: 'audit' | 'checklist' | 'pin') => {
+    if (tab === 'checklist' && !isReadyForCheckIn) {
+      if (!isCheckInTimeMet) {
+        setCheckInError(currentPrerequisites?.checkInTimeMessage || 'Chưa đến thời điểm check-in hợp lệ theo lịch hẹn!')
+        return
+      }
+      setCheckInError('Cần thỏa mãn cả 3 điều kiện đối soát (Hợp đồng, bằng chứng chuyển khoản cọc & tiền thuê, CCCD gốc) và đến thời điểm check-in hợp lệ trước khi chuyển sang nghiệm thu!')
+      return
+    }
+    if (tab === 'pin' && (!isReadyForCheckIn || !isAllChecklistPassed || !currentSession.photoDoor || !currentSession.photoInterior)) {
+      setCheckInError('Cần thỏa mãn các điều kiện đối soát và đạt chuẩn 5/5 nghiệm thu hiện trường (kèm đủ 2 ảnh) trước khi chuyển sang cấp mã PIN!')
+      return
+    }
+    setCheckInError(null)
+    updateCurrentSession({ activeStepTab: tab })
+  }
+
+  // --- PAPER CONTRACT HANDLERS ---
+  const handleOpenPaperContractModal = () => {
+    setModalFeedback(null)
+    setPaperContractCode(currentPrerequisites?.contractCode || `HD-PAPER-${bookingDisplayCode}`)
+    setPaperOriginalLocation(currentPrerequisites?.paperOriginalLocation || 'Kệ A - Ngăn 01 - Tủ lưu trữ hồ sơ cơ sở')
+    setPaperContractUrl(currentPrerequisites?.paperContractUrl || '')
+    setPaperFileName(currentPrerequisites?.paperContractUrl ? 'Bản scan hợp đồng hiện có' : '')
+    setPaperNotes('')
+    setActiveModal('PAPER_CONTRACT')
+  }
+
+  const handlePaperFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!selectedBookingId) {
+      setModalFeedback({ text: 'Vui lòng chọn lượt đặt kho trước khi tải tệp.', isError: true })
+      return
+    }
+
+    const MAX_SIZE = 10 * 1024 * 1024
+    if (file.size > MAX_SIZE) {
+      setModalFeedback({ text: 'Dung lượng tệp vượt quá giới hạn cho phép (10MB).', isError: true })
+      return
+    }
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    if (!['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
+      setModalFeedback({ text: 'Chỉ chấp nhận tệp định dạng PDF, JPG, JPEG, PNG, WEBP.', isError: true })
+      return
+    }
+
+    setIsUploadingPaperFile(true)
+    setModalFeedback(null)
+    try {
+      const res = await handoverService.uploadHandoverDocument(selectedBookingId, file, 'PAPER_CONTRACT')
+      if (res?.fileUrl) {
+        setPaperContractUrl(res.fileUrl)
+        setPaperFileName(file.name)
+        setModalFeedback({ text: `Đã tải lên tệp ${file.name} thành công!`, isError: false })
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Tải lên hợp đồng giấy thất bại.'
+      setModalFeedback({ text: msg, isError: true })
+    } finally {
+      setIsUploadingPaperFile(false)
+      e.target.value = ''
+    }
+  }
+
+  const handleSubmitPaperContract = async () => {
+    if (!selectedBookingId) return
+    if (!paperContractUrl) {
+      setModalFeedback({ text: 'Vui lòng tải lên ảnh hoặc bản scan hợp đồng giấy đã ký.', isError: true })
+      return
+    }
+    setIsSavingPaperContract(true)
+    setModalFeedback(null)
+    try {
+      await handoverService.createOrUploadPaperContract({
+        bookingId: selectedBookingId,
+        contractCode: paperContractCode.trim() || undefined,
+        paperContractUrl: paperContractUrl.trim(),
+        paperOriginalLocation: paperOriginalLocation.trim() || undefined,
+        notes: paperNotes.trim() || undefined
+      })
+      await fetchPrerequisitesForBooking(selectedBookingId)
+      setActiveModal(null)
+      setDispatchFeedback({ text: 'Đã lưu hợp đồng giấy thành công! Vui lòng bấm Xác minh hồ sơ sau khi đối chiếu chữ ký.' })
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Lỗi khi lưu hợp đồng giấy.'
+      setModalFeedback({ text: msg, isError: true })
+    } finally {
+      setIsSavingPaperContract(false)
+    }
+  }
+
+  const handleVerifyPaperContract = async () => {
+    if (!selectedBookingId) return
+    setIsVerifyingPaperContract(true)
+    setCheckInError(null)
+    try {
+      await handoverService.verifyPaperContract(selectedBookingId, 'Nhân viên đã kiểm tra chữ ký và con dấu trên bản cứng.')
+      await fetchPrerequisitesForBooking(selectedBookingId)
+      setDispatchFeedback({ text: 'Đã xác minh hợp đồng giấy thành công! Điều kiện Hợp đồng đã đạt.' })
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Lỗi khi xác minh hợp đồng giấy.'
+      setCheckInError(msg)
+    } finally {
+      setIsVerifyingPaperContract(false)
+    }
+  }
+
+  const handleOpenAuthorizedDocument = async (fileUrl: string) => {
+    if (!fileUrl) return
+    if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+      window.open(fileUrl, '_blank')
+      return
+    }
+    if (!selectedBookingId) return
+    try {
+      setOpeningDocumentUrl(fileUrl)
+      const blobUrl = await handoverService.viewAuthorizedDocument(selectedBookingId, fileUrl)
+      window.open(blobUrl, '_blank')
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Không thể xem tài liệu hoặc bạn không có quyền truy cập.'
+      setDispatchFeedback({ text: msg, isError: true })
+    } finally {
+      setOpeningDocumentUrl(null)
+    }
+  }
+
+  const handlePaymentProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!selectedBookingId) {
+      setCheckInError('Vui lòng chọn lượt nhận kho trước khi tải ảnh chuyển khoản.')
+      return
+    }
+    const MAX_SIZE = 10 * 1024 * 1024
+    if (file.size > MAX_SIZE) {
+      setCheckInError('Dung lượng tệp vượt quá giới hạn cho phép (10MB).')
+      return
+    }
+
+    setIsUploadingPaymentProof(true)
+    setCheckInError(null)
+    try {
+      const res = await handoverService.uploadHandoverDocument(selectedBookingId, file, 'PAYMENT_PROOF')
+      if (res?.fileUrl) {
+        setUploadedPaymentProofUrl(res.fileUrl)
+        setDispatchFeedback({ text: 'Đã tải lên và lưu bằng chứng chuyển khoản thành công!' })
+        await fetchPrerequisitesForBooking(selectedBookingId)
+      }
+    } catch (err: any) {
+      setCheckInError(err?.response?.data?.message || err?.message || 'Không thể tải ảnh chuyển khoản lên hệ thống.')
+    } finally {
+      setIsUploadingPaymentProof(false)
+      e.target.value = ''
+    }
+  }
+
+  const handleViewElectronicContract = async () => {
+    const targetBookingId = selectedBookingId || currentBooking?.id
+    if (!targetBookingId) return
+    setIsLoadingContract(true)
+    try {
+      let contract = await contractService.getContractByBookingId(targetBookingId)
+      if (!contract && currentPrerequisites) {
+        contract = {
+          id: currentPrerequisites.contractCode || targetBookingId,
+          contractCode: currentPrerequisites.contractCode || `CTR-${bookingDisplayCode}`,
+          customerId: currentBooking?.customerId || '',
+          customerEmail: currentPrerequisites.customerEmail || currentBooking?.customerEmail || '',
+          customerName: currentPrerequisites.customerName || currentBooking?.customerName || customerDisplayName || 'Khách hàng',
+          customerPhone: currentPrerequisites.customerPhone || currentBooking?.customerPhone || customerDisplayPhone || '',
+          unitCode: currentPrerequisites.unitCode || currentBooking?.unitCode || unitDisplayCode,
+          facilityName: currentPrerequisites.facilityName || currentBooking?.facilityName || facilityDisplayName,
+          startDate: currentBooking?.startDate || (currentBooking as any)?.expectedStartDate || new Date().toISOString(),
+          endDate: currentBooking?.endDate || (currentBooking as any)?.expectedEndDate || new Date().toISOString(),
+          monthlyFee: currentPrerequisites.requiredFirstMonthRent || (currentBooking as any)?.monthlyRent || (currentBooking && currentBooking.rentalMonths > 0 ? currentBooking.totalRentalFee / currentBooking.rentalMonths : 0),
+          depositHeld: currentPrerequisites.depositPaid || currentBooking?.depositAmount || 0,
+          status: (currentPrerequisites.contractStatus as any) || 'PENDING_ACTIVATION',
+          signedDocumentUrl: currentPrerequisites.signedDocumentUrl,
+          signedAt: currentPrerequisites.contractSignedAt,
+          signingMethod: 'ONLINE'
+        }
+      }
+      if (contract) {
+        setSelectedContractForModal(contract)
+      } else {
+        setDispatchFeedback({ text: 'Không tìm thấy hồ sơ hợp đồng điện tử.', isError: true })
+      }
+    } catch (err) {
+      if (currentPrerequisites) {
+        const fallback: RentalContract = {
+          id: currentPrerequisites.contractCode || targetBookingId,
+          contractCode: currentPrerequisites.contractCode || `CTR-${bookingDisplayCode}`,
+          customerId: currentBooking?.customerId || '',
+          customerEmail: currentPrerequisites.customerEmail || currentBooking?.customerEmail || '',
+          customerName: currentPrerequisites.customerName || currentBooking?.customerName || customerDisplayName || 'Khách hàng',
+          customerPhone: currentPrerequisites.customerPhone || currentBooking?.customerPhone || customerDisplayPhone || '',
+          unitCode: currentPrerequisites.unitCode || currentBooking?.unitCode || unitDisplayCode,
+          facilityName: currentPrerequisites.facilityName || currentBooking?.facilityName || facilityDisplayName,
+          startDate: currentBooking?.startDate || (currentBooking as any)?.expectedStartDate || new Date().toISOString(),
+          endDate: currentBooking?.endDate || (currentBooking as any)?.expectedEndDate || new Date().toISOString(),
+          monthlyFee: currentPrerequisites.requiredFirstMonthRent || (currentBooking as any)?.monthlyRent || (currentBooking && currentBooking.rentalMonths > 0 ? currentBooking.totalRentalFee / currentBooking.rentalMonths : 0),
+          depositHeld: currentPrerequisites.depositPaid || currentBooking?.depositAmount || 0,
+          status: (currentPrerequisites.contractStatus as any) || 'PENDING_ACTIVATION',
+          signedDocumentUrl: currentPrerequisites.signedDocumentUrl,
+          signedAt: currentPrerequisites.contractSignedAt,
+          signingMethod: 'ONLINE'
+        }
+        setSelectedContractForModal(fallback)
+      } else {
+        setDispatchFeedback({ text: 'Lỗi khi tải thông tin hợp đồng điện tử.', isError: true })
+      }
+    } finally {
+      setIsLoadingContract(false)
+    }
+  }
+
+  // --- IDENTITY VERIFICATION HANDLER ---
+  const handleVerifyIdentity = async () => {
+    if (!selectedBookingId) return
+    const num = idCardInputNumber.trim()
+    if (!/^[0-9]{9,12}$/.test(num)) {
+      setCheckInError('Số CCCD / Hộ chiếu phải gồm từ 9 đến 12 chữ số hợp lệ.')
+      return
+    }
+    if (!idOriginalSeen) {
+      setCheckInError('Nhân viên bắt buộc phải tích chọn xác nhận đã trực tiếp xem giấy tờ gốc tại quầy.')
+      return
+    }
+
+    // Đối chiếu với số CCCD/Passport đã lưu trong CSDL của đơn đặt giữ chỗ
+    const expectedId = (currentPrerequisites?.registeredIdCardNumber || currentPrerequisites?.idCardNumber || '').trim()
+    if (expectedId && expectedId !== num) {
+      setCheckInError(`Số ${idCardType} đối chiếu (${num}) không trùng khớp với số ${currentPrerequisites?.registeredIdCardType || 'CCCD'} đã đăng ký trong hồ sơ đặt giữ chỗ (${expectedId}). Vui lòng kiểm tra lại giấy tờ gốc của khách hàng.`)
+      return
+    }
+
+    setIsVerifyingIdentity(true)
+    setCheckInError(null)
+    try {
+      const updatedPrereq = await handoverService.verifyIdentity(selectedBookingId, {
+        idCardType,
+        idCardNumber: num,
+        originalDocumentSeen: idOriginalSeen,
+        notes: idNotes.trim() || 'Nhân viên đã kiểm tra thẻ căn cước / hộ chiếu gốc tại quầy giao dịch.'
+      })
+      updateCurrentSession({ identityVerified: true })
+      setPrerequisitesCache((prev) => ({ ...prev, [selectedBookingId]: updatedPrereq }))
+      setDispatchFeedback({ text: `Đã xác minh thành công giấy tờ gốc ${idCardType} số ${num}!` })
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Lỗi khi xác minh danh tính khách hàng.'
+      setCheckInError(msg)
+    } finally {
+      setIsVerifyingIdentity(false)
+    }
+  }
+
+  // --- STEP TRANSITION HANDLERS ---
+  const handleCompleteStep1 = async () => {
+    if (!selectedBookingId) return
+    if (!isCheckInTimeMet) {
+      setCheckInError(currentPrerequisites?.checkInTimeMessage || 'Chưa đến thời điểm check-in hợp lệ theo lịch hẹn!')
+      return
+    }
+    setIsCompletingStep1(true)
+    setCheckInError(null)
+    try {
+      await handoverService.completeStep1(selectedBookingId)
+      await fetchPrerequisitesForBooking(selectedBookingId)
+      updateCurrentSession({ activeStepTab: 'checklist' })
+      setDispatchFeedback({ text: 'Đã hoàn tất đối soát 3 điều kiện! Chuyển sang bước Nghiệm thu hiện trường.' })
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Không thể chuyển bước: Chưa đáp ứng đủ 3 điều kiện đối soát.'
+      setCheckInError(msg)
+    } finally {
+      setIsCompletingStep1(false)
+    }
+  }
+
+  const handleCompleteInspection = async () => {
+    if (!selectedBookingId) return
+    if (!isAllChecklistPassed) {
+      setCheckInError('Cần hoàn tất đạt chuẩn 5/5 tiêu chí nghiệm thu hiện trường trước khi tiếp tục.')
+      return
+    }
+    if (!currentSession.photoDoor || !currentSession.photoInterior) {
+      setCheckInError('Bắt buộc phải tải lên đủ 2 ảnh bằng chứng hiện trường (Ảnh cửa ngoài và ảnh sàn bên trong kho).')
+      return
+    }
+
+    setIsRecordingInspection(true)
+    setCheckInError(null)
+    try {
+      await handoverService.recordCheckInInspection({
+        bookingId: selectedBookingId,
+        doorConditionPassed: currentSession.checklist.doorRoll,
+        cleanlinessPassed: currentSession.checklist.cleanliness,
+        smartLockPassed: currentSession.checklist.lighting,
+        sensorPassed: currentSession.checklist.fireSafety,
+        wallStructurePassed: currentSession.checklist.sealPlate,
+        evidencePhotos: [currentSession.photoDoor, currentSession.photoInterior],
+        unitCondition: `${checklistCount}/5 tiêu chuẩn nghiệm thu đạt chuẩn (Ảnh cửa ngoài & trong kho đã lưu vết)`,
+        notes: currentSession.handoverNotes
+      })
+      await fetchPrerequisitesForBooking(selectedBookingId)
+      updateCurrentSession({ activeStepTab: 'pin' })
+      setDispatchFeedback({ text: 'Đã ghi nhận nghiệm thu hiện trường thành công! Chuyển sang bước Cấp mã PIN & Bàn giao.' })
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Lỗi khi ghi nhận nghiệm thu hiện trường.'
+      setCheckInError(msg)
+    } finally {
+      setIsRecordingInspection(false)
+    }
+  }
+
+  // Submit Handover Check-in (P0-02 & P0-03)
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
   const handleCompleteHandover = async () => {
     if (!currentBooking) return
 <<<<<<< Updated upstream
 =======
     if (!isReadyForCheckIn) {
-      setCheckInError('Chưa thỏa mãn 4 điều kiện tiên quyết (Cọc, tiền thuê tháng đầu, hợp đồng, CCCD gốc). Không thể bàn giao!')
+      setCheckInError('Chưa thỏa mãn 3 điều kiện tiên quyết (Hợp đồng, chuyển khoản cọc & thuê toàn hạn, CCCD gốc). Không thể bàn giao!')
       return
     }
     if (!isAllChecklistPassed || !currentSession.photoDoor || !currentSession.photoInterior) {
@@ -514,7 +929,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
               </h2>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+                Chuẩn hóa 3 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
               </p>
             </div>
           </div>
@@ -554,7 +969,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
               </h2>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+                Chuẩn hóa 3 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
               </p>
             </div>
           </div>
@@ -613,7 +1028,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
               </h2>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+                Chuẩn hóa 3 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
               </p>
             </div>
           </div>
@@ -693,6 +1108,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             </p>
           </div>
         </div>
+<<<<<<< HEAD
 
         {/* Customer Quick Selector & Scan Trigger */}
         <div className="flex items-center gap-2 flex-wrap shrink-0">
@@ -715,6 +1131,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             </select>
           </div>
 
+=======
+        <div>
+          <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
+            Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+            Chuẩn hóa 3 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+          </p>
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
         </div>
       </div>
 
@@ -823,7 +1248,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           <span className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center font-mono text-[10px]">
             1
           </span>
-          <span>Đối Soát 4 Điều Kiện</span>
+          <span>Đối Soát 3 Điều Kiện</span>
           {isReadyForCheckIn && (
             <span className="material-symbols-outlined text-[16px] text-emerald-600">check_circle</span>
           )}
@@ -884,7 +1309,81 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             </div>
           ) : (
             <>
+<<<<<<< HEAD
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+=======
+              {/* Thẻ Quy Tắc Nghiệp Vụ Thời Điểm Check-in */}
+              {(() => {
+                const checkInStatus = currentPrerequisites?.checkInTimeStatus || 'ON_TIME'
+                const checkInMet = currentPrerequisites?.checkInTimeMet ?? true
+                const checkInMsg = currentPrerequisites?.checkInTimeMessage || 'Đã đến thời điểm hợp lệ để nhận kho'
+                const expDateStr = currentPrerequisites?.expectedCheckInAt || currentBooking?.expectedCheckInAt || currentBooking?.startDate
+
+                let statusBadgeLabel = 'Đã đến giờ check-in'
+                let actionAdvice = 'Kiểm tra các điều kiện bàn giao còn lại'
+                let cardClass = 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                let iconName = 'verified'
+                let iconColor = 'text-emerald-600'
+
+                if (checkInStatus === 'BEFORE_DATE') {
+                  statusBadgeLabel = 'Chưa đến ngày check-in'
+                  actionAdvice = 'Hiển thị thời điểm được phép nhận kho • Không cho phép bàn giao'
+                  cardClass = 'bg-rose-50 border-rose-300 text-rose-950'
+                  iconName = 'event_busy'
+                  iconColor = 'text-rose-600'
+                } else if (checkInStatus === 'BEFORE_TIME') {
+                  statusBadgeLabel = 'Đúng ngày nhưng chưa đến giờ'
+                  actionAdvice = 'Chờ đến giờ hợp lệ • Không cho phép bàn giao'
+                  cardClass = 'bg-amber-50 border-amber-300 text-amber-950'
+                  iconName = 'hourglass_top'
+                  iconColor = 'text-amber-600'
+                } else if (checkInStatus === 'LATE') {
+                  statusBadgeLabel = 'Khách đến muộn'
+                  actionAdvice = 'Cho bàn giao nếu hợp đồng, lịch hẹn và các điều kiện khác vẫn hợp lệ'
+                  cardClass = 'bg-sky-50 border-sky-300 text-sky-950'
+                  iconName = 'history_toggle_off'
+                  iconColor = 'text-sky-600'
+                }
+
+                return (
+                  <div className={`p-4 rounded-xl border text-xs shadow-xs space-y-2 ${cardClass}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-white/80 shadow-2xs ${iconColor}`}>
+                          <span className="material-symbols-outlined text-[24px]">{iconName}</span>
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-xs">
+                              Lịch Hẹn Check-in Nhận Kho: {expDateStr ? new Date(expDateStr).toLocaleString('vi-VN') : 'Theo ngày hợp đồng'}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                              checkInMet ? 'bg-emerald-200 text-emerald-950' : 'bg-rose-200 text-rose-950'
+                            }`}>
+                              {checkInMet ? 'Có thể bàn giao' : 'Không cho phép bàn giao'}
+                            </span>
+                          </div>
+                          <p className="mt-1 font-medium text-[11px] leading-relaxed">
+                            {checkInMsg}
+                          </p>
+                          <div className="mt-1 flex items-center gap-1.5 text-[10px] font-semibold">
+                            <span className="opacity-75">Quy tắc xử lý:</span>
+                            <span className="underline decoration-dotted">{actionAdvice}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase tracking-wider bg-white/90 border border-current shadow-2xs">
+                          {statusBadgeLabel}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
                 
                 {/* Condition 1: Signed Contract */}
                 <div className="p-3.5 rounded-xl border border-slate-200 bg-white shadow-xs flex items-start gap-3">
@@ -919,6 +1418,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   </div>
                 </div>
 
+<<<<<<< HEAD
                 {/* Condition 2: 100% Payment (Deposit + First month) */}
                 <div className="p-3.5 rounded-xl border border-slate-200 bg-white shadow-xs flex items-start gap-3">
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
@@ -963,6 +1463,215 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       <span className="font-bold text-slate-900">3. Đối Chiếu CCCD / Passport Gốc</span>
                       <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-mono text-[10px] font-bold">
                         {isIdMet ? '✓ HỢP LỆ' : 'CẦN ĐỐI SOÁT'}
+=======
+                {/* Điều kiện 2: Bằng Chứng Chuyển Khoản Toàn Bộ Tiền Cọc & Thuê Trong Toàn Bộ Thời Hạn */}
+                <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                            isPaymentMet ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[20px]">payments</span>
+                        </div>
+                        <div>
+                          <span className="font-bold text-slate-900 text-xs block leading-tight">
+                            2. Chuyển Khoản Toàn Bộ Tiền Cọc &amp; Thuê
+                          </span>
+                          <span className="text-[10px] text-slate-500 leading-tight block mt-0.5">
+                            Bằng chứng chuyển khoản toàn bộ cọc &amp; tiền thuê toàn hạn
+                          </span>
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold shrink-0 ${
+                          isPaymentMet
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-rose-50 text-rose-700 border border-rose-200'
+                        }`}
+                      >
+                        {isPaymentMet
+                          ? '✓ ĐÃ ĐỦ CỌC & THUÊ'
+                          : `CÒN THIẾU ${((currentPrerequisites?.depositRemaining ?? 0) + (currentPrerequisites?.firstMonthRentRemaining ?? 0)).toLocaleString('vi-VN')}đ`}
+                      </span>
+                    </div>
+
+                    {/* Financial summary: 3 columns */}
+                    <div className="mt-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-[11px] grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">Tổng phải thu</span>
+                        <strong className="font-mono text-slate-800 text-[11px]">
+                          {((currentPrerequisites?.requiredDeposit ?? 0) + (currentPrerequisites?.requiredFirstMonthRent ?? 0)).toLocaleString('vi-VN')}đ
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">Đã xác nhận</span>
+                        <strong className="font-mono text-emerald-700 text-[11px]">
+                          {((currentPrerequisites?.depositPaid ?? 0) + (currentPrerequisites?.firstMonthRentPaid ?? 0)).toLocaleString('vi-VN')}đ
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">Còn thiếu</span>
+                        <strong
+                          className={`font-mono text-[11px] ${
+                            ((currentPrerequisites?.depositRemaining ?? 0) + (currentPrerequisites?.firstMonthRentRemaining ?? 0)) > 0
+                              ? 'text-rose-600'
+                              : 'text-slate-700'
+                          }`}
+                        >
+                          {((currentPrerequisites?.depositRemaining ?? 0) + (currentPrerequisites?.firstMonthRentRemaining ?? 0)).toLocaleString('vi-VN')}đ
+                        </strong>
+                      </div>
+                    </div>
+
+                    {/* Breakdown cọc vs thuê */}
+                    <div className="mt-2 space-y-1 text-[11px] bg-slate-50/60 p-2 rounded-lg border border-slate-100">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                          Tiền cọc giữ chỗ:
+                        </span>
+                        <span className="font-mono font-bold text-slate-700">
+                          {(currentPrerequisites?.depositPaid ?? 0).toLocaleString('vi-VN')}đ / {(currentPrerequisites?.requiredDeposit ?? 0).toLocaleString('vi-VN')}đ
+                          {isDepositMet ? (
+                            <span className="text-emerald-600 ml-1">✓</span>
+                          ) : (
+                            <span className="text-rose-500 ml-1">(-{(currentPrerequisites?.depositRemaining ?? 0).toLocaleString('vi-VN')}đ)</span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-500"></span>
+                          Tiền thuê trọn kỳ:
+                        </span>
+                        <span className="font-mono font-bold text-slate-700">
+                          {(currentPrerequisites?.firstMonthRentPaid ?? 0).toLocaleString('vi-VN')}đ / {(currentPrerequisites?.requiredFirstMonthRent ?? 0).toLocaleString('vi-VN')}đ
+                          {isRentMet ? (
+                            <span className="text-emerald-600 ml-1">✓</span>
+                          ) : (
+                            <span className="text-rose-500 ml-1">(-{(currentPrerequisites?.firstMonthRentRemaining ?? 0).toLocaleString('vi-VN')}đ)</span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Newly uploaded proof feedback banner */}
+                    {uploadedPaymentProofUrl && (
+                      <div className="mt-2 p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] flex items-center justify-between">
+                        <span className="inline-flex items-center gap-1 font-medium">
+                          <span className="material-symbols-outlined text-[15px] text-emerald-600">task_alt</span>
+                          Ảnh chuyển khoản đã tải lên
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAuthorizedDocument(uploadedPaymentProofUrl)}
+                          disabled={openingDocumentUrl === uploadedPaymentProofUrl}
+                          className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[12px]">visibility</span>
+                          <span>{openingDocumentUrl === uploadedPaymentProofUrl ? '...' : 'Xem ảnh'}</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* All payment transactions & receipts list */}
+                    {currentPrerequisites?.paymentHistory && currentPrerequisites.paymentHistory.length > 0 && (
+                      <div className="mt-2 space-y-1.5 max-h-28 overflow-y-auto pr-0.5">
+                        {currentPrerequisites.paymentHistory.map((p) => (
+                          <div key={p.id} className="p-1.5 rounded bg-slate-100/70 text-[10px] flex items-center justify-between">
+                            <div className="flex items-center gap-1">
+                              <span className={`px-1 py-0.2 rounded font-mono font-bold text-[9px] ${
+                                p.paymentType === 'DEPOSIT' ? 'bg-blue-100 text-blue-800' : 'bg-cyan-100 text-cyan-800'
+                              }`}>
+                                {p.paymentType === 'DEPOSIT' ? 'CỌC' : 'THUÊ'}
+                              </span>
+                              <span className="font-mono font-bold text-slate-700">
+                                {p.paymentMethod} • {p.amount.toLocaleString('vi-VN')}đ
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {p.proofDocumentUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAuthorizedDocument(p.proofDocumentUrl!)}
+                                  disabled={openingDocumentUrl === p.proofDocumentUrl}
+                                  className="px-1.5 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[10px] inline-flex items-center gap-0.5 cursor-pointer"
+                                  title="Xem ảnh chụp ủy nhiệm chi / biên lai chuyển khoản"
+                                >
+                                  <span className="material-symbols-outlined text-[12px]">receipt_long</span>
+                                  <span>{openingDocumentUrl === p.proofDocumentUrl ? '...' : 'Xem UNC'}</span>
+                                </button>
+                              )}
+                              <span
+                                className={`px-1.5 py-0.2 rounded font-bold ${
+                                  p.status === 'PAID'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : p.status === 'PENDING' || p.status === 'REFUND_PENDING'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-slate-200 text-slate-700'
+                                }`}
+                              >
+                                {p.status === 'PAID' ? 'Đã duyệt' : p.status === 'PENDING' ? 'Chờ duyệt' : p.status}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Upload payment proof button */}
+                  <div className="pt-2 border-t border-slate-100">
+                    <input
+                      ref={paymentProofInputRef}
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="hidden"
+                      onChange={handlePaymentProofUpload}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => paymentProofInputRef.current?.click()}
+                      disabled={isUploadingPaymentProof}
+                      className="w-full py-2 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">
+                        {isUploadingPaymentProof ? 'hourglass_top' : 'upload_file'}
+                      </span>
+                      <span>{isUploadingPaymentProof ? 'Đang Tải Ảnh...' : 'Tải Lên / Upload Ảnh Chuyển Khoản'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Điều kiện 3: Đối Chiếu CCCD / Passport Gốc */}
+                <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                            isIdMet ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[20px]">badge</span>
+                        </div>
+                        <div>
+                          <span className="font-bold text-slate-900 text-xs block">3. Đối Chiếu CCCD / Hộ Chiếu Gốc</span>
+                          <span className="text-[11px] text-slate-500">Xác minh danh tính khách hàng trực tiếp</span>
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
+                          isIdMet
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}
+                      >
+                        {isIdMet ? '✓ ĐÃ ĐỐI SOÁT GỐC' : 'CHƯA ĐỐI SOÁT'}
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
                       </span>
                     </div>
                     <div className="mt-1.5 flex items-center gap-2">
@@ -1006,6 +1715,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
               </div>
 
+<<<<<<< HEAD
               {/* Prerequisites Missing Alert */}
               {prerequisites?.missingPrerequisites && prerequisites.missingPrerequisites.length > 0 && !isReadyForCheckIn && (
                 <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs">
@@ -1017,14 +1727,39 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   </ul>
                 </div>
               )}
+=======
+              {/* Dynamic Missing Prerequisites Alert */}
+              {currentPrerequisites?.missingPrerequisites &&
+                currentPrerequisites.missingPrerequisites.length > 0 &&
+                !isReadyForCheckIn && (
+                  <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs">
+                    <span className="font-bold flex items-center gap-1.5 mb-1.5">
+                      <span className="material-symbols-outlined text-[17px] text-amber-700">error</span>
+                      <span>Hồ sơ check-in hiện chưa đủ 3 điều kiện bắt buộc:</span>
+                    </span>
+                    <ul className="list-disc list-inside space-y-1 text-[11px] text-amber-800 pl-1 font-medium">
+                      {currentPrerequisites.missingPrerequisites.map((m, idx) => (
+                        <li key={idx}>{m}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
 
               <div className="p-3 bg-cyan-50 border border-cyan-100 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-2 text-cyan-900">
                   <span className="material-symbols-outlined text-[18px] text-cyan-600">task_alt</span>
                   <span className="font-medium">
                     {isReadyForCheckIn
+<<<<<<< HEAD
                       ? 'Tất cả 4/4 điều kiện tiên quyết đã sẵn sàng. Di chuyển dẫn khách thẩm định thực địa kho.'
                       : 'Vui lòng hoàn tất hoặc xác nhận thu cọc/tiền thuê và đối chiếu CCCD trước khi chuyển bước.'}
+=======
+                      ? 'Tất cả điều kiện đối soát và thời điểm check-in đã hoàn tất hợp lệ. Bạn có thể chuyển sang bước Nghiệm thu hiện trường.'
+                      : !isCheckInTimeMet
+                      ? (currentPrerequisites?.checkInTimeMessage || 'Chưa đến thời điểm check-in hợp lệ. Hệ thống không cho phép bàn giao trước thời hạn.')
+                      : 'Hệ thống chặn chuyển bước và chặn cấp mã PIN cho đến khi cả 3 điều kiện trên được đáp ứng đầy đủ.'}
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
                   </span>
                 </div>
                 <button
@@ -1303,7 +2038,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <div>
                 <strong className="block font-bold">Chưa đủ điều kiện bàn giao buồng kho:</strong>
                 <span>
-                  Booking chưa thỏa mãn đầy đủ 4 điều kiện đối soát (Cọc, tiền thuê tháng đầu, hợp đồng điện tử đã ký, CCCD đối chiếu). Hệ thống bảo mật không cho phép cấp mã PIN trước khi đáp ứng đủ quy chuẩn.
+                  Booking chưa thỏa mãn đầy đủ 3 điều kiện đối soát (Hợp đồng, chuyển khoản cọc &amp; thuê toàn hạn, CCCD đối chiếu). Hệ thống bảo mật không cho phép cấp mã PIN trước khi đáp ứng đủ quy chuẩn.
                 </span>
               </div>
             </div>

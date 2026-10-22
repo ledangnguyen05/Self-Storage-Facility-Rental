@@ -139,11 +139,19 @@ function MainContent() {
               }
             />
 
+<<<<<<< HEAD
             {/* 2. Staff Portal: Staff, Facility Manager, Admin */}
             <Route
               path="staff"
               element={
                 <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'ADMIN']}>
+=======
+            {/* 2. Staff Portal: operational access is reserved for Staff & Facility Manager */}
+            <Route
+              path="staff"
+              element={
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER']}>
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
                   <StaffDashboard />
                 </ProtectedRoute>
               }

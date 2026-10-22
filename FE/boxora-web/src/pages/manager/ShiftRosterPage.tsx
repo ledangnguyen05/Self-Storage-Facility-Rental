@@ -15,6 +15,7 @@ import { ShiftAssignmentModal } from './modals/ShiftAssignmentModal'
 import { ShiftSwapModal } from './modals/ShiftSwapModal'
 import { ShiftHandoverModal } from './modals/ShiftHandoverModal'
 import { ShiftEditModal } from './modals/ShiftEditModal'
+import { canCheckInShift, formatShiftTimeRange, BOXORA_SHIFTS } from '../../constants/shiftConstants'
 
 const formatDateLocal = (d: Date): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -354,8 +355,8 @@ export const ShiftRosterPage: React.FC = () => {
 
   // Direct Shift Actions
   const handleCheckIn = async (assignment: StaffAssignmentResponse) => {
-    if (assignment.assignedDate !== todayStr) {
-      showToast('Chỉ có thể điểm danh vào ca trực của ngày hôm nay.')
+    if (!canCheckInShift(assignment)) {
+      showToast('Chỉ có thể điểm danh trong khung giờ của ca trực được phân công.')
       return
     }
     setActionLoadingId(assignment.id)
@@ -1177,16 +1178,7 @@ export const ShiftRosterPage: React.FC = () => {
                     const isToday = assignment.assignedDate === todayStr
                     const isLoadingAction = actionLoadingId === assignment.id
 
-                    const shiftTimeStr =
-                      assignment.startTime && assignment.endTime
-                        ? `${assignment.startTime.slice(0, 5)} - ${assignment.endTime.slice(0, 5)}`
-                        : assignment.shift === 'MORNING'
-                        ? '06:00 - 14:00'
-                        : assignment.shift === 'AFTERNOON'
-                        ? '14:00 - 22:00'
-                        : assignment.shift === 'NIGHT'
-                        ? '22:00 - 06:00'
-                        : '08:00 - 17:00'
+                    const shiftTimeStr = formatShiftTimeRange(assignment)
 
                     return (
                       <tr key={assignment.id} className="hover:bg-slate-50/80 transition-colors">
@@ -1311,8 +1303,8 @@ export const ShiftRosterPage: React.FC = () => {
                               <span className="material-symbols-outlined text-[16px]">visibility</span>
                             </button>
 
-                            {/* Check-in action ONLY if it is caller's own shift and for TODAY */}
-                            {user?.id === assignment.staffId && isAssigned && isToday && (
+                            {/* Check-in action ONLY if it is caller's own shift and within valid shift window */}
+                            {user?.id === assignment.staffId && isAssigned && canCheckInShift(assignment) && (
                               <button
                                 type="button"
                                 disabled={isLoadingAction}

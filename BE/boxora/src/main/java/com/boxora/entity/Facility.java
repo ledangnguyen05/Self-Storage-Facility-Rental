@@ -62,4 +62,7 @@ public class Facility extends BaseEntity {
 
     @Column(name = "layout_config", columnDefinition = "TEXT")
     private String layoutConfig;
+
+    @Column(name = "image_url", length = 1000)
+    private String imageUrl;
 }

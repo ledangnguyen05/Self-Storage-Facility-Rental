@@ -22,6 +22,37 @@ import { reservationEmailService } from '../../services/reservationEmailService'
 >>>>>>> Stashed changes
 import { HandoverCheckInWorkbench } from './components/HandoverCheckInWorkbench'
 import { QrCameraCheckInModal } from './components/QrCameraCheckInModal'
+<<<<<<< HEAD
+=======
+import { StaffPolicyGuideModal } from './components/StaffPolicyGuideModal'
+import { staffAssignmentService, StaffAssignmentResponse, isShiftAbsent } from '../../services/staffAssignmentService'
+import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
+import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
+import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
+import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
+import { getAssignmentWindow } from '../../constants/shiftConstants'
+
+const localDateString = (date: Date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const assignmentWindow = (assignment: StaffAssignmentResponse) => {
+  return getAssignmentWindow(assignment)
+}
+
+const isWithinAssignmentWindow = (assignment: StaffAssignmentResponse, now = new Date()) => {
+  const window = assignmentWindow(assignment)
+  return Boolean(window && now >= window.start && now < window.end)
+}
+
+const isAssignmentOnDuty = (assignment: StaffAssignmentResponse | null, now = new Date()) => {
+  if (!assignment || assignment.status !== 'CHECKED_IN' || !assignment.checkedInAt || assignment.checkedOutAt) return false
+  return isWithinAssignmentWindow(assignment, now)
+}
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
 
 export const StaffDashboard: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -1870,6 +1901,7 @@ export const StaffDashboard: React.FC = () => {
             </div>
           </div>
 
+<<<<<<< HEAD
           <Link
             to="/portal/cashier"
             className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
@@ -1877,6 +1909,28 @@ export const StaffDashboard: React.FC = () => {
             <span>Mở Trang Báo Cáo Thu Ngân (Có Phân Trang)</span>
             <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
           </Link>
+=======
+          {/* Quick Stats or Current Shift Indicator */}
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-700">
+              <span className={`w-2 h-2 rounded-full ${isShiftAbsent(myTodayAssignment) ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>
+              <span>
+                Ca trực:{' '}
+                {myTodayAssignment?.shift
+                  ? isShiftAbsent(myTodayAssignment)
+                    ? 'Không đi làm'
+                    : myTodayAssignment.shift === 'MORNING'
+                    ? 'Ca Sáng'
+                    : myTodayAssignment.shift === 'AFTERNOON'
+                    ? 'Ca Chiều'
+                    : myTodayAssignment.shift === 'NIGHT'
+                    ? 'Ca Đêm'
+                    : 'Cả Ngày'
+                  : 'Chưa vào ca'}
+              </span>
+            </span>
+          </div>
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
         </div>
 
         {/* Card 2: Danh Sách Ticket */}

@@ -461,14 +461,32 @@ export const DashboardLayout: React.FC = () => {
               <nav className="flex flex-col gap-1 text-left">
                 <Link
                   to="/portal/facility-manager"
+<<<<<<< HEAD
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/facility-manager')
                       ? 'bg-slate-100 text-slate-900'
+=======
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    isCurrentPath('/portal/facility-manager') && (!location.search || location.search === '?tab=overview')
+                      ? 'bg-slate-100 text-slate-900 font-semibold'
+>>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">grid_view</span>
                   <span>{t('SƠ ĐỒ CƠ SỞ KHO')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/facility-manager?tab=handovers-returns"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    isCurrentPath('/portal/facility-manager') && new URLSearchParams(location.search).get('tab') === 'handovers-returns'
+                      ? 'bg-slate-100 text-slate-900 font-semibold'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">badge</span>
+                  <span>{t('Bàn vận hành quầy & tiếp đón')}</span>
                 </Link>
 
                 <Link
