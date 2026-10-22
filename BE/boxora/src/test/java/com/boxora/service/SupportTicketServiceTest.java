@@ -176,7 +176,7 @@ class SupportTicketServiceTest {
             when(requestContext.currentUserId()).thenReturn(managerId);
             when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
             when(userRepository.findById(managerId)).thenReturn(Optional.of(manager));
-            when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
+            lenient().when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
             when(bookingRepository.findById(otherBookingId)).thenReturn(Optional.of(otherBooking));
 
             AppException ex = assertThrows(AppException.class, () -> supportTicketService.createTicket(request));

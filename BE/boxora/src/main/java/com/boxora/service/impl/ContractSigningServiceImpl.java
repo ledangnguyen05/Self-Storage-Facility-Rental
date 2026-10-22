@@ -838,7 +838,7 @@ public class ContractSigningServiceImpl implements ContractSigningService {
                 : (unit != null && unit.getEffectiveBasePrice() != null ? unit.getEffectiveBasePrice() : BigDecimal.valueOf(1500000));
 
         BigDecimal depositHeld = BigDecimal.ZERO;
-        if (booking.getDepositPaid() != null && booking.getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
+        if (booking.getDepositPaid() != null) {
             depositHeld = booking.getDepositPaid();
         } else if (booking.getDepositAmount() != null && booking.getDepositAmount().compareTo(BigDecimal.ZERO) > 0) {
             depositHeld = booking.getDepositAmount();
@@ -875,7 +875,7 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         }
         Booking booking = contract.getBooking();
         if (booking != null) {
-            if (booking.getDepositPaid() != null && booking.getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
+            if (booking.getDepositPaid() != null) {
                 return booking.getDepositPaid();
             }
             if (booking.getDepositAmount() != null && booking.getDepositAmount().compareTo(BigDecimal.ZERO) > 0) {
@@ -895,6 +895,7 @@ public class ContractSigningServiceImpl implements ContractSigningService {
 
     private RentalContractResponse toResponseWithResolvedFields(RentalContract c) {
         RentalContractResponse res = rentalContractMapper.toResponse(c);
+        if (res == null) return null;
         BigDecimal effectiveDeposit = resolveEffectiveDepositHeld(c);
         if (effectiveDeposit.compareTo(BigDecimal.ZERO) > 0) {
             res.setDepositHeld(effectiveDeposit);

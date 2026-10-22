@@ -140,14 +140,16 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             if (booking.getCustomer() != null) {
                 rentingCustomer = booking.getCustomer();
             }
-            if (facility == null && booking.getStorageUnit() != null) {
-                facility = booking.getStorageUnit().getFacility();
-            }
-            if (isStaffOrManager && (facility == null
-                    || !facility.getId().equals(currentStaffOrManager.getFacility().getId()))) {
+            Facility bookingFacility = booking.getStorageUnit() != null ? booking.getStorageUnit().getFacility() : null;
+            if (isStaffOrManager && (bookingFacility == null
+                    || currentStaffOrManager.getFacility() == null
+                    || !bookingFacility.getId().equals(currentStaffOrManager.getFacility().getId()))) {
                 log.warn("[SECURITY] {} {} attempted to create ticket for booking {} outside assigned facility",
                         currentUserRole, currentUserId, booking.getId());
                 throw new AppException(ErrorCode.TICKET_FACILITY_MISMATCH);
+            }
+            if (facility == null && bookingFacility != null) {
+                facility = bookingFacility;
             }
         }
 
@@ -258,10 +260,13 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .slaDueAt(slaDueAt)
                 .build();
 
-        ticket = supportTicketRepository.save(ticket);
+        SupportTicket savedTicket = supportTicketRepository.save(ticket);
+        if (savedTicket != null) {
+            ticket = savedTicket;
+        }
 
         // Audit log
-        logActivity(ticket, ActivityAction.SUPPORT_TICKET_CREATE, null, ticket.getStatus().name(),
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_CREATE, null, ticket.getStatus() != null ? ticket.getStatus().name() : "OPEN",
                 "Tạo phiếu báo cáo sự cố mới " + ticketCode + " (" + category + ", " + priority + ")");
 
         log.info("Created support ticket {} for customer {} (staffRecorded={}) at facility {}", ticketCode, customer.getId(),
