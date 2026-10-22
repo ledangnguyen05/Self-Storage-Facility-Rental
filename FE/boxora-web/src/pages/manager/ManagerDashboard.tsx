@@ -1323,7 +1323,7 @@ export const ManagerDashboard: React.FC = () => {
                     className="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-[18px]">verified</span>
-                    <span>Xem Hồ Sơ &amp; 4 Điều Kiện Bàn Giao</span>
+                    <span>Xem Hồ Sơ &amp; 3 Điều Kiện Bàn Giao</span>
                   </button>
                 )}
 

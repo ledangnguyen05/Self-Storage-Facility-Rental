@@ -873,6 +873,8 @@ Object.assign(DICTIONARY, {
   'Quy Trình Check-in & Nghiệm Thu Bàn Giao Kho': 'Check-in & Handover Acceptance Workflow',
   'Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.':
     'Standardize 4 prerequisites (BR-RULE-005), 5-point inspection, on-site photo records, and secure PIN provisioning.',
+  'Chuẩn hóa 3 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.':
+    'Standardize 3 prerequisites (BR-RULE-005), 5-point inspection, on-site photo records, and secure PIN provisioning.',
   'Lịch Hẹn Bàn Giao Trong Ngày': "Today's Move-in Appointments",
   'Lịch Hẹn Nhận Kho Trong Ca': 'Shift Move-in Appointments',
   'Lịch Hẹn Nhận Kho': 'Move-in Appointments',
@@ -890,9 +892,11 @@ Object.assign(DICTIONARY, {
   'ticket đang mở': 'open tickets',
   'Danh sách tiếp đón khách hàng đến nhận kho trực tiếp tại cơ sở trong ca làm việc.': 'Reception list of customers arriving at the facility during the shift.',
   'Đối Soát 4 Điều Kiện': 'Prerequisite Audit (4 Conditions)',
+  'Đối Soát 3 Điều Kiện': 'Prerequisite Audit (3 Conditions)',
   'Nghiệm Thu Hiện Trường (5/5) & Ảnh': 'Field Inspection (5/5) & Photos',
   'Cấp Mã PIN & Bàn Giao': 'Issue PIN Code & Handover',
   '4 Điều Kiện Tiên Quyết Bàn Giao (BR-RULE-005)': '4 Handover Prerequisites (BR-RULE-005)',
+  '3 Điều Kiện Tiên Quyết Bàn Giao (BR-RULE-005)': '3 Handover Prerequisites (BR-RULE-005)',
   'Hợp đồng hợp lệ & đã ký': 'Valid & signed contract',
   'Tiền cọc an toàn & Tiền thuê': 'Security deposit & rental fee',
   'Đối soát CCCD & Thẻ cứng': 'ID card & access card verification',

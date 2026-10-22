@@ -158,6 +158,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const [isVerifyingPaperContract, setIsVerifyingPaperContract] = useState(false)
   const paperFileInputRef = useRef<HTMLInputElement | null>(null)
 
+  // Payment Proof Upload States
+  const [isUploadingPaymentProof, setIsUploadingPaymentProof] = useState<boolean>(false)
+  const [uploadedPaymentProofUrl, setUploadedPaymentProofUrl] = useState<string | null>(null)
+  const paymentProofInputRef = useRef<HTMLInputElement | null>(null)
+
   const [openingDocumentUrl, setOpeningDocumentUrl] = useState<string | null>(null)
   // Identity Form States
   const [idCardType, setIdCardType] = useState<string>('CCCD')
@@ -540,10 +545,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   // Overall check-in readiness (P0-02 & BR-RULE-005: Backend là nguồn chân lý duy nhất)
   const isDepositMet = currentPrerequisites ? currentPrerequisites.depositSatisfied : false
   const isRentMet = currentPrerequisites ? currentPrerequisites.firstMonthRentSatisfied : false
+  const isPaymentMet = isDepositMet && isRentMet
   const isContractMet = currentPrerequisites ? currentPrerequisites.contractSigned : false
   const isIdMet = currentPrerequisites ? currentPrerequisites.identityVerified : false
   const isCheckInTimeMet = currentPrerequisites ? (currentPrerequisites.checkInTimeMet ?? true) : false
-  const isReadyForCheckIn = isDepositMet && isRentMet && isContractMet && isIdMet && isCheckInTimeMet && (currentPrerequisites?.eligibleForInspection ?? false)
+  const isReadyForCheckIn = isPaymentMet && isContractMet && isIdMet && isCheckInTimeMet && (currentPrerequisites?.eligibleForInspection ?? false)
 
   // Sync identity input with loaded prerequisites
   useEffect(() => {
@@ -555,6 +561,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       setIdCardInputNumber('')
       setIdOriginalSeen(false)
     }
+    setUploadedPaymentProofUrl(null)
   }, [selectedBookingId, currentPrerequisites])
 
   // Step Tab Navigation Guards (Protect business conditions)
@@ -564,7 +571,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         setCheckInError(currentPrerequisites?.checkInTimeMessage || 'Chưa đến thời điểm check-in hợp lệ theo lịch hẹn!')
         return
       }
-      setCheckInError('Cần thỏa mãn cả 4 điều kiện đối soát (Hợp đồng, tiền cọc, tiền thuê tháng đầu, CCCD gốc) và đến thời điểm check-in hợp lệ trước khi chuyển sang nghiệm thu!')
+      setCheckInError('Cần thỏa mãn cả 3 điều kiện đối soát (Hợp đồng, bằng chứng chuyển khoản cọc & tiền thuê, CCCD gốc) và đến thời điểm check-in hợp lệ trước khi chuyển sang nghiệm thu!')
       return
     }
     if (tab === 'pin' && (!isReadyForCheckIn || !isAllChecklistPassed || !currentSession.photoDoor || !currentSession.photoInterior)) {
@@ -685,6 +692,36 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
   }
 
+  const handlePaymentProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!selectedBookingId) {
+      setCheckInError('Vui lòng chọn lượt nhận kho trước khi tải ảnh chuyển khoản.')
+      return
+    }
+    const MAX_SIZE = 10 * 1024 * 1024
+    if (file.size > MAX_SIZE) {
+      setCheckInError('Dung lượng tệp vượt quá giới hạn cho phép (10MB).')
+      return
+    }
+
+    setIsUploadingPaymentProof(true)
+    setCheckInError(null)
+    try {
+      const res = await handoverService.uploadHandoverDocument(selectedBookingId, file, 'PAYMENT_PROOF')
+      if (res?.fileUrl) {
+        setUploadedPaymentProofUrl(res.fileUrl)
+        setDispatchFeedback({ text: 'Đã tải lên và lưu bằng chứng chuyển khoản thành công!' })
+        await fetchPrerequisitesForBooking(selectedBookingId)
+      }
+    } catch (err: any) {
+      setCheckInError(err?.response?.data?.message || err?.message || 'Không thể tải ảnh chuyển khoản lên hệ thống.')
+    } finally {
+      setIsUploadingPaymentProof(false)
+      e.target.value = ''
+    }
+  }
+
   const handleViewElectronicContract = async () => {
     const targetBookingId = selectedBookingId || currentBooking?.id
     if (!targetBookingId) return
@@ -798,9 +835,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       await handoverService.completeStep1(selectedBookingId)
       await fetchPrerequisitesForBooking(selectedBookingId)
       updateCurrentSession({ activeStepTab: 'checklist' })
-      setDispatchFeedback({ text: 'Đã hoàn tất đối soát 4 điều kiện! Chuyển sang bước Nghiệm thu hiện trường.' })
+      setDispatchFeedback({ text: 'Đã hoàn tất đối soát 3 điều kiện! Chuyển sang bước Nghiệm thu hiện trường.' })
     } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Không thể chuyển bước: Chưa đáp ứng đủ 4 điều kiện đối soát.'
+      const msg = err?.response?.data?.message || err?.message || 'Không thể chuyển bước: Chưa đáp ứng đủ 3 điều kiện đối soát.'
       setCheckInError(msg)
     } finally {
       setIsCompletingStep1(false)
@@ -847,7 +884,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const handleCompleteHandover = async () => {
     if (!currentBooking) return
     if (!isReadyForCheckIn) {
-      setCheckInError('Chưa thỏa mãn 4 điều kiện tiên quyết (Cọc, tiền thuê tháng đầu, hợp đồng, CCCD gốc). Không thể bàn giao!')
+      setCheckInError('Chưa thỏa mãn 3 điều kiện tiên quyết (Hợp đồng, chuyển khoản cọc & thuê toàn hạn, CCCD gốc). Không thể bàn giao!')
       return
     }
     if (!isAllChecklistPassed || !currentSession.photoDoor || !currentSession.photoInterior) {
@@ -1131,7 +1168,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
               </h2>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+                Chuẩn hóa 3 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
               </p>
             </div>
           </div>
@@ -1171,7 +1208,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
               </h2>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+                Chuẩn hóa 3 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
               </p>
             </div>
           </div>
@@ -1222,7 +1259,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
               </h2>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+                Chuẩn hóa 3 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
               </p>
             </div>
           </div>
@@ -1291,7 +1328,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
           </h2>
           <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-            Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+            Chuẩn hóa 3 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
           </p>
         </div>
       </div>
@@ -1405,7 +1442,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           <span className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center font-mono text-[10px]">
             1
           </span>
-          <span>Đối Soát 4 Điều Kiện</span>
+          <span>Đối Soát 3 Điều Kiện</span>
           {isReadyForCheckIn && (
             <span className="material-symbols-outlined text-[16px] text-emerald-600">check_circle</span>
           )}
@@ -1547,7 +1584,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 )
               })()}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 
                 {/* Điều kiện 1: Hợp Đồng Thuê Kho (Ký Điện Tử hoặc Ký Giấy Tại Quầy) */}
                 <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between gap-3">
@@ -1726,64 +1763,135 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   </div>
                 </div>
 
-                {/* Điều kiện 2: Tiền Cọc (Deposit) */}
+                {/* Điều kiện 2: Bằng Chứng Chuyển Khoản Toàn Bộ Tiền Cọc & Thuê Trong Toàn Bộ Thời Hạn */}
                 <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between gap-3">
                   <div>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2.5">
                         <div
                           className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                            isDepositMet ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+                            isPaymentMet ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
                           }`}
                         >
-                          <span className="material-symbols-outlined text-[20px]">account_balance_wallet</span>
+                          <span className="material-symbols-outlined text-[20px]">payments</span>
                         </div>
                         <div>
-                          <span className="font-bold text-slate-900 text-xs block">2. Tiền Cọc Thuê Kho</span>
-                          <span className="text-[11px] text-slate-500">Bảo toàn tài sản &amp; hoàn cọc khi trả</span>
+                          <span className="font-bold text-slate-900 text-xs block leading-tight">
+                            2. Chuyển Khoản Toàn Bộ Tiền Cọc &amp; Thuê
+                          </span>
+                          <span className="text-[10px] text-slate-500 leading-tight block mt-0.5">
+                            Bằng chứng chuyển khoản toàn bộ cọc &amp; tiền thuê toàn hạn
+                          </span>
                         </div>
                       </div>
                       <span
-                        className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
-                          isDepositMet
+                        className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold shrink-0 ${
+                          isPaymentMet
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                             : 'bg-rose-50 text-rose-700 border border-rose-200'
                         }`}
                       >
-                        {isDepositMet ? '✓ ĐÃ ĐỦ CỌC' : `CÒN THIẾU ${(currentPrerequisites?.depositRemaining ?? 0).toLocaleString('vi-VN')}đ`}
+                        {isPaymentMet
+                          ? '✓ ĐÃ ĐỦ CỌC & THUÊ'
+                          : `CÒN THIẾU ${((currentPrerequisites?.depositRemaining ?? 0) + (currentPrerequisites?.firstMonthRentRemaining ?? 0)).toLocaleString('vi-VN')}đ`}
                       </span>
                     </div>
 
+                    {/* Financial summary: 3 columns */}
                     <div className="mt-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-[11px] grid grid-cols-3 gap-2 text-center">
                       <div>
-                        <span className="text-slate-400 block text-[10px]">Phải thu</span>
-                        <strong className="font-mono text-slate-800">
-                          {(currentPrerequisites?.requiredDeposit ?? 0).toLocaleString('vi-VN')}đ
+                        <span className="text-slate-400 block text-[10px]">Tổng phải thu</span>
+                        <strong className="font-mono text-slate-800 text-[11px]">
+                          {((currentPrerequisites?.requiredDeposit ?? 0) + (currentPrerequisites?.requiredFirstMonthRent ?? 0)).toLocaleString('vi-VN')}đ
                         </strong>
                       </div>
                       <div>
                         <span className="text-slate-400 block text-[10px]">Đã xác nhận</span>
-                        <strong className="font-mono text-emerald-700">
-                          {(currentPrerequisites?.depositPaid ?? 0).toLocaleString('vi-VN')}đ
+                        <strong className="font-mono text-emerald-700 text-[11px]">
+                          {((currentPrerequisites?.depositPaid ?? 0) + (currentPrerequisites?.firstMonthRentPaid ?? 0)).toLocaleString('vi-VN')}đ
                         </strong>
                       </div>
                       <div>
                         <span className="text-slate-400 block text-[10px]">Còn thiếu</span>
-                        <strong className={`font-mono ${(currentPrerequisites?.depositRemaining ?? 0) > 0 ? 'text-rose-600' : 'text-slate-700'}`}>
-                          {(currentPrerequisites?.depositRemaining ?? 0).toLocaleString('vi-VN')}đ
+                        <strong
+                          className={`font-mono text-[11px] ${
+                            ((currentPrerequisites?.depositRemaining ?? 0) + (currentPrerequisites?.firstMonthRentRemaining ?? 0)) > 0
+                              ? 'text-rose-600'
+                              : 'text-slate-700'
+                          }`}
+                        >
+                          {((currentPrerequisites?.depositRemaining ?? 0) + (currentPrerequisites?.firstMonthRentRemaining ?? 0)).toLocaleString('vi-VN')}đ
                         </strong>
                       </div>
                     </div>
 
-                    {/* Deposit transaction list */}
-                    {currentPrerequisites?.paymentHistory && currentPrerequisites.paymentHistory.filter(p => p.paymentType === 'DEPOSIT').length > 0 && (
-                      <div className="mt-2.5 space-y-1.5 max-h-24 overflow-y-auto">
-                        {currentPrerequisites.paymentHistory.filter(p => p.paymentType === 'DEPOSIT').map(p => (
+                    {/* Breakdown cọc vs thuê */}
+                    <div className="mt-2 space-y-1 text-[11px] bg-slate-50/60 p-2 rounded-lg border border-slate-100">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                          Tiền cọc giữ chỗ:
+                        </span>
+                        <span className="font-mono font-bold text-slate-700">
+                          {(currentPrerequisites?.depositPaid ?? 0).toLocaleString('vi-VN')}đ / {(currentPrerequisites?.requiredDeposit ?? 0).toLocaleString('vi-VN')}đ
+                          {isDepositMet ? (
+                            <span className="text-emerald-600 ml-1">✓</span>
+                          ) : (
+                            <span className="text-rose-500 ml-1">(-{(currentPrerequisites?.depositRemaining ?? 0).toLocaleString('vi-VN')}đ)</span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-500"></span>
+                          Tiền thuê trọn kỳ:
+                        </span>
+                        <span className="font-mono font-bold text-slate-700">
+                          {(currentPrerequisites?.firstMonthRentPaid ?? 0).toLocaleString('vi-VN')}đ / {(currentPrerequisites?.requiredFirstMonthRent ?? 0).toLocaleString('vi-VN')}đ
+                          {isRentMet ? (
+                            <span className="text-emerald-600 ml-1">✓</span>
+                          ) : (
+                            <span className="text-rose-500 ml-1">(-{(currentPrerequisites?.firstMonthRentRemaining ?? 0).toLocaleString('vi-VN')}đ)</span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Newly uploaded proof feedback banner */}
+                    {uploadedPaymentProofUrl && (
+                      <div className="mt-2 p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] flex items-center justify-between">
+                        <span className="inline-flex items-center gap-1 font-medium">
+                          <span className="material-symbols-outlined text-[15px] text-emerald-600">task_alt</span>
+                          Ảnh chuyển khoản đã tải lên
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAuthorizedDocument(uploadedPaymentProofUrl)}
+                          disabled={openingDocumentUrl === uploadedPaymentProofUrl}
+                          className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[12px]">visibility</span>
+                          <span>{openingDocumentUrl === uploadedPaymentProofUrl ? '...' : 'Xem ảnh'}</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* All payment transactions & receipts list */}
+                    {currentPrerequisites?.paymentHistory && currentPrerequisites.paymentHistory.length > 0 && (
+                      <div className="mt-2 space-y-1.5 max-h-28 overflow-y-auto pr-0.5">
+                        {currentPrerequisites.paymentHistory.map((p) => (
                           <div key={p.id} className="p-1.5 rounded bg-slate-100/70 text-[10px] flex items-center justify-between">
-                            <span className="font-mono font-bold text-slate-700">
-                              {p.paymentMethod} • {p.amount.toLocaleString('vi-VN')}đ
-                            </span>
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1">
+                              <span className={`px-1 py-0.2 rounded font-mono font-bold text-[9px] ${
+                                p.paymentType === 'DEPOSIT' ? 'bg-blue-100 text-blue-800' : 'bg-cyan-100 text-cyan-800'
+                              }`}>
+                                {p.paymentType === 'DEPOSIT' ? 'CỌC' : 'THUÊ'}
+                              </span>
+                              <span className="font-mono font-bold text-slate-700">
+                                {p.paymentMethod} • {p.amount.toLocaleString('vi-VN')}đ
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
                               {p.proofDocumentUrl && (
                                 <button
                                   type="button"
@@ -1796,8 +1904,16 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                                   <span>{openingDocumentUrl === p.proofDocumentUrl ? '...' : 'Xem UNC'}</span>
                                 </button>
                               )}
-                              <span className={`px-1.5 py-0.2 rounded font-bold ${p.status === 'PAID' ? 'bg-emerald-100 text-emerald-800' : p.status === 'PENDING' || p.status === 'REFUND_PENDING' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-700'}`}>
-                                {p.status === 'PAID' ? 'Đã xác nhận' : p.status === 'PENDING' ? 'Chờ xác minh' : p.status === 'REFUND_PENDING' ? 'Chờ hoàn tiền' : p.status === 'REFUNDED' ? 'Đã hoàn tiền' : p.status}
+                              <span
+                                className={`px-1.5 py-0.2 rounded font-bold ${
+                                  p.status === 'PAID'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : p.status === 'PENDING' || p.status === 'REFUND_PENDING'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-slate-200 text-slate-700'
+                                }`}
+                              >
+                                {p.status === 'PAID' ? 'Đã duyệt' : p.status === 'PENDING' ? 'Chờ duyệt' : p.status}
                               </span>
                             </div>
                           </div>
@@ -1805,91 +1921,31 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       </div>
                     )}
                   </div>
-                  
-                </div>
 
-                {/* Điều kiện 3: Tiền Thuê Tháng Đầu (First Month Rent) */}
-                <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between gap-3">
-                  <div>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
-                        <div
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                            isRentMet ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[20px]">calendar_month</span>
-                        </div>
-                        <div>
-                          <span className="font-bold text-slate-900 text-xs block">3. Tiền Thuê Tháng Đầu</span>
-                          <span className="text-[11px] text-slate-500">Theo dõi độc lập với khoản tiền cọc</span>
-                        </div>
-                      </div>
-                      <span
-                        className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
-                          isRentMet
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-rose-50 text-rose-700 border border-rose-200'
-                        }`}
-                      >
-                        {isRentMet ? '✓ ĐÃ ĐỦ TIỀN THUÊ' : `CÒN THIẾU ${(currentPrerequisites?.firstMonthRentRemaining ?? 0).toLocaleString('vi-VN')}đ`}
+                  {/* Upload payment proof button */}
+                  <div className="pt-2 border-t border-slate-100">
+                    <input
+                      ref={paymentProofInputRef}
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="hidden"
+                      onChange={handlePaymentProofUpload}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => paymentProofInputRef.current?.click()}
+                      disabled={isUploadingPaymentProof}
+                      className="w-full py-2 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">
+                        {isUploadingPaymentProof ? 'hourglass_top' : 'upload_file'}
                       </span>
-                    </div>
-
-                    <div className="mt-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-[11px] grid grid-cols-3 gap-2 text-center">
-                      <div>
-                        <span className="text-slate-400 block text-[10px]">Phải thu</span>
-                        <strong className="font-mono text-slate-800">
-                          {(currentPrerequisites?.requiredFirstMonthRent ?? 0).toLocaleString('vi-VN')}đ
-                        </strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px]">Đã xác nhận</span>
-                        <strong className="font-mono text-emerald-700">
-                          {(currentPrerequisites?.firstMonthRentPaid ?? 0).toLocaleString('vi-VN')}đ
-                        </strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px]">Còn thiếu</span>
-                        <strong className={`font-mono ${(currentPrerequisites?.firstMonthRentRemaining ?? 0) > 0 ? 'text-rose-600' : 'text-slate-700'}`}>
-                          {(currentPrerequisites?.firstMonthRentRemaining ?? 0).toLocaleString('vi-VN')}đ
-                        </strong>
-                      </div>
-                    </div>
-
-                    {/* Rent transaction list */}
-                    {currentPrerequisites?.paymentHistory && currentPrerequisites.paymentHistory.filter(p => p.paymentType === 'RENTAL_FEE').length > 0 && (
-                      <div className="mt-2.5 space-y-1.5 max-h-24 overflow-y-auto">
-                        {currentPrerequisites.paymentHistory.filter(p => p.paymentType === 'RENTAL_FEE').map(p => (
-                          <div key={p.id} className="p-1.5 rounded bg-slate-100/70 text-[10px] flex items-center justify-between">
-                            <span className="font-mono font-bold text-slate-700">
-                              {p.paymentMethod} • {p.amount.toLocaleString('vi-VN')}đ
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                              {p.proofDocumentUrl && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenAuthorizedDocument(p.proofDocumentUrl!)}
-                                  disabled={openingDocumentUrl === p.proofDocumentUrl}
-                                  className="px-1.5 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[10px] inline-flex items-center gap-0.5 cursor-pointer"
-                                  title="Xem ảnh chụp ủy nhiệm chi / biên lai chuyển khoản"
-                                >
-                                  <span className="material-symbols-outlined text-[12px]">receipt_long</span>
-                                  <span>{openingDocumentUrl === p.proofDocumentUrl ? '...' : 'Xem UNC'}</span>
-                                </button>
-                              )}
-                              <span className={`px-1.5 py-0.2 rounded font-bold ${p.status === 'PAID' ? 'bg-emerald-100 text-emerald-800' : p.status === 'PENDING' || p.status === 'REFUND_PENDING' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-700'}`}>
-                                {p.status === 'PAID' ? 'Đã xác nhận' : p.status === 'PENDING' ? 'Chờ xác minh' : p.status === 'REFUND_PENDING' ? 'Chờ hoàn tiền' : p.status === 'REFUNDED' ? 'Đã hoàn tiền' : p.status}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                      <span>{isUploadingPaymentProof ? 'Đang Tải Ảnh...' : 'Tải Lên / Upload Ảnh Chuyển Khoản'}</span>
+                    </button>
                   </div>
                 </div>
 
-                {/* Điều kiện 4: Đối Chiếu CCCD / Passport Gốc */}
+                {/* Điều kiện 3: Đối Chiếu CCCD / Passport Gốc */}
                 <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between gap-3">
                   <div>
                     <div className="flex items-start justify-between gap-2">
@@ -1902,7 +1958,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                           <span className="material-symbols-outlined text-[20px]">badge</span>
                         </div>
                         <div>
-                          <span className="font-bold text-slate-900 text-xs block">4. Đối Chiếu CCCD / Hộ Chiếu Gốc</span>
+                          <span className="font-bold text-slate-900 text-xs block">3. Đối Chiếu CCCD / Hộ Chiếu Gốc</span>
                           <span className="text-[11px] text-slate-500">Xác minh danh tính khách hàng trực tiếp</span>
                         </div>
                       </div>
@@ -2023,7 +2079,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs">
                     <span className="font-bold flex items-center gap-1.5 mb-1.5">
                       <span className="material-symbols-outlined text-[17px] text-amber-700">error</span>
-                      <span>Hồ sơ check-in hiện chưa đủ 4 điều kiện bắt buộc:</span>
+                      <span>Hồ sơ check-in hiện chưa đủ 3 điều kiện bắt buộc:</span>
                     </span>
                     <ul className="list-disc list-inside space-y-1 text-[11px] text-amber-800 pl-1 font-medium">
                       {currentPrerequisites.missingPrerequisites.map((m, idx) => (
@@ -2048,7 +2104,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       ? 'Tất cả điều kiện đối soát và thời điểm check-in đã hoàn tất hợp lệ. Bạn có thể chuyển sang bước Nghiệm thu hiện trường.'
                       : !isCheckInTimeMet
                       ? (currentPrerequisites?.checkInTimeMessage || 'Chưa đến thời điểm check-in hợp lệ. Hệ thống không cho phép bàn giao trước thời hạn.')
-                      : 'Hệ thống chặn chuyển bước và chặn cấp mã PIN cho đến khi cả 4 điều kiện trên được đáp ứng đầy đủ.'}
+                      : 'Hệ thống chặn chuyển bước và chặn cấp mã PIN cho đến khi cả 3 điều kiện trên được đáp ứng đầy đủ.'}
                   </span>
                 </div>
                 <button
@@ -2454,7 +2510,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <div>
                 <strong className="block font-bold">Chưa đủ điều kiện bàn giao buồng kho:</strong>
                 <span>
-                  Booking chưa thỏa mãn đầy đủ 4 điều kiện đối soát (Cọc, tiền thuê tháng đầu, hợp đồng điện tử đã ký, CCCD đối chiếu). Hệ thống bảo mật không cho phép cấp mã PIN trước khi đáp ứng đủ quy chuẩn.
+                  Booking chưa thỏa mãn đầy đủ 3 điều kiện đối soát (Hợp đồng, chuyển khoản cọc &amp; thuê toàn hạn, CCCD đối chiếu). Hệ thống bảo mật không cho phép cấp mã PIN trước khi đáp ứng đủ quy chuẩn.
                 </span>
               </div>
             </div>
