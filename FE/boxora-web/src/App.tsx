@@ -118,11 +118,11 @@ function MainContent() {
               }
             />
 
-            {/* 2. Staff Portal: operational access is reserved for Staff */}
+            {/* 2. Staff Portal: operational access is reserved for Staff & Facility Manager */}
             <Route
               path="staff"
               element={
-                <ProtectedRoute allowedRoles={['STAFF']}>
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER']}>
                   <StaffDashboard />
                 </ProtectedRoute>
               }

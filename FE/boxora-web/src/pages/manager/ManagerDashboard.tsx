@@ -19,6 +19,7 @@ import { CreateStorageUnitModal } from './modals/CreateStorageUnitModal'
 import { FacilityPolicyViewModal } from './modals/FacilityPolicyViewModal'
 import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
 import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
+import { HandoverCheckInWorkbench } from '../staff/components/HandoverCheckInWorkbench'
 
 interface InspectedUnit {
   id: string
@@ -122,6 +123,16 @@ export const ManagerDashboard: React.FC = () => {
   const [checkinFromDate, setCheckinFromDate] = useState<string>('')
   const [checkinToDate, setCheckinToDate] = useState<string>('')
   const [claimingBookingId, setClaimingBookingId] = useState<string | null>(null)
+  const [activeBookingId, setActiveBookingId] = useState<string>(
+    searchParams.get('bookingId') || searchParams.get('checkinBookingId') || ''
+  )
+
+  useEffect(() => {
+    const bId = searchParams.get('bookingId') || searchParams.get('checkinBookingId')
+    if (bId) {
+      setActiveBookingId(bId)
+    }
+  }, [searchParams])
 
   // Tickets queue pagination
   const [ticketCurrentPage, setTicketCurrentPage] = useState<number>(1)
@@ -409,8 +420,13 @@ export const ManagerDashboard: React.FC = () => {
         assignedStaffId: updated.assignedStaffId || user?.id,
         assignedStaffName: updated.assignedStaffName || user?.fullName || 'Quản lý cơ sở'
       } : b))
-      setActionSuccessMessage(`Đã tiếp nhận lượt đón khách của đơn ${booking.bookingCode} thành công!`)
+      setActiveBookingId(booking.id)
+      setActionSuccessMessage(`Đã tiếp nhận lượt đón khách của đơn ${booking.bookingCode} thành công! Bàn vận hành quầy đã sẵn sàng để đối soát & bàn giao.`)
       setTimeout(() => setActionSuccessMessage(null), 4000)
+      setTimeout(() => {
+        const el = document.getElementById('handover-workbench-section')
+        if (el) el.scrollIntoView({ behavior: 'smooth' })
+      }, 100)
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Không thể tiếp nhận khách: Bạn chỉ có thể tiếp nhận khi có ca làm việc vào ngày hẹn check-in tại cơ sở và đã điểm danh vào ca trực.'
       setReceptionAlertData({
@@ -1021,8 +1037,8 @@ export const ManagerDashboard: React.FC = () => {
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <span className="material-symbols-outlined text-[18px]">fact_check</span>
-          <span>2. Bàn Giao &amp; Trả Kho ({upcomingHandovers.length})</span>
+          <span className="material-symbols-outlined text-[18px]">badge</span>
+          <span>3. Bàn Vận Hành Quầy &amp; Tiếp Đón ({upcomingHandovers.length})</span>
         </button>
 
         <button
@@ -1035,7 +1051,7 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">build_circle</span>
-          <span>3. Sự Cố &amp; SLA ({tickets.filter(t => t.status !== 'RESOLVED').length})</span>
+          <span>4. Sự Cố &amp; SLA ({tickets.filter(t => t.status !== 'RESOLVED').length})</span>
         </button>
 
         {role !== 'STAFF' && (
@@ -1408,18 +1424,56 @@ export const ManagerDashboard: React.FC = () => {
       )}
 
       {/* ============================================================== */}
-      {/* TAB 2: BÀN GIAO & TRẢ KHO (GIÁM SÁT TIẾN ĐỘ) */}
+      {/* TAB 3: BÀN VẬN HÀNH QUẦY & TIẾP ĐÓN BÀN GIAO */}
       {/* ============================================================== */}
       {activeTab === 'handovers-returns' && (
         <section className="flex flex-col gap-6">
           
-          {/* Supervisory Notice Banner */}
-          <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex items-start gap-3">
-            <span className="material-symbols-outlined text-blue-600 text-[24px] shrink-0 mt-0.5">policy</span>
-            <div className="text-xs text-blue-900 leading-relaxed">
-              <strong className="block text-sm font-bold mb-0.5">Phân định thẩm quyền vận hành:</strong>
-              Màn hình này cung cấp <strong>chế độ giám sát tiến độ</strong> dành cho Quản lý cơ sở. Toàn bộ quy trình tiếp đón khách, đối soát CCCD, nghiệm thu hiện trường 5 hạng mục và phát hành mã PIN bàn giao được thực hiện trực tiếp bởi <strong>Nhân viên quầy (Facility Staff)</strong> tại Bàn Vận Hành Quầy &amp; Tiếp Đón.
+          {/* Header Bàn Vận Hành Quầy & Tiếp Đón */}
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center border border-cyan-400/30 shrink-0">
+                <span className="material-symbols-outlined text-[26px]">badge</span>
+              </div>
+              <div>
+                <h3 className="font-headline text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                  Bàn Vận Hành Quầy &amp; Tiếp Đón Bàn Giao
+                  <span className="px-2 py-0.5 rounded-full bg-cyan-400/20 text-cyan-300 text-[10px] font-mono font-bold border border-cyan-400/30">
+                    Facility Manager Desk
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
+                  Quản lý cơ sở trực tiếp tiếp nhận khách hàng, đối soát CCCD / giấy tờ tùy thân, nghiệm thu hiện trường 5 hạng mục và cấp phát mã PIN bảo mật bàn giao kho.
+                </p>
+              </div>
             </div>
+            {activeBookingId && (
+              <button
+                type="button"
+                onClick={() => setActiveBookingId('')}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[15px]">close</span>
+                <span>Thu gọn bàn thao tác</span>
+              </button>
+            )}
+          </div>
+
+          {/* BÀN THAO TÁC CHECK-IN & BÀN GIAO KHO */}
+          <div id="handover-workbench-section" className="scroll-mt-6">
+            <HandoverCheckInWorkbench
+              facilityId={selectedFacilityId || user?.facilityId}
+              arrivals={upcomingHandovers}
+              activeBookingId={activeBookingId}
+              onSelectBooking={setActiveBookingId}
+              onHandoverComplete={(bookingId) => {
+                setActiveBookingId('')
+                fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, checkinFromDate, checkinToDate)
+                const targetFac = selectedFacilityId || user?.facilityId
+                if (targetFac) void fetchUnits(targetFac)
+                triggerAction('Đã hoàn tất bàn giao kho và cấp phát mã PIN cho khách hàng thành công!')
+              }}
+            />
           </div>
 
           {/* Upcoming Handovers Table */}
@@ -1550,12 +1604,31 @@ export const ManagerDashboard: React.FC = () => {
                         <td className="py-3 px-3 text-right">
                           <div className="flex items-center justify-end gap-2 flex-wrap">
                             {b.assignedStaffName ? (
-                              <div
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold"
-                                title={b.staffAssignmentNotes || undefined}
-                              >
-                                <span className="material-symbols-outlined text-[14px] text-emerald-600">person_check</span>
-                                <span>{b.assignedStaffName}</span>
+                              <div className="flex items-center gap-1.5">
+                                <div
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold"
+                                  title={b.staffAssignmentNotes || undefined}
+                                >
+                                  <span className="material-symbols-outlined text-[14px] text-emerald-600">person_check</span>
+                                  <span>{b.assignedStaffName}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveBookingId(b.id)
+                                    const el = document.getElementById('handover-workbench-section')
+                                    if (el) el.scrollIntoView({ behavior: 'smooth' })
+                                  }}
+                                  className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 shadow-xs ${
+                                    activeBookingId === b.id
+                                      ? 'bg-cyan-700 text-white ring-2 ring-cyan-300'
+                                      : 'bg-cyan-600 hover:bg-cyan-700 text-white'
+                                  }`}
+                                  title="Mở bàn vận hành tiếp đón & bàn giao cho đơn này"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">desktop_windows</span>
+                                  <span>{activeBookingId === b.id ? 'Đang mở bàn' : 'Vận hành bàn giao'}</span>
+                                </button>
                               </div>
                             ) : (
                               <button
@@ -1565,7 +1638,7 @@ export const ManagerDashboard: React.FC = () => {
                                 className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
                               >
                                 <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
-                                <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận'}</span>
+                                <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận & Mở bàn'}</span>
                               </button>
                             )}
 
