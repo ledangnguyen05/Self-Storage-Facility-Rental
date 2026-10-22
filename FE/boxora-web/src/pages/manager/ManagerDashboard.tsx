@@ -39,6 +39,7 @@ interface InspectedUnit {
   pricePerMonth?: number
   facilityId?: string
   facilityName?: string
+  imageUrl?: string
 }
 
 type ManagerDashboardTab = 'overview' | 'renewals' | 'handovers-returns' | 'tickets' | 'performance' | 'policy'
@@ -281,7 +282,8 @@ export const ManagerDashboard: React.FC = () => {
             floorLevel: su.floorLevel || 'Not reported',
             pricePerMonth: su.pricePerMonth,
             facilityId: su.facilityId,
-            facilityName: su.facilityName
+            facilityName: su.facilityName,
+            imageUrl: su.imageUrl
           }
         })
         mapped.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }))

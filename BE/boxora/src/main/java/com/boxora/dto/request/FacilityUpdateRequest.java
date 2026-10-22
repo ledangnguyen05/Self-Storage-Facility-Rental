@@ -52,7 +52,11 @@ public class FacilityUpdateRequest {
     private BigDecimal longitude;
 
     private String layoutConfig;
+    private String imageUrl;
 
     /** Explicitly clears both coordinates when the admin removes the GPS location. */
     private Boolean clearCoordinates;
+
+    /** Explicitly clears image url when removed. */
+    private Boolean clearImageUrl;
 }

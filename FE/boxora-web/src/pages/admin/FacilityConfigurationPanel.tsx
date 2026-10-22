@@ -49,6 +49,7 @@ interface FacilityDraft {
   geoSource: GeocodingSource
   geoConfidenceNote?: string
   layout: FacilityLayoutConfig
+  imageUrl?: string
 }
 
 const blankDraft = (): FacilityDraft => ({
@@ -65,6 +66,7 @@ const blankDraft = (): FacilityDraft => ({
   geoSource: 'UNVERIFIED',
   geoConfidenceNote: '',
   layout: { ...DEFAULT_FACILITY_LAYOUT_CONFIG },
+  imageUrl: '',
 })
 
 const inputClassName =
@@ -84,6 +86,7 @@ const toDraft = (facility: Facility): FacilityDraft => ({
   geoSource: facility.latitude != null && facility.longitude != null ? 'EXACT' : 'UNVERIFIED',
   geoConfidenceNote: facility.latitude != null && facility.longitude != null ? 'Tọa độ đã xác lập' : '',
   layout: parseFacilityLayoutConfig(facility.layoutConfig),
+  imageUrl: facility.imageUrl || '',
 })
 
 const getRequestError = (error: unknown) => {
@@ -580,7 +583,13 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
         latitude,
         longitude,
         layoutConfig: JSON.stringify(syncLegacyLayoutFields(draft.layout)),
-        ...(editingFacility ? { clearCoordinates: latitude === null && longitude === null } : {}),
+        imageUrl: draft.imageUrl?.trim() || undefined,
+        ...(editingFacility
+          ? {
+              clearCoordinates: latitude === null && longitude === null,
+              clearImageUrl: !draft.imageUrl?.trim(),
+            }
+          : {}),
       }
 
       if (editingFacility) {
@@ -1594,23 +1603,23 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                   >
                     <div>
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h3 className="truncate text-base font-bold text-slate-900 dark:text-slate-100">
-                              {facility.name}
-                            </h3>
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${
-                                facility.status === 'ACTIVE'
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300'
-                                  : facility.status === 'MAINTENANCE'
-                                  ? 'bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-950/50 dark:text-purple-300'
-                                  : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400'
-                              }`}
-                            >
-                              {facility.status}
-                            </span>
-                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h3 className="truncate text-base font-bold text-slate-900 dark:text-slate-100">
+                                {facility.name}
+                              </h3>
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${
+                                  facility.status === 'ACTIVE'
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300'
+                                    : facility.status === 'MAINTENANCE'
+                                    ? 'bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-950/50 dark:text-purple-300'
+                                    : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400'
+                                }`}
+                              >
+                                {facility.status}
+                              </span>
+                            </div>
                           <span className="mt-1 inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[11px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                             {facility.code}
                           </span>

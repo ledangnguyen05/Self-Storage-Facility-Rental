@@ -13,6 +13,17 @@ export const facilityService = {
     return response.data?.data as Facility
   },
 
+  async uploadFacilityImage(file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await api.post('/api/v1/facilities/upload-image', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return response.data?.data as { fileUrl: string; fileName: string; fileSize?: number; fileType?: string }
+  },
+
   async createFacility(data: Partial<Facility>) {
     const response = await api.post('/api/v1/facilities', data)
     return response.data?.data as Facility

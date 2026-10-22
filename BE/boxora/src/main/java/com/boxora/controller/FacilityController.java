@@ -17,6 +17,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import com.boxora.dto.response.FileUploadResponse;
+import com.boxora.service.CloudflareR2Service;
+import org.springframework.http.MediaType;
+import org.springframework.web.multipart.MultipartFile;
+
 import java.util.UUID;
 
 @RestController
@@ -26,9 +31,19 @@ import java.util.UUID;
 public class FacilityController {
 
     private final FacilityService facilityService;
+    private final CloudflareR2Service cloudflareR2Service;
 
-    public FacilityController(FacilityService facilityService) {
+    public FacilityController(FacilityService facilityService, CloudflareR2Service cloudflareR2Service) {
         this.facilityService = facilityService;
+        this.cloudflareR2Service = cloudflareR2Service;
+    }
+
+    @PostMapping(value = "/upload-image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER', 'ADMIN')")
+    @Operation(summary = "Tải ảnh cơ sở lên Cloudflare R2")
+    public ResponseEntity<ApiResponse<FileUploadResponse>> uploadFacilityImage(@RequestParam("file") MultipartFile file) {
+        FileUploadResponse response = cloudflareR2Service.uploadFacilityImage(file);
+        return ResponseEntity.ok(ApiResponse.success("Tải ảnh cơ sở lên Cloudflare R2 thành công", response));
     }
 
     @GetMapping("{id}")
