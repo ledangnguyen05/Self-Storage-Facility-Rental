@@ -139,10 +139,28 @@ export function CustomerBookingCard({
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-base font-extrabold text-slate-900">KHO #{unitCode}</span>
-                <span className="stitch-badge stitch-badge-available">
-                  <span className="pulsing-dot bg-emerald-500"></span>
-                  {booking.status === 'ACTIVE' ? 'Đang hoạt động' : 'Đã xác nhận'}
+                <span className="font-mono text-base font-extrabold text-slate-900">
+                  {unitCode ? `KHO #${unitCode}` : 'Vị trí kho xác nhận khi check-in'}
+                </span>
+                <span className={`stitch-badge ${
+                  booking.status === 'ACTIVE'
+                    ? 'stitch-badge-available'
+                    : (booking.status as string) === 'PENDING_CONTACT' || (booking.status as string) === 'PENDING_CONFIRMATION'
+                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                    : 'bg-cyan-100 text-cyan-800 border border-cyan-300'
+                }`}>
+                  <span className={`pulsing-dot ${
+                    booking.status === 'ACTIVE'
+                      ? 'bg-emerald-500'
+                      : (booking.status as string) === 'PENDING_CONTACT' || (booking.status as string) === 'PENDING_CONFIRMATION'
+                      ? 'bg-amber-500'
+                      : 'bg-cyan-500'
+                  }`}></span>
+                  {booking.status === 'ACTIVE'
+                    ? 'Đang hoạt động'
+                    : (booking.status as string) === 'PENDING_CONTACT' || (booking.status as string) === 'PENDING_CONFIRMATION'
+                    ? 'Chờ xác nhận'
+                    : 'Chờ check in'}
                 </span>
               </div>
               <span className="block truncate text-xs text-slate-500">

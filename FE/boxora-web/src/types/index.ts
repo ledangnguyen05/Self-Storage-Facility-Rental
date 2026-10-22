@@ -6,6 +6,8 @@ export interface User {
   email: string
   fullName?: string
   phone?: string
+  identityCardNumber?: string
+  identityCardType?: string
   avatar?: string
   role?: {
     id?: string
@@ -123,7 +125,11 @@ export interface StorageUnit {
   primaryImageUrl?: string
 }
 
+<<<<<<< Updated upstream
 export type BookingStatusType = 'PENDING_APPROVAL' | 'PENDING_PAYMENT' | 'CONFIRMED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
+=======
+export type BookingStatusType = 'PENDING_APPROVAL' | 'PENDING_CONTACT' | 'PENDING_PAYMENT' | 'CONFIRMED' | 'PENDING_SIGNATURE' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
+>>>>>>> Stashed changes
 
 export interface Booking {
   id: string
@@ -133,6 +139,8 @@ export interface Booking {
   customerEmail: string
   customerPhone: string
   storageUnitId: string
+  unitTypeId?: string
+  unitTypeName?: string
   unitCode: string
   facilityId?: string
   facilityName: string

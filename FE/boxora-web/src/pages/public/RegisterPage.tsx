@@ -4,6 +4,7 @@ import {
   User,
   Mail,
   Phone,
+  CreditCard,
   Lock,
   ArrowRight,
   CheckCircle2,
@@ -48,6 +49,7 @@ export const RegisterPage: React.FC = () => {
     fullName: googleRedirectState?.fullName || '',
     email: googleRedirectState?.email || '',
     phone: '',
+    identityCardNumber: '',
     password: '',
     confirmPassword: ''
   })
@@ -205,7 +207,14 @@ export const RegisterPage: React.FC = () => {
         captchaId,
         captchaCode: captchaInput.trim().toUpperCase()
       })
+<<<<<<< Updated upstream
       markUserAsNewCustomer('', derivedUsername, formData.email.trim())
+=======
+      if (formData.identityCardNumber.trim()) {
+        localStorage.setItem('boxora_user_cccd_' + formData.email.trim(), formData.identityCardNumber.trim())
+        localStorage.setItem('boxora_user_cccd', formData.identityCardNumber.trim())
+      }
+>>>>>>> Stashed changes
       setSuccess(true)
       navigate('/units', {
         state: { welcomeMessage: 'Tài khoản đã tạo thành công! Hãy chọn kho lưu trữ gần bạn nhất.' }
@@ -539,6 +548,30 @@ export const RegisterPage: React.FC = () => {
                         className="w-full h-10.5 pl-9 pr-3.5 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
                       />
                     </div>
+                  </div>
+                </div>
+
+                {/* Field: So CCCD / Dinh danh ca nhan */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                      Số CCCD / Hộ chiếu
+                    </label>
+                    <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">
+                      Tự động điền khi thuê kho &amp; cấp mã PIN
+                    </span>
+                  </div>
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3.5 text-slate-400 pointer-events-none">
+                      <CreditCard className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      value={formData.identityCardNumber}
+                      onChange={(e) => setFormData({ ...formData, identityCardNumber: e.target.value.replace(/\D/g, '').slice(0, 12) })}
+                      placeholder="Nhập 12 số CCCD (VD: 079123456789)"
+                      className="w-full h-10.5 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all font-mono"
+                    />
                   </div>
                 </div>
 

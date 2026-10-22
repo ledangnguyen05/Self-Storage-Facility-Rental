@@ -316,19 +316,31 @@ export const DashboardLayout: React.FC = () => {
                 </Link>
 
                 <Link
+<<<<<<< Updated upstream
                   to="/portal/customer?tab=requests"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
                     isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'requests'
+=======
+                  to="/my-bookings"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    isCurrentPath('/my-bookings')
+>>>>>>> Stashed changes
                       ? 'bg-slate-100 text-slate-900 font-bold'
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">pending_actions</span>
+<<<<<<< Updated upstream
                   <span>Yêu cầu đặt chỗ</span>
                 </Link>
 
 
 
+=======
+                  <span>Đơn đặt giữ chỗ</span>
+                </Link>
+
+>>>>>>> Stashed changes
                 <Link
                   to="/portal/customer?tab=explore"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${

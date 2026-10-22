@@ -2,6 +2,105 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Booking } from '../../../types'
 import { handoverService, HandoverPrerequisites } from '../../../services/handoverService'
 import { bookingService } from '../../../services/bookingService'
+<<<<<<< Updated upstream
+=======
+import { contractService } from '../../../services/contractService'
+import { ContractDocumentModal } from '../../../components/modals/ContractDocumentModal'
+import { useAuth } from '../../../context/AuthContext'
+import { storageUnitService } from '../../../services/storageUnitService'
+import { StorageUnit } from '../../../types'
+
+export interface BookingChecklist {
+  doorRoll: boolean
+  cleanliness: boolean
+  lighting: boolean
+  fireSafety: boolean
+  sealPlate: boolean
+}
+
+export interface BookingWorkbenchSession {
+  bookingId: string
+  activeStepTab: 'audit' | 'checklist' | 'pin'
+  checklist: BookingChecklist
+  photoDoor: string
+  photoInterior: string
+  rfidCard: string
+  accessPin: string
+  emailSent: boolean
+  webPushSent: boolean
+  handoverNotes: string
+  requestedUnitCode?: string
+  identityVerified: boolean
+  isCompleted: boolean
+  completedAt?: string
+}
+
+export interface HandoverSuccessModalData {
+  bookingId?: string
+  bookingCode: string
+  unitCode: string
+  customerName: string
+  customerPhone: string
+  customerEmail: string
+  pin: string
+  facilityName: string
+  completedAt: string
+}
+
+const STORAGE_KEY = 'boxora_handover_workbench_sessions'
+
+export const defaultChecklist: BookingChecklist = {
+  doorRoll: true,
+  cleanliness: true,
+  lighting: true,
+  fireSafety: true,
+  sealPlate: true
+}
+
+export const loadPersistedSessions = (): Record<string, BookingWorkbenchSession> => {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) return {}
+    Object.values(parsed).forEach((session: any) => {
+      if (session && typeof session === 'object') delete session.idCardNumber
+    })
+    return parsed
+  } catch (err) {
+    console.warn('Failed to parse persisted handover sessions', err)
+    return {}
+  }
+}
+
+export const persistSessions = (sessions: Record<string, BookingWorkbenchSession>) => {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(sessions))
+  } catch (err) {
+    console.warn('Failed to persist handover sessions to sessionStorage', err)
+  }
+}
+
+export const createInitialSession = (
+  bookingId: string,
+  isAlreadyActive = false,
+  existingPin = ''
+): BookingWorkbenchSession => ({
+  bookingId,
+  activeStepTab: 'audit',
+  checklist: { ...defaultChecklist },
+  photoDoor: '',
+  photoInterior: '',
+  rfidCard: '',
+  accessPin: existingPin && existingPin !== '------' ? existingPin : '------',
+  emailSent: false,
+  webPushSent: false,
+  handoverNotes: 'Đã đối soát đầy đủ hồ sơ tại quầy tiếp đón.',
+  requestedUnitCode: '',
+  identityVerified: false,
+  isCompleted: isAlreadyActive
+})
+>>>>>>> Stashed changes
 
 interface HandoverCheckInWorkbenchProps {
   arrivals?: Booking[]
@@ -16,11 +115,22 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   onHandoverComplete,
   activeBookingId
 }) => {
+<<<<<<< Updated upstream
   const [internalArrivals, setInternalArrivals] = useState<Booking[]>([])
   const [selectedBookingId, setSelectedBookingId] = useState<string>('')
   const [prerequisites, setPrerequisites] = useState<HandoverPrerequisites | null>(null)
   const [loadingPrerequisites, setLoadingPrerequisites] = useState(false)
   const [prerequisitesError, setPrerequisitesError] = useState<string | null>(null)
+=======
+  const { user } = useAuth()
+  const resolvedRole = (typeof user?.role === 'string' ? user?.role : user?.role?.name || user?.roleName || '').toUpperCase()
+  const canReceiveCheckIn = resolvedRole === 'STAFF' || resolvedRole === 'FACILITY_MANAGER'
+
+  const [internalArrivals, setInternalArrivals] = useState<Booking[]>([])
+  const [selectedBookingId, setSelectedBookingId] = useState<string>('')
+  const [extraBookingDetails, setExtraBookingDetails] = useState<Record<string, Booking>>({})
+  const [availableUnitChoices, setAvailableUnitChoices] = useState<StorageUnit[]>([])
+>>>>>>> Stashed changes
 
   // Form & Hardware Inputs
   const [rfidCard, setRfidCard] = useState('RF-409')
@@ -96,7 +206,37 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const arrivalsList = (propArrivals && propArrivals.length > 0) ? propArrivals : internalArrivals
   const currentBooking = arrivalsList.find(b => b.id === selectedBookingId || b.bookingCode === selectedBookingId) || arrivalsList[0]
 
+<<<<<<< Updated upstream
   // When selected booking changes, fetch real prerequisites from backend
+=======
+  useEffect(() => {
+    if (!currentBooking?.facilityId) {
+      setAvailableUnitChoices([])
+      return
+    }
+    let cancelled = false
+    storageUnitService.getUnits({ facilityId: currentBooking.facilityId })
+      .then((units) => {
+        if (cancelled) return
+        setAvailableUnitChoices((units || []).filter((unit) =>
+          unit.unitTypeId === currentBooking.unitTypeId
+          && (unit.status === 'AVAILABLE' || unit.id === currentBooking.storageUnitId)
+        ))
+      })
+      .catch(() => {
+        if (!cancelled) setAvailableUnitChoices([])
+      })
+    return () => { cancelled = true }
+  }, [currentBooking?.facilityId, currentBooking?.storageUnitId, currentBooking?.unitTypeId])
+
+  // Permission evaluation for currently selected customer
+  const isAssignedToOther = Boolean(
+    currentBooking?.assignedStaffId && currentBooking.assignedStaffId !== user?.id
+  )
+  const isUnassigned = Boolean(currentBooking && !currentBooking.assignedStaffId && canReceiveCheckIn)
+
+  // If selectedBookingId is not found in arrivalsList, fetch it directly from backend
+>>>>>>> Stashed changes
   useEffect(() => {
     if (currentBooking?.id) {
       fetchPrerequisites(currentBooking.id)
@@ -121,7 +261,123 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       setPrerequisitesError(msg)
       setPrerequisites(null)
     } finally {
+<<<<<<< Updated upstream
       setLoadingPrerequisites(false)
+=======
+      if (latestReqIdPerBookingRef.current[bookingId] === reqId) {
+        setLoadingMap((prev) => ({ ...prev, [bookingId]: false }))
+      }
+    }
+  }, [])
+
+  // Whenever selectedBookingId changes, trigger fetch if not cached or always refresh prerequisites
+  useEffect(() => {
+    if (selectedBookingId) {
+      fetchPrerequisitesForBooking(selectedBookingId)
+    }
+  }, [selectedBookingId, fetchPrerequisitesForBooking])
+
+  // Current prerequisites & states strictly scoped to selectedBookingId
+  const currentPrerequisites = selectedBookingId ? (prerequisitesCache[selectedBookingId] || null) : null
+  const loadingPrerequisites = selectedBookingId ? !!loadingMap[selectedBookingId] : false
+  const prerequisitesError = selectedBookingId ? (errorMap[selectedBookingId] || null) : null
+
+  // Customer & Unit Display labels strictly scoped to the active booking
+  const customerDisplayName =
+    currentBooking?.customerName ||
+    currentPrerequisites?.customerName ||
+    (selectedBookingId ? 'Đang tải...' : 'Chưa chọn khách')
+  const customerDisplayPhone =
+    currentBooking?.customerPhone ||
+    currentPrerequisites?.customerPhone ||
+    'N/A'
+  const customerDisplayEmail =
+    currentBooking?.customerEmail ||
+    (currentBooking as any)?.customer?.email ||
+    currentPrerequisites?.customerEmail ||
+    ''
+  const unitDisplayCode =
+    currentSession.requestedUnitCode ||
+    currentBooking?.unitCode ||
+    currentPrerequisites?.unitCode ||
+    'N/A'
+  const bookingDisplayCode =
+    currentBooking?.bookingCode ||
+    currentPrerequisites?.bookingCode ||
+    'N/A'
+  const facilityDisplayName =
+    currentBooking?.facilityName ||
+    currentPrerequisites?.facilityName ||
+    'Boxora Facility'
+
+  // Effective preview photo URLs (ưu tiên local blob URL khi vừa upload, fallback sang server URL)
+  const effectiveDoorPhoto = doorPreviewUrl || currentSession.photoDoor
+  const effectiveInteriorPhoto = interiorPreviewUrl || currentSession.photoInterior
+
+  // Synchronize authorized preview URLs for evidence photos
+  useEffect(() => {
+    let isMounted = true
+
+    if (currentSession.photoDoor) {
+      if (currentSession.photoDoor.startsWith('blob:') || currentSession.photoDoor.startsWith('data:')) {
+        setDoorPreviewUrl(currentSession.photoDoor)
+      } else if (selectedBookingId && currentSession.photoDoor.startsWith('/uploads/')) {
+        handoverService
+          .viewAuthorizedDocument(selectedBookingId, currentSession.photoDoor)
+          .then((blobUrl) => {
+            if (isMounted) setDoorPreviewUrl(blobUrl)
+          })
+          .catch((err) => {
+            console.warn('Could not load authorized door photo preview:', err)
+          })
+      }
+    } else {
+      setDoorPreviewUrl('')
+    }
+
+    if (currentSession.photoInterior) {
+      if (currentSession.photoInterior.startsWith('blob:') || currentSession.photoInterior.startsWith('data:')) {
+        setInteriorPreviewUrl(currentSession.photoInterior)
+      } else if (selectedBookingId && currentSession.photoInterior.startsWith('/uploads/')) {
+        handoverService
+          .viewAuthorizedDocument(selectedBookingId, currentSession.photoInterior)
+          .then((blobUrl) => {
+            if (isMounted) setInteriorPreviewUrl(blobUrl)
+          })
+          .catch((err) => {
+            console.warn('Could not load authorized interior photo preview:', err)
+          })
+      }
+    } else {
+      setInteriorPreviewUrl('')
+    }
+
+    return () => {
+      isMounted = false
+    }
+  }, [selectedBookingId, currentSession.photoDoor, currentSession.photoInterior])
+
+  const handleSendEmail = async () => {
+    const targetBookingId = currentBooking?.id || handoverSuccessModalData?.bookingId || selectedBookingId
+    const targetEmail = customerDisplayEmail || handoverSuccessModalData?.customerEmail
+    if (!targetBookingId) return
+    if (!targetEmail) {
+      setDispatchFeedback({ text: 'Không tìm thấy địa chỉ email hợp lệ của khách hàng.', isError: true })
+      return
+    }
+    setIsSendingEmail(true)
+    setDispatchFeedback(null)
+    try {
+      await handoverService.sendPinEmail(targetBookingId)
+      updateCurrentSession({ emailSent: true })
+      setDispatchFeedback({ text: `Đã gửi email thông báo mã PIN thành công đến ${targetEmail}.` })
+    } catch (err: any) {
+      updateCurrentSession({ emailSent: false })
+      setDispatchFeedback({ text: err?.response?.data?.message || err?.message || 'Không thể gửi email thông báo mã PIN.', isError: true })
+    } finally {
+      setIsSendingEmail(false)
+      setTimeout(() => setDispatchFeedback(null), 4000)
+>>>>>>> Stashed changes
     }
   }
 
@@ -170,11 +426,28 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   // Submit Handover Check-in
   const handleCompleteHandover = async () => {
     if (!currentBooking) return
+<<<<<<< Updated upstream
+=======
+    if (!isReadyForCheckIn) {
+      setCheckInError('Chưa thỏa mãn 4 điều kiện tiên quyết (Cọc, tiền thuê tháng đầu, hợp đồng, CCCD gốc). Không thể bàn giao!')
+      return
+    }
+    if (!isAllChecklistPassed || !currentSession.photoDoor || !currentSession.photoInterior) {
+      setCheckInError('Chưa hoàn tất đạt chuẩn 5/5 tiêu chí nghiệm thu hiện trường kèm đủ 2 ảnh bằng chứng!')
+      return
+    }
+    if (!currentSession.requestedUnitCode) {
+      setCheckInError('Vui lòng xác nhận vị trí kho khách hàng muốn chọn trước khi bàn giao.')
+      return
+    }
+
+>>>>>>> Stashed changes
     setIsSubmitting(true)
     setCheckInError(null)
     try {
       await handoverService.checkIn({
         bookingId: currentBooking.id,
+        requestedUnitCode: currentSession.requestedUnitCode,
         recordType: 'CHECK_IN',
         idCardNumber: idCardNumber.trim() || currentBooking.customerPhone || '079198002441',
         identityVerified: true,
@@ -218,11 +491,184 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     )
   }
 
+<<<<<<< Updated upstream
   const customerDisplayName = currentBooking?.customerName || prerequisites?.customerName || 'Khách hàng'
   const customerDisplayPhone = currentBooking?.customerPhone || prerequisites?.customerPhone || 'N/A'
   const unitDisplayCode = currentBooking?.unitCode || prerequisites?.unitCode || 'N/A'
   const bookingDisplayCode = currentBooking?.bookingCode || prerequisites?.bookingCode || 'N/A'
   const facilityDisplayName = currentBooking?.facilityName || prerequisites?.facilityName || 'Boxora Facility'
+=======
+  if (!currentBooking) {
+    return (
+      <>
+        {renderSuccessModal()}
+        {renderContractModal()}
+        <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
+          {/* 1. Process Header Card */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
+              <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
+            </div>
+            <div>
+              <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
+                Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+              </p>
+            </div>
+          </div>
+
+          {/* Empty State Card */}
+          <div className="py-12 px-4 flex flex-col items-center justify-center text-center">
+            <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4 shadow-xs">
+              <span className="material-symbols-outlined text-[34px]">person_pin_circle</span>
+            </div>
+            <h3 className="font-headline text-base font-bold text-slate-900">
+              Chưa Chọn Lượt Khách Tiếp Nhận Bàn Giao
+            </h3>
+            <p className="text-xs text-slate-500 mt-2 max-w-md mx-auto leading-relaxed">
+              {arrivalsList.length > 0
+                ? 'Vui lòng bấm "Tiếp nhận" hoặc chọn lượt khách bạn được phân công từ danh sách "Lịch Hẹn Nhận Kho Trong Ca" bên dưới để bắt đầu quy trình đối soát hồ sơ và bàn giao.'
+                : 'Hiện tại chưa có khách hẹn nhận kho trong ca làm việc này.'}
+            </p>
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  if (isAssignedToOther) {
+    return (
+      <>
+        {renderSuccessModal()}
+        {renderContractModal()}
+        <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
+          {/* 1. Process Header Card */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5 mb-5">
+            <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
+              <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
+            </div>
+            <div>
+              <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
+                Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+              </p>
+            </div>
+          </div>
+
+          <div className="p-6 rounded-2xl bg-amber-50 border border-amber-200 text-center flex flex-col items-center">
+            <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mb-3">
+              <span className="material-symbols-outlined text-[30px]">lock_person</span>
+            </div>
+            <h3 className="font-headline text-base font-bold text-amber-900">
+              Lượt Khách Đang Thuộc Về Nhân Viên Khác
+            </h3>
+            <p className="text-xs text-amber-800 mt-1.5 max-w-md leading-relaxed">
+              Đơn <strong>{currentBooking.bookingCode}</strong> (Khách hàng <strong>{currentBooking.customerName}</strong>) hiện đang do nhân viên <strong>{currentBooking.assignedStaffName || 'khác'}</strong> phụ trách tiếp đón.
+            </p>
+            <p className="text-[11px] text-amber-700 mt-1">
+              Theo quy định phân quyền, bạn chỉ được thao tác trên các đơn do bạn chủ động tiếp nhận hoặc được phân công.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedBookingId('')
+                if (onSelectBooking) onSelectBooking('')
+              }}
+              className="mt-4 px-4 py-2 bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold rounded-xl inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px]">close</span>
+              <span>Đóng Chi Tiết &amp; Quay Lại</span>
+            </button>
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  if (currentBooking && !canReceiveCheckIn) {
+    return (
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-center text-sm text-slate-600">
+        Tài khoản này chỉ được xem thông tin tiếp nhận. Quy trình check-in được thực hiện bởi nhân viên hoặc quản lý cơ sở.
+      </div>
+    )
+  }
+
+  if (isUnassigned) {
+    return (
+      <>
+        {renderSuccessModal()}
+        {renderContractModal()}
+        <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
+          {/* 1. Process Header Card */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5 mb-5">
+            <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
+              <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
+            </div>
+            <div>
+              <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
+                Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+              </p>
+            </div>
+          </div>
+
+          <div className="p-6 rounded-2xl bg-blue-50 border border-blue-200 text-center flex flex-col items-center">
+            <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center mb-3">
+              <span className="material-symbols-outlined text-[30px]">how_to_reg</span>
+            </div>
+            <h3 className="font-headline text-base font-bold text-blue-900">
+              Chưa Tiếp Nhận Khách Hàng Này
+            </h3>
+            <p className="text-xs text-blue-800 mt-1.5 max-w-md leading-relaxed">
+              Đơn <strong>{currentBooking.bookingCode}</strong> (Khách hàng <strong>{currentBooking.customerName}</strong>) chưa có nhân sự tiếp đón tại quầy.
+            </p>
+            <p className="text-[11px] text-blue-700 mt-1">
+              Vui lòng bấm nút tiếp nhận bên dưới để đăng ký phụ trách khách hàng này trước khi thực hiện đối soát và bàn giao kho.
+            </p>
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const updated = await bookingService.claimCheckInReception(currentBooking.id)
+                    setInternalArrivals(prev => prev.map(b => b.id === currentBooking.id ? {
+                      ...b,
+                      assignedStaffId: updated.assignedStaffId || user?.id,
+                      assignedStaffName: updated.assignedStaffName || user?.fullName || 'Nhân viên quầy'
+                    } : b))
+                    if (onRefreshArrivals) onRefreshArrivals()
+                  } catch (err: any) {
+                    alert(err?.response?.data?.message || 'Không thể tiếp nhận đơn này.')
+                  }
+                }}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl inline-flex items-center gap-2 shadow-xs cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
+                <span>Tiếp Nhận Đơn Này Ngay</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedBookingId('')
+                  if (onSelectBooking) onSelectBooking('')
+                }}
+                className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+              >
+                Quay Lại
+              </button>
+            </div>
+          </div>
+        </div>
+      </>
+    )
+  }
+>>>>>>> Stashed changes
 
   return (
     <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
@@ -848,6 +1294,50 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       {activeStepTab === 'pin' && (
         <div className="mt-6 flex flex-col gap-6">
           
+<<<<<<< Updated upstream
+=======
+          {/* Prerequisites Warning Banner in Step 3 if conditions unmet */}
+          {!isReadyForCheckIn && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-start gap-2.5">
+              <span className="material-symbols-outlined text-[20px] text-amber-600 shrink-0 mt-0.5">warning</span>
+              <div>
+                <strong className="block font-bold">Chưa đủ điều kiện bàn giao buồng kho:</strong>
+                <span>
+                  Booking chưa thỏa mãn đầy đủ 4 điều kiện đối soát (Cọc, tiền thuê tháng đầu, hợp đồng điện tử đã ký, CCCD đối chiếu). Hệ thống bảo mật không cho phép cấp mã PIN trước khi đáp ứng đủ quy chuẩn.
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="mb-4 rounded-xl border border-cyan-200 bg-cyan-50 p-4">
+            <label htmlFor="requested-unit-code" className="block text-xs font-bold text-cyan-950">
+              Vị trí kho khách hàng mong muốn
+            </label>
+            <p className="mt-1 text-[11px] text-cyan-800">
+              Xác nhận với khách và chọn kho trống cùng loại trước khi kích hoạt mã PIN.
+            </p>
+            <select
+              id="requested-unit-code"
+              value={currentSession.requestedUnitCode || ''}
+              onChange={(event) => updateCurrentSession({ requestedUnitCode: event.target.value })}
+              disabled={currentSession.isCompleted || isSubmitting}
+              className="mt-2 w-full rounded-lg border border-cyan-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 focus:border-cyan-600 focus:outline-none disabled:bg-slate-100"
+            >
+              <option value="">Chọn mã kho khách muốn nhận</option>
+              {availableUnitChoices.map((unit) => (
+                <option key={unit.id} value={unit.unitCode}>
+                  #{unit.unitCode} · {unit.floorLevel || 'Vị trí chưa ghi tầng'} {unit.status === 'AVAILABLE' ? '· Kho trống' : '· Vị trí đang giữ cho đơn này'}
+                </option>
+              ))}
+            </select>
+            {availableUnitChoices.length === 0 && (
+              <p className="mt-2 text-[11px] font-medium text-rose-700">
+                Không tìm thấy kho trống cùng loại tại cơ sở này. Hãy kiểm tra tồn kho trước khi tiếp tục.
+              </p>
+            )}
+          </div>
+
+>>>>>>> Stashed changes
           {/* The PIN Lock Box */}
           <div className="bg-slate-900 text-white rounded-2xl p-6 border border-slate-800 shadow-lg relative overflow-hidden">
             <div className="absolute -top-12 -right-12 w-48 h-48 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none"></div>

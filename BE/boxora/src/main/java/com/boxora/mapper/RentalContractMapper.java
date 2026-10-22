@@ -2,6 +2,7 @@ package com.boxora.mapper;
 
 import com.boxora.dto.response.RentalContractResponse;
 import com.boxora.entity.RentalContract;
+import com.boxora.enums.BookingStatus;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -13,10 +14,22 @@ public interface RentalContractMapper {
     @Mapping(source = "customer.email", target = "customerEmail")
     @Mapping(source = "customer.phone", target = "customerPhone")
     @Mapping(source = "unit.id", target = "unitId")
-    @Mapping(source = "unit.unitCode", target = "unitCode")
+    @Mapping(target = "unitCode", expression = "java(resolveUnitCode(entity))")
     @Mapping(source = "facility.id", target = "facilityId")
     @Mapping(source = "facility.name", target = "facilityName")
     @Mapping(source = "booking.id", target = "bookingId")
     @Mapping(target = "signingUrl", ignore = true)
     RentalContractResponse toResponse(RentalContract entity);
+
+    default String resolveUnitCode(RentalContract contract) {
+        if (contract == null || contract.getUnit() == null) {
+            return null;
+        }
+        if (contract.getBooking() != null
+                && "ONLINE".equalsIgnoreCase(contract.getBooking().getSigningMethod())
+                && contract.getBooking().getStatus() != BookingStatus.ACTIVE) {
+            return null;
+        }
+        return contract.getUnit().getUnitCode();
+    }
 }

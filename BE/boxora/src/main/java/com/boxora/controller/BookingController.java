@@ -39,8 +39,13 @@ public class BookingController {
     }
 
 @GetMapping("/my-requests")
+<<<<<<< Updated upstream
     @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN')")
     @Operation(summary = "Lấy các yêu cầu đặt kho đang chờ duyệt hoặc chờ thanh toán")
+=======
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(summary = "Lấy lịch sử các yêu cầu đặt chỗ đã đóng")
+>>>>>>> Stashed changes
     public ResponseEntity<ApiResponse<List<BookingResponse>>> getMyRequests() {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getMyBookingRequests()));
     }
@@ -92,10 +97,30 @@ public class BookingController {
     }
 
     @GetMapping("/arrivals")
+<<<<<<< Updated upstream
     @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasAnyRole('ADMIN', 'FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Danh sách khách sắp đến nhận kho")
     public ResponseEntity<ApiResponse<List<BookingResponse>>> getArrivals() {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getUpcomingArrivals()));
+=======
+    @PreAuthorize("hasAuthority('BOOKING_VIEW')")
+    @Operation(summary = "Danh sách khách đến nhận kho kèm bộ lọc thời gian")
+    public ResponseEntity<ApiResponse<List<BookingResponse>>> getArrivals(
+            @RequestParam(required = false) UUID facilityId,
+            @RequestParam(required = false) String timeframe,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate fromDate,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate toDate) {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getUpcomingArrivals(facilityId, timeframe, fromDate, toDate)));
+    }
+
+    @PostMapping("/{id}/claim-reception")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER')")
+    @Operation(summary = "Tiếp nhận lượt khách check-in tại quầy cơ sở")
+    public ResponseEntity<ApiResponse<BookingResponse>> claimReception(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Tiếp nhận lượt check-in thành công",
+                bookingService.claimCheckInReception(id)));
+>>>>>>> Stashed changes
     }
 
     @GetMapping("/{id}")

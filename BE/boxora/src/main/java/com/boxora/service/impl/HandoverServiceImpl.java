@@ -12,6 +12,7 @@ import com.boxora.exception.ErrorCode;
 import com.boxora.repository.*;
 import com.boxora.service.ActivityLogService;
 import com.boxora.service.HandoverService;
+import com.boxora.service.StorageUnitLockService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -44,6 +45,14 @@ public class HandoverServiceImpl implements HandoverService {
     private final ActivityLogService activityLogService;
     private final com.boxora.security.FacilityAccessGuard facilityAccessGuard;
     private final com.boxora.security.RequestContext requestContext;
+<<<<<<< Updated upstream
+=======
+    private final PaymentMapper paymentMapper;
+    private final RentalContractMapper rentalContractMapper;
+    private final com.boxora.service.FileStorageService fileStorageService;
+    private final StorageUnitLockService storageUnitLockService;
+
+>>>>>>> Stashed changes
 
     /**
      * Đối soát 4 điều kiện tiên quyết trước khi check-in bàn giao (BR-RULE-005):
@@ -203,11 +212,24 @@ public class HandoverServiceImpl implements HandoverService {
             missingPrerequisites.add("Hợp đồng điện tử chưa được ký qua OTP/DocuSeal");
         }
 
+<<<<<<< Updated upstream
         // Điều kiện 4: Xác minh CCCD / giấy tờ tùy thân gốc (Identity verification)
         boolean identityVerified = (request.getIdCardNumber() != null && !request.getIdCardNumber().trim().isEmpty())
                 || Boolean.TRUE.equals(request.getIdentityVerified());
         if (!identityVerified) {
             missingPrerequisites.add("Chưa đối soát giấy tờ tùy thân / CCCD gốc của khách hàng tại quầy");
+=======
+        // Operator authorization check: check-in is restricted to staff and facility managers.
+        // Điều kiện 4: Nhân viên tại quầy đối soát CCCD / giấy tờ tùy thân gốc
+        boolean idAlreadyVerified = Boolean.TRUE.equals(booking.getIdentityOriginalDocumentSeen())
+                && booking.getIdentityVerifiedAt() != null
+                && booking.getIdentityVerifiedByStaff() != null
+                && booking.getIdentityCardNumber() != null
+                && booking.getIdentityCardNumber().matches("^[0-9]{9,12}$");
+
+        if (!idAlreadyVerified) {
+            missingPrerequisites.add("Nhân viên tại quầy chưa xác nhận hoàn tất đối soát giấy tờ tùy thân / CCCD gốc của khách hàng");
+>>>>>>> Stashed changes
         }
 
         if (!missingPrerequisites.isEmpty()) {
@@ -216,6 +238,67 @@ public class HandoverServiceImpl implements HandoverService {
             throw new AppException(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
         }
 
+<<<<<<< Updated upstream
+=======
+        String requestedUnitCode = request.getRequestedUnitCode() != null
+                ? request.getRequestedUnitCode().trim()
+                : "";
+        if (requestedUnitCode.isBlank()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Cần xác nhận mã kho khách hàng chọn trước khi bàn giao.");
+        }
+        UUID facilityIdForAssignment = unit.getFacility() != null ? unit.getFacility().getId() : null;
+        if (facilityIdForAssignment == null) {
+            throw new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND);
+        }
+        StorageUnit previousUnit = unit;
+        StorageUnit selectedUnit = storageUnitRepository
+                .findWithDetailsByFacilityAndUnitCodeForUpdate(facilityIdForAssignment, requestedUnitCode)
+                .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND,
+                        "Không tìm thấy vị trí kho khách hàng chọn tại cơ sở này."));
+        if (selectedUnit.getUnitType() == null || previousUnit.getUnitType() == null
+                || !selectedUnit.getUnitType().getId().equals(previousUnit.getUnitType().getId())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    "Vị trí khách hàng chọn không cùng loại kho với đơn đặt chỗ.");
+        }
+        boolean isOriginalUnit = selectedUnit.getId().equals(previousUnit.getId());
+        boolean selectedUnitReady = selectedUnit.getStatus() == UnitStatus.AVAILABLE
+                || (isOriginalUnit && selectedUnit.getStatus() == UnitStatus.RESERVED);
+        if (!selectedUnitReady) {
+            throw new AppException(ErrorCode.HANDOVER_UNIT_NOT_READY,
+                    "Vị trí kho khách hàng chọn hiện không còn trống. Vui lòng chọn vị trí khác.");
+        }
+        boolean hasOtherReservation = bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(
+                selectedUnit.getId(),
+                List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT,
+                        BookingStatus.PENDING_APPROVAL),
+                booking.getId());
+        if (hasOtherReservation) {
+            throw new AppException(ErrorCode.HANDOVER_UNIT_NOT_READY,
+                    "Vị trí kho khách hàng chọn đã được đặt bởi một đơn khác.");
+        }
+        if (!isOriginalUnit) {
+            booking.setStorageUnit(selectedUnit);
+            unit = selectedUnit;
+            if (previousUnit.getStatus() == UnitStatus.RESERVED) {
+                boolean previousUnitHasOtherReservation = bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(
+                        previousUnit.getId(),
+                        List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT,
+                                BookingStatus.PENDING_APPROVAL),
+                        booking.getId());
+                if (!previousUnitHasOtherReservation) {
+                    previousUnit.setStatus(UnitStatus.AVAILABLE);
+                    storageUnitRepository.save(previousUnit);
+                    storageUnitLockService.releaseLock(previousUnit.getId());
+                }
+            }
+        }
+        contractOpt.ifPresent(contract -> {
+            contract.setUnit(selectedUnit);
+            rentalContractRepository.save(contract);
+        });
+
+
+>>>>>>> Stashed changes
         // =========================================================================
         // THỰC HIỆN BÀN GIAO THỰC ĐỊA & CẤP QUYỀN TRUY CẬP
         // =========================================================================

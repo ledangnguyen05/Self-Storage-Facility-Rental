@@ -47,6 +47,7 @@ public enum ErrorCode {
     RESOURCE_NOT_FOUND(602, "Resource not found", HttpStatus.NOT_FOUND),
 
     // ========================= BOOKING & ACCESS (700 - 799) =================
+<<<<<<< Updated upstream
     BOOKING_NOT_FOUND(700, "Booking not found or does not belong to user", HttpStatus.NOT_FOUND),
     BOOKING_NOT_CHECKED_IN(701, "Storage unit has not been checked in yet", HttpStatus.FORBIDDEN),
     INVALID_PIN_FORMAT(702, "PIN must be exactly 6 digits", HttpStatus.BAD_REQUEST),
@@ -68,14 +69,48 @@ public enum ErrorCode {
     BOOKING_ADVANCE_NOTICE_EXCEEDED(718, "Storage unit can only be booked up to 30 days in advance", HttpStatus.BAD_REQUEST),
     STORAGE_UNIT_SOFT_LOCKED(719, "Storage unit is currently held in a 24-hour soft-lock reservation by another customer", HttpStatus.CONFLICT),
     BOOKING_MINIMUM_DURATION_INVALID(720, "Rental duration must meet minimum rental months requirement", HttpStatus.BAD_REQUEST),
+=======
+    BOOKING_NOT_FOUND(700, "Không tìm thấy đơn đặt kho hoặc đơn không thuộc về tài khoản của bạn", HttpStatus.NOT_FOUND),
+    BOOKING_NOT_CHECKED_IN(701, "Ngăn kho chưa hoàn tất thủ tục bàn giao nhận kho (check-in)", HttpStatus.FORBIDDEN),
+    INVALID_PIN_FORMAT(702, "Mã PIN mở khóa phải bao gồm đúng 6 chữ số", HttpStatus.BAD_REQUEST),
+    UNIT_TYPE_NOT_FOUND(703, "Không tìm thấy loại ngăn kho", HttpStatus.NOT_FOUND),
+    STORAGE_UNIT_NOT_FOUND(704, "Không tìm thấy thông tin ngăn kho", HttpStatus.NOT_FOUND),
+    INVALID_PRICING_TARGET(705, "Vui lòng chọn loại ngăn kho hoặc mã ngăn kho cụ thể", HttpStatus.BAD_REQUEST),
+    UNIT_TYPE_PRICE_NOT_CONFIGURED(706, "Chưa thiết lập giá thuê theo tháng cho loại ngăn kho này", HttpStatus.INTERNAL_SERVER_ERROR),
+    NO_AVAILABLE_UNIT(707, "Không còn ngăn kho trống phù hợp tại cơ sở đã chọn", HttpStatus.CONFLICT),
+    STORAGE_UNIT_CODE_EXISTED(708, "Mã ngăn kho này đã tồn tại tại cơ sở", HttpStatus.BAD_REQUEST),
+    STORAGE_UNIT_IN_USE(709, "Không thể xóa ngăn kho vì đang có hợp đồng hoặc lịch đặt hoạt động", HttpStatus.CONFLICT),
+    STORAGE_UNIT_CANNOT_MAINTAIN(710, "Không thể chuyển ngăn kho sang bảo trì khi đang có khách thuê hoặc đặt chỗ", HttpStatus.BAD_REQUEST),
+    STORAGE_UNIT_NOT_AVAILABLE(711, "Ngăn kho hiện không khả dụng để đặt chỗ", HttpStatus.CONFLICT),
+    UNIT_TYPE_NAME_EXISTED(712, "Tên loại ngăn kho đã tồn tại", HttpStatus.BAD_REQUEST),
+    UNIT_TYPE_IN_USE(713, "Không thể xóa loại ngăn kho vì đang có các ngăn kho thuộc loại này", HttpStatus.CONFLICT),
+    BOOKING_ALREADY_CANCELLED(714, "Đơn đặt kho đã được hủy trước đó", HttpStatus.BAD_REQUEST),
+    BOOKING_ALREADY_COMPLETED(715, "Đơn đặt kho đã hoàn tất, không thể hủy", HttpStatus.BAD_REQUEST),
+    BOOKING_CANNOT_BE_CANCELLED(716, "Đơn đặt kho không thể hủy ở trạng thái hiện tại", HttpStatus.BAD_REQUEST),
+    BOOKING_START_DATE_PAST(717, "Ngày bắt đầu thuê không được là ngày trong quá khứ", HttpStatus.BAD_REQUEST),
+    BOOKING_ADVANCE_NOTICE_EXCEEDED(718, "Chỉ có thể đặt trước ngăn kho tối đa 30 ngày", HttpStatus.BAD_REQUEST),
+    STORAGE_UNIT_SOFT_LOCKED(719, "Ngăn kho hiện đang được giữ chỗ tạm thời bởi khách hàng khác", HttpStatus.CONFLICT),
+    BOOKING_MINIMUM_DURATION_INVALID(720, "Thời hạn thuê phải đáp ứng số tháng thuê tối thiểu quy định", HttpStatus.BAD_REQUEST),
+>>>>>>> Stashed changes
     HANDOVER_PREREQUISITES_NOT_MET(721, "Không đủ 4 điều kiện bàn giao kho vật lý theo BR-RULE-005 (Cọc + Tiền thuê tháng đầu + Hợp đồng ký + Đối soát CCCD)", HttpStatus.BAD_REQUEST),
     HANDOVER_UNIT_NOT_READY(722, "Ngăn kho không ở trạng thái sẵn sàng để bàn giao theo BR-RULE-006", HttpStatus.CONFLICT),
     HANDOVER_ALREADY_ACTIVE(723, "Đơn đặt kho đã được check-in bàn giao trước đó", HttpStatus.BAD_REQUEST),
     RETURN_INSPECTION_CHECKLIST_INCOMPLETE(724, "Chưa hoàn tất đầy đủ 5 tiêu chuẩn kiểm tra hiện trạng trả kho theo BR-RULE-013", HttpStatus.BAD_REQUEST),
     BOOKING_NOT_ACTIVE_FOR_RETURN(725, "Đơn đặt kho phải ở trạng thái đang hoạt động (ACTIVE) mới được thực hiện trả kho", HttpStatus.BAD_REQUEST),
     RETURN_PHOTO_EVIDENCE_REQUIRED(726, "Cần tối thiểu 2 ảnh chụp hiện trường để xác nhận nghiệm thu trả kho theo BR-RULE-013", HttpStatus.BAD_REQUEST),
+<<<<<<< Updated upstream
     BOOKING_PAYMENT_EXPIRED(727, "The 24-hour booking payment window has expired", HttpStatus.CONFLICT),
     BOOKING_REQUEST_NOT_PENDING_APPROVAL(728, "Booking request is no longer waiting for approval", HttpStatus.CONFLICT),
+=======
+    BOOKING_PAYMENT_EXPIRED(727, "Thời hạn thanh toán đơn đặt kho đã hết hạn", HttpStatus.CONFLICT),
+    BOOKING_REQUEST_NOT_PENDING_APPROVAL(728, "Yêu cầu thuê kho không còn ở trạng thái chờ duyệt", HttpStatus.CONFLICT),
+    BOOKING_ALREADY_ACTIVE(729, "Đơn đặt kho đã kích hoạt và đang sử dụng, không thể đổi lịch", HttpStatus.BAD_REQUEST),
+    BOOKING_ALREADY_HANDED_OVER(730, "Kho đã được bàn giao thực tế, không thể đổi lịch nhận kho", HttpStatus.BAD_REQUEST),
+    HANDOVER_BEFORE_CHECKIN_DATE(731, "Chưa đến ngày check-in. Thời điểm được phép nhận kho chưa tới.", HttpStatus.BAD_REQUEST),
+    HANDOVER_BEFORE_CHECKIN_TIME(732, "Đúng ngày nhưng chưa đến giờ check-in hẹn trước. Vui lòng chờ đến giờ hợp lệ.", HttpStatus.BAD_REQUEST),
+    CONTRACT_RENEWAL_BEFORE_CHECKIN_DATE(733, "Chưa đến ngày hẹn check-in tiếp đón gia hạn hợp đồng tại cơ sở.", HttpStatus.BAD_REQUEST),
+    CONTRACT_RENEWAL_BEFORE_CHECKIN_TIME(734, "Đúng ngày nhưng chưa đến giờ hẹn tiếp đón gia hạn hợp đồng. Vui lòng chờ đến giờ hợp lệ.", HttpStatus.BAD_REQUEST),
+>>>>>>> Stashed changes
 
     // ========================= PAYMENT (750 - 799) =========================
     PAYMENT_NOT_FOUND(750, "Payment transaction not found", HttpStatus.NOT_FOUND),

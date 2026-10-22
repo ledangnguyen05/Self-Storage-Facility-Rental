@@ -188,7 +188,7 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
         </h1>
 
         <p data-hero-copy className="mx-auto mt-4 max-w-2xl text-sm font-medium leading-6 text-slate-700 sm:mt-5 sm:text-base sm:leading-7 lg:text-lg">
-          Chọn diện tích phù hợp <span className="mx-1 text-cyan-600">•</span> Vào kho 24/7 bằng mã PIN
+          Chọn diện tích phù hợp <span className="mx-1 text-cyan-600">•</span> Nhận mã PIN sau khi hoàn tất bàn giao
         </p>
 
         <div data-hero-copy className="mt-5 flex flex-wrap items-center justify-center gap-3 sm:mt-6">
@@ -201,10 +201,10 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
             <ArrowRight size={16} className="transition-transform duration-200 group-hover:translate-x-1" />
           </button>
           <a
-            href="#services"
+            href="#process"
             className="inline-flex min-h-12 items-center rounded-full border border-blue-200 bg-white/75 px-6 py-3 text-sm font-semibold text-blue-900 transition-colors hover:border-cyan-500 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700"
           >
-            Khám phá dịch vụ
+            Cách thuê kho
           </a>
         </div>
 

@@ -8,11 +8,17 @@ import { ProtectedRoute } from './components/auth/ProtectedRoute'
 import { LoginPage } from './pages/public/LoginPage'
 import { RegisterPage } from './pages/public/RegisterPage'
 import { HomePage } from './pages/public/HomePage'
+import { BookingPage } from './pages/public/BookingPage'
 import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
 import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
 import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
 import { PaymentResultPage } from './pages/public/PaymentResultPage'
+<<<<<<< Updated upstream
 import { FacilitiesPage } from './pages/public/FacilitiesPage'
+=======
+import { OnlineBookingContractPage } from './pages/customer/OnlineBookingContractPage'
+import { MyBookingsPage } from './pages/customer/MyBookingsPage'
+>>>>>>> Stashed changes
 
 // StorageOps Pro Portals (Matching Prototype Stitch Files)
 
@@ -54,7 +60,15 @@ function RootRedirect() {
     case 'STAFF':
       return <Navigate to="/portal/staff" replace />
     case 'CUSTOMER':
+<<<<<<< Updated upstream
     default:
+=======
+    default: {
+      const access = checkCustomerPortalAccess(user)
+      if (!access.hasAccess) {
+        return <Navigate to="/my-bookings" replace />
+      }
+>>>>>>> Stashed changes
       return <Navigate to="/portal/customer" replace />
   }
 }
@@ -67,6 +81,8 @@ function MainContent() {
           {/* Public Landing Page & Authentication */}
           <Route path="/" element={<HomePage />} />
           <Route path="/landing" element={<HomePage />} />
+          <Route path="/booking" element={<BookingPage />} />
+          <Route path="/dat-kho" element={<BookingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
@@ -88,6 +104,16 @@ function MainContent() {
           <Route path="/payment-result" element={<PaymentResultPage />} />
 
           {/* Boxora Terms & Standards Dashboard */}
+          <Route
+            path="/my-bookings"
+            element={
+              <ProtectedRoute allowedRoles={['CUSTOMER']}>
+                <MyBookingsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/customer/bookings" element={<Navigate to="/my-bookings" replace />} />
+
           <Route path="/terms" element={<TermsAndStandardsPage />} />
           <Route path="/standards" element={<TermsAndStandardsPage />} />
           <Route path="/policies" element={<TermsAndStandardsPage />} />

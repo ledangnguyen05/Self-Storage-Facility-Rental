@@ -11,6 +11,13 @@ import { WebSettingsModal } from '../../components/common/WebSettingsModal'
 import { UserAvatarDropdown } from '../../components/common/UserAvatarDropdown'
 import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
 import { useLanguage } from '../../context/LanguageContext'
+<<<<<<< Updated upstream
+=======
+import { Facility } from '../../types'
+import { facilityService } from '../../services/facilityService'
+import { BoxoraFacilitiesMap } from '../../components/map/BoxoraFacilitiesMap'
+import { SizeTierKey } from '../../components/booking/LandingBookingWizardModal'
+>>>>>>> Stashed changes
 
 // ============================================================================
 // MAIN HOMEPAGE COMPONENT
@@ -26,11 +33,17 @@ export const HomePage: React.FC = () => {
 
   const isCustomer = user?.role?.name === 'CUSTOMER'
 
-  // Interactive 3-Step Process State
-  const [activeProcessStep, setActiveProcessStep] = useState<1 | 2 | 3>(1)
+  // Booking Navigation
+  const handleOpenBooking = (tier?: SizeTierKey) => {
+    const selected = tier || selectedSizeTier
+    navigate(`/booking?type=${selected}`)
+  }
+
+  // Interactive Process Step State
+  const [activeProcessStep, setActiveProcessStep] = useState<1 | 2 | 3 | 4 | 5>(1)
 
   // Interactive Size Guide State
-  const [selectedSizeTier, setSelectedSizeTier] = useState<'LOCKER' | 'STANDARD' | 'LARGE' | 'ENTERPRISE'>('STANDARD')
+  const [selectedSizeTier, setSelectedSizeTier] = useState<SizeTierKey>('STANDARD')
 
   // Policies active tab state
   const [activePolicyTab, setActivePolicyTab] = useState<'deposit' | 'insurance' | 'contract' | 'prohibited'>('deposit')
@@ -194,24 +207,31 @@ export const HomePage: React.FC = () => {
                 onOpenLogoutConfirm={() => setIsLogoutConfirmOpen(true)}
                 extraActions={
                   <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-2">
-                    <button
-                      type="button"
-                      onClick={() => navigate(isCustomer ? '/portal/customer' : '/portal')}
-                      className="w-full py-2.5 px-3.5 rounded-xl bg-slate-900 dark:bg-blue-600 text-white font-semibold text-xs flex items-center justify-between hover:bg-neutral-800 dark:hover:bg-blue-700 transition-all shadow-xs cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[18px] text-emerald-400">dashboard</span>
-                        <span>{isCustomer ? t('Vào Portal Quản Lý Kho') : t('Vào Trang Điều Hành Portal')}</span>
-                      </span>
-                      <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                    </button>
-                    <Link
-                      to="/portal/facility-manager"
-                      className="text-[11px] font-semibold text-cyan-800 dark:text-cyan-400 hover:underline px-1 text-center"
-                    >
-                      {t('Sơ đồ kho Tầng 1 & 2')}
-                    </Link>
-
+                    {canAccessPortal ? (
+                      <button
+                        type="button"
+                        onClick={() => navigate(isCustomer ? '/portal/customer' : '/portal')}
+                        className="w-full py-2.5 px-3.5 rounded-xl bg-slate-900 dark:bg-blue-600 text-white font-semibold text-xs flex items-center justify-between hover:bg-neutral-800 dark:hover:bg-blue-700 transition-all shadow-xs cursor-pointer"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[18px] text-emerald-400">dashboard</span>
+                          <span>{isCustomer ? t('Vào Portal Quản Lý Kho (Khóa IoT)') : t('Vào Trang Điều Hành Portal')}</span>
+                        </span>
+                        <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => navigate('/my-bookings')}
+                        className="w-full py-2.5 px-3.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-semibold text-xs flex items-center justify-between hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-all shadow-xs cursor-pointer"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[18px] text-blue-600 dark:text-blue-400">calendar_month</span>
+                          <span>{t('Đơn Đặt Giữ Chỗ Của Tôi')}</span>
+                        </span>
+                        <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                      </button>
+                    )}
                   </div>
                 }
               />
@@ -240,13 +260,13 @@ export const HomePage: React.FC = () => {
     {/* ============================================================ */}
     {/* 2. BOXORA AUTONOMOUS INTERACTIVE HERO                         */}
     {/* ============================================================ */}
-    <SmartLockerDynamicHero onBookNow={() => navigate('/units')} />
+    <SmartLockerDynamicHero onBookNow={() => handleOpenBooking()} />
 
     {/* ============================================================ */}
     {/* 3. SEAMLESS 3-STEP PROCESS (QUY TRÌNH THUÊ KHO KHÉP KÍN)     */}
     {/* ============================================================ */}
     <section id="process" className="py-20 lg:py-24 border-b border-slate-200/80 bg-white relative">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-14">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
         
         {/* Section Heading */}
         <motion.div
@@ -254,130 +274,196 @@ export const HomePage: React.FC = () => {
           whileInView="visible"
           viewport={{ once: true, amount: 0.3 }}
           variants={sectionFadeIn}
-          className="text-center max-w-2xl mx-auto space-y-3"
+          className="text-center max-w-3xl mx-auto space-y-3"
         >
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-100/80 text-cyan-800 text-xs font-mono font-bold">
+            <span className="w-2 h-2 rounded-full bg-cyan-600 animate-pulse" />
+            <span>QUY TRÌNH ĐẶT KHO TRỰC TUYẾN</span>
+          </div>
           <h2 className="font-headline text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-            Bắt Đầu Thuê Kho Chỉ Trong 3 Bước
+            Quy Trình Đặt Kho Đơn Giản &amp; Nhanh Chóng
           </h2>
           <p className="text-xs sm:text-sm text-slate-600">
-            Không thủ tục giấy tờ rườm rà. Toàn bộ quy trình hoàn tất trực tuyến minh bạch, chuẩn xác và bảo mật.
+            Từ tìm kiếm cơ sở gần bạn, chọn kích thước kho, kiểm tra đơn hàng tự động đồng bộ từ tài khoản đến nhận xác nhận giữ chỗ từ chuyên viên Boxora.
           </p>
         </motion.div>
 
-        {/* 3 Step Interactive Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-left relative">
+        {/* 5 Step Interactive Cards Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 text-left relative">
           
           {/* Step 1 */}
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 25 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.3 }}
-            transition={{ delay: 0.1, duration: 0.6 }}
-            whileHover={{ y: -6 }}
+            viewport={{ once: true, amount: 0.2 }}
+            transition={{ delay: 0.05, duration: 0.5 }}
+            whileHover={{ y: -4 }}
             onClick={() => setActiveProcessStep(1)}
-            className={`p-7 rounded-3xl border transition-all cursor-pointer relative overflow-hidden ${
-              activeProcessStep === 1
-                ? 'bg-cyan-50/50 border-cyan-400 shadow-xl ring-2 ring-cyan-500/20'
-                : 'bg-slate-50 border-slate-200/80 hover:border-cyan-300 shadow-xs'
-            }`}
+            className={'p-5 rounded-3xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ' + (activeProcessStep === 1 ? 'bg-cyan-50/60 border-cyan-400 shadow-xl ring-2 ring-cyan-500/20' : 'bg-slate-50 border-slate-200/80 hover:border-cyan-300 shadow-xs')}
           >
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-cyan-600 text-white font-mono font-black flex items-center justify-center text-base shadow-md shadow-cyan-600/30">
-                01
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-10 h-10 rounded-2xl bg-cyan-600 text-white font-mono font-black flex items-center justify-center text-xs shadow-md shadow-cyan-600/30">
+                  01
+                </div>
+                <span className="text-[10px] font-mono font-bold text-cyan-800 bg-cyan-100 px-2 py-0.5 rounded-full">
+                  BƯỚC 1
+                </span>
               </div>
-              <span className="text-[10px] font-mono font-bold text-cyan-800 bg-cyan-100/80 px-2.5 py-1 rounded-full">
-                BƯỚC 1
-              </span>
+              <h3 className="font-headline text-sm font-bold text-slate-900 mb-1.5">
+                Chọn Cơ Sở Kho
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Khám phá danh sách các chi nhánh Boxora hiện đại và lựa chọn địa điểm lưu trữ thuận tiện nhất.
+              </p>
             </div>
-
-            <h3 className="font-headline text-lg font-bold text-slate-900 mb-2">
-              Tìm Kho &amp; Đo Khoảng Cách
-            </h3>
-            <p className="text-xs text-slate-600 leading-relaxed mb-4">
-              Định vị vị trí của bạn trên Dashboard, đo cự ly di chuyển tới từng cơ sở Boxora và lựa chọn kích thước buồng kho phù hợp nhất với nhu cầu cất giữ.
-            </p>
-
-            <div className="pt-3 border-t border-slate-200/70 text-[11px] font-mono font-semibold text-cyan-800 flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[16px]">location_on</span>
-              <span>Định vị cự ly GPS thời gian thực</span>
+            <div className="pt-3 mt-3 border-t border-slate-200/70 text-[11px] font-mono font-semibold text-cyan-800 flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[15px]">location_on</span>
+              <span>Hệ thống cơ sở</span>
             </div>
           </motion.div>
 
           {/* Step 2 */}
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 25 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.3 }}
-            transition={{ delay: 0.2, duration: 0.6 }}
-            whileHover={{ y: -6 }}
+            viewport={{ once: true, amount: 0.2 }}
+            transition={{ delay: 0.1, duration: 0.5 }}
+            whileHover={{ y: -4 }}
             onClick={() => setActiveProcessStep(2)}
-            className={`p-7 rounded-3xl border transition-all cursor-pointer relative overflow-hidden ${
-              activeProcessStep === 2
-                ? 'bg-cyan-50/50 border-cyan-400 shadow-xl ring-2 ring-cyan-500/20'
-                : 'bg-slate-50 border-slate-200/80 hover:border-cyan-300 shadow-xs'
-            }`}
+            className={'p-5 rounded-3xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ' + (activeProcessStep === 2 ? 'bg-cyan-50/60 border-cyan-400 shadow-xl ring-2 ring-cyan-500/20' : 'bg-slate-50 border-slate-200/80 hover:border-cyan-300 shadow-xs')}
           >
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-cyan-600 text-white font-mono font-black flex items-center justify-center text-base shadow-md shadow-cyan-600/30">
-                02
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-10 h-10 rounded-2xl bg-cyan-600 text-white font-mono font-black flex items-center justify-center text-xs shadow-md shadow-cyan-600/30">
+                  02
+                </div>
+                <span className="text-[10px] font-mono font-bold text-cyan-800 bg-cyan-100 px-2 py-0.5 rounded-full">
+                  BƯỚC 2
+                </span>
               </div>
-              <span className="text-[10px] font-mono font-bold text-cyan-800 bg-cyan-100/80 px-2.5 py-1 rounded-full">
-                BƯỚC 2
-              </span>
+              <h3 className="font-headline text-sm font-bold text-slate-900 mb-1.5">
+                Chọn Kích Thước 3D
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Trải nghiệm 16 quy chuẩn thể tích từ 1m³ đến 24m³, tùy chọn buồng tiêu chuẩn hoặc kho lạnh A/C.
+              </p>
             </div>
-
-            <h3 className="font-headline text-lg font-bold text-slate-900 mb-2">
-              Ký Hợp Đồng &amp; Đặt Cọc Số Hóa
-            </h3>
-            <p className="text-xs text-slate-600 leading-relaxed mb-4">
-              Ký kết thỏa thuận hợp đồng điện tử bảo chứng pháp lý, thanh toán an toàn qua cổng ngân hàng bảo mật và nhận hóa đơn VAT điện tử tự động.
-            </p>
-
-            <div className="pt-3 border-t border-slate-200/70 text-[11px] font-mono font-semibold text-emerald-800 flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[16px]">verified</span>
-              <span>Hợp đồng điện tử bảo chứng pháp lý</span>
+            <div className="pt-3 mt-3 border-t border-slate-200/70 text-[11px] font-mono font-semibold text-cyan-800 flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[15px]">inventory_2</span>
+              <span>Mô hình 3D trực quan</span>
             </div>
           </motion.div>
 
           {/* Step 3 */}
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 25 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.3 }}
-            transition={{ delay: 0.3, duration: 0.6 }}
-            whileHover={{ y: -6 }}
+            viewport={{ once: true, amount: 0.2 }}
+            transition={{ delay: 0.15, duration: 0.5 }}
+            whileHover={{ y: -4 }}
             onClick={() => setActiveProcessStep(3)}
-            className={`p-7 rounded-3xl border transition-all cursor-pointer relative overflow-hidden ${
-              activeProcessStep === 3
-                ? 'bg-cyan-50/50 border-cyan-400 shadow-xl ring-2 ring-cyan-500/20'
-                : 'bg-slate-50 border-slate-200/80 hover:border-cyan-300 shadow-xs'
-            }`}
+            className={'p-5 rounded-3xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ' + (activeProcessStep === 3 ? 'bg-cyan-50/60 border-cyan-400 shadow-xl ring-2 ring-cyan-500/20' : 'bg-slate-50 border-slate-200/80 hover:border-cyan-300 shadow-xs')}
           >
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-cyan-600 text-white font-mono font-black flex items-center justify-center text-base shadow-md shadow-cyan-600/30">
-                03
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-10 h-10 rounded-2xl bg-cyan-600 text-white font-mono font-black flex items-center justify-center text-xs shadow-md shadow-cyan-600/30">
+                  03
+                </div>
+                <span className="text-[10px] font-mono font-bold text-cyan-800 bg-cyan-100 px-2 py-0.5 rounded-full">
+                  BƯỚC 3
+                </span>
               </div>
-              <span className="text-[10px] font-mono font-bold text-cyan-800 bg-cyan-100/80 px-2.5 py-1 rounded-full">
-                BƯỚC 3
-              </span>
+              <h3 className="font-headline text-sm font-bold text-slate-900 mb-1.5">
+                Thời Gian &amp; Lịch Hẹn
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Chọn kỳ hạn thuê (gói tháng hoặc theo ngày ≥ 7 ngày), lịch đón tiếp và tự động đồng bộ CCCD tài khoản.
+              </p>
             </div>
+            <div className="pt-3 mt-3 border-t border-slate-200/70 text-[11px] font-mono font-semibold text-cyan-800 flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[15px]">badge</span>
+              <span>Đồng bộ từ tài khoản</span>
+            </div>
+          </motion.div>
 
-            <h3 className="font-headline text-lg font-bold text-slate-900 mb-2">
-              Nhận Mã PIN &amp; Vào Kho 24/7
-            </h3>
-            <p className="text-xs text-slate-600 leading-relaxed mb-4">
-              Hệ thống tự động cấp mã PIN số hóa riêng biệt tức thì. Bạn có thể tự do mở cửa kho và quản lý tài sản bất kỳ lúc nào ngày hay đêm qua app.
-            </p>
+          {/* Step 4 */}
+          <motion.div
+            initial={{ opacity: 0, y: 25 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.2 }}
+            transition={{ delay: 0.2, duration: 0.5 }}
+            whileHover={{ y: -4 }}
+            onClick={() => setActiveProcessStep(4)}
+            className={'p-5 rounded-3xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ' + (activeProcessStep === 4 ? 'bg-cyan-50/60 border-cyan-400 shadow-xl ring-2 ring-cyan-500/20' : 'bg-slate-50 border-slate-200/80 hover:border-cyan-300 shadow-xs')}
+          >
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-10 h-10 rounded-2xl bg-cyan-600 text-white font-mono font-black flex items-center justify-center text-xs shadow-md shadow-cyan-600/30">
+                  04
+                </div>
+                <span className="text-[10px] font-mono font-bold text-cyan-800 bg-cyan-100 px-2 py-0.5 rounded-full">
+                  BƯỚC 4
+                </span>
+              </div>
+              <h3 className="font-headline text-sm font-bold text-slate-900 mb-1.5">
+                Xem Báo Giá &amp; Chi Tiết
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Xem bảng kê chi phí chính thức, tiền cọc hoàn trả, phí 0đ và rà soát kỹ lưỡng chi tiết đơn đặt.
+              </p>
+            </div>
+            <div className="pt-3 mt-3 border-t border-slate-200/70 text-[11px] font-mono font-semibold text-cyan-800 flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[15px]">receipt_long</span>
+              <span>Báo giá minh bạch 0đ phí</span>
+            </div>
+          </motion.div>
 
-            <div className="pt-3 border-t border-slate-200/70 text-[11px] font-mono font-semibold text-blue-800 flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[16px]">key</span>
-              <span>Cấp PIN tức thì • Vào kho tự do 24/7</span>
+          {/* Step 5 */}
+          <motion.div
+            initial={{ opacity: 0, y: 25 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.2 }}
+            transition={{ delay: 0.25, duration: 0.5 }}
+            whileHover={{ y: -4 }}
+            onClick={() => setActiveProcessStep(5)}
+            className={'p-5 rounded-3xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ' + (activeProcessStep === 5 ? 'bg-emerald-50/70 border-emerald-400 shadow-xl ring-2 ring-emerald-500/20' : 'bg-slate-50 border-slate-200/80 hover:border-emerald-300 shadow-xs')}
+          >
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white font-mono font-black flex items-center justify-center text-xs shadow-md shadow-emerald-600/30">
+                  05
+                </div>
+                <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                  BƯỚC 5
+                </span>
+              </div>
+              <h3 className="font-headline text-sm font-bold text-slate-900 mb-1.5">
+                Đặt Chỗ &amp; Chờ Tiếp Đón
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Nhận mã giữ chỗ tức thì. Chuyên viên Boxora chủ động liên hệ hỗ trợ thủ tục nhận bàn giao buồng kho.
+              </p>
+            </div>
+            <div className="pt-3 mt-3 border-t border-slate-200/70 text-[11px] font-mono font-semibold text-emerald-800 flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[15px]">support_agent</span>
+              <span>Nhân viên hỗ trợ tận tình</span>
             </div>
           </motion.div>
 
         </div>
 
-
+        {/* CTA Launch Booking Page */}
+        <div className="text-center pt-2">
+          <button
+            type="button"
+            onClick={() => handleOpenBooking()}
+            className="inline-flex items-center gap-2.5 px-8 py-3.5 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-sm shadow-lg shadow-blue-600/25 transition-all cursor-pointer"
+          >
+            <span>Tiến hành đặt kho ngay</span>
+            <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+          </button>
+        </div>
 
       </div>
     </section>
@@ -806,13 +892,14 @@ export const HomePage: React.FC = () => {
               </div>
             </div>
 
-            <Link
-              to={`/units?type=${selectedSizeTier}`}
-              className="w-full py-3 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer"
+            <button
+              type="button"
+              onClick={() => handleOpenBooking(selectedSizeTier)}
+              className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer"
             >
-              <span>Xem Các Buồng Trống Hạng Này</span>
+              <span>Đặt kích thước này ngay</span>
               <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-            </Link>
+            </button>
           </div>
         </motion.div>
 
@@ -1269,13 +1356,14 @@ export const HomePage: React.FC = () => {
         </p>
 
         <div className="flex flex-wrap justify-center gap-3.5 pt-2">
-          <Link
-            to="/units"
-            className="px-7 py-3.5 rounded-xl bg-[var(--brand-teal,#0866f5)] hover:bg-[var(--brand-teal-hover,#0752c9)] text-white font-semibold text-sm btn-tactile shadow-md hover:shadow-xl transition-all flex items-center gap-2"
+          <button
+            type="button"
+            onClick={() => handleOpenBooking()}
+            className="px-7 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm btn-tactile shadow-md hover:shadow-xl transition-all flex items-center gap-2 cursor-pointer"
           >
-            <span>Vào Dashboard Tìm &amp; Thuê Kho</span>
+            <span>Đặt kho ngay</span>
             <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
-          </Link>
+          </button>
 
           <a
             href="tel:1900BOXORA"
@@ -1436,6 +1524,8 @@ export const HomePage: React.FC = () => {
 
     {/* Floating Action Speed-Dial Widget (Scroll Top, Zalo, Hotline, Maps) */}
     <FloatingContactWidget />
+
+    
 
     <AccountProfileModal
       isOpen={isProfileModalOpen}

@@ -9,11 +9,16 @@ import { Facility, StorageUnit } from '../../types'
 import { BrandLogo } from '../../components/common/BrandLogo'
 import { StorageUnitDetailModal } from '../../components/modals/StorageUnitDetailModal'
 
+import facilityD1Img from '../../assets/facilities/facility-d1.jpg'
+import facilityD7Img from '../../assets/facilities/facility-d7.jpg'
+import facilityThuDucImg from '../../assets/facilities/facility-thuduc.jpg'
+import facilityTanBinhImg from '../../assets/facilities/facility-tanbinh.jpg'
+
 const FACILITY_IMAGES = [
-  'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&q=80&w=800',
-  'https://images.unsplash.com/photo-1549488344-1f9b8d2bd1f3?auto=format&fit=crop&q=80&w=800',
-  'https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&q=80&w=800',
-  'https://images.unsplash.com/photo-1590247813693-5541d1c609fd?auto=format&fit=crop&q=80&w=800'
+  facilityD1Img,
+  facilityD7Img,
+  facilityThuDucImg,
+  facilityTanBinhImg
 ]
 
 export const FacilitiesPage: React.FC = () => {

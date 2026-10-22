@@ -174,6 +174,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (emailOrUsername: string, password: string): Promise<User> => {
     setIsLoading(true)
     try {
+<<<<<<< Updated upstream
       try {
         const res = await authService.login(emailOrUsername, password)
         if (res.data) {
@@ -193,6 +194,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             facilityCode: rawUser?.facilityCode || undefined
           }
           localStorage.setItem('boxora_access_token', accessToken)
+=======
+      const res = await authService.login(emailOrUsername, password)
+      if (res.data) {
+        const { accessToken, refreshToken, user: rawUser } = res.data
+        const jwtRole = parseJwtRole(accessToken)
+        const enrichedUser: User = {
+          ...rawUser,
+          role: rawUser?.role || (rawUser?.roleName ? {
+            id: rawUser.roleId,
+            name: rawUser.roleName as RoleType,
+            description: rawUser.roleName
+          } : (jwtRole ? { name: jwtRole } : undefined)),
+          roleName: (rawUser?.roleName || rawUser?.role?.name || jwtRole || undefined) as (RoleType | string | undefined),
+          roleId: rawUser?.roleId || rawUser?.role?.id || undefined,
+          facilityId: rawUser?.facilityId || undefined,
+          facilityName: rawUser?.facilityName || undefined,
+          facilityCode: rawUser?.facilityCode || undefined,
+          identityCardNumber: (rawUser as any)?.identityCardNumber || localStorage.getItem('boxora_user_cccd_' + rawUser?.email) || localStorage.getItem('boxora_user_cccd') || undefined,
+          identityCardType: (rawUser as any)?.identityCardType || 'CCCD'
+        }
+        localStorage.setItem('boxora_access_token', accessToken)
+        if (refreshToken) {
+>>>>>>> Stashed changes
           localStorage.setItem('boxora_refresh_token', refreshToken)
           localStorage.setItem('boxora_user', JSON.stringify(enrichedUser))
           setToken(accessToken)
@@ -244,7 +268,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const jwtRole = parseJwtRole(accessToken)
         const enrichedUser: User = {
           ...rawUser,
-          role: rawUser?.role || (jwtRole ? { name: jwtRole } : undefined)
+          role: rawUser?.role || (jwtRole ? { name: jwtRole } : undefined),
+          identityCardNumber: (rawUser as any)?.identityCardNumber || localStorage.getItem('boxora_user_cccd_' + rawUser?.email) || localStorage.getItem('boxora_user_cccd') || undefined,
+          identityCardType: (rawUser as any)?.identityCardType || 'CCCD'
         }
         localStorage.setItem('boxora_access_token', accessToken)
         if (refreshToken) {

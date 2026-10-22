@@ -101,12 +101,32 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                 ? policy.getCancellationPartialRefundPercent() : 50.0;
 
         String unitCode = booking.getStorageUnit() != null ? booking.getStorageUnit().getUnitCode() : null;
+        if ("CUSTOMER".equalsIgnoreCase(requestContext != null ? requestContext.currentUserRole() : null)
+                && booking.getHandoverTime() == null) {
+            unitCode = null;
+        }
         BigDecimal depositPaid = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
         BigDecimal totalRentalFee = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO;
 
+<<<<<<< Updated upstream
         // Nếu booking ở trạng thái PENDING_PAYMENT: chưa thanh toán cọc -> không có tiền hoàn và không phạt
         if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
             long hoursUntilCheckin = Duration.between(LocalDateTime.now(), booking.getStartDate().atStartOfDay()).toHours();
+=======
+        // Xác định mốc thời gian nhận kho chuẩn xác:
+        // Ưu tiên expectedCheckInAt của booking (lịch hẹn nhận kho đang có hiệu lực).
+        // Nếu không có, dùng ngày bắt đầu thuê (startDate) kết hợp giờ mở cửa của cơ sở (mặc định 08:00 sáng).
+        LocalDateTime checkinDateTime = resolveEffectiveCheckInDateTime(booking);
+        LocalDateTime now = LocalDateTime.now();
+        Duration durationUntilCheckin = Duration.between(now, checkinDateTime);
+        long hoursUntilCheckin = durationUntilCheckin.toHours();
+        String timeRemainingLabel = formatCalmRemainingTime(durationUntilCheckin, hoursUntilCheckin);
+
+        // Nếu booking ở trạng thái PENDING_PAYMENT hoặc PENDING_APPROVAL: chưa thanh toán cọc -> không có tiền hoàn và không phạt
+        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT 
+                || booking.getStatus() == BookingStatus.PENDING_APPROVAL
+                || depositPaid.compareTo(BigDecimal.ZERO) <= 0) {
+>>>>>>> Stashed changes
             return BookingCancellationPreviewResponse.builder()
                     .bookingId(booking.getId())
                     .bookingCode(booking.getBookingCode())
@@ -119,7 +139,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     .refundPercentage(0.0)
                     .refundAmount(BigDecimal.ZERO)
                     .penaltyAmount(BigDecimal.ZERO)
-                    .policyDescription("Đơn đặt kho đang chờ thanh toán. Hủy đơn không phát sinh chi phí và không hoàn tiền.")
+                    .policyDescription("Đơn giữ chỗ trực tuyến chưa thanh toán tiền cọc. Hủy đơn hoàn toàn miễn phí và không có hoàn cọc (tiền cọc chỉ thanh toán khi nhận kho).")
                     .refundable(false)
                     .build();
         }

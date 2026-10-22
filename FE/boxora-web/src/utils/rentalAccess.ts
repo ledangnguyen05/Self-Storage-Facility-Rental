@@ -72,10 +72,22 @@ export const checkCustomerPortalAccess = (user: User | null): {
     return { hasAccess: true, rentals: [] }
   }
 
+<<<<<<< Updated upstream
+=======
+  // Customer must have signed contract and confirmed IoT code on system
+>>>>>>> Stashed changes
   const rentals = getCustomerRentals(user)
+  const hasConfirmedIoT =
+    Array.isArray(rentals) &&
+    rentals.length > 0 &&
+    rentals.some((r) => r.isAppConfirmed && r.contractCode)
+
   return {
-    hasAccess: true,
+    hasAccess: hasConfirmedIoT,
     rentals,
+    reason: hasConfirmedIoT
+      ? undefined
+      : 'Quý khách chưa có buồng kho thuê được ký hợp đồng và kích hoạt mã IoT trên hệ thống.',
   }
 }
 
@@ -91,7 +103,8 @@ export const unlockCustomerPortal = (user: User) => {
 export const activateCustomerRental = (
   userOrId: User | string,
   unitCode: string,
-  unitName: string = 'Kho Boxora'
+  unitName: string = 'Kho Boxora',
+  contractCode?: string
 ): CustomerRentalRecord[] => {
   const userId = typeof userOrId === 'string' ? userOrId : userOrId.id
   const username = typeof userOrId === 'string' ? '' : userOrId.username
@@ -116,7 +129,11 @@ export const activateCustomerRental = (
   const newRental: CustomerRentalRecord = {
     unitCode,
     unitName,
+<<<<<<< Updated upstream
     contractCode: `HD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+=======
+    contractCode: contractCode || `CTR-${unitCode.replace(/[^a-zA-Z0-9]/g, '')}`,
+>>>>>>> Stashed changes
     startDate: new Date().toLocaleDateString('vi-VN'),
     isAppConfirmed: true
   }

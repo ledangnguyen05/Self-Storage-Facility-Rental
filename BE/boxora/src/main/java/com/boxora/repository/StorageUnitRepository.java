@@ -26,6 +26,14 @@ public interface StorageUnitRepository extends JpaRepository<StorageUnit, UUID>,
     @Query("SELECT su FROM StorageUnit su WHERE su.id = :id")
     Optional<StorageUnit> findWithDetailsByIdForUpdate(@Param("id") UUID id);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @EntityGraph(attributePaths = {"facility", "unitType"})
+    @Query("SELECT su FROM StorageUnit su WHERE su.facility.id = :facilityId AND LOWER(su.unitCode) = LOWER(:unitCode)")
+    Optional<StorageUnit> findWithDetailsByFacilityAndUnitCodeForUpdate(
+            @Param("facilityId") UUID facilityId,
+            @Param("unitCode") String unitCode
+    );
+
     @EntityGraph(attributePaths = {"facility", "unitType"})
     List<StorageUnit> findByFacility_Id(UUID facilityId);
 

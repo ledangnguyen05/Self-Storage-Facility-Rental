@@ -1,6 +1,10 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+<<<<<<< Updated upstream
 import { LogOut, LayoutDashboard, ArrowRight, Menu, X, ShieldCheck } from 'lucide-react'
+=======
+import { LogOut, LayoutDashboard, ArrowRight, Menu, X, Pencil, Compass, Box, FileText } from 'lucide-react'
+>>>>>>> Stashed changes
 import { useAuth } from '../../context/AuthContext'
 import { Button } from '../ui/Button'
 import { BrandLogo } from '../common/BrandLogo'
@@ -74,6 +78,7 @@ export const Navbar: React.FC = () => {
           <QuickThemeLanguageToggle />
           {user ? (
             <div className="flex items-center gap-2.5">
+<<<<<<< Updated upstream
               <button
                 onClick={handleDashboardRedirect}
                 title={t('Vào Portal')}
@@ -89,6 +94,34 @@ export const Navbar: React.FC = () => {
                   </span>
                 </div>
               </button>
+=======
+              {canAccessPortal ? (
+                <button
+                  onClick={handleDashboardRedirect}
+                  title={t('Vào Portal')}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-slate-100 hover:bg-slate-200/80 border-slate-200 text-slate-900 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-700 transition-all cursor-pointer text-left"
+                >
+                  <LayoutDashboard size={15} className="text-blue-600 dark:text-blue-400" />
+                  <div className="flex flex-col">
+                    <span className="text-xs font-semibold leading-tight">
+                      {t('Vào Portal')}
+                    </span>
+                    <span className="text-[9px] uppercase tracking-wider font-mono text-slate-500 dark:text-slate-400 leading-none">
+                      {role || 'PORTAL'}
+                    </span>
+                  </div>
+                </button>
+              ) : (
+                <Link
+                  to="/my-bookings"
+                  title={t('Xem đơn đặt giữ chỗ của bạn')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100/80 border border-blue-200 text-blue-700 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-300 transition-all text-xs font-semibold cursor-pointer"
+                >
+                  <FileText size={14} />
+                  <span>{t('Đơn giữ chỗ')}</span>
+                </Link>
+              )}
+>>>>>>> Stashed changes
 
               <UserAvatarDropdown
                 user={user}
@@ -117,6 +150,7 @@ export const Navbar: React.FC = () => {
         {/* Mobile Hamburger Button */}
         <div className="flex sm:hidden items-center gap-2">
           {user && (
+<<<<<<< Updated upstream
             <button
               onClick={handleDashboardRedirect}
               className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold"
@@ -124,6 +158,25 @@ export const Navbar: React.FC = () => {
             >
               {user.fullName ? user.fullName[0].toUpperCase() : user.username[0].toUpperCase()}
             </button>
+=======
+            canAccessPortal ? (
+              <button
+                onClick={handleDashboardRedirect}
+                className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold"
+                title="Vào bảng điều khiển"
+              >
+                {user.fullName ? user.fullName[0].toUpperCase() : user.username[0].toUpperCase()}
+              </button>
+            ) : (
+              <Link
+                to="/my-bookings"
+                className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 flex items-center justify-center text-xs font-bold border border-blue-300 dark:border-blue-800"
+                title="Xem đơn đặt giữ chỗ"
+              >
+                {user.fullName ? user.fullName[0].toUpperCase() : user.username[0].toUpperCase()}
+              </Link>
+            )
+>>>>>>> Stashed changes
           )}
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -198,6 +251,7 @@ export const Navbar: React.FC = () => {
           <div className="pt-4 border-t border-slate-100 flex flex-col gap-2.5">
             {user ? (
               <>
+<<<<<<< Updated upstream
                 <button
                   onClick={handleDashboardRedirect}
                   className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-white bg-slate-900 hover:bg-slate-800 font-medium text-sm transition-colors cursor-pointer"
@@ -205,6 +259,26 @@ export const Navbar: React.FC = () => {
                   <LayoutDashboard size={16} />
                   <span>{isCustomer ? t('Vào Customer Portal') : `${t('Vào bảng điều khiển')} (${role})`}</span>
                 </button>
+=======
+                {canAccessPortal ? (
+                  <button
+                    onClick={handleDashboardRedirect}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-white font-medium text-sm transition-colors cursor-pointer bg-blue-600 hover:bg-blue-700"
+                  >
+                    <LayoutDashboard size={16} />
+                    <span>{t('Vào bảng điều khiển')} ({role})</span>
+                  </button>
+                ) : (
+                  <Link
+                    to="/my-bookings"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-medium text-sm transition-colors border border-blue-200 dark:border-blue-800"
+                  >
+                    <FileText size={16} />
+                    <span>{t('Đơn đặt giữ chỗ của bạn')}</span>
+                  </Link>
+                )}
+>>>>>>> Stashed changes
                 <button
                   type="button"
                   onClick={() => {

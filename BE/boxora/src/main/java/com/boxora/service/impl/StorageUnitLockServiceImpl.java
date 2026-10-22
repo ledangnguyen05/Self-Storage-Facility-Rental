@@ -53,7 +53,7 @@ public class StorageUnitLockServiceImpl implements StorageUnitLockService {
                         .setIfAbsent(lockKey, lockValue, Duration.ofHours(hours));
 
                 if (Boolean.TRUE.equals(acquired)) {
-                    log.info("[REDIS_LOCK] Successfully acquired 24h soft-lock for storage unit {} by booking {} (TTL: {}h)",
+                    log.info("[REDIS_LOCK] Successfully acquired soft-lock for storage unit {} by booking {} (TTL: {}h)",
                             unitId, lockValue, hours);
                     return true;
                 } else {

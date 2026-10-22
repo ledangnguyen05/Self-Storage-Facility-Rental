@@ -5,6 +5,7 @@ export interface HandoverPayload {
   bookingId: string
   staffId?: string
   recordType?: 'CHECK_IN' | 'RETURN'
+  requestedUnitCode?: string
   idCardNumber?: string
   identityVerified?: boolean
   firstMonthRentConfirmed?: boolean
@@ -76,7 +77,53 @@ export const handoverService = {
     return response.data?.data as HandoverPrerequisites
   },
 
+<<<<<<< Updated upstream
   async checkIn(data: HandoverPayload) {
+=======
+  async createOrUploadPaperContract(data: PaperContractPayload) {
+    const response = await api.post('/api/v1/handovers/contracts/paper', data)
+    return response.data?.data
+  },
+
+  async verifyPaperContract(bookingId: string, notes?: string) {
+    const response = await api.post('/api/v1/handovers/contracts/paper/verify', null, {
+      params: { bookingId, notes }
+    })
+    return response.data?.data
+  },
+
+  async recordManualPayment(data: ManualPaymentPayload) {
+    const response = await api.post('/api/v1/handovers/payments/manual', data)
+    return response.data?.data
+  },
+
+  async confirmBankTransferPayment(paymentId: string, notes?: string) {
+    const response = await api.post(`/api/v1/handovers/payments/${paymentId}/confirm-bank-transfer`, null, {
+      params: { notes }
+    })
+    return response.data?.data
+  },
+
+  async verifyIdentity(bookingId: string, data: IdentityVerifyPayload) {
+    const response = await api.post(`/api/v1/handovers/booking/${bookingId}/verify-identity`, {
+      ...data,
+      bookingId
+    })
+    return response.data?.data as HandoverPrerequisites
+  },
+
+  async completeStep1(bookingId: string) {
+    const response = await api.post(`/api/v1/handovers/booking/${bookingId}/complete-step-1`)
+    return response.data?.data
+  },
+
+  async recordCheckInInspection(data: CheckInInspectionPayload) {
+    const response = await api.post('/api/v1/handovers/check-in-inspection', data)
+    return response.data?.data as HandoverRecord
+  },
+
+  async checkIn(data: HandoverPayload & { requestedUnitCode: string }) {
+>>>>>>> Stashed changes
     if (data.recordType === 'RETURN') {
       return this.processReturn(data)
     }

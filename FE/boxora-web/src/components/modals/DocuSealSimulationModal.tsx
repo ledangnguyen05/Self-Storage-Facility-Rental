@@ -114,6 +114,159 @@ export function DocuSealSimulationModal({
     }
   }
 
+<<<<<<< Updated upstream
+=======
+  // Render Confirmation Modal View upon successful signing
+  if (signedResult) {
+    return (
+      <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-3 md:p-6 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
+        <div className="w-full max-w-2xl my-auto space-y-4 rounded-2xl border border-emerald-500/30 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          
+          {/* Header chúc mừng */}
+          <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 px-6 py-4 text-white flex items-center justify-between border-b border-emerald-800/40">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                <span className="material-symbols-outlined text-2xl">verified</span>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[11px] font-bold tracking-widest text-emerald-400 uppercase">
+                    Chứng Nhận Điện Tử Hợp Pháp
+                  </span>
+                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 border border-emerald-500/30">
+                    Đã Ký Thành Công
+                  </span>
+                </div>
+                <h2 className="text-base font-bold text-white tracking-tight">
+                  Xác Nhận Ký Hợp Đồng #{signedResult.contractCode || contract.contractCode}
+                </h2>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onSignedSuccess(signedResult)}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+          </div>
+
+          {/* Nội dung xác nhận */}
+          <div className="px-6 py-4 space-y-4 max-h-[75vh] overflow-y-auto text-slate-700">
+            
+            {/* Banner chúc mừng */}
+            <div className="text-center py-4 px-2 space-y-2">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-sm ring-8 ring-emerald-50">
+                <span className="material-symbols-outlined text-4xl">check_circle</span>
+              </div>
+              <h3 className="text-lg font-bold text-slate-900">
+                Ký Hợp Đồng Điện Tử Thành Công!
+              </h3>
+              <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
+                Hợp đồng thuê kho tự quản Boxora đã được chứng thực chữ ký số hợp pháp, mã hóa bảo mật và lưu trữ thành công trên hệ thống.
+              </p>
+            </div>
+
+            {/* Thông tin đối soát hợp đồng */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3 text-xs">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-cyan-700 text-base">description</span>
+                  <span>Thông tin hợp đồng xác lập</span>
+                </span>
+                <span className="font-mono text-[11px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md">
+                  {signedResult.contractCode || contract.contractCode}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div className="space-y-1">
+                  <span className="text-[11px] text-slate-500">Mã đơn đặt chỗ:</span>
+                  <p className="font-mono font-bold text-slate-800">
+                    {(signedResult.contractCode || contract.contractCode || '').replace(/^CTR-/, '') || 'Boxora Booking'}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[11px] text-slate-500">Ngăn kho & Cơ sở:</span>
+                  <p className="font-bold text-slate-800">{contract.unitCode || (contract.status === 'ACTIVE' ? signedResult.unitCode : '') || 'Vị trí kho sẽ được xác nhận khi nhận kho'} · {signedResult.facilityName || contract.facilityName || 'Boxora Storage'}</p>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[11px] text-slate-500">Kỳ hạn thuê dự kiến:</span>
+                  <p className="font-semibold text-slate-800">{formatDate(signedResult.startDate || contract.startDate)} đến {formatDate(signedResult.endDate || contract.endDate)}</p>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[11px] text-slate-500">Thời điểm xác nhận ký:</span>
+                  <p className="font-semibold text-slate-800">{new Date().toLocaleString('vi-VN')}</p>
+                </div>
+              </div>
+
+              {/* Bản xem trước chữ ký điện tử đã được xác thực */}
+              <div className="pt-2 border-t border-slate-200">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-xs text-emerald-600">verified_user</span>
+                    <span>Chữ ký số bên thuê (Bên B) đã ghi nhận:</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">SHA-256 · Timestamp Certified</span>
+                </div>
+
+                <div className="rounded-lg border border-cyan-200 bg-white p-3 flex items-center justify-between shadow-xs">
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-slate-900 text-xs">{customerDisplayName}</p>
+                    <p className="text-[10px] text-slate-500">{customerDisplayPhone}</p>
+                    {customerIdentityNumber && (
+                      <p className="text-[10px] text-slate-600 font-mono">
+                        {customerIdentityType}: <span className="font-semibold text-slate-800">{customerIdentityNumber}</span>
+                      </p>
+                    )}
+                  </div>
+                  <div className="h-14 max-w-[200px] flex items-center justify-end">
+                    {savedSignatureData ? (
+                      <img
+                        src={savedSignatureData}
+                        alt="Chữ ký điện tử"
+                        className="max-h-12 object-contain"
+                      />
+                    ) : (
+                      <span className="font-serif italic font-bold text-cyan-800 text-base">{signerName || customerDisplayName}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Hướng dẫn bước tiếp theo */}
+            <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 space-y-1.5 text-xs text-blue-900">
+              <div className="font-bold flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-blue-700 text-base">info</span>
+                <span>Bước tiếp theo cần thực hiện:</span>
+              </div>
+              <ul className="list-disc pl-4 space-y-1 text-[11px] text-blue-800/90 leading-relaxed">
+                <li>Quý khách có thể tiến hành <strong>thanh toán trực tuyến</strong> hoặc kiểm tra chi tiết đơn hàng trên trang quản lý.</li>
+                <li>Theo quy định Boxora, thời hạn thuê chính thức sẽ được xác lập tại thời điểm quý khách đến cơ sở hoàn tất thủ tục nhận kho và nhân viên bàn giao mã PIN bảo mật.</li>
+              </ul>
+            </div>
+
+          </div>
+
+          {/* Footer nút điều hướng */}
+          <div className="bg-slate-50 px-6 py-3.5 flex items-center justify-end gap-3 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => onSignedSuccess(signedResult)}
+              className="flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 text-xs font-bold shadow-md shadow-emerald-900/20 transition-all cursor-pointer"
+            >
+              <span>Xác Nhận & Tiếp Tục</span>
+              <span className="material-symbols-outlined text-base">arrow_forward</span>
+            </button>
+          </div>
+
+        </div>
+      </div>
+    )
+  }
+
+>>>>>>> Stashed changes
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-3 md:p-6 backdrop-blur-md overflow-y-auto">
       <div className="w-full max-w-3xl my-auto space-y-4 rounded-2xl border border-slate-700 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -190,7 +343,7 @@ export function DocuSealSimulationModal({
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1 text-[11px]">
                 <div className="bg-slate-50 p-2 rounded border border-slate-100">
                   <span className="text-slate-500 block">Ngăn kho:</span>
-                  <strong className="text-cyan-800 font-mono">{contract.unitCode}</strong>
+                  <strong className="text-cyan-800 font-mono">{contract.unitCode || 'Vị trí kho sẽ được xác nhận khi nhận kho'}</strong>
                 </div>
                 <div className="bg-slate-50 p-2 rounded border border-slate-100">
                   <span className="text-slate-500 block">Thời hạn thuê:</span>
