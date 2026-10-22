@@ -39,6 +39,71 @@ export interface StaffAssignmentResponse {
   updatedAt?: string
 }
 
+/**
+ * Kiểm tra xem một ca trực có thuộc diện "Không đi làm" (ABSENT) hay không:
+ * - Trạng thái đã là ABSENT trong cơ sở dữ liệu
+ * - HOẶC chưa check-in và chưa check-out (ASSIGNED) mà thời gian ca trực đã trôi qua
+ */
+export const isShiftAbsent = (assignment?: {
+  status: string
+  assignedDate: string
+  startTime?: string | null
+  endTime?: string | null
+  checkedInAt?: string | null
+  checkedOutAt?: string | null
+  shift?: string | null
+} | null): boolean => {
+  if (!assignment) return false
+  if (assignment.status === 'ABSENT') return true
+  if (assignment.status === 'ASSIGNED' && !assignment.checkedInAt && !assignment.checkedOutAt) {
+    const today = new Date()
+    const y = today.getFullYear()
+    const m = String(today.getMonth() + 1).padStart(2, '0')
+    const d = String(today.getDate()).padStart(2, '0')
+    const todayStr = `${y}-${m}-${d}`
+
+    // 1. Ngày ca trong quá khứ
+    if (assignment.assignedDate < todayStr) return true
+
+    // 2. Ca hôm nay nhưng giờ kết thúc đã qua
+    if (assignment.assignedDate === todayStr) {
+      let endTimeStr = assignment.endTime
+      let startTimeStr = assignment.startTime
+      if (!endTimeStr || !startTimeStr) {
+        if (assignment.shift === 'MORNING') {
+          startTimeStr = '06:00'
+          endTimeStr = '14:00'
+        } else if (assignment.shift === 'AFTERNOON') {
+          startTimeStr = '14:00'
+          endTimeStr = '22:00'
+        } else if (assignment.shift === 'NIGHT') {
+          startTimeStr = '22:00'
+          endTimeStr = '06:00'
+        } else if (assignment.shift === 'FULL_DAY') {
+          startTimeStr = '08:00'
+          endTimeStr = '17:00'
+        }
+      }
+
+      if (endTimeStr) {
+        const [endH, endM] = endTimeStr.split(':').map(Number)
+        const [startH] = (startTimeStr || '00:00').split(':').map(Number)
+        if (!isNaN(endH)) {
+          // Ca trong ngày (endTime > startTime)
+          if (!isNaN(startH) && endH > startH) {
+            const shiftEndTime = new Date(today)
+            shiftEndTime.setHours(endH, endM || 0, 0, 0)
+            if (today.getTime() > shiftEndTime.getTime()) {
+              return true
+            }
+          }
+        }
+      }
+    }
+  }
+  return false
+}
+
 export interface ShiftSwapRequest {
   id: string
   assignmentId: string
@@ -75,6 +140,8 @@ export interface ShiftHandover {
   facilityCode?: string
   handoverDate: string
   shift: 'MORNING' | 'AFTERNOON' | 'NIGHT' | 'FULL_DAY'
+  targetShift?: 'MORNING' | 'AFTERNOON' | 'NIGHT' | 'FULL_DAY'
+  handoverType: 'ROUTINE' | 'EMERGENCY' | 'RESPONSIBILITY_TRANSFER'
   outgoingStaffId: string
   outgoingStaffName?: string
   outgoingStaffUsername?: string
@@ -83,15 +150,23 @@ export interface ShiftHandover {
   incomingStaffUsername?: string
   outgoingAssignmentId?: string
   incomingAssignmentId?: string
+  emergencyReason?: string
+  transferScope?: string
   pendingTasks?: string
   pendingTicketsCount: number
   unresolvedBookingsCount: number
   cashInDrawer: number
+  cashCounted?: number
+  cashDiscrepancy?: number
+  cashDiscrepancyReason?: string
   facilityStatusNote?: string
   checklistCompleted: boolean
   notes?: string
-  status: 'SUBMITTED' | 'ACKNOWLEDGED' | 'REJECTED'
+  status: 'DRAFT' | 'SUBMITTED' | 'PENDING_DISPATCH' | 'DISCREPANCY' | 'ACKNOWLEDGED' | 'REJECTED' | 'CANCELLED'
   acknowledgedAt?: string
+  dispatchedById?: string
+  dispatchedByName?: string
+  dispatchedAt?: string
   createdAt?: string
   updatedAt?: string
 }
@@ -195,23 +270,46 @@ export const staffAssignmentService = {
     facilityId: string
     handoverDate: string
     shift: string
+    targetShift?: string
+    handoverType?: 'ROUTINE' | 'EMERGENCY' | 'RESPONSIBILITY_TRANSFER'
     incomingStaffId?: string
     outgoingAssignmentId?: string
     incomingAssignmentId?: string
+    emergencyReason?: string
+    transferScope?: string
     pendingTasks?: string
     pendingTicketsCount?: number
     unresolvedBookingsCount?: number
     cashInDrawer?: number
+    cashCounted?: number
+    cashDiscrepancy?: number
+    cashDiscrepancyReason?: string
     facilityStatusNote?: string
     checklistCompleted: boolean
     notes?: string
+    isDraft?: boolean
   }) {
     const response = await api.post('/api/v1/shift-handovers', data)
     return response.data?.data as ShiftHandover
   },
 
-  async acknowledgeHandover(id: string, data: { status: 'ACKNOWLEDGED' | 'REJECTED'; notes?: string }) {
+  async acknowledgeHandover(id: string, data: {
+    status: 'ACKNOWLEDGED' | 'REJECTED' | 'DISCREPANCY'
+    cashCounted?: number
+    cashDiscrepancy?: number
+    cashDiscrepancyReason?: string
+    notes?: string
+  }) {
     const response = await api.patch(`/api/v1/shift-handovers/${id}/acknowledge`, data)
+    return response.data?.data as ShiftHandover
+  },
+
+  async dispatchHandover(id: string, data: {
+    incomingStaffId: string
+    incomingAssignmentId?: string
+    notes?: string
+  }) {
+    const response = await api.patch(`/api/v1/shift-handovers/${id}/dispatch`, data)
     return response.data?.data as ShiftHandover
   },
 

@@ -12,7 +12,7 @@ import { extractFloor, resolveBookingFloor, filterArrivals, AppointmentStatusFil
 import { HandoverCheckInWorkbench } from './components/HandoverCheckInWorkbench'
 import { QrCameraCheckInModal } from './components/QrCameraCheckInModal'
 import { StaffPolicyGuideModal } from './components/StaffPolicyGuideModal'
-import { staffAssignmentService, StaffAssignmentResponse } from '../../services/staffAssignmentService'
+import { staffAssignmentService, StaffAssignmentResponse, isShiftAbsent } from '../../services/staffAssignmentService'
 import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
 import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
 import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
@@ -640,6 +640,17 @@ export const StaffDashboard: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
+            {myTodayAssignment && (
+              <button
+                type="button"
+                onClick={() => setShowStaffHandoverModal(true)}
+                className="px-3.5 py-2.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer shadow-xs hover:border-blue-300"
+                title="Lập biên bản bàn giao ca trực (Định kỳ, đột xuất hoặc chuyển trách nhiệm)"
+              >
+                <span className="material-symbols-outlined text-[18px] text-blue-600">assignment_turned_in</span>
+                <span>Bàn giao ca trực</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setIsPolicyGuideOpen(true)}
@@ -1254,11 +1265,13 @@ export const StaffDashboard: React.FC = () => {
           {/* Quick Stats or Current Shift Indicator */}
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-700">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span className={`w-2 h-2 rounded-full ${isShiftAbsent(myTodayAssignment) ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>
               <span>
                 Ca trực:{' '}
                 {myTodayAssignment?.shift
-                  ? myTodayAssignment.shift === 'MORNING'
+                  ? isShiftAbsent(myTodayAssignment)
+                    ? 'Không đi làm'
+                    : myTodayAssignment.shift === 'MORNING'
                     ? 'Ca Sáng'
                     : myTodayAssignment.shift === 'AFTERNOON'
                     ? 'Ca Chiều'

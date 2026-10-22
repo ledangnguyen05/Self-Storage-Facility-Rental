@@ -501,6 +501,22 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
         return staffAssignmentMapper.toResponse(assignment);
     }
 
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 60_000L)
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void autoMarkAbsentShifts() {
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        java.time.LocalTime nowTime = java.time.LocalTime.now(BUSINESS_ZONE);
+        try {
+            int pastCount = staffAssignmentRepository.markPastUncheckedInAsAbsent(today);
+            int todayCount = staffAssignmentRepository.markTodayEndedUncheckedInAsAbsent(today, nowTime);
+            if (pastCount > 0 || todayCount > 0) {
+                log.info("Auto-marked unchecked-in shifts as ABSENT: {} past, {} today", pastCount, todayCount);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to auto-mark absent shifts: {}", e.getMessage());
+        }
+    }
+
     @Override
     @Transactional(readOnly = true)
     public PageResponse<StaffAssignmentResponse> getAllAssignments(
@@ -516,6 +532,12 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             String sortBy,
             String sortDir
     ) {
+        try {
+            autoMarkAbsentShifts();
+        } catch (Exception e) {
+            log.debug("autoMarkAbsentShifts invocation skipped: {}", e.getMessage());
+        }
+
         if (fromDate != null && toDate != null && toDate.isBefore(fromDate)) {
             throw new AppException(ErrorCode.INVALID_REQUEST, "toDate must be on or after fromDate");
         }
@@ -576,6 +598,12 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
     @Override
     @Transactional(readOnly = true)
     public List<StaffAssignmentResponse> getDailyBoard(UUID facilityId, LocalDate date) {
+        try {
+            autoMarkAbsentShifts();
+        } catch (Exception e) {
+            log.debug("autoMarkAbsentShifts invocation skipped: {}", e.getMessage());
+        }
+
         UUID targetFacilityId = facilityAccessGuard.isFacilityScoped()
                 ? facilityAccessGuard.scopedFacilityIdOrNull()
                 : facilityId;

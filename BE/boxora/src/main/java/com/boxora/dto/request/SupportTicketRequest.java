@@ -17,6 +17,8 @@ public class SupportTicketRequest {
     private UUID customerId;
     private UUID bookingId;
     private UUID facilityId;
+    private UUID storageUnitId;
+    private String unitCode;
 
     @NotBlank(message = "Category is required")
     private String category;

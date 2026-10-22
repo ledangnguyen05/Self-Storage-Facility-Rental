@@ -965,6 +965,7 @@ Object.assign(DICTIONARY, {
   'Đang trực ca': 'On Duty',
   'Đã kết thúc ca': 'Shift Ended',
   'Chưa vào ca': 'Not Checked In',
+  'Không đi làm': 'Absent',
   'Hôm nay không có lịch trực ca': 'No shift scheduled today',
   'Giám sát quản trị viên (Không trực ca)': 'Admin Oversight (No shift assignment)',
   'Tài khoản đăng nhập:': 'Signed-in account:',

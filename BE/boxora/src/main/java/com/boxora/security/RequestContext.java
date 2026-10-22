@@ -30,6 +30,15 @@ public class RequestContext {
                 .orElse(null);
     }
 
+    public boolean hasAnyRole(String... roles) {
+        String current = currentUserRole();
+        if (current == null) return false;
+        for (String r : roles) {
+            if (r.equalsIgnoreCase(current)) return true;
+        }
+        return false;
+    }
+
     public String currentUserEmail() {
         return currentUser()
                 .map(User::getEmail)

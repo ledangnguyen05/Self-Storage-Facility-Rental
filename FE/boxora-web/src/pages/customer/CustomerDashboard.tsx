@@ -61,6 +61,7 @@ export const CustomerDashboard: React.FC = () => {
   const [customerPayments, setCustomerPayments] = useState<PaymentItem[]>([])
   const [loadingPayments, setLoadingPayments] = useState<boolean>(true)
   const [selectedVatPayment, setSelectedVatPayment] = useState<PaymentItem | null>(null)
+  const [selectedProofPayment, setSelectedProofPayment] = useState<PaymentItem | null>(null)
 
   // Real facilities & available units state
   const [facilities, setFacilities] = useState<Facility[]>([])
@@ -933,26 +934,55 @@ export const CustomerDashboard: React.FC = () => {
   const [contractsFloor, setContractsFloor] = useState('all')
   const [contractsSize, setContractsSize] = useState('all')
 
+  // Lọc hợp đồng hợp lệ hiển thị cho khách hàng theo đúng nghiệp vụ Boxora:
+  // 1. Ký tại cơ sở (IN_PERSON): Chỉ hiển thị sau khi đã check-in thanh toán & ký giấy tại kho xong (có paperContractUrl hoặc status không phải PENDING_SIGNATURE)
+  // 2. Ký trực tuyến (ONLINE): Chỉ hiển thị trạng thái chờ ký & nút "Ký ngay" nếu lịch đặt kho đã thanh toán (PAID hoặc đã cọc)
+  const visibleContracts = useMemo(() => {
+    return contracts.filter(c => {
+      const b = customerBookings.find(bk => bk.id === c.bookingId || bk.bookingCode === c.contractCode.replace(/^CTR-/, ''))
+      const isCounter = c.signingMethod === 'IN_PERSON' || b?.signingMethod === 'IN_PERSON'
+
+      if (isCounter) {
+        // Hợp đồng tại cơ sở: nếu chưa hoàn tất check-in & ký giấy tại kho thì chưa hiển thị trong mục Hợp đồng & Hóa đơn
+        const isCounterCompleted = Boolean(c.paperContractUrl || c.paperVerifiedAt || (c.status !== 'PENDING_SIGNATURE' && c.status !== 'CANCELLED'))
+        if (!isCounterCompleted) {
+          return false
+        }
+      } else {
+        // Hợp đồng trực tuyến: chỉ cho phép hiển thị chờ ký nếu đã thanh toán
+        if (c.status === 'PENDING_SIGNATURE') {
+          const isPaid = b
+            ? (b.paymentStatus === 'PAID' || (b.depositPaid && Number(b.depositPaid) > 0))
+            : (c.depositHeld && Number(c.depositHeld) > 0)
+          if (!isPaid) {
+            return false
+          }
+        }
+      }
+      return true
+    })
+  }, [contracts, customerBookings])
+
   const contractsFacilities = useMemo(() => {
     const map = new Map<string, string>()
-    contracts.forEach(c => {
+    visibleContracts.forEach(c => {
       const name = c.facilityName?.trim() || 'Cơ sở trực thuộc'
       const key = c.facilityId || name
       if (!map.has(key)) map.set(key, name)
     })
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
-  }, [contracts])
+  }, [visibleContracts])
 
   const contractsFloors = useMemo(() => {
     const floorSet = new Set<string>()
-    contracts.forEach(c => {
+    visibleContracts.forEach(c => {
       if (!matchesFacility(c.facilityId, c.facilityName, contractsFacility)) return
       const unit = (c.storageUnitId ? unitMapById.get(c.storageUnitId) : null) || (c.unitCode ? unitMapByCode.get(c.unitCode.trim().toUpperCase()) : null)
       const fl = getNormalizedFloor(unit?.floorLevel, c.unitCode)
       if (fl) floorSet.add(fl)
     })
     return Array.from(floorSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-  }, [contracts, contractsFacility, unitMapById, unitMapByCode])
+  }, [visibleContracts, contractsFacility, unitMapById, unitMapByCode])
 
   useEffect(() => {
     if (contractsFloor !== 'all' && !contractsFloors.includes(contractsFloor)) {
@@ -961,7 +991,7 @@ export const CustomerDashboard: React.FC = () => {
   }, [contractsFloor, contractsFloors])
 
   const filteredContracts = useMemo(() => {
-    return contracts.filter(c => {
+    return visibleContracts.filter(c => {
       if (!matchesFacility(c.facilityId, c.facilityName, contractsFacility)) return false
 
       const unit = (c.storageUnitId ? unitMapById.get(c.storageUnitId) : null) || (c.unitCode ? unitMapByCode.get(c.unitCode.trim().toUpperCase()) : null)
@@ -981,7 +1011,7 @@ export const CustomerDashboard: React.FC = () => {
       }
       return true
     })
-  }, [contracts, contractsFacility, contractsFloor, contractsSize, contractsSearchTerm, unitMapById, unitMapByCode])
+  }, [visibleContracts, contractsFacility, contractsFloor, contractsSize, contractsSearchTerm, unitMapById, unitMapByCode])
 
   // 4. Tab "Hỗ trợ & sự cố" (Support) Filter States & Calculations
   const [ticketFacility, setTicketFacility] = useState('all')
@@ -1575,6 +1605,11 @@ export const CustomerDashboard: React.FC = () => {
   }
 
   const handleSignContractNow = (contract: RentalContract) => {
+    // Nếu là hợp đồng làm thủ tục tại cơ sở hoặc đã có bản scan giấy, chỉ mở xem chi tiết hồ sơ giấy, không mở DocuSeal online
+    if (contract.signingMethod === 'IN_PERSON' || contract.paperContractUrl) {
+      setSelectedContractForModal(contract)
+      return
+    }
     // Open DocuSeal Simulation modal directly for immediate electronic signing
     setContractForDocuSealModal(contract)
   }
@@ -1646,6 +1681,61 @@ export const CustomerDashboard: React.FC = () => {
     }
   }
 
+  const handleViewOriginalContract = async (contractId?: string, contractCode?: string) => {
+    if (!contractId && !contractCode) return
+
+    // 1. Try finding in loaded contracts state immediately
+    const local = contracts.find((c) =>
+      (contractId && c.id && c.id.toLowerCase() === contractId.toLowerCase()) ||
+      (contractCode && c.contractCode && c.contractCode.toLowerCase() === contractCode.toLowerCase())
+    )
+
+    if (local) {
+      setSelectedRenewalForDocModal(null)
+      setSelectedContractForModal(local)
+    }
+
+    // 2. Fetch full contract from API by contractId to get authentic details
+    if (contractId) {
+      try {
+        const full = await contractService.getContractById(contractId)
+        if (full) {
+          setSelectedRenewalForDocModal(null)
+          setSelectedContractForModal(full)
+          setContracts((prev) => {
+            const idx = prev.findIndex((c) => c.id === full.id)
+            if (idx >= 0) {
+              const next = [...prev]
+              next[idx] = full
+              return next
+            }
+            return [full, ...prev]
+          })
+          return
+        }
+      } catch (err) {
+        console.warn('getContractById error:', err)
+      }
+    }
+
+    // 3. Fallback search by contractCode if not already found
+    if (!local && contractCode) {
+      try {
+        const listRes = await contractService.getMyContracts({ size: 100 })
+        const matched = listRes?.content?.find((c) =>
+          (contractId && c.id && c.id.toLowerCase() === contractId.toLowerCase()) ||
+          (c.contractCode && c.contractCode.toLowerCase() === contractCode.toLowerCase())
+        )
+        if (matched) {
+          setSelectedRenewalForDocModal(null)
+          setSelectedContractForModal(matched)
+        }
+      } catch (err) {
+        console.warn('Search contracts fallback error:', err)
+      }
+    }
+  }
+
   const handleShareSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setShareSuccess(true)
@@ -1674,18 +1764,7 @@ export const CustomerDashboard: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5 self-start md:self-center shrink-0">
-            <button
-              type="button"
-              onClick={handleRefreshAll}
-              disabled={isRefreshingData}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-bold text-xs border border-slate-200 hover:border-blue-300 transition-all shadow-2xs hover:shadow-sm cursor-pointer disabled:opacity-60 group"
-              title="Tải lại toàn bộ dữ liệu kho, hợp đồng, lịch sử gia hạn và thanh toán mới nhất"
-            >
-              <span className={`material-symbols-outlined text-[19px] text-blue-600 group-hover:rotate-180 transition-transform duration-300 ${isRefreshingData ? 'animate-spin' : ''}`}>sync</span>
-              <span>{isRefreshingData ? 'Đang làm mới...' : 'Làm mới dữ liệu'}</span>
-            </button>
-          </div>
+          
         </div>
 
         {/* 4 Metric Cards */}
@@ -3520,15 +3599,7 @@ export const CustomerDashboard: React.FC = () => {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => handleOpenPolicyModal('rental')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-700 text-xs font-bold border border-cyan-200 transition cursor-pointer"
-                  title="Xem các quy định về hợp đồng, thanh toán và hoàn trả tiền cọc"
-                >
-                  <span className="material-symbols-outlined text-[16px]">policy</span>
-                  <span>Chính sách thuê kho &amp; Hợp đồng</span>
-                </button>
+                
                 <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 font-mono text-xs font-bold text-emerald-700">
                   {activeContracts.length} Hợp đồng đang hiệu lực
                 </span>
@@ -3643,7 +3714,7 @@ export const CustomerDashboard: React.FC = () => {
 
               <div className="flex items-center justify-between text-[11px] text-slate-500 px-1 pt-0.5 border-t border-slate-200/70 flex-wrap gap-2">
                 <span>
-                  Hiển thị <strong className="text-slate-900 font-bold">{filteredContracts.length}</strong> / {contracts.length} hợp đồng
+                  Hiển thị <strong className="text-slate-900 font-bold">{filteredContracts.length}</strong> / {visibleContracts.length} hợp đồng
                 </span>
                 {(contractsSearchTerm || contractsFacility !== 'all' || contractsFloor !== 'all' || contractsSize !== 'all') && (
                   <span className="text-blue-600 font-semibold flex items-center gap-1">
@@ -3678,7 +3749,7 @@ export const CustomerDashboard: React.FC = () => {
                         </div>
                       </td>
                     </tr>
-                  ) : contracts.length === 0 ? (
+                  ) : visibleContracts.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="py-8 text-center text-slate-400 text-xs">
                         Chưa có hợp đồng nào trong hồ sơ của bạn.
@@ -3691,72 +3762,97 @@ export const CustomerDashboard: React.FC = () => {
                       </td>
                     </tr>
                   ) : (
-                    filteredContracts.map(c => (
-                      <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-3.5 px-4 font-unit-code text-xs font-bold text-slate-900">#{c.contractCode}</td>
-                        <td className="py-3.5 px-4 font-bold text-blue-600">#{c.unitCode}</td>
-                        <td className="py-3.5 px-4 text-slate-700">{c.facilityName || 'Boxora Facility'}</td>
-                        <td className="py-3.5 px-4 text-slate-700 font-mono">
-                          {c.status === 'PENDING_ACTIVATION' ? (
-                            <div className="flex flex-col">
-                              <span>{c.startDate} — {c.endDate}</span>
-                              <span className="text-[10px] text-cyan-700 font-sans font-semibold">
-                                (Kích hoạt khi check-in)
+                    filteredContracts.map(c => {
+                      const b = customerBookings.find(bk => bk.id === c.bookingId || bk.bookingCode === c.contractCode.replace(/^CTR-/, ''))
+                      const isPaper = Boolean(c.paperContractUrl || c.signingMethod === 'IN_PERSON' || b?.signingMethod === 'IN_PERSON')
+                      const isOnlinePaid = b
+                        ? (b.paymentStatus === 'PAID' || (b.depositPaid && Number(b.depositPaid) > 0))
+                        : (c.depositHeld && Number(c.depositHeld) > 0)
+
+                      return (
+                        <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-3.5 px-4 font-unit-code text-xs font-bold text-slate-900">#{c.contractCode}</td>
+                          <td className="py-3.5 px-4 font-bold text-blue-600">#{c.unitCode}</td>
+                          <td className="py-3.5 px-4 text-slate-700">{c.facilityName || 'Boxora Facility'}</td>
+                          <td className="py-3.5 px-4 text-slate-700 font-mono">
+                            {c.status === 'PENDING_ACTIVATION' ? (
+                              <div className="flex flex-col">
+                                <span>{c.startDate} — {c.endDate}</span>
+                                <span className="text-[10px] text-cyan-700 font-sans font-semibold">
+                                  (Kích hoạt khi check-in)
+                                </span>
+                              </div>
+                            ) : (
+                              `${c.startDate} — ${c.endDate}`
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 font-data-tabular font-bold text-slate-900 text-right">
+                            {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫
+                          </td>
+                          <td className="py-3.5 px-4 font-data-tabular text-slate-700 text-right font-bold">
+                            {getContractDepositHeld(c).toLocaleString('vi-VN')} ₫
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            {isPaper ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
+                                <span className="material-symbols-outlined text-[13px]">verified</span>
+                                <span>HĐ Giấy Đã Ký</span>
                               </span>
-                            </div>
-                          ) : (
-                            `${c.startDate} — ${c.endDate}`
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4 font-data-tabular font-bold text-slate-900 text-right">
-                          {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫
-                        </td>
-                        <td className="py-3.5 px-4 font-data-tabular text-slate-700 text-right font-bold">
-                          {getContractDepositHeld(c).toLocaleString('vi-VN')} ₫
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                            c.status === 'ACTIVE' 
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : c.status === 'PENDING_ACTIVATION'
-                              ? 'bg-cyan-50 text-cyan-800 border border-cyan-300'
-                              : c.status === 'PENDING_SIGNATURE'
-                              ? 'bg-amber-50 text-amber-800 border border-amber-300 animate-pulse'
-                              : 'bg-slate-100 text-slate-600 border border-slate-200'
-                          }`}>
-                            {c.status === 'ACTIVE' 
-                              ? 'Đang hiệu lực' 
-                              : c.status === 'PENDING_ACTIVATION'
-                              ? 'Đã ký • Chờ nhận kho'
-                              : c.status === 'PENDING_SIGNATURE' 
-                              ? 'Chờ ký số' 
-                              : c.status}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {c.status === 'PENDING_SIGNATURE' && (
+                            ) : (
+                              <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                c.status === 'ACTIVE' 
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : c.status === 'PENDING_ACTIVATION'
+                                  ? 'bg-cyan-50 text-cyan-800 border border-cyan-300'
+                                  : c.status === 'PENDING_SIGNATURE'
+                                  ? 'bg-amber-50 text-amber-800 border border-amber-300 animate-pulse'
+                                  : 'bg-slate-100 text-slate-600 border border-slate-200'
+                              }`}>
+                                {c.status === 'ACTIVE' 
+                                  ? 'Đang hiệu lực' 
+                                  : c.status === 'PENDING_ACTIVATION'
+                                  ? 'Đã ký • Chờ nhận kho'
+                                  : c.status === 'PENDING_SIGNATURE' 
+                                  ? 'Chờ ký số' 
+                                  : c.status}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {isPaper && c.paperContractUrl ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedContractForModal(c)}
+                                  className="px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-md font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                                  title="Xem bản scan hợp đồng giấy đã tiếp nhận tại cơ sở"
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">document_scanner</span>
+                                  <span>Bản scan HĐ</span>
+                                </button>
+                              ) : !isPaper && c.status === 'PENDING_SIGNATURE' && isOnlinePaid ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSignContractNow(c)}
+                                  className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-md font-bold text-xs shadow-sm flex items-center gap-1 transition-all cursor-pointer animate-pulse"
+                                  title="Ký hợp đồng trực tuyến ngay"
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">edit_document</span>
+                                  <span>Ký ngay</span>
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
-                                onClick={() => handleSignContractNow(c)}
-                                className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-md font-bold text-xs shadow-sm flex items-center gap-1 transition-all cursor-pointer animate-pulse"
-                                title="Ký hợp đồng trực tuyến ngay"
+                                onClick={() => setSelectedContractForModal(c)}
+                                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-semibold text-xs transition-colors cursor-pointer"
                               >
-                                <span className="material-symbols-outlined text-[15px]">edit_document</span>
-                                <span>Ký ngay</span>
+                                Chi tiết
                               </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => setSelectedContractForModal(c)}
-                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-semibold text-xs transition-colors cursor-pointer"
-                            >
-                              Chi tiết
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })
                   )}
                 </tbody>
               </table>
@@ -3976,23 +4072,9 @@ export const CustomerDashboard: React.FC = () => {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    const parentContract = contracts.find((c) => c.id === r.contractId) || ({
-                                      id: r.contractId,
-                                      contractCode: r.contractCode,
-                                      unitCode: r.unitCode,
-                                      facilityName: r.facilityName,
-                                      customerName: r.customerName,
-                                      customerEmail: r.customerEmail,
-                                      startDate: r.oldEndDate,
-                                      endDate: r.newEndDate,
-                                      monthlyFee: r.renewalFee / (r.cycleMonths || 1),
-                                      status: 'ACTIVE',
-                                    } as any)
-                                    setSelectedContractForModal(parentContract)
-                                  }}
+                                  onClick={() => handleViewOriginalContract(r.contractId, r.contractCode)}
                                   className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-semibold text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                                  title="Xem văn bản hợp đồng gốc"
+                                  title="Xem văn bản hợp đồng gốc ban đầu"
                                 >
                                   <span>Xem HĐ gốc</span>
                                 </button>
@@ -4047,7 +4129,7 @@ export const CustomerDashboard: React.FC = () => {
                     Lịch Sử Giao Dịch &amp; Hóa Đơn Điện Tử VAT
                   </h3>
                   <span className="text-xs text-slate-500">
-                    Đối soát dữ liệu thanh toán cổng VNPay và nộp tiền thực tế được trích xuất từ database
+                    Đối soát dữ liệu thanh toán và nộp tiền thực tế được trích xuất từ hệ thống
                   </span>
                 </div>
               </div>
@@ -4140,14 +4222,41 @@ export const CustomerDashboard: React.FC = () => {
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedVatPayment(p)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-semibold border border-emerald-200 transition-colors cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">receipt</span>
-                            <span>Biên lai VAT</span>
-                          </button>
+                          {(() => {
+                            const method = (p.paymentMethod || '').toUpperCase()
+                            const isCash = method === 'CASH' || method.includes('TIEN_MAT')
+                            const isBankTransfer = method === 'BANK_TRANSFER' || method.includes('CHUYEN_KHOAN')
+
+                            if (isCash) {
+                              return <span className="text-slate-400 text-xs font-mono">—</span>
+                            }
+
+                            if (isBankTransfer) {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedProofPayment(p)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold border border-blue-200 transition-colors cursor-pointer shadow-2xs"
+                                  title="Xem màn hình chuyển tiền / ủy nhiệm chi xác nhận tại cơ sở"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">receipt_long</span>
+                                  <span>Bằng chứng</span>
+                                </button>
+                              )
+                            }
+
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedVatPayment(p)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-semibold border border-emerald-200 transition-colors cursor-pointer"
+                                title="Xem biên lai điện tử VAT"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">receipt</span>
+                                <span>Biên lai VAT</span>
+                              </button>
+                            )
+                          })()}
                         </td>
                       </tr>
                     ))
@@ -4610,6 +4719,13 @@ export const CustomerDashboard: React.FC = () => {
                               </span>
                             )}
 
+                            {t.isStaffRecorded && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300 shadow-xs" title="Sự cố do đội ngũ vận hành kho Boxora chủ động kiểm tra và ghi nhận">
+                                <span className="material-symbols-outlined text-[14px] text-amber-600">engineering</span>
+                                <span>Do đội ngũ kho ghi nhận</span>
+                              </span>
+                            )}
+
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${catMeta.color}`}>
                               <span className="material-symbols-outlined text-[13px]">{catMeta.icon}</span>
                               <span>{catMeta.label}</span>
@@ -4640,6 +4756,22 @@ export const CustomerDashboard: React.FC = () => {
                             {t.description}
                           </div>
                         </div>
+
+                        {/* Operational Notice for tickets recorded by staff */}
+                        {t.isStaffRecorded && (
+                          <div className="p-3 rounded-lg bg-amber-50/80 border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5 leading-relaxed">
+                            <span className="material-symbols-outlined text-[18px] text-amber-600 shrink-0 mt-0.5">assignment_turned_in</span>
+                            <div>
+                              <strong className="font-semibold text-amber-950">Ghi chú từ đội ngũ vận hành:</strong>{' '}
+                              Phiếu sự cố này do đội ngũ nhân sự Boxora tại cơ sở chủ động kiểm tra hiện trường ngăn kho của quý khách và ghi nhận để hỗ trợ khắc phục sớm nhất.
+                              {t.createdByStaffName && (
+                                <span className="block text-[11px] text-amber-800 mt-0.5 font-medium">
+                                  Nhân viên ghi nhận: {t.createdByStaffName}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Resolution Note / Status update from Boxora */}
                         {t.status === 'RESOLVED' ? (
@@ -5525,6 +5657,13 @@ export const CustomerDashboard: React.FC = () => {
       {selectedContractForModal && (
         <ContractDocumentModal
           contract={selectedContractForModal}
+          booking={
+            customerBookings.find(
+              (b) =>
+                b.id === selectedContractForModal.bookingId ||
+                b.bookingCode === selectedContractForModal.contractCode.replace(/^CTR-/, '')
+            ) || null
+          }
           onClose={() => setSelectedContractForModal(null)}
           onSignNow={handleSignContractNow}
           isSigning={fetchingSigningUrl}
@@ -5538,20 +5677,13 @@ export const CustomerDashboard: React.FC = () => {
           contract={contracts.find((c) => c.id === selectedRenewalForDocModal.contractId) || null}
           onClose={() => setSelectedRenewalForDocModal(null)}
           onViewOriginalContract={() => {
-            const parentContract = contracts.find((c) => c.id === selectedRenewalForDocModal.contractId) || ({
-              id: selectedRenewalForDocModal.contractId,
-              contractCode: selectedRenewalForDocModal.contractCode,
-              unitCode: selectedRenewalForDocModal.unitCode,
-              facilityName: selectedRenewalForDocModal.facilityName,
-              customerName: selectedRenewalForDocModal.customerName,
-              customerEmail: selectedRenewalForDocModal.customerEmail,
-              startDate: selectedRenewalForDocModal.oldEndDate,
-              endDate: selectedRenewalForDocModal.newEndDate,
-              monthlyFee: selectedRenewalForDocModal.renewalFee / (selectedRenewalForDocModal.cycleMonths || 1),
-              status: 'ACTIVE',
-            } as any)
             setSelectedRenewalForDocModal(null)
-            setSelectedContractForModal(parentContract)
+            if (selectedRenewalForDocModal?.contractId || selectedRenewalForDocModal?.contractCode) {
+              void handleViewOriginalContract(
+                selectedRenewalForDocModal.contractId,
+                selectedRenewalForDocModal.contractCode
+              )
+            }
           }}
         />
       )}
@@ -5700,6 +5832,124 @@ export const CustomerDashboard: React.FC = () => {
                 type="button"
                 onClick={() => setSelectedVatPayment(null)}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Proof of Transfer / Màn hình chuyển tiền Modal */}
+      {selectedProofPayment && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm overflow-y-auto">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="bg-slate-900 px-6 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-400">
+                  <span className="material-symbols-outlined text-xl">account_balance</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm tracking-wide uppercase">Chứng Từ / Màn Hình Chuyển Tiền</h3>
+                  <p className="text-[10px] text-slate-400 font-mono">
+                    Mã giao dịch: {selectedProofPayment.transactionId || selectedProofPayment.id}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedProofPayment(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-4 text-xs text-slate-700">
+              {/* Transfer Details Card */}
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                <div>
+                  <span className="text-slate-400 text-[10px] uppercase font-bold block">Kho &amp; Cơ sở:</span>
+                  <strong className="text-blue-600 font-mono text-xs">#{selectedProofPayment.unitCode || 'N/A'}</strong>
+                  <div className="text-slate-600 text-[11px]">{selectedProofPayment.facilityName || 'Boxora Storage'}</div>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] uppercase font-bold block">Khoản thanh toán:</span>
+                  <span className="font-semibold text-slate-800">
+                    {selectedProofPayment.paymentType === 'DEPOSIT' ? 'Tiền ký quỹ (Cọc)' : 'Tiền thuê kho'}
+                  </span>
+                  <div className="text-slate-500 text-[10px]">
+                    Phương thức: <strong className="font-mono text-slate-700">BANK_TRANSFER (Chuyển khoản)</strong>
+                  </div>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] uppercase font-bold block">Thời gian thanh toán:</span>
+                  <span className="font-mono text-slate-700">
+                    {selectedProofPayment.paymentTime ? new Date(selectedProofPayment.paymentTime).toLocaleString('vi-VN') : '—'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] uppercase font-bold block">Số tiền chuyển khoản:</span>
+                  <strong className="text-emerald-700 text-sm font-mono">
+                    {selectedProofPayment.amount.toLocaleString('vi-VN')} ₫
+                  </strong>
+                </div>
+              </div>
+
+              {/* Proof Image / Screenshot Display */}
+              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 flex flex-col items-center justify-center">
+                {selectedProofPayment.proofDocumentUrl ? (
+                  <div className="space-y-3 w-full flex flex-col items-center">
+                    <div className="text-[11px] font-semibold text-slate-600 flex items-center gap-1.5 self-start">
+                      <span className="material-symbols-outlined text-[16px] text-blue-600">image</span>
+                      <span>Ảnh chụp màn hình chuyển khoản / Ủy nhiệm chi:</span>
+                    </div>
+                    <div className="max-h-[480px] w-full overflow-hidden rounded-lg border border-slate-200 bg-white flex items-center justify-center p-2 shadow-xs">
+                      <img
+                        src={selectedProofPayment.proofDocumentUrl}
+                        alt="Màn hình chuyển tiền"
+                        className="max-h-[460px] max-w-full object-contain rounded shadow-sm"
+                      />
+                    </div>
+                    <a
+                      href={selectedProofPayment.proofDocumentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg border border-blue-200 transition-colors cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                      <span>Mở ảnh gốc trong tab mới</span>
+                    </a>
+                  </div>
+                ) : (
+                  <div className="py-6 px-4 text-center space-y-2">
+                    <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mx-auto">
+                      <span className="material-symbols-outlined text-[24px]">verified</span>
+                    </div>
+                    <div className="font-bold text-slate-900 text-xs">
+                      Giao Dịch Chuyển Khoản Trực Tiếp Tại Quầy Đã Xác Nhận
+                    </div>
+                    <p className="text-[11px] text-slate-500 max-w-md mx-auto leading-relaxed">
+                      Nhân viên quầy tại cơ sở đã kiểm tra trực tiếp màn hình chuyển tiền thành công trên ứng dụng ngân hàng và đối soát chính xác với hệ thống tài khoản Boxora.
+                    </p>
+                    {selectedProofPayment.receiptVoucherCode && (
+                      <div className="inline-block mt-2 px-3 py-1 bg-slate-100 text-slate-700 rounded-lg font-mono text-[11px] border border-slate-200">
+                        Số phiếu thu / tham chiếu: <strong>{selectedProofPayment.receiptVoucherCode}</strong>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-50 px-6 py-3.5 border-t border-slate-200 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedProofPayment(null)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
               >
                 Đóng
               </button>

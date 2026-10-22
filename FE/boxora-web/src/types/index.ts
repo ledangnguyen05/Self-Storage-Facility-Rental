@@ -293,10 +293,16 @@ export interface RentalContract {
   docusealSubmissionId?: string | null
   docusealSubmitterSlug?: string | null
   signedAt?: string | null
-  signingMethod?: 'ONLINE' | 'IN_PERSON'
+  signingMethod?: 'ONLINE' | 'IN_PERSON' | string
   signatureData?: string | null
   unitTypeName?: string | null
   unitPricePerMonth?: number | null
+  paperContractUrl?: string | null
+  paperOriginalLocation?: string | null
+  paperVerifiedById?: string | null
+  paperVerifiedByName?: string | null
+  paperVerifiedAt?: string | null
+  paperNotes?: string | null
 }
 
 export type ContractRenewalStatus =

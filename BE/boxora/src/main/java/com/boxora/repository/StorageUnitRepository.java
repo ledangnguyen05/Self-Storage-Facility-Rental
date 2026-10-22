@@ -50,6 +50,8 @@ public interface StorageUnitRepository extends JpaRepository<StorageUnit, UUID>,
 
     boolean existsByFacility_IdAndUnitCode(UUID facilityId, String unitCode);
 
+    Optional<StorageUnit> findByFacility_IdAndUnitCodeIgnoreCase(UUID facilityId, String unitCode);
+
     boolean existsByFacility_IdAndUnitCodeAndIdNot(UUID facilityId, String unitCode, UUID id);
 
     boolean existsByUnitType_Id(UUID unitTypeId);

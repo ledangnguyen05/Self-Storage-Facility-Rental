@@ -9,8 +9,11 @@ import { overdueService } from '../../services/overdueService'
 
 export const OverdueManagementPage: React.FC = () => {
   const { user } = useAuth()
+  const userRole = (typeof user?.role === 'object' ? user?.role?.name : user?.role) || user?.roleName
+  const canFilterFacility = userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN'
+
   const [facilities, setFacilities] = useState<Facility[]>([])
-  const [selectedFacilityId, setSelectedFacilityId] = useState<string>('')
+  const [selectedFacilityId, setSelectedFacilityId] = useState<string>(() => (!canFilterFacility && user?.facilityId) ? user.facilityId : '')
   const [overdueItems, setOverdueItems] = useState<OverdueDebtItem[]>([])
   const [reportSummary, setReportSummary] = useState<OverdueDebtReport | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -59,7 +62,9 @@ export const OverdueManagementPage: React.FC = () => {
         const facs = res?.content || []
         setFacilities(facs)
         const userFacId = user?.facilityId
-        if (userFacId && facs.some(f => f.id === userFacId)) {
+        if (!canFilterFacility && userFacId) {
+          setSelectedFacilityId(userFacId)
+        } else if (userFacId && facs.some(f => f.id === userFacId)) {
           setSelectedFacilityId(userFacId)
         } else if (facs.length > 0) {
           setSelectedFacilityId(facs[0].id)
@@ -225,7 +230,7 @@ export const OverdueManagementPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          {facilities.length > 1 && (
+          {canFilterFacility && facilities.length > 1 && (
             <select
               value={selectedFacilityId}
               onChange={e => setSelectedFacilityId(e.target.value)}
