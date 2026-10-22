@@ -11,8 +11,20 @@ import {
   GeocodingSuggestion,
 } from '../../services/nominatimGeocodingService'
 import { VIETNAM_PROVINCES, getProvinceShortCode } from '../../constants/vietnamProvinces'
-import { Facility, FacilityLayoutConfig, FacilityPolicy } from '../../types'
-import { DEFAULT_FACILITY_LAYOUT_CONFIG, parseFacilityLayoutConfig } from '../../utils/facilityLayout'
+import {
+  Facility,
+  FacilityFloorConfig,
+  FacilityLayoutConfig,
+  FacilityPolicy,
+  FloorFunctionalZone,
+  FloorOperationPoint,
+} from '../../types'
+import {
+  DEFAULT_FACILITY_LAYOUT_CONFIG,
+  createDefaultFloor,
+  parseFacilityLayoutConfig,
+  syncLegacyLayoutFields,
+} from '../../utils/facilityLayout'
 import { FacilityPolicyViewModal } from '../manager/modals/FacilityPolicyViewModal'
 import { FacilityOperatingPoliciesPanel } from './FacilityOperatingPoliciesPanel'
 import { DynamicPricingMatrixPanel } from './DynamicPricingMatrixPanel'
@@ -126,6 +138,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [activeStep, setActiveStep] = useState<1 | 2 | 3 | 4>(1)
   const [draft, setDraft] = useState<FacilityDraft>(blankDraft)
+  const [selectedFloorIndex, setSelectedFloorIndex] = useState(0)
   const [isSaving, setIsSaving] = useState(false)
   const [isGeocoding, setIsGeocoding] = useState(false)
   const [formError, setFormError] = useState('')
@@ -188,6 +201,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   const startCreate = () => {
     setEditingFacility(null)
     setDraft(blankDraft())
+    setSelectedFloorIndex(0)
     setActiveStep(1)
     setFormError('')
     setNotice('')
@@ -199,6 +213,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   const startEdit = (facility: Facility) => {
     setEditingFacility(facility)
     setDraft(toDraft(facility))
+    setSelectedFloorIndex(0)
     setActiveStep(1)
     setFormError('')
     setNotice('')
@@ -304,8 +319,156 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
     }))
   }
 
-  const updateLayout = (key: keyof FacilityLayoutConfig, value: string) => {
-    setDraft((current) => ({ ...current, layout: { ...current.layout, [key]: value } }))
+  const floors = useMemo(() => draft.layout.floors || [], [draft.layout.floors])
+  const activeFloor = floors[selectedFloorIndex] || floors[0]
+
+  const updateLayoutTitle = (title: string) => {
+    setDraft((cur) => ({
+      ...cur,
+      layout: {
+        ...cur.layout,
+        title,
+      },
+    }))
+  }
+
+  const handleAddFloor = () => {
+    const nextNumber = floors.length + 1
+    const newFloor = createDefaultFloor(nextNumber)
+    const nextFloors = [...floors, newFloor]
+    setDraft((cur) => ({
+      ...cur,
+      layout: {
+        ...cur.layout,
+        floors: nextFloors,
+      },
+    }))
+    setSelectedFloorIndex(nextFloors.length - 1)
+  }
+
+  const handleRemoveFloor = (indexToRemove: number) => {
+    if (floors.length <= 1) return
+    const nextFloors = floors
+      .filter((_, idx) => idx !== indexToRemove)
+      .map((fl, idx) => ({ ...fl, floorNumber: idx + 1 }))
+
+    setDraft((cur) => ({
+      ...cur,
+      layout: {
+        ...cur.layout,
+        floors: nextFloors,
+      },
+    }))
+    setSelectedFloorIndex((prev) => Math.min(prev, Math.max(0, nextFloors.length - 1)))
+  }
+
+  const handleUpdateFloor = (index: number, updates: Partial<FacilityFloorConfig>) => {
+    const nextFloors = floors.map((fl, idx) => (idx === index ? { ...fl, ...updates } : fl))
+    setDraft((cur) => ({
+      ...cur,
+      layout: {
+        ...cur.layout,
+        floors: nextFloors,
+      },
+    }))
+  }
+
+  const handleAddOperationPoint = (floorIndex: number) => {
+    const targetFloor = floors[floorIndex]
+    if (!targetFloor) return
+    const newPoint: FloorOperationPoint = {
+      id: `op-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name: 'Điểm vận hành mới',
+    }
+    const nextFloors = floors.map((fl, idx) =>
+      idx === floorIndex ? { ...fl, operationPoints: [...fl.operationPoints, newPoint] } : fl
+    )
+    setDraft((cur) => ({
+      ...cur,
+      layout: {
+        ...cur.layout,
+        floors: nextFloors,
+      },
+    }))
+  }
+
+  const handleUpdateOperationPoint = (floorIndex: number, pointIndex: number, name: string) => {
+    const nextFloors = floors.map((fl, fIdx) => {
+      if (fIdx !== floorIndex) return fl
+      const nextPoints = fl.operationPoints.map((op, pIdx) => (pIdx === pointIndex ? { ...op, name } : op))
+      return { ...fl, operationPoints: nextPoints }
+    })
+    setDraft((cur) => ({
+      ...cur,
+      layout: {
+        ...cur.layout,
+        floors: nextFloors,
+      },
+    }))
+  }
+
+  const handleRemoveOperationPoint = (floorIndex: number, pointIndex: number) => {
+    const nextFloors = floors.map((fl, fIdx) => {
+      if (fIdx !== floorIndex) return fl
+      return { ...fl, operationPoints: fl.operationPoints.filter((_, pIdx) => pIdx !== pointIndex) }
+    })
+    setDraft((cur) => ({
+      ...cur,
+      layout: {
+        ...cur.layout,
+        floors: nextFloors,
+      },
+    }))
+  }
+
+  const handleAddZone = (floorIndex: number) => {
+    const targetFloor = floors[floorIndex]
+    if (!targetFloor) return
+    const nextCode = String.fromCharCode(65 + targetFloor.zones.length)
+    const newZone: FloorFunctionalZone = {
+      id: `zone-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      code: nextCode,
+      name: `Khu lưu trữ ${nextCode}`,
+    }
+    const nextFloors = floors.map((fl, idx) =>
+      idx === floorIndex ? { ...fl, zones: [...fl.zones, newZone] } : fl
+    )
+    setDraft((cur) => ({
+      ...cur,
+      layout: {
+        ...cur.layout,
+        floors: nextFloors,
+      },
+    }))
+  }
+
+  const handleUpdateZone = (floorIndex: number, zoneIndex: number, updates: Partial<FloorFunctionalZone>) => {
+    const nextFloors = floors.map((fl, fIdx) => {
+      if (fIdx !== floorIndex) return fl
+      const nextZones = fl.zones.map((z, zIdx) => (zIdx === zoneIndex ? { ...z, ...updates } : z))
+      return { ...fl, zones: nextZones }
+    })
+    setDraft((cur) => ({
+      ...cur,
+      layout: {
+        ...cur.layout,
+        floors: nextFloors,
+      },
+    }))
+  }
+
+  const handleRemoveZone = (floorIndex: number, zoneIndex: number) => {
+    const nextFloors = floors.map((fl, fIdx) => {
+      if (fIdx !== floorIndex) return fl
+      return { ...fl, zones: fl.zones.filter((_, zIdx) => zIdx !== zoneIndex) }
+    })
+    setDraft((cur) => ({
+      ...cur,
+      layout: {
+        ...cur.layout,
+        floors: nextFloors,
+      },
+    }))
   }
 
   // Validate step transitions
@@ -355,15 +518,26 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
         return false
       }
     } else if (step === 3) {
-      const area1 = draft.layout.totalAreaFloor1.trim()
-      const area2 = draft.layout.totalAreaFloor2.trim()
-      if (area1 && (isNaN(Number(area1)) || Number(area1) <= 0)) {
-        setFormError(t('Diện tích tầng 1 phải là số dương (m²).', 'Floor 1 area must be positive.'))
+      const fls = draft.layout.floors || []
+      if (fls.length === 0) {
+        setFormError(t('Cần cấu hình ít nhất 1 tầng cho cơ sở.', 'At least 1 floor is required.'))
         return false
       }
-      if (area2 && (isNaN(Number(area2)) || Number(area2) <= 0)) {
-        setFormError(t('Diện tích tầng 2 phải là số dương (m²).', 'Floor 2 area must be positive.'))
-        return false
+      for (let i = 0; i < fls.length; i++) {
+        const fl = fls[i]
+        if (!fl.name || !fl.name.trim()) {
+          setFormError(t(`Vui lòng nhập tên cho tầng thứ ${i + 1}.`, `Please enter a name for floor ${i + 1}.`))
+          return false
+        }
+        if (fl.totalArea && fl.totalArea.trim()) {
+          const areaNum = Number(fl.totalArea.trim())
+          if (isNaN(areaNum) || areaNum <= 0) {
+            setFormError(
+              t(`Diện tích của "${fl.name}" phải là số dương (m²).`, `Area of "${fl.name}" must be a positive number.`)
+            )
+            return false
+          }
+        }
       }
     }
     return true
@@ -405,7 +579,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
         status: draft.status,
         latitude,
         longitude,
-        layoutConfig: JSON.stringify(draft.layout),
+        layoutConfig: JSON.stringify(syncLegacyLayoutFields(draft.layout)),
         ...(editingFacility ? { clearCoordinates: latitude === null && longitude === null } : {}),
       }
 
@@ -870,232 +1044,388 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
 
                 {/* SECTION C: SƠ ĐỒ MẶT BẰNG */}
                 {activeStep === 3 && (
-                  <div className="space-y-4 animate-in fade-in">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-4 dark:border-slate-800 dark:bg-slate-800/30">
-                      <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[18px] text-cyan-600">floor</span>
-                        {t('Cấu trúc tầng, phân khu & điểm vận hành', 'Floor & Zone Layout Structure')}
-                      </h4>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        {t(
-                          'Cấu hình tên tầng, tên phân khu, diện tích m² và các điểm nhận hàng/hành lang/lối thoát hiểm. Việc cấu hình sơ đồ hoàn toàn độc lập với các kho vật lý hiện có.',
-                          'Configure floor names, zones, positive area in m², loading bays, and exit doors.'
-                        )}
-                      </p>
+                  <div className="space-y-5 animate-in fade-in">
+                    {/* Header Banner */}
+                    <div className="flex flex-col gap-3 rounded-2xl border border-cyan-100 bg-gradient-to-r from-cyan-50/70 via-white to-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-cyan-900/50 dark:from-cyan-950/30 dark:via-slate-800 dark:to-slate-800/60 shadow-xs">
+                      <div>
+                        <h4 className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-slate-100">
+                          <span className="material-symbols-outlined text-[20px] text-cyan-700 dark:text-cyan-400">apartment</span>
+                          <span>{t('Cấu trúc mặt bằng', 'Floor Layout Structure')}</span>
+                        </h4>
+                        <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
+                          {t('Thiết lập theo cấu trúc thực tế của chi nhánh', 'Configured according to the actual structure of the branch')}
+                        </p>
+                      </div>
+                      <span className="inline-flex items-center gap-1.5 self-start rounded-full border border-cyan-200 bg-cyan-100/80 px-3 py-1 text-xs font-bold text-cyan-800 sm:self-center dark:border-cyan-800 dark:bg-cyan-900/60 dark:text-cyan-200">
+                        <span className="material-symbols-outlined text-[15px]">tune</span>
+                        <span>{t('Có thể tùy chỉnh', 'Customizable')}</span>
+                      </span>
                     </div>
 
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <div className="sm:col-span-2 lg:col-span-3">
-                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          {t('Tiêu đề sơ đồ mặt bằng', 'Layout title')}
-                        </label>
+                    {/* Tiêu đề sơ đồ mặt bằng */}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 dark:border-slate-800 dark:bg-slate-900 shadow-xs">
+                      <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                        {t('Tiêu đề sơ đồ mặt bằng', 'Layout title')}
+                      </label>
+                      <div className="relative mt-2">
+                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">
+                          title
+                        </span>
                         <input
                           value={draft.layout.title}
-                          onChange={(e) => updateLayout('title', e.target.value)}
-                          className={`${inputClassName} mt-1.5`}
+                          onChange={(e) => updateLayoutTitle(e.target.value)}
+                          placeholder="Sơ đồ mặt bằng cơ sở Vinhomes"
+                          className={`${inputClassName} pl-10 font-semibold`}
                         />
-                      </div>
-
-                      {/* Floor 1 Config */}
-                      <div className="rounded-xl border border-slate-200 p-3.5 space-y-3 dark:border-slate-700">
-                        <div className="flex items-center gap-2 text-xs font-bold text-cyan-800 dark:text-cyan-300">
-                          <span className="material-symbols-outlined text-[16px]">layers</span>
-                          <span>{t('Thiết lập Tầng 1', 'Floor 1 Settings')}</span>
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                            {t('Tên tầng 1', 'Floor 1 Name')}
-                          </label>
-                          <input
-                            value={draft.layout.floor1Name}
-                            onChange={(e) => updateLayout('floor1Name', e.target.value)}
-                            className={`${inputClassName} mt-1`}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                            {t('Diện tích tổng tầng 1 (m²)', 'Total Floor 1 Area (m²)')}
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="any"
-                            value={draft.layout.totalAreaFloor1}
-                            onChange={(e) => updateLayout('totalAreaFloor1', e.target.value)}
-                            placeholder="650"
-                            className={`${inputClassName} mt-1`}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                            {t('Khu nhận / xuất hàng', 'Loading Bay')}
-                          </label>
-                          <input
-                            value={draft.layout.loadingBayFloor1}
-                            onChange={(e) => updateLayout('loadingBayFloor1', e.target.value)}
-                            className={`${inputClassName} mt-1`}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                            {t('Hành lang chính', 'Main Corridor')}
-                          </label>
-                          <input
-                            value={draft.layout.corridorNorth}
-                            onChange={(e) => updateLayout('corridorNorth', e.target.value)}
-                            className={`${inputClassName} mt-1`}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                            {t('Lối thoát hiểm', 'Emergency Exit')}
-                          </label>
-                          <input
-                            value={draft.layout.exitFloor1}
-                            onChange={(e) => updateLayout('exitFloor1', e.target.value)}
-                            className={`${inputClassName} mt-1`}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Floor 2 Config */}
-                      <div className="rounded-xl border border-slate-200 p-3.5 space-y-3 dark:border-slate-700">
-                        <div className="flex items-center gap-2 text-xs font-bold text-cyan-800 dark:text-cyan-300">
-                          <span className="material-symbols-outlined text-[16px]">layers</span>
-                          <span>{t('Thiết lập Tầng 2', 'Floor 2 Settings')}</span>
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                            {t('Tên tầng 2', 'Floor 2 Name')}
-                          </label>
-                          <input
-                            value={draft.layout.floor2Name}
-                            onChange={(e) => updateLayout('floor2Name', e.target.value)}
-                            className={`${inputClassName} mt-1`}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                            {t('Diện tích tổng tầng 2 (m²)', 'Total Floor 2 Area (m²)')}
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="any"
-                            value={draft.layout.totalAreaFloor2}
-                            onChange={(e) => updateLayout('totalAreaFloor2', e.target.value)}
-                            placeholder="550"
-                            className={`${inputClassName} mt-1`}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                            {t('Điểm chuyển hàng / Thang hàng', 'Freight Elevator')}
-                          </label>
-                          <input
-                            value={draft.layout.loadingBayFloor2}
-                            onChange={(e) => updateLayout('loadingBayFloor2', e.target.value)}
-                            className={`${inputClassName} mt-1`}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                            {t('Hành lang điều hòa nhiệt độ', 'Climate Corridor')}
-                          </label>
-                          <input
-                            value={draft.layout.corridorClimate}
-                            onChange={(e) => updateLayout('corridorClimate', e.target.value)}
-                            className={`${inputClassName} mt-1`}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                            {t('Lối thoát hiểm', 'Emergency Exit')}
-                          </label>
-                          <input
-                            value={draft.layout.exitFloor2}
-                            onChange={(e) => updateLayout('exitFloor2', e.target.value)}
-                            className={`${inputClassName} mt-1`}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Zones Config */}
-                      <div className="rounded-xl border border-slate-200 p-3.5 space-y-3 dark:border-slate-700">
-                        <div className="flex items-center gap-2 text-xs font-bold text-cyan-800 dark:text-cyan-300">
-                          <span className="material-symbols-outlined text-[16px]">grid_view</span>
-                          <span>{t('Phân khu chức năng', 'Functional Zones')}</span>
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                            {t('Tên phân khu A', 'Zone A Name')}
-                          </label>
-                          <input
-                            value={draft.layout.zoneAName}
-                            onChange={(e) => updateLayout('zoneAName', e.target.value)}
-                            className={`${inputClassName} mt-1`}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                            {t('Tên phân khu B', 'Zone B Name')}
-                          </label>
-                          <input
-                            value={draft.layout.zoneBName}
-                            onChange={(e) => updateLayout('zoneBName', e.target.value)}
-                            className={`${inputClassName} mt-1`}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                            {t('Tên phân khu C', 'Zone C Name')}
-                          </label>
-                          <input
-                            value={draft.layout.zoneCName}
-                            onChange={(e) => updateLayout('zoneCName', e.target.value)}
-                            className={`${inputClassName} mt-1`}
-                          />
-                        </div>
                       </div>
                     </div>
 
-                    {/* Floor Layout Visual Preview */}
-                    <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-2 dark:border-slate-700">
-                        <span className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-[16px] text-cyan-600">visibility</span>
-                          {t('Xem trước mô hình sơ đồ mặt bằng (Preview)', 'Layout Preview')}
-                        </span>
-                        <span className="text-[11px] text-slate-500">{draft.layout.title}</span>
-                      </div>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                        {/* Floor 1 Card */}
-                        <div className="rounded-lg border border-cyan-100 bg-cyan-50/30 p-3 dark:border-cyan-900/50 dark:bg-cyan-950/20">
-                          <div className="flex items-center justify-between text-xs font-bold text-cyan-900 dark:text-cyan-200">
-                            <span>{draft.layout.floor1Name}</span>
-                            <span className="text-[10px] bg-cyan-100 px-2 py-0.5 rounded text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200">
-                              {draft.layout.totalAreaFloor1 ? `${draft.layout.totalAreaFloor1} m²` : 'Chưa định diện tích'}
-                            </span>
-                          </div>
-                          <div className="mt-2 text-[11px] text-slate-600 dark:text-slate-300 space-y-1">
-                            <p>• {t('Điểm giao nhận', 'Bay')}: {draft.layout.loadingBayFloor1}</p>
-                            <p>• {t('Hành lang', 'Corridor')}: {draft.layout.corridorNorth}</p>
-                            <p>• {t('Lối thoát', 'Exit')}: {draft.layout.exitFloor1}</p>
-                          </div>
+                    {/* Danh sách tầng */}
+                    <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 dark:border-slate-800 dark:bg-slate-900 shadow-xs">
+                      {/* Floor bar header */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3.5 dark:border-slate-800">
+                        <div>
+                          <h5 className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-slate-100">
+                            <span className="material-symbols-outlined text-[18px] text-cyan-600">layers</span>
+                            <span>{t('Danh sách tầng', 'Floor List')}</span>
+                          </h5>
+                          <span className="text-xs text-slate-500 dark:text-slate-400">
+                            {floors.length} {t('tầng đã cấu hình', 'configured floors')}
+                          </span>
                         </div>
 
-                        {/* Floor 2 Card */}
-                        <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
-                          <div className="flex items-center justify-between text-xs font-bold text-slate-900 dark:text-slate-100">
-                            <span>{draft.layout.floor2Name}</span>
-                            <span className="text-[10px] bg-slate-200 px-2 py-0.5 rounded text-slate-700 dark:bg-slate-700 dark:text-slate-300">
-                              {draft.layout.totalAreaFloor2 ? `${draft.layout.totalAreaFloor2} m²` : 'Chưa định diện tích'}
-                            </span>
+                        <button
+                          type="button"
+                          onClick={handleAddFloor}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-200 bg-cyan-50 px-3.5 py-2 text-xs font-bold text-cyan-700 shadow-2xs transition hover:bg-cyan-100 cursor-pointer dark:border-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-300"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">add</span>
+                          <span>{t('Thêm tầng', 'Add Floor')}</span>
+                        </button>
+                      </div>
+
+                      {/* Floor Selector Tabs */}
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                        {floors.map((floor, idx) => {
+                          const isCurrent = idx === selectedFloorIndex
+                          return (
+                            <button
+                              key={floor.id || idx}
+                              type="button"
+                              onClick={() => setSelectedFloorIndex(idx)}
+                              className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                                isCurrent
+                                  ? 'border-cyan-600 bg-cyan-700 text-white shadow-sm shadow-cyan-700/20'
+                                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                              }`}
+                            >
+                              <span>{floor.name || `Tầng ${idx + 1}`}</span>
+                              {isCurrent && (
+                                <span className="rounded-full bg-white/25 px-2 py-0.5 text-[10px] font-semibold text-white">
+                                  {t('Đang cấu hình', 'Configuring')}
+                                </span>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      {/* Active Floor Editor */}
+                      {activeFloor && (
+                        <div className="space-y-5 rounded-xl border border-slate-200/90 bg-slate-50/60 p-4 sm:p-5 dark:border-slate-700/80 dark:bg-slate-800/40">
+                          {/* Floor Sub-header with Delete */}
+                          <div className="flex items-center justify-between border-b border-slate-200/80 pb-3 dark:border-slate-700">
+                            <div className="flex items-center gap-2">
+                              <span className="material-symbols-outlined text-[18px] text-cyan-600">settings_suggest</span>
+                              <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                                {t('Cấu hình', 'Settings')}: {activeFloor.name || `Tầng ${selectedFloorIndex + 1}`}
+                              </span>
+                            </div>
+
+                            {floors.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveFloor(selectedFloorIndex)}
+                                className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">delete</span>
+                                <span>{t('Xóa tầng', 'Delete Floor')}</span>
+                              </button>
+                            )}
                           </div>
-                          <div className="mt-2 text-[11px] text-slate-600 dark:text-slate-300 space-y-1">
-                            <p>• {t('Điểm giao nhận', 'Bay')}: {draft.layout.loadingBayFloor2}</p>
-                            <p>• {t('Hành lang', 'Corridor')}: {draft.layout.corridorClimate}</p>
-                            <p>• {t('Lối thoát', 'Exit')}: {draft.layout.exitFloor2}</p>
+
+                          {/* Tên tầng & Diện tích tổng */}
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <div>
+                              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                {t('Tên tầng', 'Floor name')} *
+                              </label>
+                              <input
+                                value={activeFloor.name}
+                                onChange={(e) => handleUpdateFloor(selectedFloorIndex, { name: e.target.value })}
+                                placeholder="Tầng trệt"
+                                className={`${inputClassName} mt-1`}
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                {t('Diện tích tổng (m²)', 'Total Area (m²)')}
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={activeFloor.totalArea || ''}
+                                onChange={(e) => handleUpdateFloor(selectedFloorIndex, { totalArea: e.target.value })}
+                                placeholder="Nhập diện tích"
+                                className={`${inputClassName} mt-1`}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Điểm vận hành */}
+                          <div className="space-y-3 border-t border-slate-200/80 pt-3 dark:border-slate-700">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <h6 className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-slate-100">
+                                  <span className="material-symbols-outlined text-[16px] text-amber-600">navigation</span>
+                                  <span>{t('Điểm vận hành', 'Operational Points')}</span>
+                                </h6>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                  {t('Mỗi tầng có thể có số điểm vận hành khác nhau.', 'Each floor can have a different number of operational points.')}
+                                </p>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleAddOperationPoint(selectedFloorIndex)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-cyan-700 shadow-2xs hover:bg-slate-50 cursor-pointer transition dark:border-slate-700 dark:bg-slate-800 dark:text-cyan-300"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">add</span>
+                                <span>{t('Thêm điểm vận hành', 'Add Operation Point')}</span>
+                              </button>
+                            </div>
+
+                            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                              {activeFloor.operationPoints.map((op, opIdx) => (
+                                <div
+                                  key={op.id || opIdx}
+                                  className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-2xs dark:border-slate-700 dark:bg-slate-800"
+                                >
+                                  <span className="material-symbols-outlined shrink-0 text-[16px] text-slate-400">
+                                    place
+                                  </span>
+                                  <input
+                                    value={op.name}
+                                    onChange={(e) => handleUpdateOperationPoint(selectedFloorIndex, opIdx, e.target.value)}
+                                    placeholder="Khu nhận / xuất hàng..."
+                                    className="w-full bg-transparent text-xs font-medium text-slate-900 outline-none dark:text-slate-100"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveOperationPoint(selectedFloorIndex, opIdx)}
+                                    className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
+                                    title={t('Xóa điểm vận hành', 'Delete point')}
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">close</span>
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Phân khu chức năng */}
+                          <div className="space-y-3 border-t border-slate-200/80 pt-3 dark:border-slate-700">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <h6 className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-slate-100">
+                                  <span className="material-symbols-outlined text-[16px] text-indigo-600">grid_view</span>
+                                  <span>{t('Phân khu chức năng', 'Functional Zones')}</span>
+                                </h6>
+                                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                                  {activeFloor.zones.length} {t('phân khu', 'zones')}
+                                </span>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleAddZone(selectedFloorIndex)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-indigo-700 shadow-2xs hover:bg-slate-50 cursor-pointer transition dark:border-slate-700 dark:bg-slate-800 dark:text-indigo-300"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">add</span>
+                                <span>{t('Thêm phân khu', 'Add Zone')}</span>
+                              </button>
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                              {activeFloor.zones.map((zone, zIdx) => (
+                                <div
+                                  key={zone.id || zIdx}
+                                  className="space-y-2 rounded-xl border border-indigo-100 bg-white p-3 shadow-2xs dark:border-indigo-900/50 dark:bg-slate-800"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                                      <span className="material-symbols-outlined text-[14px]">view_comfy</span>
+                                      <span>Phân khu {zone.code}</span>
+                                    </span>
+
+                                    {activeFloor.zones.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveZone(selectedFloorIndex, zIdx)}
+                                        className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
+                                        title={t('Xóa phân khu', 'Delete zone')}
+                                      >
+                                        <span className="material-symbols-outlined text-[15px]">delete</span>
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                      {t('Tên phân khu:', 'Zone Name:')}
+                                    </label>
+                                    <input
+                                      value={zone.name}
+                                      onChange={(e) => handleUpdateZone(selectedFloorIndex, zIdx, { name: e.target.value })}
+                                      placeholder={`Khu lưu trữ ${zone.code}`}
+                                      className={`${inputClassName} mt-1 py-1.5 text-xs font-medium`}
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Xem trước sơ đồ mặt bằng */}
+                    <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 dark:border-slate-800 dark:bg-slate-900 shadow-xs">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[20px] text-cyan-600">visibility</span>
+                          <h5 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                            {t('Xem trước sơ đồ mặt bằng', 'Floor Plan Preview')}
+                          </h5>
+                        </div>
+                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                          {draft.layout.title || 'Sơ đồ mặt bằng cơ sở'}
+                        </span>
+                      </div>
+
+                      {/* Schematic Visual Box */}
+                      <div className="rounded-xl border border-slate-200/90 bg-gradient-to-b from-slate-50/70 via-slate-50/30 to-white p-4 sm:p-5 dark:border-slate-800 dark:from-slate-800/50 dark:via-slate-800/20 dark:to-slate-900">
+                        {/* Floor Header & Area */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3 dark:border-slate-700">
+                          <div className="flex items-center gap-2.5">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-700 text-white shadow-xs">
+                              <span className="material-symbols-outlined text-[20px]">domain</span>
+                            </div>
+                            <div>
+                              <h6 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                                {activeFloor?.name || 'Tầng trệt'}
+                              </h6>
+                              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                                {floors.length > 1 ? `Tầng ${selectedFloorIndex + 1} / ${floors.length} tầng` : 'Mặt bằng cơ sở'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-bold border ${
+                              activeFloor?.totalArea && Number(activeFloor.totalArea) > 0
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                                : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                            }`}
+                          >
+                            {activeFloor?.totalArea && Number(activeFloor.totalArea) > 0
+                              ? `${activeFloor.totalArea} m²`
+                              : t('Chưa định diện tích', 'Area not set')}
+                          </span>
+                        </div>
+
+                        {/* Schematic layout items */}
+                        <div className="mt-4 space-y-3">
+                          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            {/* Operational Point 1 (e.g. Khu nhận / xuất hàng) */}
+                            {activeFloor?.operationPoints?.[0] && (
+                              <div className="flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50/50 p-3.5 text-amber-900 shadow-2xs dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300">
+                                  <span className="material-symbols-outlined text-[18px]">local_shipping</span>
+                                </div>
+                                <div className="min-w-0">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                                    {t('Điểm vận hành', 'Operation Point')}
+                                  </span>
+                                  <p className="truncate text-xs font-bold">
+                                    {activeFloor.operationPoints[0].name || 'Khu nhận / xuất hàng'}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Functional Zones */}
+                            {activeFloor?.zones.map((zone) => (
+                              <div
+                                key={zone.id}
+                                className="flex items-center gap-2.5 rounded-xl border border-indigo-200 bg-indigo-50/50 p-3.5 text-indigo-900 shadow-2xs dark:border-indigo-900/50 dark:bg-indigo-950/30 dark:text-indigo-200"
+                              >
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
+                                  <span className="material-symbols-outlined text-[18px]">warehouse</span>
+                                </div>
+                                <div className="min-w-0">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                                    Phân khu {zone.code}
+                                  </span>
+                                  <p className="truncate text-xs font-bold">
+                                    {zone.name || `Khu lưu trữ ${zone.code}`}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* Remaining Operational Points (e.g. Hành lang chính, Lối thoát hiểm) */}
+                            {activeFloor?.operationPoints?.slice(1).map((op, idx) => {
+                              const isExit =
+                                op.name.toLowerCase().includes('thoát') ||
+                                op.name.toLowerCase().includes('exit')
+                              return (
+                                <div
+                                  key={op.id || idx}
+                                  className={`flex items-center gap-2.5 rounded-xl border p-3.5 shadow-2xs ${
+                                    isExit
+                                      ? 'border-rose-200 bg-rose-50/50 text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-200'
+                                      : 'border-slate-200 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                                  }`}
+                                >
+                                  <div
+                                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                                      isExit
+                                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300'
+                                        : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                                    }`}
+                                  >
+                                    <span className="material-symbols-outlined text-[18px]">
+                                      {isExit ? 'emergency' : 'alt_route'}
+                                    </span>
+                                  </div>
+                                  <div className="min-w-0">
+                                    <span
+                                      className={`text-[10px] font-bold uppercase tracking-wider ${
+                                        isExit
+                                          ? 'text-rose-600 dark:text-rose-400'
+                                          : 'text-slate-500 dark:text-slate-400'
+                                      }`}
+                                    >
+                                      {t('Điểm vận hành', 'Operation Point')}
+                                    </span>
+                                    <p className="truncate text-xs font-bold">{op.name}</p>
+                                  </div>
+                                </div>
+                              )
+                            })}
                           </div>
                         </div>
                       </div>
@@ -1159,25 +1489,37 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                         </div>
                       </div>
 
-                      <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-white p-4 space-y-2 dark:border-slate-700 dark:bg-slate-800">
-                        <div className="text-xs font-bold text-slate-900 dark:text-slate-100 border-b pb-1 dark:border-slate-700">
-                          {t('3. Sơ đồ phân khu', 'Floor Layout Zones')}
+                      <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-white p-4 space-y-3 dark:border-slate-700 dark:bg-slate-800">
+                        <div className="flex items-center justify-between border-b pb-2 dark:border-slate-700">
+                          <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                            {t('3. Sơ đồ mặt bằng & phân khu', 'Floor Layout & Zones')}
+                          </span>
+                          <span className="text-[11px] font-medium text-slate-500">
+                            {draft.layout.title || 'Sơ đồ mặt bằng cơ sở'}
+                          </span>
                         </div>
-                        <div className="grid gap-2 sm:grid-cols-3 text-xs text-slate-600 dark:text-slate-300">
-                          <div>
-                            <p className="font-semibold text-slate-800 dark:text-slate-200">{draft.layout.floor1Name}</p>
-                            <p className="text-[11px] text-slate-500">Diện tích: {draft.layout.totalAreaFloor1 || '—'} m²</p>
-                          </div>
-                          <div>
-                            <p className="font-semibold text-slate-800 dark:text-slate-200">{draft.layout.floor2Name}</p>
-                            <p className="text-[11px] text-slate-500">Diện tích: {draft.layout.totalAreaFloor2 || '—'} m²</p>
-                          </div>
-                          <div>
-                            <p className="font-semibold text-slate-800 dark:text-slate-200">Phân khu</p>
-                            <p className="text-[11px] text-slate-500">
-                              {draft.layout.zoneAName} · {draft.layout.zoneBName} · {draft.layout.zoneCName}
-                            </p>
-                          </div>
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-xs text-slate-600 dark:text-slate-300">
+                          {(draft.layout.floors || []).map((fl, fIdx) => (
+                            <div
+                              key={fl.id || fIdx}
+                              className="rounded-lg border border-slate-100 bg-slate-50/70 p-3 space-y-1.5 dark:border-slate-700/60 dark:bg-slate-800/60"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-slate-900 dark:text-slate-100">{fl.name}</span>
+                                <span className="text-[10px] bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 dark:bg-slate-700 dark:text-slate-300 font-medium">
+                                  {fl.totalArea && Number(fl.totalArea) > 0 ? `${fl.totalArea} m²` : 'Chưa định diện tích'}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">{t('Điểm vận hành:', 'Ops:')}</span>{' '}
+                                {fl.operationPoints.length > 0 ? fl.operationPoints.map((op) => op.name).join(', ') : 'Chưa có'}
+                              </p>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">{t('Phân khu:', 'Zones:')}</span>{' '}
+                                {fl.zones.length > 0 ? fl.zones.map((z) => `${z.code} (${z.name})`).join(', ') : 'Chưa có'}
+                              </p>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     </div>
@@ -1318,7 +1660,9 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                             : t('Chưa có tọa độ GPS', 'GPS not set')}
                         </span>
                         <span className="rounded-full bg-cyan-50 px-2.5 py-1 font-semibold text-cyan-800 dark:bg-cyan-950/50 dark:text-cyan-200">
-                          {layout.floor1Name} · {layout.floor2Name}
+                          {layout.floors && layout.floors.length > 0
+                            ? layout.floors.map((fl) => fl.name).join(' · ')
+                            : `${layout.floor1Name} · ${layout.floor2Name}`}
                         </span>
                       </div>
 
