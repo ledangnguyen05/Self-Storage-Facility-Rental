@@ -145,7 +145,7 @@ function MainContent() {
               }
             />
 
-{/* 2. Staff Portal: Staff, Facility Manager, Admin */}
+            {/* 2. Staff Portal: Staff, Facility Manager, Admin */}
             <Route
               path="staff"
               element={

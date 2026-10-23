@@ -43,7 +43,7 @@ public class BookingController {
     }
 
 @GetMapping("/my-requests")
-    @PreAuthorize("hasRole('CUSTOMER')")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'ADMIN')")
     @Operation(summary = "Lấy các yêu cầu đặt kho đang chờ duyệt hoặc chờ thanh toán")
     public ResponseEntity<ApiResponse<List<BookingResponse>>> getMyRequests() {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getMyBookingRequests()));
