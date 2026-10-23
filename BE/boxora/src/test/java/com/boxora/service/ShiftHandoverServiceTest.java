@@ -81,7 +81,6 @@ class ShiftHandoverServiceTest {
         facilityId = UUID.randomUUID();
         staff1Id = UUID.randomUUID();
         staff2Id = UUID.randomUUID();
-        managerId = UUID.randomUUID();
 
         facility = Facility.builder().name("Boxora Tan Binh").code("HCM-TB").build();
         facility.setId(facilityId);
@@ -129,7 +128,11 @@ class ShiftHandoverServiceTest {
         saved.setId(UUID.randomUUID());
         when(shiftHandoverRepository.save(any(ShiftHandover.class))).thenReturn(saved);
 
-        ShiftHandoverResponse resp = ShiftHandoverResponse.builder().id(saved.getId()).status(ShiftHandoverStatus.SUBMITTED).build();
+        ShiftHandoverResponse resp = ShiftHandoverResponse.builder()
+                .id(saved.getId())
+                .status(ShiftHandoverStatus.SUBMITTED)
+                .handoverType(ShiftHandoverType.ROUTINE)
+                .build();
         when(shiftHandoverMapper.toResponse(saved)).thenReturn(resp);
 
         ShiftHandoverResponse res = shiftHandoverService.createHandover(req);

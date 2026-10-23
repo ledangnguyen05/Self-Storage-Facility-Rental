@@ -61,6 +61,10 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
         log.info("Creating staff assignment for staffId={} at facilityId={}, date={}, shift={}",
                 request.getStaffId(), request.getFacilityId(), request.getAssignedDate(), request.getShift());
 
+        if (request.getShift() == StaffShift.FULL_DAY) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Chỉ hỗ trợ 3 ca chuẩn: MORNING, AFTERNOON, NIGHT");
+        }
+
         // 1. Kiểm tra ngày phân công (không được phân công cho ngày trong quá khứ)
         if (request.getAssignedDate().isBefore(LocalDate.now(BUSINESS_ZONE))) {
             throw new AppException(ErrorCode.INVALID_ASSIGNMENT_DATE);
@@ -152,6 +156,7 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
                 }
             }
         }
+        validateShiftTimes(request.getShift(), startTime, endTime);
         ensureNoOverlappingAssignment(staff.getId(), request.getAssignedDate(), startTime, endTime, null);
 
         // 7. Tạo thực thể phân công ca
@@ -224,6 +229,9 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
         }
 
         StaffShift effectiveShift = request.getShift() != null ? request.getShift() : assignment.getShift();
+        if (request.getShift() == StaffShift.FULL_DAY) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Chỉ hỗ trợ 3 ca chuẩn: MORNING, AFTERNOON, NIGHT");
+        }
         java.time.LocalTime effectiveStartTime = request.getStartTime() != null
                 ? request.getStartTime() : assignment.getStartTime();
         java.time.LocalTime effectiveEndTime = request.getEndTime() != null
@@ -233,6 +241,10 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             java.time.LocalTime[] times = defaultShiftTimes(effectiveShift);
             effectiveStartTime = times[0];
             effectiveEndTime = times[1];
+        }
+
+        if (request.getShift() != null || request.getStartTime() != null || request.getEndTime() != null) {
+            validateShiftTimes(effectiveShift, effectiveStartTime, effectiveEndTime);
         }
 
         if ((request.getShift() != null && request.getShift() != assignment.getShift())
@@ -677,5 +689,16 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             case NIGHT -> new java.time.LocalTime[]{java.time.LocalTime.of(22, 0), java.time.LocalTime.of(6, 0)};
             case FULL_DAY -> new java.time.LocalTime[]{java.time.LocalTime.of(8, 0), java.time.LocalTime.of(17, 0)};
         };
+    }
+
+    private void validateShiftTimes(StaffShift shift, java.time.LocalTime startTime, java.time.LocalTime endTime) {
+        if (shift == null || shift == StaffShift.FULL_DAY || startTime == null || endTime == null) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Chỉ hỗ trợ 3 ca chuẩn: MORNING, AFTERNOON, NIGHT");
+        }
+
+        java.time.LocalTime[] expectedTimes = defaultShiftTimes(shift);
+        if (!expectedTimes[0].equals(startTime) || !expectedTimes[1].equals(endTime)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Giờ bắt đầu và kết thúc phải khớp với ca làm việc chuẩn");
+        }
     }
 }

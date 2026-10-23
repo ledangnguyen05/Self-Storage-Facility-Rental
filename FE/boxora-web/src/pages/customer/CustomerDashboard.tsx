@@ -40,7 +40,11 @@ const safeFormatDateTime = (dateVal?: string | null, fallback = ''): string => {
   }
 }
 
-export const CustomerDashboard: React.FC = () => {
+interface CustomerDashboardProps {
+  bookingOnly?: boolean
+}
+
+export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnly = false }) => {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -675,6 +679,46 @@ export const CustomerDashboard: React.FC = () => {
   }
 
   const [selectedBookingUnit, setSelectedBookingUnit] = useState<PortalBookingUnitData | null>(null)
+
+  useEffect(() => {
+    if (!bookingOnly || selectedBookingUnit) return
+
+    const unitId = searchParams.get('unit')
+    if (!unitId) {
+      navigate('/units', { replace: true })
+      return
+    }
+    if (loadingUnits) return
+
+    const unit = availableUnits.find((candidate) => candidate.id === unitId)
+    if (!unit) {
+      navigate('/units', { replace: true })
+      return
+    }
+
+    const price = Number(unit.pricePerMonth) || 0
+    setSelectedBookingUnit({
+      id: unit.id,
+      unitCode: unit.unitCode,
+      name: `Kho ${unit.unitCode}`,
+      facilityId: unit.facilityId,
+      facilityName: unit.facilityName,
+      facilityStatus: unit.facilityStatus,
+      priceFormatted: `${price.toLocaleString('vi-VN')} ₫`,
+      priceNumber: price,
+      depositNumber: Number(unit.depositAmount) || price,
+      areaSqMeters: unit.areaSqMeters,
+      floorLevel: unit.floorLevel,
+    })
+  }, [availableUnits, bookingOnly, loadingUnits, navigate, searchParams, selectedBookingUnit])
+
+  const closeBookingModal = () => {
+    if (bookingOnly) {
+      navigate('/units')
+      return
+    }
+    setSelectedBookingUnit(null)
+  }
 
   // Reschedule Modal state
   const [rescheduleBookingTarget, setRescheduleBookingTarget] = useState<Booking | null>(null)
@@ -4769,7 +4813,7 @@ export const CustomerDashboard: React.FC = () => {
       {selectedBookingUnit && (
         <PortalBookingReservationModal
           unit={selectedBookingUnit}
-          onClose={() => setSelectedBookingUnit(null)}
+          onClose={closeBookingModal}
           onNavigate={handleTabChange}
           onRefresh={async () => {
             await Promise.all([fetchCustomerBookings(), fetchContracts(), fetchCustomerPayments(), fetchAvailableUnits()])

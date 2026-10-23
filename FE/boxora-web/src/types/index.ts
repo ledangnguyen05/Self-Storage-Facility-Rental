@@ -110,6 +110,7 @@ export interface StorageUnit {
   unitTypeName: string
   pricePerMonth: number
   depositAmount?: number
+  imageUrl?: string
   areaSqMeters?: number
   batteryLevel?: string
   smartLockSerial?: string

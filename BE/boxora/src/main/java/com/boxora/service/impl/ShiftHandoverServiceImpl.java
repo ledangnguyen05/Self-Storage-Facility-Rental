@@ -75,6 +75,10 @@ public class ShiftHandoverServiceImpl implements ShiftHandoverService {
         User outgoingStaff = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
 
+        ShiftHandoverType handoverType = request.getHandoverType() != null
+                ? request.getHandoverType()
+                : ShiftHandoverType.ROUTINE;
+
         User incomingStaff = null;
         if (request.getIncomingStaffId() != null) {
             incomingStaff = userRepository.findById(request.getIncomingStaffId()).orElse(null);
@@ -118,10 +122,13 @@ public class ShiftHandoverServiceImpl implements ShiftHandoverService {
                 .pendingTicketsCount(request.getPendingTicketsCount() != null ? request.getPendingTicketsCount() : 0)
                 .unresolvedBookingsCount(request.getUnresolvedBookingsCount() != null ? request.getUnresolvedBookingsCount() : 0)
                 .cashInDrawer(request.getCashInDrawer() != null ? request.getCashInDrawer() : BigDecimal.ZERO)
+                .cashCounted(request.getCashCounted())
+                .cashDiscrepancy(request.getCashDiscrepancy() != null ? request.getCashDiscrepancy() : BigDecimal.ZERO)
+                .cashDiscrepancyReason(request.getCashDiscrepancyReason())
                 .facilityStatusNote(request.getFacilityStatusNote())
                 .checklistCompleted(true)
                 .notes(request.getNotes())
-                .status(ShiftHandoverStatus.SUBMITTED)
+                .status(initialStatus)
                 .build();
 
         ShiftHandover saved = shiftHandoverRepository.save(handover);

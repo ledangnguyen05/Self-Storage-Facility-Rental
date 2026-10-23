@@ -69,6 +69,13 @@ public class ShiftHandoverCreateRequest {
     @Builder.Default
     private BigDecimal cashInDrawer = BigDecimal.ZERO;
 
+    private BigDecimal cashCounted;
+
+    @Builder.Default
+    private BigDecimal cashDiscrepancy = BigDecimal.ZERO;
+
+    private String cashDiscrepancyReason;
+
     @Schema(description = "Tình trạng thiết bị cơ sở (camera, cảm biến, cửa từ, PCCC)", example = "Cửa từ hoạt động ổn định, điều hòa duy trì 24 độ C")
     private String facilityStatusNote;
 

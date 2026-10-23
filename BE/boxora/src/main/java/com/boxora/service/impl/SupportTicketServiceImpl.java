@@ -119,6 +119,9 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         // Resolve associated booking and facility
         Booking booking = null;
         Facility facility = null;
+        StorageUnit storageUnit = null;
+        User createdByStaff = isStaffOrManager ? currentStaffOrManager : null;
+        Boolean isStaffRecorded = isStaffOrManager;
 
         if (request.getBookingId() != null) {
             booking = bookingRepository.findById(request.getBookingId())
@@ -133,6 +136,7 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             }
 
             if (booking.getStorageUnit() != null) {
+                storageUnit = booking.getStorageUnit();
                 facility = booking.getStorageUnit().getFacility();
             }
             if (isStaffOrManager && (facility == null
@@ -152,6 +156,22 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         }
         if (facility == null && !isStaffOrManager) {
             facility = facilityRepository.findAllByOrderByCreatedAtAsc().stream().findFirst().orElse(null);
+        }
+
+        if (request.getStorageUnitId() != null) {
+            storageUnit = storageUnitRepository.findById(request.getStorageUnitId())
+                    .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
+        } else if (storageUnit == null && request.getUnitCode() != null && facility != null) {
+            storageUnit = storageUnitRepository.findByFacility_IdAndUnitCodeIgnoreCase(
+                    facility.getId(), request.getUnitCode().trim()
+            ).orElse(null);
+        }
+
+        if (storageUnit != null && storageUnit.getFacility() != null) {
+            if (facility != null && !facility.getId().equals(storageUnit.getFacility().getId())) {
+                throw new AppException(ErrorCode.TICKET_FACILITY_MISMATCH);
+            }
+            facility = storageUnit.getFacility();
         }
 
         String ticketCode = generateUniqueTicketCode();

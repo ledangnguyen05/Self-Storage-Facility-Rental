@@ -46,10 +46,6 @@ public class FacilityController {
         return ResponseEntity.ok(ApiResponse.success("Tải ảnh cơ sở lên Cloudflare R2 thành công", response));
     }
 
-    public FacilityController(FacilityService facilityService) {
-        this.facilityService = facilityService;
-    }
-
     @GetMapping("{id}")
     @Operation(summary = "Lấy cơ sở theo ID")
     public ResponseEntity<ApiResponse<FacilityResponse>> getById(@PathVariable UUID id) {

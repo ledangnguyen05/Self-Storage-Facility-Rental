@@ -14,6 +14,8 @@ import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
 import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
 import { PaymentResultPage } from './pages/public/PaymentResultPage'
 import { OnlineBookingContractPage } from './pages/customer/OnlineBookingContractPage'
+import { MyBookingsPage } from './pages/customer/MyBookingsPage'
+import { FacilitiesPage } from './pages/public/FacilitiesPage'
 
 // StorageOps Pro Portals (Matching Prototype Stitch Files)
 
@@ -106,7 +108,6 @@ function MainContent() {
           <Route path="/standards" element={<TermsAndStandardsPage />} />
           <Route path="/policies" element={<TermsAndStandardsPage />} />
 
-          {/* Boxora Terms & Standards Dashboard */}
           <Route
             path="/my-bookings"
             element={
@@ -116,10 +117,6 @@ function MainContent() {
             }
           />
           <Route path="/customer/bookings" element={<Navigate to="/my-bookings" replace />} />
-
-          <Route path="/terms" element={<TermsAndStandardsPage />} />
-          <Route path="/standards" element={<TermsAndStandardsPage />} />
-          <Route path="/policies" element={<TermsAndStandardsPage />} />
 
           {/* Core StorageOps Pro Portal with RBAC Route Protection */}
           <Route

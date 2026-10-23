@@ -15,7 +15,7 @@ public class StorageUnit extends BaseEntity {
         super();
     }
 
-    public StorageUnit(String unitCode, String floorLevel, UnitStatus status, Facility facility, UnitType unitType, java.math.BigDecimal pricePerMonth) {
+    public StorageUnit(String unitCode, String floorLevel, UnitStatus status, Facility facility, UnitType unitType, java.math.BigDecimal pricePerMonth, String imageUrl) {
         super();
         this.unitCode = unitCode;
         this.floorLevel = floorLevel;
@@ -23,6 +23,7 @@ public class StorageUnit extends BaseEntity {
         this.facility = facility;
         this.unitType = unitType;
         this.pricePerMonth = pricePerMonth;
+        this.imageUrl = imageUrl;
     }
 
     @Column(name = "unit_code", nullable = false, length = 30)
@@ -45,6 +46,9 @@ public class StorageUnit extends BaseEntity {
 
     @Column(name = "price_per_month", precision = 12, scale = 2)
     private java.math.BigDecimal pricePerMonth;
+
+    @Column(name = "image_url", length = 1000)
+    private String imageUrl;
 
     public java.math.BigDecimal getEffectiveBasePrice() {
         if (pricePerMonth != null) {
