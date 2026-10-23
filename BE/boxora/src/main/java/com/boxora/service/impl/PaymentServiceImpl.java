@@ -19,11 +19,8 @@ import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.PaymentMapper;
 import com.boxora.repository.BookingRepository;
 import com.boxora.repository.PaymentRepository;
-<<<<<<< Updated upstream
-=======
 import com.boxora.repository.RentalContractRepository;
 import com.boxora.repository.StorageUnitRepository;
->>>>>>> Stashed changes
 import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
 import com.boxora.service.ContractRenewalService;
@@ -70,6 +67,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractRenewalService> contractRenewalServiceProvider;
     private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractSigningService> contractSigningServiceProvider;
     private final com.boxora.service.StorageUnitLockService storageUnitLockService;
+    private final com.boxora.repository.RefundRequestRepository refundRequestRepository;
 
     private UUID extractFacilityId(Payment payment) {
         if (payment == null) return null;
@@ -82,8 +80,6 @@ public class PaymentServiceImpl implements PaymentService {
         return null;
     }
 
-<<<<<<< Updated upstream
-=======
     public record BookingPaymentSummary(
             BigDecimal requiredDeposit,
             BigDecimal requiredFirstMonthRent,
@@ -445,8 +441,6 @@ public class PaymentServiceImpl implements PaymentService {
                 String.format("Tự hủy đơn %s ngay sau khi giao dịch %s thất bại hoặc bị hủy; kho được trả về trạng thái trống.",
                         booking.getBookingCode(), transactionRef));
     }
-
->>>>>>> Stashed changes
     @Override
     public VNPayPaymentResponse createVNPayPayment(PaymentCreateRequest request, HttpServletRequest httpRequest) {
         Booking booking = bookingRepository.findById(request.getBookingId())

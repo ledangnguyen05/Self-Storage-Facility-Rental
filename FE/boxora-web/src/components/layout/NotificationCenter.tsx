@@ -1,10 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-<<<<<<< Updated upstream
-import { Link } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext'
-=======
-import { useNavigate } from 'react-router-dom'
->>>>>>> Stashed changes
+import { useNavigate, Link } from 'react-router-dom'
+
 import { NotificationLog, notificationService } from '../../services/notificationService'
 import { reservationEmailService } from '../../services/reservationEmailService'
 import { useAuth } from '../../context/AuthContext'
@@ -31,35 +27,19 @@ const formatDate = (value?: string) => {
 
 const getTypeLabel = (type?: string) => {
   switch (type) {
-<<<<<<< Updated upstream
-    case 'BOOKING_CREATED': return 'Yêu cầu đã ghi nhận'
-    case 'BOOKING_APPROVAL_REQUEST': return 'Chờ duyệt'
-    case 'BOOKING_PREPARATION': return 'Chuẩn bị kho'
-=======
     case 'NEW_BOOKING_RESERVATION': return 'Đơn giữ chỗ mới'
     case 'HANDOVER_PIN':
     case 'HANDOVER_CHECKIN': return 'Mã PIN & Bàn giao'
->>>>>>> Stashed changes
+
     case 'RENEWAL_REMINDER_3D': return 'Sắp hết hạn'
     case 'RENEWAL_REMINDER_7D': return 'Gia hạn'
     case 'REFUND_STATUS': return 'Hoàn tiền'
     case 'SEALING_NOTICE': return 'Niêm phong'
     case 'UNSEALING_NOTICE': return 'Mở niêm phong'
-    case 'NEW_BOOKING_RESERVATION': return 'Đơn giữ chỗ mới'
     default: return type?.replaceAll('_', ' ') || 'Thông báo'
   }
 }
 
-<<<<<<< Updated upstream
-const getNotificationAction = (item: NotificationLog, role?: string | null) => {
-  if (item.notificationType === 'BOOKING_APPROVAL_REQUEST'
-    && ['ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER'].includes(role || '')
-    && item.referenceId) {
-    return {
-      label: 'Xem & duyệt',
-      to: `/portal/facility-manager?bookingApprovalId=${encodeURIComponent(item.referenceId)}`,
-    }
-=======
 const getTypeBadgeStyle = (type?: string) => {
   switch (type) {
     case 'NEW_BOOKING_RESERVATION':
@@ -79,9 +59,29 @@ const getTypeBadgeStyle = (type?: string) => {
       return 'bg-purple-100 text-purple-800 border-purple-200'
     default:
       return 'bg-slate-100 text-slate-700 border-slate-200'
->>>>>>> Stashed changes
   }
+}
 
+const getReadNotificationIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem('boxora_read_notification_ids')
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw)
+    return new Set(Array.isArray(parsed) ? parsed : [])
+  } catch {
+    return new Set()
+  }
+}
+
+const saveReadNotificationIds = (ids: Set<string>) => {
+  try {
+    localStorage.setItem('boxora_read_notification_ids', JSON.stringify(Array.from(ids)))
+  } catch {
+    // Ignore storage quota
+  }
+}
+
+const getNotificationAction = (item: NotificationLog, role?: string | null) => {
   if (item.notificationType === 'BOOKING_PREPARATION' && role === 'STAFF' && item.referenceId) {
     return {
       label: 'Xem chi tiết kho',
@@ -97,24 +97,29 @@ const getTypeBadgeStyle = (type?: string) => {
 }
 
 const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
-<<<<<<< Updated upstream
-  const { role } = useAuth()
-=======
   const navigate = useNavigate()
->>>>>>> Stashed changes
+  const { user, role } = useAuth()
+
   const [isOpen, setIsOpen] = useState(false)
   const [items, setItems] = useState<NotificationLog[]>([])
+  const [readIds, setReadIds] = useState<Set<string>>(() => getReadNotificationIds())
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
-<<<<<<< Updated upstream
-=======
   const [hasNewAlert, setHasNewAlert] = useState(false)
   const [activeTab, setActiveTab] = useState<'all' | 'unread' | 'important'>('all')
 
+  const markAsRead = (id: string) => {
+    setReadIds((prev) => {
+      const next = new Set(prev)
+      next.add(id)
+      saveReadNotificationIds(next)
+      return next
+    })
+  }
+
   // Real-time floating Toast notification for new items
   const [floatingToast, setFloatingToast] = useState<NotificationLog | null>(null)
-  const { user } = useAuth()
   const [reviewBooking, setReviewBooking] = useState<any | null>(null)
   const [isRejecting, setIsRejecting] = useState<boolean>(false)
   const [rejectionReason, setRejectionReason] = useState<string>('')
@@ -122,7 +127,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
   const [isProcessingAction, setIsProcessingAction] = useState<boolean>(false)
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
->>>>>>> Stashed changes
+
   const panelRef = useRef<HTMLDivElement>(null)
   const requestIdRef = useRef(0)
 
@@ -210,24 +215,6 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
     if (nextOpen) void loadNotifications()
   }
 
-<<<<<<< Updated upstream
-  return (
-    <div ref={panelRef} className="relative">
-      <button
-        type="button"
-        onClick={togglePanel}
-        aria-label={items.length ? `Thông báo gần đây, ${items.length} mục` : 'Mở thông báo gần đây'}
-        aria-haspopup="dialog"
-        aria-expanded={isOpen}
-        aria-controls="dashboard-notifications-panel"
-        title="Thông báo gần đây"
-        className={`relative flex h-10 w-10 items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-600 focus-visible:ring-offset-2 ${isOpen ? 'border-cyan-200 bg-cyan-50 text-cyan-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'}`}
-      >
-        <span className="material-symbols-outlined text-[21px]">notifications</span>
-        {items.length > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-cyan-700 px-1 text-[9px] font-bold leading-none text-white">
-            {items.length > 9 ? '9+' : items.length}
-=======
   const handleNotificationClick = (item: NotificationLog) => {
     markAsRead(item.id)
     setExpandedId((prev) => (prev === item.id ? null : item.id))
@@ -410,10 +397,13 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
         >
           <span className={`material-symbols-outlined text-[20px] ${hasNewAlert || unreadCount > 0 ? 'animate-[wiggle_1s_ease-in-out_infinite]' : ''}`}>
             notifications
->>>>>>> Stashed changes
           </span>
-        )}
-      </button>
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white ring-2 ring-white dark:ring-slate-900">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+        </button>
 
       {isOpen && (
         <section
@@ -512,19 +502,8 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
                 })}
               </ul>
             )}
-<<<<<<< Updated upstream
           </div>
-
-          {items.length > 0 && !error && (
-            <footer className="border-t border-slate-100 px-4 py-2.5 text-center text-[10px] text-slate-400">
-              Hiển thị {items.length} thông báo gần nhất
-            </footer>
-          )}
         </section>
-      )}
-    </div>
-=======
-          </section>
         )}
       </div>
       {/* MODAL XEM CHI TIẾT ĐƠN GIỮ CHỖ & XÁC NHẬN / TỪ CHỐI (KHI BẤM TỪ THÔNG BÁO) */}
@@ -757,7 +736,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
         </div>
       )}
     </>
->>>>>>> Stashed changes
+
   )
 }
 

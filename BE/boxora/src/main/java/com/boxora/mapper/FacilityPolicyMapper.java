@@ -5,6 +5,9 @@ import com.boxora.dto.response.FacilityPolicyResponse;
 import com.boxora.entity.FacilityPolicy;
 import org.mapstruct.*;
 
+/**
+ * FacilityPolicyMapper
+ */
 @Mapper(
         componentModel = "spring",
         nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE

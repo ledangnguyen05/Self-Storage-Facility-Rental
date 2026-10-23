@@ -1,29 +1,21 @@
-<<<<<<< Updated upstream
-import React, { useState, useEffect, useMemo } from 'react'
-=======
 import React, { useState, useEffect, useMemo, useRef } from 'react'
->>>>>>> Stashed changes
+
 import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { bookingService } from '../../services/bookingService'
+import { paymentService, PaymentItem } from '../../services/paymentService'
 import { handoverService } from '../../services/handoverService'
 import { reportService } from '../../services/reportService'
 import { masterKeyService } from '../../services/masterKeyService'
 import { supportTicketService } from '../../services/supportTicketService'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
-<<<<<<< Updated upstream
-import { paymentService, PaymentItem } from '../../services/paymentService'
-import { Booking, OccupancyReport, StorageUnit, Facility } from '../../types'
-=======
-import { Booking, StorageUnit, Facility, FacilityPolicy } from '../../types'
+import { Booking, StorageUnit, Facility, FacilityPolicy, OccupancyReport } from '../../types'
 import { extractFloor, resolveBookingFloor, filterArrivals, AppointmentStatusFilter } from '../../utils/floorUtils'
 import { reservationEmailService } from '../../services/reservationEmailService'
->>>>>>> Stashed changes
+
 import { HandoverCheckInWorkbench } from './components/HandoverCheckInWorkbench'
 import { QrCameraCheckInModal } from './components/QrCameraCheckInModal'
-<<<<<<< HEAD
-=======
 import { StaffPolicyGuideModal } from './components/StaffPolicyGuideModal'
 import { staffAssignmentService, StaffAssignmentResponse, isShiftAbsent } from '../../services/staffAssignmentService'
 import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
@@ -52,7 +44,7 @@ const isAssignmentOnDuty = (assignment: StaffAssignmentResponse | null, now = ne
   if (!assignment || assignment.status !== 'CHECKED_IN' || !assignment.checkedInAt || assignment.checkedOutAt) return false
   return isWithinAssignmentWindow(assignment, now)
 }
->>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
+
 
 export const StaffDashboard: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -61,17 +53,39 @@ export const StaffDashboard: React.FC = () => {
     selectedFacility?: string
     facilities?: Facility[]
   }>() || {}
-
-<<<<<<< Updated upstream
-  // Stepper state for Spotlight Handover (Trần Minh Tuấn - #A-112)
-  const [handoverStep, setHandoverStep] = useState(4)
-  const [handoverCompleted, setHandoverCompleted] = useState(false)
-  const [isCheckInApiCalling, setIsCheckInApiCalling] = useState(false)
+  const isAdmin = user?.role?.name === 'ADMIN' || user?.roleName === 'ADMIN' || (user as any)?.role === 'ADMIN'
+  const resolvedRole = (typeof user?.role === 'string' ? user?.role : user?.role?.name || user?.roleName || 'STAFF').toUpperCase()
+  const [facilities, setFacilities] = useState<Facility[]>([])
   const [checkInSuccessMsg, setCheckInSuccessMsg] = useState<string | null>(null)
-=======
+
+  const currentTargetFacility = selectedFacility || (facilities.length > 0 ? facilities[0].id : '')
+
+  // Master Key Emergency Override Modal (BR-RULE-009)
+  const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false)
+  const [emergencyFacilityId, setEmergencyFacilityId] = useState('')
+  const [emergencyReason, setEmergencyReason] = useState('Sự cố kẹt khóa điện tử khẩn cấp tại cửa phân khu')
+  const [emergencyCategory, setEmergencyCategory] = useState<'MAINTENANCE_EMERGENCY' | 'FIRE_HAZARD' | 'POLICE_WARRANT' | 'ABANDONED_AUCTION' | 'INTERNAL_AUDIT'>('MAINTENANCE_EMERGENCY')
+  const [emergencySeverity, setEmergencySeverity] = useState<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'>('CRITICAL')
+  const [witnessStaffId, setWitnessStaffId] = useState('')
+  const [witnessPassword, setWitnessPassword] = useState('')
+  const [isEmergencyCalling, setIsEmergencyCalling] = useState(false)
+  const [emergencyResult, setEmergencyResult] = useState<string | null>(null)
+  const [emergencyError, setEmergencyError] = useState<string | null>(null)
+
+  const assignedFacilityName = useMemo(() => {
+    return facilities.find(f => f.id === selectedFacility)?.name || 'Cơ sở Boxora'
+  }, [facilities, selectedFacility])
+
+  const closeBookingDetail = () => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('bookingId')
+      return next
+    })
+  }
+
   // Work Shift & Attendance State
   type StaffTab = 'pending_orders' | 'reception' | 'renewals'
-  const [searchParams, setSearchParams] = useSearchParams()
   const [staffActiveTab, setStaffActiveTab] = useState<StaffTab>(() => {
     const tabParam = new URLSearchParams(window.location.search).get('tab')
     if (tabParam === 'pending_orders' || tabParam === 'reception' || tabParam === 'renewals') {
@@ -93,7 +107,7 @@ export const StaffDashboard: React.FC = () => {
   // Facility policy & guide
   const [staffFacilityPolicy, setStaffFacilityPolicy] = useState<FacilityPolicy | null>(null)
   const [isPolicyGuideOpen, setIsPolicyGuideOpen] = useState(false)
->>>>>>> Stashed changes
+
 
   // QR Code Scanner State
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false)
@@ -111,20 +125,6 @@ export const StaffDashboard: React.FC = () => {
   const [bookingDetailError, setBookingDetailError] = useState('')
   const bookingDetailId = searchParams.get('bookingId')
 
-<<<<<<< Updated upstream
-  // Master Key Emergency Override Modal (BR-RULE-009)
-  const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false)
-  const [emergencyFacilityId, setEmergencyFacilityId] = useState('')
-  const [emergencyReason, setEmergencyReason] = useState('Sự cố kẹt khóa điện tử khẩn cấp tại cửa phân khu')
-  const [emergencyCategory, setEmergencyCategory] = useState<'MAINTENANCE_EMERGENCY' | 'FIRE_HAZARD' | 'POLICE_WARRANT' | 'ABANDONED_AUCTION' | 'INTERNAL_AUDIT'>('MAINTENANCE_EMERGENCY')
-  const [emergencySeverity, setEmergencySeverity] = useState<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'>('CRITICAL')
-  const [witnessStaffId, setWitnessStaffId] = useState('')
-  const [witnessPassword, setWitnessPassword] = useState('')
-  const [isEmergencyCalling, setIsEmergencyCalling] = useState(false)
-  const [emergencyResult, setEmergencyResult] = useState<string | null>(null)
-  const [emergencyError, setEmergencyError] = useState<string | null>(null)
-  const [facilities, setFacilities] = useState<any[]>([])
-=======
   // Filter & Search states
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedFloor, setSelectedFloor] = useState<string>('all')
@@ -142,7 +142,7 @@ export const StaffDashboard: React.FC = () => {
     booking?: Booking | null
     canCheckInToday?: boolean
   } | null>(null)
->>>>>>> Stashed changes
+
 
   // Inspection Return state
   const [returnConfirmed, setReturnConfirmed] = useState(false)
@@ -177,14 +177,6 @@ export const StaffDashboard: React.FC = () => {
     loadShiftPayments(targetFacility)
   }, [selectedFacility])
 
-<<<<<<< Updated upstream
-  useEffect(() => {
-    if (!bookingDetailId) {
-      setBookingDetail(null)
-      setBookingDetailError('')
-      setBookingDetailLoading(false)
-      return
-=======
   // Đồng bộ URL params và sự kiện click từ Chuông thông báo
   useEffect(() => {
     const tabParam = searchParams.get('tab')
@@ -225,45 +217,25 @@ export const StaffDashboard: React.FC = () => {
     }
   }, [arrivals])
 
-  const loadFacilities = async () => {
+
+
+  const fetchArrivals = async (
+    facilityId?: string,
+    timeframe?: 'current' | 'today' | 'past' | 'future' | 'all',
+    fromDate?: string,
+    toDate?: string
+  ) => {
     try {
-      if (contextFacilities && contextFacilities.length > 0) {
-        setFacilities(contextFacilities)
-        return
-      }
-      const res = await facilityService.getFacilities()
-      if (res?.content) {
-        setFacilities(res.content)
-      }
-    } catch {
-      // fallback
->>>>>>> Stashed changes
-    }
+      const targetId = facilityId || currentTargetFacility
+      const tf = timeframe !== undefined ? timeframe : selectedShiftFilter
+      const from = fromDate !== undefined ? fromDate : filterFromDate
+      const to = toDate !== undefined ? toDate : filterToDate
 
-    let isCurrent = true
-    setBookingDetail(null)
-    setBookingDetailError('')
-    setBookingDetailLoading(true)
-    bookingService.getById(bookingDetailId)
-      .then(booking => {
-        if (isCurrent) setBookingDetail(booking)
+      const data = await bookingService.getUpcomingArrivals(targetId, {
+        timeframe: tf?.toUpperCase(),
+        fromDate: from || undefined,
+        toDate: to || undefined,
       })
-<<<<<<< Updated upstream
-      .catch(() => {
-        if (isCurrent) setBookingDetailError('Không tải được yêu cầu đặt kho tại cơ sở của bạn.')
-      })
-      .finally(() => {
-        if (isCurrent) setBookingDetailLoading(false)
-      })
-
-    return () => { isCurrent = false }
-  }, [bookingDetailId])
-
-  const closeBookingDetail = () => {
-    const nextParams = new URLSearchParams(searchParams)
-    nextParams.delete('bookingId')
-    setSearchParams(nextParams, { replace: true })
-=======
       let filtered: Booking[] = []
       if (Array.isArray(data)) {
         filtered = data
@@ -366,7 +338,7 @@ export const StaffDashboard: React.FC = () => {
       } catch {}
       setArrivals([])
     }
->>>>>>> Stashed changes
+
   }
 
   const loadShiftPayments = async (facilityId?: string) => {
@@ -462,24 +434,27 @@ export const StaffDashboard: React.FC = () => {
       if (res) {
         setOccupancyData(res)
       }
-<<<<<<< Updated upstream
     } catch {
-      // Keep static defaults on network error
+      // Empty on error
     }
   }
 
-  const fetchArrivals = async (facilityId?: string) => {
-    try {
-      const res = await bookingService.getUpcomingArrivals()
-      if (res && Array.isArray(res)) {
-        let filtered = res
-        if (facilityId) {
-          filtered = filtered.filter(b => b.facilityId === facilityId || !b.facilityId)
-        }
-        setArrivals(filtered)
-      } else {
-        setArrivals([])
-=======
+  // Lookup maps for Storage Units (by ID and by Facility+UnitCode)
+
+  const unitMapByCodeAndFacility = useMemo(() => {
+    const map = new Map<string, StorageUnit>()
+    radarUnits.forEach((u) => {
+      if (u.unitCode && u.facilityId) {
+        map.set(`${u.facilityId}#${u.unitCode.trim().toUpperCase()}`, u)
+      }
+    })
+    return map
+  }, [radarUnits])
+
+  const unitMapById = useMemo(() => {
+    const map = new Map<string, StorageUnit>()
+    radarUnits.forEach((u) => {
+      if (u.id) map.set(u.id, u)
     })
     return map
   }, [radarUnits])
@@ -677,10 +652,37 @@ export const StaffDashboard: React.FC = () => {
           canCheckInToday: !!myTodayAssignment,
         })
         return
->>>>>>> Stashed changes
       }
-    } catch {
-      setArrivals([])
+    }
+
+    setClaimingBookingId(booking.id)
+    try {
+      const updated = await bookingService.claimCheckInReception(booking.id)
+      setArrivals(prev => prev.map(b => b.id === booking.id ? {
+        ...b,
+        assignedStaffId: updated.assignedStaffId || user?.id,
+        assignedStaffName: updated.assignedStaffName || user?.fullName || 'Nhân viên quầy'
+      } : b))
+      setActiveBookingId(booking.id)
+      setAttendanceSuccessMsg(`Đã tiếp nhận lượt đón khách của đơn ${booking.bookingCode} thành công!`)
+      setTimeout(() => setAttendanceSuccessMsg(null), 4000)
+      setTimeout(() => {
+        document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+      }, 50)
+    } catch (err: any) {
+      const isShiftCheckedIn = myTodayAssignment?.status === 'CHECKED_IN' || (myTodayAssignment?.checkedInAt && !myTodayAssignment?.checkedOutAt)
+      const bookingCheckinDate = booking.expectedCheckInAt ? booking.expectedCheckInAt.slice(0, 10) : booking.startDate
+      const todayStr = localDateString(new Date())
+      const isBookingToday = bookingCheckinDate === todayStr
+
+      setReceptionAlertData({
+        isOpen: true,
+        message: err?.response?.data?.message || 'Không thể tiếp nhận khách: Bạn chỉ có thể tiếp nhận khi có ca làm việc vào ngày hẹn check-in tại cơ sở và đã điểm danh vào ca trực.',
+        booking,
+        canCheckInToday: isBookingToday && !isShiftCheckedIn && !!myTodayAssignment,
+      })
+    } finally {
+      setClaimingBookingId(null)
     }
   }
 
@@ -783,10 +785,10 @@ export const StaffDashboard: React.FC = () => {
   const facilityOccupancy = occupancyData?.byFacility?.find(facility => facility.facilityId === selectedFacility)
   const fallbackReportTotal = selectedFacility && selectedFacility !== 'ALL'
     ? facilityOccupancy?.totalUnits || 0
-    : occupancyData?.byFacility?.reduce((sum, facility) => sum + facility.totalUnits, 0) || 0
+    : occupancyData?.byFacility?.reduce((sum: number, facility: any) => sum + (facility.totalUnits || 0), 0) || 0
   const fallbackReportOccupied = selectedFacility && selectedFacility !== 'ALL'
     ? facilityOccupancy?.occupiedUnits || 0
-    : occupancyData?.byFacility?.reduce((sum, facility) => sum + facility.occupiedUnits, 0) || 0
+    : occupancyData?.byFacility?.reduce((sum: number, facility: any) => sum + (facility.occupiedUnits || 0), 0) || 0
   const reportedTotalUnits = occupancyData?.systemSummary?.totalUnits || fallbackReportTotal
   const totalFacilityUnits = reportedTotalUnits || radarUnits.length || facilityTotalUnits || 0
   const occupiedFacilityUnits = reportedTotalUnits
@@ -893,13 +895,7 @@ export const StaffDashboard: React.FC = () => {
             </button>
           </div>
         </div>
-<<<<<<< Updated upstream
       </div>
-
-      {/* 2. AUTONOMOUS 4-METRIC KPI DASHBOARD ROW */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-=======
-      </header>
 
       {/* ALERT: Incoming Shift Swap waiting for confirmation */}
       {pendingIncomingSwapsCount > 0 && (
@@ -1381,7 +1377,7 @@ export const StaffDashboard: React.FC = () => {
         <>
           {/* 2. 4 THẺ THỐNG KÊ / KPI QUẦY */}
           <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
->>>>>>> Stashed changes
+
         
         {/* Metric 1 */}
         <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex flex-col justify-between">
@@ -1470,8 +1466,7 @@ export const StaffDashboard: React.FC = () => {
             ></div>
           </div>
         </div>
-
-      </div>
+      </section>
 
       {/* 3. TACTICAL SEARCH & LOCATION FILTER RIBBON */}
       <div className="w-full bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
@@ -1901,15 +1896,6 @@ export const StaffDashboard: React.FC = () => {
             </div>
           </div>
 
-<<<<<<< HEAD
-          <Link
-            to="/portal/cashier"
-            className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
-          >
-            <span>Mở Trang Báo Cáo Thu Ngân (Có Phân Trang)</span>
-            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-          </Link>
-=======
           {/* Quick Stats or Current Shift Indicator */}
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-700">
@@ -1930,7 +1916,7 @@ export const StaffDashboard: React.FC = () => {
               </span>
             </span>
           </div>
->>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
+
         </div>
 
         {/* Card 2: Danh Sách Ticket */}
@@ -2080,8 +2066,7 @@ export const StaffDashboard: React.FC = () => {
             )}
           </div>
         </div>
-<<<<<<< Updated upstream
-=======
+      )}
 
         {/* Status Filter Tabs */}
         <div className="flex items-center gap-1.5 mb-5 p-2 bg-slate-50/80 border border-slate-200/80 rounded-xl overflow-x-auto">
@@ -2356,9 +2341,8 @@ export const StaffDashboard: React.FC = () => {
               </tbody>
             </table>
         </div>
-      </section>
         </>
->>>>>>> Stashed changes
+
       )}
 
       {/* Evidence Image Preview Modal */}
@@ -2502,7 +2486,7 @@ export const StaffDashboard: React.FC = () => {
                   >
                     {facilities.length > 0 ? (
                       facilities.map(f => (
-                        <option key={f.id} value={f.id}>{f.facilityName || f.name} ({f.facilityCode || f.code})</option>
+                        <option key={f.id} value={f.id}>{(f as any).facilityName || f.name} ({(f as any).facilityCode || (f as any).code || 'BOXORA'})</option>
                       ))
                     ) : (
                       <option value="a1111111-2222-3333-4444-555555555555">Boxora Tan Binh Mega Hub (HCM-TB)</option>
@@ -2658,10 +2642,6 @@ export const StaffDashboard: React.FC = () => {
       <QrCameraCheckInModal
         isOpen={isQrScannerOpen}
         onClose={() => setIsQrScannerOpen(false)}
-        onCheckInSuccess={(bookingId, result) => {
-          setActiveBookingId(bookingId)
-          setCheckInSuccessMsg(`Check-in qua QR Camera thành công! PIN cấp: ${result.accessPin} (Thẻ: ${result.rfidCard})`)
-        }}
         onSelectBookingForWorkbench={(bookingId) => {
           setActiveBookingId(bookingId)
         }}

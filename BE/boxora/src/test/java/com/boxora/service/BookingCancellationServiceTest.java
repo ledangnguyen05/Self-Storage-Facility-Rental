@@ -150,12 +150,7 @@ class BookingCancellationServiceTest {
         @Test
         @DisplayName("Mốc 2 (24h - 48h): Hoàn 50% tiền cọc, phạt 50%")
         void preview_Stage2_PartialRefund() {
-<<<<<<< Updated upstream
-            // 24h - 48h trước check-in (ngày T+2 cách now từ 24h đến dưới 48h)
-            testBooking.setStartDate(LocalDate.now().plusDays(2));
-=======
             testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(36));
->>>>>>> Stashed changes
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
             when(facilityPolicyRepository.findByFacility_Id(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));
@@ -293,15 +288,9 @@ class BookingCancellationServiceTest {
         }
 
         @Test
-<<<<<<< Updated upstream
-        @DisplayName("Hủy đơn Mốc 3 (< 24h): Không hoàn cọc, không tạo Payment REFUNDED")
-        void cancelBooking_Stage3_NoRefund_DoesNotCreatePayment() {
-            testBooking.setStartDate(LocalDate.now().plusDays(1));
-=======
         @DisplayName("Hủy đơn Mốc 3 (< 24h): Không hoàn cọc, không tạo RefundRequest")
         void cancelBooking_Stage3_NoRefund_DoesNotCreateRefundRequest() {
             testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(12));
->>>>>>> Stashed changes
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
             when(facilityPolicyRepository.findByFacility_Id(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));

@@ -2,6 +2,7 @@ import React from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { RoleType } from '../../types'
+import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 
 interface ProtectedRouteProps {
   allowedRoles?: RoleType[]
@@ -41,22 +42,16 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
         case 'STAFF':
           return '/portal/staff'
         case 'CUSTOMER':
-<<<<<<< Updated upstream
-        default:
-          return '/portal/customer'
-=======
         default: {
           const access = checkCustomerPortalAccess(user)
           return access.hasAccess ? '/portal/customer' : '/my-bookings'
         }
->>>>>>> Stashed changes
+
       }
     }
     return <Navigate to={getTargetPortal(role)} replace />
   }
 
-<<<<<<< Updated upstream
-=======
   // Customer cannot enter /portal until they sign contract and pay
   if (role === 'CUSTOMER' && location.pathname.startsWith('/portal')) {
     const access = checkCustomerPortalAccess(user)
@@ -65,7 +60,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
     }
   }
 
->>>>>>> Stashed changes
+
   return children
 }
 

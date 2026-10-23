@@ -58,6 +58,38 @@ import java.util.UUID;
 @Slf4j
 public class ContractSigningServiceImpl implements ContractSigningService {
 
+    @Override
+    @Transactional
+    public RentalContractResponse getContractByBookingId(UUID bookingId) {
+        if (bookingId == null) {
+            throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
+        }
+
+        RentalContract contract = rentalContractRepository.findByBookingId(bookingId)
+                .orElseGet(() -> {
+                    Booking booking = bookingRepository.findById(bookingId)
+                            .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+                    return ensureContractForBooking(booking);
+                });
+
+        if (contract == null) {
+            throw new AppException(ErrorCode.CONTRACT_NOT_FOUND);
+        }
+
+        if (facilityAccessGuard.isFacilityScoped()) {
+            facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
+        }
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            UUID currentUserId = requestContext.currentUserId();
+            if (currentUserId == null || contract.getCustomer() == null || !currentUserId.equals(contract.getCustomer().getId())) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        }
+
+        return toResponseWithResolvedFields(contract);
+    }
+
+
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final DocuSealClient docuSealClient;
@@ -67,6 +99,8 @@ public class ContractSigningServiceImpl implements ContractSigningService {
     private final StorageUnitRepository storageUnitRepository;
     private final FacilityRepository facilityRepository;
     private final BookingRepository bookingRepository;
+    private final com.boxora.repository.PaymentRepository paymentRepository;
+    private final com.boxora.repository.RefundRequestRepository refundRequestRepository;
     private final RentalContractMapper rentalContractMapper;
     private final ActivityLogService activityLogService;
     private final EmailService emailService;
@@ -399,6 +433,12 @@ public class ContractSigningServiceImpl implements ContractSigningService {
     @Override
     @Transactional
     public RentalContractResponse mockSign(UUID contractId) {
+        return mockSign(contractId, "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+    }
+
+    @Override
+    @Transactional
+    public RentalContractResponse mockSign(UUID contractId, String signatureData) {
         RentalContract contract = rentalContractRepository.findById(contractId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
 
@@ -418,9 +458,6 @@ public class ContractSigningServiceImpl implements ContractSigningService {
 
         String sampleDocUrl = "https://docuseal.com/documents/contract-" + contract.getContractCode() + "-signed.pdf";
         completeContractSigning(contract, sampleDocUrl);
-<<<<<<< Updated upstream
-        return rentalContractMapper.toResponse(contract);
-=======
         return toResponseWithResolvedFields(contract);
     }
 
@@ -594,7 +631,6 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         boolean depositSatisfied = requiredDeposit.compareTo(BigDecimal.ZERO) <= 0 || effectiveDepositPaid.compareTo(requiredDeposit) >= 0;
         boolean rentSatisfied = requiredFirstMonthRent.compareTo(BigDecimal.ZERO) <= 0 || effectiveRentPaid.compareTo(requiredFirstMonthRent) >= 0;
         return depositSatisfied && rentSatisfied;
->>>>>>> Stashed changes
     }
 
     private void completeContractSigning(RentalContract contract, String documentUrl) {
@@ -660,13 +696,6 @@ public class ContractSigningServiceImpl implements ContractSigningService {
 
         StorageUnit unit = booking.getStorageUnit();
         Facility facility = unit != null ? unit.getFacility() : null;
-<<<<<<< HEAD
-        BigDecimal monthlyFee = (unit != null && unit.getEffectiveBasePrice() != null)
-                ? unit.getEffectiveBasePrice()
-                : (booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
-                ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), java.math.RoundingMode.HALF_UP)
-                : BigDecimal.valueOf(1500000));
-=======
         BigDecimal monthlyFee = booking.getTotalRentalFee() != null && booking.getRentalMonths() != null && booking.getRentalMonths() > 0
                 ? booking.getTotalRentalFee().divide(BigDecimal.valueOf(booking.getRentalMonths()), 2, java.math.RoundingMode.HALF_UP)
                 : (unit != null && unit.getEffectiveBasePrice() != null ? unit.getEffectiveBasePrice() : BigDecimal.valueOf(1500000));
@@ -682,7 +711,6 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         } else {
             depositHeld = monthlyFee;
         }
->>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
 
         RentalContract contract = RentalContract.builder()
                 .contractCode("CTR-" + booking.getBookingCode())
@@ -702,8 +730,6 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         return contract;
     }
 
-<<<<<<< HEAD
-=======
     private BigDecimal resolveEffectiveDepositHeld(RentalContract contract) {
         if (contract == null) return BigDecimal.ZERO;
         if (contract.getDepositHeld() != null && contract.getDepositHeld().compareTo(BigDecimal.ZERO) > 0) {
@@ -750,8 +776,6 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         }
         return res;
     }
-
->>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
     private void autoGenerateContractsForOrphanConfirmedBookings(UUID customerId) {
         try {
             List<Booking> bookings = bookingRepository.findByCustomer_Id(customerId);

@@ -1,26 +1,17 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { contractService, RentalContract } from '../../services/contractService'
 import { bookingService } from '../../services/bookingService'
-import { supportTicketService } from '../../services/supportTicketService'
+import { supportTicketService, SupportTicketRecord } from '../../services/supportTicketService'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
-<<<<<<< Updated upstream
-import { Booking, Facility, StorageUnit } from '../../types'
-import { StorageUnitCard, StorageUnitCardSkeleton } from '../../components/units/StorageUnitCard'
-import { StorageUnitDetailModal } from '../../components/modals/StorageUnitDetailModal'
-import { BookingCheckoutModal } from '../../components/modals/BookingCheckoutModal'
-=======
 import { Booking, Facility, StorageUnit, ContractRenewal } from '../../types'
->>>>>>> Stashed changes
+
 import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
 import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
 import { ContractOtpModal } from '../../components/modals/ContractOtpModal'
-<<<<<<< Updated upstream
-import NotificationCenter from '../../components/layout/NotificationCenter'
-=======
 import { CustomerPolicyModal, PolicyTab } from '../../components/modals/CustomerPolicyModal'
 import { BookingCancelModal } from '../../components/modals/BookingCancelModal'
 import { BookingRescheduleModal } from '../../components/modals/BookingRescheduleModal'
@@ -29,7 +20,8 @@ import { TicketCloseConfirmModal } from '../../components/modals/TicketCloseConf
 import { PortalBookingReservationModal, PortalBookingUnitData } from '../../components/booking/PortalBookingReservationModal'
 import { extractFloor } from '../../utils/floorUtils'
 import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
->>>>>>> Stashed changes
+import NotificationCenter from '../../components/layout/NotificationCenter'
+
 
 const BookingRequestCountdown: React.FC<{ request: Booking }> = ({ request }) => {
   const expiresAt = request.paymentExpiresAt ? new Date(request.paymentExpiresAt).getTime() : NaN
@@ -86,6 +78,17 @@ interface CustomerDashboardProps {
   bookingOnly?: boolean
 }
 
+const safeFormatDateTime = (dateVal?: string | null, fallback = ''): string => {
+  if (!dateVal) return fallback
+  try {
+    const d = new Date(dateVal)
+    if (isNaN(d.getTime())) return fallback || String(dateVal)
+    return d.toLocaleString('vi-VN')
+  } catch {
+    return fallback || String(dateVal)
+  }
+}
+
 export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnly = false }) => {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -110,6 +113,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const [bookingStatusFilter, setBookingStatusFilter] = useState<string>('ALL')
   const [bookingSearchTerm, setBookingSearchTerm] = useState<string>('')
   const [selectedBookingForModal, setSelectedBookingForModal] = useState<Booking | null>(null)
+  const [cancellingBookingTarget, setCancellingBookingTarget] = useState<Booking | null>(null)
+  const [selectedProofPayment, setSelectedProofPayment] = useState<PaymentItem | null>(null)
+  const [closeTicketTarget, setCloseTicketTarget] = useState<SupportTicketRecord | null>(null)
+  const [myRenewals, setMyRenewals] = useState<ContractRenewal[]>([])
+  const [loadingRenewals, setLoadingRenewals] = useState<boolean>(false)
 
   // Real database customer payments state
   const [customerPayments, setCustomerPayments] = useState<PaymentItem[]>([])
@@ -119,15 +127,84 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   // Real facilities & available units state
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [availableUnits, setAvailableUnits] = useState<StorageUnit[]>([])
+  const [allUnits, setAllUnits] = useState<StorageUnit[]>([])
   const [loadingUnits, setLoadingUnits] = useState<boolean>(true)
   const [selectedDetailModalUnit, setSelectedDetailModalUnit] = useState<StorageUnit | null>(null)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState<boolean>(false)
   const [bookingRequests, setBookingRequests] = useState<Booking[]>([])
-<<<<<<< Updated upstream
-  const [loadingRequests, setLoadingRequests] = useState<boolean>(true)
+  const [loadingRequests, setLoadingRequests] = useState<boolean>(false)
+  const [customerTickets, setCustomerTickets] = useState<SupportTicketRecord[]>([])
+  const [loadingTickets, setLoadingTickets] = useState<boolean>(false)
+  const [ticketStatusFilter, setTicketStatusFilter] = useState<string>('ALL')
+  const [ticketSearchTerm, setTicketSearchTerm] = useState<string>('')
+  const [highlightedUnitCode, setHighlightedUnitCode] = useState<string | null>(null)
   const [requestToPay, setRequestToPay] = useState<Booking | null>(null)
-=======
->>>>>>> Stashed changes
+  const [bookingCreated, setBookingCreated] = useState<boolean>(false)
+  const [isCustomerPolicyModalOpen, setIsCustomerPolicyModalOpen] = useState<boolean>(false)
+  const [customerPolicyModalTab, setCustomerPolicyModalTab] = useState<PolicyTab>('cancellation')
+  const [customerPolicyFacility, setCustomerPolicyFacility] = useState<{ id?: string; name?: string } | null>(null)
+  const [unlockingUnit, setUnlockingUnit] = useState<string | null>(null)
+  const [unlockError, setUnlockError] = useState<string | null>(null)
+  const [unlockedSuccess, setUnlockedSuccess] = useState<string | null>(null)
+
+  // Reschedule Modal state
+  const [rescheduleBookingTarget, setRescheduleBookingTarget] = useState<Booking | null>(null)
+  const [rescheduleNewDate, setRescheduleNewDate] = useState<string>(() => new Date().toISOString().split('T')[0])
+  const [rescheduleNewTime, setRescheduleNewTime] = useState<string>('09:00')
+  const [rescheduleReason, setRescheduleReason] = useState<string>('')
+  const [isSubmittingReschedule, setIsSubmittingReschedule] = useState<boolean>(false)
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null)
+  const [rescheduleSuccess, setRescheduleSuccess] = useState<boolean>(false)
+
+  // Switch Renewal Method Modal State
+  const [switchMethodTarget, setSwitchMethodTarget] = useState<ContractRenewal | null>(null)
+  const [switchMethodMode, setSwitchMethodMode] = useState<'ONLINE' | 'COUNTER'>('COUNTER')
+  const [switchAppointmentDate, setSwitchAppointmentDate] = useState<string>(() => {
+    const d = new Date()
+    d.setDate(d.getDate() + 1)
+    return d.toISOString().split('T')[0]
+  })
+  const [switchAppointmentTime, setSwitchAppointmentTime] = useState<string>('09:00')
+  const [switchMethodNotes, setSwitchMethodNotes] = useState<string>('')
+  const [isSubmittingSwitchMethod, setIsSubmittingSwitchMethod] = useState<boolean>(false)
+  const [switchMethodError, setSwitchMethodError] = useState<string | null>(null)
+
+  const [reopenModalTicket, setReopenModalTicket] = useState<SupportTicketRecord | null>(null)
+  const [reopenReasonText, setReopenReasonText] = useState('')
+  const [isProcessingTicketAction, setIsProcessingTicketAction] = useState(false)
+  const [contractHistoryModal, setContractHistoryModal] = useState<any | null>(null)
+  const [selectedRenewalForDocModal, setSelectedRenewalForDocModal] = useState<any | null>(null)
+
+  const handleReopenCustomerTicket = async () => {
+    if (!reopenModalTicket || !reopenReasonText.trim()) return
+    setIsProcessingTicketAction(true)
+    try {
+      await supportTicketService.reopenTicket(reopenModalTicket.id, reopenReasonText.trim())
+      setReopenModalTicket(null)
+      setReopenReasonText('')
+      await fetchCustomerTickets()
+    } catch (err: any) {
+      console.error('Failed to reopen ticket:', err)
+    } finally {
+      setIsProcessingTicketAction(false)
+    }
+  }
+
+  const fetchMyRenewals = async () => {
+    try {
+      setLoadingRenewals(true)
+      const res = await contractService.getRenewals()
+      if (Array.isArray(res)) {
+        setMyRenewals(res)
+      }
+      return res
+    } catch {
+      return []
+    } finally {
+      setLoadingRenewals(false)
+    }
+  }
+
 
   const fetchCustomerBookings = async () => {
     try {
@@ -364,9 +441,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     }
   }, [tabParam])
 
-<<<<<<< Updated upstream
-  const handleTabChange = (tab: 'my-units' | 'requests' | 'bookings' | 'explore' | 'contracts' | 'support') => {
-=======
   // Automatically default to 'bookings' when customer has no active contracts
   useEffect(() => {
     if (!tabParam && !loadingContracts && activeContracts.length === 0) {
@@ -374,18 +448,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     }
   }, [tabParam, loadingContracts, activeContracts.length])
 
-  const handleTabChange = (tab: 'my-units' | 'bookings' | 'explore' | 'contracts' | 'support') => {
->>>>>>> Stashed changes
+  const handleTabChange = (tab: 'my-units' | 'requests' | 'bookings' | 'explore' | 'contracts' | 'support') => {
+
     setActiveTab(tab)
     setSearchParams({ tab })
   }
 
-<<<<<<< Updated upstream
-  // IoT Remote Unlock state
-  const [unlockingUnit, setUnlockingUnit] = useState<string | null>(null)
-  const [unlockedSuccess, setUnlockedSuccess] = useState<string | null>(null)
-  const [unlockError, setUnlockError] = useState<string | null>(null)
-=======
   const handleGoToMyUnit = (unitCode?: string) => {
     setActiveTab('my-units')
     if (unitCode) {
@@ -578,6 +646,44 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
   // Helper: Tính toán thông báo trạng thái ngày check-in để customer chú ý
   // Quy chuẩn hiển thị: "đã quá (number) ngày", "hôm nay", "(number) ngày sắp tới"
+
+  const handleOpenPolicyModal = (tab: PolicyTab = 'cancellation', facility?: { id?: string; name?: string }) => {
+    setCustomerPolicyModalTab(tab)
+    if (facility) setCustomerPolicyFacility(facility)
+    setIsCustomerPolicyModalOpen(true)
+  }
+
+  const getContractDepositHeld = useCallback((contractItem: any) => {
+    if (Number(contractItem?.depositHeld || 0) > 0) return Number(contractItem.depositHeld)
+    const matchingPayment = customerPayments.find(
+      (p) => (p.bookingId === contractItem?.bookingId || (p.unitCode && contractItem?.unitCode && p.unitCode.trim().toUpperCase() === contractItem.unitCode.trim().toUpperCase()))
+        && p.paymentType === 'DEPOSIT' && (p.status === 'PAID' || p.status === 'SUCCESS')
+    )
+    if (matchingPayment?.amount && Number(matchingPayment.amount) > 0) return Number(matchingPayment.amount)
+    const matchingBooking = customerBookings.find(
+      (b) => b.id === contractItem?.bookingId || (b.unitCode && contractItem?.unitCode && b.unitCode.trim().toUpperCase() === contractItem.unitCode.trim().toUpperCase())
+    )
+    if (matchingBooking?.depositPaid && Number(matchingBooking.depositPaid) > 0) return Number(matchingBooking.depositPaid)
+    if (matchingBooking?.depositAmount && Number(matchingBooking.depositAmount) > 0) return Number(matchingBooking.depositAmount)
+    return Number(contractItem?.monthlyFee || 0)
+  }, [customerPayments, customerBookings])
+
+  const fetchCustomerTickets = async () => {
+    try {
+      setLoadingTickets(true)
+      const res = await supportTicketService.getMyTickets()
+      if (Array.isArray(res)) {
+        setCustomerTickets(res)
+      }
+    } catch (err) {
+      console.error('Failed to load customer support tickets:', err)
+    } finally {
+      setLoadingTickets(false)
+    }
+  }
+
+
+
   const getCheckInNoticeInfo = useCallback((b: Booking) => {
     if (!b) return null
 
@@ -656,7 +762,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       }
     }
   }, [])
->>>>>>> Stashed changes
+
 
   // Copy PIN notification
   const [copiedPin, setCopiedPin] = useState<string | null>(null)
@@ -695,7 +801,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     id: string
     unitCode: string
     name: string
+    facilityId?: string
     facilityName: string
+    facilityStatus?: string
     priceFormatted: string
     priceNumber: number
     depositNumber: number
@@ -804,9 +912,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const [ticketError, setTicketError] = useState('')
   const [isSubmittingTicket, setIsSubmittingTicket] = useState(false)
 
-<<<<<<< Updated upstream
-  // Filter explore state
-=======
   // Unit lookups
   const unitMapById = useMemo(() => {
     const map = new Map<string, StorageUnit>()
@@ -1169,7 +1274,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   }, [customerTickets, ticketStatusFilter, ticketFacility, ticketFloor, ticketSize, ticketSearchTerm, unitMapByCode])
 
   // Filter explore state (Tab Tìm kiếm kho mới)
->>>>>>> Stashed changes
+
   const [filterFacility, setFilterFacility] = useState('all')
   const [filterSize, setFilterSize] = useState('all')
 
@@ -1193,7 +1298,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     setUnlockingUnit(unitCode)
     setUnlockError(null)
     try {
-      await bookingService.remoteUnlock(bookingOrContractId)
+      await (bookingService as any).remoteUnlock?.(bookingOrContractId)
       setUnlockedSuccess(unitCode)
       setTimeout(() => setUnlockedSuccess(null), 5000)
     } catch (err: any) {
@@ -1474,17 +1579,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         depositPaid: 0,
         signingMethod: 'IN_PERSON'
       })
-<<<<<<< Updated upstream
-      if (!res?.id) throw new Error('Máy chủ chưa xác nhận yêu cầu giữ chỗ. Vui lòng thử lại.')
-      bookingCreated = true
-      void bookingService.getMyRequests()
-        .then(requests => setBookingRequests(Array.isArray(requests) ? requests : []))
-        .catch(err => console.warn('Failed to refresh booking requests:', err))
-      setCreatedBookingResult({
-        bookingCode: res.bookingCode || res.id,
-        unitCode: selectedBookingUnit.unitCode,
-        facilityName: selectedBookingUnit.facilityName
-=======
       await fetchMyRenewals()
       await fetchContracts()
       setSwitchMethodTarget(null)
@@ -1520,7 +1614,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         newCheckInTime: rescheduleNewTime || '09:00',
         newExpectedCheckInAt,
         reason: rescheduleReason.trim() || undefined,
->>>>>>> Stashed changes
+
       })
       setBookingSuccess(true)
       await fetchCustomerBookings()
@@ -1840,34 +1934,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       {/* 3. TAB 1: KHO CỦA TÔI ĐANG THUÊ (MY UNITS) */}
       {activeTab === 'my-units' && (
         <div className="flex flex-col gap-6">
-<<<<<<< Updated upstream
-          {loadingContracts ? (
-            <div className="p-12 text-center text-slate-500 text-xs">Đang tải dữ liệu kho từ hệ thống database...</div>
-          ) : activeContracts.length === 0 ? (
-            <div className="stitch-card p-10 text-center flex flex-col items-center justify-center gap-4">
-              <div className="flex h-24 w-28 items-center justify-center rounded-2xl bg-blue-50">
-                <svg aria-hidden="true" viewBox="0 0 112 88" className="h-20 w-24">
-                  <path d="M12 38 56 12l44 26v39H12V38Z" fill="#fff" stroke="#93c5fd" strokeWidth="3" strokeLinejoin="round" />
-                  <path d="M25 43h62v34H25z" fill="#eff6ff" stroke="#60a5fa" strokeWidth="3" />
-                  <path d="M44 53h24v24H44z" fill="#dbeafe" stroke="#60a5fa" strokeWidth="3" />
-                  <path d="M35 34h10m22 0h10" stroke="#93c5fd" strokeWidth="4" strokeLinecap="round" />
-                  <path d="M52 65h8" stroke="#60a5fa" strokeWidth="3" strokeLinecap="round" />
-                  <circle cx="90" cy="18" r="8" fill="#bfdbfe" />
-                </svg>
-              </div>
-              <div className="max-w-md">
-                <h3 className="font-headline text-lg font-bold text-slate-900 mb-1">Bạn chưa có kho lưu trữ nào</h3>
-                <p className="text-xs text-slate-500">
-                  Hãy tìm kho gần bạn để chọn vị trí và kích thước phù hợp. Các yêu cầu đã gửi có thể theo dõi trong mục Yêu cầu đặt chỗ.
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => navigate('/units')}
-                  className="stitch-btn-primary text-xs"
-                >
-                  <span>Tìm kho gần bạn ngay</span>
-=======
           {bookingRequests.length > 0 && (
             <section className="stitch-card p-5">
               <div className="mb-3 flex items-center justify-between gap-3">
@@ -1949,7 +2015,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 >
                   <span className="material-symbols-outlined text-[16px]">add</span>
                   <span>Khám phá chọn kho mới</span>
->>>>>>> Stashed changes
+
                 </button>
                 {bookingRequests.length > 0 && (
                   <button onClick={() => handleTabChange('requests')} className="stitch-btn-secondary text-xs">
@@ -2280,12 +2346,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   <span className="material-symbols-outlined text-blue-600">history_edu</span>
                   <span>Lịch Sử Đặt Giữ Chỗ Kho Boxora</span>
                 </h3>
-<<<<<<< Updated upstream
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Theo dõi trạng thái tất cả các lượt đặt kho, tiến độ nhận kho, tiền đặt cọc và hợp đồng lưu trữ từ database.
-                </p>
-=======
->>>>>>> Stashed changes
+
               </div>
 
               <div className="flex items-center gap-2 self-start sm:self-auto">
@@ -2423,6 +2484,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 {filteredBookings.map((b) => {
                   const isPendingCheckin = b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT'
                   const isActive = b.status === 'ACTIVE'
+                  const checkInNotice = getCheckInNoticeInfo(b)
 
                   return (
                     <div
@@ -2448,40 +2510,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                             </div>
                           </div>
 
-<<<<<<< Updated upstream
-                          <div className="text-right">
-                            <span
-                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                                b.status === 'CONFIRMED'
-                                  ? 'bg-cyan-100 text-cyan-800 border border-cyan-200'
-                                  : b.status === 'PENDING_PAYMENT'
-                                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                  : b.status === 'ACTIVE'
-                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                  : b.status === 'COMPLETED'
-                                  ? 'bg-slate-100 text-slate-700 border border-slate-200'
-                                  : 'bg-rose-100 text-rose-700 border border-rose-200'
-                              }`}
-                            >
-                              {isPendingCheckin && (
-                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-600 animate-pulse"></span>
-                              )}
-                              {isActive && (
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                              )}
-                              <span>
-                                {b.status === 'CONFIRMED'
-                                  ? 'Đã Giữ Chỗ • Chờ Nhận Kho'
-                                  : b.status === 'PENDING_PAYMENT'
-                                  ? 'Chờ Thanh Toán Cọc'
-                                  : b.status === 'ACTIVE'
-                                  ? 'Đang Hoạt Động'
-                                  : b.status === 'COMPLETED'
-                                  ? 'Đã Hoàn Tất'
-                                  : b.status === 'OVERDUE'
-                                  ? 'Quá Hạn'
-                                  : 'Đã Hủy'}
-=======
                           <div className="text-right flex flex-col items-end gap-1">
                             {(() => {
                               const info = getBookingNoticeInfo(b)
@@ -2585,9 +2613,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                   {checkInNotice.type === 'OVERDUE' ? 'warning' : checkInNotice.type === 'TODAY' ? 'schedule' : 'event'}
                                 </span>
                                 <span>{checkInNotice.text}</span>
->>>>>>> Stashed changes
                               </span>
-                            </span>
+                            )}
                           </div>
                         </div>
 
@@ -2635,18 +2662,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                           </div>
                         )}
 
-<<<<<<< Updated upstream
-                        {b.status === 'PENDING_PAYMENT' && (
-                          <div className="p-3 rounded-lg bg-amber-50/80 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
-                            <span className="material-symbols-outlined text-[16px] text-amber-700 shrink-0 mt-0.5">
-                              schedule
-                            </span>
-                            <div className="leading-relaxed">
-                              Đơn đặt kho đang trong thời gian giữ chỗ 24h. Vui lòng thanh toán tiền cọc để xác nhận giữ kho chính thức.
-                            </div>
-                          </div>
-                        )}
-=======
                         {/* Status Notice Cases for Reservations */}
                         {(() => {
                           const info = getBookingNoticeInfo(b)
@@ -2788,7 +2803,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
                           return null
                         })()}
->>>>>>> Stashed changes
+
 
                         {b.status === 'ACTIVE' && (
                           <div className="p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200 text-[11px] text-emerald-900 flex items-center justify-between">
@@ -2886,7 +2901,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           {/* Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {loadingUnits ? (
-              Array.from({ length: 6 }, (_, index) => <StorageUnitCardSkeleton key={index} />)
+              Array.from({ length: 6 }, (_, index) => <div key={index} className="h-64 rounded-2xl bg-slate-100 animate-pulse border border-slate-200" />)
             ) : availableUnits.filter(u => {
                 if (filterFacility !== 'all' && u.facilityId !== filterFacility) return false
                 const area = u.areaSqMeters || 6
@@ -2907,51 +2922,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 if (filterSize === 'business' && area <= 10) return false
                 return true
               }).map((unit) => {
+                const bgImg = unit.imageUrl || unit.primaryImageUrl || (unit.images && unit.images[0]) || 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80'
+                const priceFormatted = Number(unit.pricePerMonth || 0).toLocaleString('vi-VN')
+                const areaVal = unit.areaSqMeters ? `${unit.areaSqMeters} m²` : '6 m²'
+                const volumeVal = unit.areaSqMeters ? `${Math.round(unit.areaSqMeters * 2.8)} m³` : '17 m³'
                 return (
-<<<<<<< Updated upstream
-                  <StorageUnitCard
-                    key={unit.id}
-                    unitCode={unit.unitCode}
-                    unitTypeName={unit.unitTypeName}
-                    facilityName={unit.facilityName}
-                    facilityAddress={facilities.find(facility => facility.id === unit.facilityId)?.address}
-                    floorLevel={unit.floorLevel}
-                    pricePerMonth={unit.pricePerMonth}
-                    areaSqMeters={unit.areaSqMeters}
-                    onSelect={() => {
-                      setSelectedDetailModalUnit(unit)
-                      setIsDetailModalOpen(true)
-                    }}
-                    onViewDetails={() => {
-                      setSelectedDetailModalUnit(unit)
-                      setIsDetailModalOpen(true)
-                    }}
-                    onReserve={() => {
-                      const price = Number(unit.pricePerMonth || 1250000)
-                      setSelectedBookingUnit({
-                        id: unit.id,
-                        unitCode: unit.unitCode,
-                        name: unit.unitTypeName || `Kho Tiêu Chuẩn #${unit.unitCode}`,
-                        facilityName: unit.facilityName || 'Hệ thống kho Boxora',
-                        priceFormatted: price.toLocaleString('vi-VN'),
-                        priceNumber: price,
-                        depositNumber: Number(unit.depositAmount || price),
-                        areaSqMeters: unit.areaSqMeters,
-                        floorLevel: unit.floorLevel || 'Tầng 1'
-                      })
-                      setBookingPackage('3m')
-                      setBookingCustomDays(45)
-                      const todayStr = new Date().toISOString().split('T')[0]
-                      setBookingStartDate(todayStr)
-                      const checkInD = new Date()
-                      checkInD.setDate(checkInD.getDate() + 3)
-                      setBookingCheckInDate(checkInD.toISOString().split('T')[0])
-                      setBookingPolicyAccepted(true)
-                      setBookingWorkflow('HOLD_ONLY')
-                      setBookingSuccess(false)
-                    }}
-                  />
-=======
                   <div key={unit.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
                     <div>
                       <div className="relative h-44 overflow-hidden bg-slate-800">
@@ -3045,7 +3020,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                       </button>
                     </div>
                   </div>
->>>>>>> Stashed changes
+
                 )
               })
             )}
@@ -3193,16 +3168,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                       </td>
                     </tr>
                   ) : (
-<<<<<<< Updated upstream
-                    contracts.map(c => (
-                      <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-3.5 px-4 font-unit-code text-xs font-bold text-slate-900">#{c.contractCode}</td>
-                        <td className="py-3.5 px-4 font-bold text-blue-600">#{c.unitCode}</td>
-                        <td className="py-3.5 px-4 text-slate-700">{c.facilityName || 'Boxora Facility'}</td>
-                        <td className="py-3.5 px-4 text-slate-700 font-mono">{c.startDate} — {c.endDate}</td>
-                        <td className="py-3.5 px-4 font-data-tabular font-bold text-slate-900 text-right">
-                          {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫
-=======
                     filteredContracts.map(c => {
                       const b = customerBookings.find(bk => bk.id === c.bookingId || bk.bookingCode === c.contractCode.replace(/^CTR-/, ''))
                       const isPaper = Boolean(c.paperContractUrl || c.signingMethod === 'IN_PERSON' || b?.signingMethod === 'IN_PERSON')
@@ -3355,50 +3320,51 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                       </td>
                     </tr>
                   ) : (
-                    myRenewals.map((r) => (
+                    myRenewals.map((r: ContractRenewal) => (
                       <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
                         <td className="py-3.5 px-4">
                           <div className="font-mono font-bold text-slate-900">#{r.id.slice(0, 8)}...</div>
                           <div className="text-[11px] text-slate-400">
                             {r.createdAt ? new Date(r.createdAt).toLocaleString('vi-VN') : '—'}
                           </div>
->>>>>>> Stashed changes
                         </td>
-                        <td className="py-3.5 px-4 font-data-tabular text-slate-700 text-right font-bold">
-                          {Number(c.depositHeld || 0).toLocaleString('vi-VN')} ₫
+                        <td className="py-3.5 px-4">
+                          <div className="font-mono font-bold text-blue-600">#{r.contractCode || r.contractId?.slice(0, 8)}</div>
+                          <div className="text-[11px] text-slate-500 font-medium">Kho #{r.unitCode || '—'}</div>
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-700">
+                          {r.facilityName || 'Boxora Facility'}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-mono font-bold text-emerald-700">{formatDisplayDate(r.newEndDate)}</div>
+                          <div className="text-[11px] text-slate-500 font-semibold">+{r.cycleMonths} tháng (từ {formatDisplayDate(r.oldEndDate)})</div>
+                        </td>
+                        <td className="py-3.5 px-4 font-mono font-bold text-slate-900 text-right">
+                          {Number(r.renewalFee || 0).toLocaleString('vi-VN')} ₫
                         </td>
                         <td className="py-3.5 px-4 text-center">
                           <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                            c.status === 'ACTIVE' 
+                            r.status === 'COMPLETED'
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : c.status === 'PENDING_SIGNATURE'
-                              ? 'bg-amber-50 text-amber-800 border border-amber-300 animate-pulse'
-                              : 'bg-slate-100 text-slate-600 border border-slate-200'
+                              : r.status === 'PENDING_REVIEW'
+                              ? 'bg-amber-50 text-amber-800 border border-amber-300'
+                              : r.status === 'REJECTED'
+                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                              : 'bg-blue-50 text-blue-800 border border-blue-200'
                           }`}>
-                            {c.status === 'ACTIVE' ? 'Đang hiệu lực' : c.status === 'PENDING_SIGNATURE' ? 'Chờ ký số' : c.status}
+                            {r.status === 'COMPLETED'
+                              ? 'Hoàn tất'
+                              : r.status === 'PENDING_REVIEW'
+                              ? 'Chờ duyệt'
+                              : r.status === 'REJECTED'
+                              ? 'Từ chối'
+                              : r.status}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {c.status === 'PENDING_SIGNATURE' && (
-                              <button
-                                type="button"
-                                onClick={() => handleSignContractNow(c)}
-                                className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-md font-bold text-xs shadow-sm flex items-center gap-1 transition-all cursor-pointer animate-pulse"
-                                title="Ký hợp đồng DocuSeal ngay"
-                              >
-                                <span className="material-symbols-outlined text-[15px]">edit_document</span>
-                                <span>Ký ngay</span>
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => setSelectedContractForModal(c)}
-                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-semibold text-xs transition-colors cursor-pointer"
-                            >
-                              Chi tiết
-                            </button>
-                          </div>
+                          <span className="text-[11px] text-slate-500 font-mono">
+                            {r.paymentMethod || 'Chuyển khoản / Quầy'}
+                          </span>
                         </td>
                       </tr>
                     ))
@@ -3634,7 +3600,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         </section>
       )}
 
-      </>
+        </>
       )}
 
       {/* Booking Modal (Đặt giữ chỗ kho) */}
@@ -4559,72 +4525,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         />
       )}
 
-<<<<<<< Updated upstream
-      {requestToPay && user && (
-        <BookingCheckoutModal
-          unit={{
-            backendId: requestToPay.storageUnitId,
-            code: requestToPay.unitCode,
-            name: `Kho #${requestToPay.unitCode}`,
-            facilityName: requestToPay.facilityName,
-            monthlyPrice: requestToPay.rentalMonths > 0 ? requestToPay.totalRentalFee / requestToPay.rentalMonths : requestToPay.totalRentalFee,
-            depositAmount: requestToPay.depositAmount,
-          }}
-          user={user}
-          existingBooking={requestToPay}
-          onClose={() => setRequestToPay(null)}
-        />
-      )}
-
-      <StorageUnitDetailModal
-        isOpen={isDetailModalOpen}
-        unit={selectedDetailModalUnit ? {
-          id: selectedDetailModalUnit.id,
-          backendId: selectedDetailModalUnit.id,
-          unitCode: selectedDetailModalUnit.unitCode,
-          unitTypeName: selectedDetailModalUnit.unitTypeName,
-          facilityId: selectedDetailModalUnit.facilityId,
-          facilityName: selectedDetailModalUnit.facilityName,
-          facilityAddress: facilities.find(f => f.id === selectedDetailModalUnit.facilityId)?.address,
-          floorLevel: selectedDetailModalUnit.floorLevel,
-          pricePerMonth: selectedDetailModalUnit.pricePerMonth,
-          depositAmount: selectedDetailModalUnit.depositAmount,
-          areaSqMeters: selectedDetailModalUnit.areaSqMeters,
-          status: selectedDetailModalUnit.status,
-          images: selectedDetailModalUnit.images
-        } : null}
-        onClose={() => setIsDetailModalOpen(false)}
-        onReserve={(unitData) => {
-          setIsDetailModalOpen(false)
-          const matched = availableUnits.find(u => u.id === unitData.id) || selectedDetailModalUnit
-          if (matched) {
-            const price = Number(matched.pricePerMonth || 1250000)
-            setSelectedBookingUnit({
-              id: matched.id,
-              unitCode: matched.unitCode,
-              name: matched.unitTypeName || `Kho Tiêu Chuẩn #${matched.unitCode}`,
-              facilityName: matched.facilityName || 'Hệ thống kho Boxora',
-              priceFormatted: price.toLocaleString('vi-VN'),
-              priceNumber: price,
-              depositNumber: Number(matched.depositAmount || price),
-              areaSqMeters: matched.areaSqMeters,
-              floorLevel: matched.floorLevel || 'Tầng 1'
-            })
-            setBookingPackage('3m')
-            setBookingCustomDays(45)
-            const todayStr = new Date().toISOString().split('T')[0]
-            setBookingStartDate(todayStr)
-            const checkInD = new Date()
-            checkInD.setDate(checkInD.getDate() + 3)
-            setBookingCheckInDate(checkInD.toISOString().split('T')[0])
-            setBookingPolicyAccepted(true)
-            setBookingWorkflow('HOLD_ONLY')
-            setBookingSuccess(false)
-          }
-        }}
-      />
-
-=======
       {/* VAT Invoice / Official Receipt Modal */}
       {selectedVatPayment && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm overflow-y-auto">
@@ -5357,7 +5257,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   </span>
                 </div>
 
-                {contractHistoryModal.renewals.map((r, idx) => (
+                {contractHistoryModal.renewals.map((r: any, idx: number) => (
                   <div
                     key={r.id}
                     className="border border-blue-200/90 rounded-xl p-4 bg-gradient-to-r from-white to-blue-50/30 shadow-2xs space-y-2.5"
@@ -5450,7 +5350,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         </div>
       )}
 
->>>>>>> Stashed changes
+
     </div>
   )
 }

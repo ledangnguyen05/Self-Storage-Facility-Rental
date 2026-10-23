@@ -1,11 +1,9 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-<<<<<<< Updated upstream
-import { LogOut, LayoutDashboard, ArrowRight, Menu, X, ShieldCheck } from 'lucide-react'
-=======
-import { LogOut, LayoutDashboard, ArrowRight, Menu, X, Pencil, Compass, Box, FileText } from 'lucide-react'
->>>>>>> Stashed changes
+import { LogOut, LayoutDashboard, ArrowRight, Menu, X, Pencil, Compass, Box, FileText, ShieldCheck } from 'lucide-react'
+
 import { useAuth } from '../../context/AuthContext'
+import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import { Button } from '../ui/Button'
 import { BrandLogo } from '../common/BrandLogo'
 import { AccountProfileModal } from '../common/AccountProfileModal'
@@ -25,6 +23,7 @@ export const Navbar: React.FC = () => {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
 
   const isCustomer = role === 'CUSTOMER'
+  const canAccessPortal = role !== 'CUSTOMER' || checkCustomerPortalAccess(user).hasAccess
 
   const handleDashboardRedirect = () => {
     if (!role) return
@@ -78,23 +77,6 @@ export const Navbar: React.FC = () => {
           <QuickThemeLanguageToggle />
           {user ? (
             <div className="flex items-center gap-2.5">
-<<<<<<< Updated upstream
-              <button
-                onClick={handleDashboardRedirect}
-                title={t('Vào Portal')}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl border bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-900 transition-all cursor-pointer text-left"
-              >
-                <LayoutDashboard size={16} className="text-slate-700" />
-                <div className="flex flex-col">
-                  <span className="text-xs font-bold leading-tight">
-                    {t('Vào Portal')}
-                  </span>
-                  <span className="text-[9px] uppercase tracking-wider font-mono text-slate-500 leading-none">
-                    {isCustomer ? t('Khách hàng') : (role || 'PORTAL')}
-                  </span>
-                </div>
-              </button>
-=======
               {canAccessPortal ? (
                 <button
                   onClick={handleDashboardRedirect}
@@ -121,7 +103,7 @@ export const Navbar: React.FC = () => {
                   <span>{t('Đơn giữ chỗ')}</span>
                 </Link>
               )}
->>>>>>> Stashed changes
+
 
               <UserAvatarDropdown
                 user={user}
@@ -150,15 +132,6 @@ export const Navbar: React.FC = () => {
         {/* Mobile Hamburger Button */}
         <div className="flex sm:hidden items-center gap-2">
           {user && (
-<<<<<<< Updated upstream
-            <button
-              onClick={handleDashboardRedirect}
-              className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold"
-              title="Vào trang quản lý"
-            >
-              {user.fullName ? user.fullName[0].toUpperCase() : user.username[0].toUpperCase()}
-            </button>
-=======
             canAccessPortal ? (
               <button
                 onClick={handleDashboardRedirect}
@@ -176,7 +149,7 @@ export const Navbar: React.FC = () => {
                 {user.fullName ? user.fullName[0].toUpperCase() : user.username[0].toUpperCase()}
               </Link>
             )
->>>>>>> Stashed changes
+
           )}
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -251,15 +224,6 @@ export const Navbar: React.FC = () => {
           <div className="pt-4 border-t border-slate-100 flex flex-col gap-2.5">
             {user ? (
               <>
-<<<<<<< Updated upstream
-                <button
-                  onClick={handleDashboardRedirect}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-white bg-slate-900 hover:bg-slate-800 font-medium text-sm transition-colors cursor-pointer"
-                >
-                  <LayoutDashboard size={16} />
-                  <span>{isCustomer ? t('Vào Customer Portal') : `${t('Vào bảng điều khiển')} (${role})`}</span>
-                </button>
-=======
                 {canAccessPortal ? (
                   <button
                     onClick={handleDashboardRedirect}
@@ -278,7 +242,7 @@ export const Navbar: React.FC = () => {
                     <span>{t('Đơn đặt giữ chỗ của bạn')}</span>
                   </Link>
                 )}
->>>>>>> Stashed changes
+
                 <button
                   type="button"
                   onClick={() => {

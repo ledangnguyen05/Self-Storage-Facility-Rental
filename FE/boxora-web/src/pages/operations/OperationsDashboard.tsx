@@ -773,7 +773,7 @@ export const OperationsDashboard: React.FC = () => {
               <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">Nợ Xấu &amp; Quá Hạn Thu</span>
               <div className="flex items-baseline gap-2 mt-1">
                 <DashboardMetric isLoading={isReportsLoading} className="text-2xl font-bold font-data-tabular tabular-nums text-rose-600" skeletonClassName="h-7 w-32">
-                  {debtData ? debtData.totalDebtAmount.toLocaleString('vi-VN') : '—'}
+                  {debtData && debtData.totalDebtAmount != null ? Number(debtData.totalDebtAmount).toLocaleString('vi-VN') : '—'}
                 </DashboardMetric>
                 <span className="text-xs text-slate-500">VNĐ</span>
               </div>

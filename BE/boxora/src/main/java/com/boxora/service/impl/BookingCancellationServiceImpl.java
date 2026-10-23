@@ -108,25 +108,9 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         BigDecimal depositPaid = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
         BigDecimal totalRentalFee = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO;
 
-<<<<<<< Updated upstream
         // Nếu booking ở trạng thái PENDING_PAYMENT: chưa thanh toán cọc -> không có tiền hoàn và không phạt
         if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
             long hoursUntilCheckin = Duration.between(LocalDateTime.now(), booking.getStartDate().atStartOfDay()).toHours();
-=======
-        // Xác định mốc thời gian nhận kho chuẩn xác:
-        // Ưu tiên expectedCheckInAt của booking (lịch hẹn nhận kho đang có hiệu lực).
-        // Nếu không có, dùng ngày bắt đầu thuê (startDate) kết hợp giờ mở cửa của cơ sở (mặc định 08:00 sáng).
-        LocalDateTime checkinDateTime = resolveEffectiveCheckInDateTime(booking);
-        LocalDateTime now = LocalDateTime.now();
-        Duration durationUntilCheckin = Duration.between(now, checkinDateTime);
-        long hoursUntilCheckin = durationUntilCheckin.toHours();
-        String timeRemainingLabel = formatCalmRemainingTime(durationUntilCheckin, hoursUntilCheckin);
-
-        // Nếu booking ở trạng thái PENDING_PAYMENT hoặc PENDING_APPROVAL: chưa thanh toán cọc -> không có tiền hoàn và không phạt
-        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT 
-                || booking.getStatus() == BookingStatus.PENDING_APPROVAL
-                || depositPaid.compareTo(BigDecimal.ZERO) <= 0) {
->>>>>>> Stashed changes
             return BookingCancellationPreviewResponse.builder()
                     .bookingId(booking.getId())
                     .bookingCode(booking.getBookingCode())

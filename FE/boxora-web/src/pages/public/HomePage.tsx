@@ -11,13 +11,12 @@ import { WebSettingsModal } from '../../components/common/WebSettingsModal'
 import { UserAvatarDropdown } from '../../components/common/UserAvatarDropdown'
 import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
 import { useLanguage } from '../../context/LanguageContext'
-<<<<<<< Updated upstream
-=======
 import { Facility } from '../../types'
 import { facilityService } from '../../services/facilityService'
 import { BoxoraFacilitiesMap } from '../../components/map/BoxoraFacilitiesMap'
 import { SizeTierKey } from '../../components/booking/LandingBookingWizardModal'
->>>>>>> Stashed changes
+import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
+
 
 // ============================================================================
 // MAIN HOMEPAGE COMPONENT
@@ -32,6 +31,7 @@ export const HomePage: React.FC = () => {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
 
   const isCustomer = user?.role?.name === 'CUSTOMER'
+  const canAccessPortal = !isCustomer || checkCustomerPortalAccess(user).hasAccess
 
   // Booking Navigation
   const handleOpenBooking = (tier?: SizeTierKey) => {

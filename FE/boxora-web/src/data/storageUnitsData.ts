@@ -18,6 +18,10 @@ export interface StorageUnitType {
   coords?: { lat: number; lng: number } | null
   distanceKm?: number
   images?: string[]
+  imageUrl?: string
+  primaryImageUrl?: string
+  isAvailable?: boolean
+  availableUnitCount?: number
 }
 
 export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {

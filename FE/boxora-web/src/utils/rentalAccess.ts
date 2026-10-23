@@ -72,10 +72,8 @@ export const checkCustomerPortalAccess = (user: User | null): {
     return { hasAccess: true, rentals: [] }
   }
 
-<<<<<<< Updated upstream
-=======
   // Customer must have signed contract and confirmed IoT code on system
->>>>>>> Stashed changes
+
   const rentals = getCustomerRentals(user)
   const hasConfirmedIoT =
     Array.isArray(rentals) &&
@@ -129,11 +127,8 @@ export const activateCustomerRental = (
   const newRental: CustomerRentalRecord = {
     unitCode,
     unitName,
-<<<<<<< Updated upstream
-    contractCode: `HD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-=======
     contractCode: contractCode || `CTR-${unitCode.replace(/[^a-zA-Z0-9]/g, '')}`,
->>>>>>> Stashed changes
+
     startDate: new Date().toLocaleDateString('vi-VN'),
     isAppConfirmed: true
   }
