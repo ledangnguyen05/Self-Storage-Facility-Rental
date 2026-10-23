@@ -1,69 +1,57 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { reportService } from '../../services/reportService'
 import { facilityService } from '../../services/facilityService'
-import { paymentService, PaymentItem } from '../../services/paymentService'
-import { storageUnitService } from '../../services/storageUnitService'
 import { contractService, RentalContract } from '../../services/contractService'
-import { Facility, FacilityPolicy, RevenueReport, OccupancyReport, OverdueDebtReport, UnitType } from '../../types'
+import { Facility, RevenueReport, OccupancyReport, OverdueDebtReport } from '../../types'
+import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
 
-interface DashboardMetricProps {
-  isLoading: boolean
-  className?: string
-  skeletonClassName: string
-  children: React.ReactNode
+const loadAllContracts = async (facilityId?: string): Promise<RentalContract[]> => {
+  const firstPage = await contractService.getMyContracts({ facilityId, page: 0, size: 100 })
+  const contracts = [...(firstPage.content ?? [])]
+  const totalPages = firstPage.totalPages ?? 1
+
+  for (let page = 1; page < totalPages; page += 1) {
+    const result = await contractService.getMyContracts({ facilityId, page, size: 100 })
+    contracts.push(...(result.content ?? []))
+  }
+
+  return contracts
 }
 
-const DashboardMetric: React.FC<DashboardMetricProps> = ({ isLoading, className = '', skeletonClassName, children }) => (
-  isLoading ? (
-    <span aria-hidden="true" className={`inline-block animate-pulse rounded bg-slate-200 motion-reduce:animate-none ${skeletonClassName}`} />
-  ) : (
-    <span className={className}>{children}</span>
-  )
-)
-
 export const OperationsDashboard: React.FC = () => {
-  const { role } = useAuth()
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
+  const tr = (vietnamese: string, english: string) => t(vietnamese, english)
+  const currencyLocale = language === 'vi' ? 'vi-VN' : 'en-US'
+  const formatReportDate = (value: string) => new Date(`${value}T00:00:00`).toLocaleDateString(currencyLocale)
   const { selectedFacility, setSelectedFacility, facilities: contextFacilities } = useOutletContext<{
     selectedFacility?: string
     setSelectedFacility?: (facId: string) => void
     facilities?: Facility[]
   }>() || {}
 
-  // Policy configuration state
-  const [miniPrice, setMiniPrice] = useState('450.000')
-  const [standardPrice, setStandardPrice] = useState('1.250.000')
-  const [climatePrice, setClimatePrice] = useState('2.400.000')
-  const [depositOption, setDepositOption] = useState<'1month' | '2months'>('1month')
-  const [discount3M, setDiscount3M] = useState('-5')
-  const [discount6M, setDiscount6M] = useState('-10')
-  const [discount12M, setDiscount12M] = useState('-15')
-  const [graceDays, setGraceDays] = useState('03 Ngày')
-  const [lateFee, setLateFee] = useState('50.000')
-  const [lockoutDay, setLockoutDay] = useState('Ngày thứ 05')
+  const dashboardRequestSequence = useRef(0)
 
   // Live reports and facilities from BE
   const [facilities, setFacilities] = useState<Facility[]>(contextFacilities || [])
-  const [selectedFacilityId, setSelectedFacilityId] = useState<string>(() => {
-    if (!selectedFacility || selectedFacility === 'ALL') return 'all'
-    return selectedFacility
-  })
-  const [currentPolicy, setCurrentPolicy] = useState<FacilityPolicy | null>(null)
+  const [selectedFacilityId, setSelectedFacilityId] = useState<string>(() =>
+    !selectedFacility || selectedFacility.toUpperCase() === 'ALL' ? 'all' : selectedFacility
+  )
   const [revenueData, setRevenueData] = useState<RevenueReport | null>(null)
   const [occupancyData, setOccupancyData] = useState<OccupancyReport | null>(null)
   const [debtData, setDebtData] = useState<OverdueDebtReport | null>(null)
-  const [payments, setPayments] = useState<PaymentItem[]>([])
-  const [unitTypes, setUnitTypes] = useState<UnitType[]>([])
-  const [contracts, setContracts] = useState<RentalContract[]>([])
+  const [contracts, setContracts] = useState<RentalContract[] | null>(null)
   const [isReportsLoading, setIsReportsLoading] = useState(true)
+  const [reportsHaveError, setReportsHaveError] = useState(false)
+  const [contractLoadStatus, setContractLoadStatus] = useState<'loading' | 'available' | 'forbidden' | 'error'>('loading')
   const [facilitySort, setFacilitySort] = useState<'revenue' | 'occupancy'>('revenue')
 
   // Notification toast
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [toastIsError, setToastIsError] = useState(false)
+
+
 
   // Report Date Range State - Default to All Time (empty) so user sees full DB revenue initially
   const [fromDate, setFromDate] = useState<string>('')
@@ -79,86 +67,84 @@ export const OperationsDashboard: React.FC = () => {
   }, [contextFacilities])
 
   useEffect(() => {
-    const nextScope = (!selectedFacility || selectedFacility === 'ALL') ? 'all' : selectedFacility
+    const nextScope = (!selectedFacility || selectedFacility.toUpperCase() === 'ALL') ? 'all' : selectedFacility
     setSelectedFacilityId(nextScope)
   }, [selectedFacility])
 
-  useEffect(() => {
-    void loadDashboardData(fromDate, toDate, selectedFacilityId)
-  }, [selectedFacilityId])
-
   const loadDashboardData = async (fDate = fromDate, tDate = toDate, targetScope?: string) => {
+    const requestSequence = ++dashboardRequestSequence.current
     setIsReportsLoading(true)
+    setReportsHaveError(false)
+    setRevenueData(null)
+    setOccupancyData(null)
+    setDebtData(null)
+    setContracts(null)
+    setContractLoadStatus('loading')
     try {
       const queryFrom = fDate || undefined
       const queryTo = tDate || undefined
       const scope = targetScope !== undefined ? targetScope : selectedFacilityId
       const targetFacilityId = scope === 'all' ? undefined : scope
-      const [facRes, revRes, occRes, debtRes, polRes, payRes, utRes, ctRes] = await Promise.allSettled([
+      const [facRes, revRes, occRes, debtRes, ctRes] = await Promise.allSettled([
         facilityService.getFacilities(),
         reportService.getRevenueReport(queryFrom, queryTo, targetFacilityId),
         reportService.getOccupancyReport(targetFacilityId),
         reportService.getOverdueDebtReport(targetFacilityId ? { facilityId: targetFacilityId } : undefined),
-        targetFacilityId
-          ? facilityService.getPolicyByFacilityId(targetFacilityId)
-          : Promise.resolve(null),
-        paymentService.getPayments({ size: 100 }),
-        storageUnitService.getUnitTypes(),
-        contractService.getMyContracts({ size: 100 }),
+        loadAllContracts(targetFacilityId)
       ])
+
+      if (requestSequence !== dashboardRequestSequence.current) return
+
       if (facRes.status === 'fulfilled' && facRes.value?.content) {
         setFacilities(facRes.value.content)
+      } else {
+        setFacilities([])
       }
       if (revRes.status === 'fulfilled' && revRes.value) {
         setRevenueData(revRes.value)
+      } else {
+        setRevenueData(null)
       }
       if (occRes.status === 'fulfilled' && occRes.value) {
         setOccupancyData(occRes.value)
+      } else {
+        setOccupancyData(null)
       }
       if (debtRes.status === 'fulfilled' && debtRes.value) {
         setDebtData(debtRes.value)
-      }
-      if (payRes.status === 'fulfilled' && payRes.value) {
-        setPayments(payRes.value)
-      }
-      if (utRes.status === 'fulfilled' && utRes.value) {
-        const uts: UnitType[] = utRes.value
-        setUnitTypes(uts)
-        const mini = uts.find((ut) => ut.typeName.toLowerCase().includes('mini'))
-        const standard = uts.find((ut) => ut.typeName.toLowerCase().includes('standard') || ut.typeName.toLowerCase().includes('tiêu chuẩn'))
-        const climate = uts.find((ut) => ut.typeName.toLowerCase().includes('cold') || ut.typeName.toLowerCase().includes('climate') || ut.typeName.toLowerCase().includes('mát'))
-        if (mini?.basePricePerMonth != null) {
-          setMiniPrice(Number(mini.basePricePerMonth).toLocaleString('vi-VN'))
-        }
-        if (standard?.basePricePerMonth != null) {
-          setStandardPrice(Number(standard.basePricePerMonth).toLocaleString('vi-VN'))
-        }
-        if (climate?.basePricePerMonth != null) {
-          setClimatePrice(Number(climate.basePricePerMonth).toLocaleString('vi-VN'))
-        }
-      }
-      if (ctRes.status === 'fulfilled' && ctRes.value?.content) {
-        setContracts(ctRes.value.content)
-      }
-      if (polRes.status === 'fulfilled' && polRes.value) {
-        const pol = polRes.value
-        setCurrentPolicy(pol)
-        if (pol.lateFeePerDay != null) setLateFee(pol.lateFeePerDay.toLocaleString('vi-VN'))
-        if (pol.gracePeriodDays != null) setGraceDays(`${pol.gracePeriodDays} Ngày`)
-        if (pol.discount3Months != null) setDiscount3M(`-${pol.discount3Months}`)
-        if (pol.discount6Months != null) setDiscount6M(`-${pol.discount6Months}`)
-        if (pol.discount12Months != null) setDiscount12M(`-${pol.discount12Months}`)
-        if (pol.overdueSealingDays != null) setLockoutDay(`Ngày thứ ${pol.overdueSealingDays}`)
-        if (pol.depositPercent != null) setDepositOption(pol.depositPercent >= 200 ? '2months' : '1month')
       } else {
-        setCurrentPolicy(null)
+        setDebtData(null)
       }
+      if (ctRes.status === 'fulfilled') {
+        setContracts(ctRes.value)
+        setContractLoadStatus('available')
+      } else {
+        setContracts(null)
+        const status = (ctRes.reason as { response?: { status?: number } })?.response?.status
+        setContractLoadStatus(status === 403 ? 'forbidden' : 'error')
+      }
+      setReportsHaveError([facRes, revRes, occRes, debtRes, ctRes].some((result) => result.status === 'rejected'))
     } catch {
-      // Keep static defaults on network error
+      if (requestSequence === dashboardRequestSequence.current) {
+        setFacilities([])
+        setRevenueData(null)
+        setOccupancyData(null)
+        setDebtData(null)
+        setContracts(null)
+        setContractLoadStatus('error')
+        setReportsHaveError(true)
+      }
     } finally {
-      setIsReportsLoading(false)
+      if (requestSequence === dashboardRequestSequence.current) {
+        setIsReportsLoading(false)
+      }
     }
   }
+
+  useEffect(() => {
+    void loadDashboardData(fromDate, toDate, selectedFacilityId)
+  }, [selectedFacilityId])
+
 
   const occupancyRows = [...(occupancyData?.byFacility ?? [])]
     .filter((row) => selectedFacilityId === 'all' || row.facilityId === selectedFacilityId)
@@ -168,107 +154,83 @@ export const OperationsDashboard: React.FC = () => {
       const bRevenue = revenueData?.byFacility?.find((item) => item.facilityId === b.facilityId)?.totalRevenue ?? -1
       return bRevenue - aRevenue
     })
-  const revenueForScope = selectedFacilityId === 'all'
-    ? revenueData?.systemSummary?.totalRevenue
-    : (revenueData?.byFacility?.find((item) => item.facilityId === selectedFacilityId)?.totalRevenue ?? 0)
+  // The backend has already applied the requested facility scope to these summaries.
+  const revenueForScope = revenueData?.systemSummary?.totalRevenue
+  const paymentCountForScope = revenueData?.systemSummary?.paymentCount
+  const renewalRevenueForScope = revenueData?.systemSummary?.renewalFeeRevenue
+  const occupancyForScope = occupancyData?.systemSummary
 
-  const paymentCountForScope = selectedFacilityId === 'all'
-    ? revenueData?.systemSummary?.paymentCount
-    : (revenueData?.byFacility?.find((item) => item.facilityId === selectedFacilityId)?.paymentCount ?? 0)
+  const facilityRevenueTotal = revenueData?.byFacility?.reduce((total, row) => total + (row.totalRevenue ?? 0), 0) ?? 0
+  const facilityPaymentCountTotal = revenueData?.byFacility?.reduce((total, row) => total + (row.paymentCount ?? 0), 0) ?? 0
+  const facilityRevenueVariance = (revenueData?.systemSummary?.totalRevenue ?? 0) - facilityRevenueTotal
+  const facilityPaymentCountVariance = (revenueData?.systemSummary?.paymentCount ?? 0) - facilityPaymentCountTotal
 
-  const renewalRevenueForScope = selectedFacilityId === 'all'
-    ? revenueData?.systemSummary?.renewalFeeRevenue
-    : (revenueData?.byFacility?.find((item) => item.facilityId === selectedFacilityId)?.renewalFeeRevenue ?? 0)
-
-  const occupancyForScope = selectedFacilityId === 'all'
-    ? occupancyData?.systemSummary
-    : occupancyData?.byFacility?.find((item) => item.facilityId === selectedFacilityId)
+  const validActiveContractCount = useMemo(() => {
+    if (!contracts) return null
+    const today = new Date().toLocaleDateString('en-CA')
+    return contracts.filter((contract) =>
+      contract.status === 'ACTIVE'
+      && Boolean(contract.startDate && contract.endDate)
+      && contract.startDate <= today
+      && contract.endDate >= today
+    ).length
+  }, [contracts])
 
   const periodLabel = !fromDate && !toDate
-    ? 'Toàn bộ thời gian'
+    ? tr('Toàn bộ thời gian', 'All time')
     : fromDate && toDate
-      ? `${new Date(`${fromDate}T00:00:00`).toLocaleDateString('vi-VN')} – ${new Date(`${toDate}T00:00:00`).toLocaleDateString('vi-VN')}`
-      : revenueData?.fromDate && revenueData?.toDate
-        ? `${new Date(`${revenueData.fromDate}T00:00:00`).toLocaleDateString('vi-VN')} – ${new Date(`${revenueData.toDate}T00:00:00`).toLocaleDateString('vi-VN')}`
-        : 'Kỳ hiện tại'
+      ? `${formatReportDate(fromDate)} – ${formatReportDate(toDate)}`
+      : fromDate
+        ? `${tr('Từ', 'From')} ${formatReportDate(fromDate)}`
+        : `${tr('Đến', 'To')} ${formatReportDate(toDate)}`
 
-  // Scoped payments matching active facility filter
-  const scopedPayments = useMemo(() => {
-    return payments.filter((p) => {
-      if (selectedFacilityId === 'all') return true
-      if (p.facilityName) {
-        const fac = facilities.find((f) => f.id === selectedFacilityId)
-        if (fac && p.facilityName === fac.name) return true
-      }
-      const ct = contracts.find((c) => c.id === p.contractId)
-      if (ct) {
-        if (ct.facilityId) return ct.facilityId === selectedFacilityId
-        const fac = facilities.find((f) => f.id === selectedFacilityId)
-        if (fac && ct.facilityName) return ct.facilityName === fac.name
-      }
-      return false
-    })
-  }, [payments, contracts, facilities, selectedFacilityId])
-
-  // Dynamic monthly revenue aggregation from real DB payments
+  // These chart rows are aggregated by the same PAID report query as the headline KPI.
   const monthlyRevenueData = useMemo(() => {
-    if (!scopedPayments || scopedPayments.length === 0) return []
-    const groups: Record<string, { rentalFee: number; deposit: number; renewalFee: number; total: number }> = {}
-
-    scopedPayments.forEach((p) => {
-      const dateStr = p.paymentTime || p.createdAt
-      if (!dateStr) return
-      const monthKey = dateStr.slice(0, 7) // "2026-03"
-      if (!groups[monthKey]) {
-        groups[monthKey] = { rentalFee: 0, deposit: 0, renewalFee: 0, total: 0 }
-      }
-      const amt = Number(p.amount) || 0
-      groups[monthKey].total += amt
-      if (p.paymentType === 'RENTAL_FEE') groups[monthKey].rentalFee += amt
-      else if (p.paymentType === 'DEPOSIT') groups[monthKey].deposit += amt
-      else if (p.paymentType === 'RENEWAL_FEE') groups[monthKey].renewalFee += amt
-      else groups[monthKey].rentalFee += amt
-    })
-
-    return Object.entries(groups)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([mKey, data]) => {
-        const [year, month] = mKey.split('-')
-        return {
-          monthKey: mKey,
-          label: `T${month}/${year.slice(2)}`,
-          ...data,
-        }
-      })
-  }, [scopedPayments])
+    return (revenueData?.monthlyRevenue ?? []).map((item) => ({
+      monthKey: item.month ?? 'unknown',
+      label: item.month ? `T${item.month.slice(5)}/${item.month.slice(2, 4)}` : tr('Chưa rõ ngày', 'Date unavailable'),
+      rentalFee: item.rentalFeeRevenue,
+      deposit: item.depositRevenue,
+      renewalFee: item.renewalFeeRevenue,
+      extraCharge: item.extraChargeRevenue,
+      bookingPayment: item.bookingPaymentRevenue ?? 0,
+      unclassified: Math.max(0, item.totalRevenue - item.rentalFeeRevenue - item.depositRevenue - item.renewalFeeRevenue - item.extraChargeRevenue - (item.bookingPaymentRevenue ?? 0)),
+      total: item.totalRevenue,
+      paymentCount: item.paymentCount,
+    }))
+  }, [revenueData, language])
 
   const maxMonthlyTotal = useMemo(() => {
     if (monthlyRevenueData.length === 0) return 1
     return Math.max(...monthlyRevenueData.map((m) => m.total), 1)
   }, [monthlyRevenueData])
 
-  // Dynamic payment method distribution from real DB payments
+  // 2 Official Payment Methods: VNPAY (Online) and BANK_TRANSFER (Counter Check-in)
   const paymentMethodStats = useMemo(() => {
-    const totalCount = scopedPayments.length
-    if (totalCount === 0) {
-      return { vnpayPercent: 0, bankPercent: 0, momoPercent: 0, vnpayCount: 0, bankCount: 0, momoCount: 0, totalCount: 0 }
-    }
-    const vnpayCount = scopedPayments.filter((p) => p.paymentMethod === 'VNPAY').length
-    const bankCount = scopedPayments.filter((p) => p.paymentMethod === 'BANK_TRANSFER').length
-    const momoCount = scopedPayments.filter((p) => p.paymentMethod === 'MOMO').length
+    const methodCounts = revenueData?.paymentsByMethod ?? []
+    const countForMethod = (method: string) => methodCounts
+      .filter((entry) => entry.paymentMethod?.trim().toUpperCase() === method)
+      .reduce((total, entry) => total + entry.paymentCount, 0)
+    const vnpayCount = countForMethod('VNPAY')
+    const bankCount = countForMethod('BANK_TRANSFER')
+    const knownCount = vnpayCount + bankCount
+    const otherMethodCount = methodCounts
+      .filter((entry) => !['VNPAY', 'BANK_TRANSFER'].includes(entry.paymentMethod?.trim().toUpperCase() ?? ''))
+      .reduce((total, entry) => total + entry.paymentCount, 0)
+    const totalCount = paymentCountForScope ?? methodCounts.reduce((total, entry) => total + entry.paymentCount, 0)
+    const otherCount = otherMethodCount + Math.max(0, totalCount - knownCount - otherMethodCount)
+    const percent = (count: number) => totalCount === 0 ? 0 : Math.round((count / totalCount) * 1000) / 10
 
     return {
-      vnpayPercent: Math.round((vnpayCount / totalCount) * 1000) / 10,
-      bankPercent: Math.round((bankCount / totalCount) * 1000) / 10,
-      momoPercent: Math.round((momoCount / totalCount) * 1000) / 10,
+      vnpayPercent: percent(vnpayCount),
+      bankPercent: percent(bankCount),
       vnpayCount,
       bankCount,
-      momoCount,
+      otherCount,
       totalCount,
+      isAvailable: Array.isArray(revenueData?.paymentsByMethod),
     }
-  }, [scopedPayments])
-
-  const formatCurrency = (value?: number) => (value == null ? '—' : value.toLocaleString('vi-VN'))
+  }, [revenueData, paymentCountForScope])
 
   const showToast = (msg: string, isError = false) => {
     setToastMessage(msg)
@@ -276,123 +238,52 @@ export const OperationsDashboard: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3000)
   }
 
-  const [isSavingPolicies, setIsSavingPolicies] = useState(false)
-
-  const parseCurrencyInput = (val: string) => {
-    const cleaned = String(val).replace(/\D/g, '')
-    return Number(cleaned) || 0
-  }
-
-  const handleSavePolicies = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (role !== 'ADMIN') return
-    setIsSavingPolicies(true)
-    try {
-      const priceUpdates: string[] = []
-
-      // 1. Save UnitType prices (Mini, Tiêu Chuẩn, Kho Mát) under BR-RULE-011
-      const miniUt = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('mini'))
-      const standardUt = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('standard') || ut.typeName.toLowerCase().includes('tiêu chuẩn'))
-      const climateUt = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('cold') || ut.typeName.toLowerCase().includes('climate') || ut.typeName.toLowerCase().includes('mát'))
-
-      const miniVal = parseCurrencyInput(miniPrice)
-      const standardVal = parseCurrencyInput(standardPrice)
-      const climateVal = parseCurrencyInput(climatePrice)
-
-      if (miniUt && miniVal > 0 && miniVal !== Number(miniUt.basePricePerMonth)) {
-        await storageUnitService.adjustUnitTypePrice(miniUt.id, {
-          newPrice: miniVal,
-          reason: 'Điều chỉnh ma trận giá loại kho Mini từ Operations Dashboard theo BR-RULE-011',
-          cascadeToAvailableUnits: true,
-        })
-        priceUpdates.push(`Mini: ${miniVal.toLocaleString('vi-VN')} đ`)
-      }
-
-      if (standardUt && standardVal > 0 && standardVal !== Number(standardUt.basePricePerMonth)) {
-        await storageUnitService.adjustUnitTypePrice(standardUt.id, {
-          newPrice: standardVal,
-          reason: 'Điều chỉnh ma trận giá loại kho Tiêu Chuẩn từ Operations Dashboard theo BR-RULE-011',
-          cascadeToAvailableUnits: true,
-        })
-        priceUpdates.push(`Tiêu chuẩn: ${standardVal.toLocaleString('vi-VN')} đ`)
-      }
-
-      if (climateUt && climateVal > 0 && climateVal !== Number(climateUt.basePricePerMonth)) {
-        await storageUnitService.adjustUnitTypePrice(climateUt.id, {
-          newPrice: climateVal,
-          reason: 'Điều chỉnh ma trận giá loại kho Mát từ Operations Dashboard theo BR-RULE-011',
-          cascadeToAvailableUnits: true,
-        })
-        priceUpdates.push(`Kho Mát: ${climateVal.toLocaleString('vi-VN')} đ`)
-      }
-
-      // 2. Save FacilityPolicy if a specific facility is selected
-      let policySaved = false
-      if (selectedFacilityId !== 'all') {
-        const payload: Partial<FacilityPolicy> = {
-          facilityId: selectedFacilityId,
-          lateFeePerDay: Number(lateFee.replace(/\D/g, '')),
-          discount3Months: Math.abs(Number(discount3M)) || 0,
-          discount6Months: Math.abs(Number(discount6M)) || 0,
-          discount12Months: Math.abs(Number(discount12M)) || 0,
-          depositPercent: depositOption === '2months' ? 200 : 100,
-          gracePeriodDays: Number.parseInt(graceDays, 10) || 0,
-          overdueSealingDays: Number.parseInt(lockoutDay.replace(/\D/g, ''), 10) || 5,
-        }
-        const saved = currentPolicy?.id
-          ? await facilityService.updatePolicy(currentPolicy.id, payload)
-          : await facilityService.createPolicy(payload)
-        setCurrentPolicy(saved)
-        policySaved = true
-      }
-
-      // 3. Re-fetch updated unit types
-      const updatedUnitTypes = await storageUnitService.getUnitTypes()
-      if (updatedUnitTypes) {
-        setUnitTypes(updatedUnitTypes)
-      }
-
-      if (priceUpdates.length > 0 && policySaved) {
-        showToast(`Đã lưu bảng giá (${priceUpdates.join(', ')}) và chính sách cơ sở thành công!`)
-      } else if (priceUpdates.length > 0) {
-        showToast(`Đã cập nhật bảng giá (${priceUpdates.join(', ')}) vào CSDL và StorageUnitPriceHistory (BR-RULE-011)!`)
-      } else if (policySaved) {
-        showToast(`Đã lưu chính sách cơ sở cho ${facilities.find((facility) => facility.id === selectedFacilityId)?.name || 'cơ sở đã chọn'}.`)
-      } else {
-        showToast('Thông số chính sách và bảng giá hiện tại đã khớp CSDL.')
-      }
-    } catch (error: any) {
-      const errMsg = error?.response?.data?.message || 'Không lưu được chính sách hoặc bảng giá. Vui lòng thử lại.'
-      showToast(errMsg, true)
-    } finally {
-      setIsSavingPolicies(false)
-    }
-  }
-
   const handleExportRevenueCsv = () => {
     const rows = revenueData?.byFacility
-    if (!rows?.length) {
+    const summary = revenueData?.systemSummary
+    if (!summary || !rows) {
       showToast('Chưa có dữ liệu doanh thu để xuất.', true)
       return
     }
+    const selectedFacilityName = facilities.find((facility) => facility.id === selectedFacilityId)?.name
+    const scopeName = selectedFacilityId === 'all' ? tr('Toàn hệ thống', 'All facilities') : (selectedFacilityName || tr('Cơ sở đã chọn', 'Selected facility'))
     const csvRows = [
-      ['Cơ sở', 'Tổng doanh thu (VND)', 'Tiền thuê (VND)', 'Tiền cọc (VND)', 'Gia hạn (VND)', 'Số thanh toán'],
+      [tr('Kỳ báo cáo', 'Report period'), periodLabel],
+      [tr('Phạm vi', 'Scope'), scopeName],
+      [],
+      [tr('Cơ sở', 'Facility'), tr('Tổng doanh thu (VND)', 'Total revenue (VND)'), tr('Tiền thuê (VND)', 'Rental fee (VND)'), tr('Tiền cọc (VND)', 'Deposit (VND)'), tr('Gia hạn (VND)', 'Renewal (VND)'), tr('Phụ phí (VND)', 'Extra charges (VND)'), tr('Thanh toán đặt kho (VND)', 'Booking payments (VND)'), tr('Chưa phân loại (VND)', 'Unclassified (VND)'), tr('Số thanh toán', 'Payment count')],
+      [selectedFacilityId === 'all' ? tr('Tổng toàn hệ thống', 'System total') : `${tr('Tổng', 'Total')} ${scopeName}`, summary.totalRevenue, summary.rentalFeeRevenue, summary.depositRevenue, summary.renewalFeeRevenue ?? 0, summary.extraChargeRevenue ?? 0, summary.bookingPaymentRevenue ?? 0, Math.max(0, summary.totalRevenue - summary.rentalFeeRevenue - summary.depositRevenue - (summary.renewalFeeRevenue ?? 0) - (summary.extraChargeRevenue ?? 0) - (summary.bookingPaymentRevenue ?? 0)), summary.paymentCount],
       ...rows
         .filter(row => selectedFacilityId === 'all' || row.facilityId === selectedFacilityId)
-        .map(row => [row.facilityName, row.totalRevenue, row.rentalFeeRevenue, row.depositRevenue, row.renewalFeeRevenue ?? 0, row.paymentCount ?? 0]),
+        .map(row => [row.facilityName, row.totalRevenue, row.rentalFeeRevenue, row.depositRevenue, row.renewalFeeRevenue ?? 0, row.extraChargeRevenue ?? 0, row.bookingPaymentRevenue ?? 0, Math.max(0, row.totalRevenue - row.rentalFeeRevenue - row.depositRevenue - (row.renewalFeeRevenue ?? 0) - (row.extraChargeRevenue ?? 0) - (row.bookingPaymentRevenue ?? 0)), row.paymentCount ?? 0]),
+      ...(selectedFacilityId === 'all' && (facilityRevenueVariance !== 0 || facilityPaymentCountVariance !== 0)
+        ? [[tr('Chênh lệch tổng hệ thống - tổng cơ sở', 'System total minus facility totals'), facilityRevenueVariance, '', '', '', '', '', '', facilityPaymentCountVariance]]
+        : []),
     ]
-    const csv = '\uFEFF' + csvRows.map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(',')).join('\r\n')
+    const csv = '\uFEFF' + csvRows.map(row => row.map(value => {
+      const cell = String(value ?? '')
+      const safeCell = /^[=+@-]/.test(cell) ? `'${cell}` : cell
+      return `"${safeCell.replaceAll('"', '""')}"`
+    }).join(',')).join('\r\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
     const link = document.createElement('a')
     link.href = url
     link.download = `boxora-doanh-thu-${new Date().toISOString().slice(0, 10)}.csv`
     link.click()
     URL.revokeObjectURL(url)
-    showToast('Đã tải báo cáo doanh thu CSV.')
+    showToast(tr('Đã tải báo cáo doanh thu CSV.', 'Revenue CSV downloaded.'))
   }
 
   return (
-    <div className="flex flex-col gap-6 w-full">
+    <>
+    <style>{`@media print {
+      @page { size: landscape; margin: 12mm; }
+      body * { visibility: hidden !important; }
+      #operations-dashboard-report, #operations-dashboard-report * { visibility: visible !important; }
+      #operations-dashboard-report { position: absolute; left: 0; top: 0; width: 100%; background: white; }
+      #operations-dashboard-report .print\\:hidden { display: none !important; }
+    }`}</style>
+    <div id="operations-dashboard-report" className="flex flex-col gap-6 w-full">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed top-24 right-8 z-50 flex items-center gap-2 px-4 py-3 bg-neutral-900 text-white rounded-lg shadow-xl border border-neutral-700 animate-in fade-in duration-200">
@@ -409,19 +300,19 @@ export const OperationsDashboard: React.FC = () => {
           <div className="absolute left-1/3 -bottom-16 h-48 w-48 rounded-full bg-teal-500/10 blur-2xl"></div>
         </div>
 
-        <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-4 print:hidden">
           <div className="flex flex-col gap-2 max-w-2xl text-left">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold ${isReportsLoading ? 'bg-slate-50 border-slate-200 text-slate-600' : revenueData && occupancyData && debtData ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${isReportsLoading ? 'bg-slate-400' : revenueData && occupancyData && debtData ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-                {isReportsLoading ? 'Đang tải báo cáo' : revenueData && occupancyData && debtData ? 'Dữ liệu hệ thống' : 'Dữ liệu chưa đầy đủ'}
+              <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold ${isReportsLoading ? 'bg-slate-50 border-slate-200 text-slate-600' : reportsHaveError ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${isReportsLoading ? 'bg-slate-400' : reportsHaveError ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
+                {isReportsLoading ? tr('Đang tải báo cáo', 'Loading reports') : reportsHaveError ? tr('Một số dữ liệu không tải được', 'Some data could not be loaded') : tr('Đã tải dữ liệu báo cáo', 'Report data loaded')}
               </span>
             </div>
             <h1 className="text-2xl font-bold font-headline text-slate-900 tracking-tight">
-              Doanh thu &amp; vận hành hệ thống
+              {tr('Doanh thu & vận hành hệ thống', 'Revenue and operations')}
             </h1>
             <p className="text-sm text-slate-600">
-              Theo dõi doanh thu, công suất kho, công nợ và chính sách tại các cơ sở.
+              {tr('Theo dõi doanh thu, công suất kho, công nợ và chính sách tại các cơ sở.', 'Review revenue, unit capacity, debt, and policies across facilities.')}
             </p>
           </div>
 
@@ -433,7 +324,7 @@ export const OperationsDashboard: React.FC = () => {
               </span>
               <div className="flex flex-col pr-1 text-left">
                 <span className="text-[10px] text-slate-500 uppercase font-semibold leading-none mb-0.5">
-                  Cơ sở báo cáo
+                  {tr('Cơ sở báo cáo', 'Report facility')}
                 </span>
                 <select
                   value={selectedFacilityId}
@@ -441,12 +332,12 @@ export const OperationsDashboard: React.FC = () => {
                     const newFacilityId = e.target.value
                     setSelectedFacilityId(newFacilityId)
                     if (setSelectedFacility) {
-                      setSelectedFacility(newFacilityId)
+                      setSelectedFacility(newFacilityId === 'all' ? 'ALL' : newFacilityId)
                     }
                   }}
                   className="bg-transparent font-mono text-xs text-slate-900 font-bold focus:outline-none cursor-pointer pr-1"
                 >
-                  <option value="all">Toàn hệ thống (Tất cả)</option>
+                  <option value="all">{tr('Toàn hệ thống (Tất cả)', 'All facilities')}</option>
                   {facilities.map((f) => (
                     <option key={f.id} value={f.id}>
                       {f.name.replace(/StoreHub\s*/gi, 'Boxora ')} ({f.code})
@@ -464,15 +355,21 @@ export const OperationsDashboard: React.FC = () => {
                   setTempToDate(toDate)
                   setIsDatePickerOpen(!isDatePickerOpen)
                 }}
-                title="Bấm để chọn khoảng ngày báo cáo doanh thu"
-                className="flex items-center bg-slate-50 hover:bg-slate-100 text-left px-3 py-1.5 rounded-lg border border-slate-200 hover:border-slate-300 transition-all shadow-xs cursor-pointer group"
+                title={tr('Bấm để chọn khoảng ngày báo cáo doanh thu', 'Choose a revenue reporting date range')}
+                className={`flex items-center text-left px-3 py-1.5 rounded-lg border transition-all cursor-pointer group ${
+                  isDatePickerOpen
+                    ? 'bg-blue-50/70 border-blue-400 shadow-md shadow-blue-500/15 ring-2 ring-blue-400/20'
+                    : (fromDate || toDate)
+                    ? 'bg-blue-50/40 border-blue-300 shadow-sm'
+                    : 'bg-slate-50 hover:bg-slate-100 border-slate-200 hover:border-slate-300 shadow-xs'
+                }`}
               >
                 <span className="material-symbols-outlined text-blue-600 group-hover:scale-110 transition-transform text-[20px] mr-2">
                   calendar_month
                 </span>
                 <div className="flex flex-col pr-1">
                   <div className="flex items-center gap-1">
-                    <span className="text-[10px] text-slate-500 uppercase font-semibold leading-none">Kỳ báo cáo</span>
+                    <span className="text-[10px] text-slate-500 uppercase font-semibold leading-none">{tr('Kỳ báo cáo', 'Report period')}</span>
                     <span className="material-symbols-outlined text-[13px] text-slate-400 group-hover:text-blue-600 transition-colors">
                       edit_calendar
                     </span>
@@ -484,120 +381,126 @@ export const OperationsDashboard: React.FC = () => {
               </button>
 
               {/* Date Range Picker Popover */}
-              {isDatePickerOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setIsDatePickerOpen(false)}
-                  />
-                  <div className="absolute right-0 top-full mt-2 z-50 w-88 max-w-[90vw] bg-white rounded-xl border border-slate-200 shadow-2xl p-4 animate-in fade-in zoom-in-95 duration-150">
-                    <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-100">
-                      <div className="flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-blue-600 text-[18px]">date_range</span>
-                        <h4 className="text-xs font-bold text-slate-900">Chọn Kỳ Báo Cáo</h4>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setIsDatePickerOpen(false)}
-                        className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">close</span>
-                      </button>
-                    </div>
+              {isDatePickerOpen && (() => {
+                const now = new Date()
+                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+                const thisMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+                const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+                const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0)
+                const lastMonthStart = `${firstDayLastMonth.getFullYear()}-${String(firstDayLastMonth.getMonth() + 1).padStart(2, '0')}-01`
+                const lastMonthEnd = `${lastDayLastMonth.getFullYear()}-${String(lastDayLastMonth.getMonth() + 1).padStart(2, '0')}-${String(lastDayLastMonth.getDate()).padStart(2, '0')}`
+                const d7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+                const last7Start = `${d7.getFullYear()}-${String(d7.getMonth() + 1).padStart(2, '0')}-${String(d7.getDate()).padStart(2, '0')}`
+                const d30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+                const last30Start = `${d30.getFullYear()}-${String(d30.getMonth() + 1).padStart(2, '0')}-${String(d30.getDate()).padStart(2, '0')}`
+                const thisYearStart = `${now.getFullYear()}-01-01`
 
-                    {/* Quick Presets */}
-                    <div className="mb-3">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
-                        Chọn nhanh
-                      </span>
-                      <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                const quickPresets = [
+                  {
+                    id: 'ALL',
+                    label: tr('Toàn bộ', 'All time'),
+                    isSelected: !tempFromDate && !tempToDate,
+                    apply: () => {
+                      setTempFromDate('')
+                      setTempToDate('')
+                    },
+                  },
+                  {
+                    id: 'THIS_MONTH',
+                    label: tr('Tháng này', 'This month'),
+                    isSelected: tempFromDate === thisMonthStart && tempToDate === todayStr,
+                    apply: () => {
+                      setTempFromDate(thisMonthStart)
+                      setTempToDate(todayStr)
+                    },
+                  },
+                  {
+                    id: 'LAST_MONTH',
+                    label: tr('Tháng trước', 'Last month'),
+                    isSelected: tempFromDate === lastMonthStart && tempToDate === lastMonthEnd,
+                    apply: () => {
+                      setTempFromDate(lastMonthStart)
+                      setTempToDate(lastMonthEnd)
+                    },
+                  },
+                  {
+                    id: 'LAST_7_DAYS',
+                    label: tr('7 ngày qua', 'Last 7 days'),
+                    isSelected: tempFromDate === last7Start && tempToDate === todayStr,
+                    apply: () => {
+                      setTempFromDate(last7Start)
+                      setTempToDate(todayStr)
+                    },
+                  },
+                  {
+                    id: 'LAST_30_DAYS',
+                    label: tr('30 ngày qua', 'Last 30 days'),
+                    isSelected: tempFromDate === last30Start && tempToDate === todayStr,
+                    apply: () => {
+                      setTempFromDate(last30Start)
+                      setTempToDate(todayStr)
+                    },
+                  },
+                  {
+                    id: 'THIS_YEAR',
+                    label: tr('Năm nay', 'This year'),
+                    isSelected: tempFromDate === thisYearStart && tempToDate === todayStr,
+                    apply: () => {
+                      setTempFromDate(thisYearStart)
+                      setTempToDate(todayStr)
+                    },
+                  },
+                ]
+
+                return (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setIsDatePickerOpen(false)}
+                    />
+                    <div className="absolute right-0 top-full mt-2 z-50 w-88 max-w-[90vw] bg-white rounded-xl border border-slate-200 shadow-2xl p-4 animate-in fade-in zoom-in-95 duration-150">
+                      <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-100">
+                        <div className="flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-blue-600 text-[18px]">date_range</span>
+                          <h4 className="text-xs font-bold text-slate-900">{tr('Chọn Kỳ Báo Cáo', 'Choose a report period')}</h4>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            setTempFromDate('')
-                            setTempToDate('')
-                          }}
-                          className={`px-2 py-1 rounded-md text-xs font-semibold border cursor-pointer text-center ${!tempFromDate && !tempToDate ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'}`}
+                          onClick={() => setIsDatePickerOpen(false)}
+                          className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
                         >
-                          Toàn bộ
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const now = new Date()
-                            const f = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-                            const t = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-                            setTempFromDate(f)
-                            setTempToDate(t)
-                          }}
-                          className="px-2 py-1 rounded-md bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold border border-slate-200 cursor-pointer text-center"
-                        >
-                          Tháng này
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const now = new Date()
-                            const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-                            const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0)
-                            const f = `${firstDayLastMonth.getFullYear()}-${String(firstDayLastMonth.getMonth() + 1).padStart(2, '0')}-01`
-                            const t = `${lastDayLastMonth.getFullYear()}-${String(lastDayLastMonth.getMonth() + 1).padStart(2, '0')}-${String(lastDayLastMonth.getDate()).padStart(2, '0')}`
-                            setTempFromDate(f)
-                            setTempToDate(t)
-                          }}
-                          className="px-2 py-1 rounded-md bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold border border-slate-200 cursor-pointer text-center"
-                        >
-                          Tháng trước
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const now = new Date()
-                            const d7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-                            const f = `${d7.getFullYear()}-${String(d7.getMonth() + 1).padStart(2, '0')}-${String(d7.getDate()).padStart(2, '0')}`
-                            const t = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-                            setTempFromDate(f)
-                            setTempToDate(t)
-                          }}
-                          className="px-2 py-1 rounded-md bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold border border-slate-200 cursor-pointer text-center"
-                        >
-                          7 ngày qua
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const now = new Date()
-                            const d30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-                            const f = `${d30.getFullYear()}-${String(d30.getMonth() + 1).padStart(2, '0')}-${String(d30.getDate()).padStart(2, '0')}`
-                            const t = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-                            setTempFromDate(f)
-                            setTempToDate(t)
-                          }}
-                          className="px-2 py-1 rounded-md bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold border border-slate-200 cursor-pointer text-center"
-                        >
-                          30 ngày qua
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const now = new Date()
-                            const f = `${now.getFullYear()}-01-01`
-                            const t = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-                            setTempFromDate(f)
-                            setTempToDate(t)
-                          }}
-                          className="px-2 py-1 rounded-md bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold border border-slate-200 cursor-pointer text-center"
-                        >
-                          Năm nay
+                          <span className="material-symbols-outlined text-[18px]">close</span>
                         </button>
                       </div>
-                    </div>
+
+                      {/* Quick Presets */}
+                      <div className="mb-3">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                          {tr('Chọn nhanh', 'Quick presets')}
+                        </span>
+                        <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                          {quickPresets.map(preset => (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              onClick={preset.apply}
+                              className={`px-2 py-1.5 rounded-lg text-xs font-semibold border cursor-pointer text-center transition-all ${
+                                preset.isSelected
+                                  ? 'bg-blue-50 text-blue-700 border-blue-400 font-bold shadow-md shadow-blue-500/25 ring-2 ring-blue-400/30'
+                                  : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
 
                     {/* Custom Date Pickers */}
                     <div className="space-y-2 mb-4 text-xs">
                       <div>
                         <label className="text-[11px] font-bold text-slate-600 block mb-1">
-                          Từ ngày (Bắt đầu):
+                          {tr('Từ ngày (Bắt đầu):', 'From date:')}
                         </label>
                         <input
                           type="date"
@@ -608,7 +511,7 @@ export const OperationsDashboard: React.FC = () => {
                       </div>
                       <div>
                         <label className="text-[11px] font-bold text-slate-600 block mb-1">
-                          Đến ngày (Kết thúc):
+                          {tr('Đến ngày (Kết thúc):', 'To date:')}
                         </label>
                         <input
                           type="date"
@@ -626,13 +529,13 @@ export const OperationsDashboard: React.FC = () => {
                         onClick={() => setIsDatePickerOpen(false)}
                         className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-semibold cursor-pointer"
                       >
-                        Đóng
+                        {tr('Đóng', 'Close')}
                       </button>
                       <button
                         type="button"
                         onClick={() => {
                           if (tempFromDate && tempToDate && tempFromDate > tempToDate) {
-                            showToast('Ngày bắt đầu không được lớn hơn ngày kết thúc', true)
+                            showToast(tr('Ngày bắt đầu không được lớn hơn ngày kết thúc', 'Start date must be on or before the end date.'), true)
                             return
                           }
                           setFromDate(tempFromDate)
@@ -643,12 +546,12 @@ export const OperationsDashboard: React.FC = () => {
                         className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs cursor-pointer flex items-center gap-1"
                       >
                         <span className="material-symbols-outlined text-[16px]">check</span>
-                        <span>Áp dụng kỳ</span>
+                        <span>{tr('Áp dụng kỳ', 'Apply period')}</span>
                       </button>
                     </div>
                   </div>
                 </>
-              )}
+              )})()}
             </div>
 
 
@@ -659,7 +562,7 @@ export const OperationsDashboard: React.FC = () => {
                 className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-medium transition-all shadow-xs border border-slate-200"
               >
                 <span className="material-symbols-outlined text-[18px]">table_view</span>
-                Tải CSV
+                {tr('Tải CSV', 'Download CSV')}
               </button>
               <button 
                 type="button" 
@@ -667,7 +570,7 @@ export const OperationsDashboard: React.FC = () => {
                 className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 text-white hover:bg-neutral-800 rounded-lg text-xs font-semibold transition-all shadow-sm"
               >
                 <span className="material-symbols-outlined text-[18px]">picture_as_pdf</span>
-                In / lưu PDF
+                {tr('In / lưu PDF', 'Print / save PDF')}
               </button>
             </div>
           </div>
@@ -675,25 +578,17 @@ export const OperationsDashboard: React.FC = () => {
       </div>
 
       {/* 4 EXECUTIVE SUMMARY KPI CARDS */}
-      <div
-        role="group"
-        aria-label="Chỉ số tổng quan"
-        aria-busy={isReportsLoading}
-        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4"
-      >
-        <span role="status" aria-live="polite" className="sr-only">
-          {isReportsLoading ? 'Đang tải các chỉ số báo cáo' : ''}
-        </span>
-        {/* Metric 1 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {/* Metric 1: Doanh thu thuần */}
         <div className="relative overflow-hidden rounded-xl bg-white p-5 shadow-sm border border-slate-200 flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="flex flex-col">
-              <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">Tổng Doanh Thu Hệ Thống</span>
+              <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">{tr('Tổng doanh thu trong phạm vi', 'Revenue in selected scope')}</span>
               <div className="flex items-baseline gap-2 mt-1">
-                <DashboardMetric isLoading={isReportsLoading} className="text-2xl font-bold font-data-tabular tabular-nums text-slate-900" skeletonClassName="h-7 w-36">
-                  {revenueData ? (revenueForScope ?? 0).toLocaleString('vi-VN') : '—'}
-                </DashboardMetric>
-                <span className="text-xs text-slate-500">VNĐ</span>
+                <span className="text-2xl font-bold font-mono text-slate-900">
+                  {revenueData ? (revenueForScope ?? 0).toLocaleString(currencyLocale) : '—'}
+                </span>
+                <span className="text-xs text-slate-500 font-mono">VNĐ</span>
               </div>
             </div>
             <div className="h-10 w-10 rounded-lg bg-orange-50 flex items-center justify-center text-orange-600 border border-orange-100">
@@ -701,11 +596,9 @@ export const OperationsDashboard: React.FC = () => {
             </div>
           </div>
           <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
-            <DashboardMetric isLoading={isReportsLoading} className="font-data-tabular tabular-nums" skeletonClassName="h-3 w-36">
-              {revenueData != null
-                ? `${(paymentCountForScope ?? 0).toLocaleString('vi-VN')} giao dịch trong kỳ`
-                : 'Chưa có dữ liệu doanh thu'}
-            </DashboardMetric>
+            {revenueData != null
+              ? `${(paymentCountForScope ?? 0).toLocaleString(currencyLocale)} ${tr('giao dịch PAID trong kỳ', 'PAID payments in period')}`
+              : tr('Chưa có dữ liệu doanh thu', 'Revenue data unavailable')}
           </div>
         </div>
 
@@ -713,14 +606,14 @@ export const OperationsDashboard: React.FC = () => {
         <div className="relative overflow-hidden rounded-xl bg-white p-5 shadow-sm border border-slate-200 flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="flex flex-col">
-              <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">Tỷ Lệ Lấp Đầy Bình Quân</span>
+              <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">{tr('Tỷ lệ kho đang thuê', 'Unit occupancy rate')}</span>
               <div className="flex items-baseline gap-2 mt-1">
-                <DashboardMetric isLoading={isReportsLoading} className="text-2xl font-bold font-data-tabular tabular-nums text-slate-900" skeletonClassName="h-7 w-20">
+                <span className="text-2xl font-bold font-mono text-slate-900">
                   {occupancyForScope?.occupancyRate != null ? `${occupancyForScope.occupancyRate.toFixed(1)}%` : '—'}
-                </DashboardMetric>
-                <DashboardMetric isLoading={isReportsLoading} className="text-xs text-slate-500 font-data-tabular tabular-nums" skeletonClassName="h-3 w-12">
-                  {occupancyForScope?.occupiedUnits != null ? `${occupancyForScope.occupiedUnits} / ${occupancyForScope.totalUnits}` : 'kho'}
-                </DashboardMetric>
+                </span>
+                <span className="text-xs text-slate-500 font-mono">
+                  {occupancyForScope?.occupiedUnits != null ? `${occupancyForScope.occupiedUnits} / ${occupancyForScope.totalUnits}` : tr('kho', 'units')}
+                </span>
               </div>
             </div>
             <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100">
@@ -728,16 +621,12 @@ export const OperationsDashboard: React.FC = () => {
             </div>
           </div>
           <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
-            <DashboardMetric isLoading={isReportsLoading} className="font-data-tabular tabular-nums" skeletonClassName="h-3 w-36">
-              {occupancyForScope?.availableUnits != null ? `Còn trống: ${occupancyForScope.availableUnits} kho` : 'Chưa có dữ liệu công suất'}
-            </DashboardMetric>
+            {occupancyForScope?.availableUnits != null
+              ? `${tr('Còn trống', 'Available')}: ${occupancyForScope.availableUnits} · ${tr('Đặt trước', 'Reserved')}: ${occupancyForScope.reservedUnits ?? '—'} · ${tr('Bảo trì', 'Maintenance')}: ${occupancyForScope.maintenanceUnits ?? '—'}`
+              : tr('Chưa có dữ liệu công suất', 'Capacity data unavailable')}
           </div>
           <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
-            {isReportsLoading ? (
-              <div className="h-full w-2/3 rounded-full bg-blue-200 animate-pulse motion-reduce:animate-none" />
-            ) : (
-              <div className="bg-blue-600 h-full rounded-full" style={{ width: `${occupancyForScope?.occupancyRate ?? 0}%` }}></div>
-            )}
+            <div className="bg-blue-600 h-full rounded-full" style={{ width: `${occupancyForScope?.occupancyRate ?? 0}%` }}></div>
           </div>
         </div>
 
@@ -745,12 +634,12 @@ export const OperationsDashboard: React.FC = () => {
         <div className="relative overflow-hidden rounded-xl bg-white p-5 shadow-sm border border-slate-200 flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="flex flex-col">
-              <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">Doanh Thu Tái Ký &amp; Gia Hạn</span>
+              <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">{tr('Doanh thu tái ký và gia hạn', 'Renewal revenue')}</span>
               <div className="flex items-baseline gap-2 mt-1">
-                <DashboardMetric isLoading={isReportsLoading} className="text-2xl font-bold font-data-tabular tabular-nums text-emerald-600" skeletonClassName="h-7 w-32">
-                  {revenueData ? (renewalRevenueForScope ?? 0).toLocaleString('vi-VN') : '—'}
-                </DashboardMetric>
-                <span className="text-xs text-slate-500">VNĐ</span>
+                <span className="text-2xl font-bold font-mono text-emerald-600">
+                  {revenueData ? (renewalRevenueForScope ?? 0).toLocaleString(currencyLocale) : '—'}
+                </span>
+                <span className="text-xs text-slate-500 font-mono">VNĐ</span>
               </div>
             </div>
             <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 border border-emerald-100">
@@ -758,11 +647,9 @@ export const OperationsDashboard: React.FC = () => {
             </div>
           </div>
           <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
-            <DashboardMetric isLoading={isReportsLoading} className="font-data-tabular tabular-nums" skeletonClassName="h-3 w-40">
-              {contracts.length > 0
-                ? `${contracts.filter(c => c.status === 'ACTIVE').length} / ${contracts.length} hợp đồng đang hiệu lực`
-                : 'Theo dõi hợp đồng gia hạn trong kỳ'}
-            </DashboardMetric>
+            {contracts == null
+              ? contractLoadStatus === 'loading' ? tr('Đang tải tình trạng hợp đồng', 'Loading contract status') : contractLoadStatus === 'forbidden' ? tr('Không có quyền xem dữ liệu hợp đồng', 'Contract data access is not permitted') : tr('Không tải được tình trạng hợp đồng', 'Contract status unavailable')
+              : `${validActiveContractCount ?? 0} / ${contracts.length} ${tr('hợp đồng ACTIVE còn trong thời hạn', 'ACTIVE contracts within their term')}`}
           </div>
         </div>
 
@@ -770,12 +657,10 @@ export const OperationsDashboard: React.FC = () => {
         <div className="relative overflow-hidden rounded-xl bg-white p-5 shadow-sm border border-slate-200 flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="flex flex-col">
-              <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">Nợ Xấu &amp; Quá Hạn Thu</span>
+              <span className="text-xs uppercase font-semibold text-slate-500 tracking-wider">{tr('Công nợ quá hạn', 'Overdue debt')}</span>
               <div className="flex items-baseline gap-2 mt-1">
-                <DashboardMetric isLoading={isReportsLoading} className="text-2xl font-bold font-data-tabular tabular-nums text-rose-600" skeletonClassName="h-7 w-32">
-                  {debtData ? debtData.totalDebtAmount.toLocaleString('vi-VN') : '—'}
-                </DashboardMetric>
-                <span className="text-xs text-slate-500">VNĐ</span>
+                <span className="text-2xl font-bold font-mono text-rose-600">{debtData ? (debtData.totalDebtAmount != null ? debtData.totalDebtAmount.toLocaleString(currencyLocale) : tr('Chưa đối soát', 'Unreconciled')) : '—'}</span>
+                <span className="text-xs text-slate-500 font-mono">VNĐ</span>
               </div>
             </div>
             <div className="h-10 w-10 rounded-lg bg-rose-50 flex items-center justify-center text-rose-600 border border-rose-100">
@@ -783,11 +668,9 @@ export const OperationsDashboard: React.FC = () => {
             </div>
           </div>
           <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
-            <DashboardMetric isLoading={isReportsLoading} className="font-data-tabular tabular-nums" skeletonClassName="h-3 w-40">
-              {debtData
-                ? `${debtData.totalOverdueCount} khoản quá hạn · ${debtData.accessBlockedCount} kho đã khóa`
-                : 'Chưa có dữ liệu công nợ'}
-            </DashboardMetric>
+            {debtData
+              ? `${debtData.totalOverdueCount} ${tr('khoản quá hạn', 'overdue records')} · ${debtData.accessBlockedCount} ${tr('đạt ngưỡng ngừng quyền truy cập; trạng thái khóa vật lý chưa xác minh', 'at the configured access suspension threshold; physical lock status is unverified')}`
+              : tr('Chưa có dữ liệu công nợ', 'Debt data unavailable')}
           </div>
         </div>
       </div>
@@ -798,17 +681,20 @@ export const OperationsDashboard: React.FC = () => {
         <div className="lg:col-span-8 bg-white rounded-xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
             <div>
-              <h2 className="text-base font-bold text-slate-900">Xu hướng doanh thu theo kỳ</h2>
+              <h2 className="text-base font-bold text-slate-900">{tr('Xu hướng doanh thu theo kỳ', 'Revenue trend by period')}</h2>
               <p className="text-xs text-slate-500">
                 {monthlyRevenueData.length > 0
-                  ? `Dữ liệu thanh toán thực tế từ ${monthlyRevenueData.length} kỳ phát sinh doanh thu trong hệ thống.`
-                  : 'Đang tải dữ liệu chu kỳ thanh toán...'}
+                  ? `${tr('Doanh thu thanh toán PAID trong', 'PAID payment revenue across')} ${monthlyRevenueData.length} ${tr('nhóm tháng, cùng kỳ với KPI.', 'month groups in the KPI period.')}`
+                  : isReportsLoading ? tr('Đang tải chuỗi doanh thu...', 'Loading revenue series...') : reportsHaveError ? tr('Không tải được chuỗi doanh thu.', 'Could not load the revenue series.') : tr('Không có giao dịch PAID trong kỳ đã chọn.', 'No PAID payments in the selected period.')}
               </p>
             </div>
             <div className="flex items-center gap-3 text-slate-600 text-xs font-medium flex-wrap">
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-slate-900"></span>Tiền thuê kho</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-cyan-500"></span>Tiền cọc bảo chứng</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-600"></span>Phí tái ký / gia hạn</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-slate-900"></span>{tr('Tiền thuê kho', 'Rental fees')}</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-cyan-500"></span>{tr('Tiền cọc', 'Deposits')}</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-600"></span>{tr('Phí tái ký / gia hạn', 'Renewal fees')}</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-500"></span>{tr('Phụ phí', 'Extra charges')}</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-violet-500"></span>{tr('Thanh toán đặt kho', 'Booking payments')}</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-slate-400"></span>{tr('Chưa phân loại', 'Unclassified')}</span>
             </div>
           </div>
 
@@ -820,6 +706,9 @@ export const OperationsDashboard: React.FC = () => {
                 const rentalPct = m.total > 0 ? (m.rentalFee / m.total) * 100 : 0
                 const depositPct = m.total > 0 ? (m.deposit / m.total) * 100 : 0
                 const renewalPct = m.total > 0 ? (m.renewalFee / m.total) * 100 : 0
+                const extraChargePct = m.total > 0 ? (m.extraCharge / m.total) * 100 : 0
+                const bookingPaymentPct = m.total > 0 ? (m.bookingPayment / m.total) * 100 : 0
+                const unclassifiedPct = m.total > 0 ? (m.unclassified / m.total) * 100 : 0
 
                 return (
                   <div key={m.monthKey} className="flex-1 min-w-[48px] flex flex-col items-center gap-2 h-full justify-end group">
@@ -827,38 +716,51 @@ export const OperationsDashboard: React.FC = () => {
                       className="w-full flex flex-col items-center gap-0.5 transition-all duration-300 group-hover:opacity-90"
                       style={{ height: `${heightPercent}%` }}
                     >
+                      {unclassifiedPct > 0 && (
+                        <div className="w-full max-w-[42px] bg-slate-400 rounded-t" style={{ height: `${unclassifiedPct}%` }} title={`${tr('Chưa phân loại', 'Unclassified')}: ${(m.unclassified / 1_000_000).toFixed(2)}m`} />
+                      )}
+                      {extraChargePct > 0 && (
+                        <div
+                          className={`w-full max-w-[42px] bg-amber-500 ${unclassifiedPct === 0 ? 'rounded-t' : ''}`}
+                          style={{ height: `${extraChargePct}%` }}
+                          title={`${tr('Phụ phí', 'Extra charges')}: ${(m.extraCharge / 1_000_000).toFixed(2)}m`}
+                        />
+                      )}
                       {renewalPct > 0 && (
                         <div 
-                          className="w-full max-w-[42px] bg-emerald-600 rounded-t"
+                          className={`w-full max-w-[42px] bg-emerald-600 ${extraChargePct === 0 && unclassifiedPct === 0 ? 'rounded-t' : ''}`}
                           style={{ height: `${renewalPct}%` }}
-                          title={`Tái ký: ${(m.renewalFee / 1_000_000).toFixed(2)} tr`}
+                          title={`${tr('Tái ký', 'Renewals')}: ${(m.renewalFee / 1_000_000).toFixed(2)}m`}
                         />
+                      )}
+                      {bookingPaymentPct > 0 && (
+                        <div className={`w-full max-w-[42px] bg-violet-500 ${extraChargePct === 0 && renewalPct === 0 && unclassifiedPct === 0 ? 'rounded-t' : ''}`} style={{ height: `${bookingPaymentPct}%` }} title={`${tr('Thanh toán đặt kho', 'Booking payments')}: ${(m.bookingPayment / 1_000_000).toFixed(2)}m`} />
                       )}
                       {depositPct > 0 && (
                         <div 
-                          className={`w-full max-w-[42px] bg-cyan-500 ${renewalPct === 0 ? 'rounded-t' : ''}`}
+                          className={`w-full max-w-[42px] bg-cyan-500 ${renewalPct === 0 && extraChargePct === 0 && bookingPaymentPct === 0 && unclassifiedPct === 0 ? 'rounded-t' : ''}`}
                           style={{ height: `${depositPct}%` }}
-                          title={`Cọc: ${(m.deposit / 1_000_000).toFixed(2)} tr`}
+                          title={`${tr('Tiền cọc', 'Deposits')}: ${(m.deposit / 1_000_000).toFixed(2)}m`}
                         />
                       )}
                       {rentalPct > 0 && (
                         <div 
-                          className={`w-full max-w-[42px] bg-slate-900 rounded-b ${renewalPct === 0 && depositPct === 0 ? 'rounded-t' : ''}`}
+                          className={`w-full max-w-[42px] bg-slate-900 rounded-b ${renewalPct === 0 && depositPct === 0 && extraChargePct === 0 && bookingPaymentPct === 0 && unclassifiedPct === 0 ? 'rounded-t' : ''}`}
                           style={{ height: `${rentalPct}%` }}
-                          title={`Tiền thuê: ${(m.rentalFee / 1_000_000).toFixed(2)} tr`}
+                          title={`${tr('Tiền thuê', 'Rental fees')}: ${(m.rentalFee / 1_000_000).toFixed(2)}m`}
                         />
                       )}
                     </div>
                     <span className="text-[11px] text-slate-600 font-semibold">{m.label}</span>
-                    <span className="font-data-tabular tabular-nums text-[11px] text-slate-900 font-bold">
-                      {m.total >= 1_000_000 ? `${(m.total / 1_000_000).toFixed(1)} tr` : `${(m.total / 1_000).toFixed(0)} k`}
+                    <span className="font-mono text-[11px] text-slate-900 font-bold">
+                      {m.total >= 1_000_000 ? `${(m.total / 1_000_000).toFixed(1)}m` : `${(m.total / 1_000).toFixed(0)}k`}
                     </span>
                   </div>
                 )
               })
             ) : (
               <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
-                Chưa có dữ liệu kỳ thanh toán để hiển thị biểu đồ
+                {isReportsLoading ? tr('Đang tải biểu đồ doanh thu...', 'Loading revenue chart...') : reportsHaveError ? tr('Không tải được dữ liệu biểu đồ.', 'Could not load chart data.') : tr('Không có giao dịch PAID trong kỳ đã chọn.', 'No PAID payments in the selected period.')}
               </div>
             )}
           </div>
@@ -867,12 +769,12 @@ export const OperationsDashboard: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-orange-600 text-[20px]">insights</span>
               <span className="text-xs text-slate-700 font-medium">
-                Biểu đồ cột phản ánh doanh thu thực theo tháng từ lịch sử hóa đơn thanh toán của hệ thống.
+                {tr('Biểu đồ phân loại doanh thu PAID theo tháng xác nhận thanh toán.', 'Monthly breakdown of PAID revenue by payment confirmation date.')}
               </span>
             </div>
-            <DashboardMetric isLoading={isReportsLoading} className="text-xs font-bold font-data-tabular tabular-nums text-slate-900" skeletonClassName="h-3 w-32">
-              Tổng cộng: {scopedPayments.length} GD thành công
-            </DashboardMetric>
+            <span className="text-xs font-mono font-bold text-slate-900">
+              {tr('Tổng cộng', 'Total')}: {(paymentCountForScope ?? 0).toLocaleString(currencyLocale)} {tr('giao dịch PAID', 'PAID payments')}
+            </span>
           </div>
         </div>
 
@@ -880,15 +782,15 @@ export const OperationsDashboard: React.FC = () => {
         <div className="lg:col-span-4 bg-white rounded-xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-base font-bold text-slate-900">Kênh thanh toán &amp; HĐ</h2>
+              <h2 className="text-base font-bold text-slate-900">{tr('Kênh thanh toán', 'Payment methods')}</h2>
               <p className="text-xs text-slate-500">
-                <DashboardMetric isLoading={isReportsLoading} className="font-data-tabular tabular-nums" skeletonClassName="h-3 w-32">
-                  Phân bố thực tế từ {paymentMethodStats.totalCount} giao dịch
-                </DashboardMetric>
+                {paymentMethodStats.isAvailable
+                  ? `${tr('Phân bố từ', 'Breakdown of')} ${paymentMethodStats.totalCount} ${tr('giao dịch PAID trong kỳ.', 'PAID payments in the period.')}`
+                  : tr('Chưa tải được phân bố kênh thanh toán.', 'Payment method breakdown unavailable.')}
               </p>
             </div>
             <span className="px-2 py-0.5 rounded bg-slate-100 font-mono text-xs font-bold text-slate-800 border border-slate-200">
-              Hệ thống
+              {tr('Phạm vi', 'Scope')}
             </span>
           </div>
 
@@ -903,8 +805,8 @@ export const OperationsDashboard: React.FC = () => {
                 fill="transparent" 
                 r="64" 
                 stroke="currentColor" 
-                strokeDasharray="402" 
-                strokeDashoffset={402 - (402 * (paymentMethodStats.vnpayPercent / 100))} 
+                strokeDasharray={`${402 * paymentMethodStats.vnpayPercent / 100} 402`}
+                strokeDashoffset={0}
                 strokeLinecap="round" 
                 strokeWidth="14"
               />
@@ -916,49 +818,74 @@ export const OperationsDashboard: React.FC = () => {
                 fill="transparent" 
                 r="64" 
                 stroke="currentColor" 
-                strokeDasharray="402" 
-                strokeDashoffset={402 - (402 * ((paymentMethodStats.vnpayPercent + paymentMethodStats.bankPercent) / 100))} 
+                strokeDasharray={`${402 * paymentMethodStats.bankPercent / 100} 402`}
+                strokeDashoffset={-402 * paymentMethodStats.vnpayPercent / 100}
                 strokeLinecap="round" 
                 strokeWidth="14"
               />
+              {/* Other segment if residual */}
+              {paymentMethodStats.otherCount > 0 && (
+                <circle
+                  className="text-slate-300"
+                  cx="80"
+                  cy="80"
+                  fill="transparent"
+                  r="64"
+                  stroke="currentColor"
+                  strokeDasharray={`${402 * paymentMethodStats.otherCount / Math.max(paymentMethodStats.totalCount, 1)} 402`}
+                  strokeDashoffset={-402 * (paymentMethodStats.vnpayPercent + paymentMethodStats.bankPercent) / 100}
+                  strokeLinecap="round"
+                  strokeWidth="14"
+                />
+              )}
             </svg>
             <div className="absolute flex flex-col items-center justify-center text-center">
-              <DashboardMetric isLoading={isReportsLoading} className="text-3xl font-extrabold font-data-tabular tabular-nums text-slate-900 leading-none" skeletonClassName="h-9 w-16">
+              <span className="text-3xl font-extrabold font-mono text-slate-900 leading-none">
                 {paymentMethodStats.totalCount}
-              </DashboardMetric>
-              <span className="text-[10px] uppercase font-semibold text-slate-400 mt-1">Giao dịch đã thu</span>
+              </span>
+              <span className="text-[10px] uppercase font-semibold text-slate-400 mt-1">{tr('Giao dịch PAID', 'PAID payments')}</span>
             </div>
           </div>
 
-          <div className="flex flex-col gap-2">
+          {paymentMethodStats.isAvailable ? <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between p-2 rounded bg-slate-50 border border-slate-200">
               <span className="flex items-center gap-2 text-xs text-slate-700">
                 <span className="h-2.5 w-2.5 rounded-full bg-blue-600"></span>
-                Cổng VNPay (Thẻ / QR)
+                {tr('Cổng VNPay (Trực tuyến)', 'VNPay (Online)')}
               </span>
-              <DashboardMetric isLoading={isReportsLoading} className="text-xs font-bold font-data-tabular tabular-nums text-slate-900" skeletonClassName="h-3 w-20">
+              <span className="font-mono text-xs font-bold text-slate-900">
                 {paymentMethodStats.vnpayCount} GD ({paymentMethodStats.vnpayPercent}%)
-              </DashboardMetric>
+              </span>
             </div>
             <div className="flex items-center justify-between p-2 rounded bg-slate-50 border border-slate-200">
               <span className="flex items-center gap-2 text-xs text-slate-700">
                 <span className="h-2.5 w-2.5 rounded-full bg-slate-900"></span>
-                Chuyển khoản Ngân hàng
+                {tr('Chuyển khoản ngân hàng (Tại quầy)', 'Bank transfer (At counter)')}
               </span>
-              <DashboardMetric isLoading={isReportsLoading} className="text-xs font-bold font-data-tabular tabular-nums text-slate-900" skeletonClassName="h-3 w-20">
+              <span className="font-mono text-xs font-bold text-slate-900">
                 {paymentMethodStats.bankCount} GD ({paymentMethodStats.bankPercent}%)
-              </DashboardMetric>
-            </div>
-            <div className="flex items-center justify-between p-2 rounded bg-slate-50 border border-slate-200">
-              <span className="flex items-center gap-2 text-xs text-slate-500">
-                <span className="h-2.5 w-2.5 rounded-full bg-amber-500"></span>
-                Ví MoMo
               </span>
-              <DashboardMetric isLoading={isReportsLoading} className="text-xs font-bold font-data-tabular tabular-nums text-slate-900" skeletonClassName="h-3 w-20">
-                {paymentMethodStats.momoCount} GD ({paymentMethodStats.momoPercent}%)
-              </DashboardMetric>
             </div>
-          </div>
+            {paymentMethodStats.otherCount > 0 && (
+              <div className="flex items-center justify-between p-2 rounded bg-slate-50 border border-slate-200">
+                <span className="flex items-center gap-2 text-xs text-slate-500">
+                  <span className="h-2.5 w-2.5 rounded-full bg-slate-400"></span>
+                  {tr('Khác / chưa xác định', 'Other / unknown')}
+                </span>
+                <span className="font-mono text-xs font-bold text-slate-900">
+                  {paymentMethodStats.otherCount} GD ({paymentMethodStats.totalCount ? Math.round(paymentMethodStats.otherCount / paymentMethodStats.totalCount * 1000) / 10 : 0}%)
+                </span>
+              </div>
+            )}
+          </div> : (
+            <div className="py-6 text-center text-xs text-slate-500">
+                {isReportsLoading
+                  ? tr('Đang tải phân bổ kênh thanh toán...', 'Loading payment methods...')
+                  : reportsHaveError
+                    ? tr('Không tải được phân bổ kênh thanh toán.', 'Could not load payment methods.')
+                    : tr('Không có giao dịch PAID trong kỳ đã chọn.', 'No PAID payments in the selected period.')}
+            </div>
+          )}
         </div>
       </div>
 
@@ -968,19 +895,19 @@ export const OperationsDashboard: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-orange-600 text-[24px]">view_list</span>
-              <h2 className="text-base font-bold text-slate-900">So sánh các cơ sở</h2>
+              <h2 className="text-base font-bold text-slate-900">{tr('So sánh các cơ sở', 'Facility comparison')}</h2>
             </div>
-            <p className="text-xs text-slate-500">Công suất và doanh thu trong kỳ báo cáo. Dấu “—” là chưa có số liệu.</p>
+            <p className="text-xs text-slate-500">{tr('Công suất hiện tại và doanh thu trong kỳ báo cáo.', 'Current capacity and revenue for the report period.')}</p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="hidden text-xs text-slate-500 sm:inline">Sắp xếp:</span>
+            <span className="hidden text-xs text-slate-500 sm:inline">{tr('Sắp xếp:', 'Sort:')}</span>
             <button
               type="button"
               aria-pressed={facilitySort === 'revenue'}
               onClick={() => setFacilitySort('revenue')}
               className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${facilitySort === 'revenue' ? 'border-slate-300 bg-slate-100 text-slate-900' : 'border-transparent text-slate-500 hover:bg-slate-50'}`}
             >
-              Doanh thu
+              {tr('Doanh thu', 'Revenue')}
             </button>
             <button
               type="button"
@@ -988,7 +915,7 @@ export const OperationsDashboard: React.FC = () => {
               onClick={() => setFacilitySort('occupancy')}
               className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${facilitySort === 'occupancy' ? 'border-slate-300 bg-slate-100 text-slate-900' : 'border-transparent text-slate-500 hover:bg-slate-50'}`}
             >
-              Lấp đầy
+              {tr('Lấp đầy', 'Occupancy')}
             </button>
           </div>
         </div>
@@ -997,14 +924,16 @@ export const OperationsDashboard: React.FC = () => {
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-500 font-mono uppercase border-y border-slate-200">
-                <th className="py-3 px-4 font-semibold">Tên Cơ Sở &amp; Quản Lý</th>
-                <th className="py-3 px-3 font-semibold">Địa Chỉ Chi Nhánh</th>
-                <th className="py-3 px-3 text-right font-semibold">Tổng Kho</th>
-                <th className="py-3 px-4 font-semibold text-center">Tỷ Lệ Lấp Đầy</th>
-                <th className="py-3 px-4 text-right font-semibold">Tổng doanh thu</th>
-                <th className="py-3 px-4 text-right font-semibold">Doanh thu thuê</th>
-                <th className="py-3 px-3 text-center font-semibold">Kho trống</th>
-                <th className="py-3 px-4 text-center font-semibold">Thao Tác</th>
+                <th className="py-3 px-4 font-semibold">{tr('Tên cơ sở', 'Facility')}</th>
+                <th className="py-3 px-3 font-semibold">{tr('Địa chỉ chi nhánh', 'Facility address')}</th>
+                <th className="py-3 px-3 text-right font-semibold">{tr('Tổng kho', 'Total units')}</th>
+                <th className="py-3 px-4 font-semibold text-center">{tr('Tỷ lệ lấp đầy', 'Occupancy rate')}</th>
+                <th className="py-3 px-4 text-right font-semibold">{tr('Tổng doanh thu', 'Total revenue')}</th>
+                <th className="py-3 px-4 text-right font-semibold">{tr('Doanh thu thuê', 'Rental revenue')}</th>
+                <th className="py-3 px-3 text-center font-semibold">{tr('Kho trống', 'Available units')}</th>
+                <th className="py-3 px-3 text-center font-semibold">{tr('Đặt trước', 'Reserved')}</th>
+                <th className="py-3 px-3 text-center font-semibold">{tr('Bảo trì', 'Maintenance')}</th>
+                <th className="py-3 px-4 text-center font-semibold">{tr('Thao tác', 'Actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
@@ -1018,17 +947,17 @@ export const OperationsDashboard: React.FC = () => {
                         <div className="flex flex-col">
                           <span className="font-bold text-slate-900">{bf.facilityName}</span>
                           <span className="text-[11px] text-slate-500">
-                            {bf.occupiedUnits} kho đang thuê{facilityInfo?.contactPhone ? ` · Hotline: ${facilityInfo.contactPhone}` : ''}
+                            {bf.occupiedUnits} {tr('kho đang thuê', 'units occupied')}{facilityInfo?.contactPhone ? ` · ${tr('Hotline', 'Phone')}: ${facilityInfo.contactPhone}` : ''}
                           </span>
                         </div>
                       </td>
                       <td className="py-3.5 px-3 text-slate-600">
-                        {facilityInfo?.address ? `${facilityInfo.address}, ${facilityInfo.city}` : '—'}
+                        {facilityInfo?.address ? `${facilityInfo.address}${facilityInfo.city ? `, ${facilityInfo.city}` : ''}` : '—'}
                       </td>
-                      <td className="py-3.5 px-3 text-right font-data-tabular tabular-nums font-bold text-slate-900">{bf.totalUnits} kho</td>
+                      <td className="py-3.5 px-3 text-right font-mono font-bold text-slate-900">{bf.totalUnits} {tr('kho', 'units')}</td>
                       <td className="py-3.5 px-4">
                         <div className="flex flex-col gap-1 items-center">
-                          <span className="font-data-tabular tabular-nums font-bold text-slate-900">{bf.occupancyRate.toFixed(1)}%</span>
+                          <span className="font-mono font-bold text-slate-900">{bf.occupancyRate.toFixed(1)}%</span>
                           <div className="w-24 bg-slate-100 h-1.5 rounded-full overflow-hidden">
                             <div 
                               className={`h-full rounded-full ${bf.occupancyRate >= 70 ? 'bg-orange-600' : bf.occupancyRate >= 30 ? 'bg-blue-600' : 'bg-slate-400'}`} 
@@ -1037,17 +966,19 @@ export const OperationsDashboard: React.FC = () => {
                           </div>
                         </div>
                       </td>
-                      <td className="py-3.5 px-4 text-right font-data-tabular tabular-nums font-bold text-slate-900">
-                        {facilityRevenue?.totalRevenue != null ? `${facilityRevenue.totalRevenue.toLocaleString('vi-VN')} đ` : '—'}
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
+                        {facilityRevenue?.totalRevenue != null ? `${facilityRevenue.totalRevenue.toLocaleString(currencyLocale)} ₫` : '—'}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-data-tabular tabular-nums font-semibold text-orange-600">
-                        {facilityRevenue?.rentalFeeRevenue != null ? `${facilityRevenue.rentalFeeRevenue.toLocaleString('vi-VN')} đ` : '—'}
+                      <td className="py-3.5 px-4 text-right font-mono font-semibold text-orange-600">
+                        {facilityRevenue?.rentalFeeRevenue != null ? `${facilityRevenue.rentalFeeRevenue.toLocaleString(currencyLocale)} ₫` : '—'}
                       </td>
                       <td className="py-3.5 px-3 text-center">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 text-[11px] font-semibold border border-slate-200">
-                          {bf.availableUnits} kho trống
+                          {bf.availableUnits} {tr('kho trống', 'available')}
                         </span>
                       </td>
+                      <td className="py-3.5 px-3 text-center font-mono text-slate-700">{bf.reservedUnits ?? '—'}</td>
+                      <td className="py-3.5 px-3 text-center font-mono text-slate-700">{bf.maintenanceUnits ?? '—'}</td>
                       <td className="py-3.5 px-4 text-center">
                         <button 
                           type="button" 
@@ -1058,8 +989,8 @@ export const OperationsDashboard: React.FC = () => {
                               setSelectedFacilityId(bf.facilityId)
                             }
                           }}
-                          aria-label={`Lọc báo cáo theo ${bf.facilityName}`}
-                          title={`Lọc báo cáo theo ${bf.facilityName}`}
+                          aria-label={`${tr('Lọc báo cáo theo', 'Filter report by')} ${bf.facilityName}`}
+                          title={`${tr('Lọc báo cáo theo', 'Filter report by')} ${bf.facilityName}`}
                           className="p-1.5 rounded hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors"
                         >
                           <span className="material-symbols-outlined text-[18px]">visibility</span>
@@ -1070,291 +1001,48 @@ export const OperationsDashboard: React.FC = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan={8} className="py-6 text-center text-slate-500">
-                    {isReportsLoading ? 'Đang tải báo cáo...' : 'Chưa có dữ liệu cơ sở trong kỳ báo cáo.'}
+                  <td colSpan={10} className="py-6 text-center text-slate-500">
+                    {isReportsLoading ? tr('Đang tải báo cáo...', 'Loading report...') : reportsHaveError ? tr('Không tải được báo cáo cơ sở.', 'Could not load facility report.') : tr('Chưa có dữ liệu cơ sở trong kỳ báo cáo.', 'No facility data for this report period.')}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+        {selectedFacilityId === 'all' && revenueData && (facilityRevenueVariance !== 0 || facilityPaymentCountVariance !== 0) && (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {tr('Chênh lệch chưa quy thuộc theo cơ sở', 'Unreconciled difference between system and facility totals')}: {facilityRevenueVariance.toLocaleString(currencyLocale)} ₫ · {facilityPaymentCountVariance} {tr('giao dịch PAID. Đây là chênh lệch tính từ báo cáo; nguyên nhân cần đối soát dữ liệu.', 'PAID payments. This is a report variance; its cause requires reconciliation.')}
+          </div>
+        )}
       </div>
 
-      {/* 4-TIER DYNAMIC PRICING MATRIX & BUSINESS POLICY ENGINE */}
-      {role === 'ADMIN' ? (
-      <form onSubmit={handleSavePolicies} className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
+      {/* SECTION: GIÁM SÁT & QUẢN LÝ GIA HẠN HỢP ĐỒNG TOÀN CHUỖI */}
+      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-orange-50 flex items-center justify-center text-orange-600 border border-orange-100">
-              <span className="material-symbols-outlined text-[24px]">tune</span>
+            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center">
+              <span className="material-symbols-outlined text-[20px]">autorenew</span>
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">
-                Cấu Hình Quy Tắc Kinh Doanh &amp; Chính Sách Giá Động (Pricing Matrix)
+              <h2 className="text-base font-bold font-headline text-slate-900">
+                {tr('Giám sát & Thẩm định gia hạn toàn chuỗi', 'Chain-wide Renewal Monitoring & Review')}
               </h2>
-              <p className="text-xs text-slate-500">Lưu các trường chính sách được API hỗ trợ cho cơ sở đang chọn. Bảng giá theo diện tích chỉ để tham khảo.</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <button 
-              type="button" 
-              onClick={() => {
-                const mini = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('mini'))
-                const standard = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('standard') || ut.typeName.toLowerCase().includes('tiêu chuẩn'))
-                const climate = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('cold') || ut.typeName.toLowerCase().includes('climate') || ut.typeName.toLowerCase().includes('mát'))
-                setMiniPrice(mini?.basePricePerMonth ? Number(mini.basePricePerMonth).toLocaleString('vi-VN') : '450.000')
-                setStandardPrice(standard?.basePricePerMonth ? Number(standard.basePricePerMonth).toLocaleString('vi-VN') : '2.400.000')
-                setClimatePrice(climate?.basePricePerMonth ? Number(climate.basePricePerMonth).toLocaleString('vi-VN') : '3.200.000')
-                setDepositOption('1month')
-                setDiscount3M('-5')
-                setDiscount6M('-10')
-                setDiscount12M('-15')
-                showToast('Đã khôi phục thông số chính sách và bảng giá loại kho')
-              }}
-              className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all border border-slate-200 cursor-pointer"
-            >
-              Khôi phục mặc định
-            </button>
-            <button 
-              type="submit" 
-              disabled={isReportsLoading || isSavingPolicies}
-              className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[18px]">
-                {isSavingPolicies ? 'hourglass_top' : 'save'}
-              </span>
-              <span>
-                {isSavingPolicies
-                  ? 'Đang lưu...'
-                  : selectedFacilityId === 'all'
-                  ? 'Lưu bảng giá loại kho (BR-RULE-011)'
-                  : 'Lưu bảng giá & chính sách cơ sở'}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {/* Tier 1: Base Pricing (Real Unit Types from DB with BR-RULE-011 live adjustment) */}
-          <div className="bg-slate-50 rounded-xl p-4 flex flex-col justify-between border border-slate-200">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-mono text-xs uppercase font-bold text-slate-900 flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-orange-600 text-[18px]">sell</span>
-                  1. Bảng Giá Tiêu Chuẩn
-                </span>
-                <span className="px-2 py-0.5 rounded bg-white text-xs font-semibold text-emerald-700 border border-emerald-200">
-                  {unitTypes.length > 0 ? `${unitTypes.length} loại kho` : 'BR-RULE-011'}
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 mb-3">
-                Đơn giá niêm yết theo loại kho (lưu StorageUnitPriceHistory và đồng bộ kho trống).
+              <p className="text-xs text-slate-500">
+                {tr('Theo dõi tiến độ gia hạn, tỷ lệ hoàn tất, duyệt ngoại lệ và đối soát doanh thu thực thu tại các cơ sở', 'Monitor renewal progress, completion rates, approve exceptions, and reconcile collected revenue')}
               </p>
-              <div className="flex flex-col gap-2.5">
-                {/* Mini */}
-                <div className="p-2.5 rounded-lg bg-white border border-slate-200 flex flex-col gap-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-800">Kho Mini (Personal Locker)</span>
-                    <span className="text-[10px] text-slate-400 font-mono">1.0 - 2.5m²</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <input
-                      type="text"
-                      value={miniPrice}
-                      onChange={(e) => setMiniPrice(e.target.value)}
-                      placeholder="450.000"
-                      className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1 font-mono text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-orange-500"
-                    />
-                    <span className="text-xs text-slate-500 font-mono shrink-0">đ/th</span>
-                  </div>
-                </div>
-
-                {/* Standard */}
-                <div className="p-2.5 rounded-lg bg-white border border-slate-200 flex flex-col gap-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-800">Kho Tiêu Chuẩn (Standard)</span>
-                    <span className="text-[10px] text-slate-400 font-mono">4.0 - 10.0m²</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <input
-                      type="text"
-                      value={standardPrice}
-                      onChange={(e) => setStandardPrice(e.target.value)}
-                      placeholder="2.400.000"
-                      className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1 font-mono text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-orange-500"
-                    />
-                    <span className="text-xs text-slate-500 font-mono shrink-0">đ/th</span>
-                  </div>
-                </div>
-
-                {/* Cold Storage */}
-                <div className="p-2.5 rounded-lg bg-white border border-slate-200 flex flex-col gap-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-800">Kho Mát (Cold Storage 18-22°C)</span>
-                    <span className="text-[10px] text-cyan-600 font-mono">Khí hậu ổn định</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <input
-                      type="text"
-                      value={climatePrice}
-                      onChange={(e) => setClimatePrice(e.target.value)}
-                      placeholder="3.200.000"
-                      className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1 font-mono text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-orange-500"
-                    />
-                    <span className="text-xs text-slate-500 font-mono shrink-0">đ/th</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="mt-3 pt-2 border-t border-slate-200 text-[10px] text-slate-400 flex items-center justify-between">
-              <span>Chuẩn BR-RULE-011</span>
-              <span>Bảo lưu HĐ đang thuê</span>
-            </div>
-          </div>
-
-          {/* Tier 2: Security Deposit */}
-          <div className="bg-slate-50 rounded-xl p-4 flex flex-col justify-between border border-slate-200">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-mono text-xs uppercase font-bold text-slate-900 flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-slate-800 text-[18px]">account_balance_wallet</span>
-                  2. Tiền Cọc Đảm Bảo
-                </span>
-                <span className="px-2 py-0.5 rounded bg-white text-xs font-semibold text-slate-800 border border-slate-200">Bắt buộc</span>
-              </div>
-              <p className="text-xs text-slate-500 mb-3">Chính sách bảo chứng tài sản kho:</p>
-              <div className="flex flex-col gap-2">
-                <label className="flex items-start gap-2 p-2 rounded bg-white border border-slate-200 cursor-pointer">
-                  <input 
-                    type="radio" 
-                    name="deposit" 
-                    checked={depositOption === '1month'}
-                    onChange={() => setDepositOption('1month')}
-                    className="mt-1 accent-orange-600" 
-                  />
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-slate-900">Mặc định: 01 Tháng Tiền Thuê</span>
-                    <span className="text-[11px] text-slate-500">Khách cá nhân và DN nhỏ &lt; 6 tháng</span>
-                  </div>
-                </label>
-                <label className="flex items-start gap-2 p-2 rounded bg-white border border-slate-200 cursor-pointer">
-                  <input 
-                    type="radio" 
-                    name="deposit" 
-                    checked={depositOption === '2months'}
-                    onChange={() => setDepositOption('2months')}
-                    className="mt-1 accent-orange-600" 
-                  />
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-slate-900">Cố định: 02 Tháng Tiền Thuê</span>
-                    <span className="text-[11px] text-slate-500">Kho điều hòa hoặc thuê &gt; 100m²</span>
-                  </div>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          {/* Tier 3: Tenure Discount */}
-          <div className="bg-slate-50 rounded-xl p-4 flex flex-col justify-between border border-slate-200">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-mono text-xs uppercase font-bold text-slate-900 flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-orange-600 text-[18px]">percent</span>
-                  3. Chiết Khấu Kỳ Hạn
-                </span>
-                <span className="px-2 py-0.5 rounded bg-white text-xs font-semibold text-slate-800 border border-slate-200">Kích hoạt</span>
-              </div>
-              <p className="text-xs text-slate-500 mb-3">Khuyến khích ký dài hạn &amp; giảm tỷ lệ churn:</p>
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between p-2 rounded bg-white border border-slate-200">
-                  <span className="text-xs text-slate-800">Trả trước 3 Tháng</span>
-                  <div className="flex items-center gap-1">
-                    <input 
-                      type="text" 
-                      value={discount3M}
-                      onChange={(e) => setDiscount3M(e.target.value)}
-                      className="w-12 text-center bg-slate-50 rounded px-1.5 py-0.5 font-mono text-xs font-bold text-orange-600 focus:outline-none border border-slate-200" 
-                    />
-                    <span className="text-xs text-slate-800">%</span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between p-2 rounded bg-white border border-slate-200">
-                  <span className="text-xs text-slate-800">Trả trước 6 Tháng</span>
-                  <div className="flex items-center gap-1">
-                    <input 
-                      type="text" 
-                      value={discount6M}
-                      onChange={(e) => setDiscount6M(e.target.value)}
-                      className="w-12 text-center bg-slate-50 rounded px-1.5 py-0.5 font-mono text-xs font-bold text-orange-600 focus:outline-none border border-slate-200" 
-                    />
-                    <span className="text-xs text-slate-800">%</span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between p-2 rounded bg-white border border-slate-200">
-                  <span className="text-xs text-slate-800">Trả trước 12 Tháng</span>
-                  <div className="flex items-center gap-1">
-                    <input 
-                      type="text" 
-                      value={discount12M}
-                      onChange={(e) => setDiscount12M(e.target.value)}
-                      className="w-12 text-center bg-slate-50 rounded px-1.5 py-0.5 font-mono text-xs font-bold text-orange-600 focus:outline-none border border-slate-200" 
-                    />
-                    <span className="text-xs text-slate-800">%</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Tier 4: Overdue & Penalty */}
-          <div className="bg-slate-50 rounded-xl p-4 flex flex-col justify-between border border-slate-200">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-mono text-xs uppercase font-bold text-slate-900 flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-rose-600 text-[18px]">lock_clock</span>
-                  4. Xử Lý Quá Hạn
-                </span>
-                <span className="px-2 py-0.5 rounded bg-white text-xs font-semibold text-rose-600 border border-slate-200">Tự Động</span>
-              </div>
-              <p className="text-xs text-slate-500 mb-3">Quy chuẩn thu hồi công nợ &amp; khóa mã kho:</p>
-              <div className="flex flex-col gap-2">
-                <div className="p-2 rounded bg-white border border-slate-200 flex flex-col gap-0.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-800">Thời gian ân hạn:</span>
-                    <span className="font-mono text-xs font-bold text-slate-900">{graceDays}</span>
-                  </div>
-                  <span className="text-[10px] text-slate-500">Không áp dụng phí phạt trễ hạn.</span>
-                </div>
-                <div className="p-2 rounded bg-white border border-slate-200 flex flex-col gap-0.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-800">Phạt từ Ngày thứ 4:</span>
-                    <span className="font-mono text-xs font-bold text-orange-600">{lateFee} đ/ngày</span>
-                  </div>
-                  <span className="text-[10px] text-slate-500">Tự cộng vào biên lai kế tiếp.</span>
-                </div>
-                <div className="p-2 rounded bg-white border border-slate-200 flex flex-col gap-0.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-rose-700">Khóa cổng điện tử:</span>
-                    <span className="font-mono text-xs font-bold text-rose-700">{lockoutDay}</span>
-                  </div>
-                  <span className="text-[10px] text-slate-500">Ngắt mã PIN &amp; quyền App.</span>
-                </div>
-              </div>
             </div>
           </div>
         </div>
-      </form>
-      ) : (
-        <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <div className="flex items-start gap-3">
-            <span className="material-symbols-outlined rounded-lg bg-slate-100 p-2 text-slate-600 dark:bg-slate-800 dark:text-slate-300">admin_panel_settings</span>
-            <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{t('Cấu hình chính sách toàn hệ thống', 'System-wide policy settings')}</h2>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{t('Chỉ Admin được phép chỉnh sửa chính sách và bảng giá.', 'Only Admin can edit system policies and pricing.')}</p>
-            </div>
-          </div>
-        </section>
-      )}
+
+        <ContractRenewalsManagementPanel
+          currentFacilityId={selectedFacilityId === 'all' ? undefined : selectedFacilityId}
+          facilities={facilities}
+          userRole="BUSINESS_MANAGER"
+          showChainWideFilter={true}
+        />
+      </div>
+
     </div>
+    </>
   )
 }

@@ -22,6 +22,7 @@ interface BookingCheckoutModalProps {
   user: User
   onClose: () => void
   existingBooking?: Booking
+  existingPayments?: any[]
 }
 
 type CheckoutStep = 1 | 2 | 3 | 4
@@ -289,11 +290,8 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                       <span className="text-xs font-bold text-slate-900">Ký Trực Tiếp Tại Kho</span>
                     </div>
                     <p className="text-[11px] text-slate-600 leading-relaxed">
-<<<<<<< Updated upstream
                       Quản lý duyệt &amp; phân công nhân viên đón tiếp &rarr; Quý khách đến kiểm tra kho thực tế &rarr; Ký biên bản &amp; nhận kho tại quầy.
-=======
-                      Giữ chỗ đến lịch hẹn ({startDate} {checkInTime}) + {serverQuote?.holdGraceHours ?? 1} giờ theo chính sách. Vị trí kho được xác nhận khi check-in.
->>>>>>> Stashed changes
+
                     </p>
                   </div>
                 </div>
@@ -309,22 +307,12 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
               <div className="space-y-2 rounded-xl border border-slate-200 p-4 text-xs">
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Người thuê</span><strong>{customerName.trim()}</strong></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Email / điện thoại</span><strong className="text-right">{user.email}<br />{normalizedPhone}</strong></div>
-<<<<<<< Updated upstream
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Ngày bắt đầu</span><strong>{new Date(`${startDate}T00:00:00`).toLocaleDateString('vi-VN')}</strong></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Dự kiến đến</span><strong>{new Date(`${expectedArrivalDate}T00:00:00`).toLocaleDateString('vi-VN')} · {expectedArrivalTime}</strong></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Kỳ hạn</span><strong>{rentalMonths} tháng</strong></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Tiền thuê theo kỳ hạn</span><strong>{formatVnd(unit.monthlyPrice * rentalMonths)}</strong></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Tiền cọc dự kiến</span><strong>{formatVnd(unit.depositAmount ?? unit.monthlyPrice)}</strong></div>
-=======
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Lịch hẹn nhận kho</span><strong>{new Date(`${startDate}T${checkInTime || '09:00'}:00`).toLocaleString('vi-VN')}</strong></div>
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Hạn giữ chỗ dự kiến</span><strong className="text-amber-800">Đến giờ hẹn + {serverQuote?.holdGraceHours ?? 1} giờ</strong></div>
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Kỳ hạn thuê</span><strong>{rentalMonths} tháng</strong></div>
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Tiền thuê trước ưu đãi</span><strong>{formatVnd(serverQuote?.subtotalRentalFee ?? monthlyPrice * rentalMonths)}</strong></div>
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Chiết khấu kỳ hạn</span><strong className="text-emerald-700">-{formatVnd(serverQuote?.discountAmount ?? 0)}{serverQuote?.discountPercentage ? ` (${serverQuote.discountPercentage}%)` : ''}</strong></div>
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Tiền thuê sau ưu đãi</span><strong>{formatVnd(serverQuote?.totalRentalFee ?? monthlyPrice * rentalMonths)}</strong></div>
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Tiền cọc an ninh</span><strong>{formatVnd(depositAmount)}</strong></div>
-                <div className="flex justify-between gap-3 border-t border-slate-200 pt-2"><span className="font-bold text-slate-800">Tổng chi phí dự kiến</span><strong className="text-blue-600">{formatVnd(serverQuote?.totalContractValue ?? amountDue)}</strong></div>
->>>>>>> Stashed changes
+
                 <div className="flex justify-between items-center gap-3 pt-1 border-t border-slate-100">
                   <span className="text-slate-500">Hình thức ký hợp đồng</span>
                   <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${

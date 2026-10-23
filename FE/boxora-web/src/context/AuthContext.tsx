@@ -174,27 +174,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (emailOrUsername: string, password: string): Promise<User> => {
     setIsLoading(true)
     try {
-<<<<<<< Updated upstream
-      try {
-        const res = await authService.login(emailOrUsername, password)
-        if (res.data) {
-          const { accessToken, refreshToken, user: rawUser } = res.data
-          const jwtRole = parseJwtRole(accessToken)
-          const enrichedUser: User = {
-            ...rawUser,
-            role: rawUser?.role || (rawUser?.roleName ? {
-              id: rawUser.roleId,
-              name: rawUser.roleName as RoleType,
-              description: rawUser.roleName
-            } : (jwtRole ? { name: jwtRole } : undefined)),
-            roleName: (rawUser?.roleName || rawUser?.role?.name || jwtRole || undefined) as (RoleType | string | undefined),
-            roleId: rawUser?.roleId || rawUser?.role?.id || undefined,
-            facilityId: rawUser?.facilityId || undefined,
-            facilityName: rawUser?.facilityName || undefined,
-            facilityCode: rawUser?.facilityCode || undefined
-          }
-          localStorage.setItem('boxora_access_token', accessToken)
-=======
       const res = await authService.login(emailOrUsername, password)
       if (res.data) {
         const { accessToken, refreshToken, user: rawUser } = res.data
@@ -216,44 +195,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         localStorage.setItem('boxora_access_token', accessToken)
         if (refreshToken) {
->>>>>>> Stashed changes
           localStorage.setItem('boxora_refresh_token', refreshToken)
-          localStorage.setItem('boxora_user', JSON.stringify(enrichedUser))
-          setToken(accessToken)
-          setUser(enrichedUser)
-          return enrichedUser
         }
-      } catch (backendError: any) {
-        if (backendError?.response) {
-          throw backendError
-        }
-        console.warn('Backend authentication offline, falling back to mock session:', backendError)
-        const matchedPreset = ROLE_PRESETS.find(
-          p => p.email.toLowerCase() === emailOrUsername.toLowerCase() ||
-               p.role.toLowerCase() === emailOrUsername.toLowerCase() ||
-               p.email.split('@')[0].toLowerCase() === emailOrUsername.toLowerCase()
-        )
-        if (matchedPreset) {
-          const mockUser: User = {
-            id: `mock-${matchedPreset.role.toLowerCase()}`,
-            username: matchedPreset.email.split('@')[0],
-            email: matchedPreset.email,
-            fullName: matchedPreset.role === 'ADMIN' ? 'Nguyễn Quỳnh Anh' :
-                      matchedPreset.role === 'BUSINESS_MANAGER' ? 'Hoàng Minh Trí' :
-                      matchedPreset.role === 'FACILITY_MANAGER' ? 'Phạm Quốc Đạt' :
-                      matchedPreset.role === 'STAFF' ? 'Trần Văn Hậu' : 'Lê Đăng Nguyên',
-            role: { name: matchedPreset.role, description: matchedPreset.label }
-          }
-          const fakeToken = `mock-token-${matchedPreset.role.toLowerCase()}`
-          localStorage.setItem('boxora_access_token', fakeToken)
-          localStorage.setItem('boxora_user', JSON.stringify(mockUser))
-          setToken(fakeToken)
-          setUser(mockUser)
-          return mockUser
-        }
-        throw backendError
+        localStorage.setItem('boxora_user', JSON.stringify(enrichedUser))
+        setToken(accessToken)
+        setUser(enrichedUser)
+        return enrichedUser
       }
       throw new Error('Đăng nhập không thành công, vui lòng thử lại.')
+    } catch (backendError: any) {
+      if (backendError?.response) {
+        throw backendError
+      }
+      console.warn('Backend authentication offline, falling back to mock session:', backendError)
+      const matchedPreset = ROLE_PRESETS.find(
+        p => p.email.toLowerCase() === emailOrUsername.toLowerCase() ||
+             p.role.toLowerCase() === emailOrUsername.toLowerCase() ||
+             p.email.split('@')[0].toLowerCase() === emailOrUsername.toLowerCase()
+      )
+      if (matchedPreset) {
+        const mockUser: User = {
+          id: `mock-${matchedPreset.role.toLowerCase()}`,
+          username: matchedPreset.email.split('@')[0],
+          email: matchedPreset.email,
+          fullName: matchedPreset.role === 'ADMIN' ? 'Nguyễn Quỳnh Anh' :
+                    matchedPreset.role === 'BUSINESS_MANAGER' ? 'Hoàng Minh Trí' :
+                    matchedPreset.role === 'FACILITY_MANAGER' ? 'Phạm Quốc Đạt' :
+                    matchedPreset.role === 'STAFF' ? 'Trần Văn Hậu' : 'Lê Đăng Nguyên',
+          role: { name: matchedPreset.role, description: matchedPreset.label }
+        }
+        const fakeToken = `mock-token-${matchedPreset.role.toLowerCase()}`
+        localStorage.setItem('boxora_access_token', fakeToken)
+        localStorage.setItem('boxora_user', JSON.stringify(mockUser))
+        setToken(fakeToken)
+        setUser(mockUser)
+        return mockUser
+      }
+      throw backendError
     } finally {
       setIsLoading(false)
     }

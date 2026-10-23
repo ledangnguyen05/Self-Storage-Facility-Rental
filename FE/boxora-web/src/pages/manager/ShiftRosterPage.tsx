@@ -133,6 +133,11 @@ export const ShiftRosterPage: React.FC = () => {
   const [dispatchNotes, setDispatchNotes] = useState<string>('')
   const [isDispatching, setIsDispatching] = useState(false)
 
+  // Reject Handover State
+  const [rejectHandoverTarget, setRejectHandoverTarget] = useState<ShiftHandover | null>(null)
+  const [rejectHandoverReason, setRejectHandoverReason] = useState<string>('')
+  const [isRejectingHandover, setIsRejectingHandover] = useState(false)
+
   const showToast = (msg: string) => {
     setToastMessage(msg)
     setTimeout(() => setToastMessage(null), 4000)
@@ -429,6 +434,31 @@ export const ShiftRosterPage: React.FC = () => {
       showToast(err?.response?.data?.message || 'Lỗi khi xác nhận bàn giao.')
     } finally {
       setActionLoadingId(null)
+    }
+  }
+
+  // Handover Reject Action
+  const handleRejectHandoverSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!rejectHandoverTarget) return
+    if (!rejectHandoverReason.trim()) {
+      showToast('Vui lòng nhập lý do từ chối nhận bàn giao ca.')
+      return
+    }
+    setIsRejectingHandover(true)
+    try {
+      await staffAssignmentService.acknowledgeHandover(rejectHandoverTarget.id, {
+        status: 'REJECTED',
+        notes: rejectHandoverReason.trim()
+      })
+      showToast('Đã từ chối nhận bàn giao ca thành công!')
+      setRejectHandoverTarget(null)
+      setRejectHandoverReason('')
+      await fetchData()
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Lỗi khi từ chối bàn giao ca.')
+    } finally {
+      setIsRejectingHandover(false)
     }
   }
 
@@ -1073,10 +1103,10 @@ export const ShiftRosterPage: React.FC = () => {
                 className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:border-blue-400"
               >
                 <option value="ALL">Tất cả trạng thái chấm công</option>
-                <option value="ASSIGNED">Chưa vào ca (Chờ trực)</option>
-                <option value="CHECKED_IN">Đang trực ca (Checked-in)</option>
+                <option value="ASSIGNED">Chưa vào ca</option>
+                <option value="CHECKED_IN">Đang trực ca</option>
                 <option value="COMPLETED">Đã hoàn thành</option>
-                <option value="ABSENT">Không đi làm (Vắng mặt)</option>
+                <option value="ABSENT">Không đi làm</option>
                 <option value="CANCELLED">Đã hủy ca</option>
               </select>
 
@@ -1751,22 +1781,36 @@ export const ShiftRosterPage: React.FC = () => {
                               </button>
                             )}
 
-                            {/* Nút Xác nhận tiếp nhận khi SUBMITTED hoặc DISCREPANCY */}
+                            {/* Nút Tiếp nhận / Từ chối khi SUBMITTED hoặc DISCREPANCY */}
                             {(isSubmitted || isDiscrepancy) && (
                               isMyOwnHandover ? (
                                 <span className="text-[11px] text-slate-400 italic font-semibold">
                                   Người giao ca
                                 </span>
                               ) : (
-                                <button
-                                  type="button"
-                                  disabled={isLoadingAction}
-                                  onClick={() => handleAcknowledgeHandover(h.id)}
-                                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
-                                >
-                                  <span className="material-symbols-outlined text-[15px]">check_circle</span>
-                                  <span>Tiếp nhận</span>
-                                </button>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    disabled={isLoadingAction}
+                                    onClick={() => {
+                                      setRejectHandoverTarget(h)
+                                      setRejectHandoverReason('')
+                                    }}
+                                    className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg font-bold text-xs transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                                  >
+                                    <span className="material-symbols-outlined text-[15px]">close</span>
+                                    <span>Từ chối</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isLoadingAction}
+                                    onClick={() => handleAcknowledgeHandover(h.id)}
+                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                                  >
+                                    <span className="material-symbols-outlined text-[15px]">check_circle</span>
+                                    <span>Tiếp nhận</span>
+                                  </button>
+                                </div>
                               )
                             )}
 
@@ -1868,6 +1912,73 @@ export const ShiftRosterPage: React.FC = () => {
                     >
                       {isDispatching && <span className="material-symbols-outlined text-[15px] animate-spin">progress_activity</span>}
                       <span>Xác nhận điều phối</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Từ chối tiếp nhận bàn giao ca */}
+          {rejectHandoverTarget && (
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+              <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+                <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-rose-50/60">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-rose-600 text-[20px]">cancel</span>
+                    <h3 className="font-bold text-slate-900 text-sm">
+                      Từ Chối Nhận Bàn Giao Ca
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRejectHandoverTarget(null)}
+                    className="text-slate-400 hover:text-slate-600 cursor-pointer p-1"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">close</span>
+                  </button>
+                </div>
+
+                <form onSubmit={handleRejectHandoverSubmit} className="p-5 flex flex-col gap-3.5 text-xs">
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 space-y-1">
+                    <div>Người bàn giao: <strong>{rejectHandoverTarget.outgoingStaffName || rejectHandoverTarget.outgoingStaffUsername}</strong></div>
+                    <div>Ca trực: <strong>{rejectHandoverTarget.shift} • {rejectHandoverTarget.handoverDate}</strong></div>
+                    <div>Tiền sổ sách: <strong className="font-mono text-blue-700">{Number(rejectHandoverTarget.cashInDrawer || 0).toLocaleString('vi-VN')} đ</strong></div>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">
+                      Lý do từ chối nhận ca <span className="text-rose-500">*</span>
+                    </label>
+                    <textarea
+                      rows={3}
+                      required
+                      value={rejectHandoverReason}
+                      onChange={e => setRejectHandoverReason(e.target.value)}
+                      placeholder="Ghi rõ lý do từ chối (chênh lệch quỹ, thiếu trang thiết bị, hỏng hóc...)"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-rose-500 focus:bg-white resize-none"
+                    />
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Lý do sẽ được cập nhật vào biên bản bàn giao để gửi lại người giao ca và Quản lý cơ sở.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setRejectHandoverTarget(null)}
+                      disabled={isRejectingHandover}
+                      className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl cursor-pointer"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isRejectingHandover || !rejectHandoverReason.trim()}
+                      className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl flex items-center gap-1 shadow-xs disabled:opacity-50 cursor-pointer"
+                    >
+                      {isRejectingHandover && <span className="material-symbols-outlined text-[15px] animate-spin">progress_activity</span>}
+                      <span>Xác nhận từ chối</span>
                     </button>
                   </div>
                 </form>

@@ -207,14 +207,11 @@ export const RegisterPage: React.FC = () => {
         captchaId,
         captchaCode: captchaInput.trim().toUpperCase()
       })
-<<<<<<< Updated upstream
-      markUserAsNewCustomer('', derivedUsername, formData.email.trim())
-=======
       if (formData.identityCardNumber.trim()) {
         localStorage.setItem('boxora_user_cccd_' + formData.email.trim(), formData.identityCardNumber.trim())
         localStorage.setItem('boxora_user_cccd', formData.identityCardNumber.trim())
       }
->>>>>>> Stashed changes
+
       setSuccess(true)
       navigate('/units', {
         state: { welcomeMessage: 'Tài khoản đã tạo thành công! Hãy chọn kho lưu trữ gần bạn nhất.' }

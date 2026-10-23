@@ -8,14 +8,11 @@ import com.boxora.entity.*;
 import com.boxora.enums.ActivityAction;
 import com.boxora.enums.BookingStatus;
 import com.boxora.enums.PaymentStatus;
-import com.boxora.enums.PaymentType;
+import com.boxora.enums.RefundStatus;
 import com.boxora.enums.UnitStatus;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
-import com.boxora.repository.BookingRepository;
-import com.boxora.repository.FacilityPolicyRepository;
-import com.boxora.repository.PaymentRepository;
-import com.boxora.repository.StorageUnitRepository;
+import com.boxora.repository.*;
 import com.boxora.security.RequestContext;
 import com.boxora.service.impl.BookingCancellationServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -55,6 +52,18 @@ class BookingCancellationServiceTest {
 
     @Mock
     private PaymentRepository paymentRepository;
+
+    @Mock
+    private RentalContractRepository rentalContractRepository;
+
+    @Mock
+    private RefundRequestRepository refundRequestRepository;
+
+    @Mock
+    private HandoverRecordRepository handoverRecordRepository;
+
+    @Mock
+    private UserRepository userRepository;
 
     @Mock
     private ActivityLogService activityLogService;
@@ -131,10 +140,9 @@ class BookingCancellationServiceTest {
         @Test
         @DisplayName("Mốc 1 (>= 48h): Hoàn 100% tiền cọc")
         void preview_Stage1_FullRefund() {
-            // >= 48h trước check-in
             testBooking.setStartDate(LocalDate.now().plusDays(4));
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(facilityPolicyRepository.findByFacility_Id(testFacility.getId()))
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));
 
             BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
@@ -150,14 +158,9 @@ class BookingCancellationServiceTest {
         @Test
         @DisplayName("Mốc 2 (24h - 48h): Hoàn 50% tiền cọc, phạt 50%")
         void preview_Stage2_PartialRefund() {
-<<<<<<< Updated upstream
-            // 24h - 48h trước check-in (ngày T+2 cách now từ 24h đến dưới 48h)
             testBooking.setStartDate(LocalDate.now().plusDays(2));
-=======
-            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(36));
->>>>>>> Stashed changes
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(facilityPolicyRepository.findByFacility_Id(testFacility.getId()))
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));
 
             BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
@@ -173,10 +176,10 @@ class BookingCancellationServiceTest {
         @Test
         @DisplayName("Mốc 3 (< 24h): Hoàn 0% tiền cọc, khấu trừ 100%")
         void preview_Stage3_NoRefund() {
-            // < 24h trước check-in (ngày T+1 cách now dưới 24h)
-            testBooking.setStartDate(LocalDate.now().plusDays(1));
+            // Lịch hẹn nhận kho trong vòng 10 giờ tới (< 24h)
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(10));
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(facilityPolicyRepository.findByFacility_Id(testFacility.getId()))
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));
 
             BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
@@ -187,6 +190,153 @@ class BookingCancellationServiceTest {
             assertThat(preview.getRefundAmount()).isEqualByComparingTo(BigDecimal.ZERO);
             assertThat(preview.getPenaltyAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
             assertThat(preview.isRefundable()).isFalse();
+            assertThat(preview.getTimeRemainingLabel()).isEqualTo("Lịch hẹn còn dưới 24 giờ");
+        }
+
+        @Test
+        @DisplayName("Đơn vừa tạo, thanh toán cọc và có lịch hẹn sau 3 ngày: Hoàn 100% tiền cọc (Mốc 1), không bị rơi vào Mốc 3")
+        void preview_NewlyCreatedBooking_WithFutureAppointment_FullRefund() {
+            // Đơn có startDate là hôm nay nhưng lịch hẹn nhận kho là 3 ngày sau lúc 14:00 (khoảng 72h)
+            testBooking.setStartDate(LocalDate.now());
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusDays(3));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview).isNotNull();
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_1_FULL_REFUND");
+            assertThat(preview.getRefundPercentage()).isEqualTo(100.0);
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
+            assertThat(preview.getPenaltyAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(preview.isRefundable()).isTrue();
+            assertThat(preview.getTimeRemainingLabel()).contains("đến lịch hẹn nhận kho");
+        }
+
+        @Test
+        @DisplayName("Mốc 1: Còn 49 giờ (> 48h) -> Hoàn 100%")
+        void preview_49Hours_Stage1_FullRefund() {
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(49).plusMinutes(1));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_1_FULL_REFUND");
+            assertThat(preview.getRefundPercentage()).isEqualTo(100.0);
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
+        }
+
+        @Test
+        @DisplayName("Ranh giới chính xác 48 giờ: Thuộc nhóm Mốc 1 hoàn 100%")
+        void preview_Exact48Hours_Stage1_FullRefund() {
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(48).plusMinutes(1));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_1_FULL_REFUND");
+            assertThat(preview.getRefundPercentage()).isEqualTo(100.0);
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
+        }
+
+        @Test
+        @DisplayName("Mốc 2: Còn 47 giờ (< 48h và >= 24h) -> Hoàn 50%")
+        void preview_47Hours_Stage2_PartialRefund() {
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(47).plusMinutes(1));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_2_PARTIAL_REFUND");
+            assertThat(preview.getRefundPercentage()).isEqualTo(50.0);
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("500000.00"));
+        }
+
+        @Test
+        @DisplayName("Mốc 2: Còn 25 giờ (> 24h và < 48h) -> Hoàn 50%")
+        void preview_25Hours_Stage2_PartialRefund() {
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(25).plusMinutes(1));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_2_PARTIAL_REFUND");
+            assertThat(preview.getRefundPercentage()).isEqualTo(50.0);
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("500000.00"));
+        }
+
+        @Test
+        @DisplayName("Ranh giới chính xác 24 giờ: Thuộc nhóm Mốc 2 hoàn 50%")
+        void preview_Exact24Hours_Stage2_PartialRefund() {
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(24).plusMinutes(1));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_2_PARTIAL_REFUND");
+            assertThat(preview.getRefundPercentage()).isEqualTo(50.0);
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("500000.00"));
+        }
+
+        @Test
+        @DisplayName("Mốc 3: Còn 23 giờ (< 24h) -> Hoàn 0%, khấu trừ 100%")
+        void preview_23Hours_Stage3_NoRefund() {
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(23).plusMinutes(30));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_3_NO_REFUND");
+            assertThat(preview.getRefundPercentage()).isEqualTo(0.0);
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(preview.getPenaltyAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
+        }
+
+        @Test
+        @DisplayName("Đã qua lịch hẹn nhận kho (quá khứ) -> Mốc 3, hoàn 0%")
+        void preview_PastAppointment_Stage3_NoRefund() {
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().minusHours(2));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_3_NO_REFUND");
+            assertThat(preview.getRefundPercentage()).isEqualTo(0.0);
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(preview.getTimeRemainingLabel()).isEqualTo("Đã qua lịch hẹn nhận kho");
+        }
+
+        @Test
+        @DisplayName("Kiểm tra làm tròn và số tiền lẻ: Cọc 450.000 ₫ hoàn 50% = 225.000 ₫")
+        void preview_OddDepositAmount_RoundingCorrectness() {
+            testBooking.setDepositPaid(new BigDecimal("450000.00"));
+            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(30));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
+
+            assertThat(preview.getMilestoneStage()).isEqualTo("STAGE_2_PARTIAL_REFUND");
+            assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("225000.00"));
+            assertThat(preview.getPenaltyAmount()).isEqualByComparingTo(new BigDecimal("225000.00"));
+            assertThat(preview.getRefundAmount().add(preview.getPenaltyAmount()))
+                    .isEqualByComparingTo(new BigDecimal("450000.00"));
         }
 
         @Test
@@ -195,7 +345,7 @@ class BookingCancellationServiceTest {
             testBooking.setStatus(BookingStatus.PENDING_PAYMENT);
             testBooking.setDepositPaid(BigDecimal.ZERO);
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(facilityPolicyRepository.findByFacility_Id(testFacility.getId()))
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));
 
             BookingCancellationPreviewResponse preview = cancellationService.previewCancellationRefund(bookingId);
@@ -229,6 +379,18 @@ class BookingCancellationServiceTest {
 
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BOOKING_ALREADY_COMPLETED);
         }
+
+        @Test
+        @DisplayName("Đơn đang ACTIVE hoặc đã CHECK_IN: Ném BOOKING_CANNOT_BE_CANCELLED")
+        void preview_ActiveOrCheckedIn_ThrowsException() {
+            testBooking.setStatus(BookingStatus.ACTIVE);
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    cancellationService.previewCancellationRefund(bookingId));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BOOKING_CANNOT_BE_CANCELLED);
+        }
     }
 
     @Nested
@@ -236,17 +398,28 @@ class BookingCancellationServiceTest {
     class CancelExecutionTests {
 
         @Test
-        @DisplayName("Hủy đơn thành công Mốc 1: Tạo Payment REFUNDED, giải phóng kho và revoke PIN")
+        @DisplayName("Hủy đơn thành công Mốc 1: Khởi tạo RefundRequest PENDING_REVIEW, giải phóng kho và revoke PIN")
         void cancelBooking_Stage1_Success() {
             testBooking.setStartDate(LocalDate.now().plusDays(4));
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(facilityPolicyRepository.findByFacility_Id(testFacility.getId()))
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));
             when(requestContext.currentUserId()).thenReturn(customerId);
             when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+            when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
+
+            UUID generatedRefundId = UUID.randomUUID();
+            when(refundRequestRepository.save(any(RefundRequest.class))).thenAnswer(invocation -> {
+                RefundRequest r = invocation.getArgument(0);
+                r.setId(generatedRefundId);
+                return r;
+            });
 
             BookingCancelRequest request = BookingCancelRequest.builder()
                     .cancellationReason("Thay đổi kế hoạch kinh doanh")
+                    .bankName("Vietcombank")
+                    .bankAccountNumber("0123456789")
+                    .bankAccountName("NGUYEN VAN KHACH")
                     .build();
 
             BookingCancelResponse response = cancellationService.cancelBooking(bookingId, request);
@@ -256,19 +429,25 @@ class BookingCancellationServiceTest {
             assertThat(response.getMilestoneStage()).isEqualTo("STAGE_1_FULL_REFUND");
             assertThat(response.getRefundAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
             assertThat(response.isUnitReleased()).isTrue();
-            assertThat(response.getRefundTransactionId()).startsWith("REFUND-");
+            assertThat(response.getRefundRequestId()).isEqualTo(generatedRefundId);
+            assertThat(response.getRefundRequestCode()).startsWith("REF-");
+            assertThat(response.getCancellationReason()).isEqualTo("Thay đổi kế hoạch kinh doanh");
 
             // Verify entity updates
             assertThat(testBooking.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+            assertThat(testBooking.getCancellationReason()).isEqualTo("Thay đổi kế hoạch kinh doanh");
+            assertThat(testBooking.getCancelledBy()).isEqualTo(testCustomer);
+            assertThat(testBooking.getCancelledAt()).isNotNull();
             assertThat(testBooking.getAccessPin()).isNull();
             assertThat(testBooking.getQrAccessToken()).isEqualTo("REVOKED_CANCELLED");
             assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.AVAILABLE);
 
-            // Verify Payment creation
-            verify(paymentRepository, times(1)).save(argThat(payment ->
-                    payment.getAmount().compareTo(new BigDecimal("1000000.00")) == 0
-                            && payment.getStatus() == PaymentStatus.REFUNDED
-                            && payment.getPaymentType() == PaymentType.DEPOSIT
+            // Verify RefundRequest created in PENDING_REVIEW state (never a fake payment)
+            verify(refundRequestRepository, times(1)).save(argThat(r ->
+                    r.getFinalRefundAmount().compareTo(new BigDecimal("1000000.00")) == 0
+                            && r.getStatus() == RefundStatus.PENDING_REVIEW
+                            && r.getBankName().equals("Vietcombank")
+                            && r.getBankAccountNumber().equals("0123456789")
             ));
 
             // Verify Activity Log calls
@@ -293,20 +472,15 @@ class BookingCancellationServiceTest {
         }
 
         @Test
-<<<<<<< Updated upstream
-        @DisplayName("Hủy đơn Mốc 3 (< 24h): Không hoàn cọc, không tạo Payment REFUNDED")
-        void cancelBooking_Stage3_NoRefund_DoesNotCreatePayment() {
-            testBooking.setStartDate(LocalDate.now().plusDays(1));
-=======
         @DisplayName("Hủy đơn Mốc 3 (< 24h): Không hoàn cọc, không tạo RefundRequest")
         void cancelBooking_Stage3_NoRefund_DoesNotCreateRefundRequest() {
-            testBooking.setExpectedCheckInAt(LocalDateTime.now().plusHours(12));
->>>>>>> Stashed changes
+            testBooking.setStartDate(LocalDate.now().plusDays(1));
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(facilityPolicyRepository.findByFacility_Id(testFacility.getId()))
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
                     .thenReturn(Optional.of(testPolicy));
             when(requestContext.currentUserId()).thenReturn(customerId);
             when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+            when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
 
             BookingCancelRequest request = BookingCancelRequest.builder()
                     .cancellationReason("Bận việc gấp")
@@ -317,12 +491,12 @@ class BookingCancellationServiceTest {
             assertThat(response.getMilestoneStage()).isEqualTo("STAGE_3_NO_REFUND");
             assertThat(response.getRefundAmount()).isEqualByComparingTo(BigDecimal.ZERO);
             assertThat(response.getPenaltyAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
-            assertThat(response.getRefundTransactionId()).isNull();
+            assertThat(response.getRefundRequestId()).isNull();
 
             // Unit vẫn được giải phóng về AVAILABLE
             assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.AVAILABLE);
-            // Không tạo Payment refund
-            verify(paymentRepository, never()).save(any(Payment.class));
+            // Không tạo RefundRequest
+            verify(refundRequestRepository, never()).save(any(RefundRequest.class));
         }
 
         @Test
@@ -348,6 +522,7 @@ class BookingCancellationServiceTest {
         @Test
         @DisplayName("Trigger auto-cancel quét và hủy thành công các booking PENDING_PAYMENT quá hạn")
         void triggerAutoCancel_Success() {
+            testUnit.setStatus(UnitStatus.RESERVED);
             Booking expiredBooking1 = Booking.builder()
                     .bookingCode("BK-PENDING-001")
                     .status(BookingStatus.PENDING_PAYMENT)
@@ -370,7 +545,7 @@ class BookingCancellationServiceTest {
                     .status(BookingStatus.PENDING_PAYMENT)
                     .storageUnit(unit2)
                     .customer(testCustomer)
-                    .startDate(LocalDate.now().minusDays(1)) // Đã qua ngày bắt đầu
+                    .startDate(LocalDate.now().minusDays(1))
                     .build();
             expiredBooking2.setId(UUID.randomUUID());
             expiredBooking2.setCreatedAt(LocalDateTime.now().minusHours(2));
@@ -378,6 +553,10 @@ class BookingCancellationServiceTest {
             when(bookingRepository.findExpiredPendingBookings(
                     eq(BookingStatus.PENDING_PAYMENT), any(LocalDateTime.class), any(LocalDate.class)))
                     .thenReturn(List.of(expiredBooking1, expiredBooking2));
+            when(bookingRepository.findByIdForUpdate(expiredBooking1.getId())).thenReturn(Optional.of(expiredBooking1));
+            when(bookingRepository.findByIdForUpdate(expiredBooking2.getId())).thenReturn(Optional.of(expiredBooking2));
+            when(storageUnitRepository.findWithDetailsByIdForUpdate(testUnit.getId())).thenReturn(Optional.of(testUnit));
+            when(storageUnitRepository.findWithDetailsByIdForUpdate(unit2.getId())).thenReturn(Optional.of(unit2));
 
             AutoCancelResult result = cancellationService.triggerAutoCancel(15);
 
@@ -386,14 +565,12 @@ class BookingCancellationServiceTest {
             assertThat(result.getCancelledCount()).isEqualTo(2);
             assertThat(result.getUnitsReleasedCount()).isEqualTo(2);
 
-            // Kiểm tra trạng thái cả 2 booking và units
             assertThat(expiredBooking1.getStatus()).isEqualTo(BookingStatus.CANCELLED);
             assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.AVAILABLE);
 
             assertThat(expiredBooking2.getStatus()).isEqualTo(BookingStatus.CANCELLED);
             assertThat(unit2.getStatus()).isEqualTo(UnitStatus.AVAILABLE);
 
-            // Verify activity logs hệ thống
             verify(activityLogService, times(2)).recordSystem(
                     eq(testFacility.getId()),
                     eq(ActivityAction.RESERVATION_EXPIRE),
@@ -417,6 +594,40 @@ class BookingCancellationServiceTest {
             assertThat(result.getUnitsReleasedCount()).isEqualTo(0);
             verify(bookingRepository, never()).save(any(Booking.class));
         }
+
+        @Test
+        @DisplayName("triggerAutoCancel: Idempotent - Booking đã bị CANCELLED được bỏ qua an toàn")
+        void triggerAutoCancel_Idempotent_AlreadyCancelledBooking_SkippedSafely() {
+            testBooking.setStatus(BookingStatus.CANCELLED);
+            when(bookingRepository.findExpiredPendingBookings(
+                    eq(BookingStatus.PENDING_PAYMENT), any(LocalDateTime.class), any(LocalDate.class)))
+                    .thenReturn(List.of(testBooking));
+            when(bookingRepository.findByIdForUpdate(testBooking.getId())).thenReturn(Optional.of(testBooking));
+
+            AutoCancelResult result = cancellationService.triggerAutoCancel(15);
+
+            assertThat(result.getCancelledCount()).isEqualTo(0);
+            assertThat(result.getUnitsReleasedCount()).isEqualTo(0);
+            verify(storageUnitRepository, never()).save(any(StorageUnit.class));
+        }
+
+        @Test
+        @DisplayName("triggerAutoCancel: Race condition với Payment - Đơn đã PAID được chuyển CONFIRMED thay vì hủy")
+        void triggerAutoCancel_RaceWithPayment_PaidBookingReconcilesToConfirmed() {
+            testBooking.setStatus(BookingStatus.PENDING_PAYMENT);
+            when(bookingRepository.findExpiredPendingBookings(
+                    eq(BookingStatus.PENDING_PAYMENT), any(LocalDateTime.class), any(LocalDate.class)))
+                    .thenReturn(List.of(testBooking));
+            when(bookingRepository.findByIdForUpdate(testBooking.getId())).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.existsByBooking_IdAndStatus(testBooking.getId(), PaymentStatus.PAID)).thenReturn(true);
+
+            AutoCancelResult result = cancellationService.triggerAutoCancel(15);
+
+            assertThat(result.getCancelledCount()).isEqualTo(0);
+            assertThat(testBooking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+            assertThat(testBooking.getPaymentExpiresAt()).isNull();
+            verify(bookingRepository).save(testBooking);
+            verify(storageUnitLockService).releaseLock(testUnit.getId());
+        }
     }
 }
-

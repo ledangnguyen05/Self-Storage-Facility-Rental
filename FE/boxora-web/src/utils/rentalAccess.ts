@@ -72,10 +72,8 @@ export const checkCustomerPortalAccess = (user: User | null): {
     return { hasAccess: true, rentals: [] }
   }
 
-<<<<<<< Updated upstream
-=======
   // Customer must have signed contract and confirmed IoT code on system
->>>>>>> Stashed changes
+
   const rentals = getCustomerRentals(user)
   const hasConfirmedIoT =
     Array.isArray(rentals) &&
@@ -129,11 +127,8 @@ export const activateCustomerRental = (
   const newRental: CustomerRentalRecord = {
     unitCode,
     unitName,
-<<<<<<< Updated upstream
-    contractCode: `HD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-=======
     contractCode: contractCode || `CTR-${unitCode.replace(/[^a-zA-Z0-9]/g, '')}`,
->>>>>>> Stashed changes
+
     startDate: new Date().toLocaleDateString('vi-VN'),
     isAppConfirmed: true
   }
@@ -191,4 +186,48 @@ export const syncCustomerPortalAccess = async (user: User) => {
   // An existing local access marker also protects the portal route if the API
   // is temporarily unavailable.
   return hasCustomerPortalActivity(user) || !isMarkedAsNewCustomer(user)
+}
+
+export interface CheckInCountdownInfo {
+  text: string
+  type: 'today' | 'overdue' | 'upcoming'
+  diffDays: number
+  badgeClass: string
+}
+
+export const getCheckInCountdown = (dateString?: string): CheckInCountdownInfo | null => {
+  if (!dateString) return null
+  const target = new Date(dateString)
+  if (isNaN(target.getTime())) return null
+
+  const now = new Date()
+  const targetDate = new Date(target.getFullYear(), target.getMonth(), target.getDate())
+  const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+  const diffMs = targetDate.getTime() - todayDate.getTime()
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
+
+  if (diffDays === 0) {
+    return {
+      text: 'Hôm nay',
+      type: 'today',
+      diffDays: 0,
+      badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300'
+    }
+  } else if (diffDays < 0) {
+    const pastDays = Math.abs(diffDays)
+    return {
+      text: `Quá ${pastDays} ngày`,
+      type: 'overdue',
+      diffDays,
+      badgeClass: 'bg-rose-100 text-rose-800 border-rose-300'
+    }
+  } else {
+    return {
+      text: `Sắp tới ${diffDays} ngày`,
+      type: 'upcoming',
+      diffDays,
+      badgeClass: 'bg-blue-100 text-blue-800 border-blue-300'
+    }
+  }
 }

@@ -244,7 +244,8 @@ public class ShiftHandoverServiceImpl implements ShiftHandoverService {
         handover.setAcknowledgedAt(LocalDateTime.now());
         if (request.getNotes() != null && !request.getNotes().isBlank()) {
             String existingNotes = handover.getNotes() != null ? handover.getNotes() + "\n" : "";
-            handover.setNotes(existingNotes + "[Tiếp nhận ca] " + request.getNotes());
+            String prefix = nextStatus == ShiftHandoverStatus.REJECTED ? "[Từ chối nhận ca] " : "[Tiếp nhận ca] ";
+            handover.setNotes(existingNotes + prefix + request.getNotes());
         }
 
         ShiftHandover updated = shiftHandoverRepository.save(handover);

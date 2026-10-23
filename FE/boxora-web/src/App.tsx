@@ -13,12 +13,9 @@ import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
 import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
 import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
 import { PaymentResultPage } from './pages/public/PaymentResultPage'
-<<<<<<< Updated upstream
 import { FacilitiesPage } from './pages/public/FacilitiesPage'
-=======
 import { OnlineBookingContractPage } from './pages/customer/OnlineBookingContractPage'
 import { MyBookingsPage } from './pages/customer/MyBookingsPage'
->>>>>>> Stashed changes
 
 // StorageOps Pro Portals (Matching Prototype Stitch Files)
 
@@ -32,10 +29,13 @@ import { IncidentTicketsPage } from './pages/staff/IncidentTicketsPage'
 import { OverdueManagementPage } from './pages/manager/OverdueManagementPage'
 import { ShiftRosterPage } from './pages/manager/ShiftRosterPage'
 import { BoxoraChatWidget } from './components/chat/BoxoraChatWidget'
+import { StaffMyShiftsPage } from './pages/staff/StaffMyShiftsPage'
+import { checkCustomerPortalAccess } from './utils/rentalAccess'
+import { ErrorBoundary } from './components/common/ErrorBoundary'
 
 // Root redirect handler based on user role
 function RootRedirect() {
-  const { isAuthenticated, role, isLoading } = useAuth()
+  const { isAuthenticated, role, user, isLoading } = useAuth()
 
   if (isLoading) {
     return (
@@ -60,16 +60,14 @@ function RootRedirect() {
     case 'STAFF':
       return <Navigate to="/portal/staff" replace />
     case 'CUSTOMER':
-<<<<<<< Updated upstream
-    default:
-=======
     default: {
       const access = checkCustomerPortalAccess(user)
       if (!access.hasAccess) {
         return <Navigate to="/my-bookings" replace />
       }
->>>>>>> Stashed changes
+
       return <Navigate to="/portal/customer" replace />
+    }
   }
 }
 
@@ -102,6 +100,14 @@ function MainContent() {
             }
           />
           <Route path="/payment-result" element={<PaymentResultPage />} />
+          <Route
+            path="/online-booking-contract"
+            element={
+              <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}>
+                <OnlineBookingContractPage />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Boxora Terms & Standards Dashboard */}
           <Route
@@ -139,20 +145,21 @@ function MainContent() {
               }
             />
 
-<<<<<<< HEAD
-            {/* 2. Staff Portal: Staff, Facility Manager, Admin */}
+{/* 2. Staff Portal: Staff, Facility Manager, Admin */}
             <Route
               path="staff"
               element={
                 <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'ADMIN']}>
-=======
-            {/* 2. Staff Portal: operational access is reserved for Staff & Facility Manager */}
+                  <StaffDashboard />
+                </ProtectedRoute>
+              }
+            />
+
             <Route
-              path="staff"
+              path="staff/shifts"
               element={
                 <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER']}>
->>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
-                  <StaffDashboard />
+                  <StaffMyShiftsPage />
                 </ProtectedRoute>
               }
             />
@@ -230,6 +237,8 @@ function MainContent() {
           {/* Direct Friendly URLs with Automatic Route Guards */}
           <Route path="/customer" element={<Navigate to="/portal/customer" replace />} />
           <Route path="/staff" element={<Navigate to="/portal/staff" replace />} />
+          <Route path="/staff/shifts" element={<Navigate to="/portal/staff/shifts" replace />} />
+          <Route path="/my-shifts" element={<Navigate to="/portal/staff/shifts" replace />} />
           <Route path="/facility-manager" element={<Navigate to="/portal/facility-manager" replace />} />
           <Route path="/manager" element={<Navigate to="/portal/facility-manager" replace />} />
           <Route path="/cashier" element={<Navigate to="/portal/cashier" replace />} />
@@ -254,9 +263,11 @@ function MainContent() {
 export function App() {
   return (
     <BrowserRouter>
+      <ErrorBoundary>
       <AuthProvider>
         <MainContent />
       </AuthProvider>
+      </ErrorBoundary>
     </BrowserRouter>
   )
 }

@@ -5,24 +5,16 @@ import com.boxora.dto.response.AutoCancelDetail;
 import com.boxora.dto.response.AutoCancelResult;
 import com.boxora.dto.response.BookingCancelResponse;
 import com.boxora.dto.response.BookingCancellationPreviewResponse;
-import com.boxora.entity.Booking;
-import com.boxora.entity.FacilityPolicy;
-import com.boxora.entity.Payment;
-import com.boxora.entity.StorageUnit;
-import com.boxora.enums.ActivityAction;
-import com.boxora.enums.BookingStatus;
-import com.boxora.enums.PaymentStatus;
-import com.boxora.enums.PaymentType;
-import com.boxora.enums.UnitStatus;
+import com.boxora.entity.*;
+import com.boxora.enums.*;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
-import com.boxora.repository.BookingRepository;
-import com.boxora.repository.FacilityPolicyRepository;
-import com.boxora.repository.PaymentRepository;
-import com.boxora.repository.StorageUnitRepository;
+import com.boxora.repository.*;
 import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
 import com.boxora.service.BookingCancellationService;
+import com.boxora.service.StorageUnitLockService;
+import com.boxora.util.VNPayUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,6 +27,7 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -48,9 +41,13 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
     private final StorageUnitRepository storageUnitRepository;
     private final FacilityPolicyRepository facilityPolicyRepository;
     private final PaymentRepository paymentRepository;
+    private final RentalContractRepository rentalContractRepository;
+    private final RefundRequestRepository refundRequestRepository;
+    private final HandoverRecordRepository handoverRecordRepository;
+    private final UserRepository userRepository;
     private final ActivityLogService activityLogService;
     private final RequestContext requestContext;
-    private final com.boxora.service.StorageUnitLockService storageUnitLockService;
+    private final StorageUnitLockService storageUnitLockService;
 
     @Value("${app.scheduling.pending-payment-timeout-minutes:15}")
     private int defaultPendingPaymentTimeoutMinutes;
@@ -101,18 +98,9 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                 ? policy.getCancellationPartialRefundPercent() : 50.0;
 
         String unitCode = booking.getStorageUnit() != null ? booking.getStorageUnit().getUnitCode() : null;
-        if ("CUSTOMER".equalsIgnoreCase(requestContext != null ? requestContext.currentUserRole() : null)
-                && booking.getHandoverTime() == null) {
-            unitCode = null;
-        }
         BigDecimal depositPaid = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
         BigDecimal totalRentalFee = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO;
 
-<<<<<<< Updated upstream
-        // Nếu booking ở trạng thái PENDING_PAYMENT: chưa thanh toán cọc -> không có tiền hoàn và không phạt
-        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
-            long hoursUntilCheckin = Duration.between(LocalDateTime.now(), booking.getStartDate().atStartOfDay()).toHours();
-=======
         // Xác định mốc thời gian nhận kho chuẩn xác:
         // Ưu tiên expectedCheckInAt của booking (lịch hẹn nhận kho đang có hiệu lực).
         // Nếu không có, dùng ngày bắt đầu thuê (startDate) kết hợp giờ mở cửa của cơ sở (mặc định 08:00 sáng).
@@ -123,30 +111,25 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         String timeRemainingLabel = formatCalmRemainingTime(durationUntilCheckin, hoursUntilCheckin);
 
         // Nếu booking ở trạng thái PENDING_PAYMENT hoặc PENDING_APPROVAL: chưa thanh toán cọc -> không có tiền hoàn và không phạt
-        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT 
-                || booking.getStatus() == BookingStatus.PENDING_APPROVAL
-                || depositPaid.compareTo(BigDecimal.ZERO) <= 0) {
->>>>>>> Stashed changes
+        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
             return BookingCancellationPreviewResponse.builder()
                     .bookingId(booking.getId())
                     .bookingCode(booking.getBookingCode())
                     .unitCode(unitCode)
                     .startDate(booking.getStartDate())
+                    .checkInDateTime(checkinDateTime)
                     .depositPaid(depositPaid)
                     .totalRentalFee(totalRentalFee)
                     .hoursUntilCheckin(hoursUntilCheckin)
+                    .timeRemainingLabel(timeRemainingLabel)
                     .milestoneStage("STAGE_PENDING_NO_PAYMENT")
                     .refundPercentage(0.0)
                     .refundAmount(BigDecimal.ZERO)
                     .penaltyAmount(BigDecimal.ZERO)
-                    .policyDescription("Đơn giữ chỗ trực tuyến chưa thanh toán tiền cọc. Hủy đơn hoàn toàn miễn phí và không có hoàn cọc (tiền cọc chỉ thanh toán khi nhận kho).")
+                    .policyDescription("Đơn đặt kho đang chờ thanh toán. Hủy đơn không phát sinh chi phí và không hoàn tiền.")
                     .refundable(false)
                     .build();
         }
-
-        // Tính số giờ còn lại từ bây giờ tới thời điểm check-in (startDate 00:00)
-        LocalDateTime checkinDateTime = booking.getStartDate().atStartOfDay();
-        long hoursUntilCheckin = Duration.between(LocalDateTime.now(), checkinDateTime).toHours();
 
         String milestoneStage;
         double refundPercentage;
@@ -155,28 +138,28 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         String policyDescription;
 
         if (hoursUntilCheckin >= fullRefundHours) {
-            // MỐC 1: >= 48h trước check-in -> Hoàn 100% tiền cọc
+            // MỐC 1: >= 48h trước lịch hẹn nhận kho -> Hoàn 100% tiền cọc
             milestoneStage = "STAGE_1_FULL_REFUND";
             refundPercentage = 100.0;
             refundAmount = depositPaid;
             penaltyAmount = BigDecimal.ZERO;
-            policyDescription = String.format("Mốc 1: Hủy trước giờ nhận kho từ %d giờ trở lên. Hoàn 100%% tiền cọc đã đóng.", fullRefundHours);
+            policyDescription = String.format("Mốc 1: Hủy trước giờ hẹn nhận kho từ %d giờ trở lên. Hoàn 100%% tiền cọc đã đóng.", fullRefundHours);
         } else if (hoursUntilCheckin >= partialRefundHours) {
-            // MỐC 2: Từ 24h đến dưới 48h trước check-in -> Hoàn 50% tiền cọc (giữ lại 50% phí phạt)
+            // MỐC 2: Từ 24h đến dưới 48h trước lịch hẹn nhận kho -> Hoàn 50% tiền cọc
             milestoneStage = "STAGE_2_PARTIAL_REFUND";
             refundPercentage = partialRefundPercent;
             refundAmount = depositPaid.multiply(BigDecimal.valueOf(partialRefundPercent / 100.0))
                     .setScale(2, RoundingMode.HALF_UP);
             penaltyAmount = depositPaid.subtract(refundAmount);
-            policyDescription = String.format("Mốc 2: Hủy trước giờ nhận kho từ %d đến dưới %d giờ. Hoàn %.0f%% tiền cọc, giữ lại %.0f%% làm phí giữ chỗ.",
+            policyDescription = String.format("Mốc 2: Hủy trước giờ hẹn nhận kho từ %d đến dưới %d giờ. Hoàn %.0f%% tiền cọc, khấu trừ %.0f%% chi phí giữ chỗ.",
                     partialRefundHours, fullRefundHours, partialRefundPercent, 100.0 - partialRefundPercent);
         } else {
-            // MỐC 3: Dưới 24h trước check-in hoặc đã qua ngày bắt đầu thuê -> Hoàn 0% (khấu trừ 100%)
+            // MỐC 3: Dưới 24h trước lịch hẹn nhận kho hoặc đã qua lịch hẹn -> Áp dụng chính sách hủy sát giờ
             milestoneStage = "STAGE_3_NO_REFUND";
             refundPercentage = 0.0;
             refundAmount = BigDecimal.ZERO;
             penaltyAmount = depositPaid;
-            policyDescription = String.format("Mốc 3: Hủy dưới %d giờ trước giờ nhận kho hoặc sau ngày bắt đầu thuê. Không hoàn tiền cọc (phạt 100%% tiền cọc).",
+            policyDescription = String.format("Mốc 3: Hủy dưới %d giờ trước giờ hẹn nhận kho hoặc đã qua giờ hẹn. Khấu trừ 100%% tiền cọc theo điều khoản hủy sát giờ.",
                     partialRefundHours);
         }
 
@@ -187,9 +170,11 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                 .bookingCode(booking.getBookingCode())
                 .unitCode(unitCode)
                 .startDate(booking.getStartDate())
+                .checkInDateTime(checkinDateTime)
                 .depositPaid(depositPaid)
                 .totalRentalFee(totalRentalFee)
                 .hoursUntilCheckin(hoursUntilCheckin)
+                .timeRemainingLabel(timeRemainingLabel)
                 .milestoneStage(milestoneStage)
                 .refundPercentage(refundPercentage)
                 .refundAmount(refundAmount)
@@ -200,7 +185,10 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
     }
 
     /**
-     * Thực hiện hủy booking theo chính sách hoàn tiền 3 mốc.
+     * Thực hiện hủy booking theo chính sách hoàn tiền 3 mốc:
+     * - Chỉ giải phóng kho khi đơn ở trạng thái hợp lệ và chưa check-in kho.
+     * - Lưu lịch sử lý do hủy, người hủy và thời điểm hủy vào booking.
+     * - Nếu có hoàn cọc, khởi tạo quy trình RefundRequest hợp lệ (PENDING_REVIEW), không tạo Payment hoàn tiền giả mạo.
      */
     @Override
     @Transactional
@@ -218,15 +206,26 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
+        User cancelledByUser = currentUserId != null
+                ? userRepository.findById(currentUserId).orElse(null)
+                : booking.getCustomer();
+
         BookingCancellationPreviewResponse preview = previewCancellationRefund(bookingId);
 
-        // Cập nhật trạng thái Booking
+        // Cập nhật trạng thái Booking và lưu thông tin hủy
         BookingStatus oldStatus = booking.getStatus();
+        LocalDateTime cancelNow = LocalDateTime.now();
+        String reason = (request != null && request.getCancellationReason() != null && !request.getCancellationReason().isBlank())
+                ? request.getCancellationReason().trim() : "Khách hàng yêu cầu hủy";
+
         booking.setStatus(BookingStatus.CANCELLED);
+        booking.setCancellationReason(reason);
+        booking.setCancelledBy(cancelledByUser);
+        booking.setCancelledAt(cancelNow);
         booking.setAccessPin(null); // Thu hồi PIN
         booking.setQrAccessToken("REVOKED_CANCELLED"); // Thu hồi QR token
 
-        // Giải phóng StorageUnit về AVAILABLE
+        // Giải phóng StorageUnit về AVAILABLE nếu không còn booking active nào khác
         boolean unitReleased = false;
         StorageUnit unit = booking.getStorageUnit();
         if (unit != null) {
@@ -236,28 +235,61 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
             unitReleased = true;
         }
 
-        // Nếu có hoàn tiền cọc (refundAmount > 0), tạo bản ghi Payment hoàn tiền
-        String refundTxnId = null;
+        // Hủy hợp đồng thuê liên kết nếu đang ở trạng thái chờ ký hoặc chờ kích hoạt nhận kho
+        RentalContract linkedContract = rentalContractRepository.findByBookingId(booking.getId()).orElse(null);
+        if (linkedContract != null) {
+            if (linkedContract.getStatus() == RentalContractStatus.PENDING_SIGNATURE
+                    || linkedContract.getStatus() == RentalContractStatus.PENDING_ACTIVATION) {
+                linkedContract.setStatus(RentalContractStatus.CANCELLED);
+                rentalContractRepository.save(linkedContract);
+            }
+        }
+
+        // Nếu có hoàn tiền cọc (refundAmount > 0), khởi tạo RefundRequest chính thức thay vì ghi nhận thanh toán giả
+        UUID refundRequestId = null;
+        String refundRequestCode = null;
         if (preview.getRefundAmount() != null && preview.getRefundAmount().compareTo(BigDecimal.ZERO) > 0) {
-            refundTxnId = "REFUND-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-            Payment refundPayment = Payment.builder()
-                    .transactionId(refundTxnId)
+            Facility facility = (unit != null) ? unit.getFacility() : null;
+            if (facility == null && linkedContract != null) {
+                facility = linkedContract.getFacility();
+            }
+
+            String bankName = (request != null && request.getBankName() != null && !request.getBankName().isBlank())
+                    ? request.getBankName().trim() : "CHỜ_CẬP_NHẬT";
+            String bankAccountNumber = (request != null && request.getBankAccountNumber() != null && !request.getBankAccountNumber().isBlank())
+                    ? request.getBankAccountNumber().trim() : "CHỜ_CẬP_NHẬT";
+            String bankAccountName = (request != null && request.getBankAccountName() != null && !request.getBankAccountName().isBlank())
+                    ? request.getBankAccountName().trim()
+                    : (booking.getCustomer() != null && booking.getCustomer().getFullName() != null
+                    ? booking.getCustomer().getFullName() : "KHACH_HANG");
+
+            refundRequestCode = "REF-" + System.currentTimeMillis() + "-" + VNPayUtil.randomAlphaNumeric(4).toUpperCase();
+            RefundRequest refundRequest = RefundRequest.builder()
+                    .requestCode(refundRequestCode)
+                    .customer(booking.getCustomer())
+                    .facility(facility)
                     .booking(booking)
-                    .amount(preview.getRefundAmount())
-                    .paymentType(PaymentType.DEPOSIT)
-                    .status(PaymentStatus.REFUNDED)
-                    .paymentMethod("BANK_REFUND")
-                    .paymentTime(LocalDateTime.now())
+                    .contract(linkedContract)
+                    .requestedAmount(booking.getDepositPaid() != null ? booking.getDepositPaid() : preview.getRefundAmount())
+                    .deductionAmount(preview.getPenaltyAmount())
+                    .finalRefundAmount(preview.getRefundAmount())
+                    .bankName(bankName)
+                    .bankAccountNumber(bankAccountNumber)
+                    .bankAccountName(bankAccountName)
+                    .reason(String.format("Hoàn cọc khi hủy đơn %s (%s). Lý do: %s",
+                            booking.getBookingCode(), preview.getMilestoneStage(), reason))
+                    .status(RefundStatus.PENDING_REVIEW)
+                    .requestedBy(cancelledByUser != null ? cancelledByUser : booking.getCustomer())
                     .build();
-            paymentRepository.save(refundPayment);
+
+            refundRequest = refundRequestRepository.save(refundRequest);
+            refundRequestId = refundRequest.getId();
         }
 
         bookingRepository.save(booking);
 
         // Ghi Audit Trail ActivityLog
         UUID facilityId = (unit != null && unit.getFacility() != null) ? unit.getFacility().getId() : null;
-        String reason = (request != null && request.getCancellationReason() != null && !request.getCancellationReason().isBlank())
-                ? request.getCancellationReason() : "Khách hàng yêu cầu hủy";
 
         activityLogService.record(
                 facilityId,
@@ -293,16 +325,16 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                 null
         );
 
-        if (refundTxnId != null) {
+        if (refundRequestId != null) {
             activityLogService.record(
                     facilityId,
-                    ActivityAction.REFUND_PROCESSED,
-                    "Payment",
-                    booking.getId(),
-                    String.format("Tạo lệnh hoàn tiền cọc %s VNĐ cho đơn %s (Giao dịch: %s, Mốc: %s)",
-                            preview.getRefundAmount(), booking.getBookingCode(), refundTxnId, preview.getMilestoneStage()),
+                    ActivityAction.REFUND_REQUEST_CREATE,
+                    "RefundRequest",
+                    refundRequestId,
+                    String.format("Khởi tạo yêu cầu hoàn cọc %s cho đơn %s (Số tiền: %s VNĐ, Mốc: %s)",
+                            refundRequestCode, booking.getBookingCode(), preview.getRefundAmount(), preview.getMilestoneStage()),
                     null,
-                    preview.getRefundAmount()
+                    RefundStatus.PENDING_REVIEW.name()
             );
         }
 
@@ -314,9 +346,10 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                 .refundPercentage(preview.getRefundPercentage())
                 .refundAmount(preview.getRefundAmount())
                 .penaltyAmount(preview.getPenaltyAmount())
-                .refundTransactionId(refundTxnId)
+                .refundRequestId(refundRequestId)
+                .refundRequestCode(refundRequestCode)
                 .unitReleased(unitReleased)
-                .cancelledAt(LocalDateTime.now())
+                .cancelledAt(cancelNow)
                 .cancellationReason(reason)
                 .message("Đã hủy đơn đặt kho thành công. " + preview.getPolicyDescription())
                 .build();
@@ -345,19 +378,59 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         int unitsReleasedCount = 0;
         List<AutoCancelDetail> detailList = new ArrayList<>();
 
-        for (Booking booking : expiredBookings) {
+        for (Booking candidate : expiredBookings) {
+            Booking booking = bookingRepository.findByIdForUpdate(candidate.getId()).orElse(null);
+            if (booking == null) {
+                continue;
+            }
+
+            if (booking.getStatus() == BookingStatus.CANCELLED) {
+                continue;
+            }
+            if (booking.getStatus() != BookingStatus.PENDING_PAYMENT && booking.getStatus() != BookingStatus.PENDING_APPROVAL) {
+                continue;
+            }
+
+            boolean hasPaidPayment = paymentRepository.existsByBooking_IdAndStatus(booking.getId(), PaymentStatus.PAID);
+            if (hasPaidPayment) {
+                log.info("[AUTO-CANCEL_RECONCILE] Booking {} has PAID payment; reconciling to CONFIRMED instead of CANCELLED", booking.getBookingCode());
+                booking.setStatus(BookingStatus.CONFIRMED);
+                booking.setPaymentExpiresAt(null);
+                bookingRepository.save(booking);
+                if (booking.getStorageUnit() != null) {
+                    storageUnitLockService.releaseLock(booking.getStorageUnit().getId());
+                }
+                continue;
+            }
+
             booking.setStatus(BookingStatus.CANCELLED);
+            booking.setCancellationReason("Hệ thống tự động hủy do quá hạn thanh toán");
+            booking.setCancelledAt(LocalDateTime.now());
+            booking.setPaymentExpiresAt(null);
+            booking.setHoldExpiresAt(null);
+            booking.setPaymentStatus("UNPAID");
             booking.setAccessPin(null);
             booking.setQrAccessToken("REVOKED_AUTO_CANCEL");
 
             boolean released = false;
             StorageUnit unit = booking.getStorageUnit();
             if (unit != null) {
-                unit.setStatus(UnitStatus.AVAILABLE);
-                storageUnitRepository.save(unit);
-                storageUnitLockService.releaseLock(unit.getId());
-                released = true;
-                unitsReleasedCount++;
+                UUID unitId = unit.getId();
+                StorageUnit lockedUnit = storageUnitRepository.findWithDetailsByIdForUpdate(unitId).orElse(null);
+                if (lockedUnit != null) {
+                    boolean hasOtherActive = bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(
+                            unitId,
+                            List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING_APPROVAL),
+                            booking.getId()
+                    );
+                    if (!hasOtherActive && lockedUnit.getStatus() == UnitStatus.RESERVED) {
+                        lockedUnit.setStatus(UnitStatus.AVAILABLE);
+                        storageUnitRepository.save(lockedUnit);
+                        storageUnitLockService.releaseLock(unitId);
+                        released = true;
+                        unitsReleasedCount++;
+                    }
+                }
             }
 
             bookingRepository.save(booking);
@@ -402,6 +475,12 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         if (booking.getStatus() == BookingStatus.COMPLETED) {
             throw new AppException(ErrorCode.BOOKING_ALREADY_COMPLETED);
         }
+        // Đơn đang ACTIVE hoặc đã check-in không được hủy trực tiếp mà phải qua quy trình thanh lý trả kho
+        if (booking.getStatus() == BookingStatus.ACTIVE
+                || (booking.getId() != null && handoverRecordRepository.existsByBooking_IdAndRecordType(booking.getId(), "CHECK_IN"))) {
+            throw new AppException(ErrorCode.BOOKING_CANNOT_BE_CANCELLED,
+                    "Đơn kho đã nhận bàn giao kho (ACTIVE / CHECK_IN). Vui lòng thực hiện thủ tục trả kho thay vì hủy đơn.");
+        }
         if (booking.getStatus() != BookingStatus.CONFIRMED
                 && booking.getStatus() != BookingStatus.PENDING_PAYMENT
                 && booking.getStatus() != BookingStatus.PENDING_APPROVAL) {
@@ -411,10 +490,52 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
 
     private FacilityPolicy getFacilityPolicy(Booking booking) {
         if (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null) {
-            return facilityPolicyRepository.findByFacility_Id(booking.getStorageUnit().getFacility().getId())
+            return facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(booking.getStorageUnit().getFacility().getId())
                     .orElse(null);
         }
         return null;
     }
-}
 
+    /**
+     * Xác định mốc thời gian nhận kho có hiệu lực:
+     * 1. Ưu tiên expectedCheckInAt nếu khách đã đặt lịch hẹn nhận kho.
+     * 2. Nếu không có lịch hẹn, lấy ngày startDate kết hợp với giờ mở cửa của cơ sở (hoặc mặc định 08:00 sáng).
+     */
+    private LocalDateTime resolveEffectiveCheckInDateTime(Booking booking) {
+        if (booking.getExpectedCheckInAt() != null) {
+            return booking.getExpectedCheckInAt();
+        }
+
+        if (booking.getStartDate() != null) {
+            LocalTime openTime = LocalTime.of(8, 0);
+            if (booking.getStorageUnit() != null
+                    && booking.getStorageUnit().getFacility() != null
+                    && booking.getStorageUnit().getFacility().getOpenTime() != null) {
+                openTime = booking.getStorageUnit().getFacility().getOpenTime();
+            }
+            return booking.getStartDate().atTime(openTime);
+        }
+
+        // Fallback an toàn nếu thiếu cả startDate: lấy ngày tạo đơn cộng 1 ngày lúc 08:00
+        return LocalDateTime.now().plusDays(1).withHour(8).withMinute(0).withSecond(0);
+    }
+
+    /**
+     * Định dạng thời gian còn lại nhẹ nhàng, không gây áp lực theo tiêu chuẩn UX Boxora.
+     */
+    private String formatCalmRemainingTime(Duration duration, long hoursUntilCheckin) {
+        if (duration.isNegative() || hoursUntilCheckin < 0) {
+            return "Đã qua lịch hẹn nhận kho";
+        }
+        if (hoursUntilCheckin < 24) {
+            return "Lịch hẹn còn dưới 24 giờ";
+        }
+        long days = duration.toDays();
+        long remainingHours = duration.toHours() % 24;
+        if (remainingHours > 0) {
+            return String.format("Còn khoảng %d ngày %d giờ đến lịch hẹn nhận kho", days, remainingHours);
+        } else {
+            return String.format("Còn khoảng %d ngày đến lịch hẹn nhận kho", days);
+        }
+    }
+}

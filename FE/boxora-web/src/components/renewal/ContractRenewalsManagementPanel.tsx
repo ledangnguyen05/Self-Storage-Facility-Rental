@@ -170,7 +170,7 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
 
   // 3. Thu cước quầy đơn giản (Counter Payment cũ)
   const [counterPaymentTarget, setCounterPaymentTarget] = useState<ContractRenewal | null>(null)
-  const [counterPaymentMethod, setCounterPaymentMethod] = useState<'CASH' | 'BANK_TRANSFER' | 'POS'>('CASH')
+  const [counterPaymentMethod, setCounterPaymentMethod] = useState<'BANK_TRANSFER'>('BANK_TRANSFER')
   const [receiptVoucherCode, setReceiptVoucherCode] = useState<string>('')
   const [counterPaymentNotes, setCounterPaymentNotes] = useState<string>('')
   const [counterPaymentError, setCounterPaymentError] = useState<string | null>(null)
@@ -217,7 +217,7 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
   const [receptionTermsConfirmed, setReceptionTermsConfirmed] = useState<boolean>(false)
   const [receptionTermsNotes, setReceptionTermsNotes] = useState<string>('')
   const [receptionPaymentConfirmed, setReceptionPaymentConfirmed] = useState<boolean>(false)
-  const [receptionPaymentMethod, setReceptionPaymentMethod] = useState<'CASH' | 'BANK_TRANSFER' | 'POS'>('CASH')
+  const [receptionPaymentMethod, setReceptionPaymentMethod] = useState<'BANK_TRANSFER'>('BANK_TRANSFER')
   const [receptionReceiptVoucherCode, setReceptionReceiptVoucherCode] = useState<string>('')
   const [receptionNotes, setReceptionNotes] = useState<string>('')
   const [receptionSignatureData, setReceptionSignatureData] = useState<string>('')
@@ -561,7 +561,7 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
     setReceptionTermsConfirmed(false)
     setReceptionTermsNotes('')
     setReceptionPaymentConfirmed(false)
-    setReceptionPaymentMethod(r.paymentMethod && r.paymentMethod !== 'ONLINE' ? (r.paymentMethod as any) : 'CASH')
+    setReceptionPaymentMethod('BANK_TRANSFER')
     setReceptionReceiptVoucherCode(`PT-${Date.now().toString().slice(-6)}`)
     setReceptionNotes('')
     setReceptionSignatureData('')
@@ -1868,25 +1868,9 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                     <div>
                       <label className="text-[11px] text-slate-500 font-medium block mb-1">Phương thức thu tiền</label>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {[
-                          { id: 'CASH', label: 'Tiền mặt' },
-                          { id: 'BANK_TRANSFER', label: 'Chuyển khoản' },
-                          { id: 'POS', label: 'Thẻ POS' },
-                        ].map((m) => (
-                          <button
-                            key={m.id}
-                            type="button"
-                            onClick={() => setReceptionPaymentMethod(m.id as any)}
-                            className={`py-1.5 text-xs font-bold rounded-lg border transition cursor-pointer ${
-                              receptionPaymentMethod === m.id
-                                ? 'bg-blue-600 text-white border-blue-600'
-                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            {m.label}
-                          </button>
-                        ))}
+                      <div className="p-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 text-xs font-bold flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[16px] text-blue-700">account_balance</span>
+                        <span>Chuyển khoản ngân hàng (BANK_TRANSFER)</span>
                       </div>
                     </div>
 
@@ -2049,26 +2033,12 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
             <div className="space-y-3">
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">Phương thức thu tiền</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'CASH', label: 'Tiền mặt', icon: 'payments' },
-                    { id: 'BANK_TRANSFER', label: 'Chuyển khoản', icon: 'account_balance' },
-                    { id: 'POS', label: 'Thẻ POS', icon: 'credit_card' },
-                  ].map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setCounterPaymentMethod(m.id as any)}
-                      className={`py-2 px-2 rounded-xl text-xs font-bold border flex flex-col items-center gap-1 transition cursor-pointer ${
-                        counterPaymentMethod === m.id
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-[18px]">{m.icon}</span>
-                      <span>{m.label}</span>
-                    </button>
-                  ))}
+                <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs font-bold flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[20px] text-indigo-700">account_balance</span>
+                  <div>
+                    <div>Chuyển khoản ngân hàng (BANK_TRANSFER)</div>
+                    <div className="text-[11px] font-normal text-indigo-700">Khách quét mã QR / chuyển khoản vào tài khoản ngân hàng cơ sở</div>
+                  </div>
                 </div>
               </div>
 
