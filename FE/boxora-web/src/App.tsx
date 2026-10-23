@@ -13,12 +13,7 @@ import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
 import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
 import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
 import { PaymentResultPage } from './pages/public/PaymentResultPage'
-<<<<<<< Updated upstream
 import { FacilitiesPage } from './pages/public/FacilitiesPage'
-=======
-import { OnlineBookingContractPage } from './pages/customer/OnlineBookingContractPage'
-import { MyBookingsPage } from './pages/customer/MyBookingsPage'
->>>>>>> Stashed changes
 
 // StorageOps Pro Portals (Matching Prototype Stitch Files)
 
@@ -32,6 +27,7 @@ import { IncidentTicketsPage } from './pages/staff/IncidentTicketsPage'
 import { OverdueManagementPage } from './pages/manager/OverdueManagementPage'
 import { ShiftRosterPage } from './pages/manager/ShiftRosterPage'
 import { BoxoraChatWidget } from './components/chat/BoxoraChatWidget'
+import MyBookingsPage from './pages/customer/MyBookingsPage'
 
 // Root redirect handler based on user role
 function RootRedirect() {
@@ -60,15 +56,7 @@ function RootRedirect() {
     case 'STAFF':
       return <Navigate to="/portal/staff" replace />
     case 'CUSTOMER':
-<<<<<<< Updated upstream
     default:
-=======
-    default: {
-      const access = checkCustomerPortalAccess(user)
-      if (!access.hasAccess) {
-        return <Navigate to="/my-bookings" replace />
-      }
->>>>>>> Stashed changes
       return <Navigate to="/portal/customer" replace />
   }
 }
@@ -139,19 +127,11 @@ function MainContent() {
               }
             />
 
-<<<<<<< HEAD
             {/* 2. Staff Portal: Staff, Facility Manager, Admin */}
             <Route
               path="staff"
               element={
                 <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'ADMIN']}>
-=======
-            {/* 2. Staff Portal: operational access is reserved for Staff & Facility Manager */}
-            <Route
-              path="staff"
-              element={
-                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER']}>
->>>>>>> dc54f515e9b5c06f6639b5efd5c5ed3a26213a2c
                   <StaffDashboard />
                 </ProtectedRoute>
               }
