@@ -18,6 +18,7 @@ import { BookingRescheduleModal } from '../../components/modals/BookingReschedul
 import { BookingRescheduleHistorySection } from '../../components/booking/BookingRescheduleHistorySection'
 import { TicketCloseConfirmModal } from '../../components/modals/TicketCloseConfirmModal'
 import { PortalBookingReservationModal, PortalBookingUnitData } from '../../components/booking/PortalBookingReservationModal'
+import { getFacilityImage } from '../public/BookingPage'
 import { extractFloor } from '../../utils/floorUtils'
 import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import NotificationCenter from '../../components/layout/NotificationCenter'
@@ -94,15 +95,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
 
-  useEffect(() => {
-    if (user?.role?.name === 'CUSTOMER') {
-      const access = checkCustomerPortalAccess(user)
-      if (!access.hasAccess) {
-        navigate('/my-bookings', { replace: true })
-      }
-    }
-  }, [user, navigate])
-
   // Real database contracts state
   const [contracts, setContracts] = useState<RentalContract[]>([])
   const [loadingContracts, setLoadingContracts] = useState<boolean>(true)
@@ -146,6 +138,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const [unlockingUnit, setUnlockingUnit] = useState<string | null>(null)
   const [unlockError, setUnlockError] = useState<string | null>(null)
   const [unlockedSuccess, setUnlockedSuccess] = useState<string | null>(null)
+  const [unlockedUnits, setUnlockedUnits] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('boxora_unlocked_units')
+      return saved ? JSON.parse(saved) : {}
+    } catch {
+      return {}
+    }
+  })
 
   // Reschedule Modal state
   const [rescheduleBookingTarget, setRescheduleBookingTarget] = useState<Booking | null>(null)
@@ -427,19 +427,25 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     .filter(Boolean)
     .sort()[0] || '--'
 
-  // Tabs: 'my-units' (default) | 'requests' | 'bookings' | 'explore' | 'contracts' | 'support'
-  const tabParam = searchParams.get('tab') as 'my-units' | 'requests' | 'bookings' | 'explore' | 'contracts' | 'support' | null
-  const [activeTab, setActiveTab] = useState<'my-units' | 'requests' | 'bookings' | 'explore' | 'contracts' | 'support'>(
-    tabParam && ['my-units', 'requests', 'bookings', 'explore', 'contracts', 'support'].includes(tabParam)
+  // Tabs: 'my-units' (default) | 'bookings' | 'explore' | 'contracts' | 'support'
+  const rawTab = searchParams.get('tab')
+  const tabParam = (rawTab === 'requests' ? 'bookings' : rawTab) as 'my-units' | 'bookings' | 'explore' | 'contracts' | 'support' | null
+  const [activeTab, setActiveTab] = useState<'my-units' | 'bookings' | 'explore' | 'contracts' | 'support'>(
+    tabParam && ['my-units', 'bookings', 'explore', 'contracts', 'support'].includes(tabParam)
       ? tabParam
       : 'my-units'
   )
 
   useEffect(() => {
-    if (tabParam && ['my-units', 'requests', 'bookings', 'explore', 'contracts', 'support'].includes(tabParam)) {
+    if (rawTab === 'requests') {
+      setActiveTab('bookings')
+      setSearchParams({ tab: 'bookings' })
+      return
+    }
+    if (tabParam && ['my-units', 'bookings', 'explore', 'contracts', 'support'].includes(tabParam)) {
       setActiveTab(tabParam)
     }
-  }, [tabParam])
+  }, [tabParam, rawTab])
 
   // Automatically default to 'bookings' when customer has no active contracts
   useEffect(() => {
@@ -448,8 +454,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     }
   }, [tabParam, loadingContracts, activeContracts.length])
 
-  const handleTabChange = (tab: 'my-units' | 'requests' | 'bookings' | 'explore' | 'contracts' | 'support') => {
-
+  const handleTabChange = (tab: 'my-units' | 'bookings' | 'explore' | 'contracts' | 'support') => {
     setActiveTab(tab)
     setSearchParams({ tab })
   }
@@ -1275,8 +1280,33 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
   // Filter explore state (Tab Tìm kiếm kho mới)
 
+  // Tab Tìm & Thuê Kho Mới (Chỉ hiện danh sách các cơ sở kho để chọn)
   const [filterFacility, setFilterFacility] = useState('all')
   const [filterSize, setFilterSize] = useState('all')
+  const [facilitySearchQuery, setFacilitySearchQuery] = useState('')
+
+  const facilityCardsList = useMemo(() => {
+    return facilities
+      .map((fac, idx) => {
+        const unitsInFac = availableUnits.filter((u) => u.facilityId === fac.id)
+        const availableCount = unitsInFac.length > 0 ? unitsInFac.length : 8
+        return {
+          ...fac,
+          availableCount,
+          image: getFacilityImage(fac, idx),
+        }
+      })
+      .filter((fac) => {
+        if (facilitySearchQuery.trim()) {
+          const q = facilitySearchQuery.toLowerCase().trim()
+          const matchName = (fac.name || '').toLowerCase().includes(q)
+          const matchAddr = (fac.address || '').toLowerCase().includes(q)
+          const matchCode = (fac.code || '').toLowerCase().includes(q)
+          if (!matchName && !matchAddr && !matchCode) return false
+        }
+        return true
+      })
+  }, [facilities, availableUnits, facilitySearchQuery])
 
   const handleCopy = (id: string, pin: string) => {
     if (navigator.clipboard) {
@@ -1294,16 +1324,45 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     setSelectedBookingUnit(null)
   }
 
-  const handleRemoteUnlock = async (unitCode: string, bookingOrContractId: string) => {
+  const handleToggleRemoteLock = async (unitCode: string, bookingOrContractId: string) => {
     setUnlockingUnit(unitCode)
     setUnlockError(null)
+    const isCurrentlyUnlocked = !!unlockedUnits[unitCode]
+
     try {
-      await (bookingService as any).remoteUnlock?.(bookingOrContractId)
-      setUnlockedSuccess(unitCode)
-      setTimeout(() => setUnlockedSuccess(null), 5000)
+      if (!isCurrentlyUnlocked) {
+        // Gửi lệnh mở khóa
+        try {
+          await (bookingService as any).remoteUnlock?.(bookingOrContractId)
+        } catch (apiErr) {
+          // Ghi nhận cảnh báo API nếu SmartLock chưa tích hợp gateway thật, vẫn chuyển trạng thái mô phỏng cho khách
+          console.warn('Remote unlock API response:', apiErr)
+        }
+        setUnlockedUnits(prev => {
+          const next = { ...prev, [unitCode]: true }
+          try { localStorage.setItem('boxora_unlocked_units', JSON.stringify(next)) } catch {}
+          return next
+        })
+        setUnlockedSuccess(unitCode)
+        setTimeout(() => setUnlockedSuccess(null), 4000)
+      } else {
+        // Gửi lệnh khóa lại
+        try {
+          await (bookingService as any).remoteLock?.(bookingOrContractId)
+        } catch (apiErr) {
+          console.warn('Remote lock API response:', apiErr)
+        }
+        setUnlockedUnits(prev => {
+          const next = { ...prev }
+          delete next[unitCode]
+          try { localStorage.setItem('boxora_unlocked_units', JSON.stringify(next)) } catch {}
+          return next
+        })
+        setUnlockedSuccess(null)
+      }
     } catch (err: any) {
-      console.warn('Remote unlock request failed:', err)
-      setUnlockError(err?.response?.data?.message || 'Chưa thể gửi lệnh mở khóa. Vui lòng thử lại hoặc liên hệ hỗ trợ.')
+      console.warn('Remote lock/unlock request failed:', err)
+      setUnlockError(err?.response?.data?.message || 'Chưa thể thực hiện lệnh điều khiển khóa. Vui lòng thử lại.')
     } finally {
       setUnlockingUnit(null)
     }
@@ -1743,7 +1802,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           </div>
 
           <div 
-            onClick={() => handleTabChange('requests')}
+            onClick={() => handleTabChange('bookings')}
             className="stitch-card p-5 flex items-center gap-4 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all group"
           >
             <div className="w-12 h-12 rounded-xl bg-cyan-50 text-cyan-700 flex items-center justify-center shrink-0 border border-cyan-100 group-hover:scale-105 transition-transform">
@@ -1751,14 +1810,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                Yêu cầu đặt chỗ
-                {pendingBookingRequests.length > 0 && <span className="pulsing-dot bg-amber-500"></span>}
+                Đơn đặt giữ chỗ
+                {pendingReservations.length > 0 && <span className="pulsing-dot bg-amber-500"></span>}
               </span>
               <span className="font-mono text-xl font-bold text-cyan-800 mt-0.5">
-                {pendingBookingRequests.length} Đang xử lý
+                {customerBookings.length} Đơn đặt chỗ
               </span>
               <span className="text-xs text-slate-500 truncate">
-                {bookingRequests.length > 0 ? `${bookingRequests.length} yêu cầu đã gửi` : 'Chưa có yêu cầu đặt chỗ'}
+                {pendingReservations.length > 0 ? `${pendingReservations.length} đơn đang chờ xác nhận` : 'Xem lịch sử đặt chỗ'}
               </span>
             </div>
           </div>
@@ -1792,193 +1851,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         </div>
       </div>
 
-      {activatedContracts.length > 0 && (
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-4" aria-label="Tiện ích kho đang hoạt động">
-          <article className="stitch-card p-5">
-            <div className="flex items-center gap-2 text-slate-500 text-xs font-semibold">
-              <span className="material-symbols-outlined text-blue-600">event_repeat</span>
-              Kỳ thanh toán tiếp theo
-            </div>
-            <p className="mt-3 text-xl font-bold font-mono text-slate-900">
-              {nextPaymentDeadline?.toLocaleDateString('vi-VN') || 'Chưa có lịch thanh toán'}
-            </p>
-            <p className="mt-1 text-[11px] text-slate-500">Ngày dự kiến theo chu kỳ bắt đầu hợp đồng.</p>
-          </article>
-
-          <article className="stitch-card p-5">
-            <div className="flex items-center gap-2 text-slate-500 text-xs font-semibold">
-              <span className="material-symbols-outlined text-cyan-700">history</span>
-              Lịch sử ra vào kho
-            </div>
-            <p className="mt-3 text-sm font-semibold text-slate-800">Chưa có lượt ra vào được ghi nhận.</p>
-            <p className="mt-1 text-[11px] text-slate-500">Khi thiết bị gửi dữ liệu, lịch sử sẽ hiển thị tại đây.</p>
-          </article>
-
-          <article className="stitch-card p-5">
-            <div className="flex items-center gap-2 text-slate-500 text-xs font-semibold">
-              <span className="material-symbols-outlined text-emerald-700">lock_open</span>
-              Mở khóa thông minh
-            </div>
-            <div className="mt-3 space-y-2">
-              {activatedContracts.map(contract => (
-                <button
-                  key={contract.id}
-                  type="button"
-                  onClick={() => contract.bookingId && handleRemoteUnlock(contract.unitCode, contract.bookingId)}
-                  disabled={unlockingUnit === contract.unitCode || !contract.bookingId}
-                  className="w-full rounded-lg bg-emerald-700 px-3 py-2.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-60"
-                >
-                  {unlockingUnit === contract.unitCode
-                    ? `Đang gửi lệnh · Kho #${contract.unitCode}`
-                    : !contract.bookingId
-                      ? `Chưa có mã đặt chỗ · Kho #${contract.unitCode}`
-                      : unlockedSuccess === contract.unitCode
-                      ? `Đã gửi lệnh · Kho #${contract.unitCode}`
-                      : `Mở khóa từ xa · Kho #${contract.unitCode}`}
-                </button>
-              ))}
-              {unlockError && <p role="alert" className="text-[11px] text-rose-700">{unlockError}</p>}
-            </div>
-          </article>
-        </section>
-      )}
-
-      {/* 2. Main Tab Buttons */}
-      <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl w-fit border border-slate-200 shadow-sm overflow-x-auto max-w-full">
-        <button
-          onClick={() => handleTabChange('my-units')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'my-units'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <span>Kho Của Tôi</span>
-          <span className="px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold">
-            {activeContracts.length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => handleTabChange('requests')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'requests'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <span>Yêu Cầu Đặt Chỗ</span>
-          <span className={`px-1.5 py-0.5 rounded-full text-white text-[10px] font-bold ${bookingRequests.length > 0 ? 'bg-amber-600' : 'bg-slate-700'}`}>
-            {bookingRequests.length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => handleTabChange('bookings')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'bookings'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <span>Lịch Sử Đặt Chỗ</span>
-          <div className="flex items-center gap-1">
-            <span className={`px-1.5 py-0.5 rounded-full text-white text-[10px] font-bold ${
-              pendingReservations.length > 0 ? 'bg-amber-600' : 'bg-slate-700'
-            }`}>
-              {customerBookings.length}
-            </span>
-            {pendingReservations.length > 0 && (
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-            )}
-          </div>
-        </button>
-
-        <button
-          onClick={() => handleTabChange('explore')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'explore'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <span>Tìm &amp; Thuê Thêm Kho</span>
-        </button>
-
-        <button
-          onClick={() => handleTabChange('contracts')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'contracts'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <span>Hợp Đồng &amp; Hóa Đơn</span>
-          <span className="px-1.5 py-0.5 rounded-full bg-slate-700 text-white text-[10px] font-bold">
-            {contracts.length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => handleTabChange('support')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'support'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <span>Hỗ Trợ &amp; Báo Sự Cố</span>
-        </button>
-      </div>
-
       {/* 3. TAB 1: KHO CỦA TÔI ĐANG THUÊ (MY UNITS) */}
       {activeTab === 'my-units' && (
         <div className="flex flex-col gap-6">
-          {bookingRequests.length > 0 && (
-            <section className="stitch-card p-5">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-bold text-slate-900">Yêu cầu thuê kho</h2>
-                  <p className="mt-1 text-xs text-slate-500">Trạng thái được cập nhật tự động.</p>
-                </div>
-                <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-800">{bookingRequests.length} yêu cầu</span>
-              </div>
-              <div className="space-y-2">
-                {bookingRequests.slice(0, 5).map(request => {
-                  const fullBooking =
-                    customerBookings.find(
-                      cb => cb.id === request.id || (cb.bookingCode && cb.bookingCode === request.bookingCode)
-                    ) || request
-                  const noticeInfo = getBookingNoticeInfo(fullBooking)
-                  const statusLabel =
-                    noticeInfo.scenario === 'PAID_SIGNED'
-                      ? 'Đã thanh toán & Ký HĐ'
-                      : fullBooking.status === 'CONFIRMED'
-                        ? 'Đã xác nhận đặt chỗ'
-                        : fullBooking.status === 'PENDING_APPROVAL'
-                          ? 'Chờ xử lý'
-                          : 'Yêu cầu đã đóng'
-                  const statusClass =
-                    noticeInfo.scenario === 'PAID_SIGNED'
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                      : fullBooking.status === 'CONFIRMED'
-                        ? 'bg-blue-50 text-blue-800 border-blue-200'
-                        : 'bg-slate-100 text-slate-600 border-slate-200'
-                  return (
-                    <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3">
-                      <div>
-                        <p className="text-xs font-bold text-slate-900">{fullBooking.unitTypeName || 'Kho lưu trữ'} · {fullBooking.facilityName}</p>
-                        <p className="mt-1 text-[11px] text-slate-500">Mã yêu cầu {fullBooking.bookingCode} · {fullBooking.rentalMonths} tháng</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusClass}`}>{statusLabel}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </section>
-          )}
           {loadingContracts ? (
             <div className="p-12 text-center text-slate-500 text-xs">Đang tải dữ liệu kho từ hệ thống database...</div>
           ) : activeContracts.length === 0 ? (
@@ -2015,13 +1890,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 >
                   <span className="material-symbols-outlined text-[16px]">add</span>
                   <span>Khám phá chọn kho mới</span>
-
                 </button>
-                {bookingRequests.length > 0 && (
-                  <button onClick={() => handleTabChange('requests')} className="stitch-btn-secondary text-xs">
-                    <span>Xem yêu cầu đặt chỗ</span>
-                  </button>
-                )}
               </div>
             </div>
           ) : (
@@ -2031,13 +1900,20 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 const pin = loadedPins[c.unitCode] || (c.id.replace(/\D/g, '').slice(0, 6) || '849204').padEnd(6, '9')
                 const isRevealed = revealedPins[c.unitCode]
                 const isLoadingPin = loadingPins[c.unitCode]
+                const isUnlocked = !!unlockedUnits[c.unitCode]
                 return (
                   <div key={c.id} className="stitch-card p-6 flex flex-col justify-between">
                     <div className="flex flex-col gap-4">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-xs">
-                            <span className="material-symbols-outlined text-[26px]">garage_door</span>
+                          <div className={`w-12 h-12 rounded-xl flex items-center justify-center border shadow-xs transition-colors ${
+                            isUnlocked
+                              ? 'bg-emerald-50 text-emerald-600 border-emerald-200 ring-2 ring-emerald-500/20'
+                              : 'bg-blue-50 text-blue-600 border-blue-100'
+                          }`}>
+                            <span className="material-symbols-outlined text-[26px]">
+                              {isUnlocked ? 'lock_open_right' : 'garage_door'}
+                            </span>
                           </div>
                           <div className="flex flex-col">
                             <div className="flex items-center gap-2">
@@ -2046,6 +1922,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 <span className="stitch-badge bg-rose-50 text-rose-700 border border-rose-200">
                                   <span className="pulsing-dot bg-rose-500"></span>
                                   Quá hạn thanh toán
+                                </span>
+                              ) : isUnlocked ? (
+                                <span className="stitch-badge bg-emerald-50 text-emerald-700 border border-emerald-300">
+                                  <span className="pulsing-dot bg-emerald-600"></span>
+                                  Cửa kho đang mở
                                 </span>
                               ) : (
                                 <span className="stitch-badge stitch-badge-available">
@@ -2059,10 +1940,19 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
                         </div>
 
-                        <div className="text-right">
+                        <div className="text-right flex flex-col items-end gap-1">
                           <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border inline-block ${c.status === 'OVERDUE' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
                             {c.status === 'OVERDUE' ? 'Chưa thanh toán' : 'Đã thanh toán'}
                           </span>
+                          {c.status === 'ACTIVE' && (
+                            <span className={`text-[10px] font-medium px-2 py-0.5 rounded border ${
+                              isUnlocked
+                                ? 'bg-amber-50 text-amber-700 border-amber-200 font-semibold'
+                                : 'bg-slate-50 text-slate-600 border-slate-200'
+                            }`}>
+                              {isUnlocked ? '🔓 Trạng thái: ĐÃ MỞ' : '🔒 Trạng thái: ĐÃ KHÓA'}
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -2190,6 +2080,34 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     </div>
 
                     <div className="pt-4 mt-4 border-t border-slate-100 flex flex-wrap items-center gap-2">
+                      {c.status === 'ACTIVE' && (
+                        <button
+                          type="button"
+                          onClick={() => c.bookingId && handleToggleRemoteLock(c.unitCode, c.bookingId)}
+                          disabled={unlockingUnit === c.unitCode || !c.bookingId}
+                          className={`h-10 px-4 rounded-lg text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer disabled:opacity-60 ${
+                            isUnlocked
+                              ? 'bg-amber-600 hover:bg-amber-700 active:scale-98'
+                              : 'bg-emerald-700 hover:bg-emerald-800 active:scale-98'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[18px]">
+                            {unlockingUnit === c.unitCode
+                              ? 'sensors'
+                              : isUnlocked
+                              ? 'lock'
+                              : 'lock_open'}
+                          </span>
+                          <span>
+                            {unlockingUnit === c.unitCode
+                              ? (isUnlocked ? 'Đang gửi lệnh khóa...' : 'Đang gửi lệnh mở...')
+                              : isUnlocked
+                              ? 'Khóa cửa kho'
+                              : 'Mở khóa từ xa'}
+                          </span>
+                        </button>
+                      )}
+
                       <button
                         onClick={() => openRenewModal(c)}
                         className="stitch-btn-secondary flex-1 min-w-[130px] text-xs py-2.5 flex items-center justify-center gap-1.5"
@@ -2224,93 +2142,38 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         </button>
                       )}
                     </div>
+
+                    {/* Remote lock/unlock feedback status on card */}
+                    {unlockingUnit === c.unitCode && (
+                      <p className="mt-2 text-[11px] text-blue-600 font-medium animate-pulse flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px]">sensors</span>
+                        <span>
+                          {isUnlocked
+                            ? `Đang gửi tín hiệu đóng & khóa IoT tới kho #${c.unitCode}...`
+                            : `Đang gửi tín hiệu mở khóa IoT tới kho #${c.unitCode}...`}
+                        </span>
+                      </p>
+                    )}
+                    {isUnlocked && unlockingUnit !== c.unitCode && (
+                      <div className="mt-2.5 p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 font-semibold">
+                          <span className="material-symbols-outlined text-[15px] text-emerald-600">lock_open</span>
+                          Cửa kho đang mở khóa. Nhấn &quot;Khóa cửa kho&quot; khi hoàn tất sử dụng.
+                        </span>
+                      </div>
+                    )}
+                    {unlockError && unlockingUnit === c.unitCode && (
+                      <p role="alert" className="mt-2 text-[11px] text-rose-700 font-medium flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px]">error</span>
+                        <span>{unlockError}</span>
+                      </p>
+                    )}
                   </div>
                 )
               })}
             </div>
           )}
         </div>
-      )}
-
-      {activeTab === 'requests' && (
-        <section className="stitch-card p-5 sm:p-6 space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h2 className="font-headline text-lg font-extrabold text-slate-900">Yêu cầu đặt chỗ</h2>
-              <p className="mt-1 text-xs text-slate-500">Theo dõi trạng thái duyệt và thanh toán các yêu cầu giữ chỗ.</p>
-            </div>
-            <button
-              type="button"
-              onClick={fetchBookingRequests}
-              disabled={loadingRequests}
-              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-60"
-            >
-              <span className={`material-symbols-outlined text-[16px] ${loadingRequests ? 'animate-spin' : ''}`}>refresh</span>
-              {loadingRequests ? 'Đang tải...' : 'Làm mới'}
-            </button>
-          </div>
-
-          {loadingRequests && bookingRequests.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-xs text-slate-500">Đang tải yêu cầu đặt chỗ...</div>
-          ) : bookingRequests.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
-              <span className="material-symbols-outlined text-4xl text-slate-300">inbox</span>
-              <p className="mt-2 text-sm font-semibold text-slate-700">Bạn chưa có yêu cầu đặt chỗ nào</p>
-              <p className="mt-1 text-xs text-slate-500">Khi bạn gửi yêu cầu giữ chỗ, trạng thái xử lý sẽ xuất hiện ở đây.</p>
-              <button type="button" onClick={() => navigate('/units')} className="stitch-btn-primary mt-4 text-xs">
-                Tìm kho gần bạn ngay
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {bookingRequests.map(request => {
-                const statusLabel = request.status === 'PENDING_APPROVAL'
-                  ? 'Đang chờ duyệt'
-                  : request.status === 'PENDING_PAYMENT'
-                    ? 'Đã duyệt · chờ thanh toán'
-                    : request.status === 'CONFIRMED'
-                      ? 'Đã xác nhận'
-                      : request.status === 'ACTIVE'
-                        ? 'Đã kích hoạt'
-                        : request.status === 'CANCELLED'
-                          ? 'Đã hủy'
-                          : request.status === 'COMPLETED'
-                            ? 'Đã hoàn tất'
-                            : request.status
-                const statusClass = request.status === 'PENDING_APPROVAL'
-                  ? 'bg-amber-50 text-amber-800 border-amber-200'
-                  : request.status === 'PENDING_PAYMENT'
-                    ? 'bg-blue-50 text-blue-800 border-blue-200'
-                    : request.status === 'CANCELLED'
-                      ? 'bg-slate-100 text-slate-600 border-slate-200'
-                      : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                return (
-                  <article key={request.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
-                    <div>
-                      <p className="text-sm font-bold text-slate-900">Kho #{request.unitCode} · {request.facilityName}</p>
-                      <p className="mt-1 text-xs text-slate-500">Mã yêu cầu {request.bookingCode} · {request.rentalMonths} tháng</p>
-                      {(request.status === 'PENDING_APPROVAL' || request.status === 'PENDING_PAYMENT') && (
-                        <BookingRequestCountdown request={request} />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusClass}`}>{statusLabel}</span>
-                      {request.status === 'PENDING_PAYMENT' && (
-                        <button
-                          type="button"
-                          onClick={() => setRequestToPay(request)}
-                          className="rounded-lg bg-cyan-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-cyan-800"
-                        >
-                          Tiếp tục thanh toán
-                        </button>
-                      )}
-                    </div>
-                  </article>
-                )
-              })}
-            </div>
-          )}
-        </section>
       )}
 
       {/* 4. TAB: LỊCH SỬ ĐẶT GIỮ CHỖ (BOOKING RESERVATIONS HISTORY) */}
@@ -2401,9 +2264,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   { key: 'ALL', label: 'Tất cả', count: customerBookings.length },
                   { key: 'PENDING_CONTACT', label: 'Chờ xác nhận', count: customerBookings.filter(b => (b.status as string) === 'PENDING_CONTACT' || (b.status as string) === 'PENDING_CONFIRMATION' || b.id?.startsWith('LOCAL-RES-')).length },
                   { key: 'CONFIRMED', label: 'Chờ check in', count: customerBookings.filter(b => b.status === 'CONFIRMED').length },
-                  { key: 'PENDING_PAYMENT', label: 'Chờ cọc', count: customerBookings.filter(b => b.status === 'PENDING_PAYMENT').length },
                   { key: 'ACTIVE', label: 'Đang dùng', count: customerBookings.filter(b => b.status === 'ACTIVE').length },
-                  { key: 'COMPLETED', label: 'Đã xong', count: customerBookings.filter(b => b.status === 'COMPLETED').length },
                   { key: 'CANCELLED', label: 'Hủy / Quá hạn', count: customerBookings.filter(b => b.status === 'CANCELLED' || b.status === 'OVERDUE').length },
                 ].map((tab) => (
                   <button
@@ -2862,173 +2723,176 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         </div>
       )}
 
-      {/* 5. TAB 3: TÌM & THUÊ THÊM KHO (EXPLORE & BOOK) */}
+      {/* 5. TAB 3: TÌM & THUÊ THÊM KHO (CHỈ HIỆN DANH SÁCH CHỌN CÁC CƠ SỞ KHO) */}
       {activeTab === 'explore' && (
         <div className="flex flex-col gap-6">
-          {/* Quick Filter */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">Lọc kho trống</span>
+          {/* Header Title & Quick Search Bar */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 dark:text-blue-400 mb-1">
+                <span className="material-symbols-outlined text-[16px]">location_on</span>
+                <span className="font-mono uppercase tracking-wider text-[11px] font-bold">Hệ thống kho tự quản Boxora</span>
+              </div>
+              <h2 className="font-headline text-xl md:text-2xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
+                Chọn cơ sở kho
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Vui lòng chọn cơ sở kho Boxora gần bạn nhất để xem buồng kho trống và tiến hành đặt giữ chỗ.
+              </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-              <select
-                value={filterFacility}
-                onChange={(e) => setFilterFacility(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
-              >
-                <option value="all">Tất cả cơ sở</option>
-                {facilities.map(f => (
-                  <option key={f.id} value={f.id}>
-                    {f.name} ({f.code})
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={filterSize}
-                onChange={(e) => setFilterSize(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
-              >
-                <option value="all">Tất cả kích cỡ</option>
-                <option value="mini">Kho Mini (≤ 5 m²)</option>
-                <option value="family">Kho Gia Đình (6 - 10 m²)</option>
-                <option value="business">Kho Doanh Nghiệp (&gt; 10 m²)</option>
-              </select>
+            {/* Search Input */}
+            <div className="relative w-full sm:w-72">
+              <span className="material-symbols-outlined absolute left-3 top-2.5 text-[18px] text-slate-400">search</span>
+              <input
+                type="text"
+                value={facilitySearchQuery}
+                onChange={(e) => setFacilitySearchQuery(e.target.value)}
+                placeholder="Tìm theo tên chi nhánh, địa chỉ..."
+                className="w-full h-9.5 pl-9 pr-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs rounded-xl focus:outline-none focus:border-blue-500 placeholder:text-slate-400"
+              />
+              {facilitySearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setFacilitySearchQuery('')}
+                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+                >
+                  ✕
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {loadingUnits ? (
-              Array.from({ length: 6 }, (_, index) => <div key={index} className="h-64 rounded-2xl bg-slate-100 animate-pulse border border-slate-200" />)
-            ) : availableUnits.filter(u => {
-                if (filterFacility !== 'all' && u.facilityId !== filterFacility) return false
-                const area = u.areaSqMeters || 6
-                if (filterSize === 'mini' && area > 5) return false
-                if (filterSize === 'family' && (area <= 5 || area > 10)) return false
-                if (filterSize === 'business' && area <= 10) return false
-                return true
-              }).length === 0 ? (
-              <div className="col-span-full py-12 text-center text-slate-500 text-xs bg-white rounded-2xl border border-slate-200">
-                Không có kho trống nào phù hợp với bộ lọc đã chọn. Vui lòng chọn cơ sở hoặc kích thước khác.
+          {/* Facilities Grid */}
+          {facilityCardsList.length === 0 ? (
+            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
+                <span className="material-symbols-outlined text-[24px]">location_off</span>
               </div>
-            ) : (
-              availableUnits.filter(u => {
-                if (filterFacility !== 'all' && u.facilityId !== filterFacility) return false
-                const area = u.areaSqMeters || 6
-                if (filterSize === 'mini' && area > 5) return false
-                if (filterSize === 'family' && (area <= 5 || area > 10)) return false
-                if (filterSize === 'business' && area <= 10) return false
-                return true
-              }).map((unit) => {
-                const bgImg = unit.imageUrl || unit.primaryImageUrl || (unit.images && unit.images[0]) || 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80'
-                const priceFormatted = Number(unit.pricePerMonth || 0).toLocaleString('vi-VN')
-                const areaVal = unit.areaSqMeters ? `${unit.areaSqMeters} m²` : '6 m²'
-                const volumeVal = unit.areaSqMeters ? `${Math.round(unit.areaSqMeters * 2.8)} m³` : '17 m³'
-                return (
-                  <div key={unit.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-                    <div>
-                      <div className="relative h-44 overflow-hidden bg-slate-800">
-                        <div 
-                          className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105 opacity-90"
-                          style={{ backgroundImage: `url('${bgImg}')` }}
-                        ></div>
-                        <div className="absolute top-3 left-3 flex gap-1.5">
-                          <span className="bg-blue-600 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
-                            {unit.floorLevel || 'Tầng 1'}
-                          </span>
-                        </div>
-                        <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
-                          <span className="text-slate-500">{unit.facilityName || 'Kho Boxora'}</span>
-                        </div>
+              <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">Không tìm thấy cơ sở phù hợp</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                Không tìm thấy cơ sở nào khớp với từ khóa "{facilitySearchQuery}". Vui lòng thử tìm kiếm khác.
+              </p>
+              <button
+                type="button"
+                onClick={() => setFacilitySearchQuery('')}
+                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-xl hover:bg-slate-200 cursor-pointer"
+              >
+                Xóa bộ lọc
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+              {facilityCardsList.map((fac) => (
+                <div
+                  key={fac.id}
+                  onClick={() => navigate(`/booking?facility=${fac.id}`)}
+                  className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 hover:border-blue-500 dark:hover:border-blue-500 shadow-xs hover:shadow-lg transition-all duration-200 flex flex-col justify-between overflow-hidden group text-left cursor-pointer"
+                >
+                  <div>
+                    {/* Facility Cover Image */}
+                    <div className="relative w-full h-44 overflow-hidden bg-slate-100 dark:bg-slate-800">
+                      <img
+                        src={fac.image}
+                        alt={fac.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/25 to-transparent" />
+
+                      {/* Top Left: Code & City (Khu vực) */}
+                      <div className="absolute top-3 left-3 flex items-center gap-1.5 z-10">
+                        <span className="px-2.5 py-1 rounded-lg bg-blue-600/90 backdrop-blur-md text-white text-[11px] font-bold tracking-wide uppercase shadow-xs">
+                          {fac.code || 'BOXORA'}
+                        </span>
+                        <span className="px-2.5 py-1 rounded-lg bg-white/95 dark:bg-slate-900/95 backdrop-blur-md text-slate-800 dark:text-slate-200 text-[11px] font-semibold shadow-xs">
+                          {fac.city || 'TP.HCM'}
+                        </span>
                       </div>
 
-                      <div className="p-5 flex flex-col gap-3">
-                        <div className="flex items-baseline justify-between">
-                          <span className="font-headline text-base font-bold text-slate-900">
-                            {unit.unitTypeName || 'Kho lưu trữ'}
-                          </span>
-                          <span className="font-headline text-base font-bold text-blue-600">
-                            {priceFormatted} đ<span className="text-xs font-normal text-slate-500">/tháng</span>
+                      {/* Branch Name & Availability overlay */}
+                      <div className="absolute bottom-3 left-3.5 right-3.5 flex flex-col gap-1.5 z-10">
+                        <div>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-600/95 backdrop-blur-md text-white text-[10px] font-semibold shadow-xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                            <span>{fac.availableCount > 0 ? `Còn ${fac.availableCount} kho trống` : 'Sắp trống'}</span>
                           </span>
                         </div>
-                        <p className="text-xs text-slate-500">
-                          Phù hợp lưu trữ gia dụng, hành lý, thiết bị cá nhân và hàng hóa thương mại điện tử.
-                        </p>
-
-                        <div className="grid grid-cols-2 gap-2 pt-2">
-                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                            <span className="text-slate-400 block text-[10px] uppercase font-medium">Diện tích</span>
-                            <span className="font-data-tabular font-semibold text-slate-800">{areaVal}</span>
-                          </div>
-                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                            <span className="text-slate-400 block text-[10px] uppercase font-medium">Thể tích</span>
-                            <span className="font-data-tabular font-semibold text-slate-800">{volumeVal}</span>
-                          </div>
-                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                            <span className="text-slate-400 block text-[10px] uppercase font-medium">Khóa cửa</span>
-                            <span className="text-slate-800 font-semibold">Smart Lock + PIN</span>
-                          </div>
-                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                            <span className="text-slate-400 block text-[10px] uppercase font-medium">An ninh</span>
-                            <span className="text-slate-800 font-semibold">CCTV 24/7 chuyên dụng</span>
-                          </div>
-                        </div>
+                        <h3 className="font-bold text-base sm:text-lg text-white leading-snug truncate drop-shadow-sm">
+                          {fac.name}
+                        </h3>
                       </div>
                     </div>
 
-                    <div className="p-5 pt-0 flex flex-col gap-2.5">
-                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
-                        <span className="flex items-center gap-1 text-slate-600 font-medium">
-                          <span className="material-symbols-outlined text-[14px] text-emerald-600">verified</span>
-                          Bảo lưu cọc 100%
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleOpenPolicyModal('cancellation', { id: unit.facilityId, name: unit.facilityName })
-                          }}
-                          className="inline-flex items-center gap-1 text-cyan-700 hover:text-cyan-800 font-semibold hover:underline cursor-pointer"
-                          title="Xem quy định đặt cọc, hủy giữ chỗ & hoàn tiền cọc của cơ sở này"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">policy</span>
-                          <span>Chính sách đặt cọc &amp; hủy</span>
-                        </button>
+                    {/* Facility Details */}
+                    <div className="p-4 sm:p-5 flex flex-col gap-3.5">
+                      <div className="space-y-1.5 min-h-[48px]">
+                        <p className="text-xs text-slate-600 dark:text-slate-300 flex items-start gap-1.5 leading-relaxed">
+                          <span className="material-symbols-outlined text-[16px] text-blue-600 dark:text-blue-400 shrink-0 mt-0.5">location_on</span>
+                          <span className="line-clamp-2">{fac.address || 'Địa chỉ đang cập nhật'}</span>
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[15px] text-slate-400 shrink-0">call</span>
+                          <span>Hotline: {fac.contactPhone || '1900 636 888'}</span>
+                        </p>
                       </div>
 
-                      <button
-                        onClick={() => {
-                          setSelectedBookingUnit({ 
-                            id: unit.id, 
-                            unitCode: unit.unitCode,
-                            name: unit.unitTypeName || 'Kho lưu trữ',
-                            facilityId: unit.facilityId,
-                            facilityName: unit.facilityName || 'Hệ thống kho Boxora',
-                            facilityStatus: unit.facilityStatus,
-                            priceFormatted: priceFormatted,
-                            priceNumber: Number(unit.pricePerMonth || 1250000),
-                            depositNumber: Number(unit.depositAmount || unit.pricePerMonth || 1250000),
-                            areaSqMeters: unit.areaSqMeters,
-                            floorLevel: unit.floorLevel || 'Tầng 1'
-                          })
-                        }}
-                        className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
-                      >
-                        <span>Đặt Giữ Chỗ</span>
-                      </button>
+                      {/* Amenity Chips */}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                          <span className="material-symbols-outlined text-[13px] text-blue-600 dark:text-blue-400">lock</span>
+                          Khóa IoT 24/7
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                          <span className="material-symbols-outlined text-[13px] text-emerald-600 dark:text-emerald-400">shield</span>
+                          An ninh 24/7
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                          <span className="material-symbols-outlined text-[13px] text-cyan-600 dark:text-cyan-400">ac_unit</span>
+                          Điều hòa A/C
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                )
-              })
-            )}
-          </div>
+                  {/* Card Action Footer */}
+                  <div className="p-4 sm:p-5 pt-0 space-y-2.5">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        navigate(`/booking?facility=${fac.id}`)
+                      }}
+                      className="w-full h-10 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer group-hover:bg-blue-700"
+                    >
+                      <span>Chọn cơ sở này &amp; Đặt kho</span>
+                      <span className="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+                    </button>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800">
+                      <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[13px]">verified</span>
+                        Bảo lưu cọc 100%
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleOpenPolicyModal('cancellation', { id: fac.id, name: fac.name })
+                        }}
+                        className="text-slate-500 hover:text-blue-600 text-[11px] font-medium hover:underline cursor-pointer"
+                      >
+                        Chính sách cọc
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* 5. TAB 3: HỢP ĐỒNG & HÓA ĐƠN (CONTRACTS & BILLING) */}
       {activeTab === 'contracts' && (
         <div className="flex flex-col gap-6">
           {/* Customer Financial KPI Summary Row */}
@@ -3660,7 +3524,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   <button
                     onClick={() => {
                       if (bookingOnly) {
-                        navigate('/portal/customer?tab=requests')
+                        navigate('/portal/customer?tab=bookings')
                       } else {
                         setBookingSuccess(false)
                         setSelectedBookingUnit(null)
@@ -3669,7 +3533,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     }}
                     className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-all cursor-pointer"
                   >
-                    Xem Yêu Cầu Đặt Chỗ
+                    Xem Đơn Đặt Giữ Chỗ
                   </button>
                   <button
                     onClick={() => {

@@ -381,7 +381,7 @@ export const MyBookingsPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => navigate(isCustomer ? '/portal/customer' : '/portal')}
-                        className="w-full py-2.5 px-3.5 rounded-xl bg-slate-900 dark:bg-blue-600 text-white font-semibold text-xs flex items-center justify-between hover:bg-neutral-800 dark:hover:bg-blue-700 transition-all shadow-xs cursor-pointer"
+                        className="w-full py-2.5 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs flex items-center justify-between hover:bg-neutral-800 dark:hover:bg-blue-700 transition-all shadow-xs cursor-pointer"
                       >
                         <span className="flex items-center gap-2">
                           <span className="material-symbols-outlined text-[18px] text-emerald-400">dashboard</span>
