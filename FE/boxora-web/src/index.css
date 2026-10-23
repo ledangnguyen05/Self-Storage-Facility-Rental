@@ -1,11 +1,18 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+@theme {
+  --font-sans: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
 :root {
   color-scheme: light;
   /* Boxora Smart Storage Design System Variables */
-  --font-heading: 'Helvetica Now Display Bold', sans-serif;
-  --font-body: 'Inter', sans-serif;
+  --font-heading: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-body: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --color-text: #0f172a;
   --color-accent: #0866f5;
   --color-accent-hover: #0752c9;
@@ -66,11 +73,20 @@
   --radius-xl: 1rem;
   --radius-2xl: 1.5rem;
 
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: var(--on-surface);
   background-color: var(--background);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+button,
+input,
+select,
+textarea {
+  font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 body {
@@ -82,7 +98,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 #root {
@@ -92,20 +108,22 @@ body {
   width: 100%;
 }
 
+.font-sans,
+.font-serif,
 .font-headline {
-  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   font-display: swap;
 }
 
 .font-unit-code {
-  font-family: 'Inter', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-weight: 700;
   letter-spacing: 0.05em;
   font-variant-numeric: tabular-nums;
 }
 
 .font-data-tabular {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-variant-numeric: tabular-nums;
 }
 
@@ -321,15 +339,16 @@ body {
  * Stitch MCP Design System Helpers (Boxora Smart Storage)
  * ========================================================= */
 .font-mono {
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-variant-numeric: tabular-nums;
 }
 
 .dashboard-typography {
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .dashboard-typography :is(h1, h2, h3, h4, h5, h6):not(.font-mono) {
-  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .pulsing-dot {
@@ -359,6 +378,48 @@ body {
   transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+
+/* Stitch Design System - Dark Mode Support */
+html.dark .stitch-card {
+  background-color: #0f172a !important;
+  border-color: #1e293b !important;
+  color: #f8fafc !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
+}
+
+html.dark .stitch-card:hover {
+  border-color: #334155 !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6) !important;
+}
+
+html.dark .stitch-badge {
+  border-color: #334155 !important;
+}
+
+html.dark .stitch-badge-secure {
+  background-color: rgba(16, 185, 129, 0.2) !important;
+  border-color: rgba(16, 185, 129, 0.35) !important;
+  color: #34d399 !important;
+}
+
+html.dark .stitch-badge-available {
+  background-color: rgba(6, 182, 212, 0.2) !important;
+  border-color: rgba(6, 182, 212, 0.35) !important;
+  color: #38bdf8 !important;
+}
+
+html.dark .stitch-badge-warning {
+  background-color: rgba(245, 158, 11, 0.2) !important;
+  border-color: rgba(245, 158, 11, 0.35) !important;
+  color: #fbbf24 !important;
+}
+
+html.dark .stitch-badge-danger {
+  background-color: rgba(239, 68, 68, 0.2) !important;
+  border-color: rgba(239, 68, 68, 0.35) !important;
+  color: #f87171 !important;
+}
+
 .stitch-card:hover {
   border-color: #cbd5e1;
   box-shadow: 0 8px 16px -4px rgba(15, 23, 42, 0.06), 0 2px 6px -2px rgba(15, 23, 42, 0.04);
@@ -370,7 +431,8 @@ body {
   gap: 0.375rem;
   padding: 0.2rem 0.55rem;
   border-radius: 9999px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -654,35 +716,48 @@ html.dark main {
 }
 
 /* Surfaces & Cards */
-html.dark .bg-white {
+html.dark .bg-white,
+html.dark [class*="bg-white"]:not([class*="dark:bg-"]):not([class*="bg-white/1"]):not([class*="bg-white/2"]):not([class*="bg-white/3"]):not([class*="bg-white/4"]):not([class*="bg-white/5"]) {
   background-color: var(--surface) !important;
   color: var(--on-surface);
 }
 
-html.dark .bg-white\/90,
-html.dark .bg-white\/80,
-html.dark .bg-white\/95,
-html.dark .bg-white\/70 {
+html.dark [class*="bg-white/9"],
+html.dark [class*="bg-white/8"],
+html.dark [class*="bg-white/7"],
+html.dark [class*="bg-white/6"] {
   background-color: rgba(15, 23, 42, 0.94) !important;
+  color: var(--on-surface) !important;
 }
 
 html.dark .bg-slate-50,
+html.dark [class*="bg-slate-50"]:not([class*="dark:bg-"]),
 html.dark .bg-gray-50,
 html.dark .bg-neutral-50,
 html.dark .bg-zinc-50 {
   background-color: var(--surface-soft) !important;
 }
 
-html.dark .bg-slate-50\/90,
-html.dark .bg-slate-50\/80 {
+html.dark [class*="bg-slate-50/9"],
+html.dark [class*="bg-slate-50/8"],
+html.dark [class*="bg-slate-50/7"],
+html.dark [class*="bg-slate-50/6"] {
   background-color: rgba(17, 26, 43, 0.94) !important;
 }
 
 html.dark .bg-slate-100,
+html.dark [class*="bg-slate-100"]:not([class*="dark:bg-"]),
 html.dark .bg-gray-100,
 html.dark .bg-neutral-100 {
   background-color: var(--surface-muted) !important;
   color: var(--on-surface);
+}
+
+html.dark [class*="bg-slate-100/9"],
+html.dark [class*="bg-slate-100/8"],
+html.dark [class*="bg-slate-100/7"],
+html.dark [class*="bg-slate-100/6"] {
+  background-color: rgba(22, 31, 51, 0.94) !important;
 }
 
 html.dark .bg-slate-200,
@@ -690,24 +765,114 @@ html.dark .bg-gray-200 {
   background-color: var(--surface-low) !important;
 }
 
+/* Hardcoded Linear Gradients Inversion */
+html.dark [class*="bg-[linear-gradient(180deg,#f1fff8"],
+html.dark [class*="bg-[linear-gradient(180deg,#f7faff"],
+html.dark [class*="bg-[linear-gradient(180deg,#ffffff"],
+html.dark [class*="bg-[linear-gradient(145deg,#f0f7ff"],
+html.dark [class*="bg-[linear-gradient(135deg,#f4f9ff"],
+html.dark [class*="bg-[linear-gradient(135deg,#f0f7ff"],
+html.dark [class*="bg-[linear-gradient(180deg,#f8fafc"],
+html.dark [class*="bg-[linear-gradient(135deg,#ffffff"] {
+  background: linear-gradient(180deg, #090d16 0%, #0d172a 45%, #0a0f1d 100%) !important;
+}
+
 /* Gradients Inversion */
-html.dark .from-white {
+html.dark .from-white,
+html.dark [class*="from-white"] {
   --tw-gradient-from: #090d16 var(--tw-gradient-from-position) !important;
 }
-html.dark .to-white {
+html.dark .to-white,
+html.dark [class*="to-white"] {
   --tw-gradient-to: #0f172a var(--tw-gradient-to-position) !important;
 }
-html.dark .from-slate-50 {
+html.dark .via-white,
+html.dark [class*="via-white"] {
+  --tw-gradient-via: #0f172a var(--tw-gradient-via-position) !important;
+}
+html.dark .from-blue-50,
+html.dark [class*="from-blue-50"] {
+  --tw-gradient-from: #111a2b var(--tw-gradient-from-position) !important;
+}
+html.dark .to-blue-50,
+html.dark [class*="to-blue-50"] {
+  --tw-gradient-to: #111a2b var(--tw-gradient-to-position) !important;
+}
+html.dark .via-blue-50,
+html.dark [class*="via-blue-50"] {
+  --tw-gradient-via: #111a2b var(--tw-gradient-via-position) !important;
+}
+html.dark .from-cyan-50,
+html.dark [class*="from-cyan-50"] {
+  --tw-gradient-from: #0d1a2d var(--tw-gradient-from-position) !important;
+}
+html.dark .to-cyan-50,
+html.dark [class*="to-cyan-50"] {
+  --tw-gradient-to: #0d1a2d var(--tw-gradient-to-position) !important;
+}
+html.dark .via-cyan-50,
+html.dark [class*="via-cyan-50"] {
+  --tw-gradient-via: #0d1a2d var(--tw-gradient-via-position) !important;
+}
+html.dark .from-teal-50,
+html.dark [class*="from-teal-50"] {
+  --tw-gradient-from: #091a1e var(--tw-gradient-from-position) !important;
+}
+html.dark .to-teal-50,
+html.dark [class*="to-teal-50"] {
+  --tw-gradient-to: #091a1e var(--tw-gradient-to-position) !important;
+}
+html.dark .via-teal-50,
+html.dark [class*="via-teal-50"] {
+  --tw-gradient-via: #091a1e var(--tw-gradient-via-position) !important;
+}
+html.dark .from-slate-50,
+html.dark [class*="from-slate-50"] {
   --tw-gradient-from: #090d16 var(--tw-gradient-from-position) !important;
 }
-html.dark .to-slate-50 {
+html.dark .to-slate-50,
+html.dark [class*="to-slate-50"] {
   --tw-gradient-to: #0f172a var(--tw-gradient-to-position) !important;
 }
-html.dark .from-slate-100 {
+html.dark .via-slate-50,
+html.dark [class*="via-slate-50"] {
+  --tw-gradient-via: #0f172a var(--tw-gradient-via-position) !important;
+}
+html.dark .from-slate-100,
+html.dark [class*="from-slate-100"] {
   --tw-gradient-from: #161f33 var(--tw-gradient-from-position) !important;
 }
-html.dark .to-slate-100 {
+html.dark .to-slate-100,
+html.dark [class*="to-slate-100"] {
   --tw-gradient-to: #0f172a var(--tw-gradient-to-position) !important;
+}
+html.dark .via-slate-100,
+html.dark [class*="via-slate-100"] {
+  --tw-gradient-via: #161f33 var(--tw-gradient-via-position) !important;
+}
+html.dark .from-amber-50,
+html.dark [class*="from-amber-50"] {
+  --tw-gradient-from: rgba(245, 158, 11, 0.15) !important;
+}
+html.dark .to-amber-50,
+html.dark [class*="to-amber-50"] {
+  --tw-gradient-to: rgba(245, 158, 11, 0.05) !important;
+}
+html.dark .from-emerald-50,
+html.dark [class*="from-emerald-50"] {
+  --tw-gradient-from: rgba(16, 185, 129, 0.15) !important;
+}
+html.dark .to-emerald-50,
+html.dark [class*="to-emerald-50"] {
+  --tw-gradient-to: rgba(16, 185, 129, 0.05) !important;
+}
+html.dark .from-indigo-50,
+html.dark [class*="from-indigo-50"] {
+  --tw-gradient-from: rgba(99, 102, 241, 0.15) !important;
+}
+html.dark .to-indigo-50,
+html.dark [class*="to-indigo-50"] {
+  --tw-gradient-to: rgba(99, 102, 241, 0.05) !important;
 }
 
 /* Text & contrast */

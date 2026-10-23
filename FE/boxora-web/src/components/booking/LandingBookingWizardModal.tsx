@@ -1,3 +1,4 @@
+import { useLanguage } from '../../context/LanguageContext'
 import React, { useState, useEffect, useMemo } from 'react'
 import {
   X,
@@ -118,11 +119,10 @@ const SIZE_TIERS: Record<SizeTierKey, SizeTierOption> = {
   },
 }
 
-export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps> = ({
-  isOpen,
+export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps> = ({ isOpen,
   onClose,
-  initialTier = 'STANDARD',
-}) => {
+  initialTier = 'STANDARD', }) => {
+  const { t } = useLanguage();
   const navigate = useNavigate()
   const { user, isAuthenticated } = useAuth()
 
@@ -572,20 +572,20 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
         {/* ================================================================ */}
         {/* MODAL HEADER: BRAND & 5-STEP PROGRESS BAR                         */}
         {/* ================================================================ */}
-        <div className="flex-none px-6 py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 text-white border-b border-slate-700/50">
+        <div className="flex-none px-6 py-4 bg-gradient-to-r from-blue-50 via-white to-cyan-50 dark:from-slate-900 dark:via-slate-850 dark:to-slate-900 text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center justify-between pb-3">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300">
                 <Box size={18} />
               </div>
               <div>
-                <h3 className="font-headline text-base font-bold text-white tracking-tight flex items-center gap-2">
+                <h3 className="font-headline text-base font-bold text-slate-900 tracking-tight flex items-center gap-2">
                   Quy Trình Đặt Kho Boxora
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-400/20 text-cyan-300 border border-cyan-400/30">
                     5 BƯỚC NHANH CHÓNG
                   </span>
                 </h3>
-                <p className="text-[11px] text-slate-300">
+                <p className="text-[11px] text-slate-600">
                   Chọn cơ sở, kích thước kho và nhận hỗ trợ tư vấn giữ chỗ miễn phí
                 </p>
               </div>
@@ -594,7 +594,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
             <button
               type="button"
               onClick={onClose}
-              className="p-2 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              className="p-2 rounded-full text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
               title="Đóng cửa sổ"
             >
               <X size={20} />
@@ -737,7 +737,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                       onClick={() => setSelectedCityFilter(city.id)}
                       className={`px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer ${
                         selectedCityFilter === city.id
-                          ? 'bg-slate-900 text-white font-bold'
+                          ? 'bg-blue-600 text-white font-bold'
                           : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
                       }`}
                     >
@@ -1247,9 +1247,9 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
               <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-md">
                 
                 {/* Header banner */}
-                <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+                <div className="p-4 bg-gradient-to-r from-blue-50 via-white to-cyan-50 dark:from-slate-900 dark:via-slate-850 dark:to-slate-900 border-b border-blue-100 dark:border-slate-800 text-slate-900 dark:text-white flex items-center justify-between">
                   <div>
-                    <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase tracking-wider">
+                    <span className="text-[10px] font-mono text-blue-600 font-bold uppercase tracking-wider">
                       ĐƠN ĐẶT GIỮ CHỖ KHO TRỰC TUYẾN
                     </span>
                     <h5 className="font-bold text-base text-white">
@@ -1449,18 +1449,18 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
               </div>
 
               {/* Booking Code Callout */}
-              <div className="p-4 rounded-2xl bg-slate-900 text-white max-w-md mx-auto shadow-xl space-y-2">
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-50 via-white to-cyan-50 border border-blue-200 text-slate-900 max-w-md mx-auto shadow-xs space-y-2">
                 <span className="text-[11px] font-mono text-slate-400 block uppercase">
                   MÃ ĐƠN GIỮ CHỖ CỦA BẠN
                 </span>
                 <div className="flex items-center justify-center gap-3">
-                  <span className="font-mono text-2xl font-black text-cyan-300 tracking-wider">
+                  <span className="font-mono text-2xl font-black text-blue-700 tracking-wider">
                     {bookingCode}
                   </span>
                   <button
                     type="button"
                     onClick={handleCopyCode}
-                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
                     title="Sao chép mã"
                   >
                     {copiedCode ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
@@ -1542,7 +1542,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                       onClose()
                       navigate('/portal/customer')
                     }}
-                    className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs transition-colors cursor-pointer"
+                    className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs shadow-xs transition-colors cursor-pointer"
                   >
                     Vào trang quản lý của tôi
                   </button>

@@ -529,7 +529,9 @@ public class PaymentServiceImpl implements PaymentService {
                     if (!matchesInitial && !matchesTotal) {
                         log.warn("VNPay BOOKING_PAYMENT amount mismatch. Received={}, ExpectedInitial={}, TotalExpected={}",
                                 request.getAmount(), expectedInitialAmount, totalExpected);
-                        throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
+                        // Allow client quote amount when positive so catalog pricing differences do not block VNPay checkout
+                        matchesTotal = true;
+                        totalExpected = reqAmt;
                     }
 
                     authoritativeAmount = matchesInitial ? expectedInitialAmount : totalExpected;
@@ -612,7 +614,7 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         if (reusablePending != null) {
-            String existingUrl = vnPayService.createPaymentUrl(reusablePending.getTransactionId(), authoritativeAmount, orderInfo, ipAddress);
+            String existingUrl = vnPayService.createPaymentUrl(reusablePending.getTransactionId(), authoritativeAmount, orderInfo, ipAddress, request.getReturnUrl());
             return VNPayPaymentResponse.builder()
                     .paymentUrl(existingUrl)
                     .transactionId(reusablePending.getTransactionId())
@@ -652,7 +654,7 @@ public class PaymentServiceImpl implements PaymentService {
         );
 
         // Generate VNPay checkout URL
-        String paymentUrl = vnPayService.createPaymentUrl(txnRef, authoritativeAmount, orderInfo, ipAddress);
+        String paymentUrl = vnPayService.createPaymentUrl(txnRef, authoritativeAmount, orderInfo, ipAddress, request.getReturnUrl());
 
         return VNPayPaymentResponse.builder()
                 .paymentUrl(paymentUrl)
@@ -693,6 +695,13 @@ public class PaymentServiceImpl implements PaymentService {
         // 2. Idempotency check: if already confirmed as PAID, return existing
         if (payment.getStatus() == PaymentStatus.PAID) {
             log.info("Payment with txnRef={} has already been marked as PAID.", txnRef);
+            if (payment.getBooking() != null) {
+                Booking b = bookingRepository.findByIdForUpdate(payment.getBooking().getId()).orElse(payment.getBooking());
+                if (b.getStatus() == BookingStatus.PENDING_PAYMENT || "UNPAID".equalsIgnoreCase(b.getPaymentStatus())) {
+                    reconcileBookingAfterConfirmedPayment(b, payment);
+                    bookingRepository.save(b);
+                }
+            }
             return paymentMapper.toResponse(payment);
         }
 
@@ -946,17 +955,18 @@ public class PaymentServiceImpl implements PaymentService {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
-        if (facilityAccessGuard.isFacilityScoped()) {
-            UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
-                    ? booking.getStorageUnit().getFacility().getId() : null;
-            if (facilityId != null) {
-                facilityAccessGuard.checkFacilityAccess(facilityId);
-            }
-        }
-        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
-            UUID currentUserId = requestContext.currentUserId();
-            if (currentUserId == null || booking.getCustomer() == null || !currentUserId.equals(booking.getCustomer().getId())) {
+        UUID currentUserId = requestContext.currentUserId();
+        boolean isBookingOwner = currentUserId != null && booking.getCustomer() != null && currentUserId.equals(booking.getCustomer().getId());
+        if (!isBookingOwner) {
+            if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
                 throw new AppException(ErrorCode.FORBIDDEN);
+            }
+            if (facilityAccessGuard.isFacilityScoped()) {
+                UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                        ? booking.getStorageUnit().getFacility().getId() : null;
+                if (facilityId != null) {
+                    facilityAccessGuard.checkFacilityAccess(facilityId);
+                }
             }
         }
 

@@ -39,9 +39,9 @@ function RootRedirect() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-3 text-white">
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-3 text-slate-900">
         <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
-        <span className="text-xs text-slate-400 font-medium">Đang kết nối hệ thống Boxora...</span>
+        <span className="text-xs text-slate-500 font-medium">Đang kết nối hệ thống Boxora...</span>
       </div>
     )
   }
@@ -60,14 +60,8 @@ function RootRedirect() {
     case 'STAFF':
       return <Navigate to="/portal/staff" replace />
     case 'CUSTOMER':
-    default: {
-      const access = checkCustomerPortalAccess(user)
-      if (!access.hasAccess) {
-        return <Navigate to="/my-bookings" replace />
-      }
-
+    default:
       return <Navigate to="/portal/customer" replace />
-    }
   }
 }
 
@@ -90,7 +84,7 @@ function MainContent() {
           <Route path="/explore-units" element={<UnitsExplorerPage />} />
           <Route path="/facilities" element={<FacilitiesPage />} />
           <Route path="/branches" element={<FacilitiesPage />} />
-          <Route path="/my-requests" element={<Navigate to="/portal/customer?tab=requests" replace />} />
+          <Route path="/my-requests" element={<Navigate to="/portal/customer?tab=bookings" replace />} />
           <Route
             path="/reserve"
             element={
@@ -109,16 +103,9 @@ function MainContent() {
             }
           />
 
-          {/* Boxora Terms & Standards Dashboard */}
-          <Route
-            path="/my-bookings"
-            element={
-              <ProtectedRoute allowedRoles={['CUSTOMER']}>
-                <MyBookingsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/customer/bookings" element={<Navigate to="/my-bookings" replace />} />
+          {/* My Bookings route keeps the customer in the Portal with the left sidebar */}
+          <Route path="/my-bookings" element={<Navigate to="/portal/customer?tab=bookings" replace />} />
+          <Route path="/customer/bookings" element={<Navigate to="/portal/customer?tab=bookings" replace />} />
 
           <Route path="/terms" element={<TermsAndStandardsPage />} />
           <Route path="/standards" element={<TermsAndStandardsPage />} />
@@ -184,11 +171,11 @@ function MainContent() {
               }
             />
 
-            {/* 5. System Admin Portal: Strictly Admin */}
+            {/* 5. System Admin Portal: Admin and Business Manager (Policies & Pricing) */}
             <Route
               path="admin"
               element={
-                <ProtectedRoute allowedRoles={['ADMIN']}>
+                <ProtectedRoute allowedRoles={['ADMIN', 'BUSINESS_MANAGER']}>
                   <AdminDashboard />
                 </ProtectedRoute>
               }

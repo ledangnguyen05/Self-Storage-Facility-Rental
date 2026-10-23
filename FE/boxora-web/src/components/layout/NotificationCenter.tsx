@@ -90,7 +90,7 @@ const getNotificationAction = (item: NotificationLog, role?: string | null) => {
   }
 
   if (item.notificationType === 'BOOKING_CREATED' && role === 'CUSTOMER') {
-    return { label: 'Xem yêu cầu đặt chỗ', to: '/portal/customer?tab=requests' }
+    return { label: 'Xem đơn đặt giữ chỗ', to: '/portal/customer?tab=bookings' }
   }
 
   return null
@@ -512,7 +512,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
           <div className="w-full max-w-xl rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col text-left animate-in zoom-in-95 duration-200">
             
             {/* Modal Header */}
-            <div className="bg-slate-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-slate-800">
+            <div className="bg-gradient-to-r from-blue-50 via-white to-cyan-50 text-slate-900 p-5 sm:p-6 flex items-center justify-between border-b border-slate-200">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-md shadow-blue-500/30">
                   <FileText size={20} />
@@ -545,7 +545,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
               <button
                 type="button"
                 onClick={() => setReviewBooking(null)}
-                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                className="w-8 h-8 rounded-full bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center transition-colors cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -725,7 +725,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
                 <button
                   type="button"
                   onClick={() => setReviewBooking(null)}
-                  className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-colors cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
                 >
                   Đóng
                 </button>

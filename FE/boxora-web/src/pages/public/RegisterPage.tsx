@@ -122,7 +122,7 @@ export const RegisterPage: React.FC = () => {
         <rect width="160" height="50" rx="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
         <path d="M 5 20 Q 80 5 155 35" stroke="#38bdf8" stroke-width="2" fill="none" opacity="0.6"/>
         <path d="M 10 35 Q 90 45 150 15" stroke="#94a3b8" stroke-width="1.5" fill="none" opacity="0.5"/>
-        <text x="20" y="34" font-family="monospace, sans-serif" font-size="24" font-weight="bold" fill="#0284c7" letter-spacing="4">${code}</text>
+        <text x="20" y="34" font-family="'Be Vietnam Pro', sans-serif" font-size="24" font-weight="bold" fill="#0284c7" letter-spacing="4">${code}</text>
       </svg>
     `.trim()
     const base64 = `data:image/svg+xml;base64,${btoa(svg)}`
@@ -227,7 +227,7 @@ export const RegisterPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen w-full relative flex flex-col justify-between overflow-x-hidden font-sans text-slate-800 bg-[#f4f8ff]">
+    <div className="min-h-screen w-full relative flex flex-col justify-between overflow-x-hidden font-sans text-slate-800 dark:text-slate-200 bg-[#f4f8ff] dark:bg-slate-950">
       
       {/* 1. BACKGROUND                                                */}
       {/* ============================================================ */}
@@ -714,7 +714,7 @@ export const RegisterPage: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full h-11 sm:h-12 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs sm:text-sm tracking-wider uppercase shadow-lg shadow-slate-900/15 hover:shadow-slate-900/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed mt-1.5"
+                  className="w-full h-11 sm:h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md shadow-blue-600/20 text-xs sm:text-sm tracking-wider uppercase shadow-lg shadow-slate-900/15 hover:shadow-slate-900/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed mt-1.5"
                 >
                   {isLoading ? (
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />

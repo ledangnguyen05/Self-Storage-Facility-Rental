@@ -26,4 +26,6 @@ public class PaymentCreateRequest {
 
     @Size(max = 255, message = "Order info must not exceed 255 characters")
     private String orderInfo;
+
+    private String returnUrl;
 }

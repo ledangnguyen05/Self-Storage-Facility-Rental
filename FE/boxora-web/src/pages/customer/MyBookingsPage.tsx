@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { bookingService } from '../../services/bookingService'
+import { paymentService } from '../../services/paymentService'
 import { facilityService } from '../../services/facilityService'
 import { Booking, Facility } from '../../types'
 import { BrandLogo } from '../../components/common/BrandLogo'
@@ -166,6 +167,8 @@ export const MyBookingsPage: React.FC = () => {
                   rentalMonths: r.duration?.months || r.rentalMonths || 1,
                   totalRentalFee: r.totalRentalFee || 0,
                   depositAmount: r.depositAmount || 0,
+                  depositPaid: r.depositPaid ?? (r.paymentStatus === 'PAID' ? (r.depositAmount || 0) : 0),
+                  paymentStatus: r.paymentStatus || 'UNPAID',
                   expectedCheckInAt: r.expectedCheckInAt || `${r.checkInDate || ''}T${r.checkInTime || '09:00'}:00`,
                   checkInDate: r.checkInDate,
                   checkInTime: r.checkInTime,
@@ -182,6 +185,29 @@ export const MyBookingsPage: React.FC = () => {
         console.warn('Error merging local reservations:', e)
       }
 
+      try {
+        const myPayments = await paymentService.getMyPayments().catch(() => [])
+        if (Array.isArray(myPayments) && myPayments.length > 0) {
+          const paidBookingIds = new Set(
+            myPayments.filter((pm: any) => pm.status === 'PAID' || pm.status === 'SUCCESS').map((pm: any) => pm.bookingId).filter(Boolean)
+          )
+          const paidBookingCodes = new Set(
+            myPayments.filter((pm: any) => pm.status === 'PAID' || pm.status === 'SUCCESS').map((pm: any) => pm.bookingCode).filter(Boolean)
+          )
+          list = list.map((bk) => {
+            if (paidBookingIds.has(bk.id) || (bk.bookingCode && paidBookingCodes.has(bk.bookingCode))) {
+              return {
+                ...bk,
+                paymentStatus: 'PAID',
+                status: bk.status === 'PENDING_PAYMENT' ? 'CONFIRMED' : bk.status,
+              }
+            }
+            return bk
+          })
+        }
+      } catch (payErr) {
+        console.warn('Reconcile payments warning:', payErr)
+      }
       setBookings(list)
     } catch (err: any) {
       console.error('Failed to load bookings:', err)
@@ -355,7 +381,7 @@ export const MyBookingsPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => navigate(isCustomer ? '/portal/customer' : '/portal')}
-                        className="w-full py-2.5 px-3.5 rounded-xl bg-slate-900 dark:bg-blue-600 text-white font-semibold text-xs flex items-center justify-between hover:bg-neutral-800 dark:hover:bg-blue-700 transition-all shadow-xs cursor-pointer"
+                        className="w-full py-2.5 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs flex items-center justify-between hover:bg-neutral-800 dark:hover:bg-blue-700 transition-all shadow-xs cursor-pointer"
                       >
                         <span className="flex items-center gap-2">
                           <span className="material-symbols-outlined text-[18px] text-emerald-400">dashboard</span>
@@ -727,10 +753,12 @@ export const MyBookingsPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {filteredBookings.map((b) => {
               const isLocal = b.id?.startsWith('LOCAL-RES-')
-              const isPendingContact = (b.status as string) === 'PENDING_CONTACT' || (b.status as string) === 'PENDING_CONFIRMATION' || isLocal
-              const isConfirmed = b.status === 'CONFIRMED'
+              const isPaid = b.paymentStatus === 'PAID' || (b.status as string) === 'PAID_CONFIRMED' || Number(b.depositPaid || 0) > 0
               const isActiveOrSigned = b.status === 'ACTIVE' || b.status === 'COMPLETED'
               const isCancelled = b.status === 'CANCELLED'
+              const isPendingPayment = b.status === 'PENDING_PAYMENT' && !isPaid && !isCancelled
+              const isConfirmed = (b.status === 'CONFIRMED' || (isPaid && !isActiveOrSigned)) && !isCancelled
+              const isPendingContact = !isConfirmed && !isPendingPayment && !isActiveOrSigned && !isCancelled && ((b.status as string) === 'PENDING_CONTACT' || (b.status as string) === 'PENDING_CONFIRMATION' || isLocal)
 
               return (
                 <div
@@ -770,15 +798,29 @@ export const MyBookingsPage: React.FC = () => {
                           </>
                         )}
 
+                        {isPendingPayment && (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                            <span>Chờ thanh toán</span>
+                          </span>
+                        )}
+
                         {isConfirmed && (
                           <>
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-cyan-100 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-800">
                               <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse"></span>
                               <span>Chờ check in</span>
                             </span>
-                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
-                              ✓ Đã xác nhận đón
-                            </span>
+                            {isPaid ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                <CheckCircle2 size={11} />
+                                <span>Đã thanh toán</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                                ✓ Đã xác nhận đón
+                              </span>
+                            )}
                           </>
                         )}
 
@@ -886,14 +928,43 @@ export const MyBookingsPage: React.FC = () => {
                           <span className="material-symbols-outlined text-[17px]">dashboard</span>
                           <span>Vào Portal Quản Lý Kho (Khóa IoT)</span>
                         </button>
+                      ) : isPaid ? (
+                        <div className="space-y-2">
+                          <div className="w-full p-2.5 rounded-xl bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-left space-y-1">
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900 dark:text-emerald-300">
+                              <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <span>{b.contractSigned ? 'Đã thanh toán & Đã ký HĐ điện tử' : 'Đã thanh toán trực tuyến thành công'}</span>
+                            </div>
+                            <p className="text-[11px] text-emerald-800 dark:text-emerald-300/90 leading-relaxed">
+                              {b.contractSigned ? 'Hợp đồng điện tử đã ký thành công. Vui lòng mang theo CCCD khi đến nhận kho theo lịch hẹn.' : 'Kho đã được giữ chỗ cho bạn. Vui lòng hoàn tất ký hợp đồng điện tử và mang theo CCCD khi đến nhận kho.'}
+                            </p>
+                          </div>
+                          {!isLocal && (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}${b.contractSigned ? '' : '&autoSign=true'}`)}
+                              className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                            >
+                              <span>{b.contractSigned ? 'Xem hợp đồng điện tử đã ký' : 'Ký hợp đồng điện tử ngay'}</span>
+                            </button>
+                          )}
+                        </div>
+                      ) : isPendingPayment && !isLocal ? (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}`)}
+                          className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                        >
+                          <span>Thanh toán trực tuyến ngay</span>
+                        </button>
                       ) : (
                         <div className="w-full p-2.5 rounded-xl bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-900/60 text-left space-y-1">
                           <div className="flex items-center gap-1.5 text-xs font-bold text-blue-900 dark:text-blue-300">
                             <span className="material-symbols-outlined text-[16px] text-blue-600 dark:text-cyan-400">badge</span>
-                            <span>Ký HĐ &amp; Thanh toán do Staff thực hiện</span>
+                            <span>Thanh toán tại quầy khi nhận kho</span>
                           </div>
                           <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                            Quý khách vui lòng mang theo CCCD bản gốc đến cơ sở vào ngày hẹn. Nhân viên Staff sẽ trực tiếp đối soát, lập hợp đồng và hỗ trợ thanh toán tại quầy.
+                            Vui lòng mang theo CCCD bản gốc đến cơ sở vào ngày hẹn để đối soát, ký hợp đồng và thanh toán nhận kho.
                           </p>
                         </div>
                       )

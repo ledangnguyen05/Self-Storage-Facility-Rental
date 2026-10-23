@@ -147,7 +147,7 @@ export function DocuSealRenewalModal({
     <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
       <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+        <div className="px-6 py-4 bg-gradient-to-r from-blue-50 via-white to-cyan-50 dark:from-slate-900 dark:via-slate-850 dark:to-slate-900 text-slate-900 dark:text-white flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-xs">
               <span className="material-symbols-outlined text-[20px]">draw</span>
@@ -166,7 +166,7 @@ export function DocuSealRenewalModal({
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer"
+            className="w-8 h-8 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition cursor-pointer"
           >
             ✕
           </button>
@@ -349,7 +349,7 @@ export function DocuSealRenewalModal({
                       value={signerName}
                       onChange={(e) => setSignerName(e.target.value)}
                       placeholder="Nhập họ và tên đầy đủ..."
-                      className="w-full h-11 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:border-blue-500 font-serif italic"
+                      className="w-full h-11 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:border-blue-500 font-sans italic"
                     />
                   </div>
                 )}

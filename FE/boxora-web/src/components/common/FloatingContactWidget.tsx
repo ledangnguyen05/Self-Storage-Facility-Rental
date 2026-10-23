@@ -1,6 +1,9 @@
+import { useLanguage } from '../../context/LanguageContext'
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 
 export const FloatingContactWidget: React.FC = () => {
+  const { t } = useLanguage();
+
   const [showScrollTop, setShowScrollTop] = useState(false)
   const [showBranchModal, setShowBranchModal] = useState(false)
   const [showZaloModal, setShowZaloModal] = useState(false)
@@ -88,8 +91,8 @@ export const FloatingContactWidget: React.FC = () => {
         {/* ========================================================== */}
         <div className="flex flex-col items-center group relative">
           {/* Tooltip */}
-          <div id="scroll-top-tooltip" role="tooltip" className="absolute right-full mr-3 top-1/2 -translate-y-1/2 rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-[11px] font-semibold whitespace-nowrap text-white opacity-0 shadow-lg transition-all duration-200 group-hover:-translate-x-0.5 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none">
-            Cuộn lên đầu trang
+          <div id="scroll-top-tooltip" role="tooltip" className="absolute right-full mr-3 top-1/2 -translate-y-1/2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-[11px] font-bold whitespace-nowrap text-slate-800 dark:text-slate-100 opacity-0 shadow-xl border transition-all duration-200 group-hover:-translate-x-0.5 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none">
+            {t('Cuộn lên đầu trang')}
           </div>
 
           <button
@@ -97,7 +100,7 @@ export const FloatingContactWidget: React.FC = () => {
             onClick={scrollToTop}
             aria-label="Cuộn lên đầu trang"
             aria-describedby="scroll-top-tooltip"
-            className={`flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-full bg-slate-950 text-white shadow-lg shadow-slate-900/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 active:translate-y-0 cursor-pointer ${
+            className={`flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/25 shadow-slate-900/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 active:translate-y-0 cursor-pointer ${
               showScrollTop ? 'opacity-100 scale-100' : 'opacity-85 scale-95'
             }`}
           >
@@ -120,8 +123,8 @@ export const FloatingContactWidget: React.FC = () => {
         {/* ========================================================== */}
         <div className="relative group">
           {/* Tooltip */}
-          <div id="zalo-tooltip" role="tooltip" className="absolute right-full mr-3 top-1/2 -translate-y-1/2 rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-[11px] font-semibold whitespace-nowrap text-white opacity-0 shadow-lg transition-all duration-200 group-hover:-translate-x-0.5 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none">
-            Chat Zalo tư vấn 24/7
+          <div id="zalo-tooltip" role="tooltip" className="absolute right-full mr-3 top-1/2 -translate-y-1/2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-[11px] font-bold whitespace-nowrap text-slate-800 dark:text-slate-100 opacity-0 shadow-xl border transition-all duration-200 group-hover:-translate-x-0.5 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none">
+            {t('Chat Zalo tư vấn 24/7')}
           </div>
 
           {/* Pulse Ripple Effect Ring */}
@@ -160,7 +163,7 @@ export const FloatingContactWidget: React.FC = () => {
         {/* ========================================================== */}
         <div className="relative group">
           {/* Tooltip */}
-          <div id="hotline-tooltip" role="tooltip" className="absolute right-full mr-3 top-1/2 -translate-y-1/2 rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-[11px] font-semibold whitespace-nowrap text-white opacity-0 shadow-lg transition-all duration-200 group-hover:-translate-x-0.5 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none">
+          <div id="hotline-tooltip" role="tooltip" className="absolute right-full mr-3 top-1/2 -translate-y-1/2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-[11px] font-bold whitespace-nowrap text-slate-800 dark:text-slate-100 opacity-0 shadow-xl border transition-all duration-200 group-hover:-translate-x-0.5 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none">
             Hotline: 1900-BOXORA (1900 269 672)
           </div>
 
@@ -171,7 +174,7 @@ export const FloatingContactWidget: React.FC = () => {
             href="tel:1900269672"
             aria-label="Gọi hotline 1900-BOXORA"
             aria-describedby="hotline-tooltip"
-            className="relative flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-full bg-slate-950 text-white shadow-lg shadow-slate-900/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 active:translate-y-0 cursor-pointer"
+            className="relative flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/25 shadow-slate-900/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 active:translate-y-0 cursor-pointer"
           >
             <svg
               className="w-5 h-5 sm:w-6 sm:h-6 text-white transition-transform group-hover:rotate-[-8deg] motion-reduce:animate-none"
@@ -188,7 +191,7 @@ export const FloatingContactWidget: React.FC = () => {
         {/* ========================================================== */}
         <div className="relative group">
           {/* Tooltip */}
-          <div id="branches-tooltip" role="tooltip" className="absolute right-full mr-3 top-1/2 -translate-y-1/2 rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-[11px] font-semibold whitespace-nowrap text-white opacity-0 shadow-lg transition-all duration-200 group-hover:-translate-x-0.5 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none">
+          <div id="branches-tooltip" role="tooltip" className="absolute right-full mr-3 top-1/2 -translate-y-1/2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-[11px] font-bold whitespace-nowrap text-slate-800 dark:text-slate-100 opacity-0 shadow-xl border transition-all duration-200 group-hover:-translate-x-0.5 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none">
             Vị trí cơ sở Boxora
           </div>
 
@@ -204,7 +207,7 @@ export const FloatingContactWidget: React.FC = () => {
             aria-expanded={showBranchModal}
             aria-controls="boxora-branches-dialog"
             aria-describedby="branches-tooltip"
-            className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:bg-blue-50 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 active:translate-y-0 cursor-pointer"
+            className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:bg-blue-50 dark:hover:bg-slate-700 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 active:translate-y-0 cursor-pointer"
           >
             <svg
               className="w-5 h-5 text-slate-700"
@@ -238,7 +241,7 @@ export const FloatingContactWidget: React.FC = () => {
             aria-modal="true"
             aria-labelledby="boxora-zalo-title"
             tabIndex={-1}
-            className="contact-modal-panel max-h-[calc(100svh-2rem)] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/80 bg-white p-5 text-left shadow-[0_24px_80px_rgba(15,23,42,.28)] sm:p-6"
+            className="contact-modal-panel max-h-[calc(100svh-2rem)] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 text-left shadow-[0_24px_80px_rgba(15,23,42,.28)] sm:p-6"
           >
             <div className="space-y-5">
               <div className="flex items-center justify-between">
@@ -276,7 +279,7 @@ export const FloatingContactWidget: React.FC = () => {
                   href="https://zalo.me/0901234567"
                   target="_blank"
                   rel="noreferrer"
-                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-xs font-semibold text-white shadow-sm transition-all hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 cursor-pointer"
+                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-3 text-xs font-semibold text-white shadow-sm shadow-sm transition-all hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 cursor-pointer"
                 >
                   <span>Mở Zalo Chat Ngay (0901 234 567)</span>
                   <span className="material-symbols-outlined text-[16px]">open_in_new</span>
@@ -310,7 +313,7 @@ export const FloatingContactWidget: React.FC = () => {
             aria-modal="true"
             aria-labelledby="boxora-branches-title"
             tabIndex={-1}
-            className="contact-modal-panel flex max-h-[min(88svh,48rem)] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-white/80 bg-white p-5 text-left shadow-[0_24px_80px_rgba(15,23,42,.28)] sm:p-6"
+            className="contact-modal-panel flex max-h-[min(88svh,48rem)] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-white/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 text-left shadow-[0_24px_80px_rgba(15,23,42,.28)] sm:p-6"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -336,7 +339,7 @@ export const FloatingContactWidget: React.FC = () => {
             <div role="region" aria-label="Danh sách ba cơ sở Boxora" tabIndex={0} className="mt-5 min-h-0 space-y-3 overflow-y-auto overscroll-contain pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600">
               
               {/* Branch 1 */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2">
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200/90 dark:border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="font-headline font-bold text-slate-900 text-xs sm:text-sm">
                     Cơ Sở 1: TP. Thủ Đức (Hi-Tech Park)
@@ -366,7 +369,7 @@ export const FloatingContactWidget: React.FC = () => {
               </div>
 
               {/* Branch 2 */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2">
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200/90 dark:border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="font-headline font-bold text-slate-900 text-xs sm:text-sm">
                     Cơ Sở 2: Nam Sài Gòn (Giáp Q.7 / Trung Sơn)
@@ -396,7 +399,7 @@ export const FloatingContactWidget: React.FC = () => {
               </div>
 
               {/* Branch 3 */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2">
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200/90 dark:border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="font-headline font-bold text-slate-900 text-xs sm:text-sm">
                     Cơ Sở 3: Tân Bình Hub (Sân Bay TSN)
@@ -431,7 +434,7 @@ export const FloatingContactWidget: React.FC = () => {
               <button
                 type="button"
                 onClick={closeDialogs}
-                className="min-h-11 w-full rounded-xl bg-slate-950 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 cursor-pointer"
+                className="min-h-11 w-full rounded-xl bg-blue-600 hover:bg-blue-700 py-2.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 cursor-pointer"
               >
                 Đóng
               </button>

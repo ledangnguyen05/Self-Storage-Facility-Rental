@@ -94,7 +94,7 @@ export const Navbar: React.FC = () => {
                 </button>
               ) : (
                 <Link
-                  to="/my-bookings"
+                  to="/portal/customer?tab=bookings"
                   title={t('Xem đơn đặt giữ chỗ của bạn')}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100/80 border border-blue-200 text-blue-700 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-300 transition-all text-xs font-semibold cursor-pointer"
                 >
@@ -141,7 +141,7 @@ export const Navbar: React.FC = () => {
               </button>
             ) : (
               <Link
-                to="/my-bookings"
+                to="/portal/customer?tab=bookings"
                 className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 flex items-center justify-center text-xs font-bold border border-blue-300 dark:border-blue-800"
                 title="Xem đơn đặt giữ chỗ"
               >
@@ -233,7 +233,7 @@ export const Navbar: React.FC = () => {
                   </button>
                 ) : (
                   <Link
-                    to="/my-bookings"
+                    to="/portal/customer?tab=bookings"
                     onClick={() => setIsMobileMenuOpen(false)}
                     className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-medium text-sm transition-colors border border-blue-200 dark:border-blue-800"
                   >

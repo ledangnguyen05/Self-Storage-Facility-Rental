@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useLanguage } from '../../context/LanguageContext'
 import {
   getStorageUnitImages,
   getStorageUnitDetailedSpecs,
@@ -30,12 +31,11 @@ interface StorageUnitDetailModalProps {
   onReserve?: (unit: StorageUnitDetailModalData) => void
 }
 
-export const StorageUnitDetailModal: React.FC<StorageUnitDetailModalProps> = ({
-  isOpen,
+export const StorageUnitDetailModal: React.FC<StorageUnitDetailModalProps> = ({ isOpen,
   unit,
   onClose,
-  onReserve
-}) => {
+  onReserve }) => {
+  const { t } = useLanguage();
   const [activeImageIndex, setActiveImageIndex] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [activeTab, setActiveTab] = useState<'overview' | 'capacity' | 'amenities'>('overview')
@@ -117,14 +117,14 @@ export const StorageUnitDetailModal: React.FC<StorageUnitDetailModalProps> = ({
       />
 
       {/* Main Dialog Modal */}
-      <div className="relative w-full max-w-4xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden z-10 my-auto flex flex-col max-h-[92vh]">
+      <div className="relative w-full max-w-4xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden z-10 my-auto flex flex-col max-h-[92vh]">
         
         {/* ============================================================ */}
         {/* 1. MODAL HEADER                                              */}
         {/* ============================================================ */}
-        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50/80 flex items-center justify-between gap-4 shrink-0">
+        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-850 flex items-center justify-between gap-4 shrink-0">
           <div className="flex flex-wrap items-center gap-2.5">
-            <span className="font-mono text-xs font-black px-2.5 py-1 rounded-lg bg-slate-900 text-white">
+            <span className="font-mono text-xs font-black px-2.5 py-1 rounded-lg bg-blue-600 text-white">
               #{unit.unitCode}
             </span>
             <span className="font-bold text-xs px-2.5 py-1 rounded-lg bg-blue-100 text-blue-900 border border-blue-200">
@@ -206,7 +206,7 @@ export const StorageUnitDetailModal: React.FC<StorageUnitDetailModalProps> = ({
           {/* 3. INTERACTIVE IMAGE GALLERY                                 */}
           {/* ============================================================ */}
           <div className="space-y-3">
-            <div className="relative rounded-2xl overflow-hidden bg-slate-950 aspect-[16/10] sm:aspect-[16/9] shadow-md border border-slate-200 group select-none">
+            <div className="relative rounded-2xl overflow-hidden bg-slate-100 aspect-[16/10] sm:aspect-[16/9] shadow-md border border-slate-200 group select-none">
               <img
                 src={currentImage.url}
                 alt={currentImage.title}
@@ -215,7 +215,7 @@ export const StorageUnitDetailModal: React.FC<StorageUnitDetailModalProps> = ({
 
               {/* Tag Pill on Image */}
               <div className="absolute top-3.5 left-3.5 flex items-center gap-2">
-                <span className="px-3 py-1 rounded-lg bg-slate-900/85 backdrop-blur-md text-white text-xs font-bold shadow-sm flex items-center gap-1.5">
+                <span className="px-3 py-1 rounded-lg bg-white/95 backdrop-blur-md text-slate-800 border border-slate-200/80 text-xs font-bold shadow-sm flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                   {currentImage.tag}
                 </span>
@@ -229,7 +229,7 @@ export const StorageUnitDetailModal: React.FC<StorageUnitDetailModalProps> = ({
                 type="button"
                 onClick={() => setIsFullscreen(true)}
                 title="Xem ảnh phóng to"
-                className="absolute top-3.5 right-3.5 w-9 h-9 rounded-xl bg-slate-900/80 hover:bg-slate-900 text-white flex items-center justify-center transition-colors backdrop-blur-md cursor-pointer shadow-sm"
+                className="absolute top-3.5 right-3.5 w-9 h-9 rounded-xl bg-white/90 hover:bg-white text-slate-800 border border-slate-200 flex items-center justify-center transition-colors backdrop-blur-md cursor-pointer shadow-sm"
               >
                 <span className="material-symbols-outlined text-[18px]">fullscreen</span>
               </button>
@@ -283,7 +283,7 @@ export const StorageUnitDetailModal: React.FC<StorageUnitDetailModalProps> = ({
                       alt={img.title}
                       className="w-full h-full object-cover"
                     />
-                    <div className="absolute inset-x-0 bottom-0 bg-slate-900/80 py-0.5 px-1 text-[10px] font-medium text-white truncate text-center">
+                    <div className="absolute inset-x-0 bottom-0 bg-white/90 py-0.5 px-1 text-[10px] font-semibold text-slate-800 border-t border-slate-200/80 truncate text-center">
                       {img.tag.split('&')[0]}
                     </div>
                   </button>

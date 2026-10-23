@@ -127,7 +127,8 @@ public class ContractOtpServiceImpl implements ContractOtpService {
         RentalContract contract = contractRepository.findById(contractId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
         UUID currentUserId = requestContext.currentUserId();
-        if (currentUserId == null || !currentUserId.equals(contract.getCustomer().getId())) {
+        boolean isOwner = currentUserId != null && contract.getCustomer() != null && currentUserId.equals(contract.getCustomer().getId());
+        if (!isOwner && "CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
         if (contract.getStatus() != RentalContractStatus.PENDING_SIGNATURE) {

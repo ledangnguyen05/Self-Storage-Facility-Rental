@@ -18,6 +18,7 @@ export interface BookingCreatePayload {
   rentalMonths: number
   totalRentalFee?: number
   depositPaid?: number
+  depositAmount?: number
   signingMethod?: 'ONLINE' | 'IN_PERSON'
   expectedCheckInAt?: string
   checkInTime?: string

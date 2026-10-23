@@ -167,7 +167,7 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-sm"
+                  className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-sm"
                 >
                   Hoàn Tất &amp; Đóng
                 </button>

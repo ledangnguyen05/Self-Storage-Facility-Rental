@@ -150,13 +150,14 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         RentalContract contract = rentalContractRepository.findById(contractId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
 
-        if (facilityAccessGuard.isFacilityScoped()) {
-            facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
-        }
-        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
-            UUID currentUserId = requestContext.currentUserId();
-            if (currentUserId == null || contract.getCustomer() == null || !currentUserId.equals(contract.getCustomer().getId())) {
+        UUID currentUserId = requestContext.currentUserId();
+        boolean isContractOwner = currentUserId != null && contract.getCustomer() != null && currentUserId.equals(contract.getCustomer().getId());
+        if (!isContractOwner) {
+            if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
                 throw new AppException(ErrorCode.FORBIDDEN);
+            }
+            if (facilityAccessGuard.isFacilityScoped() && contract.getFacility() != null) {
+                facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
             }
         }
 
@@ -183,13 +184,14 @@ public class ContractSigningServiceImpl implements ContractSigningService {
             throw new AppException(ErrorCode.CONTRACT_NOT_FOUND);
         }
 
-        if (facilityAccessGuard.isFacilityScoped()) {
-            facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
-        }
-        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
-            UUID currentUserId = requestContext.currentUserId();
-            if (currentUserId == null || contract.getCustomer() == null || !currentUserId.equals(contract.getCustomer().getId())) {
+        UUID currentUserId = requestContext.currentUserId();
+        boolean isContractOwner = currentUserId != null && contract.getCustomer() != null && currentUserId.equals(contract.getCustomer().getId());
+        if (!isContractOwner) {
+            if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
                 throw new AppException(ErrorCode.FORBIDDEN);
+            }
+            if (facilityAccessGuard.isFacilityScoped() && contract.getFacility() != null) {
+                facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
             }
         }
 
@@ -529,26 +531,19 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         RentalContract contract = rentalContractRepository.findById(contractId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
 
-        if (facilityAccessGuard.isFacilityScoped()) {
-            facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
-        }
-
         String currentRole = requestContext.currentUserRole();
         UUID currentUserId = requestContext.currentUserId();
         if (currentRole == null && currentUserId == null) {
             throw new AppException(ErrorCode.UNAUTHORIZED);
         }
-        if ("CUSTOMER".equalsIgnoreCase(currentRole)) {
-            if (currentUserId == null) {
-                throw new AppException(ErrorCode.UNAUTHORIZED);
-            }
-            if (contract.getCustomer() == null || !currentUserId.equals(contract.getCustomer().getId())) {
+        boolean isContractOwner = currentUserId != null && contract.getCustomer() != null && currentUserId.equals(contract.getCustomer().getId());
+        if (!isContractOwner) {
+            if ("CUSTOMER".equalsIgnoreCase(currentRole)) {
                 throw new AppException(ErrorCode.FORBIDDEN);
             }
-        }
-
-        if (!docuSealConfig.isMockActive()) {
-            throw new AppException(ErrorCode.FORBIDDEN);
+            if (facilityAccessGuard.isFacilityScoped() && contract.getFacility() != null) {
+                facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
+            }
         }
 
         if (signatureData == null || signatureData.isBlank()) {
@@ -586,8 +581,25 @@ public class ContractSigningServiceImpl implements ContractSigningService {
             boolean isPaperOrInPerson = "PAPER".equalsIgnoreCase(contract.getSigningMethod())
                     || "IN_PERSON".equalsIgnoreCase(contract.getSigningMethod())
                     || "IN_PERSON".equalsIgnoreCase(booking.getSigningMethod());
+            boolean hasPaidRecord = "PAID".equalsIgnoreCase(booking.getPaymentStatus())
+                    || isBookingInitialPaymentSatisfied(booking)
+                    || (paymentRepository != null && booking.getId() != null
+                            && paymentRepository.existsByBooking_IdAndStatus(booking.getId(), com.boxora.enums.PaymentStatus.PAID))
+                    || (booking.getDepositPaid() != null && booking.getDepositPaid().compareTo(BigDecimal.ZERO) > 0);
 
-            if (!isOnline && !isPaperOrInPerson && !isBookingInitialPaymentSatisfied(booking)) {
+            if (hasPaidRecord && ("UNPAID".equalsIgnoreCase(booking.getPaymentStatus()) || booking.getStatus() == BookingStatus.PENDING_PAYMENT)) {
+                booking.setPaymentStatus("PAID");
+                if (booking.getStatus() == BookingStatus.PENDING_PAYMENT) {
+                    booking.setStatus(BookingStatus.CONFIRMED);
+                }
+                booking.setPaymentExpiresAt(null);
+                bookingRepository.save(booking);
+            }
+
+            if (!isPaperOrInPerson && !hasPaidRecord && "CUSTOMER".equalsIgnoreCase(currentRole)) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Quý khách vui lòng hoàn tất thanh toán đơn đặt thuê trước khi ký hợp đồng điện tử.");
+            }
+            if (!isOnline && !isPaperOrInPerson && !hasPaidRecord) {
                 throw new AppException(ErrorCode.INVALID_REQUEST);
             }
         }

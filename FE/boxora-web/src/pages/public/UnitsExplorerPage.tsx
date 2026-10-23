@@ -618,11 +618,11 @@ export const UnitsExplorerPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--surface-canvas,#f8fafc)] text-slate-900 font-sans selection:bg-blue-600 selection:text-white pb-20">
+    <div className="min-h-screen bg-[var(--surface-canvas,#f8fafc)] dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-blue-600 selection:text-white pb-20">
       {/* ============================================================ */}
       {/* 1. TOP HEADER & NAVIGATION                                   */}
       {/* ============================================================ */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-2xs">
+      <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-2xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between">
           {/* Logo Boxora */}
           <div className="flex items-center gap-4 sm:gap-6">
@@ -668,7 +668,7 @@ export const UnitsExplorerPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => navigate(isCustomer ? '/portal/customer' : '/portal')}
-                        className="w-full py-2.5 px-3.5 rounded-xl bg-slate-900 text-white font-semibold text-xs flex items-center justify-between hover:bg-neutral-800 transition-all shadow-xs cursor-pointer"
+                        className="w-full py-2.5 px-3.5 rounded-xl bg-blue-600 text-white font-semibold text-xs flex items-center justify-between hover:bg-blue-700 shadow-xs transition-all shadow-xs cursor-pointer"
                       >
                         <span className="flex items-center gap-2">
                           <span className="material-symbols-outlined text-[18px] text-emerald-400">
@@ -706,7 +706,7 @@ export const UnitsExplorerPage: React.FC = () => {
       {/* ============================================================ */}
       {/* 2. DASHBOARD HERO BANNER                                     */}
       {/* ============================================================ */}
-      <section className="bg-gradient-to-b from-white to-slate-50 border-b border-slate-200 py-10 sm:py-12 text-left">
+      <section className="bg-gradient-to-b from-white to-slate-50 dark:from-slate-900 dark:to-slate-950 border-b border-slate-200 dark:border-slate-800 py-10 sm:py-12 text-left">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
           <div className="max-w-3xl space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold">
@@ -1088,7 +1088,7 @@ export const UnitsExplorerPage: React.FC = () => {
             <button
               type="button"
               onClick={handleResetFilters}
-              className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-neutral-800 text-white text-xs font-bold transition-colors cursor-pointer"
+              className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
             >
               Xem lại toàn bộ kho
             </button>
