@@ -269,7 +269,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                       <span className="text-xs font-bold text-slate-900">Ký Online DocuSeal</span>
                     </div>
                     <p className="text-[11px] text-slate-600 leading-relaxed">
-                      Quản lý duyệt &rarr; Thanh toán trước qua Sandbox VNPay &rarr; Nhận link ký số DocuSeal &rarr; Kích hoạt mã mở kho ngay.
+                      Quản lý duyệt &rarr; Thanh toán trực tuyến online &rarr; Nhận link ký số DocuSeal &rarr; Kích hoạt mã mở kho ngay.
                     </p>
                   </div>
 

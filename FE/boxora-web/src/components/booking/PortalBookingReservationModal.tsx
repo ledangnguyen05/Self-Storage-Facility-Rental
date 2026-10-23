@@ -364,7 +364,7 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
       const expectedCheckInAt = `${bookingCheckInDate}T${bookingCheckInTime || '09:00'}:00`
 
       if (bookingWorkflow === 'ONLINE_NOW') {
-        // Option B: Ký online & thanh toán: Tạo booking và chuyển tiếp ngay sang cổng VNPay Sandbox
+        // Option B: Ký online & thanh toán: Tạo booking và chuyển tiếp ngay sang cổng thanh toán trực tuyến
         let bookingId = ''
         let createdBooking: any = null
         try {
@@ -392,7 +392,7 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
           return
         }
 
-        // Tạo giao dịch thanh toán VNPay Sandbox và lấy URL chính thức
+        // Tạo giao dịch thanh toán trực tuyến và lấy URL chính thức
         const paymentAmount = (createdBooking?.totalRentalFee != null && createdBooking?.depositAmount != null)
           ? Math.round(Number(createdBooking.totalRentalFee) + Number(createdBooking.depositAmount))
           : Math.round(bookingEstimate.totalPayment)

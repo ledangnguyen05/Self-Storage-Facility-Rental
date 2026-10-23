@@ -368,7 +368,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     }
   }, [selectedFacility, storageUnits, selectedTierKey])
 
-  // Pricing calculation: Áp dụng chiết khấu ưu đãi theo kỳ hạn thuê (1 tháng: 0%, 3 tháng: 5%, 6 tháng: 10%, 12 tháng: 15%), cọc 1 tháng tiền kho theo giá gốc niêm yết
+  // Pricing calculation: Tiền thuê buồng kho hàng tháng sau ưu đãi tính theo gói + % giảm, cọc 1 tháng tiền kho theo giá gốc niêm yết
   const quoteCalculation = useMemo(() => {
     const tier = SIZE_TIERS[selectedTierKey]
     const baseMonthly = tier.rateNumber
@@ -382,7 +382,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     const monthlyAfterDiscount = Math.round(baseMonthly * (1 - discountPercent / 100))
     const rawRent = baseMonthly * rentalMonths
     const discountAmount = Math.round(rawRent * (discountPercent / 100))
-    const totalRent = rawRent - discountAmount
+    const totalRent = monthlyAfterDiscount * rentalMonths
     const depositAmount = baseMonthly // 1 tháng tiền cọc của kho đó theo giá niêm yết
 
     return {
@@ -1354,54 +1354,16 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                       <span className="font-semibold text-slate-800">{quoteCalculation.baseMonthly.toLocaleString('vi-VN')} ₫/tháng</span>
                     </div>
 
-                    <div className="flex justify-between text-slate-600">
-                      <span>Thời hạn thuê:</span>
-                      <span className="font-bold text-slate-800">{rentalMonths} tháng</span>
-                    </div>
-
-                    <div className="flex justify-between text-slate-600">
-                      <span>Tổng tiền thuê chưa giảm trừ ({rentalMonths} tháng):</span>
-                      <span className="font-semibold text-slate-800">{quoteCalculation.rawRent.toLocaleString('vi-VN')} ₫</span>
-                    </div>
-
-                    {quoteCalculation.discountPercent > 0 && (
-                      <div className="flex justify-between items-center text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
-                        <span className="font-semibold flex items-center gap-1">
-                          <Tag size={13} className="text-emerald-600" />
-                          Ưu đãi kỳ hạn thuê ({rentalMonths} tháng - Giảm {quoteCalculation.discountPercent}%):
-                        </span>
-                        <strong className="text-emerald-700 font-bold">
-                          −{quoteCalculation.discountAmount.toLocaleString('vi-VN')} ₫
-                        </strong>
-                      </div>
-                    )}
-
                     <div className="flex justify-between text-slate-800 font-semibold pt-1 border-t border-blue-200/60">
                       <span>
                         {quoteCalculation.discountPercent > 0
-                          ? `Tiền thuê hàng tháng sau ưu đãi (Đã giảm ${quoteCalculation.discountPercent}%):`
-                          : 'Tiền thuê buồng kho hàng tháng (giá gốc):'}
+                          ? `Tiền thuê buồng kho hàng tháng sau ưu đãi (Giảm ${quoteCalculation.discountPercent}%):`
+                          : 'Tiền thuê buồng kho hàng tháng sau ưu đãi:'}
                       </span>
-                      <div className="flex items-baseline gap-1.5">
-                        {quoteCalculation.discountPercent > 0 && (
-                          <span className="text-[11px] text-slate-400 line-through font-normal">
-                            {quoteCalculation.baseMonthly.toLocaleString('vi-VN')} ₫
-                          </span>
-                        )}
-                        <span className="text-blue-700 font-bold">
-                          {quoteCalculation.monthlyAfterDiscount.toLocaleString('vi-VN')} ₫/tháng
-                        </span>
-                      </div>
+                      <span className="text-blue-700 font-bold">
+                        {quoteCalculation.monthlyAfterDiscount.toLocaleString('vi-VN')} ₫/tháng
+                      </span>
                     </div>
-
-                    {quoteCalculation.discountPercent > 0 && (
-                      <div className="flex justify-between text-slate-800 font-semibold">
-                        <span>Tổng tiền thuê sau ưu đãi ({rentalMonths} tháng):</span>
-                        <strong className="text-blue-700 font-bold">
-                          {quoteCalculation.totalRent.toLocaleString('vi-VN')} ₫
-                        </strong>
-                      </div>
-                    )}
 
                     <div className="flex justify-between items-center text-slate-700">
                       <span>Tiền phải cọc buồng kho (1 tháng tiền kho theo giá niêm yết):</span>
