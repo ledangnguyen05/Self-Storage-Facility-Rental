@@ -1,134 +1,273 @@
 import React, { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { CircleCheck } from 'lucide-react'
-import { Alert, Button, Field } from '../../components/ui'
-import { buttonVariants } from '../../components/ui/buttonVariants'
-import { useAuth } from '../../context/AuthContext'
-import { getApiErrorCode, getApiErrorMessage } from '../../lib/apiError'
+import {
+  Lock,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  AlertCircle,
+  ArrowRight,
+  ShieldCheck,
+  KeyRound,
+  ArrowLeft
+} from 'lucide-react'
 import { authService } from '../../services/authService'
-import { PASSWORD_HINT, validatePassword, validatePasswordConfirmation } from './auth/credentialRules'
-import { AuthLayout } from './components/AuthLayout'
-import { PasswordInput } from './components/PasswordInput'
-import { usePageTitle } from './components/usePageTitle'
-
-/** Backend `ErrorCode`s of the reset endpoint. */
-const ERROR_PASSWORD_MISMATCH = 500
-const ERROR_NEW_PASSWORD_SAME_AS_OLD = 502
-const ERROR_INVALID_RESET_TOKEN = 503
+import boxoraLogo from '../../assets/boxora-logo.png'
+import futuristicBoxoraBg from '../../assets/Futuristic BOXORA Smart Warehouse.png'
+import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
 
 export const ResetPasswordPage: React.FC = () => {
-  usePageTitle('Đặt lại mật khẩu')
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { logout } = useAuth()
-  // The emailed link is /reset-password?token=<jwt>; surrounding whitespace from copy/paste is ignored.
-  const token = (searchParams.get('token') ?? '').trim()
+  const token = searchParams.get('token') || ''
 
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [errors, setErrors] = useState<{ newPassword?: string; confirmPassword?: string }>({})
-  const [requestError, setRequestError] = useState<string | null>(null)
-  const [linkInvalid, setLinkInvalid] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isDone, setIsDone] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
-    const nextErrors = {
-      newPassword: validatePassword(newPassword) ?? undefined,
-      confirmPassword: validatePasswordConfirmation(newPassword, confirmPassword) ?? undefined,
+  const [isLoading, setIsLoading] = useState(false)
+  const [isSuccess, setIsSuccess] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+
+    if (!token) {
+      setError('Mã xác thực (Token) không tồn tại hoặc liên kết không hợp lệ. Vui lòng kiểm tra lại liên kết trong email.')
+      return
     }
-    setErrors(nextErrors)
-    setRequestError(null)
-    if (nextErrors.newPassword || nextErrors.confirmPassword) return
 
-    setIsSubmitting(true)
+    if (newPassword.length < 5) {
+      setError('Mật khẩu mới phải có tối thiểu 5 ký tự.')
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError('Mật khẩu xác nhận không khớp với mật khẩu mới.')
+      return
+    }
+
+    setIsLoading(true)
     try {
-      await authService.resetPassword({ token, newPassword, confirmPassword })
-      // The backend revoked every session of this account: forget any stale session kept in this browser.
-      await logout()
-      setIsDone(true)
-    } catch (err) {
-      const code = getApiErrorCode(err)
-      if (code === ERROR_INVALID_RESET_TOKEN) {
-        setLinkInvalid(true)
-      } else if (code === ERROR_NEW_PASSWORD_SAME_AS_OLD) {
-        setRequestError('Mật khẩu mới phải khác mật khẩu hiện tại.')
-      } else if (code === ERROR_PASSWORD_MISMATCH) {
-        setRequestError('Mật khẩu nhập lại không khớp.')
+      await authService.resetPassword({
+        token,
+        newPassword,
+        confirmPassword
+      })
+      setIsSuccess(true)
+    } catch (err: any) {
+      console.error('Reset password error:', err)
+      const msg = err?.response?.data?.message
+      if (msg && msg.toLowerCase().includes('token')) {
+        setError('Liên kết đặt lại mật khẩu đã hết hạn (quá 15 phút) hoặc đã được sử dụng. Vui lòng yêu cầu gửi lại email mới.')
+      } else if (msg && msg.toLowerCase().includes('same')) {
+        setError('Mật khẩu mới không được trùng với mật khẩu cũ.')
       } else {
-        setRequestError(getApiErrorMessage(err, 'Không thể đặt lại mật khẩu. Vui lòng thử lại.'))
+        setError(msg || 'Không thể đặt lại mật khẩu. Vui lòng kiểm tra lại liên kết hoặc thử lại sau.')
       }
     } finally {
-      setIsSubmitting(false)
+      setIsLoading(false)
     }
-  }
-
-  if (isDone) {
-    return (
-      <AuthLayout title="Đã đổi mật khẩu" description="Mật khẩu mới đã được cập nhật.">
-        <Alert tone="success" icon={CircleCheck} title="Đặt lại mật khẩu thành công">
-          Các phiên đăng nhập cũ đã bị thu hồi. Hãy đăng nhập lại bằng mật khẩu mới.
-        </Alert>
-        <Button size="lg" fullWidth className="mt-6" onClick={() => navigate('/login')}>
-          Đăng nhập
-        </Button>
-      </AuthLayout>
-    )
-  }
-
-  if (!token || linkInvalid) {
-    return (
-      <AuthLayout title="Liên kết không dùng được" description="Liên kết đặt lại mật khẩu thiếu mã xác thực, đã hết hạn hoặc đã được dùng.">
-        <Alert tone="warning" title="Cần yêu cầu liên kết mới">
-          Liên kết trong email có hiệu lực 15 phút và chỉ dùng được một lần. Hãy quay lại trang đăng nhập và chọn &ldquo;Quên mật khẩu&rdquo; để
-          nhận liên kết mới.
-        </Alert>
-        <Link to="/login" className={buttonVariants({ size: 'lg', fullWidth: true, className: 'mt-6' })}>
-          Về trang đăng nhập
-        </Link>
-      </AuthLayout>
-    )
   }
 
   return (
-    <AuthLayout
-      title="Đặt lại mật khẩu"
-      description="Nhập mật khẩu mới cho tài khoản Boxora của bạn."
-      footer={
-        <Link to="/login" className="font-medium text-accent-text hover:underline">
-          Về trang đăng nhập
+    <div className="min-h-screen w-full relative flex flex-col justify-between overflow-x-hidden font-sans text-slate-800 bg-[#f1f5f9]">
+      {/* Background Graphic with Crisp Overlay */}
+      <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none select-none">
+        <img
+          src={futuristicBoxoraBg}
+          alt="Hệ thống kho tự quản thông minh Boxora"
+          className="w-full h-full object-cover object-center scale-105"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/70 via-slate-950/80 to-slate-950/90" />
+      </div>
+
+      {/* Top Header */}
+      <header className="relative z-10 w-full px-6 sm:px-10 py-5 flex items-center justify-between">
+        <Link to="/" className="flex items-center gap-3">
+          <img src={boxoraLogo} alt="BOXORA" className="h-8 w-auto object-contain" />
+          <span className="hidden sm:inline text-xs font-mono font-bold tracking-widest text-cyan-400 uppercase">
+            • SECURE ACCESS
+          </span>
         </Link>
-      }
-    >
-      <form onSubmit={handleSubmit} noValidate className="space-y-4">
-        {requestError ? <Alert tone="danger">{requestError}</Alert> : null}
+        <div className="flex items-center gap-3">
+          <QuickThemeLanguageToggle />
+          <Link
+            to="/login"
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4 text-cyan-400" />
+            <span>Về trang đăng nhập</span>
+          </Link>
+        </div>
+      </header>
 
-        <Field label="Mật khẩu mới" required error={errors.newPassword} hint={PASSWORD_HINT}>
-          <PasswordInput
-            value={newPassword}
-            onChange={event => setNewPassword(event.target.value)}
-            autoComplete="new-password"
-            placeholder="Nhập mật khẩu mới"
-            autoFocus
-          />
-        </Field>
+      {/* Main Card */}
+      <main className="relative z-10 flex-1 flex items-center justify-center p-4 sm:p-6 my-4">
+        <div className="w-full max-w-md bg-white/95 backdrop-blur-md rounded-3xl border border-slate-200/90 p-6 sm:p-8 shadow-2xl space-y-6 text-left">
+          
+          {/* Header icon & title */}
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 rounded-2xl bg-cyan-50 border border-cyan-200/80 text-cyan-600 flex items-center justify-center mx-auto shadow-xs">
+              <KeyRound className="w-6 h-6" />
+            </div>
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+              {isSuccess ? 'Đổi Mật Khẩu Thành Công' : 'Đặt Lại Mật Khẩu'}
+            </h1>
+            <p className="text-xs text-slate-600 leading-relaxed max-w-xs mx-auto">
+              {isSuccess
+                ? 'Mật khẩu của bạn đã được cập nhật thành công trên toàn bộ hệ thống.'
+                : 'Thiết lập mật khẩu mới bảo mật chuẩn ngân hàng cho tài khoản lưu kho Boxora.'}
+            </p>
+          </div>
 
-        <Field label="Nhập lại mật khẩu mới" required error={errors.confirmPassword}>
-          <PasswordInput
-            value={confirmPassword}
-            onChange={event => setConfirmPassword(event.target.value)}
-            autoComplete="new-password"
-            placeholder="Nhập lại mật khẩu mới"
-          />
-        </Field>
+          {/* Missing Token Warning */}
+          {!token && !isSuccess && (
+            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs space-y-2">
+              <div className="flex items-center gap-2 font-bold">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>Thiếu mã token xác thực</span>
+              </div>
+              <p className="text-rose-600 leading-relaxed">
+                Liên kết này không chứa mã xác thực hợp lệ. Vui lòng mở lại liên kết từ email của bạn hoặc gửi lại yêu cầu quên mật khẩu.
+              </p>
+              <div className="pt-1">
+                <Link
+                  to="/login"
+                  className="font-bold underline text-rose-800 hover:text-rose-950"
+                >
+                  Yêu cầu cấp lại liên kết mới &rarr;
+                </Link>
+              </div>
+            </div>
+          )}
 
-        <Button type="submit" size="lg" fullWidth loading={isSubmitting}>
-          Cập nhật mật khẩu
-        </Button>
-      </form>
-    </AuthLayout>
+          {/* Error Message */}
+          {error && (
+            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span className="leading-relaxed">{error}</span>
+            </div>
+          )}
+
+          {/* SUCCESS STATE */}
+          {isSuccess ? (
+            <div className="space-y-4 pt-2">
+              <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs space-y-1.5">
+                <div className="flex items-center gap-2 font-bold text-emerald-700 dark:text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>An toàn 100%</span>
+                </div>
+                <p className="leading-relaxed">
+                  Mật khẩu mới đã được kích hoạt. Mọi phiên đăng nhập cũ trên các thiết bị khác đã được thu hồi để đảm bảo an toàn.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => navigate('/login')}
+                className="w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>Đăng nhập ngay bây giờ</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            /* FORM STATE */
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Field 1: Mật khẩu mới */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Mật khẩu mới
+                </label>
+                <div className="relative flex items-center">
+                  <div className="absolute left-3.5 text-slate-400 pointer-events-none">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Tối thiểu 5 ký tự"
+                    required
+                    disabled={!token || isLoading}
+                    className="w-full h-11 pl-10 pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all disabled:opacity-60"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-1"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Field 2: Xác nhận mật khẩu mới */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Xác nhận lại mật khẩu
+                </label>
+                <div className="relative flex items-center">
+                  <div className="absolute left-3.5 text-slate-400 pointer-events-none">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Nhập lại mật khẩu mới"
+                    required
+                    disabled={!token || isLoading}
+                    className="w-full h-11 pl-10 pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all disabled:opacity-60"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-1"
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Security Hint */}
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                <span>Mật khẩu được mã hóa an toàn BCrypt Salted Hash trước khi lưu trữ.</span>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                type="submit"
+                disabled={!token || isLoading}
+                className="w-full h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-blue-600/20 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Đang cập nhật...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Cập nhật mật khẩu mới</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </form>
+          )}
+
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="relative z-10 py-5 text-center text-xs text-slate-400 font-mono">
+        &copy; {new Date().getFullYear()} Boxora Smart Storage. Hỗ trợ khẩn cấp: 1900-6868
+      </footer>
+    </div>
   )
 }
 
-export default ResetPasswordPage

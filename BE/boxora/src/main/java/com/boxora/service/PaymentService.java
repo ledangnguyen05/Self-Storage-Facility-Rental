@@ -72,19 +72,6 @@ public interface PaymentService {
             String sortDir
     );
 
-    /**
-     * Payment of a contract (renewal fee, outstanding rent / overdue settlement). The amount and its
-     * breakdown are computed by the caller on the server; {@code extensionDays} moves the contract end
-     * date when an overdue settlement is paid.
-     */
-    VNPayPaymentResponse createContractPayment(
-            RentalContract contract, com.boxora.entity.Booking booking, PaymentType type, BigDecimal amount, Integer renewalMonths,
-            BigDecimal lateFeeAmount, BigDecimal overdueRentAmount, int extensionDays,
-            String orderInfo, HttpServletRequest httpRequest);
-
-    /** VNPay payment of what a contract owes today (+ optional upcoming months), computed server-side. */
-    VNPayPaymentResponse createOutstandingPayment(UUID contractId, Integer upcomingMonths, HttpServletRequest httpRequest);
-
     VNPayPaymentResponse createContractPayment(
             RentalContract contract, PaymentType type, BigDecimal amount,
             Integer renewalMonths, String orderInfo, HttpServletRequest httpRequest);

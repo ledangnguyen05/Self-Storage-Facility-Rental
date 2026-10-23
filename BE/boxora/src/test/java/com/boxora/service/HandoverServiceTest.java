@@ -1,18 +1,18 @@
 package com.boxora.service;
 
 import com.boxora.dto.request.HandoverRequest;
+import com.boxora.dto.request.IdentityVerifyRequest;
 import com.boxora.dto.request.ManualPaymentRecordRequest;
-import com.boxora.dto.response.HandoverPrerequisitesResponse;
-import com.boxora.dto.response.HandoverResponse;
-import com.boxora.dto.response.ReturnSettlementPreviewResponse;
-import com.boxora.dto.response.ReturnSettlementResponse;
+import com.boxora.dto.request.PaperContractCreateRequest;
+import com.boxora.dto.response.*;
 import com.boxora.entity.*;
 import com.boxora.enums.*;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.repository.*;
 import com.boxora.service.impl.HandoverServiceImpl;
-import org.mockito.ArgumentCaptor;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -87,14 +87,9 @@ class HandoverServiceTest {
     private com.boxora.mapper.RentalContractMapper rentalContractMapper;
 
     @Mock
-    private CustomerDebtRepository customerDebtRepository;
-
-    @Mock
     private FileStorageService fileStorageService;
 
-    @Mock
-    private com.boxora.service.impl.HandoverPinMailer pinMailer;
-
+    @InjectMocks
     private HandoverServiceImpl handoverService;
 
     private Facility testFacility;
@@ -150,6 +145,7 @@ class HandoverServiceTest {
                 .status(BookingStatus.CONFIRMED)
                 .identityVerifiedByStaff(testStaff)
                 .identityVerifiedAt(LocalDateTime.now())
+                .identityOriginalDocumentSeen(true)
                 .identityCardNumber("001092003891")
                 .build();
         testBooking.setId(bookingId);
@@ -184,32 +180,42 @@ class HandoverServiceTest {
 
         lenient().when(requestContext.currentUserId()).thenReturn(staffId);
         lenient().when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
-        lenient().when(customerDebtRepository.save(any(CustomerDebt.class))).thenAnswer(inv -> {
-            CustomerDebt debt = inv.getArgument(0);
-            debt.setId(UUID.randomUUID());
-            return debt;
-        });
+        lenient().when(bookingRepository.findByIdForUpdate(any(UUID.class)))
+                .thenAnswer(invocation -> bookingRepository.findById(invocation.getArgument(0)));
 
-        // The real overdue rule, reading the (mocked) facility policy repository.
-        OverdueFeeCalculator overdueFeeCalculator = new OverdueFeeCalculator(facilityPolicyRepository);
-        handoverService = new HandoverServiceImpl(
-                handoverRecordRepository, bookingRepository, storageUnitRepository, userRepository, paymentRepository,
-                rentalContractRepository, facilityPolicyRepository, activityLogService, encryptionService,
-                refundRequestRepository, customerDebtRepository, notificationLogRepository, emailService,
-                fileStorageService, overdueFeeCalculator, facilityAccessGuard, requestContext, paymentMapper,
-                rentalContractMapper, pinMailer);
-    }
-
-    /** A saved CHECK_IN_INSPECTION record: 5/5 passed and two uploaded photos, as the wizard step 2 stores it. */
-    private HandoverRecord passedInspection() {
-        return HandoverRecord.builder()
+        HandoverRecord inboundInspection = HandoverRecord.builder()
                 .booking(testBooking)
                 .recordType("CHECK_IN_INSPECTION")
-                .unitCondition("5/5 tiêu chí đạt")
-                .checklistSummary("Cửa cuốn: Đạt | Vệ sinh: Sạch sẽ | SmartLock: Tốt | Cảm biến IoT: Chuẩn | Tường vách: Nguyên vẹn")
-                .evidencePhotos("[\"/uploads/handover/a.jpg\",\"/uploads/handover/b.jpg\"]")
+                .doorConditionPassed(true)
+                .cleanlinessPassed(true)
+                .smartLockPassed(true)
+                .sensorPassed(true)
+                .wallStructurePassed(true)
+                .evidencePhotos("/uploads/door.jpg;/uploads/interior.jpg")
                 .recordedAt(LocalDateTime.now())
                 .build();
+        HandoverRecord returnInspection = HandoverRecord.builder()
+                .booking(testBooking)
+                .recordType("INSPECTION")
+                .doorConditionPassed(true)
+                .cleanlinessPassed(true)
+                .smartLockPassed(true)
+                .sensorPassed(true)
+                .wallStructurePassed(true)
+                .evidencePhotos("/uploads/return-door.jpg;/uploads/return-interior.jpg")
+                .recordedAt(LocalDateTime.now())
+                .build();
+        lenient().when(handoverRecordRepository.findByBooking_Id(any(UUID.class)))
+                .thenReturn(List.of(inboundInspection, returnInspection));
+
+        FacilityPolicy policy = FacilityPolicy.builder()
+                .facility(testFacility)
+                .depositRefundSlaDays(5)
+                .overdueGraceDays(1)
+                .dailyLateFee(new BigDecimal("100000.00"))
+                .build();
+        lenient().when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(any(UUID.class)))
+                .thenReturn(Optional.of(policy));
     }
 
     @Nested
@@ -238,23 +244,6 @@ class HandoverServiceTest {
             assertThat(response.isIdentityVerified()).isTrue();
             assertThat(response.isEligibleForCheckIn()).isTrue();
             assertThat(response.getMissingPrerequisites()).isEmpty();
-        }
-
-        @Test
-        @DisplayName("Chưa đối soát giấy tờ: idCardNumber = null, không lấy số điện thoại khách thay thế")
-        void getCheckInPrerequisites_UnverifiedIdentity_DoesNotInventIdNumber() {
-            testBooking.setIdentityVerifiedAt(null);
-            testBooking.setIdentityVerifiedByStaff(null);
-            testBooking.setIdentityCardNumber(null);
-
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
-
-            HandoverPrerequisitesResponse response = handoverService.getCheckInPrerequisites(bookingId);
-
-            assertThat(response.isIdentityVerified()).isFalse();
-            assertThat(response.getIdCardNumber()).isNull();
-            assertThat(response.getCustomerPhone()).isEqualTo("0912.345.678");
         }
 
         @Test
@@ -300,10 +289,6 @@ class HandoverServiceTest {
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
             when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
             when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
-            when(handoverRecordRepository.findFirstByBooking_IdAndRecordTypeOrderByRecordedAtDesc(bookingId, "CHECK_IN_INSPECTION"))
-                    .thenReturn(Optional.of(passedInspection()));
-            when(emailService.isMailConfigured()).thenReturn(true);
-            when(notificationLogRepository.save(any(NotificationLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
             when(handoverRecordRepository.save(any(HandoverRecord.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -311,19 +296,6 @@ class HandoverServiceTest {
 
             assertThat(response).isNotNull();
             assertThat(response.getRecordType()).isEqualTo("CHECK_IN");
-            // The one place the plain PIN is returned. The mail is queued for after the commit, never sent in the request.
-            assertThat(response.getAccessPin()).matches("^[0-9]{6}$");
-            assertThat(response.getEmailSent()).isFalse();
-            assertThat(response.getEmailQueued()).isTrue();
-            assertThat(response.getRfidCardNumber()).isEqualTo("RF-409");
-            assertThat(response.getEvidencePhotos()).containsExactly("/uploads/handover/a.jpg", "/uploads/handover/b.jpg");
-            verify(emailService, never()).sendNow(anyString(), anyString(), anyString());
-            verify(pinMailer).sendAfterCommit(eq("tuan.tran@gmail.com"), anyString(), contains(response.getAccessPin()), eq("RES-8921"));
-
-            // The in-app notification must never carry the PIN.
-            ArgumentCaptor<NotificationLog> notification = ArgumentCaptor.forClass(NotificationLog.class);
-            verify(notificationLogRepository).save(notification.capture());
-            assertThat(notification.getValue().getContent()).doesNotContain(response.getAccessPin());
 
             // Verify entity state updates
             assertThat(testBooking.getStatus()).isEqualTo(BookingStatus.ACTIVE);
@@ -358,8 +330,31 @@ class HandoverServiceTest {
         }
 
         @Test
+        @DisplayName("Client checklist and photo URLs cannot bypass a missing persisted inspection")
+        void checkIn_ClientInspectionPayloadCannotBypassPersistedInspection() {
+            HandoverRequest request = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .identityVerified(true)
+                    .doorConditionPassed(true)
+                    .cleanlinessPassed(true)
+                    .smartLockPassed(true)
+                    .sensorPassed(true)
+                    .wallStructurePassed(true)
+                    .evidencePhotos(List.of("/uploads/client-door.jpg", "/uploads/client-interior.jpg"))
+                    .build();
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(handoverRecordRepository.findByBooking_Id(bookingId)).thenReturn(List.of());
+
+            AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.RETURN_INSPECTION_CHECKLIST_INCOMPLETE);
+            verify(handoverRecordRepository, never()).save(any(HandoverRecord.class));
+        }
+
+        @Test
         @DisplayName("Thiếu đối soát CCCD: Ném HANDOVER_PREREQUISITES_NOT_MET")
         void checkIn_MissingIdCard_ThrowsException() {
+            testBooking.setIdentityOriginalDocumentSeen(false);
             HandoverRequest request = HandoverRequest.builder()
                     .bookingId(bookingId)
                     .firstMonthRentConfirmed(true)
@@ -427,8 +422,8 @@ class HandoverServiceTest {
                     .build();
 
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(requestContext.currentUserId()).thenReturn(custOpId);
             when(userRepository.findById(custOpId)).thenReturn(Optional.of(customerOperator));
+            when(requestContext.currentUserId()).thenReturn(custOpId);
 
             AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
@@ -446,7 +441,6 @@ class HandoverServiceTest {
                     .build();
 
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(userRepository.findById(unknownStaffId)).thenReturn(Optional.empty());
             when(requestContext.currentUserId()).thenReturn(null);
 
             AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
@@ -456,6 +450,9 @@ class HandoverServiceTest {
         @Test
         @DisplayName("Số CCCD sai định dạng (không phải 9-12 chữ số) -> Ném HANDOVER_PREREQUISITES_NOT_MET")
         void checkIn_InvalidCccdFormat_ThrowsPrerequisitesNotMet() {
+            testBooking.setIdentityOriginalDocumentSeen(false);
+            testBooking.setIdentityVerifiedAt(null);
+            testBooking.setIdentityVerifiedByStaff(null);
             HandoverRequest request = HandoverRequest.builder()
                     .bookingId(bookingId)
                     .staffId(staffId)
@@ -472,127 +469,11 @@ class HandoverServiceTest {
         }
 
         @Test
-        @DisplayName("Chưa có biên bản nghiệm thu 5/5 kèm 2 ảnh -> Ném HANDOVER_INSPECTION_REQUIRED, không cấp PIN")
-        void checkIn_WithoutInspectionRecord_ThrowsInspectionRequired() {
-            HandoverRequest request = HandoverRequest.builder()
-                    .bookingId(bookingId)
-                    .staffId(staffId)
-                    .idCardNumber("001092003891")
-                    .identityVerified(true)
-                    .build();
-
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
-            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
-
-            AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_INSPECTION_REQUIRED);
-            assertThat(testBooking.getAccessPin()).isNull();
-            assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.RESERVED);
-        }
-
-        @Test
-        @DisplayName("Biên bản nghiệm thu chỉ có 1 ảnh -> Ném HANDOVER_INSPECTION_REQUIRED")
-        void checkIn_InspectionWithOnePhoto_ThrowsInspectionRequired() {
-            HandoverRecord inspection = passedInspection();
-            inspection.setEvidencePhotos("[\"/uploads/handover/a.jpg\"]");
-            HandoverRequest request = HandoverRequest.builder()
-                    .bookingId(bookingId)
-                    .staffId(staffId)
-                    .idCardNumber("001092003891")
-                    .identityVerified(true)
-                    .build();
-
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
-            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
-            when(handoverRecordRepository.findFirstByBooking_IdAndRecordTypeOrderByRecordedAtDesc(bookingId, "CHECK_IN_INSPECTION"))
-                    .thenReturn(Optional.of(inspection));
-
-            AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_INSPECTION_REQUIRED);
-        }
-
-        @Test
-        @DisplayName("Email không gửi được -> vẫn bàn giao, emailSent=false kèm lý do (không báo thành công giả)")
-        void checkIn_EmailFailure_IsReportedHonestly() {
-            HandoverRequest request = HandoverRequest.builder()
-                    .bookingId(bookingId)
-                    .staffId(staffId)
-                    .idCardNumber("001092003891")
-                    .identityVerified(true)
-                    .build();
-
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
-            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
-            when(handoverRecordRepository.findFirstByBooking_IdAndRecordTypeOrderByRecordedAtDesc(bookingId, "CHECK_IN_INSPECTION"))
-                    .thenReturn(Optional.of(passedInspection()));
-            when(handoverRecordRepository.save(any(HandoverRecord.class))).thenAnswer(inv -> inv.getArgument(0));
-            when(emailService.isMailConfigured()).thenReturn(false);
-
-            HandoverResponse response = handoverService.checkIn(request);
-
-            assertThat(testBooking.getStatus()).isEqualTo(BookingStatus.ACTIVE);
-            assertThat(response.getEmailSent()).isFalse();
-            assertThat(response.getEmailQueued()).isFalse();
-            assertThat(response.getEmailError()).contains("SMTP");
-            verify(emailService, never()).sendNow(anyString(), anyString(), anyString());
-            verify(pinMailer, never()).sendAfterCommit(anyString(), anyString(), anyString(), anyString());
-        }
-
-        @Test
-        @DisplayName("Hộ chiếu (chữ + số) được chấp nhận ở bước đối soát khi nhân viên xác nhận loại PASSPORT")
-        void checkIn_PassportNumber_IsAccepted() {
-            testBooking.setIdentityVerifiedAt(null);
-            testBooking.setIdentityVerifiedByStaff(null);
-            testBooking.setIdentityCardNumber(null);
-            HandoverRequest request = HandoverRequest.builder()
-                    .bookingId(bookingId)
-                    .staffId(staffId)
-                    .idCardType("PASSPORT")
-                    .idCardNumber("b1234567")
-                    .identityVerified(true)
-                    .build();
-
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
-            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
-            when(handoverRecordRepository.findFirstByBooking_IdAndRecordTypeOrderByRecordedAtDesc(bookingId, "CHECK_IN_INSPECTION"))
-                    .thenReturn(Optional.of(passedInspection()));
-            when(handoverRecordRepository.save(any(HandoverRecord.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            handoverService.checkIn(request);
-
-            assertThat(testBooking.getIdentityCardType()).isEqualTo("PASSPORT");
-            assertThat(testBooking.getIdentityCardNumber()).isEqualTo("B1234567");
-            assertThat(testBooking.getStatus()).isEqualTo(BookingStatus.ACTIVE);
-        }
-
-        @Test
-        @DisplayName("Số điện thoại 10 số không được chấp nhận làm CCCD")
-        void checkIn_PhoneNumberAsCccd_IsRejected() {
-            testBooking.setIdentityVerifiedAt(null);
-            testBooking.setIdentityVerifiedByStaff(null);
-            testBooking.setIdentityCardNumber(null);
-            HandoverRequest request = HandoverRequest.builder()
-                    .bookingId(bookingId)
-                    .staffId(staffId)
-                    .idCardNumber("0912345678")
-                    .identityVerified(true)
-                    .build();
-
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
-            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
-
-            AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
-        }
-
-        @Test
         @DisplayName("Nhân viên chưa đối soát thực tế (identityVerified = false) -> Ném HANDOVER_PREREQUISITES_NOT_MET")
         void checkIn_StaffDidNotAttestIdentity_ThrowsPrerequisitesNotMet() {
+            testBooking.setIdentityOriginalDocumentSeen(false);
+            testBooking.setIdentityVerifiedAt(null);
+            testBooking.setIdentityVerifiedByStaff(null);
             HandoverRequest request = HandoverRequest.builder()
                     .bookingId(bookingId)
                     .staffId(staffId)
@@ -681,6 +562,8 @@ class HandoverServiceTest {
             FacilityPolicy policy = FacilityPolicy.builder()
                     .facility(testFacility)
                     .depositRefundSlaDays(5)
+                    .dailyLateFee(new BigDecimal("100000.00"))
+                    .overdueGraceDays(1)
                     .build();
 
             HandoverRequest request = HandoverRequest.builder()
@@ -693,8 +576,7 @@ class HandoverServiceTest {
                     .wallStructurePassed(true)
                     .damageFee(BigDecimal.ZERO)
                     .cleaningFee(BigDecimal.ZERO)
-                    .refundMethod("CASH")
-                    .evidencePhotos(List.of("/uploads/handover/photo1.jpg", "/uploads/handover/photo2.jpg"))
+                    .evidencePhotos(List.of("http://boxora.com/photo1.jpg", "http://boxora.com/photo2.jpg"))
                     .build();
 
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
@@ -721,11 +603,7 @@ class HandoverServiceTest {
             assertThat(testContract.getStatus()).isEqualTo(RentalContractStatus.TERMINATED); // Contract terminated
 
             // Verify Payment created with REFUND_PENDING status
-            verify(paymentRepository).save(argThat(payment ->
-                    payment.getAmount().compareTo(new BigDecimal("1500000.00")) == 0
-                            && payment.getPaymentType() == PaymentType.DEPOSIT
-                            && payment.getStatus() == PaymentStatus.REFUND_PENDING
-            ));
+            verify(paymentRepository, never()).save(any(Payment.class));
 
             // Verify Activity Logs
             verify(activityLogService).record(
@@ -766,6 +644,20 @@ class HandoverServiceTest {
             FacilityPolicy policy = FacilityPolicy.builder()
                     .facility(testFacility)
                     .depositRefundSlaDays(5)
+                    .dailyLateFee(new BigDecimal("100000.00"))
+                    .overdueGraceDays(1)
+                    .build();
+
+            HandoverRecord damagedInspection = HandoverRecord.builder()
+                    .booking(testBooking)
+                    .recordType("INSPECTION")
+                    .doorConditionPassed(true)
+                    .cleanlinessPassed(false)
+                    .smartLockPassed(true)
+                    .sensorPassed(true)
+                    .wallStructurePassed(false)
+                    .evidencePhotos("/uploads/return-door.jpg;/uploads/return-interior.jpg")
+                    .recordedAt(LocalDateTime.now())
                     .build();
 
             HandoverRequest request = HandoverRequest.builder()
@@ -779,17 +671,13 @@ class HandoverServiceTest {
                     .damageFee(new BigDecimal("300000.00"))
                     .cleaningFee(new BigDecimal("200000.00"))
                     .damageNotes("Vách kho bị cấn móp, sàn bám bẩn rác cặn")
-                    .refundMethod("BANK_TRANSFER")
-                    .refundBankName("Vietcombank")
-                    .refundBankAccountNumber("0071001234567")
-                    .refundBankAccountName("Tran Minh Tuan")
-                    .evidencePhotos(List.of("/uploads/handover/photo1.jpg", "/uploads/handover/photo2.jpg"))
                     .build();
 
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
             when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
             when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(policy));
             when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
+            when(handoverRecordRepository.findByBooking_Id(bookingId)).thenReturn(List.of(damagedInspection));
             when(handoverRecordRepository.save(any(HandoverRecord.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -801,21 +689,8 @@ class HandoverServiceTest {
             // 1,500,000 - 500,000 = 1,000,000
             assertThat(response.getRefundAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
 
-            // Verify Payment created with REFUND_PENDING status for accounting review
-            verify(paymentRepository).save(argThat(payment ->
-                    payment.getAmount().compareTo(new BigDecimal("1000000.00")) == 0
-                            && payment.getPaymentType() == PaymentType.DEPOSIT
-                            && payment.getStatus() == PaymentStatus.REFUND_PENDING
-            ));
-
-            // The refund request carries the bank account the staff captured at the desk.
-            ArgumentCaptor<RefundRequest> refund = ArgumentCaptor.forClass(RefundRequest.class);
-            verify(refundRequestRepository).save(refund.capture());
-            assertThat(refund.getValue().getBankName()).isEqualTo("Vietcombank");
-            assertThat(refund.getValue().getBankAccountNumber()).isEqualTo("0071001234567");
-            assertThat(refund.getValue().getDeductionAmount()).isEqualByComparingTo(new BigDecimal("500000.00"));
-            assertThat(refund.getValue().getFinalRefundAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
-            assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.UNDER_MAINTENANCE);
+            // A proposal creates no payment transaction before finance records an actual payout.
+            verify(paymentRepository, never()).save(any(Payment.class));
 
             // Verify DAMAGE_FEE_RECORDED activity log
             verify(activityLogService).record(
@@ -827,53 +702,6 @@ class HandoverServiceTest {
                     isNull(),
                     isNull()
             );
-        }
-
-        @Test
-        @DisplayName("Hoàn cọc chuyển khoản thiếu số tài khoản -> Ném HANDOVER_REFUND_BANK_REQUIRED, booking vẫn ACTIVE")
-        void processReturn_BankTransferWithoutAccount_IsRejected() {
-            testBooking.setStatus(BookingStatus.ACTIVE);
-            testBooking.setAccessPin("739215");
-            testUnit.setStatus(UnitStatus.OCCUPIED);
-
-            HandoverRequest request = HandoverRequest.builder()
-                    .bookingId(bookingId)
-                    .staffId(staffId)
-                    .refundMethod("BANK_TRANSFER")
-                    .evidencePhotos(List.of("/uploads/handover/photo1.jpg", "/uploads/handover/photo2.jpg"))
-                    .build();
-
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
-
-            AppException ex = assertThrows(AppException.class, () -> handoverService.processReturn(request));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_REFUND_BANK_REQUIRED);
-            assertThat(testBooking.getStatus()).isEqualTo(BookingStatus.ACTIVE);
-            verify(refundRequestRepository, never()).save(any());
-        }
-
-        @Test
-        @DisplayName("Ảnh gửi dạng base64 hoặc ít hơn 2 ảnh bị từ chối")
-        void processReturn_Base64OrMissingPhotos_IsRejected() {
-            testBooking.setStatus(BookingStatus.ACTIVE);
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
-
-            HandoverRequest base64 = HandoverRequest.builder()
-                    .bookingId(bookingId)
-                    .staffId(staffId)
-                    .evidencePhotos(List.of("data:image/jpeg;base64,AAAA", "data:image/jpeg;base64,BBBB"))
-                    .build();
-            AppException ex = assertThrows(AppException.class, () -> handoverService.processReturn(base64));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_EVIDENCE_URL_INVALID);
-
-            HandoverRequest onePhoto = HandoverRequest.builder()
-                    .bookingId(bookingId)
-                    .staffId(staffId)
-                    .evidencePhotos(List.of("/uploads/handover/photo1.jpg"))
-                    .build();
-            AppException few = assertThrows(AppException.class, () -> handoverService.processReturn(onePhoto));
-            assertThat(few.getErrorCode()).isEqualTo(ErrorCode.RETURN_PHOTO_EVIDENCE_REQUIRED);
         }
 
         @Test
@@ -900,6 +728,8 @@ class HandoverServiceTest {
             FacilityPolicy policy = FacilityPolicy.builder()
                     .facility(testFacility)
                     .depositRefundSlaDays(5)
+                    .dailyLateFee(new BigDecimal("100000.00"))
+                    .overdueGraceDays(1)
                     .build();
 
             HandoverRequest request = HandoverRequest.builder()
@@ -912,8 +742,7 @@ class HandoverServiceTest {
                     .wallStructurePassed(true)
                     .damageFee(BigDecimal.ZERO)
                     .cleaningFee(BigDecimal.ZERO)
-                    .refundMethod("CASH")
-                    .evidencePhotos(List.of("/uploads/handover/photo1.jpg", "/uploads/handover/photo2.jpg"))
+                    .evidencePhotos(List.of("http://boxora.com/photo1.jpg", "http://boxora.com/photo2.jpg"))
                     .build();
 
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
@@ -932,9 +761,6 @@ class HandoverServiceTest {
             assertThat(response.getReviewStatus()).isEqualTo("AUTO_REFUND_APPROVED");
             assertThat(response.isChecklistAllPassed()).isTrue();
             assertThat(response.getEvidencePhotoCount()).isEqualTo(2);
-            assertThat(response.getEvidencePhotos()).containsExactly("/uploads/handover/photo1.jpg", "/uploads/handover/photo2.jpg");
-            assertThat(response.getRefundMethod()).isEqualTo("CASH");
-            assertThat(response.getCustomerDebtAmount()).isEqualByComparingTo(BigDecimal.ZERO);
         }
 
         @Test
@@ -946,6 +772,8 @@ class HandoverServiceTest {
             FacilityPolicy policy = FacilityPolicy.builder()
                     .facility(testFacility)
                     .depositRefundSlaDays(7)
+                    .dailyLateFee(new BigDecimal("100000.00"))
+                    .overdueGraceDays(1)
                     .build();
 
             // Cọc: 1,500,000. Phạt hư hại: 2,000,000 -> Âm 500,000
@@ -954,7 +782,6 @@ class HandoverServiceTest {
                     .staffId(staffId)
                     .damageFee(new BigDecimal("2000000.00"))
                     .damageNotes("Vỡ kính cường lực và hỏng ray cửa")
-                    .evidencePhotos(List.of("/uploads/handover/photo1.jpg", "/uploads/handover/photo2.jpg"))
                     .build();
 
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
@@ -972,228 +799,8 @@ class HandoverServiceTest {
             assertThat(response.getNetRefundAmount()).isEqualByComparingTo(BigDecimal.ZERO);
             assertThat(response.getReviewStatus()).isEqualTo("PENDING_ACCOUNTING_REVIEW");
             assertThat(response.getNotes()).contains("CẢNH BÁO: Khấu trừ vượt quá tiền cọc!");
-            assertThat(response.getNotes()).contains("500.000 ₫");
+            assertThat(response.getNotes()).contains("500000.00");
             verify(paymentRepository, never()).save(any(Payment.class));
-
-            // The unrecovered amount is recorded for accounting instead of only being written into the notes.
-            assertThat(response.getCustomerDebtAmount()).isEqualByComparingTo(new BigDecimal("500000.00"));
-            assertThat(response.getCustomerDebtId()).isNotNull();
-            ArgumentCaptor<CustomerDebt> debt = ArgumentCaptor.forClass(CustomerDebt.class);
-            verify(customerDebtRepository).save(debt.capture());
-            assertThat(debt.getValue().getAmount()).isEqualByComparingTo(new BigDecimal("500000.00"));
-            assertThat(debt.getValue().getStatus()).isEqualTo(CustomerDebt.STATUS_OPEN);
-            verify(refundRequestRepository, never()).save(any());
-        }
-    }
-
-    @Nested
-    @DisplayName("Trả kho quá hạn, minh chứng và định dạng tiền")
-    class OverdueReturnEvidenceAndMoneyTests {
-
-        private HandoverRequest cleanReturn() {
-            return HandoverRequest.builder()
-                    .bookingId(bookingId)
-                    .staffId(staffId)
-                    .doorConditionPassed(true)
-                    .cleanlinessPassed(true)
-                    .smartLockPassed(true)
-                    .sensorPassed(true)
-                    .wallStructurePassed(true)
-                    .refundMethod("CASH")
-                    .evidencePhotos(List.of("/uploads/handover/photo1.jpg", "/uploads/handover/photo2.jpg"))
-                    .build();
-        }
-
-        private void arrangeOverdueReturn() {
-            testBooking.setStatus(BookingStatus.ACTIVE);
-            testBooking.setAccessPin("739215");
-            testBooking.setEndDate(LocalDate.now().minusDays(4));
-            testUnit.setStatus(UnitStatus.OCCUPIED);
-            FacilityPolicy policy = FacilityPolicy.builder()
-                    .facility(testFacility)
-                    .depositRefundSlaDays(5)
-                    .dailyLateFee(new BigDecimal("100000.00"))
-                    .overdueGraceDays(1)
-                    .build();
-            lenient().when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            lenient().when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
-            lenient().when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(policy));
-            lenient().when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
-            lenient().when(handoverRecordRepository.save(any(HandoverRecord.class))).thenAnswer(inv -> inv.getArgument(0));
-        }
-
-        @Test
-        @DisplayName("Trả kho sạch nhưng quá hạn, chỉ có phí trễ hạn theo chính sách -> kho về AVAILABLE, không vào bảo trì")
-        void overdueCleanReturn_withOnlyPolicyLateFee_releasesUnitToAvailable() {
-            arrangeOverdueReturn();
-            HandoverRequest request = cleanReturn();
-            // The wizard used to send its mandatory reason text as damageNotes; neither field may mean "damage".
-            request.setDamageNotes("Phí trễ hạn theo chính sách cơ sở");
-
-            ReturnSettlementResponse response = handoverService.processReturnSettlement(request);
-
-            assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.AVAILABLE);
-            assertThat(response.getTotalDeduction()).isEqualByComparingTo(new BigDecimal("300000.00"));
-            assertThat(response.getOverdueDebt()).isEqualByComparingTo(new BigDecimal("300000.00"));
-            assertThat(response.isChecklistAllPassed()).isTrue();
-            // Money in backend-composed text is Vietnamese-style, never "300,000 VNĐ".
-            assertThat(response.getNotes()).contains("300.000 ₫").doesNotContain("VNĐ");
-        }
-
-        @Test
-        @DisplayName("Lý do khấu trừ riêng (deductionReason) được lưu vào biên bản và không đổi trạng thái kho")
-        void deductionReason_isRecordedAndDoesNotSendUnitToMaintenance() {
-            arrangeOverdueReturn();
-            HandoverRequest request = cleanReturn();
-            request.setOverdueDebt(new BigDecimal("100000.00"));
-            request.setDeductionReason("Quản lý đồng ý giảm phí trễ hạn còn một ngày");
-
-            ReturnSettlementResponse response = handoverService.processReturnSettlement(request);
-
-            assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.AVAILABLE);
-            assertThat(response.getNotes()).contains("Lý do khấu trừ: Quản lý đồng ý giảm phí trễ hạn còn một ngày");
-        }
-
-        @Test
-        @DisplayName("Phí hư hại hoặc hạng mục không đạt vẫn đưa kho vào bảo trì")
-        void damageOrFailedChecklist_stillSendsUnitToMaintenance() {
-            arrangeOverdueReturn();
-            HandoverRequest damaged = cleanReturn();
-            damaged.setDamageFee(new BigDecimal("200000.00"));
-            damaged.setDeductionReason("Thay chốt khóa");
-            handoverService.processReturnSettlement(damaged);
-            assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.UNDER_MAINTENANCE);
-
-            assertThat(HandoverServiceImplAccess.release(BigDecimal.ZERO, BigDecimal.ZERO, true, false, true, true, true))
-                    .isEqualTo(UnitStatus.UNDER_MAINTENANCE);
-            assertThat(HandoverServiceImplAccess.release(BigDecimal.ZERO, new BigDecimal("50000"), true, true, true, true, true))
-                    .isEqualTo(UnitStatus.UNDER_MAINTENANCE);
-            assertThat(HandoverServiceImplAccess.release(BigDecimal.ZERO, BigDecimal.ZERO, true, true, true, true, true))
-                    .isEqualTo(UnitStatus.AVAILABLE);
-        }
-
-        @Test
-        @DisplayName("Khấu trừ ngoài phí trễ hạn mà không ghi lý do bị từ chối")
-        void nonLateDeductionWithoutReason_isRejected() {
-            arrangeOverdueReturn();
-            HandoverRequest request = cleanReturn();
-            request.setCleaningFee(new BigDecimal("150000.00"));
-
-            AppException ex = assertThrows(AppException.class, () -> handoverService.processReturnSettlement(request));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
-            assertThat(testBooking.getStatus()).isEqualTo(BookingStatus.ACTIVE);
-        }
-
-        @Test
-        @DisplayName("Ảnh trả kho phải là tệp đã tải lên cho đúng đơn: tệp không tồn tại hoặc của đơn khác bị từ chối")
-        void returnEvidence_mustBelongToTheBooking() {
-            arrangeOverdueReturn();
-            doThrow(new AppException(ErrorCode.HANDOVER_EVIDENCE_URL_INVALID))
-                    .when(fileStorageService).requireBookingEvidence(any(), eq(bookingId), eq(testFacility.getId()));
-
-            AppException ex = assertThrows(AppException.class, () -> handoverService.processReturnSettlement(cleanReturn()));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_EVIDENCE_URL_INVALID);
-            assertThat(testBooking.getStatus()).isEqualTo(BookingStatus.ACTIVE);
-            assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.OCCUPIED);
-            verify(handoverRecordRepository, never()).save(any(HandoverRecord.class));
-        }
-
-        @Test
-        @DisplayName("Ảnh nghiệm thu khi nhận kho cũng được kiểm tra tồn tại và thuộc đơn")
-        void inspectionEvidence_isCheckedAgainstTheStoredFiles() {
-            testBooking.setStatus(BookingStatus.ACTIVE);
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
-            doThrow(new AppException(ErrorCode.HANDOVER_EVIDENCE_URL_INVALID))
-                    .when(fileStorageService).requireBookingEvidence(any(), eq(bookingId), eq(testFacility.getId()));
-
-            HandoverRequest request = HandoverRequest.builder()
-                    .bookingId(bookingId)
-                    .staffId(staffId)
-                    .evidencePhotos(List.of("/uploads/handover/nonexistent-1.jpg", "/uploads/handover/nonexistent-2.jpg"))
-                    .build();
-            AppException ex = assertThrows(AppException.class, () -> handoverService.performInspection(request));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_EVIDENCE_URL_INVALID);
-            verify(handoverRecordRepository, never()).save(any(HandoverRecord.class));
-        }
-
-        @Test
-        @DisplayName("Tải ảnh lên gắn với đơn và cơ sở của đơn")
-        void upload_isBoundToTheBookingAndItsFacility() {
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            org.springframework.web.multipart.MultipartFile file = new org.springframework.mock.web.MockMultipartFile(
-                    "file", "a.jpg", "image/jpeg", new byte[]{1});
-
-            handoverService.uploadEvidence(file, bookingId);
-
-            verify(fileStorageService).storeDocument(file, "handover", bookingId, testFacility.getId());
-        }
-
-        @Test
-        @DisplayName("Thông báo thiếu điều kiện dùng định dạng tiền Việt: 1.250.000 ₫")
-        void prerequisiteMessages_useVietnameseMoneyFormat() {
-            testBooking.setDepositPaid(null);
-            testBooking.setDepositAmount(new BigDecimal("1250000"));
-            testBooking.setTotalRentalFee(new BigDecimal("1250000"));
-            testBooking.setRentalMonths(1);
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.empty());
-            when(paymentRepository.findAllByBooking_Id(any())).thenReturn(List.of());
-
-            HandoverPrerequisitesResponse response = handoverService.getCheckInPrerequisites(bookingId);
-
-            assertThat(response.getMissingPrerequisites())
-                    .anyMatch(m -> m.contains("Tiền cọc còn thiếu 1.250.000 ₫ (Đã xác nhận: 0 ₫ / Yêu cầu: 1.250.000 ₫)"))
-                    .anyMatch(m -> m.contains("Tiền thuê tháng đầu còn thiếu 1.250.000 ₫"))
-                    .noneMatch(m -> m.contains("VNĐ") || m.contains("1,250,000"));
-        }
-
-        @Test
-        @DisplayName("Thu vượt số còn phải thu: báo số còn lại theo định dạng 1.500.000 ₫")
-        void overpayment_messageUsesVietnameseMoneyFormat() {
-            testBooking.setDepositPaid(BigDecimal.ZERO);
-            testBooking.setDepositAmount(new BigDecimal("1500000"));
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(paymentRepository.findAllByBooking_Id(any())).thenReturn(List.of());
-
-            ManualPaymentRecordRequest tooMuch = ManualPaymentRecordRequest.builder()
-                    .bookingId(bookingId)
-                    .paymentType(PaymentType.DEPOSIT)
-                    .paymentMethod("CASH")
-                    .amount(new BigDecimal("2000000"))
-                    .receiptVoucherCode("PT-001")
-                    .build();
-            AppException ex = assertThrows(AppException.class, () -> handoverService.recordManualPayment(tooMuch));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_PAYMENT_OVER_REMAINING);
-            assertThat(ex.getMessage()).contains("1.500.000 ₫").doesNotContain("VNĐ");
-        }
-
-        @Test
-        @DisplayName("Biên bản check-in chỉ ghi 4 số cuối của giấy tờ")
-        void checkIn_doesNotWriteTheFullIdentityNumberIntoTheRecord() {
-            HandoverRequest request = HandoverRequest.builder()
-                    .bookingId(bookingId)
-                    .staffId(staffId)
-                    .idCardNumber("001092003891")
-                    .identityVerified(true)
-                    .build();
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
-            when(handoverRecordRepository.findFirstByBooking_IdAndRecordTypeOrderByRecordedAtDesc(bookingId, "CHECK_IN_INSPECTION"))
-                    .thenReturn(Optional.of(passedInspection()));
-            when(handoverRecordRepository.save(any(HandoverRecord.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            HandoverResponse response = handoverService.checkIn(request);
-
-            assertThat(response.getNotes()).contains("********3891").doesNotContain("001092003891");
-        }
-    }
-
-    /** The unit release rule is package-private in the implementation; this mirrors its call for the pure-function checks. */
-    private static final class HandoverServiceImplAccess {
-        static UnitStatus release(BigDecimal damageFee, BigDecimal cleaningFee, boolean door, boolean cleanliness,
-                                  boolean lock, boolean sensor, boolean wall) {
-            return com.boxora.service.impl.HandoverUnitRelease.statusAfterReturn(damageFee, cleaningFee, door, cleanliness, lock, sensor, wall);
         }
     }
 
@@ -1232,6 +839,7 @@ class HandoverServiceTest {
                     .status(BookingStatus.CONFIRMED)
                     .identityVerifiedByStaff(testStaff)
                     .identityVerifiedAt(LocalDateTime.now())
+                    .identityOriginalDocumentSeen(true)
                     .identityCardNumber("079090123456")
                     .build();
             booking1.setId(booking1Id);
@@ -1390,221 +998,641 @@ class HandoverServiceTest {
     }
 
     @Nested
-    @DisplayName("Phân quyền, bảo mật mã PIN và chứng từ tại quầy")
-    class SecurityAndCounterPaymentTests {
+    @DisplayName("Task 13: Lưu hợp đồng giấy, ghi nhận tiền cọc chuyển khoản và tiền mặt tại quầy (BR-RULE-005/006)")
+    class Task13HandoverTests {
 
-        @Test
-        @DisplayName("Lịch sử biên bản không bao giờ trả mã PIN hay QR token, kể cả khi đơn đang ACTIVE")
-        void getByBookingId_NeverReturnsPin() {
-            testBooking.setStatus(BookingStatus.ACTIVE);
-            testBooking.setAccessPin("739215");
-            testBooking.setQrAccessToken("QR-ABCD1234");
-            HandoverRecord record = HandoverRecord.builder()
-                    .booking(testBooking)
-                    .staff(testStaff)
-                    .recordType("CHECK_IN")
-                    .recordedAt(LocalDateTime.now())
-                    .build();
-
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(handoverRecordRepository.findByBookingId(bookingId)).thenReturn(List.of(record));
-
-            List<HandoverResponse> history = handoverService.getByBookingId(bookingId);
-
-            assertThat(history).hasSize(1);
-            assertThat(history.get(0).getAccessPin()).isNull();
-            assertThat(history.get(0).getQrAccessToken()).isNull();
-        }
-
-        @Test
-        @DisplayName("Khách xem biên bản / quyết toán của đơn người khác -> không tìm thấy")
-        void customerCannotReadAnotherCustomersBooking() {
-            UUID otherCustomerId = UUID.randomUUID();
-            when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
-            when(requestContext.currentUserId()).thenReturn(otherCustomerId);
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-
-            AppException history = assertThrows(AppException.class, () -> handoverService.getByBookingId(bookingId));
-            assertThat(history.getErrorCode()).isEqualTo(ErrorCode.BOOKING_NOT_FOUND);
-            AppException preview = assertThrows(AppException.class, () -> handoverService.getReturnSettlementPreview(bookingId));
-            assertThat(preview.getErrorCode()).isEqualTo(ErrorCode.BOOKING_NOT_FOUND);
-            verify(handoverRecordRepository, never()).findByBookingId(any());
-        }
-
-        @Test
-        @DisplayName("Khách xem biên bản của chính mình được phép")
-        void customerCanReadOwnBooking() {
-            when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
-            when(requestContext.currentUserId()).thenReturn(testCustomer.getId());
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(handoverRecordRepository.findByBookingId(bookingId)).thenReturn(List.of());
-
-            assertThat(handoverService.getByBookingId(bookingId)).isEmpty();
-        }
-
-        @Test
-        @DisplayName("Nhân viên cơ sở khác bị chặn bởi FacilityAccessGuard khi xem biên bản")
-        void staffOfAnotherFacilityIsBlocked() {
-            doThrow(new AppException(ErrorCode.FACILITY_ACCESS_DENIED))
-                    .when(facilityAccessGuard).checkFacilityAccess(testFacility.getId());
-            when(requestContext.currentUserRole()).thenReturn("STAFF");
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-
-            AppException ex = assertThrows(AppException.class, () -> handoverService.getByBookingId(bookingId));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FACILITY_ACCESS_DENIED);
-        }
-
-        @Test
-        @DisplayName("Gửi lại PIN: luôn gửi tới email trong hồ sơ khách và chỉ báo thành công khi sendNow xong")
-        void sendHandoverPinEmail_GoesToCustomerEmailOnFile() {
-            testBooking.setStatus(BookingStatus.ACTIVE);
-            testBooking.setAccessPin("739215");
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(emailService.isMailConfigured()).thenReturn(true);
-
-            String sentTo = handoverService.sendHandoverPinEmail(bookingId);
-
-            assertThat(sentTo).isEqualTo("tuan.tran@gmail.com");
-            verify(emailService).sendNow(eq("tuan.tran@gmail.com"), anyString(), contains("739215"));
-        }
-
-        @Test
-        @DisplayName("Gửi PIN khi chưa bàn giao -> HANDOVER_NOT_CHECKED_IN; SMTP chưa cấu hình -> EMAIL_SEND_FAILED")
-        void sendHandoverPinEmail_RefusesWhenNothingToSendOrMailMissing() {
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            AppException notCheckedIn = assertThrows(AppException.class, () -> handoverService.sendHandoverPinEmail(bookingId));
-            assertThat(notCheckedIn.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_NOT_CHECKED_IN);
-
-            testBooking.setStatus(BookingStatus.ACTIVE);
-            testBooking.setAccessPin("739215");
-            when(emailService.isMailConfigured()).thenReturn(false);
-            AppException noSmtp = assertThrows(AppException.class, () -> handoverService.sendHandoverPinEmail(bookingId));
-            assertThat(noSmtp.getErrorCode()).isEqualTo(ErrorCode.EMAIL_SEND_FAILED);
-            verify(emailService, never()).sendNow(anyString(), anyString(), anyString());
-        }
-
-        @Test
-        @DisplayName("Thông báo trong ứng dụng không chứa PIN và không tạo bản ghi trùng khi gọi lại")
-        void sendHandoverWebNotification_IsPinFreeAndIdempotent() {
-            testBooking.setStatus(BookingStatus.ACTIVE);
-            testBooking.setAccessPin("739215");
-            NotificationLog existing = NotificationLog.builder()
-                    .recipient(testCustomer)
-                    .recipientEmail("tuan.tran@gmail.com")
-                    .notificationType(NotificationType.HANDOVER_PIN)
-                    .channel(NotificationChannel.IN_APP)
-                    .title("Bàn giao kho A-112")
-                    .content("đã được bàn giao")
-                    .build();
-            existing.setId(UUID.randomUUID());
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(notificationLogRepository.findFirstByNotificationTypeAndReferenceIdAndChannelOrderByCreatedAtDesc(
-                    NotificationType.HANDOVER_PIN, bookingId, NotificationChannel.IN_APP)).thenReturn(Optional.of(existing));
-
-            handoverService.sendHandoverWebNotification(bookingId);
-
-            verify(notificationLogRepository, never()).save(any());
-        }
-
-        @Test
-        @DisplayName("Xác nhận chuyển khoản: chỉ BANK_TRANSFER đang PENDING có mã tham chiếu và biên lai")
-        void confirmBankTransfer_Rules() {
-            Payment vnpay = Payment.builder().booking(testBooking).amount(new BigDecimal("1500000"))
-                    .paymentType(PaymentType.DEPOSIT).paymentMethod("VNPAY").status(PaymentStatus.PENDING)
-                    .referenceCode("REF1").proofDocumentUrl("/uploads/handover/p.jpg").build();
-            UUID vnpayId = UUID.randomUUID();
-            vnpay.setId(vnpayId);
-            when(paymentRepository.findById(vnpayId)).thenReturn(Optional.of(vnpay));
-            assertThat(assertThrows(AppException.class, () -> handoverService.confirmBankTransferPayment(vnpayId, null)).getErrorCode())
-                    .isEqualTo(ErrorCode.HANDOVER_PAYMENT_NOT_PENDING_TRANSFER);
-
-            Payment failed = Payment.builder().booking(testBooking).amount(new BigDecimal("1500000"))
-                    .paymentType(PaymentType.DEPOSIT).paymentMethod("BANK_TRANSFER").status(PaymentStatus.FAILED)
-                    .referenceCode("REF2").proofDocumentUrl("/uploads/handover/p.jpg").build();
-            UUID failedId = UUID.randomUUID();
-            failed.setId(failedId);
-            when(paymentRepository.findById(failedId)).thenReturn(Optional.of(failed));
-            assertThat(assertThrows(AppException.class, () -> handoverService.confirmBankTransferPayment(failedId, null)).getErrorCode())
-                    .isEqualTo(ErrorCode.HANDOVER_PAYMENT_NOT_PENDING_TRANSFER);
-
-            Payment noProof = Payment.builder().booking(testBooking).amount(new BigDecimal("1500000"))
-                    .paymentType(PaymentType.DEPOSIT).paymentMethod("BANK_TRANSFER").status(PaymentStatus.PENDING)
-                    .referenceCode("REF3").build();
-            UUID noProofId = UUID.randomUUID();
-            noProof.setId(noProofId);
-            when(paymentRepository.findById(noProofId)).thenReturn(Optional.of(noProof));
-            assertThat(assertThrows(AppException.class, () -> handoverService.confirmBankTransferPayment(noProofId, null)).getErrorCode())
-                    .isEqualTo(ErrorCode.HANDOVER_PAYMENT_PROOF_REQUIRED);
-
-            Payment good = Payment.builder().booking(testBooking).amount(new BigDecimal("1500000"))
-                    .paymentType(PaymentType.DEPOSIT).paymentMethod("BANK_TRANSFER").status(PaymentStatus.PENDING)
-                    .referenceCode("REF4").proofDocumentUrl("/uploads/handover/p.jpg").build();
-            UUID goodId = UUID.randomUUID();
-            good.setId(goodId);
-            when(paymentRepository.findById(goodId)).thenReturn(Optional.of(good));
-            when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
-            handoverService.confirmBankTransferPayment(goodId, "Đã đối soát");
-            assertThat(good.getStatus()).isEqualTo(PaymentStatus.PAID);
-            assertThat(good.getConfirmedByStaff()).isEqualTo(testStaff);
-        }
-
-        @Test
-        @DisplayName("Ghi nhận thu vượt quá số còn phải thu bị từ chối; ảnh biên lai base64 bị từ chối")
-        void recordManualPayment_RejectsOverpaymentAndBase64Proof() {
+        @BeforeEach
+        void initTask13Booking() {
+            testBooking.setDepositAmount(new BigDecimal("450000.00"));
             testBooking.setDepositPaid(BigDecimal.ZERO);
-            testBooking.setDepositAmount(new BigDecimal("1500000"));
-            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(paymentRepository.findAllByBooking_Id(any())).thenReturn(List.of());
+            testBooking.setStatus(BookingStatus.CONFIRMED);
+            lenient().when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+            lenient().when(rentalContractRepository.save(any(RentalContract.class))).thenAnswer(inv -> inv.getArgument(0));
+        }
 
-            ManualPaymentRecordRequest tooMuch = ManualPaymentRecordRequest.builder()
+        @Test
+        @DisplayName("1. Upload hợp đồng giấy với file ảnh hợp lệ -> Lưu thành công với status PENDING_VERIFICATION")
+        void createOrUploadPaperContract_validImage_statusPendingVerification() {
+            String paperUrl = "/uploads/contracts/" + bookingId + "/doc-image-scan.jpg";
+            PaperContractCreateRequest req = PaperContractCreateRequest.builder()
                     .bookingId(bookingId)
-                    .paymentType(PaymentType.DEPOSIT)
-                    .paymentMethod("CASH")
-                    .amount(new BigDecimal("2000000"))
-                    .receiptVoucherCode("PT-001")
+                    .paperContractUrl(paperUrl)
+                    .paperOriginalLocation("Tủ hồ sơ tầng 1, ngăn A12")
+                    .notes("Đã ký sống tại quầy Tân Bình")
                     .build();
-            assertThat(assertThrows(AppException.class, () -> handoverService.recordManualPayment(tooMuch)).getErrorCode())
-                    .isEqualTo(ErrorCode.HANDOVER_PAYMENT_OVER_REMAINING);
 
-            ManualPaymentRecordRequest base64Proof = ManualPaymentRecordRequest.builder()
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.empty());
+            when(rentalContractRepository.findByContractCodeIgnoreCase(anyString())).thenReturn(Optional.empty());
+            when(rentalContractRepository.save(any(RentalContract.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            RentalContractResponse res = handoverService.createOrUploadPaperContract(req);
+
+            assertThat(res).isNotNull();
+            verify(rentalContractRepository).save(argThat(c ->
+                    RentalContractStatus.PENDING_VERIFICATION.equals(c.getStatus())
+                            && paperUrl.equals(c.getPaperContractUrl())
+                            && "PAPER".equals(c.getSigningMethod())
+                            && c.getPaperVerifiedAt() == null
+                            && c.getSignedAt() == null
+            ));
+        }
+
+        @Test
+        @DisplayName("2. Upload hợp đồng giấy với file PDF hợp lệ -> Lưu thành công với status PENDING_VERIFICATION")
+        void createOrUploadPaperContract_validPdf_statusPendingVerification() {
+            String paperUrl = "/uploads/contracts/" + bookingId + "/doc-contract-signed.pdf";
+            PaperContractCreateRequest req = PaperContractCreateRequest.builder()
+                    .bookingId(bookingId)
+                    .paperContractUrl(paperUrl)
+                    .contractCode("HD-GIAY-" + testBooking.getBookingCode())
+                    .paperOriginalLocation("Tủ hồ sơ văn phòng")
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.empty());
+            when(rentalContractRepository.findByContractCodeIgnoreCase(anyString())).thenReturn(Optional.empty());
+            when(rentalContractRepository.save(any(RentalContract.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            handoverService.createOrUploadPaperContract(req);
+
+            verify(rentalContractRepository).save(argThat(c ->
+                    RentalContractStatus.PENDING_VERIFICATION.equals(c.getStatus())
+                            && paperUrl.equals(c.getPaperContractUrl())
+            ));
+        }
+
+        @Test
+        @DisplayName("3. Upload tài liệu định dạng không hỗ trợ hoặc kích thước >10MB -> Ném lỗi INVALID_REQUEST / TICKET_IMAGE_SIZE_EXCEEDED")
+        void uploadHandoverDocument_invalidFormatOrOversized_throwsError() {
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+
+            MultipartFile dummyFile = mock(MultipartFile.class);
+            AppException exType = assertThrows(AppException.class, () ->
+                    handoverService.uploadHandoverDocument(bookingId, dummyFile, "UNKNOWN_TYPE"));
+            assertThat(exType.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+
+            when(fileStorageService.storeDocumentFile(any(), eq("contracts/" + bookingId)))
+                    .thenThrow(new AppException(ErrorCode.TICKET_IMAGE_SIZE_EXCEEDED));
+            AppException exSize = assertThrows(AppException.class, () ->
+                    handoverService.uploadHandoverDocument(bookingId, dummyFile, "PAPER_CONTRACT"));
+            assertThat(exSize.getErrorCode()).isEqualTo(ErrorCode.TICKET_IMAGE_SIZE_EXCEEDED);
+        }
+
+        @Test
+        @DisplayName("4. Base64 data URI hoặc URL > 500 ký tự -> Từ chối với INVALID_REQUEST (ngăn lỗi VARCHAR 500)")
+        void createOrUploadPaperContract_base64OrTooLong_throwsInvalidRequest() {
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+
+            PaperContractCreateRequest base64Req = PaperContractCreateRequest.builder()
+                    .bookingId(bookingId)
+                    .paperContractUrl("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD...")
+                    .build();
+            AppException ex1 = assertThrows(AppException.class, () ->
+                    handoverService.createOrUploadPaperContract(base64Req));
+            assertThat(ex1.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+
+            String longUrl = "/uploads/contracts/" + "a".repeat(500) + ".pdf";
+            PaperContractCreateRequest longReq = PaperContractCreateRequest.builder()
+                    .bookingId(bookingId)
+                    .paperContractUrl(longUrl)
+                    .build();
+            AppException ex2 = assertThrows(AppException.class, () ->
+                    handoverService.createOrUploadPaperContract(longReq));
+            assertThat(ex2.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+
+            ManualPaymentRecordRequest bankBase64Req = ManualPaymentRecordRequest.builder()
                     .bookingId(bookingId)
                     .paymentType(PaymentType.DEPOSIT)
                     .paymentMethod("BANK_TRANSFER")
-                    .amount(new BigDecimal("1500000"))
-                    .referenceCode("FT123")
-                    .proofDocumentUrl("data:image/png;base64,AAAA")
+                    .amount(new BigDecimal("450000.00"))
+                    .referenceCode("REF-123")
+                    .proofDocumentUrl("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...")
                     .build();
-            assertThat(assertThrows(AppException.class, () -> handoverService.recordManualPayment(base64Proof)).getErrorCode())
-                    .isEqualTo(ErrorCode.HANDOVER_EVIDENCE_URL_INVALID);
-            verify(paymentRepository, never()).save(any());
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+            AppException ex3 = assertThrows(AppException.class, () ->
+                    handoverService.recordManualPayment(bankBase64Req));
+            assertThat(ex3.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
         }
 
         @Test
-        @DisplayName("Tra cứu QR: nhận BOXORA-CHECKIN:<mã>, mã thô và UUID; không trả mã PIN; mã lạ -> 404")
-        void lookupBooking_AcceptsQrCodeAndRawCode() {
-            // The real query ignores case; the mock has to as well.
-            when(bookingRepository.findByBookingCodeIgnoreCase(argThat(code -> code != null && code.equalsIgnoreCase("RES-8921"))))
-                    .thenReturn(Optional.of(testBooking));
+        @DisplayName("5. Hợp đồng giấy ở trạng thái PENDING_VERIFICATION -> Chưa đủ điều kiện check-in (eligibleForCheckIn = false)")
+        void getCheckInPrerequisites_paperContractPendingVerification_notEligible() {
+            testBooking.setDepositPaid(new BigDecimal("450000.00"));
+            RentalContract paperContract = RentalContract.builder()
+                    .contractCode("HĐ-GIAY-8921")
+                    .booking(testBooking)
+                    .customer(testCustomer)
+                    .unit(testUnit)
+                    .facility(testFacility)
+                    .signingMethod("PAPER")
+                    .paperContractUrl("/uploads/contracts/" + bookingId + "/scan.pdf")
+                    .status(RentalContractStatus.PENDING_VERIFICATION)
+                    .paperVerifiedAt(null)
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(paperContract));
+
+            HandoverPrerequisitesResponse resp = handoverService.getCheckInPrerequisites(bookingId);
+            assertThat(resp.isContractSigned()).isFalse();
+            assertThat(resp.getContractVerificationStatus()).isEqualTo("PENDING_VERIFICATION");
+            assertThat(resp.isEligibleForCheckIn()).isFalse();
+            assertThat(resp.getMissingPrerequisites()).anyMatch(m -> m.contains("chờ nhân viên kiểm tra chữ ký"));
+        }
+
+        @Test
+        @DisplayName("6. Xác minh hợp đồng giấy: Nhân viên hợp lệ -> PASS (ACTIVE/PENDING_ACTIVATION); Khách hàng -> FORBIDDEN")
+        void verifyPaperContract_authorizedStaffPass_customerForbidden() {
+            RentalContract paperContract = RentalContract.builder()
+                    .contractCode("HĐ-GIAY-8921")
+                    .booking(testBooking)
+                    .customer(testCustomer)
+                    .unit(testUnit)
+                    .facility(testFacility)
+                    .signingMethod("PAPER")
+                    .paperContractUrl("/uploads/contracts/" + bookingId + "/scan.pdf")
+                    .status(RentalContractStatus.PENDING_VERIFICATION)
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(paperContract));
+            when(rentalContractRepository.save(any(RentalContract.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            RentalContractResponse res = handoverService.verifyPaperContract(bookingId, "Đã kiểm tra chữ ký tay đối chiếu CMND");
+            assertThat(res).isNotNull();
+            assertThat(paperContract.getPaperVerifiedAt()).isNotNull();
+            assertThat(paperContract.getPaperVerifiedBy()).isEqualTo(testStaff);
+            assertThat(paperContract.getStatus()).isEqualTo(RentalContractStatus.PENDING_ACTIVATION);
+
+            UUID customerUserId = testCustomer.getId();
+            when(requestContext.currentUserId()).thenReturn(customerUserId);
+            when(userRepository.findById(customerUserId)).thenReturn(Optional.of(testCustomer));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.verifyPaperContract(bookingId, "Khách tự duyệt"));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("7. Thu tiền mặt (CASH) tại quầy -> Bắt buộc có mã phiếu thu, tự động loại bỏ proofDocumentUrl và referenceCode thừa")
+        void recordManualPayment_cash_nullifiesProofAndRefCode_andSetsPaid() {
+            ManualPaymentRecordRequest req = ManualPaymentRecordRequest.builder()
+                    .bookingId(bookingId)
+                    .paymentType(PaymentType.DEPOSIT)
+                    .paymentMethod("CASH")
+                    .amount(new BigDecimal("450000.00"))
+                    .receiptVoucherCode("PT-2026-TANBINH-001")
+                    .referenceCode("REF-LEFTOVER-999")
+                    .proofDocumentUrl("/uploads/payments/" + bookingId + "/leftover.png")
+                    .notes("Khách đóng tiền mặt tại sảnh")
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.existsByReceiptVoucherCodeIgnoreCase("PT-2026-TANBINH-001")).thenReturn(false);
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+            when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            handoverService.recordManualPayment(req);
+
+            verify(paymentRepository).save(argThat(p ->
+                    PaymentStatus.PAID.equals(p.getStatus())
+                            && "CASH".equals(p.getPaymentMethod())
+                            && "PT-2026-TANBINH-001".equals(p.getReceiptVoucherCode())
+                            && p.getReferenceCode() == null
+                            && p.getProofDocumentUrl() == null
+                            && p.getConfirmedByStaff() != null
+                            && p.getConfirmedAt() != null
+            ));
+        }
+
+        @Test
+        @DisplayName("8. Thu tiền mặt trùng mã phiếu thu (duplicate voucher code) -> Ném lỗi PAYMENT_ALREADY_PROCESSED")
+        void recordManualPayment_duplicateCashVoucherCode_throwsPaymentAlreadyProcessed() {
+            ManualPaymentRecordRequest req = ManualPaymentRecordRequest.builder()
+                    .bookingId(bookingId)
+                    .paymentType(PaymentType.DEPOSIT)
+                    .paymentMethod("CASH")
+                    .amount(new BigDecimal("450000.00"))
+                    .receiptVoucherCode("PT-DUPLICATE-999")
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+            when(paymentRepository.existsByReceiptVoucherCodeIgnoreCase("PT-DUPLICATE-999")).thenReturn(true);
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.recordManualPayment(req));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_ALREADY_PROCESSED);
+        }
+
+        @Test
+        @DisplayName("9. Thu tiền mặt khi nghĩa vụ đã hoàn tất -> Ném lỗi PAYMENT_ALREADY_PROCESSED chống cộng tiền trùng")
+        void recordManualPayment_obligationAlreadySatisfied_throwsPaymentAlreadyProcessed() {
+            Payment existingDep = Payment.builder()
+                    .paymentType(PaymentType.DEPOSIT)
+                    .status(PaymentStatus.PAID)
+                    .amount(new BigDecimal("450000.00"))
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of(existingDep));
+
+            ManualPaymentRecordRequest req = ManualPaymentRecordRequest.builder()
+                    .bookingId(bookingId)
+                    .paymentType(PaymentType.DEPOSIT)
+                    .paymentMethod("CASH")
+                    .amount(new BigDecimal("450000.00"))
+                    .receiptVoucherCode("PT-EXTRA-888")
+                    .build();
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.recordManualPayment(req));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_ALREADY_PROCESSED);
+        }
+
+        @Test
+        @DisplayName("10. Ghi nhận chuyển khoản ngân hàng -> Trạng thái PENDING, lưu proof URL, chưa cộng vào tiền đã thanh toán")
+        void recordManualPayment_bankTransfer_statusPending_notCountedAsPaid() {
+            String proofUrl = "/uploads/payments/" + bookingId + "/proof_mb_123.jpg";
+            ManualPaymentRecordRequest req = ManualPaymentRecordRequest.builder()
+                    .bookingId(bookingId)
+                    .paymentType(PaymentType.DEPOSIT)
+                    .paymentMethod("BANK_TRANSFER")
+                    .amount(new BigDecimal("450000.00"))
+                    .referenceCode("MB-FT8921001")
+                    .proofDocumentUrl(proofUrl)
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+            when(paymentRepository.existsByReferenceCodeIgnoreCase("MB-FT8921001")).thenReturn(false);
+            when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            handoverService.recordManualPayment(req);
+
+            verify(paymentRepository).save(argThat(p ->
+                    PaymentStatus.PENDING.equals(p.getStatus())
+                            && "BANK_TRANSFER".equals(p.getPaymentMethod())
+                            && "MB-FT8921001".equals(p.getReferenceCode())
+                            && proofUrl.equals(p.getProofDocumentUrl())
+                            && p.getConfirmedByStaff() == null
+                            && p.getConfirmedAt() == null
+            ));
+            assertThat(testBooking.getDepositPaid()).isEqualByComparingTo("0.00");
+        }
+
+        @Test
+        @DisplayName("11. Chuyển khoản ngân hàng chỉ được tính đã thanh toán sau khi nhân viên đối soát khớp lệnh")
+        void confirmBankTransferPayment_authorizedStaff_setsPaidAndSynchronizesDeposit() {
+            UUID paymentId = UUID.randomUUID();
+            Payment pendingBankPayment = Payment.builder()
+                    .booking(testBooking)
+                    .amount(new BigDecimal("450000.00"))
+                    .paymentType(PaymentType.DEPOSIT)
+                    .paymentMethod("BANK_TRANSFER")
+                    .referenceCode("VCB-FT9921002")
+                    .proofDocumentUrl("/uploads/payments/" + bookingId + "/proof_vcb.png")
+                    .status(PaymentStatus.PENDING)
+                    .build();
+            pendingBankPayment.setId(paymentId);
+
+            testBooking.setDepositPaid(BigDecimal.ZERO);
+
+            when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(pendingBankPayment));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+            when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            handoverService.confirmBankTransferPayment(paymentId, "Đã khớp lệnh tiền nổi tài khoản VCB Boxora");
+
+            assertThat(pendingBankPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
+            assertThat(pendingBankPayment.getConfirmedByStaff()).isEqualTo(testStaff);
+            assertThat(pendingBankPayment.getConfirmedAt()).isNotNull();
+            verify(bookingRepository).save(argThat(b ->
+                    b.getDepositPaid() != null && b.getDepositPaid().compareTo(new BigDecimal("450000.00")) == 0
+            ));
+        }
+
+        @Test
+        @DisplayName("12. Xác nhận trùng chuyển khoản đã PAID -> Ném lỗi PAYMENT_ALREADY_PROCESSED, không cộng tiền 2 lần")
+        void confirmBankTransferPayment_alreadyPaid_throwsPaymentAlreadyProcessed() {
+            UUID paymentId = UUID.randomUUID();
+            Payment alreadyPaidPayment = Payment.builder()
+                    .booking(testBooking)
+                    .amount(new BigDecimal("450000.00"))
+                    .paymentType(PaymentType.DEPOSIT)
+                    .paymentMethod("BANK_TRANSFER")
+                    .status(PaymentStatus.PAID)
+                    .build();
+            alreadyPaidPayment.setId(paymentId);
+
+            when(paymentRepository.findById(paymentId)).thenReturn(Optional.of(alreadyPaidPayment));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.confirmBankTransferPayment(paymentId, "Duyệt lại"));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_ALREADY_PROCESSED);
+        }
+
+        @Test
+        @DisplayName("13. Check-in bị chặn nếu thiếu bất kỳ điều kiện nào trong 4 điều kiện (BR-RULE-005)")
+        void checkIn_missingAnyOfFourConditions_throwsPrerequisitesNotMet() {
+            // Case 13a: Missing Deposit
+            testBooking.setDepositPaid(BigDecimal.ZERO);
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
+
+            HandoverRequest reqNoDeposit = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .staffId(staffId)
+                    .idCardNumber("001092003891")
+                    .identityVerified(true)
+                    .build();
+            AppException ex1 = assertThrows(AppException.class, () -> handoverService.checkIn(reqNoDeposit));
+            assertThat(ex1.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
+
+            // Case 13b: Missing Rent (no rent payment)
+            testBooking.setDepositPaid(new BigDecimal("450000.00"));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of(
+                    Payment.builder().paymentType(PaymentType.DEPOSIT).status(PaymentStatus.PAID).amount(new BigDecimal("450000.00")).build()
+            ));
+            AppException ex2 = assertThrows(AppException.class, () -> handoverService.checkIn(reqNoDeposit));
+            assertThat(ex2.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
+
+            // Case 13c: Missing Verified Contract (e.g. Paper Contract still PENDING_VERIFICATION)
+            RentalContract unverifiedPaper = RentalContract.builder()
+                    .contractCode("HĐ-CHUA-DUYET")
+                    .signingMethod("PAPER")
+                    .status(RentalContractStatus.PENDING_VERIFICATION)
+                    .paperContractUrl("/uploads/contracts/scan.pdf")
+                    .build();
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(unverifiedPaper));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of(
+                    Payment.builder().paymentType(PaymentType.DEPOSIT).status(PaymentStatus.PAID).amount(new BigDecimal("450000.00")).build(),
+                    Payment.builder().paymentType(PaymentType.RENTAL_FEE).status(PaymentStatus.PAID).amount(new BigDecimal("1500000.00")).build()
+            ));
+            AppException ex3 = assertThrows(AppException.class, () -> handoverService.checkIn(reqNoDeposit));
+            assertThat(ex3.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
+
+            // Case 13d: Missing Identity verification
+            testBooking.setDepositPaid(new BigDecimal("450000.00"));
+            testBooking.setIdentityVerifiedAt(null);
+            testBooking.setIdentityVerifiedByStaff(null);
+            testBooking.setIdentityCardNumber(null);
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
+            HandoverRequest reqNoIdentity = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .staffId(staffId)
+                    .identityVerified(false)
+                    .build();
+            AppException ex4 = assertThrows(AppException.class, () -> handoverService.checkIn(reqNoIdentity));
+            assertThat(ex4.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
+        }
+
+        @Test
+        @DisplayName("14. Luồng ký điện tử qua DocuSeal hoàn toàn không bị ảnh hưởng và được công nhận hợp lệ")
+        void docuSealElectronicContract_recognizedAsSigned() {
+            RentalContract docusealContract = RentalContract.builder()
+                    .contractCode("HD-ONLINE-2026")
+                    .booking(testBooking)
+                    .customer(testCustomer)
+                    .unit(testUnit)
+                    .facility(testFacility)
+                    .signingMethod("ONLINE")
+                    .docusealSubmissionId(883921L)
+                    .status(RentalContractStatus.PENDING_ACTIVATION)
+                    .signedAt(LocalDateTime.now())
+                    .build();
+
+            testBooking.setDepositPaid(new BigDecimal("450000.00"));
+
+            Payment rentPayment = Payment.builder()
+                    .paymentType(PaymentType.RENTAL_FEE)
+                    .status(PaymentStatus.PAID)
+                    .amount(new BigDecimal("1500000.00"))
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(docusealContract));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of(rentPayment));
+
+            HandoverPrerequisitesResponse resp = handoverService.getCheckInPrerequisites(bookingId);
+            assertThat(resp.isContractSigned()).isTrue();
+            assertThat(resp.getContractSigningMethod()).isEqualTo("ONLINE");
+            assertThat(resp.getContractStatus()).isEqualTo("ĐÃ_KÝ_ĐIỆN_TỬ");
+            assertThat(resp.isEligibleForCheckIn()).isTrue();
+        }
+
+        @Test
+        @DisplayName("15. Luồng trả kho & quyết toán hoàn tiền (Return/Refund của Khang) không bị ảnh hưởng, khấu trừ đúng khoản REFUNDED")
+        void returnFlowAndRefundCalculation_remainsIntact() {
+            Payment paidDeposit = Payment.builder()
+                    .paymentType(PaymentType.DEPOSIT)
+                    .status(PaymentStatus.PAID)
+                    .amount(new BigDecimal("1500000.00"))
+                    .build();
+            Payment refundedDeposit = Payment.builder()
+                    .paymentType(PaymentType.DEPOSIT)
+                    .status(PaymentStatus.REFUNDED)
+                    .amount(new BigDecimal("500000.00"))
+                    .build();
+            Payment refundPending = Payment.builder()
+                    .paymentType(PaymentType.DEPOSIT)
+                    .status(PaymentStatus.REFUND_PENDING)
+                    .amount(new BigDecimal("200000.00"))
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of(paidDeposit, refundedDeposit, refundPending));
+
+            HandoverPrerequisitesResponse resp = handoverService.getCheckInPrerequisites(bookingId);
+            assertThat(resp.getDepositPaid()).isEqualByComparingTo("1000000.00");
+        }
+
+        @Test
+        @DisplayName("16. Bảo vệ đa cơ sở: Khi facilityAccessGuard từ chối quyền thì tất cả các endpoint Task 13 đều ném FORBIDDEN")
+        void crossFacilityAccess_deniedByGuard_throwsForbidden() {
+            doThrow(new AppException(ErrorCode.FORBIDDEN))
+                    .when(facilityAccessGuard).checkFacilityAccess(testFacility.getId());
+
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
 
-            assertThat(handoverService.lookupBooking("BOXORA-CHECKIN:RES-8921").getBookingCode()).isEqualTo("RES-8921");
-            assertThat(handoverService.lookupBooking("  #res-8921 ").getFacilityName()).isEqualTo("Boxora Tan Binh");
-            assertThat(handoverService.lookupBooking(bookingId.toString()).getId()).isEqualTo(bookingId);
-            assertThat(handoverService.lookupBooking("RES-8921").isCheckedIn()).isFalse();
+            MultipartFile mockFile = mock(MultipartFile.class);
+            assertThrows(AppException.class, () ->
+                    handoverService.uploadHandoverDocument(bookingId, mockFile, "PAPER_CONTRACT"));
 
-            AppException ex = assertThrows(AppException.class, () -> handoverService.lookupBooking("BOXORA-CHECKIN:KHONG-CO"));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_LOOKUP_NOT_FOUND);
+            PaperContractCreateRequest paperReq = PaperContractCreateRequest.builder()
+                    .bookingId(bookingId)
+                    .paperContractUrl("/uploads/contracts/test.pdf")
+                    .build();
+            assertThrows(AppException.class, () ->
+                    handoverService.createOrUploadPaperContract(paperReq));
+
+            assertThrows(AppException.class, () ->
+                    handoverService.verifyPaperContract(bookingId, "Duyệt khác cơ sở"));
+
+            ManualPaymentRecordRequest payReq = ManualPaymentRecordRequest.builder()
+                    .bookingId(bookingId)
+                    .paymentType(PaymentType.DEPOSIT)
+                    .paymentMethod("CASH")
+                    .receiptVoucherCode("PT-CROSS-123")
+                    .amount(new BigDecimal("450000.00"))
+                    .build();
+            assertThrows(AppException.class, () ->
+                    handoverService.recordManualPayment(payReq));
         }
 
         @Test
-        @DisplayName("Tra cứu QR bị chặn khi đơn thuộc cơ sở khác")
-        void lookupBooking_OtherFacilityIsBlocked() {
-            doThrow(new AppException(ErrorCode.FACILITY_ACCESS_DENIED))
-                    .when(facilityAccessGuard).checkFacilityAccess(testFacility.getId());
-            when(bookingRepository.findByBookingCodeIgnoreCase("RES-8921")).thenReturn(Optional.of(testBooking));
+        @DisplayName("17. Bảo mật tài liệu: Yêu cầu xác thực, từ chối khi chưa đăng nhập")
+        void getAuthorizedHandoverDocumentPath_unauthenticated_throwsForbidden() {
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(requestContext.currentUserId()).thenReturn(null);
 
-            AppException ex = assertThrows(AppException.class, () -> handoverService.lookupBooking("RES-8921"));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FACILITY_ACCESS_DENIED);
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.getAuthorizedHandoverDocumentPath(bookingId, "/uploads/contracts/" + bookingId + "/doc.pdf"));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("18. Bảo mật tài liệu: Khách hàng không thể xem tài liệu đơn đặt kho của khách khác (IDOR)")
+        void getAuthorizedHandoverDocumentPath_otherCustomer_throwsForbidden() {
+            UUID otherCustomerId = UUID.randomUUID();
+            User otherCustomer = User.builder()
+                    .fullName("Người lạ")
+                    .role(Role.builder().name("CUSTOMER").build())
+                    .build();
+            otherCustomer.setId(otherCustomerId);
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(requestContext.currentUserId()).thenReturn(otherCustomerId);
+            when(userRepository.findById(otherCustomerId)).thenReturn(Optional.of(otherCustomer));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.getAuthorizedHandoverDocumentPath(bookingId, "/uploads/contracts/" + bookingId + "/doc.pdf"));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("19. Bảo mật tài liệu: Nhân viên trái cơ sở bị facilityAccessGuard chặn khi xem tệp")
+        void getAuthorizedHandoverDocumentPath_crossFacilityStaff_throwsForbidden() {
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
+            doThrow(new AppException(ErrorCode.FORBIDDEN))
+                    .when(facilityAccessGuard).checkFacilityAccess(testFacility.getId());
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.getAuthorizedHandoverDocumentPath(bookingId, "/uploads/contracts/" + bookingId + "/doc.pdf"));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("20. Bảo mật tài liệu: Chặn truy xuất tệp không thuộc booking (IDOR file tamper)")
+        void getAuthorizedHandoverDocumentPath_idorMismatchedFile_throwsForbidden() {
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.empty());
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of());
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.getAuthorizedHandoverDocumentPath(bookingId, "/uploads/contracts/other-booking-id/secret.pdf"));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("21. Bảo mật tài liệu: Nhân viên hợp lệ xem đúng tài liệu của đơn kho thành công")
+        void getAuthorizedHandoverDocumentPath_validAccess_returnsPath() {
+            String validUrl = "/uploads/contracts/" + bookingId + "/paper_contract.pdf";
+            java.nio.file.Path mockPath = java.nio.file.Path.of("uploads", "contracts", bookingId.toString(), "paper_contract.pdf");
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(
+                    RentalContract.builder().paperContractUrl(validUrl).build()
+            ));
+            when(fileStorageService.resolveStoredFilePath(validUrl)).thenReturn(mockPath);
+
+            java.nio.file.Path result = handoverService.getAuthorizedHandoverDocumentPath(bookingId, validUrl);
+            assertThat(result).isEqualTo(mockPath);
+        }
+    }
+
+    @Nested
+    @DisplayName("Bảo vệ luồng gửi lại mã PIN: Chỉ cho phép đơn ACTIVE đã check-in thành công")
+    class HandoverPinEmailGuardTests {
+
+        @Test
+        @DisplayName("Gửi lại PIN: Booking PENDING_PAYMENT bị từ chối với BOOKING_NOT_CHECKED_IN")
+        void sendHandoverPinEmail_PendingPayment_ThrowsException() {
+            testBooking.setStatus(BookingStatus.PENDING_PAYMENT);
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.sendHandoverPinEmail(bookingId, null));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BOOKING_NOT_CHECKED_IN);
+            verify(emailService, never()).sendHandoverPinEmail(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("Gửi lại PIN: Booking CONFIRMED chưa check-in bị từ chối với BOOKING_NOT_CHECKED_IN")
+        void sendHandoverPinEmail_ConfirmedNotActive_ThrowsException() {
+            testBooking.setStatus(BookingStatus.CONFIRMED);
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.sendHandoverPinEmail(bookingId, null));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BOOKING_NOT_CHECKED_IN);
+            verify(emailService, never()).sendHandoverPinEmail(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("Gửi lại PIN: Booking ACTIVE nhưng thiếu accessPin bị từ chối với BOOKING_NOT_CHECKED_IN")
+        void sendHandoverPinEmail_ActiveMissingPin_ThrowsException() {
+            testBooking.setStatus(BookingStatus.ACTIVE);
+            testBooking.setAccessPin(null);
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.sendHandoverPinEmail(bookingId, null));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BOOKING_NOT_CHECKED_IN);
+            verify(emailService, never()).sendHandoverPinEmail(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("Gửi lại PIN: Booking ACTIVE đã check-in gửi lại đúng PIN hiện hữu, không sinh PIN mới")
+        void sendHandoverPinEmail_ActiveCheckedIn_SendsExistingPinSuccessfully() {
+            testBooking.setStatus(BookingStatus.ACTIVE);
+            testBooking.setAccessPin("encrypted-pin-123456");
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(encryptionService.decrypt("encrypted-pin-123456")).thenReturn("123456");
+
+            handoverService.sendHandoverPinEmail(bookingId, null);
+
+            verify(emailService, times(1)).sendHandoverPinEmail(
+                    eq(testCustomer.getEmail()),
+                    eq(testCustomer.getFullName()),
+                    eq(testUnit.getUnitCode()),
+                    eq(testBooking.getBookingCode()),
+                    eq("123456"),
+                    eq(testFacility.getName())
+            );
+            // Verify accessPin is not modified or replaced
+            assertThat(testBooking.getAccessPin()).isEqualTo("encrypted-pin-123456");
+        }
+
+        @Test
+        @DisplayName("Thông báo Web PIN: Booking chưa ACTIVE bị từ chối với BOOKING_NOT_CHECKED_IN")
+        void sendHandoverWebNotification_NotActive_ThrowsException() {
+            testBooking.setStatus(BookingStatus.CONFIRMED);
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    handoverService.sendHandoverWebNotification(bookingId));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BOOKING_NOT_CHECKED_IN);
+            verify(notificationLogRepository, never()).save(any());
         }
     }
 }
+

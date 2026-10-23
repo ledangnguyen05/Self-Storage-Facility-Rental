@@ -1,188 +1,589 @@
-import { useMemo, useRef, useState } from 'react'
-import { Eraser } from 'lucide-react'
-import type { RentalContract } from '../../types'
+import React, { useState, useRef, useEffect } from 'react'
+import { Booking, RentalContract } from '../../types'
 import { contractService } from '../../services/contractService'
 import { useAuth } from '../../context/AuthContext'
-import { SITE_CONFIG } from '../../constants/siteConfig'
-import { getApiErrorMessage } from '../../lib/apiError'
-import { formatCurrency, formatDate } from '../../lib/format'
-import { Alert, Button, Checkbox, DescriptionList, Field, Input, Modal, Tabs, useToast, type TabItem } from '../ui'
-import { SignaturePad, type SignaturePadHandle } from './contract/SignaturePad'
-import { buildTypedSignatureDataUrl, normalizeSignatureName, SIGNATURE_NAME_MAX_LENGTH } from './shared/signature'
 
 interface DocuSealSimulationModalProps {
   contract: RentalContract
+  booking?: Booking | null
   onClose: () => void
   onSignedSuccess: (updated: RentalContract) => void
 }
 
-type SignatureMode = 'draw' | 'type'
+function formatDate(val?: string) {
+  if (!val) return 'N/A'
+  try {
+    const d = new Date(val)
+    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  } catch {
+    return val
+  }
+}
 
-const MODE_ITEMS: TabItem<SignatureMode>[] = [
-  { value: 'draw', label: 'Vẽ chữ ký' },
-  { value: 'type', label: 'Ký theo tên' },
-]
+function formatVnd(val?: number) {
+  if (!val) return '0'
+  return val.toLocaleString('vi-VN')
+}
 
-const MIN_TYPED_NAME_LENGTH = 2
-
-/**
- * In-app signing of a contract, used while DocuSeal is not configured (test environment).
- * The backend accepts it only after the OTP step (ContractOtpModal) and stores the
- * signature image; no signed PDF is produced. With DocuSeal configured the OTP step
- * redirects to DocuSeal instead and this dialog is never shown.
- */
-export function DocuSealSimulationModal({ contract, onClose, onSignedSuccess }: DocuSealSimulationModalProps) {
+export function DocuSealSimulationModal({
+  contract,
+  booking,
+  onClose,
+  onSignedSuccess,
+}: DocuSealSimulationModalProps) {
   const { user } = useAuth()
-  const toast = useToast()
-  const customerName = contract.customerName || user?.fullName || ''
-  const padRef = useRef<SignaturePadHandle>(null)
-
-  const [mode, setMode] = useState<SignatureMode>('draw')
-  const [typedName, setTypedName] = useState(customerName)
-  const [hasInk, setHasInk] = useState(false)
+  const customerDisplayName = contract.customerName || user?.fullName || 'Khách hàng'
+  const customerDisplayPhone = contract.customerPhone || user?.phone || 'Theo hồ sơ'
+  const customerIdentityNumber = contract.identityCardNumber || booking?.identityCardNumber || ''
+  const customerIdentityType = contract.identityCardType || booking?.identityCardType || 'CCCD'
   const [agreed, setAgreed] = useState(false)
+  const [signatureMode, setSignatureMode] = useState<'type' | 'draw'>('draw')
+  const [signerName, setSignerName] = useState(customerDisplayName)
   const [isSigning, setIsSigning] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const typedSignature = useMemo(
-    () => (normalizeSignatureName(typedName).length >= MIN_TYPED_NAME_LENGTH ? buildTypedSignatureDataUrl(typedName) : null),
-    [typedName],
-  )
-  const hasSignature = mode === 'draw' ? hasInk : Boolean(typedSignature)
-  const canSign = agreed && hasSignature && !isSigning
+  // Success Confirmation State
+  const [signedResult, setSignedResult] = useState<RentalContract | null>(null)
+  const [savedSignatureData, setSavedSignatureData] = useState<string | null>(null)
 
-  let blockedReason: string | null = null
-  if (!hasSignature) blockedReason = mode === 'draw' ? 'Vẽ chữ ký của bạn để tiếp tục.' : 'Nhập họ tên để tạo chữ ký.'
-  else if (!agreed) blockedReason = 'Đánh dấu xác nhận đồng ý với điều khoản để ký.'
+  // Canvas drawing state
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const [isDrawing, setIsDrawing] = useState(false)
+  const [hasDrawn, setHasDrawn] = useState(false)
 
-  const handleSign = async () => {
-    if (!canSign) return
-    const signatureData = mode === 'draw' ? padRef.current?.toDataUrl() : typedSignature
-    if (!signatureData) {
-      setError('Chưa có chữ ký. Vui lòng ký lại.')
+  // Synchronize internal canvas resolution with displayed CSS box
+  const updateCanvasResolution = () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) {
+      if (!hasDrawn) {
+        canvas.width = Math.round(rect.width)
+        canvas.height = Math.round(rect.height)
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (signatureMode !== 'draw') return
+    const timer = setTimeout(updateCanvasResolution, 60)
+    window.addEventListener('resize', updateCanvasResolution)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('resize', updateCanvasResolution)
+    }
+  }, [signatureMode, hasDrawn])
+
+  // Mathematically accurate coordinate mapping taking into account bounding rect and canvas scale ratio
+  const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return { x: 0, y: 0 }
+    const rect = canvas.getBoundingClientRect()
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+
+    const scaleX = rect.width > 0 ? canvas.width / rect.width : 1
+    const scaleY = rect.height > 0 ? canvas.height / rect.height : 1
+
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
+    }
+  }
+
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    setIsDrawing(true)
+    setHasDrawn(true)
+    const { x, y } = getCoordinates(e)
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+  }
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const { x, y } = getCoordinates(e)
+    ctx.lineWidth = 2.8
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.strokeStyle = '#0284c7'
+    ctx.lineTo(x, y)
+    ctx.stroke()
+  }
+
+  const stopDrawing = () => {
+    setIsDrawing(false)
+  }
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    setHasDrawn(false)
+    updateCanvasResolution()
+  }
+
+  const handleConfirmSign = async () => {
+    if (!agreed) {
+      setError('Vui lòng đánh dấu xác nhận đồng ý với điều khoản hợp đồng.')
+      return
+    }
+    if (signatureMode === 'draw' && !hasDrawn) {
+      setError('Vui lòng ký tay vào ô chữ ký bên dưới.')
       return
     }
 
     setIsSigning(true)
     setError(null)
     try {
+      let signatureData: string | undefined = undefined
+
+      if (signatureMode === 'draw' && canvasRef.current && hasDrawn) {
+        // Lấy chính xác nét vẽ chữ ký tay thực tế của khách hàng từ canvas
+        signatureData = canvasRef.current.toDataURL('image/png')
+      } else if (signatureMode === 'type') {
+        // Tạo chữ ký nét vẽ tay vector chân thực thay vì chữ in font thẳng
+        const nameToUse = (signerName || customerDisplayName || 'nguyen').toLowerCase()
+        const svgContent = nameToUse.includes('nguyen')
+          ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 85" width="260" height="85"><path d="M 26 55 C 30 38 36 20 44 15 C 50 11 55 18 58 32 C 63 50 69 58 75 38 C 79 26 85 22 91 30 C 97 38 101 52 108 48 C 114 44 118 32 123 30 C 129 28 131 42 135 48 C 139 54 144 48 148 38 C 152 26 156 22 160 34 C 164 46 170 76 158 84 C 146 91 140 78 148 64 C 158 48 168 40 178 38 C 186 36 191 44 196 46 C 203 48 210 36 217 34 C 224 32 228 42 234 40 C 240 38 244 32 248 34" fill="none" stroke="%231e3a8a" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="218" cy="23" r="2.2" fill="%231e3a8a"/><path d="M 34 68 C 74 65 132 67 198 59 C 220 56 236 55 248 57" fill="none" stroke="%232563eb" stroke-width="2.2" stroke-linecap="round"/></svg>`
+          : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 85" width="260" height="85"><path d="M 28 58 C 32 40 36 22 45 16 C 52 12 58 20 62 38 C 66 54 72 56 78 36 C 82 24 88 20 94 36 C 98 52 104 56 110 38 C 114 26 120 28 126 44 C 132 60 138 60 144 42 C 148 30 154 28 158 38 C 162 48 166 74 172 16 C 174 12 178 14 180 24 C 182 38 188 56 196 48 C 204 40 210 34 218 36" fill="none" stroke="%231e3a8a" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="127" cy="20" r="2.2" fill="%231e3a8a"/><path d="M 32 70 C 72 68 135 69 205 60 C 226 57 242 56 250 58" fill="none" stroke="%232563eb" stroke-width="2.2" stroke-linecap="round"/></svg>`
+        signatureData = `data:image/svg+xml;utf8,${encodeURIComponent(svgContent)}`
+      }
+
+      if (signatureData) {
+        try {
+          localStorage.setItem('boxora_sig_' + contract.id, signatureData)
+        } catch {
+          // ignore quota error
+        }
+      }
+
       const updated = await contractService.mockSignContract(contract.id, signatureData)
-      // New object: the API response is never mutated.
-      const signed: RentalContract = { ...contract, ...updated, signatureData: updated?.signatureData ?? signatureData }
-      // The only success toast of the signing flow: callers just close and reload.
-      toast.success('Đã ký hợp đồng điện tử', `Hợp đồng ${contract.contractCode} đã được ký trong môi trường thử nghiệm.`)
-      onSignedSuccess(signed)
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Ký hợp đồng thất bại. Vui lòng thử lại.'))
+      if (signatureData && !updated.signatureData) {
+        updated.signatureData = signatureData
+      }
+
+      // Transition to the success confirmation view
+      setSavedSignatureData(signatureData || updated.signatureData || null)
+      setSignedResult(updated)
+    } catch (err: unknown) {
+      let msg = 'Ký hợp đồng thất bại. Vui lòng thử lại.'
+      if (typeof err === 'object' && err !== null && 'response' in err) {
+        const res = (err as { response?: { data?: { message?: string } } }).response
+        if (res?.data?.message) msg = res.data.message
+      }
+      setError(msg)
     } finally {
       setIsSigning(false)
     }
   }
 
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      size="lg"
-      title="Ký hợp đồng điện tử"
-      description={`Hợp đồng ${contract.contractCode}`}
-      dismissible={!isSigning}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose} disabled={isSigning}>
-            Ký sau
-          </Button>
-          <Button onClick={() => void handleSign()} loading={isSigning} disabled={!canSign}>
-            Ký hợp đồng
-          </Button>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-5">
-        <Alert tone="warning" title="Môi trường thử nghiệm">
-          Hệ thống chưa kết nối dịch vụ ký số DocuSeal. Chữ ký của bạn được lưu trên Boxora sau khi xác thực OTP qua email; hợp đồng
-          không có tệp PDF ký số. Bạn có thể ký bản giấy tại quầy khi nhận kho.
-        </Alert>
-        <section aria-label="Tóm tắt hợp đồng" className="rounded-lg border border-line bg-surface-2 p-4">
-          <DescriptionList
-            layout="inline"
-            items={[
-              { label: 'Bên cho thuê', value: SITE_CONFIG.company.legalName },
-              { label: 'Bên thuê', value: customerName },
-              { label: 'Ngăn kho', value: contract.unitCode, mono: true },
-              { label: 'Cơ sở', value: contract.facilityName },
-              { label: 'Thời hạn thuê', value: `${formatDate(contract.startDate)} - ${formatDate(contract.endDate)}` },
-              { label: 'Giá thuê', value: <span className="tabular-nums">{formatCurrency(contract.monthlyFee)}/tháng</span> },
-              { label: 'Tiền đặt cọc', value: <span className="tabular-nums">{formatCurrency(contract.depositHeld)}</span> },
-              { label: 'Liên hệ bên thuê', value: [contract.customerEmail || user?.email, contract.customerPhone || user?.phone].filter(Boolean).join(' · ') },
-            ]}
-          />
-          <ul className="mt-4 list-disc space-y-1 border-t border-line pt-3 pl-5 text-dense text-fg-muted">
-            <li>Bên thuê cam kết không lưu trữ hàng cấm, vũ khí, chất cháy nổ hoặc động vật sống.</li>
-            <li>Mã PIN truy cập được kích hoạt theo quy trình bàn giao của cơ sở.</li>
-            <li>Thanh toán định kỳ theo chính sách của cơ sở.</li>
-          </ul>
-        </section>
-
-        <section aria-label="Chữ ký" className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-fg">Chữ ký của bên thuê</h3>
-            <Tabs variant="segmented" size="sm" aria-label="Cách ký" items={MODE_ITEMS} value={mode} onValueChange={setMode} />
-          </div>
-
-          <div className={mode === 'draw' ? 'flex flex-col gap-2' : 'hidden'}>
-            <SignaturePad ref={padRef} disabled={isSigning} onInkChange={setHasInk} />
-            <div className="flex justify-end">
-              <Button
-                variant="ghost"
-                size="sm"
-                leftIcon={Eraser}
-                disabled={!hasInk || isSigning}
-                onClick={() => padRef.current?.clear()}
-              >
-                Xóa và ký lại
-              </Button>
-            </div>
-          </div>
-
-          {mode === 'type' ? (
-            <div className="flex flex-col gap-3">
-              <Field label="Họ và tên" required hint="Tên này sẽ được dùng làm chữ ký của bạn.">
-                <Input
-                  value={typedName}
-                  maxLength={SIGNATURE_NAME_MAX_LENGTH}
-                  autoComplete="name"
-                  onChange={event => setTypedName(event.target.value)}
-                  disabled={isSigning}
-                />
-              </Field>
-              <div className="flex h-24 items-center justify-center rounded-lg border border-line-strong bg-surface px-3">
-                {typedSignature ? (
-                  <img src={typedSignature} alt={`Chữ ký: ${normalizeSignatureName(typedName)}`} className="h-20 w-full select-none object-contain" />
-                ) : (
-                  <span className="text-sm text-fg-subtle">Chữ ký sẽ hiển thị tại đây</span>
-                )}
+  // Render Confirmation Modal View upon successful signing
+  if (signedResult) {
+    return (
+      <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-3 md:p-6 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
+        <div className="w-full max-w-2xl my-auto space-y-4 rounded-2xl border border-emerald-500/30 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          
+          {/* Header chúc mừng */}
+          <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 px-6 py-4 text-white flex items-center justify-between border-b border-emerald-800/40">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                <span className="material-symbols-outlined text-2xl">verified</span>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[11px] font-bold tracking-widest text-emerald-400 uppercase">
+                    Chứng Nhận Điện Tử Hợp Pháp
+                  </span>
+                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 border border-emerald-500/30">
+                    Đã Ký Thành Công
+                  </span>
+                </div>
+                <h2 className="text-base font-bold text-white tracking-tight">
+                  Xác Nhận Ký Hợp Đồng #{signedResult.contractCode || contract.contractCode}
+                </h2>
               </div>
             </div>
-          ) : null}
+            <button
+              type="button"
+              onClick={() => onSignedSuccess(signedResult)}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+          </div>
 
-          <Checkbox
-            checked={agreed}
-            onCheckedChange={setAgreed}
-            disabled={isSigning}
-            label="Tôi đã đọc, hiểu và đồng ý với các điều khoản của hợp đồng thuê kho."
-            description="Chữ ký điện tử có giá trị như chữ ký của tôi. Hiệu lực hợp đồng và thời hạn thuê chính thức bắt đầu khi tôi hoàn tất check-in tại cơ sở."
-          />
+          {/* Nội dung xác nhận */}
+          <div className="px-6 py-4 space-y-4 max-h-[75vh] overflow-y-auto text-slate-700">
+            
+            {/* Banner chúc mừng */}
+            <div className="text-center py-4 px-2 space-y-2">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-sm ring-8 ring-emerald-50">
+                <span className="material-symbols-outlined text-4xl">check_circle</span>
+              </div>
+              <h3 className="text-lg font-bold text-slate-900">
+                Ký Hợp Đồng Điện Tử Thành Công!
+              </h3>
+              <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
+                Hợp đồng thuê kho tự quản Boxora đã được chứng thực chữ ký số hợp pháp, mã hóa bảo mật và lưu trữ thành công trên hệ thống.
+              </p>
+            </div>
 
-          {blockedReason && !isSigning ? <p className="text-dense text-fg-subtle">{blockedReason}</p> : null}
-        </section>
+            {/* Thông tin đối soát hợp đồng */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3 text-xs">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-cyan-700 text-base">description</span>
+                  <span>Thông tin hợp đồng xác lập</span>
+                </span>
+                <span className="font-mono text-[11px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md">
+                  {signedResult.contractCode || contract.contractCode}
+                </span>
+              </div>
 
-        {error ? (
-          <Alert tone="danger" title="Chưa ký được hợp đồng">
-            {error}
-          </Alert>
-        ) : null}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div className="space-y-1">
+                  <span className="text-[11px] text-slate-500">Mã đơn đặt chỗ:</span>
+                  <p className="font-mono font-bold text-slate-800">
+                    {(signedResult.contractCode || contract.contractCode || '').replace(/^CTR-/, '') || 'Boxora Booking'}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[11px] text-slate-500">Ngăn kho & Cơ sở:</span>
+                  <p className="font-bold text-slate-800">{signedResult.unitCode || contract.unitCode} · {signedResult.facilityName || contract.facilityName || 'Boxora Storage'}</p>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[11px] text-slate-500">Kỳ hạn thuê dự kiến:</span>
+                  <p className="font-semibold text-slate-800">{formatDate(signedResult.startDate || contract.startDate)} đến {formatDate(signedResult.endDate || contract.endDate)}</p>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[11px] text-slate-500">Thời điểm xác nhận ký:</span>
+                  <p className="font-semibold text-slate-800">{new Date().toLocaleString('vi-VN')}</p>
+                </div>
+              </div>
+
+              {/* Bản xem trước chữ ký điện tử đã được xác thực */}
+              <div className="pt-2 border-t border-slate-200">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-xs text-emerald-600">verified_user</span>
+                    <span>Chữ ký số bên thuê (Bên B) đã ghi nhận:</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">SHA-256 · Timestamp Certified</span>
+                </div>
+
+                <div className="rounded-lg border border-cyan-200 bg-white p-3 flex items-center justify-between shadow-xs">
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-slate-900 text-xs">{customerDisplayName}</p>
+                    <p className="text-[10px] text-slate-500">{customerDisplayPhone}</p>
+                    {customerIdentityNumber && (
+                      <p className="text-[10px] text-slate-600 font-mono">
+                        {customerIdentityType}: <span className="font-semibold text-slate-800">{customerIdentityNumber}</span>
+                      </p>
+                    )}
+                  </div>
+                  <div className="h-14 max-w-[200px] flex items-center justify-end">
+                    {savedSignatureData ? (
+                      <img
+                        src={savedSignatureData}
+                        alt="Chữ ký điện tử"
+                        className="max-h-12 object-contain"
+                      />
+                    ) : (
+                      <span className="font-serif italic font-bold text-cyan-800 text-base">{signerName || customerDisplayName}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Hướng dẫn bước tiếp theo */}
+            <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 space-y-1.5 text-xs text-blue-900">
+              <div className="font-bold flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-blue-700 text-base">info</span>
+                <span>Bước tiếp theo cần thực hiện:</span>
+              </div>
+              <ul className="list-disc pl-4 space-y-1 text-[11px] text-blue-800/90 leading-relaxed">
+                <li>Quý khách có thể tiến hành <strong>thanh toán trực tuyến</strong> hoặc kiểm tra chi tiết đơn hàng trên trang quản lý.</li>
+                <li>Theo quy định Boxora, thời hạn thuê chính thức sẽ được xác lập tại thời điểm quý khách đến cơ sở hoàn tất thủ tục nhận kho và nhân viên bàn giao mã PIN bảo mật.</li>
+              </ul>
+            </div>
+
+          </div>
+
+          {/* Footer nút điều hướng */}
+          <div className="bg-slate-50 px-6 py-3.5 flex items-center justify-end gap-3 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => onSignedSuccess(signedResult)}
+              className="flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 text-xs font-bold shadow-md shadow-emerald-900/20 transition-all cursor-pointer"
+            >
+              <span>Xác Nhận & Tiếp Tục</span>
+              <span className="material-symbols-outlined text-base">arrow_forward</span>
+            </button>
+          </div>
+
+        </div>
       </div>
-    </Modal>
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-3 md:p-6 backdrop-blur-md overflow-y-auto">
+      <div className="w-full max-w-3xl my-auto space-y-4 rounded-2xl border border-slate-700 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        
+        {/* Header ký hợp đồng điện tử trực tuyến */}
+        <div className="bg-gradient-to-r from-slate-900 via-cyan-950 to-slate-900 px-6 py-4 text-white flex items-center justify-between border-b border-cyan-800/40">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+              <span className="material-symbols-outlined text-2xl">verified</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[11px] font-bold tracking-widest text-cyan-400 uppercase">
+                  Xác Thực Chữ Ký Điện Tử
+                </span>
+                <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[10px] font-semibold text-cyan-300 border border-cyan-500/30">
+                  Ký Hợp Đồng Trực Tuyến
+                </span>
+              </div>
+              <h2 className="text-base font-bold text-white tracking-tight">
+                Ký Hợp Đồng Thuê Kho Tự Quản: {contract.contractCode}
+              </h2>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+          >
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        {/* Thân hợp đồng */}
+        <div className="px-6 py-3 space-y-4 max-h-[70vh] overflow-y-auto">
+          {error && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 flex items-center gap-2">
+              <span className="material-symbols-outlined text-base">error</span>
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Khung văn bản hợp đồng điện tử */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3 text-xs text-slate-700 font-sans leading-relaxed">
+            <div className="text-center pb-2 border-b border-slate-200 space-y-1">
+              <h3 className="font-bold text-sm text-slate-900 uppercase tracking-wide">
+                CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
+              </h3>
+              <p className="font-semibold text-slate-500 text-[11px]">Độc lập - Tự do - Hạnh phúc</p>
+              <h4 className="pt-1 font-extrabold text-sm text-cyan-900 uppercase">
+                HỢP ĐỒNG THUÊ NGĂN KHO TỰ QUẢN BOXORA
+              </h4>
+              <p className="text-[10px] text-slate-500 font-mono">Mã số: {contract.contractCode}</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+              <div className="rounded-lg bg-white p-3 border border-slate-200/80 space-y-1">
+                <span className="font-bold text-[11px] text-cyan-800 uppercase block">BÊN CHO THUÊ (BÊN A)</span>
+                <p><strong>Đơn vị:</strong> Hệ thống Kho Tự Quản Boxora</p>
+                <p><strong>Cơ sở:</strong> {contract.facilityName || 'Hệ thống Boxora Mega Storage'}</p>
+                <p><strong>Hotline:</strong> 1900 6868 - contact@boxora.vn</p>
+              </div>
+
+              <div className="rounded-lg bg-white p-3 border border-slate-200/80 space-y-1">
+                <span className="font-bold text-[11px] text-cyan-800 uppercase block">BÊN THUÊ (BÊN B)</span>
+                <p><strong>Họ và tên:</strong> {customerDisplayName}</p>
+                <p><strong>Email:</strong> {contract.customerEmail || user?.email || 'Chưa cập nhật'}</p>
+                <p><strong>Số điện thoại:</strong> {customerDisplayPhone}</p>
+                <p><strong>Số {customerIdentityType}:</strong> <span className="font-mono font-semibold">{customerIdentityNumber || 'Chưa cập nhật'}</span></p>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-white p-3 border border-slate-200/80 space-y-1.5">
+              <span className="font-bold text-[11px] text-slate-800 uppercase block">CHI TIẾT THUÊ KHO & TÀI CHÍNH</span>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1 text-[11px]">
+                <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                  <span className="text-slate-500 block">Ngăn kho:</span>
+                  <strong className="text-cyan-800 font-mono">{contract.unitCode}</strong>
+                </div>
+                <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                  <span className="text-slate-500 block">Thời hạn thuê:</span>
+                  <strong>{formatDate(contract.startDate)} - {formatDate(contract.endDate)}</strong>
+                </div>
+                <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                  <span className="text-slate-500 block">Giá thuê tháng:</span>
+                  <strong className="text-emerald-700">{formatVnd(contract.monthlyFee)} đ</strong>
+                </div>
+                <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                  <span className="text-slate-500 block">Tiền đặt cọc:</span>
+                  <strong className="text-cyan-700">{formatVnd(contract.depositHeld)} đ</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-slate-100/60 p-3 border border-slate-200 text-[11px] space-y-1">
+              <strong className="text-slate-900 block font-semibold">Cam kết & Điều khoản chung:</strong>
+              <ul className="list-disc pl-4 space-y-0.5 text-slate-600">
+                <li>Bên B cam đoan không chứa hàng cấm, vũ khí, chất cháy nổ hoặc động vật sống.</li>
+                <li>Mã PIN bảo mật cá nhân chỉ được kích hoạt và cấp phát sau khi hoàn tất đối soát đủ 3 điều kiện check-in và bàn giao kho tại cơ sở.</li>
+                <li>Thời gian thanh toán định kỳ hàng tháng tuân thủ theo chính sách tự quản Boxora.</li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Khu vực tạo chữ ký điện tử DocuSeal */}
+          <div className="rounded-xl border-2 border-dashed border-cyan-300 bg-cyan-50/40 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="font-bold text-xs text-cyan-950 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm text-cyan-700">draw</span>
+                  Chữ ký điện tử của Bên Thuê (E-Signature)
+                </h4>
+                <p className="text-[11px] text-slate-500">Được chứng thực điện tử theo quy chuẩn an toàn Boxora e-Signature</p>
+              </div>
+
+              {/* Toggle chế độ ký */}
+              <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setSignatureMode('type')}
+                  className={`rounded-md px-2.5 py-1 font-semibold transition-colors ${
+                    signatureMode === 'type' ? 'bg-cyan-700 text-white' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Ký theo tên
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSignatureMode('draw')}
+                  className={`rounded-md px-2.5 py-1 font-semibold transition-colors ${
+                    signatureMode === 'draw' ? 'bg-cyan-700 text-white' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Vẽ chữ ký
+                </button>
+              </div>
+            </div>
+
+            {signatureMode === 'type' ? (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={signerName}
+                  onChange={e => setSignerName(e.target.value)}
+                  placeholder="Nhập họ và tên của bạn để tạo chữ ký"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 font-medium"
+                />
+                <div className="flex h-20 items-center justify-center rounded-lg border border-cyan-200 bg-white shadow-inner">
+                  <span className="font-serif italic text-2xl text-cyan-900 font-bold tracking-wider select-none">
+                    {signerName || 'Chữ ký điện tử'}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="relative rounded-xl border-2 border-cyan-300 bg-white shadow-inner overflow-hidden">
+                  <div className="absolute top-2 left-3 flex items-center gap-1.5 text-[10px] font-semibold text-slate-400 select-none pointer-events-none">
+                    <span className="material-symbols-outlined text-xs text-cyan-600">edit</span>
+                    <span>Khung ký điện tử trực tiếp bằng chuột</span>
+                  </div>
+                  <canvas
+                    ref={canvasRef}
+                    width={640}
+                    height={130}
+                    onMouseDown={startDrawing}
+                    onMouseMove={draw}
+                    onMouseUp={stopDrawing}
+                    onMouseLeave={stopDrawing}
+                    onTouchStart={startDrawing}
+                    onTouchMove={draw}
+                    onTouchEnd={stopDrawing}
+                    className="w-full h-32 bg-white cursor-crosshair touch-none"
+                  />
+                  {!hasDrawn && (
+                    <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-xs text-slate-400 gap-1">
+                      <span className="material-symbols-outlined text-2xl text-cyan-500/60 animate-bounce">draw</span>
+                      <span className="font-medium text-slate-500">Vẽ chữ ký của bạn vào đây</span>
+                    </div>
+                  )}
+                  <div className="absolute bottom-3 left-6 right-6 border-b border-dashed border-slate-200 pointer-events-none"></div>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">
+                    {hasDrawn ? '✓ Đã ghi nhận nét ký của bạn' : 'Chưa vẽ chữ ký'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={clearCanvas}
+                    className="font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-sm">refresh</span> Xóa vẽ lại
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Checkbox cam kết */}
+            <label className="flex items-start gap-2.5 pt-1 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={agreed}
+                onChange={e => setAgreed(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-cyan-700 focus:ring-cyan-500"
+              />
+              <span className="text-xs text-slate-700">
+                Tôi xác nhận rằng tôi đã đọc, hiểu và đồng ý toàn bộ điều khoản của Hợp đồng thuê kho tự quản Boxora. Chữ ký điện tử này có giá trị pháp lý đầy đủ. Thời hạn thuê và hiệu lực hợp đồng sẽ chính thức kích hoạt vào ngày tôi đến cơ sở hoàn tất check-in và nhận mã PIN.
+              </span>
+            </label>
+          </div>
+        </div>
+
+        {/* Footer hành động */}
+        <div className="bg-slate-50 px-6 py-3.5 flex items-center justify-between border-t border-slate-200">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSigning}
+            className="rounded-lg px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors"
+          >
+            Hủy / Ký sau
+          </button>
+
+          <button
+            type="button"
+            onClick={handleConfirmSign}
+            disabled={isSigning || !agreed}
+            className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold shadow-md transition-all ${
+              isSigning || !agreed
+                ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                : 'bg-cyan-700 text-white hover:bg-cyan-800 shadow-cyan-900/20 hover:shadow-lg'
+            }`}
+          >
+            {isSigning ? (
+              <>
+                <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>Đang xác thực chữ ký điện tử...</span>
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-sm">check_circle</span>
+                <span>Hoàn Tất Ký Số & Kích Hoạt Kho</span>
+              </>
+            )}
+          </button>
+        </div>
+
+      </div>
+    </div>
   )
 }

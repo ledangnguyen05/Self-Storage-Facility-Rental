@@ -30,10 +30,4 @@ public interface ContractRenewalRepository extends JpaRepository<ContractRenewal
     boolean existsByContract_IdAndStatusIn(UUID contractId, List<ContractRenewalStatus> statuses);
 
     Optional<ContractRenewal> findFirstByContractIdOrderByCreatedAtDesc(UUID contractId);
-
-    Optional<ContractRenewal> findFirstByContract_IdAndStatusInOrderByCreatedAtDesc(UUID contractId, List<ContractRenewalStatus> statuses);
-
-    List<ContractRenewal> findByContractIdOrderByCreatedAtDesc(UUID contractId);
-
-    List<ContractRenewal> findByStatusInAndCreatedAtBefore(List<ContractRenewalStatus> statuses, java.time.LocalDateTime before);
 }

@@ -1,227 +1,469 @@
-import type { ReactNode } from 'react'
-import { CalendarOff } from 'lucide-react'
-import { Alert, Badge, Button, Card, CardContent, CardHeader, DescriptionList, EmptyState, Modal, Skeleton } from '@/components/ui'
-import { getBookingStatusMeta, getContractStatusMeta } from '@/constants/statusMeta'
-import { useAsyncData } from '@/hooks/useAsyncData'
-import { getApiErrorMessage } from '@/lib/apiError'
-import { formatCurrency, formatDate } from '@/lib/format'
-import { bookingService } from '@/services/bookingService'
-import { handoverService, type HandoverPrerequisites } from '@/services/handoverService'
-import type { Booking } from '@/types'
-
-/** Statuses after the front desk handed the unit over: the handover checklist no longer applies. */
-const HANDED_OVER_STATUSES = new Set(['ACTIVE', 'OVERDUE', 'CHECKOUT_REQUESTED', 'INSPECTED', 'COMPLETED'])
+import React, { useEffect, useState, useRef } from 'react'
+import { handoverService, HandoverPrerequisites } from '../../../services/handoverService'
+import { bookingService } from '../../../services/bookingService'
+import { Booking } from '../../../types'
 
 interface BookingDetailReadOnlyModalProps {
-  open: boolean
+  isOpen: boolean
   onClose: () => void
   bookingId?: string
   unitCode?: string
+  unitBackendId?: string
 }
 
-/** Read-only booking file with the four handover prerequisites. Staff at the front desk perform the handover. */
-export function BookingDetailReadOnlyModal(props: BookingDetailReadOnlyModalProps) {
-  if (!props.open) return null
-  return <BookingDetailDialog {...props} />
-}
+export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProps> = ({
+  isOpen,
+  onClose,
+  bookingId,
+  unitCode,
+  unitBackendId,
+}) => {
+  const [loading, setLoading] = useState<boolean>(true)
+  const [prereq, setPrereq] = useState<HandoverPrerequisites | null>(null)
+  const [booking, setBooking] = useState<Booking | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [uploadingProof, setUploadingProof] = useState<boolean>(false)
+  const [uploadedProofUrl, setUploadedProofUrl] = useState<string | null>(null)
+  const [openingDocUrl, setOpeningDocUrl] = useState<string | null>(null)
+  const [proofMessage, setProofMessage] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-function PrerequisiteCard({
-  title,
-  done,
-  doneLabel,
-  pendingLabel,
-  items,
-}: {
-  title: string
-  done: boolean
-  doneLabel: string
-  pendingLabel: string
-  items: { label: string; value: ReactNode; mono?: boolean }[]
-}) {
-  return (
-    <Card>
-      <CardHeader
-        title={title}
-        titleAs="h4"
-        actions={
-          <Badge tone={done ? 'success' : 'warning'} dot>
-            {done ? doneLabel : pendingLabel}
-          </Badge>
-        }
-      />
-      <CardContent className="pt-3">
-        <DescriptionList columns={1} layout="inline" items={items} />
-      </CardContent>
-    </Card>
-  )
-}
+  useEffect(() => {
+    if (!isOpen) {
+      setPrereq(null)
+      setBooking(null)
+      setError(null)
+      setUploadedProofUrl(null)
+      setProofMessage(null)
+      return
+    }
 
-function Prerequisites({ prereq }: { prereq: HandoverPrerequisites }) {
-  const contractStatus = prereq.contractStatus ? getContractStatusMeta(prereq.contractStatus).label : undefined
-  return (
-    <div className="flex flex-col gap-4">
-      <Alert
-        tone={prereq.eligibleForCheckIn ? 'success' : 'warning'}
-        title={prereq.eligibleForCheckIn ? 'Đủ điều kiện bàn giao' : 'Chưa đủ điều kiện bàn giao'}
-      >
-        {prereq.eligibleForCheckIn
-          ? 'Đơn đặt kho đã hoàn tất 4 điều kiện, nhân viên quầy có thể bàn giao.'
-          : 'Đơn còn thiếu điều kiện trước khi nhân viên quầy bàn giao kho.'}
-      </Alert>
+    const loadData = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        let targetBookingId = bookingId
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <PrerequisiteCard
-          title="1. Tiền đặt cọc"
-          done={prereq.depositSatisfied}
-          doneLabel="Đã thu đủ"
-          pendingLabel="Chưa đủ"
-          items={[
-            { label: 'Đã nộp', value: formatCurrency(prereq.depositPaid) },
-            { label: 'Yêu cầu', value: formatCurrency(prereq.requiredDeposit) },
-          ]}
-        />
-        <PrerequisiteCard
-          title="2. Tiền thuê tháng đầu"
-          done={prereq.firstMonthRentSatisfied}
-          doneLabel="Đã thu đủ"
-          pendingLabel="Chưa đóng"
-          items={[
-            { label: 'Đã nộp', value: formatCurrency(prereq.firstMonthRentPaid) },
-            { label: 'Yêu cầu', value: formatCurrency(prereq.requiredFirstMonthRent) },
-          ]}
-        />
-        <PrerequisiteCard
-          title="3. Hợp đồng điện tử"
-          done={prereq.contractSigned}
-          doneLabel="Đã ký"
-          pendingLabel="Chưa ký"
-          items={[
-            { label: 'Mã hợp đồng', value: prereq.contractCode, mono: true },
-            { label: 'Trạng thái', value: contractStatus },
-          ]}
-        />
-        <PrerequisiteCard
-          title="4. Đối soát giấy tờ tùy thân"
-          done={prereq.identityVerified}
-          doneLabel="Đã xác minh"
-          pendingLabel="Chờ kiểm tra"
-          items={[
-            // Only a number the front desk actually verified; never a placeholder or the phone number.
-            { label: 'Số giấy tờ', value: prereq.identityVerified ? prereq.idCardNumber : undefined, mono: true },
-            { label: 'Thực hiện tại', value: 'Quầy tiếp đón' },
-          ]}
-        />
-      </div>
-
-      {prereq.missingPrerequisites && prereq.missingPrerequisites.length > 0 ? (
-        <Alert tone="danger" title="Cần bổ sung trước khi bàn giao">
-          <ul className="list-disc pl-4">
-            {prereq.missingPrerequisites.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </Alert>
-      ) : null}
-    </div>
-  )
-}
-
-function BookingSummary({ booking, prereq }: { booking?: Booking; prereq?: HandoverPrerequisites }) {
-  const status = booking ? getBookingStatusMeta(booking.status) : undefined
-  const contact = [booking?.customerPhone ?? prereq?.customerPhone, booking?.customerEmail ?? prereq?.customerEmail]
-    .filter(Boolean)
-    .join(' · ')
-  return (
-    <DescriptionList
-      items={[
-        { label: 'Khách hàng', value: booking?.customerName ?? prereq?.customerName },
-        { label: 'Liên hệ', value: contact },
-        { label: 'Cơ sở', value: booking?.facilityName ?? prereq?.facilityName },
-        { label: 'Kho', value: booking?.unitCode ?? prereq?.unitCode, mono: true },
-        { label: 'Mã đặt kho', value: booking?.bookingCode ?? prereq?.bookingCode, mono: true },
-        {
-          label: 'Trạng thái đặt kho',
-          value: status ? (
-            <Badge tone={status.tone} dot>
-              {status.label}
-            </Badge>
-          ) : undefined,
-        },
-        { label: 'Thời gian thuê', value: booking ? `${formatDate(booking.startDate)} – ${formatDate(booking.endDate)}` : undefined },
-      ]}
-    />
-  )
-}
-
-function BookingDetailDialog({ onClose, bookingId, unitCode }: BookingDetailReadOnlyModalProps) {
-  const bookingQuery = useAsyncData((signal) => bookingService.getById(bookingId as string, { signal }), [bookingId], {
-    enabled: Boolean(bookingId),
-  })
-  const prereqQuery = useAsyncData((signal) => handoverService.getCheckInPrerequisites(bookingId as string, { signal }), [bookingId], {
-    enabled: Boolean(bookingId),
-  })
-
-  const isLoading = Boolean(bookingId) && (bookingQuery.isLoading || prereqQuery.isLoading)
-  const reload = () => void Promise.all([bookingQuery.reload(), prereqQuery.reload()])
-
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      size="lg"
-      title={unitCode ? `Hồ sơ đặt kho ${unitCode}` : 'Hồ sơ đặt kho'}
-      description="Chế độ xem cho quản lý cơ sở. Việc bàn giao do nhân viên quầy thực hiện."
-      footer={
-        <Button variant="secondary" onClick={onClose}>
-          Đóng
-        </Button>
-      }
-    >
-      {!bookingId ? (
-        <EmptyState icon={CalendarOff} title="Kho chưa có đặt chỗ hiệu lực" description="Chưa có hồ sơ đặt kho để đối soát cho kho này." />
-      ) : isLoading ? (
-        <div className="flex flex-col gap-4" aria-busy="true">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-40" />
-        </div>
-      ) : prereqQuery.error && !bookingQuery.data ? (
-        <Alert
-          tone="danger"
-          title="Không tải được hồ sơ đặt kho"
-          action={
-            <Button size="sm" variant="secondary" onClick={reload}>
-              Thử lại
-            </Button>
+        // If bookingId was not provided, try to find active booking for this unit
+        if (!targetBookingId && unitBackendId) {
+          const res = await bookingService.getAll({ size: 100 })
+          const matched = res?.content?.find(b => 
+            (b.storageUnitId === unitBackendId || b.unitCode === unitCode) &&
+            (b.status === 'CONFIRMED' || b.status === 'PENDING_APPROVAL' || b.status === 'PENDING_PAYMENT' || b.status === 'ACTIVE')
+          )
+          if (matched) {
+            targetBookingId = matched.id
+            setBooking(matched)
           }
-        >
-          {getApiErrorMessage(prereqQuery.error, 'Không thể tải điều kiện bàn giao của đơn này.')}
-        </Alert>
-      ) : (
-        <div className="flex flex-col gap-6">
-          <BookingSummary booking={bookingQuery.data} prereq={prereqQuery.data} />
-          {bookingQuery.data && HANDED_OVER_STATUSES.has(bookingQuery.data.status) ? (
-            <Alert tone="success" title="Đã bàn giao kho">
-              {bookingQuery.data.status === 'COMPLETED'
-                ? 'Khách đã trả kho. Các điều kiện bàn giao đã được xác nhận khi nhận kho.'
-                : 'Khách đang sử dụng kho. Các điều kiện bàn giao đã được xác nhận tại quầy khi nhận kho.'}
-            </Alert>
-          ) : prereqQuery.data ? (
-            <Prerequisites prereq={prereqQuery.data} />
-          ) : prereqQuery.error ? (
-            <Alert
-              tone="warning"
-              title="Không tải được điều kiện bàn giao"
-              action={
-                <Button size="sm" variant="secondary" onClick={() => void prereqQuery.reload()}>
-                  Thử lại
-                </Button>
-              }
-            >
-              {getApiErrorMessage(prereqQuery.error)}
-            </Alert>
-          ) : null}
+        } else if (targetBookingId) {
+          try {
+            const b = await bookingService.getById(targetBookingId)
+            setBooking(b)
+          } catch {
+            // fallback
+          }
+        }
+
+        if (targetBookingId) {
+          const prereqData = await handoverService.getCheckInPrerequisites(targetBookingId)
+          setPrereq(prereqData)
+        } else {
+          setError('Không tìm thấy thông tin đặt chỗ hiệu lực cho ngăn kho này.')
+        }
+      } catch (err: any) {
+        const msg = err?.response?.data?.message || err?.message || 'Không thể tải điều kiện bàn giao của đặt chỗ này.'
+        setError(msg)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    void loadData()
+  }, [isOpen, bookingId, unitBackendId, unitCode])
+
+  const activeBookingId = bookingId || booking?.id || prereq?.bookingId
+
+  const handleUploadProof = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!activeBookingId) {
+      setProofMessage('Không tìm thấy mã đặt chỗ để tải ảnh.')
+      return
+    }
+    const MAX_SIZE = 10 * 1024 * 1024
+    if (file.size > MAX_SIZE) {
+      setProofMessage('Dung lượng tệp vượt quá giới hạn 10MB.')
+      return
+    }
+
+    setUploadingProof(true)
+    setProofMessage(null)
+    try {
+      const res = await handoverService.uploadHandoverDocument(activeBookingId, file, 'PAYMENT_PROOF')
+      if (res?.fileUrl) {
+        setUploadedProofUrl(res.fileUrl)
+        setProofMessage('Đã tải lên ảnh chuyển khoản thành công!')
+        const fresh = await handoverService.getCheckInPrerequisites(activeBookingId)
+        setPrereq(fresh)
+      }
+    } catch (err: any) {
+      setProofMessage(err?.response?.data?.message || err?.message || 'Lỗi khi tải ảnh chuyển khoản lên hệ thống.')
+    } finally {
+      setUploadingProof(false)
+      e.target.value = ''
+    }
+  }
+
+  const handleOpenDoc = async (url: string) => {
+    if (!activeBookingId || !url) return
+    setOpeningDocUrl(url)
+    try {
+      const blobUrl = await handoverService.viewAuthorizedDocument(activeBookingId, url)
+      window.open(blobUrl, '_blank')
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || 'Không thể xem tài liệu đối soát.')
+    } finally {
+      setOpeningDocUrl(null)
+    }
+  }
+
+  if (!isOpen) return null
+
+  const isDepositMet = prereq ? prereq.depositSatisfied : false
+  const isRentMet = prereq ? prereq.firstMonthRentSatisfied : false
+  const isPaymentMet = isDepositMet && isRentMet
+
+  const totalRequired = ((prereq?.requiredDeposit || 0) + (prereq?.requiredFirstMonthRent || 0))
+  const totalPaid = ((prereq?.depositPaid || 0) + (prereq?.firstMonthRentPaid || 0))
+  const totalRemaining = ((prereq?.depositRemaining || 0) + (prereq?.firstMonthRentRemaining || 0))
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+      <div className="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 max-h-[90vh] overflow-y-auto text-left">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 text-slate-800 flex items-center justify-center">
+              <span className="material-symbols-outlined text-[22px] text-blue-600">visibility</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-headline text-base font-bold text-slate-900">
+                  Hồ Sơ Đặt Kho &amp; Đối Soát 3 Điều Kiện Bàn Giao
+                </h3>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                  CHẾ ĐỘ GIÁM SÁT
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Kho giám sát: <strong className="font-mono text-slate-900">#{unitCode || prereq?.unitCode || 'N/A'}</strong> • Mã đơn: <span className="font-mono">{booking?.bookingCode || prereq?.bookingCode || bookingId || 'N/A'}</span>
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[20px]">close</span>
+          </button>
         </div>
-      )}
-    </Modal>
+
+        {/* Content */}
+        {loading ? (
+          <div className="py-12 flex flex-col items-center justify-center gap-2">
+            <span className="material-symbols-outlined text-3xl text-blue-600 animate-spin">progress_activity</span>
+            <span className="text-xs text-slate-500 font-medium">Đang tải đối soát 3 điều kiện tiên quyết...</span>
+          </div>
+        ) : error ? (
+          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+            <div className="flex items-center gap-2 font-bold mb-1">
+              <span className="material-symbols-outlined text-[18px]">info</span>
+              <span>Thông tin giám sát</span>
+            </div>
+            <p>{error}</p>
+          </div>
+        ) : prereq ? (
+          <div className="flex flex-col gap-4">
+            
+            {/* Customer & Booking Information */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 font-mono block">Khách hàng</span>
+                <span className="font-bold text-slate-900 text-sm mt-0.5 block">{prereq.customerName || 'N/A'}</span>
+                <span className="text-slate-600 font-mono">{prereq.customerPhone || 'N/A'} • {prereq.customerEmail || 'Chưa có email'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 font-mono block">Cơ sở &amp; Kho</span>
+                <span className="font-bold text-slate-900 mt-0.5 block">{prereq.facilityName || 'N/A'}</span>
+                <span className="font-mono text-cyan-800 font-bold">Mã kho #{prereq.unitCode}</span>
+              </div>
+            </div>
+
+            {/* Overall Eligibility Status */}
+            <div className={`p-3 rounded-xl border flex items-center justify-between ${
+              prereq.eligibleForCheckIn 
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
+                : 'bg-amber-50 border-amber-200 text-amber-800'
+            }`}>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="material-symbols-outlined text-[20px]">
+                  {prereq.eligibleForCheckIn ? 'verified' : 'pending_actions'}
+                </span>
+                <span className="font-bold">
+                  {prereq.eligibleForCheckIn 
+                    ? 'Đơn đặt kho đã đủ 3 điều kiện sẵn sàng bàn giao thực địa' 
+                    : 'Đơn đặt kho chưa hoàn tất đủ 3 điều kiện tiên quyết'}
+                </span>
+              </div>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${
+                prereq.eligibleForCheckIn ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+              }`}>
+                {prereq.eligibleForCheckIn ? 'SẴN SÀNG BÀN GIAO' : 'CHỜ BỔ SUNG'}
+              </span>
+            </div>
+
+            {/* 3 Prerequisites Cards */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+              
+              {/* Điều kiện 1: Hợp đồng thuê kho */}
+              <div className="p-3.5 rounded-xl border border-slate-200 bg-white flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px] text-purple-600">history_edu</span>
+                      1. Hợp đồng thuê kho
+                    </span>
+                    <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                      prereq.contractSigned ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {prereq.contractSigned ? 'Đã ký hợp lệ' : 'Chưa ký xác nhận'}
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-600 space-y-1">
+                    <div className="flex justify-between">
+                      <span>Mã HĐ:</span>
+                      <strong className="font-mono text-slate-900">{prereq.contractCode || 'Chưa tạo'}</strong>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Phương thức:</span>
+                      <span className="font-medium text-slate-700">
+                        {prereq.contractSigningMethod === 'PAPER' ? '🏢 Ký Giấy Tại Quầy' : '✍️ Ký Điện Tử'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Trạng thái:</span>
+                      <span className="font-mono text-slate-500">{prereq.contractStatus || 'N/A'}</span>
+                    </div>
+                    {prereq.paperContractUrl && (
+                      <div className="pt-1 border-t border-slate-100 flex justify-between items-center">
+                        <span className="text-slate-500 text-[11px]">Bản scan:</span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDoc(prereq.paperContractUrl!)}
+                          disabled={openingDocUrl === prereq.paperContractUrl}
+                          className="text-cyan-700 hover:text-cyan-800 font-bold text-[11px] inline-flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[13px]">attachment</span>
+                          <span>{openingDocUrl === prereq.paperContractUrl ? '...' : 'Xem scan'}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Điều kiện 2: Bằng chứng chuyển khoản toàn bộ tiền cọc & thuê trong toàn bộ thời hạn */}
+              <div className="p-3.5 rounded-xl border border-slate-200 bg-white flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px] text-cyan-600">payments</span>
+                      2. Chuyển khoản cọc &amp; thuê
+                    </span>
+                    <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                      isPaymentMet ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                    }`}>
+                      {isPaymentMet ? 'Đã thu đủ' : 'Chưa đủ'}
+                    </span>
+                  </div>
+
+                  <div className="text-xs text-slate-600 space-y-1">
+                    <div className="flex justify-between">
+                      <span>Tổng phải thu:</span>
+                      <strong className="font-mono text-slate-900">{totalRequired.toLocaleString('vi-VN')} đ</strong>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Đã nộp:</span>
+                      <strong className="font-mono text-emerald-700">{totalPaid.toLocaleString('vi-VN')} đ</strong>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Còn thiếu:</span>
+                      <strong className={`font-mono ${totalRemaining > 0 ? 'text-rose-600' : 'text-slate-700'}`}>
+                        {totalRemaining.toLocaleString('vi-VN')} đ
+                      </strong>
+                    </div>
+                    <div className="pt-1 border-t border-slate-100 space-y-0.5 text-[11px] text-slate-500">
+                      <div className="flex justify-between">
+                        <span>• Tiền cọc:</span>
+                        <span className="font-mono font-medium">{(prereq.depositPaid || 0).toLocaleString('vi-VN')}đ / {(prereq.requiredDeposit || 0).toLocaleString('vi-VN')}đ {isDepositMet ? '✓' : ''}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>• Tiền thuê toàn hạn:</span>
+                        <span className="font-mono font-medium">{(prereq.firstMonthRentPaid || 0).toLocaleString('vi-VN')}đ / {(prereq.requiredFirstMonthRent || 0).toLocaleString('vi-VN')}đ {isRentMet ? '✓' : ''}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Upload message if any */}
+                  {proofMessage && (
+                    <div className="mt-2 p-1.5 rounded bg-blue-50 border border-blue-200 text-blue-800 text-[11px]">
+                      {proofMessage}
+                    </div>
+                  )}
+
+                  {/* Uploaded proof pill */}
+                  {uploadedProofUrl && (
+                    <div className="mt-2 p-1.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] flex items-center justify-between">
+                      <span>Ảnh vừa tải lên:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenDoc(uploadedProofUrl)}
+                        disabled={openingDocUrl === uploadedProofUrl}
+                        className="px-1.5 py-0.5 rounded bg-emerald-600 text-white font-bold text-[10px] cursor-pointer"
+                      >
+                        {openingDocUrl === uploadedProofUrl ? '...' : 'Xem ảnh'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Existing payment receipts */}
+                  {prereq.paymentHistory && prereq.paymentHistory.length > 0 && (
+                    <div className="mt-2 space-y-1 max-h-20 overflow-y-auto">
+                      {prereq.paymentHistory.map((p) => (
+                        <div key={p.id} className="p-1 rounded bg-slate-50 text-[10px] flex items-center justify-between">
+                          <span className="font-mono font-bold text-slate-700">
+                            {p.paymentType === 'DEPOSIT' ? '[Cọc]' : '[Thuê]'} {p.amount.toLocaleString('vi-VN')}đ
+                          </span>
+                          <div className="flex items-center gap-1">
+                            {p.proofDocumentUrl && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDoc(p.proofDocumentUrl!)}
+                                disabled={openingDocUrl === p.proofDocumentUrl}
+                                className="px-1 py-0.2 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[9px] cursor-pointer"
+                              >
+                                {openingDocUrl === p.proofDocumentUrl ? '...' : 'Xem UNC'}
+                              </button>
+                            )}
+                            <span className={`px-1 py-0.2 rounded font-bold text-[9px] ${p.status === 'PAID' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                              {p.status === 'PAID' ? 'Đã thu' : p.status}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Upload Button */}
+                <div className="mt-2.5 pt-2 border-t border-slate-100">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,application/pdf"
+                    className="hidden"
+                    onChange={handleUploadProof}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingProof}
+                    className="w-full py-1.5 px-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-[11px] flex items-center justify-center gap-1 transition cursor-pointer disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">
+                      {uploadingProof ? 'hourglass_top' : 'upload_file'}
+                    </span>
+                    <span>{uploadingProof ? 'Đang Tải...' : 'Upload Ảnh Chuyển Khoản'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Điều kiện 3: Đối soát CCCD */}
+              <div className="p-3.5 rounded-xl border border-slate-200 bg-white flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px] text-teal-600">badge</span>
+                      3. Đối soát CCCD gốc
+                    </span>
+                    <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                      prereq.identityVerified ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {prereq.identityVerified ? 'Đã xác minh' : 'Chờ kiểm tra quầy'}
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-600 space-y-1">
+                    <div className="flex justify-between">
+                      <span>Số giấy tờ:</span>
+                      <strong className="font-mono text-slate-900">{prereq.idCardNumber || 'N/A'}</strong>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Loại thẻ:</span>
+                      <span className="font-mono text-slate-700">{prereq.idCardType || 'CCCD'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Thực hiện tại:</span>
+                      <span className="text-slate-500">Quầy tiếp đón cơ sở</span>
+                    </div>
+                    {prereq.identityVerifiedByName && (
+                      <div className="flex justify-between">
+                        <span>Nhân viên:</span>
+                        <span className="font-medium text-emerald-700">{prereq.identityVerifiedByName}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Missing items list if any */}
+            {prereq.missingPrerequisites && prereq.missingPrerequisites.length > 0 && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+                <span className="font-bold block mb-1">Các hạng mục cần bổ sung trước khi bàn giao:</span>
+                <ul className="list-disc list-inside space-y-0.5 text-[11px]">
+                  {prereq.missingPrerequisites.map((m: string, idx: number) => (
+                    <li key={idx}>{m}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Scope separation notice */}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-600 leading-relaxed flex items-start gap-2">
+              <span className="material-symbols-outlined text-[16px] text-blue-600 shrink-0 mt-0.5">policy</span>
+              <div>
+                <strong>Quy định phân quyền:</strong> Đây là chế độ xem hồ sơ giám sát của <strong>Quản lý cơ sở</strong>. Các thao tác tiếp đón khách, đối soát CCCD, nghiệm thu 5 hạng mục hiện trường và phát hành mã PIN bàn giao được thực hiện trực tiếp bởi <strong>Nhân viên quầy (Facility Staff)</strong> tại Bàn Vận Hành Quầy &amp; Tiếp Đón.
+              </div>
+            </div>
+
+          </div>
+        ) : null}
+
+        {/* Footer */}
+        <div className="flex items-center justify-end pt-3 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition cursor-pointer shadow-xs"
+          >
+            Đóng bảng giám sát
+          </button>
+        </div>
+
+      </div>
+    </div>
   )
 }

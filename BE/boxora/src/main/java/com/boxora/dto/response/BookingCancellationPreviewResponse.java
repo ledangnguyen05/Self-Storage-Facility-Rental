@@ -59,14 +59,5 @@ public class BookingCancellationPreviewResponse {
 
     /** Có phát sinh hoàn tiền hay không (refundAmount > 0) */
     private boolean refundable;
-
-    /** Phần tiền cọc được hoàn theo mốc hủy. */
-    private BigDecimal depositRefundAmount;
-
-    /** Tiền thuê đã trả trước cho kỳ chưa bắt đầu (luôn hoàn 100% khi hủy trước nhận kho). */
-    private BigDecimal prepaidRentAmount;
-
-    /** Hạn hoàn tiền theo chính sách cơ sở (ngày làm việc). */
-    private Integer refundSlaDays;
 }
 

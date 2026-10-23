@@ -26,6 +26,14 @@ public interface StorageUnitRepository extends JpaRepository<StorageUnit, UUID>,
     @Query("SELECT su FROM StorageUnit su WHERE su.id = :id")
     Optional<StorageUnit> findWithDetailsByIdForUpdate(@Param("id") UUID id);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @EntityGraph(attributePaths = {"facility", "unitType"})
+    @Query("SELECT su FROM StorageUnit su WHERE su.facility.id = :facilityId AND LOWER(su.unitCode) = LOWER(:unitCode)")
+    Optional<StorageUnit> findWithDetailsByFacilityAndUnitCodeForUpdate(
+            @Param("facilityId") UUID facilityId,
+            @Param("unitCode") String unitCode
+    );
+
     @EntityGraph(attributePaths = {"facility", "unitType"})
     List<StorageUnit> findByFacility_Id(UUID facilityId);
 
@@ -50,65 +58,11 @@ public interface StorageUnitRepository extends JpaRepository<StorageUnit, UUID>,
 
     boolean existsByFacility_IdAndUnitCode(UUID facilityId, String unitCode);
 
+    Optional<StorageUnit> findByFacility_IdAndUnitCodeIgnoreCase(UUID facilityId, String unitCode);
+
     boolean existsByFacility_IdAndUnitCodeAndIdNot(UUID facilityId, String unitCode, UUID id);
 
-    /** Mã kho là duy nhất trong cơ sở KHÔNG phân biệt hoa thường: {@code D1-A101} và {@code d1-a101} là cùng một mã. */
-    boolean existsByFacility_IdAndUnitCodeIgnoreCase(UUID facilityId, String unitCode);
-
-    boolean existsByFacility_IdAndUnitCodeIgnoreCaseAndIdNot(UUID facilityId, String unitCode, UUID id);
-
     boolean existsByUnitType_Id(UUID unitTypeId);
-
-    boolean existsByFacility_Id(UUID facilityId);
-
-    long countByFacility_IdAndStatusIn(UUID facilityId, java.util.Collection<UnitStatus> statuses);
-
-    /** Đếm kho theo cơ sở và trạng thái trong một truy vấn (không N+1): [facilityId, status, count]. */
-    @Query("""
-            SELECT su.facility.id, su.status, COUNT(su)
-            FROM StorageUnit su
-            WHERE su.facility.id IN :facilityIds
-            GROUP BY su.facility.id, su.status
-            """)
-    List<Object[]> countByFacilityIdsGroupedByStatus(@Param("facilityIds") java.util.Collection<UUID> facilityIds);
-
-    @EntityGraph(attributePaths = {"facility", "unitType"})
-    @Query("SELECT su FROM StorageUnit su")
-    List<StorageUnit> findAllWithDetails();
-
-    /**
-     * Kho đang trống theo loại và cơ sở đang hoạt động: [unitTypeId, facilityId, min(pricePerMonth)]; dùng cho "giá từ".
-     * Kho đã có đặt kho còn hiệu lực không tính là trống dù cột trạng thái chưa cập nhật.
-     */
-    @Query("""
-            SELECT su.unitType.id, su.facility.id, MIN(su.pricePerMonth)
-            FROM StorageUnit su
-            WHERE su.status = com.boxora.enums.UnitStatus.AVAILABLE
-              AND su.facility.status = com.boxora.enums.FacilityStatus.ACTIVE
-              AND NOT EXISTS (
-                  SELECT b.id FROM Booking b
-                  WHERE b.storageUnit = su
-                    AND b.status NOT IN (com.boxora.enums.BookingStatus.COMPLETED, com.boxora.enums.BookingStatus.CANCELLED))
-            GROUP BY su.unitType.id, su.facility.id
-            """)
-    List<Object[]> findAvailableMinPriceByTypeAndFacility();
-
-    /**
-     * Số kho đang ghi {@code AVAILABLE} nhưng đã có đặt kho còn hiệu lực, theo cơ sở: [facilityId, count].
-     * Trừ số này khỏi số kho trống để "Kho trống" không đếm kho đã có người giữ.
-     */
-    @Query("""
-            SELECT su.facility.id, COUNT(su)
-            FROM StorageUnit su
-            WHERE su.facility.id IN :facilityIds
-              AND su.status = com.boxora.enums.UnitStatus.AVAILABLE
-              AND EXISTS (
-                  SELECT b.id FROM Booking b
-                  WHERE b.storageUnit = su
-                    AND b.status NOT IN (com.boxora.enums.BookingStatus.COMPLETED, com.boxora.enums.BookingStatus.CANCELLED))
-            GROUP BY su.facility.id
-            """)
-    List<Object[]> countAvailableWithLiveBookingByFacilityIds(@Param("facilityIds") java.util.Collection<UUID> facilityIds);
 
     long countByUnitType_Id(UUID unitTypeId);
 

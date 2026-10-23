@@ -16,11 +16,6 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Path alias: '@/x' -> 'src/x' (mirrored in vite.config.ts resolve.alias) */
-    "paths": {
-      "@/*": ["./src/*"]
-    },
-
     /* Linting */
     "noUnusedLocals": false,
     "noUnusedParameters": false,

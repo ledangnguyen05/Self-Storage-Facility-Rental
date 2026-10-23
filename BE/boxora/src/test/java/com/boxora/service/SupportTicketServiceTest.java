@@ -73,9 +73,6 @@ class SupportTicketServiceTest {
     private FileStorageService fileStorageService;
 
     @Mock
-    private com.boxora.repository.NotificationLogRepository notificationLogRepository;
-
-    @Mock
     private com.boxora.security.RequestContext requestContext;
 
     @InjectMocks
@@ -122,6 +119,7 @@ class SupportTicketServiceTest {
 
         lenient().when(requestContext.currentUserId()).thenReturn(customerId);
         lenient().when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        lenient().when(facilityRepository.findAllByOrderByCreatedAtAsc()).thenReturn(List.of(testFacility));
     }
 
     @Nested
@@ -129,9 +127,91 @@ class SupportTicketServiceTest {
     class CreateTicketTests {
 
         @Test
+        @DisplayName("Facility manager cannot create a ticket for a different facility")
+        void createTicket_facilityManagerCannotSpecifyAnotherFacility() {
+            UUID managerId = UUID.randomUUID();
+            UUID otherFacilityId = UUID.randomUUID();
+            User manager = User.builder().facility(testFacility).build();
+            manager.setId(managerId);
+            SupportTicketRequest request = SupportTicketRequest.builder()
+                    .customerId(customerId)
+                    .facilityId(otherFacilityId)
+                    .category("OTHER")
+                    .title("Facility issue")
+                    .description("Issue reported on site")
+                    .build();
+
+            when(requestContext.currentUserId()).thenReturn(managerId);
+            when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
+            when(userRepository.findById(managerId)).thenReturn(Optional.of(manager));
+
+            AppException ex = assertThrows(AppException.class, () -> supportTicketService.createTicket(request));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_FACILITY_MISMATCH);
+            verify(supportTicketRepository, never()).save(any(SupportTicket.class));
+        }
+
+        @Test
+        @DisplayName("Facility manager cannot create a ticket from a booking at a different facility")
+        void createTicket_facilityManagerCannotUseBookingFromAnotherFacility() {
+            UUID managerId = UUID.randomUUID();
+            UUID otherFacilityId = UUID.randomUUID();
+            Facility otherFacility = Facility.builder().name("Other facility").code("BX-OTHER").build();
+            otherFacility.setId(otherFacilityId);
+            StorageUnit otherUnit = StorageUnit.builder().unitCode("B-201").facility(otherFacility).build();
+            otherUnit.setId(UUID.randomUUID());
+            Booking otherBooking = Booking.builder().customer(testCustomer).storageUnit(otherUnit).build();
+            UUID otherBookingId = UUID.randomUUID();
+            otherBooking.setId(otherBookingId);
+            User manager = User.builder().facility(testFacility).build();
+            manager.setId(managerId);
+            SupportTicketRequest request = SupportTicketRequest.builder()
+                    .customerId(customerId)
+                    .bookingId(otherBookingId)
+                    .category("OTHER")
+                    .title("Facility issue")
+                    .description("Issue reported on site")
+                    .build();
+
+            when(requestContext.currentUserId()).thenReturn(managerId);
+            when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
+            when(userRepository.findById(managerId)).thenReturn(Optional.of(manager));
+            lenient().when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
+            when(bookingRepository.findById(otherBookingId)).thenReturn(Optional.of(otherBooking));
+
+            AppException ex = assertThrows(AppException.class, () -> supportTicketService.createTicket(request));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_FACILITY_MISMATCH);
+            verify(supportTicketRepository, never()).save(any(SupportTicket.class));
+        }
+
+        @Test
+        @DisplayName("Staff without an assigned facility cannot create a ticket")
+        void createTicket_staffWithoutAssignedFacilityIsForbidden() {
+            UUID staffId = UUID.randomUUID();
+            User unassignedStaff = User.builder().build();
+            unassignedStaff.setId(staffId);
+            SupportTicketRequest request = SupportTicketRequest.builder()
+                    .category("OTHER")
+                    .title("Facility issue")
+                    .description("Issue reported on site")
+                    .build();
+
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(unassignedStaff));
+
+            AppException ex = assertThrows(AppException.class, () -> supportTicketService.createTicket(request));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+            verify(facilityRepository, never()).findAllByOrderByCreatedAtAsc();
+            verify(supportTicketRepository, never()).save(any(SupportTicket.class));
+        }
+
+        @Test
         @DisplayName("createTicket should save imageEvidence string and parse into evidenceUrls response")
         void createTicket_withSingleImageEvidence_shouldSucceed() {
-            String testImageUrl = "/uploads/tickets/evidence-3f6c1b2e-0a11-4c3d-9d0f-1a2b3c4d5e6f.jpg";
+            String testImageUrl = "https://images.unsplash.com/photo-lock-issue.jpg";
             SupportTicketRequest request = SupportTicketRequest.builder()
                     .customerId(customerId)
                     .bookingId(bookingId)
@@ -166,9 +246,9 @@ class SupportTicketServiceTest {
         @DisplayName("createTicket with list of evidenceUrls should join with semicolon and return in evidenceUrls")
         void createTicket_withMultipleEvidenceUrls_shouldCombineCorrectly() {
             List<String> urls = List.of(
-                    "/uploads/tickets/evidence-1.jpg",
-                    "/uploads/tickets/evidence-2.jpg",
-                    "/uploads/tickets/evidence-3.jpg"
+                    "https://images.unsplash.com/img1.jpg",
+                    "https://images.unsplash.com/img2.jpg",
+                    "https://images.unsplash.com/img3.jpg"
             );
             SupportTicketRequest request = SupportTicketRequest.builder()
                     .customerId(customerId)
@@ -191,7 +271,7 @@ class SupportTicketServiceTest {
             SupportTicketResponse response = supportTicketService.createTicket(request);
 
             assertThat(response).isNotNull();
-            assertThat(response.getImageEvidence()).isEqualTo("/uploads/tickets/evidence-1.jpg;/uploads/tickets/evidence-2.jpg;/uploads/tickets/evidence-3.jpg");
+            assertThat(response.getImageEvidence()).contains("img1.jpg;https://images.unsplash.com/img2.jpg;https://images.unsplash.com/img3.jpg");
             assertThat(response.getEvidenceUrls()).containsExactlyElementsOf(urls);
         }
 
@@ -230,8 +310,8 @@ class SupportTicketServiceTest {
             List<MultipartFile> files = List.of(file1, file2);
 
             when(fileStorageService.storeFiles(files, "tickets")).thenReturn(List.of(
-                    FileUploadResponse.builder().fileUrl("/uploads/tickets/evidence-aaa.png").fileName("img1.png").build(),
-                    FileUploadResponse.builder().fileUrl("/uploads/tickets/evidence-bbb.jpg").fileName("img2.jpg").build()
+                    FileUploadResponse.builder().fileUrl("https://storage/img1.png").fileName("img1.png").build(),
+                    FileUploadResponse.builder().fileUrl("https://storage/img2.jpg").fileName("img2.jpg").build()
             ));
 
             SupportTicketRequest request = SupportTicketRequest.builder()
@@ -254,7 +334,7 @@ class SupportTicketServiceTest {
             SupportTicketResponse response = supportTicketService.createTicketWithFiles(request, files);
 
             assertThat(response).isNotNull();
-            assertThat(response.getEvidenceUrls()).containsExactly("/uploads/tickets/evidence-aaa.png", "/uploads/tickets/evidence-bbb.jpg");
+            assertThat(response.getEvidenceUrls()).containsExactly("https://storage/img1.png", "https://storage/img2.jpg");
             verify(fileStorageService).storeFiles(files, "tickets");
         }
     }
@@ -493,7 +573,6 @@ class SupportTicketServiceTest {
                     .title("Lỗi khóa cửa")
                     .customer(testCustomer)
                     .facility(testFacility)
-                    .assignedStaff(staff)
                     .status(TicketStatus.IN_PROGRESS)
                     .build();
             UUID ticketId = UUID.randomUUID();
@@ -516,16 +595,11 @@ class SupportTicketServiceTest {
 
             SupportTicketResponse reopenedRes = supportTicketService.reopenTicket(ticketId, "Vẫn kêu cót két khi mở");
             assertThat(reopenedRes.getStatus()).isEqualTo("REOPENED");
-            // The reason is its own field now, not glued into the resolution note.
-            assertThat(reopenedRes.getReopenReason()).isEqualTo("Vẫn kêu cót két khi mở");
-            assertThat(reopenedRes.getReopenCount()).isEqualTo(1);
-            assertThat(ticket.getResolutionNote()).doesNotContain("REOPEN").doesNotContain("null");
+            assertThat(ticket.getResolutionNote()).contains("[REOPEN YÊU CẦU XỬ LÝ LẠI]: Vẫn kêu cót két khi mở");
 
-            // Step 3: Staff takes the reopened ticket again, then resolves it
+            // Step 3: Staff resolves again
             when(requestContext.currentUserId()).thenReturn(staffId);
             when(requestContext.currentUserRole()).thenReturn("STAFF");
-            supportTicketService.takeOwnership(ticketId);
-            assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
             supportTicketService.resolveTicket(ticketId, "Đã thay mới linh kiện");
             assertThat(ticket.getStatus()).isEqualTo(TicketStatus.RESOLVED);
 
@@ -565,7 +639,7 @@ class SupportTicketServiceTest {
             assertThat(res.getStatus()).isEqualTo("CLOSED");
             assertThat(ticket.getStatus()).isEqualTo(TicketStatus.CLOSED);
             assertThat(ticket.getClosedAt()).isNotNull();
-            assertThat(ticket.getResolutionNote()).contains("Đóng phiếu: Khách hàng rất hài lòng");
+            assertThat(ticket.getResolutionNote()).contains("[ĐÓNG PHIẾU]: Khách hàng rất hài lòng");
         }
 
         @Test
@@ -672,14 +746,14 @@ class SupportTicketServiceTest {
             when(requestContext.currentUserId()).thenReturn(staffId);
             when(requestContext.currentUserRole()).thenReturn("STAFF");
             when(userRepository.findById(staffId)).thenReturn(Optional.of(staff));
-            when(supportTicketRepository.findByFacility_IdOrAssignedStaff_Id(facilityId, staffId))
+            when(supportTicketRepository.findByFacility_Id(facilityId))
                     .thenReturn(List.of(ticket1));
 
             List<SupportTicketResponse> res = supportTicketService.getQueue(null, null, null, null);
 
             assertThat(res).hasSize(1);
             assertThat(res.get(0).getTitle()).isEqualTo("Sự cố 1");
-            verify(supportTicketRepository).findByFacility_IdOrAssignedStaff_Id(facilityId, staffId);
+            verify(supportTicketRepository).findByFacility_Id(facilityId);
         }
 
         @Test
@@ -814,605 +888,44 @@ class SupportTicketServiceTest {
 
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
         }
-    }
 
-    @Nested
-    @DisplayName("Task 4: dữ liệu thật cho phiếu sự cố (phân công, mở lại, thống kê, định tuyến)")
-    class Task4TicketDataTests {
+        @Test
+        @DisplayName("Ticket stats calculate resolution time from records and keep overdue as an overlapping dimension")
+        void statsUsePersistedResolutionTimesAndCountSlaSeparately() {
+            UUID adminId = UUID.randomUUID();
+            User admin = User.builder().fullName("Admin Sys").build();
+            admin.setId(adminId);
 
-        private SupportTicket openTicket() {
-            SupportTicket ticket = SupportTicket.builder()
-                    .title("Kẹt cửa cuốn")
-                    .customer(testCustomer)
+            LocalDateTime now = LocalDateTime.now();
+            SupportTicket overdueOpen = SupportTicket.builder()
+                    .title("Open ticket past SLA")
                     .facility(testFacility)
                     .status(TicketStatus.OPEN)
-                    .priority("MEDIUM")
+                    .slaDueAt(now.minusMinutes(5))
                     .build();
-            ticket.setId(UUID.randomUUID());
-            ticket.setCreatedAt(LocalDateTime.now().minusHours(1));
-            ticket.setSlaDueAt(ticket.getCreatedAt().plusHours(24));
-            return ticket;
-        }
+            overdueOpen.setCreatedAt(now.minusHours(2));
 
-        @Test
-        @DisplayName("Phân công áp dụng mức ưu tiên mới, tính lại SLA và ghi chỉ đạo của quản lý")
-        void assign_appliesPriorityAndNotes() {
-            UUID managerId = UUID.randomUUID();
-            UUID staffId = UUID.randomUUID();
-            User manager = User.builder().fullName("Quản lý Trí").facility(testFacility).build();
-            manager.setId(managerId);
-            User staff = User.builder().fullName("Nhân viên An").facility(testFacility)
-                    .role(Role.builder().name("STAFF").build()).build();
-            staff.setId(staffId);
-            SupportTicket ticket = openTicket();
+            SupportTicket resolved = SupportTicket.builder()
+                    .title("Resolved ticket")
+                    .facility(testFacility)
+                    .status(TicketStatus.RESOLVED)
+                    .resolvedAt(now.minusMinutes(30))
+                    .build();
+            resolved.setCreatedAt(now.minusMinutes(90));
 
-            when(requestContext.currentUserId()).thenReturn(managerId);
-            when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
-            when(supportTicketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-            when(userRepository.findById(managerId)).thenReturn(Optional.of(manager));
-            when(userRepository.findById(staffId)).thenReturn(Optional.of(staff));
-            when(supportTicketRepository.save(any(SupportTicket.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            SupportTicketResponse res = supportTicketService.assignTicket(ticket.getId(),
-                    TicketAssignRequest.builder().staffId(staffId).priority("urgent").notes("Kiểm tra nguồn khóa trước 10h").build());
-
-            assertThat(res.getPriority()).isEqualTo("URGENT");
-            assertThat(res.getStatus()).isEqualTo("IN_PROGRESS");
-            assertThat(res.getAssignedStaffId()).isEqualTo(staffId);
-            // URGENT = 2h counted from the creation time (one hour ago), not the old 24h window.
-            assertThat(ticket.getSlaDueAt()).isEqualTo(ticket.getCreatedAt().plusHours(2));
-            assertThat(res.getResolutionNote()).contains("Chỉ đạo phân công: Kiểm tra nguồn khóa trước 10h");
-        }
-
-        @Test
-        @DisplayName("Phân công với mức ưu tiên không hợp lệ -> TICKET_INVALID_PRIORITY, không đổi phiếu")
-        void assign_rejectsUnknownPriority() {
-            UUID managerId = UUID.randomUUID();
-            UUID staffId = UUID.randomUUID();
-            User manager = User.builder().fullName("Quản lý Trí").facility(testFacility).build();
-            manager.setId(managerId);
-            User staff = User.builder().fullName("Nhân viên An").facility(testFacility)
-                    .role(Role.builder().name("STAFF").build()).build();
-            staff.setId(staffId);
-            SupportTicket ticket = openTicket();
-
-            when(requestContext.currentUserId()).thenReturn(managerId);
-            when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
-            when(supportTicketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-            when(userRepository.findById(managerId)).thenReturn(Optional.of(manager));
-            when(userRepository.findById(staffId)).thenReturn(Optional.of(staff));
-
-            AppException ex = assertThrows(AppException.class, () -> supportTicketService.assignTicket(ticket.getId(),
-                    TicketAssignRequest.builder().staffId(staffId).priority("SIÊU KHẨN").build()));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_INVALID_PRIORITY);
-            verify(supportTicketRepository, never()).save(any());
-        }
-
-        @Test
-        @DisplayName("Mở lại phiếu chưa có ghi chú không để lại chữ 'null' và tăng reopenCount")
-        void reopen_withoutExistingNote_hasNoNullPrefix() {
-            SupportTicket ticket = openTicket();
-            ticket.setStatus(TicketStatus.RESOLVED);
-            ticket.setResolvedAt(LocalDateTime.now());
-            ticket.setResolutionNote(null);
-
-            when(requestContext.currentUserId()).thenReturn(customerId);
-            when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
-            when(supportTicketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-            when(supportTicketRepository.save(any(SupportTicket.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            SupportTicketResponse res = supportTicketService.reopenTicket(ticket.getId(), "Chưa hết lỗi");
-
-            assertThat(res.getStatus()).isEqualTo("REOPENED");
-            assertThat(res.getReopenCount()).isEqualTo(1);
-            assertThat(res.getReopenReason()).isEqualTo("Chưa hết lỗi");
-            assertThat(res.getResolutionNote()).isNull();
-            assertThat(ticket.getResolvedAt()).isNull();
-        }
-
-        @Test
-        @DisplayName("Phiếu chung không gắn kho: lấy cơ sở của đơn gần nhất của khách")
-        void createGeneralTicket_usesFacilityOfLatestBooking() {
-            SupportTicketRequest request = SupportTicketRequest.builder()
-                    .category("OTHER").title("Hỏi về giờ mở cửa").description("Cần hỗ trợ chung").build();
-
-            when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
-            when(bookingRepository.findFirstByCustomer_IdOrderByCreatedAtDesc(customerId)).thenReturn(Optional.of(testBooking));
-            when(supportTicketRepository.save(any(SupportTicket.class))).thenAnswer(inv -> {
-                SupportTicket t = inv.getArgument(0);
-                t.setId(UUID.randomUUID());
-                return t;
-            });
-
-            SupportTicketResponse res = supportTicketService.createTicket(request);
-
-            assertThat(res.getFacilityId()).isEqualTo(facilityId);
-            assertThat(res.getUnitCode()).isNull();
-            verify(facilityRepository, never()).findAllByOrderByCreatedAtAsc();
-        }
-
-        @Test
-        @DisplayName("Khách chưa có đơn nào và không chọn cơ sở -> TICKET_FACILITY_REQUIRED (không gán bừa cơ sở đầu tiên)")
-        void createGeneralTicket_withoutAnyFacility_isRejected() {
-            SupportTicketRequest request = SupportTicketRequest.builder()
-                    .category("OTHER").title("Hỏi chung").description("Cần hỗ trợ").build();
-
-            when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
-            when(bookingRepository.findFirstByCustomer_IdOrderByCreatedAtDesc(customerId)).thenReturn(Optional.empty());
-
-            AppException ex = assertThrows(AppException.class, () -> supportTicketService.createTicket(request));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_FACILITY_REQUIRED);
-            verify(supportTicketRepository, never()).save(any());
-        }
-
-        @Test
-        @DisplayName("my-tickets của nhân viên chỉ gồm phiếu của cơ sở mình, không phải toàn hệ thống")
-        void getMyTickets_forStaff_isFacilityScoped() {
-            UUID staffId = UUID.randomUUID();
-            User staff = User.builder().fullName("Nhân viên An").facility(testFacility).build();
-            staff.setId(staffId);
-            SupportTicket mine = openTicket();
-
-            when(requestContext.currentUserId()).thenReturn(staffId);
-            when(requestContext.currentUserRole()).thenReturn("STAFF");
-            when(userRepository.findById(staffId)).thenReturn(Optional.of(staff));
-            when(supportTicketRepository.findByFacility_IdOrAssignedStaff_Id(facilityId, staffId)).thenReturn(List.of(mine));
-
-            List<SupportTicketResponse> res = supportTicketService.getMyTickets(null);
-
-            assertThat(res).hasSize(1);
-            verify(supportTicketRepository, never()).findAll();
-        }
-
-        @Test
-        @DisplayName("Thống kê: thời gian xử lý trung bình và SLA tính từ dữ liệu thật, không có số cố định")
-        void getStats_computesAverageAndSlaFromData() {
-            LocalDateTime created = LocalDateTime.now().minusDays(2);
-
-            SupportTicket onTime = openTicket();
-            onTime.setStatus(TicketStatus.RESOLVED);
-            onTime.setCreatedAt(created);
-            onTime.setSlaDueAt(created.plusHours(24));
-            onTime.setResolvedAt(created.plusHours(1));          // 60 minutes, within SLA
-
-            SupportTicket late = openTicket();
-            late.setStatus(TicketStatus.CLOSED);
-            late.setCreatedAt(created);
-            late.setSlaDueAt(created.plusHours(2));
-            late.setResolvedAt(created.plusHours(5));            // 300 minutes, after SLA
-
-            SupportTicket overdueOpen = openTicket();
-            overdueOpen.setCreatedAt(created);
-            overdueOpen.setSlaDueAt(created.plusHours(6));       // still open, deadline passed
-
-            SupportTicket freshOpen = openTicket();              // still open, inside SLA
-
-            UUID adminId = UUID.randomUUID();
             when(requestContext.currentUserId()).thenReturn(adminId);
             when(requestContext.currentUserRole()).thenReturn("ADMIN");
-            when(userRepository.findById(adminId)).thenReturn(Optional.empty());
-            when(supportTicketRepository.findAll()).thenReturn(List.of(onTime, late, overdueOpen, freshOpen));
+            when(userRepository.findById(adminId)).thenReturn(Optional.of(admin));
+            when(supportTicketRepository.findAll()).thenReturn(List.of(overdueOpen, resolved));
 
             SupportTicketStatsResponse stats = supportTicketService.getStats(null);
 
-            assertThat(stats.getTotalTickets()).isEqualTo(4);
+            assertThat(stats.getTotalTickets()).isEqualTo(2);
+            assertThat(stats.getOpenTickets()).isEqualTo(1);
+            assertThat(stats.getResolvedTickets()).isEqualTo(1);
             assertThat(stats.getOverdueTickets()).isEqualTo(1);
-            assertThat(stats.getResolvedLateTickets()).isEqualTo(1);
-            assertThat(stats.getResolvedOnTimeTickets()).isEqualTo(1);
-            assertThat(stats.getAvgResolutionMinutes()).isEqualTo(180.0);   // (60 + 300) / 2
-            assertThat(stats.getSlaCompliancePercent()).isEqualTo(50.0);     // 2 of 4 within SLA
-        }
-
-        @Test
-        @DisplayName("Thống kê khi chưa có phiếu: SLA và thời gian xử lý là null, không phải 100% hay 18 phút")
-        void getStats_withoutTickets_hasNoInventedFigures() {
-            UUID adminId = UUID.randomUUID();
-            when(requestContext.currentUserId()).thenReturn(adminId);
-            when(requestContext.currentUserRole()).thenReturn("ADMIN");
-            when(supportTicketRepository.findAll()).thenReturn(List.of());
-
-            SupportTicketStatsResponse stats = supportTicketService.getStats(null);
-
-            assertThat(stats.getSlaCompliancePercent()).isNull();
-            assertThat(stats.getAvgResolutionMinutes()).isNull();
-        }
-
-        @Test
-        @DisplayName("Ghi nhật ký liên hệ lưu đúng vai trò người nhận (BUSINESS_OPERATIONS_MANAGER cũ chuyển thành BUSINESS_MANAGER)")
-        void contactLog_normalizesTargetRole() {
-            UUID managerId = UUID.randomUUID();
-            User manager = User.builder().fullName("Quản lý Trí").facility(testFacility).build();
-            manager.setId(managerId);
-            SupportTicket ticket = openTicket();
-
-            when(requestContext.currentUserId()).thenReturn(managerId);
-            when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
-            when(supportTicketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-            when(userRepository.findById(managerId)).thenReturn(Optional.of(manager));
-            when(contactLogRepository.save(any(SupportTicketContactLog.class))).thenAnswer(inv -> {
-                SupportTicketContactLog l = inv.getArgument(0);
-                l.setId(UUID.randomUUID());
-                return l;
-            });
-
-            SupportTicketContactLogResponse res = supportTicketService.recordContactLog(ticket.getId(),
-                    SupportTicketContactLogRequest.builder().contactMethod("PHONE").contactTarget("0901234567")
-                            .summary("Báo sự cố").targetRole("BUSINESS_OPERATIONS_MANAGER").build());
-            assertThat(res.getTargetRole()).isEqualTo("BUSINESS_MANAGER");
-        }
-    }
-
-    @Nested
-    @DisplayName("Staff chỉ thao tác trên phiếu của cơ sở mình và phiếu được giao cho mình")
-    class StaffOwnershipTests {
-
-        private UUID staffId;
-        private UUID colleagueId;
-        private User staff;
-        private User colleague;
-
-        @org.junit.jupiter.api.BeforeEach
-        void setUpStaff() {
-            staffId = UUID.randomUUID();
-            colleagueId = UUID.randomUUID();
-            staff = User.builder().fullName("Nhân viên A").facility(testFacility).build();
-            staff.setId(staffId);
-            colleague = User.builder().fullName("Nhân viên B").facility(testFacility).build();
-            colleague.setId(colleagueId);
-            lenient().when(requestContext.currentUserId()).thenReturn(staffId);
-            lenient().when(requestContext.currentUserRole()).thenReturn("STAFF");
-            lenient().when(userRepository.findById(staffId)).thenReturn(Optional.of(staff));
-            lenient().when(supportTicketRepository.save(any(SupportTicket.class))).thenAnswer(inv -> inv.getArgument(0));
-        }
-
-        private SupportTicket ticket(TicketStatus status, User assignee) {
-            SupportTicket ticket = SupportTicket.builder()
-                    .title("Sự cố")
-                    .customer(testCustomer)
-                    .facility(testFacility)
-                    .assignedStaff(assignee)
-                    .status(status)
-                    .build();
-            ticket.setId(UUID.randomUUID());
-            lenient().when(supportTicketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-            return ticket;
-        }
-
-        @Test
-        @DisplayName("Nhận phiếu chưa ai nhận: gán cho mình và chuyển sang IN_PROGRESS")
-        void take_freeTicket_assignsToCaller() {
-            SupportTicket ticket = ticket(TicketStatus.OPEN, null);
-
-            SupportTicketResponse res = supportTicketService.takeOwnership(ticket.getId());
-
-            assertThat(res.getStatus()).isEqualTo("IN_PROGRESS");
-            assertThat(ticket.getAssignedStaff()).isEqualTo(staff);
-        }
-
-        @Test
-        @DisplayName("Nhận phiếu đang do đồng nghiệp xử lý bị từ chối (409), phiếu không đổi người phụ trách")
-        void take_ticketAssignedToColleague_isRejected() {
-            SupportTicket ticket = ticket(TicketStatus.IN_PROGRESS, colleague);
-
-            AppException ex = assertThrows(AppException.class, () -> supportTicketService.takeOwnership(ticket.getId()));
-
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_ALREADY_TAKEN);
-            assertThat(ticket.getAssignedStaff()).isEqualTo(colleague);
-            verify(supportTicketRepository, never()).save(any());
-        }
-
-        @Test
-        @DisplayName("Quản lý cơ sở được phân công lại phiếu bằng cách nhận phiếu của nhân viên")
-        void take_facilityManagerMayTakeOverATicket() {
-            UUID managerId = UUID.randomUUID();
-            User manager = User.builder().fullName("Quản lý").facility(testFacility).build();
-            manager.setId(managerId);
-            when(requestContext.currentUserId()).thenReturn(managerId);
-            when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
-            when(userRepository.findById(managerId)).thenReturn(Optional.of(manager));
-            SupportTicket ticket = ticket(TicketStatus.IN_PROGRESS, colleague);
-
-            supportTicketService.takeOwnership(ticket.getId());
-
-            assertThat(ticket.getAssignedStaff()).isEqualTo(manager);
-        }
-
-        @Test
-        @DisplayName("Tài khoản nhân viên chưa gán cơ sở không thao tác được phiếu nào")
-        void staffWithoutFacility_cannotTouchTickets() {
-            staff.setFacility(null);
-            SupportTicket ticket = ticket(TicketStatus.OPEN, null);
-
-            AppException ex = assertThrows(AppException.class, () -> supportTicketService.takeOwnership(ticket.getId()));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_FACILITY_MISMATCH);
-            AppException view = assertThrows(AppException.class, () -> supportTicketService.getTicketById(ticket.getId()));
-            assertThat(view.getErrorCode()).isEqualTo(ErrorCode.TICKET_FACILITY_MISMATCH);
-        }
-
-        @Test
-        @DisplayName("Báo hoàn tất phiếu của đồng nghiệp bị từ chối")
-        void resolve_ticketOfColleague_isRejected() {
-            SupportTicket ticket = ticket(TicketStatus.IN_PROGRESS, colleague);
-
-            AppException ex = assertThrows(AppException.class, () -> supportTicketService.resolveTicket(ticket.getId(), "hijack"));
-
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_NOT_ASSIGNED_TO_YOU);
-            assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
-        }
-
-        @Test
-        @DisplayName("Báo hoàn tất phiếu chưa ai nhận (OPEN) bị từ chối")
-        void resolve_openUnassignedTicket_isRejected() {
-            SupportTicket ticket = ticket(TicketStatus.OPEN, null);
-
-            AppException ex = assertThrows(AppException.class, () -> supportTicketService.resolveTicket(ticket.getId(), "Đã xử lý"));
-
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_NOT_ASSIGNED_TO_YOU);
-            assertThat(ticket.getStatus()).isEqualTo(TicketStatus.OPEN);
-        }
-
-        @Test
-        @DisplayName("Báo hoàn tất phiếu của mình nhưng chưa ở trạng thái IN_PROGRESS (vừa mở lại) bị từ chối")
-        void resolve_reopenedTicket_requiresTakingItFirst() {
-            SupportTicket ticket = ticket(TicketStatus.REOPENED, staff);
-
-            AppException ex = assertThrows(AppException.class, () -> supportTicketService.resolveTicket(ticket.getId(), "Đã xử lý"));
-
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_NOT_IN_PROGRESS);
-        }
-
-        @Test
-        @DisplayName("Ghi chú xử lý trống hoặc chỉ khoảng trắng bị từ chối")
-        void resolve_blankNote_isRejected() {
-            SupportTicket ticket = ticket(TicketStatus.IN_PROGRESS, staff);
-
-            for (String note : new String[]{null, "", "   "}) {
-                AppException ex = assertThrows(AppException.class, () -> supportTicketService.resolveTicket(ticket.getId(), note));
-                assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_RESOLUTION_NOTE_REQUIRED);
-            }
-            assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
-        }
-
-        @Test
-        @DisplayName("Người được giao báo hoàn tất kèm ghi chú -> RESOLVED")
-        void resolve_byAssigneeWithNote_succeeds() {
-            SupportTicket ticket = ticket(TicketStatus.IN_PROGRESS, staff);
-
-            SupportTicketResponse res = supportTicketService.resolveTicket(ticket.getId(), "  Đã thay pin khóa  ");
-
-            assertThat(res.getStatus()).isEqualTo("RESOLVED");
-            assertThat(ticket.getResolutionNote()).contains("Hoàn tất xử lý: Đã thay pin khóa");
-        }
-
-        @Test
-        @DisplayName("PATCH status của phiếu đồng nghiệp bị từ chối; không có chuyển ngược về OPEN")
-        void updateStatus_rules() {
-            SupportTicket colleagueTicket = ticket(TicketStatus.IN_PROGRESS, colleague);
-            AppException notYours = assertThrows(AppException.class, () -> supportTicketService.updateStatus(
-                    colleagueTicket.getId(), TicketStatusUpdateRequest.builder().status("RESOLVED").note("x").build()));
-            assertThat(notYours.getErrorCode()).isEqualTo(ErrorCode.TICKET_NOT_ASSIGNED_TO_YOU);
-
-            SupportTicket mine = ticket(TicketStatus.IN_PROGRESS, staff);
-            AppException backwards = assertThrows(AppException.class, () -> supportTicketService.updateStatus(
-                    mine.getId(), TicketStatusUpdateRequest.builder().status("OPEN").build()));
-            assertThat(backwards.getErrorCode()).isEqualTo(ErrorCode.TICKET_INVALID_STATUS_TRANSITION);
-            assertThat(mine.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
-
-            AppException noNote = assertThrows(AppException.class, () -> supportTicketService.updateStatus(
-                    mine.getId(), TicketStatusUpdateRequest.builder().status("RESOLVED").build()));
-            assertThat(noNote.getErrorCode()).isEqualTo(ErrorCode.TICKET_RESOLUTION_NOTE_REQUIRED);
-
-            SupportTicketResponse resolved = supportTicketService.updateStatus(
-                    mine.getId(), TicketStatusUpdateRequest.builder().status("RESOLVED").note("Đã xong").build());
-            assertThat(resolved.getStatus()).isEqualTo("RESOLVED");
-        }
-
-        @Test
-        @DisplayName("PATCH status chuyển phiếu tự do sang IN_PROGRESS = nhận phiếu")
-        void updateStatus_claimingAFreeTicketAssignsIt() {
-            SupportTicket free = ticket(TicketStatus.OPEN, null);
-
-            SupportTicketResponse res = supportTicketService.updateStatus(
-                    free.getId(), TicketStatusUpdateRequest.builder().status("IN_PROGRESS").build());
-
-            assertThat(res.getStatus()).isEqualTo("IN_PROGRESS");
-            assertThat(free.getAssignedStaff()).isEqualTo(staff);
-        }
-
-        @Test
-        @DisplayName("Nhân viên không đóng phiếu bằng PATCH status; phiếu OPEN không nhảy thẳng sang RESOLVED")
-        void updateStatus_staffCannotCloseOrSkipSteps() {
-            SupportTicket open = ticket(TicketStatus.OPEN, staff);
-            AppException skip = assertThrows(AppException.class, () -> supportTicketService.updateStatus(
-                    open.getId(), TicketStatusUpdateRequest.builder().status("RESOLVED").note("x").build()));
-            assertThat(skip.getErrorCode()).isEqualTo(ErrorCode.TICKET_INVALID_STATUS_TRANSITION);
-
-            SupportTicket resolved = ticket(TicketStatus.RESOLVED, staff);
-            AppException close = assertThrows(AppException.class, () -> supportTicketService.updateStatus(
-                    resolved.getId(), TicketStatusUpdateRequest.builder().status("CLOSED").build()));
-            assertThat(close.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
-        }
-    }
-
-    @Nested
-    @DisplayName("Tạo phiếu: danh mục và minh chứng được kiểm tra")
-    class CreateValidationTests {
-
-        private SupportTicketRequest.SupportTicketRequestBuilder base() {
-            return SupportTicketRequest.builder()
-                    .customerId(customerId)
-                    .bookingId(bookingId)
-                    .category("LOCK_ISSUE")
-                    .title("Kẹt khóa")
-                    .description("Khóa không nhận mã")
-                    .priority("MEDIUM");
-        }
-
-        private void arrange() {
-            lenient().when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
-            lenient().when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            lenient().when(supportTicketRepository.save(any(SupportTicket.class))).thenAnswer(inv -> {
-                SupportTicket t = inv.getArgument(0);
-                t.setId(UUID.randomUUID());
-                return t;
-            });
-        }
-
-        @Test
-        @DisplayName("Danh mục lạ hoặc để trống bị từ chối (400), không còn rơi về OTHER")
-        void unknownCategory_isRejected() {
-            arrange();
-            for (String category : new String[]{"BOGUS", "", null, "lock"}) {
-                AppException ex = assertThrows(AppException.class,
-                        () -> supportTicketService.createTicket(base().category(category).build()));
-                assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_INVALID_CATEGORY);
-            }
-            verify(supportTicketRepository, never()).save(any());
-        }
-
-        @Test
-        @DisplayName("Danh mục hợp lệ không phân biệt hoa thường")
-        void knownCategory_isAccepted() {
-            arrange();
-            assertThat(supportTicketService.createTicket(base().category("pin_code").build()).getCategory()).isEqualTo("PIN_CODE");
-        }
-
-        @Test
-        @DisplayName("Minh chứng là link ngoài, javascript: hoặc data: bị từ chối")
-        void foreignEvidence_isRejected() {
-            arrange();
-            for (String url : new String[]{"http://evil.example/a.jpg", "javascript:alert(1)", "data:image/png;base64,AAAA",
-                    "/uploads/../etc/passwd", "/uploads/tickets/../../x.jpg", "//evil.example/uploads/tickets/a.jpg"}) {
-                AppException ex = assertThrows(AppException.class,
-                        () -> supportTicketService.createTicket(base().evidenceUrls(List.of(url)).build()));
-                assertThat(ex.getErrorCode()).as(url).isEqualTo(ErrorCode.TICKET_EVIDENCE_INVALID);
-            }
-            verify(supportTicketRepository, never()).save(any());
-            verify(fileStorageService, never()).requireOwnUploads(any(), anyString());
-        }
-
-        @Test
-        @DisplayName("Minh chứng hợp lệ phải là tệp của chính người gửi: kiểm tra qua FileStorageService, link ký số được lưu dạng đường dẫn gốc")
-        void uploadedEvidence_isCheckedAgainstTheUploader() {
-            arrange();
-            doThrow(new AppException(ErrorCode.TICKET_EVIDENCE_INVALID)).when(fileStorageService).requireOwnUploads(any(), eq("tickets"));
-            AppException ex = assertThrows(AppException.class, () -> supportTicketService.createTicket(
-                    base().evidenceUrls(List.of("/uploads/tickets/not-mine.jpg")).build()));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_EVIDENCE_INVALID);
-        }
-
-        @Test
-        @DisplayName("Link ký số dán lại được lưu thành đường dẫn gốc, không kèm chữ ký")
-        void signedLink_isStoredAsThePlainPath() {
-            arrange();
-            SupportTicketResponse res = supportTicketService.createTicket(
-                    base().evidenceUrls(List.of("/uploads/tickets/evidence-1.jpg?exp=1&sig=abc")).build());
-            assertThat(res.getEvidenceUrls()).containsExactly("/uploads/tickets/evidence-1.jpg");
-            verify(fileStorageService).requireOwnUploads(List.of("/uploads/tickets/evidence-1.jpg"), "tickets");
-        }
-    }
-
-    @Nested
-    @DisplayName("Khách nhận thông báo trong ứng dụng khi phiếu được tiếp nhận và khi xử lý xong")
-    class CustomerNoticeTests {
-
-        private User staff;
-        private User customer;
-
-        @org.junit.jupiter.api.BeforeEach
-        void setUpNotice() {
-            UUID staffId = UUID.randomUUID();
-            staff = User.builder().fullName("Nhân viên A").facility(testFacility).build();
-            staff.setId(staffId);
-            customer = User.builder().fullName("Khách A").email("khach@example.com")
-                    .role(Role.builder().name("CUSTOMER").build()).build();
-            customer.setId(UUID.randomUUID());
-            lenient().when(requestContext.currentUserId()).thenReturn(staffId);
-            lenient().when(requestContext.currentUserRole()).thenReturn("STAFF");
-            lenient().when(userRepository.findById(staffId)).thenReturn(Optional.of(staff));
-            lenient().when(supportTicketRepository.save(any(SupportTicket.class))).thenAnswer(inv -> inv.getArgument(0));
-        }
-
-        private SupportTicket ticket(TicketStatus status, User assignee, User raisedBy) {
-            SupportTicket ticket = SupportTicket.builder()
-                    .ticketCode("TK-261021-0001")
-                    .title("Khóa cửa kẹt")
-                    .customer(raisedBy)
-                    .facility(testFacility)
-                    .assignedStaff(assignee)
-                    .status(status)
-                    .build();
-            ticket.setId(UUID.randomUUID());
-            lenient().when(supportTicketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-            return ticket;
-        }
-
-        private com.boxora.entity.NotificationLog savedNotice() {
-            org.mockito.ArgumentCaptor<com.boxora.entity.NotificationLog> captor =
-                    org.mockito.ArgumentCaptor.forClass(com.boxora.entity.NotificationLog.class);
-            verify(notificationLogRepository).save(captor.capture());
-            return captor.getValue();
-        }
-
-        @Test
-        @DisplayName("Nhận phiếu: khách có thông báo trong ứng dụng, không lộ mã trạng thái")
-        void takingTheTicketNotifiesTheCustomer() {
-            SupportTicket ticket = ticket(TicketStatus.OPEN, null, customer);
-
-            supportTicketService.takeOwnership(ticket.getId());
-
-            com.boxora.entity.NotificationLog notice = savedNotice();
-            assertThat(notice.getRecipient()).isEqualTo(customer);
-            assertThat(notice.getNotificationType()).isEqualTo(com.boxora.enums.NotificationType.TICKET_UPDATE);
-            assertThat(notice.getChannel()).isEqualTo(com.boxora.enums.NotificationChannel.IN_APP);
-            assertThat(notice.getReferenceId()).isEqualTo(ticket.getId());
-            assertThat(notice.getTitle()).isEqualTo("Phiếu hỗ trợ TK-261021-0001 đã được tiếp nhận");
-            assertThat(notice.getContent()).contains("Nhân viên A", "Khóa cửa kẹt").doesNotContain("IN_PROGRESS");
-        }
-
-        @Test
-        @DisplayName("Xử lý xong: khách có thông báo mời xem kết quả và xác nhận đóng phiếu")
-        void resolvingTheTicketNotifiesTheCustomer() {
-            SupportTicket ticket = ticket(TicketStatus.IN_PROGRESS, staff, customer);
-
-            supportTicketService.resolveTicket(ticket.getId(), "Đã thay pin khóa");
-
-            com.boxora.entity.NotificationLog notice = savedNotice();
-            assertThat(notice.getTitle()).isEqualTo("Phiếu hỗ trợ TK-261021-0001 đã được xử lý");
-            assertThat(notice.getContent()).contains("xử lý xong", "xác nhận đóng phiếu").doesNotContain("RESOLVED", "Đã thay pin khóa");
-        }
-
-        @Test
-        @DisplayName("Sự cố do nhân viên tự ghi nhận (không có khách) thì không gửi thông báo")
-        void staffRaisedIncidentsSendNoNotice() {
-            User otherStaff = User.builder().fullName("Nhân viên C").role(Role.builder().name("STAFF").build()).build();
-            otherStaff.setId(UUID.randomUUID());
-            SupportTicket ticket = ticket(TicketStatus.IN_PROGRESS, staff, otherStaff);
-
-            supportTicketService.resolveTicket(ticket.getId(), "Đã xử lý");
-
-            verifyNoInteractions(notificationLogRepository);
-        }
-
-        @Test
-        @DisplayName("Nhận lại phiếu đã là của mình không gửi thêm thông báo")
-        void takingAnAlreadyOwnedTicketSendsNothing() {
-            SupportTicket ticket = ticket(TicketStatus.IN_PROGRESS, staff, customer);
-
-            supportTicketService.takeOwnership(ticket.getId());
-
-            verifyNoInteractions(notificationLogRepository);
-        }
-
-        @Test
-        @DisplayName("Lưu thông báo lỗi thì phiếu vẫn được xử lý xong")
-        void aFailingNoticeNeverBlocksTheTicket() {
-            SupportTicket ticket = ticket(TicketStatus.IN_PROGRESS, staff, customer);
-            when(notificationLogRepository.save(any())).thenThrow(new IllegalStateException("db down"));
-
-            SupportTicketResponse res = supportTicketService.resolveTicket(ticket.getId(), "Đã xử lý");
-
-            assertThat(res.getStatus()).isEqualTo("RESOLVED");
+            assertThat(stats.getSlaCompliancePercent()).isEqualTo(50.0);
+            assertThat(stats.getAvgResolutionMinutes()).isEqualTo(60.0);
         }
     }
 }

@@ -1,5 +1,3 @@
-import { APP_EVENTS, STORAGE_KEYS } from '../constants/storageKeys'
-
 export interface WebSettings {
   theme: 'light' | 'dark' | 'system'
   fontSize: 'normal' | 'large'
@@ -10,7 +8,7 @@ export interface WebSettings {
   rememberSession: boolean
 }
 
-const STORAGE_KEY = STORAGE_KEYS.webSettings
+const STORAGE_KEY = 'boxora_web_settings'
 
 export const DEFAULT_WEB_SETTINGS: WebSettings = {
   theme: 'light',
@@ -33,7 +31,7 @@ export const getWebSettings = (): WebSettings => {
       ...parsed,
       theme: parsed.theme === 'dark' || parsed.theme === 'system' ? parsed.theme : 'light',
       fontSize: parsed.fontSize === 'large' ? 'large' : 'normal',
-      language: parsed.language === 'en' ? 'en' : 'vi',
+      language: 'vi',
     }
   } catch (e) {
     console.warn('Failed to parse web settings from localStorage:', e)
@@ -82,7 +80,7 @@ export const applyWebSettingsToDOM = (settings: WebSettings) => {
       if (event.key !== STORAGE_KEY) return
       const syncedSettings = getWebSettings()
       applyWebSettingsToDOM(syncedSettings)
-      window.dispatchEvent(new CustomEvent(APP_EVENTS.settingsChanged, { detail: syncedSettings }))
+      window.dispatchEvent(new CustomEvent('boxora_settings_changed', { detail: syncedSettings }))
     })
     storageSyncAttached = true
   }
@@ -110,74 +108,29 @@ export const saveWebSettings = (newSettings: Partial<WebSettings>): WebSettings 
 
   // Dispatch custom event for real-time reactivity
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent(APP_EVENTS.settingsChanged, { detail: updated }))
+    window.dispatchEvent(new CustomEvent('boxora_settings_changed', { detail: updated }))
   }
 
   return updated
 }
 
-/**
- * Short two-tone alert (Web Audio, no asset needed). Used by the settings "Nghe thử" button and when a
- * new notification arrives while "Âm báo khi có thông báo mới" is on. Browsers only allow audio after the
- * user has interacted with the page once; before that the call is silently ignored.
- */
-export const playAlertSound = (volume: number = 80) => {
+export const playEmergencySoundPreview = (volume: number = 80) => {
   if (typeof window === 'undefined') return
   try {
-    const AudioCtor = window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-    if (!AudioCtor) return
-    const audioCtx = new AudioCtor()
-    void audioCtx.resume?.()
-    const peak = Math.min(Math.max(volume, 0), 100) / 100 * 0.3
-    const beep = (frequency: number, startAt: number) => {
-      const osc = audioCtx.createOscillator()
-      const gain = audioCtx.createGain()
-      osc.type = 'sine'
-      osc.frequency.setValueAtTime(frequency, audioCtx.currentTime + startAt)
-      gain.gain.setValueAtTime(Math.max(peak, 0.001), audioCtx.currentTime + startAt)
-      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startAt + 0.25)
-      osc.connect(gain)
-      gain.connect(audioCtx.destination)
-      osc.start(audioCtx.currentTime + startAt)
-      osc.stop(audioCtx.currentTime + startAt + 0.25)
-    }
-    beep(880, 0)
-    beep(660, 0.3)
-    window.setTimeout(() => void audioCtx.close?.(), 1000)
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const osc = audioCtx.createOscillator()
+    const gain = audioCtx.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(880, audioCtx.currentTime)
+    osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.3)
+    gain.gain.setValueAtTime((volume / 100) * 0.3, audioCtx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3)
+    osc.connect(gain)
+    gain.connect(audioCtx.destination)
+    osc.start()
+    osc.stop(audioCtx.currentTime + 0.3)
   } catch (e) {
     console.warn('Web Audio API not supported or blocked:', e)
   }
 }
 
-/** @deprecated Use playAlertSound. Kept so older imports keep working. */
-export const playEmergencySoundPreview = playAlertSound
-
-export type BrowserNotificationPermission = 'unsupported' | 'default' | 'granted' | 'denied'
-
-/** Current state of the browser's Notification permission for this site. */
-export const getBrowserNotificationPermission = (): BrowserNotificationPermission => {
-  if (typeof window === 'undefined' || typeof Notification === 'undefined') return 'unsupported'
-  return Notification.permission
-}
-
-/** Asks the browser for permission (must be called from a user gesture, e.g. flipping the switch). */
-export const requestBrowserNotificationPermission = async (): Promise<BrowserNotificationPermission> => {
-  if (getBrowserNotificationPermission() === 'unsupported') return 'unsupported'
-  try {
-    return await Notification.requestPermission()
-  } catch {
-    return getBrowserNotificationPermission()
-  }
-}
-
-/** Shows an operating-system notification; returns false when it cannot (unsupported or not granted). */
-export const showBrowserNotification = (title: string, body?: string, tag?: string): boolean => {
-  if (getBrowserNotificationPermission() !== 'granted') return false
-  try {
-    new Notification(title, { body, tag, icon: '/favicon.svg' })
-    return true
-  } catch (e) {
-    console.warn('Browser notification failed:', e)
-    return false
-  }
-}

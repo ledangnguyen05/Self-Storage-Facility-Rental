@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Data
@@ -22,6 +23,10 @@ public class BookingCreateRequest {
 
     @NotNull(message = "Start date is required")
     private LocalDate startDate;
+
+    private LocalDateTime expectedArrivalAt;
+
+    private Boolean requiresManagerApproval;
 
     @NotNull(message = "Rental duration in months is required")
     private Integer rentalMonths;
@@ -39,4 +44,10 @@ public class BookingCreateRequest {
 
     /** Giờ dự kiến đến cơ sở nhận kho (ví dụ: "14:00") */
     private String checkInTime;
+
+    /** Số Căn cước công dân hoặc Hộ chiếu */
+    private String identityCardNumber;
+
+    /** Loại giấy tờ định danh (CCCD hoặc PASSPORT) */
+    private String identityCardType;
 }

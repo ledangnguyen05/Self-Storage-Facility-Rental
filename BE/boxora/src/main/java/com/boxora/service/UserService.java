@@ -5,7 +5,6 @@ import com.boxora.dto.request.UserCreateRequest;
 import com.boxora.dto.request.ProfileUpdateRequest;
 import com.boxora.dto.request.UserUpdateRequest;
 import com.boxora.dto.response.UserResponse;
-import com.boxora.dto.response.UserSummaryResponse;
 
 import java.util.UUID;
 
@@ -27,7 +26,4 @@ public interface UserService {
             String sortDir
     );
     UserResponse toggleActive(UUID id);
-
-    /** Counts of matching accounts (total / active / inactive / per role), for the admin KPI strip. */
-    UserSummaryResponse getSummary(String search, Boolean isActive, UUID roleId, String role, UUID facilityId);
 }

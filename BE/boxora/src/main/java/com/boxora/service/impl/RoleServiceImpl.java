@@ -65,7 +65,7 @@ public class RoleServiceImpl implements RoleService {
                 ActivityAction.ROLE_CREATE,
                 "Role",
                 saved.getId(),
-                "Tạo mới vai trò: " + saved.getName(),
+                "Tao moi role: " + saved.getName(),
                 null,
                 saved.getName()
         );
@@ -97,7 +97,7 @@ public class RoleServiceImpl implements RoleService {
                 ActivityAction.ROLE_UPDATE,
                 "Role",
                 updated.getId(),
-                "Cập nhật vai trò: " + updated.getName(),
+                "Cap nhat role: " + updated.getName(),
                 null,
                 updated.getName()
         );
@@ -122,7 +122,7 @@ public class RoleServiceImpl implements RoleService {
                 ActivityAction.ROLE_DELETE,
                 "Role",
                 role.getId(),
-                "Xóa vai trò: " + role.getName(),
+                "Xoa role: " + role.getName(),
                 null,
                 null
         );

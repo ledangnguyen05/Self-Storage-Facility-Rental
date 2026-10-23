@@ -70,13 +70,4 @@ public class RefundRequestResponse {
     private String reconciledByName;
     private LocalDateTime reconciledAt;
     private String reconciliationNotes;
-
-    /** True while the customer has not provided a usable bank account (transfer is blocked). */
-    private boolean bankInfoMissing;
-    private LocalDateTime bankInfoUpdatedAt;
-    private String transferEvidenceUrl;
-    private LocalDateTime updatedAt;
-    private String unitCode;
-    /** Refund SLA of the facility policy, in working days (null when unknown). */
-    private Integer refundSlaDays;
 }

@@ -1,6 +1,5 @@
 package com.boxora.config;
 
-import com.boxora.security.ApiAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -36,32 +35,19 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthFilter;
     private final UserDetailsService userDetailsService;
-    private final ApiAuthenticationEntryPoint authenticationEntryPoint;
 
-    @Value("${app.frontend-url:http://localhost:5173}")
+    @Value("${app.frontend-url}")
     private String frontendUrl;
 
-    /** Extra browser origins allowed to call the API (comma separated), e.g. a second dev server port. */
-    @Value("${app.cors.extra-origins:}")
-    private String extraOrigins;
-
-    /**
-     * Only the anonymous auth endpoints are public. /auth/profile and /auth/change-password are
-     * deliberately NOT listed: they need a valid Bearer token (see {@link JwtAuthenticationFilter}).
-     */
-    static final String[] ANONYMOUS_AUTH_URLS = {
+    private static final String[] PUBLIC_URLS = {
             "/api/v1/auth/login",
             "/api/v1/auth/register",
+            "/api/v1/auth/refresh-token",
+            "/api/v1/auth/forgot-password",
+            "/api/v1/auth/reset-password",
             "/api/v1/auth/captcha",
             "/api/v1/auth/google",
-            "/api/v1/auth/public-config",
-            "/api/v1/auth/refresh-token",
             "/api/v1/auth/logout",
-            "/api/v1/auth/forgot-password",
-            "/api/v1/auth/reset-password"
-    };
-
-    private static final String[] PUBLIC_URLS = {
             "/api/v1/payments/vnpay-return",
             "/api/v1/payments/vnpay-ipn",
             "/api/v1/payments/vnpay-verify",
@@ -70,11 +56,10 @@ public class SecurityConfig {
             "/swagger-ui.html",
             "/api-docs/**",
             "/v3/api-docs/**",
-            // Reachable without a bearer token on purpose (an <img src> cannot send one), but FileStorageController
-            // answers only for a short-lived HMAC-signed link issued by POST /api/v1/files/sign.
             "/uploads/**",
             "/api/v1/chatbot/**",
-            "/api/v1/pricing/**"
+            "/api/v1/pricing/**",
+            "/api/v1/geocoding/**"
     };
 
     @Bean
@@ -86,7 +71,6 @@ public class SecurityConfig {
 
                 // Configure route permissions
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(ANONYMOUS_AUTH_URLS).permitAll()
                         .requestMatchers(PUBLIC_URLS).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/facilities/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/storage-units/**").permitAll()
@@ -96,10 +80,9 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
 
-                // 401 (not 403) on unauthenticated access, with a JSON body and a WWW-Authenticate challenge that says
-                // whether an access token was rejected (the web app may then refresh) or none was sent at all.
+                // Return 401 Unauthorized instead of default 403 Forbidden on unauthenticated access
                 .exceptionHandling(ex -> ex
-                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .authenticationEntryPoint(new org.springframework.security.web.authentication.HttpStatusEntryPoint(org.springframework.http.HttpStatus.UNAUTHORIZED))
                 )
 
                 // Stateless session — no HTTP session stored server-side
@@ -119,32 +102,18 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(allowedOrigins());
+        configuration.setAllowedOriginPatterns(List.of("*"));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
-        // Cross-origin deployments: let the web app read WHY a 401 happened (see ApiAuthenticationEntryPoint).
-        configuration.setExposedHeaders(List.of("WWW-Authenticate"));
         configuration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
 
-    /** Configured frontend origin plus local dev servers; blank entries and trailing slashes are dropped. */
-    private List<String> allowedOrigins() {
-        java.util.LinkedHashSet<String> origins = new java.util.LinkedHashSet<>();
-        origins.add(frontendUrl);
-        origins.add("http://localhost:5173");
-        origins.add("http://localhost:3000");
-        if (extraOrigins != null) {
-            origins.addAll(java.util.Arrays.asList(extraOrigins.split(",")));
-        }
-        return origins.stream()
-                .filter(o -> o != null && !o.isBlank())
-                .map(String::trim)
-                .map(o -> o.endsWith("/") ? o.substring(0, o.length() - 1) : o)
-                .distinct()
-                .toList();
+    @Bean
+    public org.springframework.web.filter.CorsFilter corsFilter() {
+        return new org.springframework.web.filter.CorsFilter(corsConfigurationSource());
     }
 
     @Bean

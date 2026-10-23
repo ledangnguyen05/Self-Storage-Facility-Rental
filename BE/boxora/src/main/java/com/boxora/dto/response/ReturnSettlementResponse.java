@@ -54,15 +54,6 @@ public class ReturnSettlementResponse {
     /** Mã giao dịch hoàn tiền nếu đã sinh */
     private String refundTransactionId;
 
-    /** Yêu cầu hoàn tiền chuyển kế toán duyệt (null nếu không có tiền để hoàn) */
-    private UUID refundRequestId;
-    private String refundRequestCode;
-    private String refundMethod;
-
-    /** Khoản khách còn nợ khi khấu trừ vượt tiền cọc (0 nếu không nợ) */
-    private BigDecimal customerDebtAmount;
-    private UUID customerDebtId;
-
     /** Đạt toàn bộ 5/5 tiêu chuẩn hiện trường */
     private boolean checklistAllPassed;
 

@@ -34,48 +34,70 @@ public class StaffAssignmentController {
     private final StaffAssignmentService staffAssignmentService;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER')")
     @Operation(summary = "Tạo mới phân công ca trực cho nhân viên")
     public ResponseEntity<ApiResponse<StaffAssignmentResponse>> createAssignment(
             @Valid @RequestBody StaffAssignmentCreateRequest request
     ) {
         StaffAssignmentResponse response = staffAssignmentService.createAssignment(request);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Đã phân công ca trực", response));
+                .body(ApiResponse.success("Tạo phân công ca trực thành công", response));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER')")
     @Operation(summary = "Cập nhật phân công ca trực (ca, khu vực, vai trò, ghi chú)")
     public ResponseEntity<ApiResponse<StaffAssignmentResponse>> updateAssignment(
             @PathVariable UUID id,
             @Valid @RequestBody StaffAssignmentUpdateRequest request
     ) {
         StaffAssignmentResponse response = staffAssignmentService.updateAssignment(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Đã cập nhật phân công ca trực", response));
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật phân công ca trực thành công", response));
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Cập nhật trạng thái ca trực (Điểm danh check-in, hoàn thành ca, báo vắng)")
     public ResponseEntity<ApiResponse<StaffAssignmentResponse>> updateStatus(
             @PathVariable UUID id,
             @Valid @RequestBody StaffAssignmentStatusUpdateRequest request
     ) {
         StaffAssignmentResponse response = staffAssignmentService.updateStatus(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Đã cập nhật trạng thái ca trực", response));
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật trạng thái ca trực thành công", response));
+    }
+
+    @PostMapping("/{id}/check-in")
+    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Điểm danh xác nhận vào ca trực (Check-in)")
+    public ResponseEntity<ApiResponse<StaffAssignmentResponse>> checkIn(
+            @PathVariable UUID id,
+            @RequestBody(required = false) com.boxora.dto.request.StaffCheckInRequest request
+    ) {
+        StaffAssignmentResponse response = staffAssignmentService.checkIn(id, request);
+        return ResponseEntity.ok(ApiResponse.success("Điểm danh vào ca trực thành công", response));
+    }
+
+    @PostMapping("/{id}/check-out")
+    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Kết thúc ca trực (Check-out)")
+    public ResponseEntity<ApiResponse<StaffAssignmentResponse>> checkOut(
+            @PathVariable UUID id,
+            @RequestBody(required = false) com.boxora.dto.request.StaffCheckOutRequest request
+    ) {
+        StaffAssignmentResponse response = staffAssignmentService.checkOut(id, request);
+        return ResponseEntity.ok(ApiResponse.success("Điểm danh kết thúc ca trực thành công", response));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER')")
     @Operation(summary = "Xóa hoặc hủy phân công ca trực")
     public ResponseEntity<ApiResponse<Void>> deleteAssignment(@PathVariable UUID id) {
         staffAssignmentService.deleteAssignment(id);
-        return ResponseEntity.ok(ApiResponse.success("Đã hủy phân công ca trực", null));
+        return ResponseEntity.ok(ApiResponse.success("Hủy phân công ca trực thành công", null));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_VIEW')")
     @Operation(summary = "Xem chi tiết một lượt phân công ca trực")
     public ResponseEntity<ApiResponse<StaffAssignmentResponse>> getById(@PathVariable UUID id) {
         StaffAssignmentResponse response = staffAssignmentService.getById(id);
@@ -83,7 +105,7 @@ public class StaffAssignmentController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_VIEW')")
     @Operation(summary = "Tra cứu danh sách phân công ca trực với bộ lọc và phân trang")
     public ResponseEntity<ApiResponse<PageResponse<StaffAssignmentResponse>>> getAllAssignments(
             @RequestParam(required = false) UUID facilityId,
@@ -105,7 +127,7 @@ public class StaffAssignmentController {
     }
 
     @GetMapping("/daily-board")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_VIEW')")
     @Operation(summary = "Bảng điều khiển ca trực trong ngày (Daily Task Board - SP2-06)")
     public ResponseEntity<ApiResponse<List<StaffAssignmentResponse>>> getDailyBoard(
             @RequestParam(required = false) UUID facilityId,

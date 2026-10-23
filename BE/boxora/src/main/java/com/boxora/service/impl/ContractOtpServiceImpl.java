@@ -13,7 +13,6 @@ import com.boxora.service.ContractOtpService;
 import com.boxora.service.ContractSigningService;
 import com.boxora.service.EmailService;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,7 +25,6 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class ContractOtpServiceImpl implements ContractOtpService {
 
     private static final int OTP_TTL_SECONDS = 300;
@@ -98,11 +96,13 @@ public class ContractOtpServiceImpl implements ContractOtpService {
             throw new AppException(ErrorCode.CONTRACT_OTP_INVALID);
         }
 
-        String signingUrl = contractSigningService.createSigningRequest(contractId);
         if (challenge.getVerifiedAt() == null) {
             challenge.setVerifiedAt(LocalDateTime.now());
+            challenge.setFailedAttempts(0);
             otpRepository.save(challenge);
         }
+
+        String signingUrl = contractSigningService.createSigningRequest(contractId);
         return ContractOtpResponse.builder()
                 .expiresInSeconds(0)
                 .resendInSeconds(0)
@@ -113,15 +113,8 @@ public class ContractOtpServiceImpl implements ContractOtpService {
     @Override
     @Transactional(readOnly = true)
     public void requireVerified(UUID contractId) {
-        // Electronic signing (DocuSeal link or the in-app test signature) is the customer's own act: staff and
-        // managers can never sign, nor obtain the signing link, on the customer's behalf. Counter contracts are
-        // signed on paper and uploaded through the handover flow instead.
-        RentalContract contract = contractRepository.findById(contractId)
-                .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
-        UUID currentUserId = requestContext.currentUserId();
-        if (!"CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole()) || currentUserId == null
-                || contract.getCustomer() == null || !currentUserId.equals(contract.getCustomer().getId())) {
-            throw new AppException(ErrorCode.CONTRACT_SIGNER_NOT_CUSTOMER);
+        if (!"CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+            return;
         }
         ContractSigningOtp challenge = otpRepository.findByContract_Id(contractId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_OTP_NOT_FOUND));
@@ -162,35 +155,11 @@ public class ContractOtpServiceImpl implements ContractOtpService {
             challenge.setRevoked(false);
         }
         otpRepository.save(challenge);
-        String email = contract.getCustomer().getEmail();
-        if (email == null || email.isBlank()) {
-            throw new AppException(ErrorCode.CONTRACT_OTP_SEND_FAILED,
-                    "Tài khoản chưa có email nên không thể nhận mã OTP. Vui lòng cập nhật email hoặc ký hợp đồng tại quầy.");
-        }
-        try {
-            // Synchronous: the API only says "OTP sent" when the mail server accepted the message.
-            emailService.sendNow(email, "Mã OTP ký hợp đồng Boxora " + contract.getContractCode(), otpEmailHtml(otp, contract));
-        } catch (Exception ex) {
-            log.warn("Contract OTP email for {} could not be sent: {}", contract.getContractCode(), ex.getMessage());
-            // The transaction rolls back: no OTP is stored when it could not be delivered.
-            throw new AppException(ErrorCode.CONTRACT_OTP_SEND_FAILED);
-        }
+        emailService.sendContractSigningOtp(contract.getCustomer().getEmail(), otp);
         return ContractOtpResponse.builder()
                 .expiresInSeconds(OTP_TTL_SECONDS)
                 .resendInSeconds(RESEND_COOLDOWN_SECONDS)
                 .build();
-    }
-
-    private static String otpEmailHtml(String otp, RentalContract contract) {
-        return """
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                    <h2>Xác thực ký hợp đồng Boxora</h2>
-                    <p>Mã OTP để ký hợp đồng <strong>%s</strong> của bạn là:</p>
-                    <p style="font-size: 28px; font-weight: bold; letter-spacing: 8px;">%s</p>
-                    <p>Mã có hiệu lực trong 5 phút. Không chia sẻ mã này với bất kỳ ai, kể cả nhân viên Boxora.</p>
-                    <p>Nếu bạn không yêu cầu ký hợp đồng, hãy bỏ qua email này.</p>
-                </div>
-                """.formatted(contract.getContractCode() != null ? contract.getContractCode() : "", otp);
     }
 
     private int resendWaitSeconds(ContractSigningOtp challenge) {

@@ -60,4 +60,14 @@ public interface StaffAssignmentService {
      * Bảng phân công ca trực trong ngày của cơ sở (Daily Task Board - SP2-06).
      */
     List<StaffAssignmentResponse> getDailyBoard(UUID facilityId, LocalDate date);
+
+    /**
+     * Nhân viên hoặc Quản lý thực hiện điểm danh vào ca trực (Check-in).
+     */
+    StaffAssignmentResponse checkIn(UUID id, com.boxora.dto.request.StaffCheckInRequest request);
+
+    /**
+     * Nhân viên hoặc Quản lý thực hiện kết thúc ca trực (Check-out).
+     */
+    StaffAssignmentResponse checkOut(UUID id, com.boxora.dto.request.StaffCheckOutRequest request);
 }

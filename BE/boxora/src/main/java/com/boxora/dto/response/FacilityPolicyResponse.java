@@ -18,11 +18,6 @@ public class FacilityPolicyResponse {
 
     private Integer renewalWindowDays;
 
-    /** Số giờ gia hạn sau giờ hẹn nhận kho trước khi giữ chỗ tự hết hạn. */
-    private Integer holdGraceHours;
-    /** Số ngày tối đa được đặt giữ chỗ trước lịch hẹn. */
-    private Integer maxHoldDays;
-
     private Integer cancellationFullRefundHours;
     private Integer cancellationPartialRefundHours;
     private Double cancellationPartialRefundPercent;

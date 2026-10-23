@@ -15,17 +15,17 @@ import java.util.UUID;
 @Builder
 public class ManualPaymentRecordRequest {
 
-    @NotNull(message = "Thiếu mã đơn đặt kho")
+    @NotNull(message = "Booking ID is required")
     private UUID bookingId;
 
-    @NotNull(message = "Chọn khoản cần thu: tiền cọc hoặc tiền thuê tháng đầu")
+    @NotNull(message = "Payment obligation type is required (DEPOSIT or RENTAL_FEE)")
     private PaymentType paymentType;
 
-    @NotNull(message = "Chọn phương thức thu: tiền mặt hoặc chuyển khoản")
+    @NotNull(message = "Payment method is required (CASH or BANK_TRANSFER)")
     private String paymentMethod;
 
-    @NotNull(message = "Nhập số tiền thu")
-    @DecimalMin(value = "1000", message = "Số tiền tối thiểu 1.000 ₫")
+    @NotNull(message = "Amount is required")
+    @DecimalMin(value = "1000", message = "Amount must be at least 1,000 VND")
     private BigDecimal amount;
 
     private String receiptVoucherCode;

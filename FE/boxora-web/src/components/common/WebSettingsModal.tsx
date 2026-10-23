@@ -1,276 +1,244 @@
-import React, { useId, useState } from 'react'
-import { Bell, Languages, Monitor, Moon, Palette, Play, RotateCcw, Sun, Type, Volume2, type LucideIcon } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { Modal } from '../ui/Modal'
+import { Button } from '../ui/Button'
 import { useLanguage } from '../../context/LanguageContext'
-import { useWebSettings } from '../../hooks/useWebSettings'
 import {
-  getBrowserNotificationPermission,
-  playAlertSound,
-  requestBrowserNotificationPermission,
-  showBrowserNotification,
-  type BrowserNotificationPermission,
-  type WebSettings,
+  WebSettings,
+  DEFAULT_WEB_SETTINGS,
+  getWebSettings,
+  saveWebSettings,
 } from '../../utils/webSettings'
-import { Button, Modal, Switch, useToast } from '../ui'
-import { cn } from '../ui/cn'
 
 interface WebSettingsModalProps {
   isOpen: boolean
   onClose: () => void
 }
 
-interface ChoiceOption<T extends string> {
-  value: T
-  label: string
-  description: string
-  icon?: LucideIcon
-}
-
-const THEME_OPTIONS: ChoiceOption<WebSettings['theme']>[] = [
-  { value: 'light', label: 'Sáng', description: 'Giao diện trắng tiêu chuẩn', icon: Sun },
-  { value: 'dark', label: 'Tối', description: 'Dịu mắt ban đêm', icon: Moon },
-  { value: 'system', label: 'Tự động', description: 'Theo hệ điều hành', icon: Monitor },
-]
-
-const FONT_OPTIONS: ChoiceOption<WebSettings['fontSize']>[] = [
-  { value: 'normal', label: 'Tiêu chuẩn (100%)', description: 'Tối ưu sơ đồ & bảng dữ liệu' },
-  { value: 'large', label: 'Dễ đọc (+10%)', description: 'Cỡ chữ lớn hơn cho màn hình xa' },
-]
-
-const NOTIFICATION_PERMISSION_HINT: Record<BrowserNotificationPermission, string> = {
-  unsupported: 'Trình duyệt này không hỗ trợ thông báo trên màn hình.',
-  denied: 'Bạn đã chặn thông báo cho trang này. Hãy cho phép lại trong cài đặt của trình duyệt.',
-  default: 'Hiện thông báo trên màn hình máy khi có thông báo mới. Trình duyệt sẽ hỏi quyền khi bạn bật.',
-  granted: 'Hiện thông báo trên màn hình máy khi có thông báo mới, kể cả khi bạn đang ở tab khác.',
-}
-
-const LANGUAGE_OPTIONS: ChoiceOption<WebSettings['language']>[] = [
-  { value: 'vi', label: 'Tiếng Việt', description: 'Ngôn ngữ mặc định hệ thống' },
-  { value: 'en', label: 'English', description: 'Global English interface' },
-]
-
-/** Appearance, sound, language and session preferences. Changes apply immediately. */
 export const WebSettingsModal: React.FC<WebSettingsModalProps> = ({ isOpen, onClose }) => {
-  const { language, setLanguage } = useLanguage()
-  const { settings, update, reset } = useWebSettings()
-  const toast = useToast()
-  const [permission, setPermission] = useState<BrowserNotificationPermission>(getBrowserNotificationPermission)
+  const { language, setLanguage, t } = useLanguage()
+  const [settings, setSettings] = useState<WebSettings>(getWebSettings())
+  const [savedSuccess, setSavedSuccess] = useState(false)
 
-  /** Turning browser notifications on asks the browser for permission and only stays on when it is granted. */
-  const handleBrowserNotifications = async (checked: boolean) => {
-    if (!checked) {
-      update({ enableNotifications: false })
-      return
+  useEffect(() => {
+    if (isOpen) {
+      setSettings(getWebSettings())
+      setSavedSuccess(false)
     }
-    const result = await requestBrowserNotificationPermission()
-    setPermission(result)
-    if (result === 'granted') {
-      update({ enableNotifications: true })
-      toast.success('Đã bật thông báo của trình duyệt')
+  }, [isOpen])
+
+  const handleUpdate = <K extends keyof WebSettings>(key: K, value: WebSettings[K]) => {
+    const updated = { ...settings, [key]: value }
+    setSettings(updated)
+    if (key === 'language') {
+      setLanguage(value as 'vi' | 'en')
     } else {
-      update({ enableNotifications: false })
-      toast.warning('Chưa bật được thông báo', NOTIFICATION_PERMISSION_HINT[result])
+      saveWebSettings({ [key]: value })
     }
-  }
-
-  const sendTestNotification = () => {
-    const shown = showBrowserNotification('Thông báo thử từ Boxora', 'Bạn sẽ nhận thông báo như thế này khi có thông tin mới.', 'boxora-test')
-    if (!shown) toast.warning('Không hiện được thông báo', NOTIFICATION_PERMISSION_HINT[getBrowserNotificationPermission()])
   }
 
   const handleReset = () => {
-    reset()
-    toast.success('Đã khôi phục cài đặt mặc định')
+    setSettings(DEFAULT_WEB_SETTINGS)
+    saveWebSettings(DEFAULT_WEB_SETTINGS)
+    setSavedSuccess(true)
+    setTimeout(() => setSavedSuccess(false), 2000)
   }
 
   const handleSaveAndClose = () => {
-    if (settings.language !== language) setLanguage(settings.language)
-    else update(settings)
-    toast.success('Đã lưu cài đặt')
-    onClose()
+    if (settings.language !== language) {
+      setLanguage(settings.language)
+    } else {
+      saveWebSettings(settings)
+    }
+    setSavedSuccess(true)
+    setTimeout(() => {
+      setSavedSuccess(false)
+      onClose()
+    }, 400)
   }
 
   return (
-    <Modal
-      open={isOpen}
-      onClose={onClose}
-      size="md"
-      title="Cài đặt giao diện & hệ thống"
-      description="Tùy chỉnh trải nghiệm làm việc theo nhu cầu cá nhân."
-      footer={
-        <>
-          <Button variant="ghost" leftIcon={RotateCcw} onClick={handleReset} className="mr-auto">
-            Khôi phục mặc định
-          </Button>
-          <Button variant="secondary" onClick={onClose}>
-            Đóng
-          </Button>
-          <Button onClick={handleSaveAndClose}>Lưu & áp dụng</Button>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-6">
-        <ChoiceGroup
-          icon={Palette}
-          legend="Giao diện"
-          options={THEME_OPTIONS}
-          value={settings.theme}
-          onChange={theme => update({ theme })}
-          columns={3}
-        />
+    <Modal isOpen={isOpen} onClose={onClose} maxWidth="md">
+      <div className="flex flex-col gap-5 text-left">
+        {/* Header */}
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200/60 flex items-center justify-center text-blue-600">
+              <span className="material-symbols-outlined text-[22px]">settings</span>
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900">{t('Cài đặt giao diện & hệ thống')}</h3>
+              <p className="text-xs text-slate-500">{t('Tùy chỉnh trải nghiệm làm việc theo nhu cầu cá nhân')}</p>
+            </div>
+          </div>
+          {savedSuccess && (
+            <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold flex items-center gap-1 animate-in fade-in">
+              <span className="material-symbols-outlined text-[16px]">check_circle</span>
+              <span>{t('Đã lưu')}</span>
+            </span>
+          )}
+        </div>
 
-        <ChoiceGroup
-          icon={Type}
-          legend="Kích thước phông chữ"
-          options={FONT_OPTIONS}
-          value={settings.fontSize}
-          onChange={fontSize => update({ fontSize })}
-          columns={2}
-        />
+        {/* Content sections */}
+        <div className="flex flex-col gap-4 max-h-[60vh] overflow-y-auto pr-1">
+          {/* Section 1: Giao diện (Theme) */}
+          <div className="rounded-xl border border-slate-200/80 p-3.5 bg-white space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-slate-500">palette</span>
+                <span className="text-xs font-bold text-slate-900">{t('Giao diện (Chủ đề màu sắc)')}</span>
+              </div>
+              <span className="text-[11px] font-medium text-slate-500">
+                {settings.theme === 'dark' ? t('Tối') : settings.theme === 'system' ? t('Tự động') : t('Sáng')}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              {[
+                { id: 'light', label: t('Sáng'), desc: t('Giao diện trắng tiêu chuẩn'), icon: 'light_mode' },
+                { id: 'dark', label: t('Tối'), desc: t('Dịu mắt ban đêm'), icon: 'dark_mode' },
+                { id: 'system', label: t('Tự động'), desc: t('Theo hệ điều hành'), icon: 'contrast' },
+              ].map(item => {
+                const isActive = settings.theme === item.id
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleUpdate('theme', item.id as any)}
+                    aria-pressed={isActive}
+                    className={`flex min-h-[92px] flex-col items-center justify-center gap-1.5 p-3 rounded-xl border text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer ${
+                      isActive
+                        ? 'border-blue-600 bg-blue-50/70 text-blue-900 shadow-xs'
+                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
+                    <span className="text-xs font-bold">{item.label}</span>
+                    <span className="text-[10px] text-slate-500 leading-tight">{item.desc}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
 
-        <section className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-3">
-            <SectionTitle icon={Volume2}>Âm báo và thông báo</SectionTitle>
-            <Button variant="ghost" size="sm" leftIcon={Play} onClick={() => playAlertSound(settings.soundVolume)}>
-              Nghe thử
+          {/* Section 2: Cỡ chữ & Hiển thị */}
+          <div className="rounded-xl border border-slate-200/80 p-3.5 bg-white space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-slate-500">format_size</span>
+                <span className="text-xs font-bold text-slate-900">{t('Kích thước phông chữ')}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              {[
+                { id: 'normal', label: t('Tiêu chuẩn (100%)'), desc: t('Tối ưu sơ đồ & bảng dữ liệu'), icon: 'density_medium' },
+                { id: 'large', label: t('Dễ đọc (+10%)'), desc: t('Cỡ chữ lớn hơn cho màn hình xa'), icon: 'density_small' },
+              ].map(item => {
+                const isActive = settings.fontSize === item.id
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleUpdate('fontSize', item.id as any)}
+                    className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      isActive
+                        ? 'border-blue-600 bg-blue-50/70 text-blue-900 shadow-xs'
+                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px] mt-0.5">{item.icon}</span>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold">{item.label}</span>
+                      <span className="text-[10px] text-slate-500">{item.desc}</span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Section 3: Ngôn ngữ & Vùng */}
+          <div className="rounded-xl border border-slate-200/80 p-3.5 bg-white space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-slate-500">translate</span>
+                <span className="text-xs font-bold text-slate-900">{t('Ngôn ngữ hiển thị')}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              {[
+                { id: 'vi', label: t('Tiếng Việt'), desc: t('Ngôn ngữ mặc định hệ thống') },
+                { id: 'en', label: t('English'), desc: t('Global English interface') },
+              ].map(item => {
+                const isActive = settings.language === item.id
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleUpdate('language', item.id as any)}
+                    className={`flex items-center justify-between p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      isActive
+                        ? 'border-blue-600 bg-blue-50/70 text-blue-900 shadow-xs'
+                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    <div>
+                      <p className="text-xs font-bold">{item.label}</p>
+                      <p className="text-[10px] text-slate-500">{item.desc}</p>
+                    </div>
+                    {isActive && (
+                      <span className="material-symbols-outlined text-[18px] text-blue-600">check</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Section 4: Phiên đăng nhập */}
+          <div className="rounded-xl border border-slate-200/80 p-3.5 bg-white flex items-center justify-between">
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-slate-500">lock_reset</span>
+                <span className="text-xs font-bold text-slate-900">{t('Ghi nhớ phiên đăng nhập an toàn')}</span>
+              </div>
+              <span className="text-[10px] text-slate-500 mt-0.5">{t('Duy trì trạng thái làm việc khi đóng trình duyệt')}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleUpdate('rememberSession', !settings.rememberSession)}
+              className={`w-10 h-6 rounded-full p-0.5 transition-colors cursor-pointer ${
+                settings.rememberSession ? 'bg-blue-600' : 'bg-slate-300'
+              }`}
+            >
+              <div
+                className={`w-5 h-5 rounded-full bg-white shadow-xs transition-transform ${
+                  settings.rememberSession ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* Footer actions */}
+        <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={handleReset}
+            className="text-xs font-medium text-slate-500 hover:text-slate-800 transition-colors cursor-pointer flex items-center gap-1"
+          >
+            <span className="material-symbols-outlined text-[15px]">refresh</span>
+            <span>{t('Khôi phục mặc định')}</span>
+          </button>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="secondary" size="sm" onClick={onClose}>
+              {t('Đóng')}
+            </Button>
+            <Button type="button" variant="primary" size="sm" onClick={handleSaveAndClose}>
+              {t('Lưu & Áp dụng')}
             </Button>
           </div>
-          <div className="flex flex-col gap-4 rounded-lg border border-line p-4">
-            <Switch
-              labelPosition="start"
-              label="Âm báo khi có thông báo mới"
-              description="Phát âm báo ngắn khi Boxora gửi thông báo mới cho tài khoản của bạn (mã PIN, hoàn tiền, nhắc gia hạn…)"
-              checked={settings.enableEmergencySound}
-              onCheckedChange={checked => update({ enableEmergencySound: checked })}
-            />
-            {settings.enableEmergencySound ? <VolumeSlider value={settings.soundVolume} onChange={soundVolume => update({ soundVolume })} /> : null}
-            <Switch
-              labelPosition="start"
-              label="Thông báo của trình duyệt"
-              description={NOTIFICATION_PERMISSION_HINT[permission]}
-              checked={settings.enableNotifications && permission === 'granted'}
-              disabled={permission === 'unsupported' || permission === 'denied'}
-              onCheckedChange={checked => void handleBrowserNotifications(checked)}
-            />
-            {settings.enableNotifications && permission === 'granted' ? (
-              <div>
-                <Button variant="secondary" size="sm" leftIcon={Bell} onClick={sendTestNotification}>
-                  Gửi thông báo thử
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        </section>
-
-        <ChoiceGroup
-          icon={Languages}
-          legend="Ngôn ngữ hiển thị"
-          options={LANGUAGE_OPTIONS}
-          value={settings.language}
-          onChange={lang => setLanguage(lang)}
-          columns={2}
-        />
-
-        <div className="rounded-lg border border-line p-4">
-          <Switch
-            labelPosition="start"
-            label="Ghi nhớ phiên đăng nhập"
-            description="Giữ bạn đăng nhập khi đóng trình duyệt. Tắt để tự đăng xuất khi đóng tab, nên tắt trên máy dùng chung"
-            checked={settings.rememberSession}
-            onCheckedChange={checked => update({ rememberSession: checked })}
-          />
         </div>
       </div>
     </Modal>
   )
 }
-
-function SectionTitle({ icon: Icon, children }: { icon: LucideIcon; children: React.ReactNode }) {
-  return (
-    <span className="flex items-center gap-2 text-sm font-semibold text-fg">
-      <Icon size={16} strokeWidth={1.75} aria-hidden="true" className="text-fg-subtle" />
-      {children}
-    </span>
-  )
-}
-
-function ChoiceGroup<T extends string>({
-  icon,
-  legend,
-  options,
-  value,
-  onChange,
-  columns,
-}: {
-  icon: LucideIcon
-  legend: string
-  options: ChoiceOption<T>[]
-  value: T
-  onChange: (value: T) => void
-  columns: 2 | 3
-}) {
-  const name = useId()
-  return (
-    <fieldset className="min-w-0">
-      <legend className="mb-3">
-        <SectionTitle icon={icon}>{legend}</SectionTitle>
-      </legend>
-      <div className={cn('grid gap-2', columns === 3 ? 'grid-cols-3' : 'grid-cols-1 sm:grid-cols-2')}>
-        {options.map(option => {
-          const checked = option.value === value
-          const Icon = option.icon
-          return (
-            <label
-              key={option.value}
-              className={cn(
-                'flex cursor-pointer gap-2.5 rounded-lg border p-3 transition-colors',
-                'has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ring',
-                Icon ? 'flex-col items-center text-center' : 'items-start',
-                checked ? 'border-accent bg-accent-subtle' : 'border-line hover:border-line-strong hover:bg-surface-2',
-              )}
-            >
-              <input
-                type="radio"
-                name={name}
-                value={option.value}
-                checked={checked}
-                onChange={() => onChange(option.value)}
-                className="sr-only"
-              />
-              {Icon ? (
-                <Icon size={20} strokeWidth={1.75} aria-hidden="true" className={checked ? 'text-accent-text' : 'text-fg-subtle'} />
-              ) : null}
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span className={cn('text-sm font-medium', checked ? 'text-accent-text' : 'text-fg')}>{option.label}</span>
-                <span className="text-xs text-fg-muted">{option.description}</span>
-              </span>
-            </label>
-          )
-        })}
-      </div>
-    </fieldset>
-  )
-}
-
-function VolumeSlider({ value, onChange }: { value: number; onChange: (value: number) => void }) {
-  const id = useId()
-  return (
-    <div className="flex items-center gap-3">
-      <label htmlFor={id} className="shrink-0 text-dense text-fg-muted">
-        Âm lượng còi
-      </label>
-      <input
-        id={id}
-        type="range"
-        min={10}
-        max={100}
-        value={value}
-        data-slot="range"
-        onChange={event => onChange(Number(event.target.value))}
-        className="h-1.5 w-full cursor-pointer accent-accent"
-      />
-      <span className="w-10 shrink-0 text-right font-mono text-dense tabular-nums text-fg">{value}%</span>
-    </div>
-  )
-}
-
 export default WebSettingsModal

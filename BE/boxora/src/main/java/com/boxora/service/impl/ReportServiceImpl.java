@@ -1,33 +1,18 @@
 package com.boxora.service.impl;
 
-import com.boxora.dto.response.FacilityOccupancyResponse;
-import com.boxora.dto.response.FacilityRevenueResponse;
-import com.boxora.dto.response.MonthlyRevenueResponse;
-import com.boxora.dto.response.OccupancyReportResponse;
-import com.boxora.dto.response.OverdueDebtReportResponse;
-import com.boxora.dto.response.PaymentChannelItemResponse;
-import com.boxora.dto.response.PaymentChannelReportResponse;
-import com.boxora.dto.response.RevenueReportResponse;
-import com.boxora.dto.response.RevenueTrendResponse;
-import com.boxora.dto.response.SystemOccupancyResponse;
-import com.boxora.dto.response.SystemRevenueSummaryResponse;
+import com.boxora.dto.response.*;
+import com.boxora.entity.Booking;
 import com.boxora.entity.Facility;
-import com.boxora.entity.NotificationLog;
+import com.boxora.entity.FacilityPolicy;
 import com.boxora.entity.RentalContract;
 import com.boxora.entity.User;
 import com.boxora.enums.ActivityAction;
-import com.boxora.enums.NotificationChannel;
-import com.boxora.enums.NotificationType;
-import com.boxora.enums.PaymentStatus;
-import com.boxora.enums.PaymentType;
+import com.boxora.enums.BookingStatus;
+import com.boxora.enums.RentalContractStatus;
 import com.boxora.enums.UnitStatus;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
-import com.boxora.repository.FacilityRepository;
-import com.boxora.repository.NotificationLogRepository;
-import com.boxora.repository.PaymentReportRepository;
-import com.boxora.repository.RentalContractRepository;
-import com.boxora.repository.UnitReportRepository;
+import com.boxora.repository.*;
 import com.boxora.security.FacilityAccessGuard;
 import com.boxora.service.ActivityLogService;
 import com.boxora.service.EmailService;
@@ -36,23 +21,17 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.util.HtmlUtils;
 
 import java.math.BigDecimal;
-import java.text.NumberFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.YearMonth;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.EnumMap;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.TreeMap;
-import java.util.UUID;
+import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
+import java.util.stream.Collectors;
+
+import com.boxora.entity.Payment;
+import com.boxora.enums.PaymentType;
 
 @Service
 @RequiredArgsConstructor
@@ -60,25 +39,15 @@ import java.util.UUID;
 @Transactional(readOnly = true) // reports only read data, never mutate it
 public class ReportServiceImpl implements ReportService {
 
-    /** Open period bounds used when the caller does not pass a date. */
-    private static final LocalDate OPEN_FROM = LocalDate.of(2000, 1, 1);
-    private static final LocalDate OPEN_TO = LocalDate.of(2099, 12, 31);
-    /** Longest zero-filled month series returned by the trend report. */
-    private static final int MAX_TREND_MONTHS = 120;
-    /** Channel key for payments whose method was never recorded. */
-    private static final String UNKNOWN_CHANNEL = "OTHER";
-
-    private final PaymentReportRepository paymentReportRepository;
-    private final UnitReportRepository unitReportRepository;
+    private final PaymentRepository paymentRepository;
+    private final StorageUnitRepository storageUnitRepository;
     private final FacilityRepository facilityRepository;
     private final RentalContractRepository rentalContractRepository;
-    private final NotificationLogRepository notificationLogRepository;
-    private final OverdueDebtReportBuilder overdueDebtReportBuilder;
+    private final FacilityPolicyRepository facilityPolicyRepository;
+    private final BookingRepository bookingRepository;
     private final EmailService emailService;
     private final ActivityLogService activityLogService;
     private final FacilityAccessGuard facilityAccessGuard;
-
-    // ============================================================ revenue
 
     @Override
     public RevenueReportResponse getRevenueReport(LocalDate fromDate, LocalDate toDate) {
@@ -87,171 +56,86 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public RevenueReportResponse getRevenueReport(LocalDate fromDate, LocalDate toDate, UUID facilityId) {
-        validatePeriod(fromDate, toDate);
-        UUID scope = resolveFacilityScope(facilityId);
-
-        List<Object[]> rows = paymentReportRepository.aggregateByFacilityTypeAndStatus(
-                periodStart(fromDate), periodEndExclusive(toDate), scope);
-
-        Map<UUID, RevenueAccumulator> byFacilityId = new LinkedHashMap<>();
-        RevenueAccumulator unassigned = null;
-        for (Object[] row : rows) {
-            UUID rowFacilityId = (UUID) row[0];
-            RevenueAccumulator accumulator;
-            if (rowFacilityId == null) {
-                if (unassigned == null) {
-                    unassigned = new RevenueAccumulator(null, "Chưa gắn với cơ sở nào");
-                }
-                accumulator = unassigned;
-            } else {
-                accumulator = byFacilityId.computeIfAbsent(rowFacilityId, id -> new RevenueAccumulator(id, (String) row[1]));
-            }
-            accumulator.add(
-                    (PaymentType) row[2],
-                    (PaymentStatus) row[3],
-                    toBigDecimal(row[4]),
-                    toLong(row[5]),
-                    toBigDecimal(row[6]));
+        if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST);
         }
 
-        // Every facility in scope gets a row (0 when it had no payment), so the table never shows a gap.
-        for (Facility facility : facilityRepository.findAllByOrderByCreatedAtAsc()) {
-            if (scope == null || scope.equals(facility.getId())) {
-                byFacilityId.computeIfAbsent(facility.getId(), id -> new RevenueAccumulator(id, facility.getName()));
-            }
+        UUID effectiveFacilityId = facilityId;
+        if (facilityAccessGuard.isFacilityScoped()) {
+            effectiveFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
         }
 
-        List<RevenueAccumulator> accumulators = new ArrayList<>(byFacilityId.values());
-        accumulators.sort(Comparator.comparing(RevenueAccumulator::name, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)));
+        LocalDateTime from = fromDate != null ? fromDate.atStartOfDay() : LocalDateTime.of(2000, 1, 1, 0, 0, 0);
+        LocalDateTime to = toDate != null ? toDate.atTime(LocalTime.MAX) : LocalDateTime.of(2099, 12, 31, 23, 59, 59);
 
-        RevenueAccumulator system = new RevenueAccumulator(null, null);
-        List<FacilityRevenueResponse> byFacility = new ArrayList<>();
-        for (RevenueAccumulator accumulator : accumulators) {
-            byFacility.add(accumulator.toFacilityResponse());
-            system.merge(accumulator);
+        List<FacilityRevenueResponse> byFacility = paymentRepository.sumRevenueByFacility(from, to, effectiveFacilityId);
+        SystemRevenueSummaryResponse systemSummary = paymentRepository.sumSystemRevenue(from, to, effectiveFacilityId);
+        if (systemSummary == null) {
+            systemSummary = SystemRevenueSummaryResponse.builder()
+                    .totalRevenue(BigDecimal.ZERO)
+                    .depositRevenue(BigDecimal.ZERO)
+                    .rentalFeeRevenue(BigDecimal.ZERO)
+                    .renewalFeeRevenue(BigDecimal.ZERO)
+                    .extraChargeRevenue(BigDecimal.ZERO)
+                    .bookingPaymentRevenue(BigDecimal.ZERO)
+                    .paymentCount(0L)
+                    .build();
         }
-        if (unassigned != null) {
-            byFacility.add(unassigned.toFacilityResponse());
-            system.merge(unassigned);
-        }
+
+        List<RevenueMonthSummaryResponse> monthlyRevenue = Optional.ofNullable(
+                        paymentRepository.sumRevenueByMonth(from, to, effectiveFacilityId))
+                .orElseGet(List::of)
+                .stream()
+                .map(this::toMonthlySummary)
+                .toList();
+        List<PaymentMethodSummaryResponse> paymentsByMethod = Optional.ofNullable(
+                        paymentRepository.countPaidPaymentsByMethod(from, to, effectiveFacilityId))
+                .orElseGet(List::of)
+                .stream()
+                .map(this::toPaymentMethodSummary)
+                .toList();
 
         return RevenueReportResponse.builder()
                 .fromDate(fromDate)
                 .toDate(toDate)
-                .systemSummary(system.toSystemResponse())
+                .systemSummary(systemSummary)
                 .byFacility(byFacility)
+                .monthlyRevenue(monthlyRevenue)
+                .paymentsByMethod(paymentsByMethod)
                 .build();
     }
 
-    @Override
-    public RevenueTrendResponse getRevenueTrend(LocalDate fromDate, LocalDate toDate, UUID facilityId) {
-        validatePeriod(fromDate, toDate);
-        UUID scope = resolveFacilityScope(facilityId);
+    private RevenueMonthSummaryResponse toMonthlySummary(Object[] row) {
+        Number year = (Number) row[0];
+        Number month = (Number) row[1];
+        String monthKey = year == null || month == null
+                ? null
+                : String.format(Locale.ROOT, "%04d-%02d", year.intValue(), month.intValue());
 
-        TreeMap<YearMonth, MonthAccumulator> months = new TreeMap<>();
-        for (Object[] row : paymentReportRepository.aggregateByMonth(periodStart(fromDate), periodEndExclusive(toDate), scope)) {
-            if (row[0] == null || row[1] == null) {
-                continue;
-            }
-            YearMonth month = YearMonth.of(((Number) row[0]).intValue(), ((Number) row[1]).intValue());
-            MonthAccumulator accumulator = months.computeIfAbsent(month, key -> new MonthAccumulator());
-            BigDecimal amount = toBigDecimal(row[4]);
-            long count = toLong(row[5]);
-            PaymentType type = (PaymentType) row[2];
-            if (row[3] == PaymentStatus.PAID) {
-                accumulator.collected = accumulator.collected.add(amount);
-                accumulator.count += count;
-                accumulator.byType.merge(type, amount, BigDecimal::add);
-            } else if (row[3] == PaymentStatus.REFUNDED) {
-                accumulator.refunded = accumulator.refunded.add(amount);
-            }
-        }
-
-        YearMonth first = fromDate != null ? YearMonth.from(fromDate) : (months.isEmpty() ? null : months.firstKey());
-        YearMonth last = toDate != null ? YearMonth.from(toDate) : (months.isEmpty() ? null : months.lastKey());
-        if (first != null && last != null && first.isAfter(last)) {
-            last = first;
-        }
-
-        List<MonthlyRevenueResponse> series = new ArrayList<>();
-        BigDecimal totalCollected = BigDecimal.ZERO;
-        BigDecimal totalRefunded = BigDecimal.ZERO;
-        long totalCount = 0;
-        if (first != null && last != null) {
-            YearMonth cursor = first;
-            if (cursor.until(last, java.time.temporal.ChronoUnit.MONTHS) >= MAX_TREND_MONTHS) {
-                cursor = last.minusMonths(MAX_TREND_MONTHS - 1L);
-            }
-            for (; !cursor.isAfter(last); cursor = cursor.plusMonths(1)) {
-                MonthAccumulator accumulator = months.getOrDefault(cursor, new MonthAccumulator());
-                Map<String, BigDecimal> byType = new LinkedHashMap<>();
-                for (PaymentType type : PaymentType.values()) {
-                    byType.put(type.name(), accumulator.byType.getOrDefault(type, BigDecimal.ZERO));
-                }
-                series.add(MonthlyRevenueResponse.builder()
-                        .month(cursor.toString())
-                        .collectedAmount(accumulator.collected)
-                        .refundedAmount(accumulator.refunded)
-                        .netAmount(accumulator.collected.subtract(accumulator.refunded))
-                        .paymentCount(accumulator.count)
-                        .collectedByType(byType)
-                        .build());
-                totalCollected = totalCollected.add(accumulator.collected);
-                totalRefunded = totalRefunded.add(accumulator.refunded);
-                totalCount += accumulator.count;
-            }
-        }
-
-        return RevenueTrendResponse.builder()
-                .fromDate(fromDate)
-                .toDate(toDate)
-                .months(series)
-                .totalCollected(totalCollected)
-                .totalRefunded(totalRefunded)
-                .totalNet(totalCollected.subtract(totalRefunded))
-                .totalPaymentCount(totalCount)
+        return RevenueMonthSummaryResponse.builder()
+                .month(monthKey)
+                .rentalFeeRevenue(toBigDecimal(row[2]))
+                .depositRevenue(toBigDecimal(row[3]))
+                .renewalFeeRevenue(toBigDecimal(row[4]))
+                .extraChargeRevenue(toBigDecimal(row[5]))
+                .bookingPaymentRevenue(toBigDecimal(row[6]))
+                .totalRevenue(toBigDecimal(row[7]))
+                .paymentCount(((Number) row[8]).longValue())
                 .build();
     }
 
-    @Override
-    public PaymentChannelReportResponse getPaymentChannels(LocalDate fromDate, LocalDate toDate, UUID facilityId) {
-        validatePeriod(fromDate, toDate);
-        UUID scope = resolveFacilityScope(facilityId);
-
-        Map<String, long[]> counts = new HashMap<>();
-        Map<String, BigDecimal> amounts = new HashMap<>();
-        for (Object[] row : paymentReportRepository.aggregateByMethod(periodStart(fromDate), periodEndExclusive(toDate), scope)) {
-            String method = row[0] instanceof String text && !text.isBlank() ? text.trim().toUpperCase(Locale.ROOT) : UNKNOWN_CHANNEL;
-            counts.computeIfAbsent(method, key -> new long[1])[0] += toLong(row[1]);
-            amounts.merge(method, toBigDecimal(row[2]), BigDecimal::add);
-        }
-
-        List<PaymentChannelItemResponse> channels = new ArrayList<>();
-        long totalCount = 0;
-        BigDecimal totalAmount = BigDecimal.ZERO;
-        for (Map.Entry<String, long[]> entry : counts.entrySet()) {
-            BigDecimal amount = amounts.getOrDefault(entry.getKey(), BigDecimal.ZERO);
-            channels.add(PaymentChannelItemResponse.builder()
-                    .method(entry.getKey())
-                    .count(entry.getValue()[0])
-                    .amount(amount)
-                    .build());
-            totalCount += entry.getValue()[0];
-            totalAmount = totalAmount.add(amount);
-        }
-        channels.sort(Comparator.comparingLong(PaymentChannelItemResponse::getCount).reversed()
-                .thenComparing(PaymentChannelItemResponse::getMethod));
-
-        return PaymentChannelReportResponse.builder()
-                .fromDate(fromDate)
-                .toDate(toDate)
-                .totalCount(totalCount)
-                .totalAmount(totalAmount)
-                .channels(channels)
+    private PaymentMethodSummaryResponse toPaymentMethodSummary(Object[] row) {
+        return PaymentMethodSummaryResponse.builder()
+                .paymentMethod((String) row[0])
+                .paymentCount(((Number) row[1]).longValue())
                 .build();
     }
 
-    // ============================================================ occupancy
+    private BigDecimal toBigDecimal(Object value) {
+        if (value instanceof BigDecimal amount) return amount;
+        if (value instanceof Number amount) return new BigDecimal(amount.toString());
+        return BigDecimal.ZERO;
+    }
 
     @Override
     public OccupancyReportResponse getOccupancyReport() {
@@ -260,27 +144,43 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public OccupancyReportResponse getOccupancyReport(UUID facilityId) {
-        UUID scope = resolveFacilityScope(facilityId);
+        UUID effectiveFacilityId = facilityId;
+        if (facilityAccessGuard.isFacilityScoped()) {
+            effectiveFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+        }
+
+        List<Object[]> rows = storageUnitRepository.countUnitsGroupedByFacilityAndStatus();
 
         Map<UUID, String> facilityNames = new LinkedHashMap<>();
-        // bucket layout per facility: [total, occupied (incl. locked), available, reserved, maintenance, locked]
+        // bucket layout per facility: [total, occupied, available, reserved, maintenance]
         Map<UUID, long[]> counts = new LinkedHashMap<>();
 
-        for (Object[] row : unitReportRepository.countUnitsByFacilityAndStatus()) {
-            UUID rowFacilityId = (UUID) row[0];
-            facilityNames.putIfAbsent(rowFacilityId, (String) row[1]);
-            long[] bucket = counts.computeIfAbsent(rowFacilityId, key -> new long[6]);
-            if (!(row[2] instanceof UnitStatus status)) {
-                continue; // facility without units: keeps its all-zero bucket
+        facilityRepository.findAll().forEach(facility -> {
+            if (facility != null && facility.getId() != null) {
+                facilityNames.putIfAbsent(facility.getId(), facility.getName());
+                counts.computeIfAbsent(facility.getId(), ignored -> new long[5]);
             }
-            long count = toLong(row[3]);
+        });
+
+        for (Object[] row : rows) {
+            UUID fId = (UUID) row[0];
+            String facilityName = (String) row[1];
+            
+            UnitStatus status;
+            if (row[2] instanceof UnitStatus us) {
+                status = us;
+            } else if (row[2] instanceof String str) {
+                status = UnitStatus.valueOf(str);
+            } else {
+                continue;
+            }
+            Long count = row[3] instanceof Number num ? num.longValue() : 0L;
+
+            facilityNames.putIfAbsent(fId, facilityName);
+            long[] bucket = counts.computeIfAbsent(fId, k -> new long[5]);
             bucket[0] += count;
             switch (status) {
                 case OCCUPIED -> bucket[1] += count;
-                case OVERDUE_LOCKED -> {
-                    bucket[1] += count;
-                    bucket[5] += count;
-                }
                 case AVAILABLE -> bucket[2] += count;
                 case RESERVED -> bucket[3] += count;
                 case UNDER_MAINTENANCE -> bucket[4] += count;
@@ -288,38 +188,43 @@ public class ReportServiceImpl implements ReportService {
         }
 
         List<FacilityOccupancyResponse> byFacility = new ArrayList<>();
-        long[] system = new long[6];
+        long sysTotal = 0, sysOccupied = 0, sysAvailable = 0, sysReserved = 0, sysMaintenance = 0;
 
         for (Map.Entry<UUID, long[]> entry : counts.entrySet()) {
-            UUID rowFacilityId = entry.getKey();
-            if (scope != null && !scope.equals(rowFacilityId)) {
+            UUID fId = entry.getKey();
+            if (effectiveFacilityId != null && !effectiveFacilityId.equals(fId)) {
                 continue;
             }
             long[] c = entry.getValue();
+            double rate = c[0] == 0 ? 0.0 : (c[1] * 100.0) / c[0];
+
             byFacility.add(FacilityOccupancyResponse.builder()
-                    .facilityId(rowFacilityId)
-                    .facilityName(facilityNames.get(rowFacilityId))
+                    .facilityId(fId)
+                    .facilityName(facilityNames.get(fId))
                     .totalUnits(c[0])
                     .occupiedUnits(c[1])
-                    .lockedUnits(c[5])
                     .availableUnits(c[2])
                     .reservedUnits(c[3])
                     .maintenanceUnits(c[4])
-                    .occupancyRate(rate(c[1], c[0]))
+                    .occupancyRate(round2(rate))
                     .build());
-            for (int i = 0; i < system.length; i++) {
-                system[i] += c[i];
-            }
+
+            sysTotal += c[0];
+            sysOccupied += c[1];
+            sysAvailable += c[2];
+            sysReserved += c[3];
+            sysMaintenance += c[4];
         }
 
+        double systemRate = sysTotal == 0 ? 0.0 : (sysOccupied * 100.0) / sysTotal;
+
         SystemOccupancyResponse systemSummary = SystemOccupancyResponse.builder()
-                .totalUnits(system[0])
-                .occupiedUnits(system[1])
-                .lockedUnits(system[5])
-                .availableUnits(system[2])
-                .reservedUnits(system[3])
-                .maintenanceUnits(system[4])
-                .occupancyRate(rate(system[1], system[0]))
+                .totalUnits(sysTotal)
+                .occupiedUnits(sysOccupied)
+                .availableUnits(sysAvailable)
+                .reservedUnits(sysReserved)
+                .maintenanceUnits(sysMaintenance)
+                .occupancyRate(round2(systemRate))
                 .build();
 
         return OccupancyReportResponse.builder()
@@ -328,11 +233,229 @@ public class ReportServiceImpl implements ReportService {
                 .build();
     }
 
-    // ============================================================ overdue debt
-
     @Override
     public OverdueDebtReportResponse getOverdueDebtReport(UUID filterFacilityId) {
-        return overdueDebtReportBuilder.build(resolveFacilityScope(filterFacilityId), LocalDate.now());
+        LocalDate today = LocalDate.now();
+
+        UUID effectiveFacilityId = filterFacilityId;
+        if (facilityAccessGuard.isFacilityScoped()) {
+            effectiveFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+        }
+        final UUID targetFacilityId = effectiveFacilityId;
+
+        // Include linked booking IDs from every contract to avoid counting a linked booking a second time.
+        List<RentalContract> allContracts = rentalContractRepository.findAll();
+        Set<UUID> accountedBookingIds = allContracts.stream()
+                .map(RentalContract::getBooking)
+                .filter(Objects::nonNull)
+                .map(Booking::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        List<RentalContract> overdueContracts = allContracts.stream()
+                .filter(c -> (c.getStatus() == RentalContractStatus.ACTIVE
+                        || c.getStatus() == RentalContractStatus.OVERDUE
+                        || c.getStatus() == RentalContractStatus.EXPIRED)
+                        && c.getEndDate() != null && c.getEndDate().isBefore(today))
+                .filter(c -> c.getBooking() == null
+                        || (c.getBooking().getStatus() != BookingStatus.CANCELLED
+                        && !"REFUNDED".equalsIgnoreCase(c.getBooking().getPaymentStatus())))
+                .filter(c -> targetFacilityId == null || (c.getFacility() != null && targetFacilityId.equals(c.getFacility().getId())))
+                .toList();
+
+        Map<UUID, FacilityPolicy> policyCache = new HashMap<>();
+        List<OverdueDebtItemResponse> overdueItems = new ArrayList<>();
+
+        for (RentalContract contract : overdueContracts) {
+            Facility facility = contract.getFacility();
+            UUID facilityId = facility != null ? facility.getId() : null;
+
+            FacilityPolicy policy = null;
+            if (facilityId != null) {
+                policy = policyCache.computeIfAbsent(facilityId, id -> facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(id).orElse(null));
+            }
+
+            long daysOverdue = ChronoUnit.DAYS.between(contract.getEndDate(), today);
+            // RentalContract has no recurring invoice/payment ledger, so monthlyFee cannot be called unpaid rent.
+            BigDecimal unpaidRent = null;
+            BigDecimal dailyLateFee = configuredDailyLateFee(policy);
+            BigDecimal totalLateFee = calculateLateFee(daysOverdue, policy);
+            BigDecimal totalDebt = addIfKnown(unpaidRent, totalLateFee);
+            String overdueStage = resolveOverdueStage(daysOverdue, policy);
+
+            overdueItems.add(OverdueDebtItemResponse.builder()
+                    .contractId(contract.getId())
+                    .contractCode(contract.getContractCode())
+                    .bookingId(contract.getBooking() != null ? contract.getBooking().getId() : null)
+                    .bookingCode(contract.getBooking() != null ? contract.getBooking().getBookingCode() : null)
+                    .customerId(contract.getCustomer() != null ? contract.getCustomer().getId() : null)
+                    .customerName(contract.getCustomer() != null ? contract.getCustomer().getFullName() : null)
+                    .customerPhone(contract.getCustomer() != null ? contract.getCustomer().getPhone() : null)
+                    .customerEmail(contract.getCustomer() != null ? contract.getCustomer().getEmail() : null)
+                    .unitId(contract.getUnit() != null ? contract.getUnit().getId() : null)
+                    .unitCode(contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A")
+                    .facilityId(facilityId)
+                    .facilityName(facility != null ? facility.getName() : null)
+                    .startDate(contract.getStartDate())
+                    .dueDate(contract.getEndDate())
+                    .daysOverdue(daysOverdue)
+                    .unpaidRent(unpaidRent)
+                    .dailyLateFee(dailyLateFee)
+                    .totalLateFee(totalLateFee)
+                    .totalDebt(totalDebt)
+                    .overdueStage(overdueStage)
+                    .smartLockStatus("UNVERIFIED")
+                    .build());
+        }
+
+        // 2. Also check active/confirmed bookings past end date not linked to contract
+        List<Booking> overdueBookings = bookingRepository.findAll().stream()
+                .filter(b -> (b.getStatus() == BookingStatus.ACTIVE || b.getStatus() == BookingStatus.CONFIRMED)
+                        && b.getEndDate() != null && b.getEndDate().isBefore(today))
+                .filter(b -> !accountedBookingIds.contains(b.getId()))
+                .filter(b -> !"REFUNDED".equalsIgnoreCase(b.getPaymentStatus()))
+                .filter(b -> {
+                    if (targetFacilityId == null) return true;
+                    return b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null
+                            && targetFacilityId.equals(b.getStorageUnit().getFacility().getId());
+                })
+                .toList();
+
+        for (Booking booking : overdueBookings) {
+            Facility facility = (booking.getStorageUnit() != null) ? booking.getStorageUnit().getFacility() : null;
+            UUID facilityId = facility != null ? facility.getId() : null;
+
+            FacilityPolicy policy = null;
+            if (facilityId != null) {
+                policy = policyCache.computeIfAbsent(facilityId, id -> facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(id).orElse(null));
+            }
+
+            long daysOverdue = ChronoUnit.DAYS.between(booking.getEndDate(), today);
+            BigDecimal unpaidRent = resolveUnpaidBookingRent(booking);
+            BigDecimal dailyLateFee = configuredDailyLateFee(policy);
+            BigDecimal totalLateFee = calculateLateFee(daysOverdue, policy);
+            BigDecimal totalDebt = addIfKnown(unpaidRent, totalLateFee);
+            String overdueStage = resolveOverdueStage(daysOverdue, policy);
+
+            overdueItems.add(OverdueDebtItemResponse.builder()
+                    .contractId(null)
+                    .contractCode(null)
+                    .bookingId(booking.getId())
+                    .bookingCode(booking.getBookingCode())
+                    .customerId(booking.getCustomer() != null ? booking.getCustomer().getId() : null)
+                    .customerName(booking.getCustomer() != null ? booking.getCustomer().getFullName() : null)
+                    .customerPhone(booking.getCustomer() != null ? booking.getCustomer().getPhone() : null)
+                    .customerEmail(booking.getCustomer() != null ? booking.getCustomer().getEmail() : null)
+                    .unitId(booking.getStorageUnit() != null ? booking.getStorageUnit().getId() : null)
+                    .unitCode(booking.getStorageUnit() != null ? booking.getStorageUnit().getUnitCode() : "N/A")
+                    .facilityId(facilityId)
+                    .facilityName(facility != null ? facility.getName() : null)
+                    .startDate(booking.getStartDate())
+                    .dueDate(booking.getEndDate())
+                    .daysOverdue(daysOverdue)
+                    .unpaidRent(unpaidRent)
+                    .dailyLateFee(dailyLateFee)
+                    .totalLateFee(totalLateFee)
+                    .totalDebt(totalDebt)
+                    .overdueStage(overdueStage)
+                    .smartLockStatus("UNVERIFIED")
+                    .build());
+        }
+
+        // Sort by daysOverdue descending
+        overdueItems.sort((a, b) -> Long.compare(b.getDaysOverdue(), a.getDaysOverdue()));
+
+        // Calculate aging distribution and stage counts
+        BigDecimal aging1To3 = BigDecimal.ZERO;
+        BigDecimal aging4To7 = BigDecimal.ZERO;
+        BigDecimal aging8To14 = BigDecimal.ZERO;
+        BigDecimal aging15Plus = BigDecimal.ZERO;
+        long graceCount = 0;
+        long warningCount = 0;
+        long blockedCount = 0;
+        long sealingCount = 0;
+        long policyUnconfiguredCount = 0;
+
+        for (OverdueDebtItemResponse item : overdueItems) {
+            long days = item.getDaysOverdue();
+            BigDecimal debt = item.getTotalDebt();
+
+            if (debt == null) {
+                aging1To3 = null;
+                aging4To7 = null;
+                aging8To14 = null;
+                aging15Plus = null;
+            } else if (aging1To3 == null) {
+                // Keep all aging totals unavailable if any item lacks a configured debt calculation.
+            } else if (days <= 3) {
+                aging1To3 = aging1To3.add(debt);
+            } else if (days <= 7) {
+                aging4To7 = aging4To7.add(debt);
+            } else if (days <= 14) {
+                aging8To14 = aging8To14.add(debt);
+            } else {
+                aging15Plus = aging15Plus.add(debt);
+            }
+
+            if ("GRACE_PERIOD".equals(item.getOverdueStage())) {
+                graceCount++;
+            } else if ("WARNING".equals(item.getOverdueStage())) {
+                warningCount++;
+            } else if ("ACCESS_BLOCKED".equals(item.getOverdueStage())) {
+                blockedCount++;
+            } else if ("ELIGIBLE_FOR_SEALING".equals(item.getOverdueStage())) {
+                sealingCount++;
+            } else if ("POLICY_UNCONFIGURED".equals(item.getOverdueStage())) {
+                policyUnconfiguredCount++;
+            }
+        }
+
+        // Aggregate by facility
+        Map<UUID, List<OverdueDebtItemResponse>> byFacilityMap = overdueItems.stream()
+                .filter(i -> i.getFacilityId() != null)
+                .collect(Collectors.groupingBy(OverdueDebtItemResponse::getFacilityId));
+
+        List<FacilityOverdueDebtResponse> byFacilitySummary = new ArrayList<>();
+        for (Map.Entry<UUID, List<OverdueDebtItemResponse>> entry : byFacilityMap.entrySet()) {
+            List<OverdueDebtItemResponse> items = entry.getValue();
+            String fName = items.isEmpty() ? null : items.get(0).getFacilityName();
+            BigDecimal fUnpaid = sumIfKnown(items.stream().map(OverdueDebtItemResponse::getUnpaidRent).toList());
+            BigDecimal fLate = sumIfKnown(items.stream().map(OverdueDebtItemResponse::getTotalLateFee).toList());
+            BigDecimal fTotal = sumIfKnown(items.stream().map(OverdueDebtItemResponse::getTotalDebt).toList());
+
+            byFacilitySummary.add(FacilityOverdueDebtResponse.builder()
+                    .facilityId(entry.getKey())
+                    .facilityName(fName)
+                    .overdueContractCount(items.size())
+                    .totalUnpaidRent(fUnpaid)
+                    .totalLateFees(fLate)
+                    .totalOverdueDebt(fTotal)
+                    .build());
+        }
+
+        long totalOverdueCount = overdueItems.size();
+        BigDecimal totalUnpaid = sumIfKnown(overdueItems.stream().map(OverdueDebtItemResponse::getUnpaidRent).toList());
+        BigDecimal totalLate = sumIfKnown(overdueItems.stream().map(OverdueDebtItemResponse::getTotalLateFee).toList());
+        BigDecimal totalDebt = sumIfKnown(overdueItems.stream().map(OverdueDebtItemResponse::getTotalDebt).toList());
+
+        return OverdueDebtReportResponse.builder()
+                .asOfDate(today)
+                .totalOverdueCount(totalOverdueCount)
+                .totalDebtAmount(totalDebt)
+                .totalUnpaidRent(totalUnpaid)
+                .totalLateFees(totalLate)
+                .gracePeriodCount(graceCount)
+                .warningCount(warningCount)
+                .accessBlockedCount(blockedCount)
+                .eligibleForSealingCount(sealingCount)
+                .policyUnconfiguredCount(policyUnconfiguredCount)
+                .aging1To3DaysDebt(aging1To3)
+                .aging4To7DaysDebt(aging4To7)
+                .aging8To14DaysDebt(aging8To14)
+                .aging15PlusDaysDebt(aging15Plus)
+                .items(overdueItems)
+                .byFacility(byFacilitySummary)
+                .build();
     }
 
     @Override
@@ -341,250 +464,110 @@ public class ReportServiceImpl implements ReportService {
         RentalContract contract = rentalContractRepository.findById(contractId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
 
-        Facility facility = contract.getFacility();
-        if (facilityAccessGuard.isFacilityScoped()) {
-            if (facility == null) {
-                throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
-            }
-            facilityAccessGuard.checkFacilityAccess(facility.getId());
+        if (contract.getFacility() == null) {
+            throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
         }
+        facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
 
         LocalDate today = LocalDate.now();
-        OverdueDebtReportBuilder.DebtFigures figures = overdueDebtReportBuilder.figuresFor(contract, today);
-        if (figures == null) {
-            throw new AppException(ErrorCode.OVERDUE_REMINDER_NOT_OVERDUE);
+        if (contract.getEndDate() == null || !contract.getEndDate().isBefore(today)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST);
         }
+
+        FacilityPolicy policy = facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(contract.getFacility().getId()).orElse(null);
+
+        if (policy == null || policy.getOverdueGraceDays() == null || policy.getOverdueGraceDays() < 0
+                || configuredDailyLateFee(policy) == null) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "An active facility overdue policy is required to calculate this reminder");
+        }
+
+        long daysOverdue = ChronoUnit.DAYS.between(contract.getEndDate(), today);
+        // The contract model has no recurring invoice ledger, so monthlyFee is not an authoritative unpaid balance.
+        BigDecimal unpaidRent = null;
+        BigDecimal totalLateFee = calculateLateFee(daysOverdue, policy);
+        BigDecimal totalDebt = addIfKnown(unpaidRent, totalLateFee);
+        String overdueStage = resolveOverdueStage(daysOverdue, policy);
 
         User customer = contract.getCustomer();
-        if (customer == null || customer.getEmail() == null || customer.getEmail().isBlank()) {
-            throw new AppException(ErrorCode.OVERDUE_REMINDER_NO_EMAIL);
+        if (customer != null && customer.getEmail() != null) {
+            emailService.sendOverdueNoticeEmail(
+                    customer.getEmail(),
+                    customer.getFullName() != null ? customer.getFullName() : customer.getUsername(),
+                    contract.getContractCode(),
+                    contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A",
+                    daysOverdue,
+                    totalDebt,
+                    overdueStage
+            );
         }
-        if (!emailService.isMailConfigured()) {
-            throw new AppException(ErrorCode.OVERDUE_REMINDER_EMAIL_UNAVAILABLE);
-        }
 
-        String customerName = customer.getFullName() != null && !customer.getFullName().isBlank()
-                ? customer.getFullName() : customer.getUsername();
-        String unitCode = contract.getUnit() != null ? contract.getUnit().getUnitCode() : "—";
-        String subject = "[Boxora] Nhắc thanh toán công nợ quá hạn - hợp đồng " + contract.getContractCode();
-        String body = renderReminderEmail(customerName, contract.getContractCode(), unitCode, contract.getEndDate(), figures);
-
-        // Synchronous on purpose: the API only reports success when the mail server accepted the message.
-        emailService.sendNow(customer.getEmail(), subject, body);
-
-        notificationLogRepository.save(NotificationLog.builder()
-                .recipient(customer)
-                .recipientEmail(customer.getEmail())
-                .recipientName(customerName)
-                .facility(facility)
-                .channel(NotificationChannel.EMAIL)
-                .notificationType(NotificationType.OVERDUE_NOTICE)
-                .referenceType("RentalContract")
-                .referenceId(contract.getId())
-                .title(subject)
-                .content("Quá hạn " + figures.daysOverdue() + " ngày, còn nợ " + formatMoney(figures.totalDebt()))
-                .status("SENT")
-                .build());
-
+        UUID facilityId = contract.getFacility() != null ? contract.getFacility().getId() : null;
         activityLogService.record(
-                facility != null ? facility.getId() : null,
+                facilityId,
                 ActivityAction.OVERDUE_REMINDER_SENT,
                 "RentalContract",
                 contract.getId(),
-                "Đã gửi email nhắc nợ quá hạn tới " + customer.getEmail() + ": quá hạn " + figures.daysOverdue()
-                        + " ngày, còn nợ " + formatMoney(figures.totalDebt()),
+                "Sent an overdue reminder to " + (customer != null ? customer.getEmail() : "N/A")
+                        + " for " + daysOverdue + " days overdue; the outstanding balance is not reconciled.",
                 null,
                 contract.getContractCode()
         );
     }
 
-    private String renderReminderEmail(String customerName, String contractCode, String unitCode,
-                                       LocalDate dueDate, OverdueDebtReportBuilder.DebtFigures figures) {
-        String stage = switch (figures.stage()) {
-            case GRACE_PERIOD -> "Đang trong thời gian ân hạn, chưa tính phí trễ hạn";
-            case WARNING -> "Đã quá hạn, bắt đầu tính phí trễ hạn";
-            case ACCESS_BLOCKED -> "Quyền ra vào kho có thể bị thu hồi";
-            case ELIGIBLE_FOR_SEALING -> "Kho có thể bị niêm phong theo hợp đồng";
-            case CURRENT -> "Hợp đồng còn hiệu lực";
-        };
-        return """
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #D92D20; border-radius: 8px;">
-                    <h2 style="color: #B42318; margin-top: 0;">Nhắc thanh toán công nợ quá hạn</h2>
-                    <p>Kính gửi <strong>%s</strong>,</p>
-                    <p>Hợp đồng thuê kho <strong>%s</strong> (kho <strong>%s</strong>) đã hết hạn ngày <strong>%s</strong> và hiện còn công nợ chưa thanh toán.</p>
-                    <div style="background-color: #FEF3F2; border-left: 4px solid #D92D20; padding: 14px; margin: 16px 0;">
-                        <p style="margin: 4px 0;">Số ngày quá hạn: <strong>%d ngày</strong></p>
-                        <p style="margin: 4px 0;">Giai đoạn hiện tại: <strong>%s</strong></p>
-                        <p style="margin: 4px 0;">Tiền thuê còn nợ: <strong>%s</strong></p>
-                        <p style="margin: 4px 0;">Phí trễ hạn: <strong>%s</strong></p>
-                        <p style="margin: 4px 0;">Tổng cần thanh toán: <strong style="color: #B42318; font-size: 18px;">%s</strong></p>
-                    </div>
-                    <p>Vui lòng đăng nhập Boxora để thanh toán hoặc liên hệ cơ sở để được hỗ trợ.</p>
-                    <hr style="border: 0; border-top: 1px solid #FECDCA; margin: 20px 0;"/>
-                    <p style="color: #667085; font-size: 12px;">Email tự động từ Boxora. Nếu bạn đã thanh toán, vui lòng bỏ qua thông báo này.</p>
-                </div>
-                """.formatted(
-                HtmlUtils.htmlEscape(customerName != null ? customerName : ""),
-                HtmlUtils.htmlEscape(contractCode != null ? contractCode : "—"),
-                HtmlUtils.htmlEscape(unitCode),
-                dueDate != null ? String.format("%02d/%02d/%d", dueDate.getDayOfMonth(), dueDate.getMonthValue(), dueDate.getYear()) : "—",
-                figures.daysOverdue(),
-                stage,
-                formatMoney(figures.unpaidRent()),
-                formatMoney(figures.lateFee()),
-                formatMoney(figures.totalDebt()));
+    private double round2(double value) {
+        return Math.round(value * 100.0) / 100.0;
     }
 
-    // ============================================================ helpers
+    private BigDecimal configuredDailyLateFee(FacilityPolicy policy) {
+        return policy != null && policy.getDailyLateFee() != null
+                && policy.getDailyLateFee().compareTo(BigDecimal.ZERO) >= 0
+                ? policy.getDailyLateFee()
+                : null;
+    }
 
-    private void validatePeriod(LocalDate fromDate, LocalDate toDate) {
-        if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
-            throw new AppException(ErrorCode.REPORT_INVALID_PERIOD);
+    private BigDecimal calculateLateFee(long daysOverdue, FacilityPolicy policy) {
+        if (policy == null || policy.getOverdueGraceDays() == null || policy.getOverdueGraceDays() < 0
+                || configuredDailyLateFee(policy) == null) {
+            return null;
         }
+        long billableDays = Math.max(0, daysOverdue - policy.getOverdueGraceDays());
+        return configuredDailyLateFee(policy).multiply(BigDecimal.valueOf(billableDays));
     }
 
-    /**
-     * Facility filter actually applied: facility-scoped roles (staff, facility manager) always see their own
-     * facility only; an account without an assigned facility sees nothing (never "everything").
-     */
-    private UUID resolveFacilityScope(UUID requestedFacilityId) {
-        if (facilityAccessGuard.isFacilityScoped()) {
-            UUID own = facilityAccessGuard.scopedFacilityIdOrNull();
-            if (own == null) {
-                throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
-            }
-            return own;
+    private String resolveOverdueStage(long daysOverdue, FacilityPolicy policy) {
+        if (policy == null || policy.getOverdueGraceDays() == null || policy.getOverdueGraceDays() < 0
+                || policy.getOverdueAccessDisableDays() == null || policy.getOverdueAccessDisableDays() < 0
+                || policy.getOverdueSealingDays() == null || policy.getOverdueSealingDays() < 0
+                || configuredDailyLateFee(policy) == null) {
+            return "POLICY_UNCONFIGURED";
         }
-        return requestedFacilityId;
+        if (daysOverdue <= policy.getOverdueGraceDays()) return "GRACE_PERIOD";
+        if (daysOverdue < policy.getOverdueAccessDisableDays()) return "WARNING";
+        if (daysOverdue < policy.getOverdueSealingDays()) return "ACCESS_BLOCKED";
+        return "ELIGIBLE_FOR_SEALING";
     }
 
-    private static LocalDateTime periodStart(LocalDate fromDate) {
-        return (fromDate != null ? fromDate : OPEN_FROM).atStartOfDay();
+    private BigDecimal addIfKnown(BigDecimal left, BigDecimal right) {
+        return left == null || right == null ? null : left.add(right);
     }
 
-    /** Exclusive upper bound: the start of the day after {@code toDate}. */
-    private static LocalDateTime periodEndExclusive(LocalDate toDate) {
-        return (toDate != null ? toDate : OPEN_TO).plusDays(1).atStartOfDay();
-    }
-
-    private static double rate(long occupied, long total) {
-        return total == 0 ? 0.0 : Math.round((occupied * 10000.0) / total) / 100.0;
-    }
-
-    private static String formatMoney(BigDecimal value) {
-        NumberFormat format = NumberFormat.getIntegerInstance(Locale.forLanguageTag("vi-VN"));
-        return format.format(value != null ? value : BigDecimal.ZERO) + " ₫";
-    }
-
-    private static BigDecimal toBigDecimal(Object value) {
-        if (value instanceof BigDecimal decimal) {
-            return decimal;
+    private BigDecimal resolveUnpaidBookingRent(Booking booking) {
+        if (booking.getTotalRentalFee() == null || booking.getTotalRentalFee().compareTo(BigDecimal.ZERO) < 0) {
+            return null;
         }
-        return value instanceof Number number ? new BigDecimal(number.toString()) : BigDecimal.ZERO;
+        String paymentStatus = booking.getPaymentStatus();
+        if ("PAID".equalsIgnoreCase(paymentStatus)) {
+            return BigDecimal.ZERO;
+        }
+        if ("UNPAID".equalsIgnoreCase(paymentStatus)) {
+            return booking.getTotalRentalFee();
+        }
+        // Partial payments, pending refunds, and unknown legacy statuses need ledger reconciliation.
+        return null;
     }
 
-    private static long toLong(Object value) {
-        return value instanceof Number number ? number.longValue() : 0L;
-    }
-
-    // ============================================================ accumulators
-
-    private static final class MonthAccumulator {
-        private BigDecimal collected = BigDecimal.ZERO;
-        private BigDecimal refunded = BigDecimal.ZERO;
-        private long count;
-        private final Map<PaymentType, BigDecimal> byType = new EnumMap<>(PaymentType.class);
-    }
-
-    /** Sums the grouped payment rows of one facility (or of everything, for the system summary). */
-    private static final class RevenueAccumulator {
-        private final UUID facilityId;
-        private final String name;
-        private BigDecimal collected = BigDecimal.ZERO;
-        private BigDecimal refunded = BigDecimal.ZERO;
-        private BigDecimal pendingRefund = BigDecimal.ZERO;
-        private BigDecimal deposit = BigDecimal.ZERO;
-        private BigDecimal rental = BigDecimal.ZERO;
-        private BigDecimal renewal = BigDecimal.ZERO;
-        private BigDecimal extra = BigDecimal.ZERO;
-        private long paymentCount;
-
-        private RevenueAccumulator(UUID facilityId, String name) {
-            this.facilityId = facilityId;
-            this.name = name;
-        }
-
-        private String name() {
-            return name;
-        }
-
-        private void add(PaymentType type, PaymentStatus status, BigDecimal amount, long count, BigDecimal bookingDepositPart) {
-            if (status == PaymentStatus.REFUNDED) {
-                refunded = refunded.add(amount);
-                return;
-            }
-            if (status == PaymentStatus.REFUND_PENDING) {
-                pendingRefund = pendingRefund.add(amount);
-                return;
-            }
-            if (status != PaymentStatus.PAID) {
-                return;
-            }
-            collected = collected.add(amount);
-            paymentCount += count;
-            switch (type) {
-                case DEPOSIT -> deposit = deposit.add(amount);
-                case RENTAL_FEE -> rental = rental.add(amount);
-                case RENEWAL_FEE -> renewal = renewal.add(amount);
-                case EXTRA_CHARGE -> extra = extra.add(amount);
-                case BOOKING_PAYMENT -> {
-                    // First online payment = deposit + first rent: split it so every bucket stays exact.
-                    BigDecimal depositPart = bookingDepositPart.min(amount).max(BigDecimal.ZERO);
-                    deposit = deposit.add(depositPart);
-                    rental = rental.add(amount.subtract(depositPart));
-                }
-            }
-        }
-
-        private void merge(RevenueAccumulator other) {
-            collected = collected.add(other.collected);
-            refunded = refunded.add(other.refunded);
-            pendingRefund = pendingRefund.add(other.pendingRefund);
-            deposit = deposit.add(other.deposit);
-            rental = rental.add(other.rental);
-            renewal = renewal.add(other.renewal);
-            extra = extra.add(other.extra);
-            paymentCount += other.paymentCount;
-        }
-
-        private FacilityRevenueResponse toFacilityResponse() {
-            return FacilityRevenueResponse.builder()
-                    .facilityId(facilityId)
-                    .facilityName(name)
-                    .totalRevenue(collected.subtract(refunded))
-                    .collectedAmount(collected)
-                    .refundedAmount(refunded)
-                    .pendingRefundAmount(pendingRefund)
-                    .depositRevenue(deposit)
-                    .rentalFeeRevenue(rental)
-                    .renewalFeeRevenue(renewal)
-                    .extraChargeRevenue(extra)
-                    .paymentCount(paymentCount)
-                    .build();
-        }
-
-        private SystemRevenueSummaryResponse toSystemResponse() {
-            return SystemRevenueSummaryResponse.builder()
-                    .totalRevenue(collected.subtract(refunded))
-                    .collectedAmount(collected)
-                    .refundedAmount(refunded)
-                    .pendingRefundAmount(pendingRefund)
-                    .depositRevenue(deposit)
-                    .rentalFeeRevenue(rental)
-                    .renewalFeeRevenue(renewal)
-                    .extraChargeRevenue(extra)
-                    .paymentCount(paymentCount)
-                    .build();
-        }
+    private BigDecimal sumIfKnown(List<BigDecimal> amounts) {
+        if (amounts.stream().anyMatch(Objects::isNull)) return null;
+        return amounts.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 }

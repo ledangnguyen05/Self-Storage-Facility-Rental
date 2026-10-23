@@ -9,11 +9,9 @@ import org.mapstruct.Mapping;
 public interface UnitTypeMapper {
 
     @Mapping(target = "activeUnitsCount", ignore = true)
-    @Mapping(target = "lowestListedPrice", ignore = true)
     UnitTypeResponse toResponse(UnitType entity);
 
     @Mapping(target = "activeUnitsCount", source = "activeUnitsCount")
-    @Mapping(target = "lowestListedPrice", ignore = true)
     UnitTypeResponse toResponse(UnitType entity, Long activeUnitsCount);
 }
 

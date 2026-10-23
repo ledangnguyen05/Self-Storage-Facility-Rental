@@ -77,4 +77,14 @@ public interface ShiftSwapRequestRepository extends JpaRepository<ShiftSwapReque
             @Param("toDate") LocalDate toDate,
             Pageable pageable
     );
+
+    @EntityGraph(attributePaths = {"assignment"})
+    @Query("""
+            SELECT r FROM ShiftSwapRequest r
+            JOIN r.assignment a
+            WHERE r.status IN (com.boxora.enums.ShiftSwapStatus.PENDING, com.boxora.enums.ShiftSwapStatus.MANAGER_APPROVED)
+              AND a.assignedDate < :today
+            """)
+    List<ShiftSwapRequest> findOverduePendingSwaps(@Param("today") LocalDate today);
 }
+

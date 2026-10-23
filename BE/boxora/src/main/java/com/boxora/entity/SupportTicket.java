@@ -25,6 +25,18 @@ public class SupportTicket extends BaseEntity {
     @JoinColumn(name = "booking_id")
     private Booking booking;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "storage_unit_id")
+    private StorageUnit storageUnit;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by_staff_id")
+    private User createdByStaff;
+
+    @Column(name = "is_staff_recorded")
+    @Builder.Default
+    private Boolean isStaffRecorded = false;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
     private TicketCategory category;
@@ -66,11 +78,4 @@ public class SupportTicket extends BaseEntity {
 
     @Column(name = "closed_at")
     private java.time.LocalDateTime closedAt;
-
-    @Column(name = "reopen_count", nullable = false)
-    @Builder.Default
-    private Integer reopenCount = 0;
-
-    @Column(name = "reopen_reason", columnDefinition = "TEXT")
-    private String reopenReason;
 }

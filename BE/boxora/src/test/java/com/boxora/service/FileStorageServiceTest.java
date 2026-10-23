@@ -111,64 +111,110 @@ class FileStorageServiceTest {
         assertThat(responses.get(1).getFileUrl()).startsWith("/uploads/tickets/");
     }
 
-    private static byte[] withHeader(byte[] header) {
-        byte[] data = new byte[64];
-        System.arraycopy(header, 0, data, 0, header.length);
-        return data;
+    @Test
+    @DisplayName("storeDocumentFile should store valid PDF with magic bytes %PDF-")
+    void storeDocumentFile_validPdf_shouldSucceed() {
+        byte[] pdfBytes = "%PDF-1.4 sample pdf content".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        MockMultipartFile pdfFile = new MockMultipartFile(
+                "file", "contract.pdf", "application/pdf", pdfBytes
+        );
+
+        FileUploadResponse response = fileStorageService.storeDocumentFile(pdfFile, "contracts/b1");
+        assertThat(response).isNotNull();
+        assertThat(response.getFileUrl()).startsWith("/uploads/contracts/b1/").endsWith(".pdf");
+        assertThat(fileStorageService.resolveStoredFilePath(response.getFileUrl())).exists();
     }
 
     @Test
-    @DisplayName("storeDocument accepts a real PDF and an image, names them with an unguessable UUID")
-    void storeDocument_pdfAndImage_shouldSucceed() {
-        MockMultipartFile pdf = new MockMultipartFile("file", "hop-dong.pdf", "application/pdf", withHeader("%PDF-1.7".getBytes()));
-        MockMultipartFile jpg = new MockMultipartFile("file", "bien-lai.JPG", "image/jpeg",
-                withHeader(new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0}));
+    @DisplayName("storeDocumentFile should store valid JPEG with magic bytes FF D8 FF")
+    void storeDocumentFile_validJpg_shouldSucceed() {
+        byte[] jpgBytes = new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0x00, 0x10, 0x4A, 0x46};
+        MockMultipartFile jpgFile = new MockMultipartFile(
+                "file", "proof.jpg", "image/jpeg", jpgBytes
+        );
 
-        FileUploadResponse pdfResponse = fileStorageService.storeDocument(pdf, "handover");
-        FileUploadResponse jpgResponse = fileStorageService.storeDocument(jpg, "handover");
-
-        assertThat(pdfResponse.getFileUrl()).matches("^/uploads/handover/[0-9a-f-]{36}\\.pdf$");
-        assertThat(pdfResponse.getFileType()).isEqualTo("application/pdf");
-        assertThat(jpgResponse.getFileUrl()).matches("^/uploads/handover/[0-9a-f-]{36}\\.jpg$");
-        assertThat(tempUploadDir.resolve("handover").toFile().list()).hasSize(2);
+        FileUploadResponse response = fileStorageService.storeDocumentFile(jpgFile, "payments/b1");
+        assertThat(response).isNotNull();
+        assertThat(response.getFileUrl()).startsWith("/uploads/payments/b1/").endsWith(".jpg");
     }
 
     @Test
-    @DisplayName("storeDocument rejects content that does not match its extension, scripts and html")
-    void storeDocument_wrongContent_shouldThrow() {
-        MockMultipartFile fakePdf = new MockMultipartFile("file", "x.pdf", "application/pdf", withHeader("<html><script>".getBytes()));
-        MockMultipartFile script = new MockMultipartFile("file", "x.sh", "text/plain", withHeader("echo".getBytes()));
-        MockMultipartFile mismatch = new MockMultipartFile("file", "x.png", "application/pdf", withHeader("%PDF-1.7".getBytes()));
+    @DisplayName("storeDocumentFile should store valid PNG with magic bytes 89 50 4E 47")
+    void storeDocumentFile_validPng_shouldSucceed() {
+        byte[] pngBytes = new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+        MockMultipartFile pngFile = new MockMultipartFile(
+                "file", "proof.png", "image/png", pngBytes
+        );
 
-        assertThat(assertThrows(AppException.class, () -> fileStorageService.storeDocument(fakePdf, "handover")).getErrorCode())
-                .isEqualTo(ErrorCode.FILE_FORMAT_NOT_ALLOWED);
-        assertThat(assertThrows(AppException.class, () -> fileStorageService.storeDocument(script, "handover")).getErrorCode())
-                .isEqualTo(ErrorCode.FILE_FORMAT_NOT_ALLOWED);
-        assertThat(assertThrows(AppException.class, () -> fileStorageService.storeDocument(mismatch, "handover")).getErrorCode())
-                .isEqualTo(ErrorCode.FILE_FORMAT_NOT_ALLOWED);
+        FileUploadResponse response = fileStorageService.storeDocumentFile(pngFile, "payments/b1");
+        assertThat(response).isNotNull();
+        assertThat(response.getFileUrl()).startsWith("/uploads/payments/b1/").endsWith(".png");
     }
 
     @Test
-    @DisplayName("storeDocument: empty file and 11MB file get their own errors")
-    void storeDocument_emptyAndOversized() {
-        MockMultipartFile empty = new MockMultipartFile("file", "x.pdf", "application/pdf", new byte[0]);
-        MockMultipartFile huge = new MockMultipartFile("file", "x.pdf", "application/pdf", new byte[11 * 1024 * 1024]);
+    @DisplayName("storeDocumentFile should store valid WEBP with magic bytes RIFF...WEBP")
+    void storeDocumentFile_validWebp_shouldSucceed() {
+        byte[] webpBytes = "RIFF\0\0\0\0WEBPVP8 ".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        MockMultipartFile webpFile = new MockMultipartFile(
+                "file", "proof.webp", "image/webp", webpBytes
+        );
 
-        assertThat(assertThrows(AppException.class, () -> fileStorageService.storeDocument(empty, "handover")).getErrorCode())
-                .isEqualTo(ErrorCode.FILE_UPLOAD_EMPTY);
-        assertThat(assertThrows(AppException.class, () -> fileStorageService.storeDocument(huge, "handover")).getErrorCode())
-                .isEqualTo(ErrorCode.FILE_TOO_LARGE);
+        FileUploadResponse response = fileStorageService.storeDocumentFile(webpFile, "payments/b1");
+        assertThat(response).isNotNull();
+        assertThat(response.getFileUrl()).startsWith("/uploads/payments/b1/").endsWith(".webp");
     }
 
     @Test
-    @DisplayName("A sub directory that tries to leave the upload root falls back to 'general'")
-    void storeDocument_pathTraversalSubDirectory_isNeutralised() {
-        MockMultipartFile png = new MockMultipartFile("file", "a.png", "image/png",
-                withHeader(new byte[]{(byte) 0x89, 'P', 'N', 'G'}));
+    @DisplayName("storeDocumentFile should reject file with spoofed extension and wrong magic bytes")
+    void storeDocumentFile_mismatchedMagicBytes_shouldThrowException() {
+        MockMultipartFile fakePdf = new MockMultipartFile(
+                "file", "malicious.pdf", "application/pdf", "not a pdf header".getBytes()
+        );
 
-        FileUploadResponse response = fileStorageService.storeDocument(png, "../../etc");
+        AppException ex = assertThrows(AppException.class, () ->
+                fileStorageService.storeDocumentFile(fakePdf, "contracts/b1"));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
 
-        assertThat(response.getFileUrl()).startsWith("/uploads/general/");
-        assertThat(tempUploadDir.getParent().resolve("etc")).doesNotExist();
+    @Test
+    @DisplayName("storeDocumentFile should reject unsupported document extensions (e.g. .exe, .sh)")
+    void storeDocumentFile_unsupportedExtension_shouldThrowException() {
+        MockMultipartFile exeFile = new MockMultipartFile(
+                "file", "malicious.exe", "application/octet-stream", "MZ\0\0".getBytes()
+        );
+
+        AppException ex = assertThrows(AppException.class, () ->
+                fileStorageService.storeDocumentFile(exeFile, "contracts/b1"));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("storeDocumentFile should reject path traversal in subDir")
+    void storeDocumentFile_pathTraversal_shouldThrowException() {
+        byte[] pdfBytes = "%PDF-1.4 test".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        MockMultipartFile pdfFile = new MockMultipartFile(
+                "file", "contract.pdf", "application/pdf", pdfBytes
+        );
+
+        AppException ex = assertThrows(AppException.class, () ->
+                fileStorageService.storeDocumentFile(pdfFile, "../../etc/passwd"));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("deleteFileIfExists should safely delete file and resolveStoredFilePath should reject traversal")
+    void deleteAndResolve_pathTraversal_protection() {
+        byte[] pdfBytes = "%PDF-1.4 delete test".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        MockMultipartFile pdfFile = new MockMultipartFile(
+                "file", "contract.pdf", "application/pdf", pdfBytes
+        );
+        FileUploadResponse response = fileStorageService.storeDocumentFile(pdfFile, "contracts/b2");
+        assertThat(fileStorageService.resolveStoredFilePath(response.getFileUrl())).exists();
+
+        fileStorageService.deleteFileIfExists(response.getFileUrl());
+        assertThat(fileStorageService.resolveStoredFilePath(response.getFileUrl())).doesNotExist();
+
+        assertThrows(AppException.class, () ->
+                fileStorageService.resolveStoredFilePath("/uploads/../../etc/passwd"));
     }
 }

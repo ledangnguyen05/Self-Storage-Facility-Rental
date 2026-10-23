@@ -49,19 +49,6 @@ public interface SealingRecordRepository extends JpaRepository<SealingRecord, UU
         return findByStorageUnit_IdAndStatus(unitId, status);
     }
 
-    @EntityGraph(attributePaths = {"storageUnit", "contract", "facility", "sealedBy", "witness"})
-    List<SealingRecord> findByStatusAndContract_IdIn(SealingStatus status, java.util.Collection<UUID> contractIds);
-
-    @EntityGraph(attributePaths = {"storageUnit", "contract", "contract.customer", "facility", "sealedBy", "witness", "unsealedBy"})
-    Optional<SealingRecord> findFirstByStorageUnit_IdAndStatusOrderBySealedAtDesc(UUID storageUnitId, SealingStatus status);
-
-    @EntityGraph(attributePaths = {"storageUnit", "contract", "contract.customer", "facility", "sealedBy", "witness", "unsealedBy"})
-    Optional<SealingRecord> findFirstByContract_IdAndStatusOrderBySealedAtDesc(UUID contractId, SealingStatus status);
-
-    boolean existsBySealTagNumberIgnoreCase(String sealTagNumber);
-
-    boolean existsByProtocolNumber(String protocolNumber);
-
     @EntityGraph(attributePaths = {"storageUnit", "contract", "facility", "sealedBy", "witness", "unsealedBy"})
     @Query("""
             SELECT s FROM SealingRecord s

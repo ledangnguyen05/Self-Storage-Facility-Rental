@@ -1,6 +1,7 @@
 package com.boxora.dto.response;
 
 import com.boxora.enums.ShiftHandoverStatus;
+import com.boxora.enums.ShiftHandoverType;
 import com.boxora.enums.StaffShift;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
@@ -29,6 +30,8 @@ public class ShiftHandoverResponse {
 
     private LocalDate handoverDate;
     private StaffShift shift;
+    private StaffShift targetShift;
+    private ShiftHandoverType handoverType;
 
     // Outgoing Staff
     private UUID outgoingStaffId;
@@ -44,11 +47,18 @@ public class ShiftHandoverResponse {
     private UUID outgoingAssignmentId;
     private UUID incomingAssignmentId;
 
+    // Emergency & Scope
+    private String emergencyReason;
+    private String transferScope;
+
     // Content
     private String pendingTasks;
     private Integer pendingTicketsCount;
     private Integer unresolvedBookingsCount;
     private BigDecimal cashInDrawer;
+    private BigDecimal cashCounted;
+    private BigDecimal cashDiscrepancy;
+    private String cashDiscrepancyReason;
     private String facilityStatusNote;
     private Boolean checklistCompleted;
     private String notes;
@@ -56,6 +66,11 @@ public class ShiftHandoverResponse {
     // Status
     private ShiftHandoverStatus status;
     private LocalDateTime acknowledgedAt;
+
+    // Dispatch info
+    private UUID dispatchedById;
+    private String dispatchedByName;
+    private LocalDateTime dispatchedAt;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

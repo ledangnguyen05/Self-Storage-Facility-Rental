@@ -35,7 +35,7 @@ public class PermissionController {
             (@Valid @RequestBody PermissionCreateRequest request) {
         PermissionResponse response = permissionService.create(request);
         return ResponseEntity.status(HttpStatus.CREATED).
-                body(ApiResponse.success("Đã tạo quyền", response));
+                body(ApiResponse.success("Created permission successfully", response));
     }
 
     @PutMapping("/{id}")
@@ -43,14 +43,14 @@ public class PermissionController {
     public ResponseEntity<ApiResponse<PermissionResponse>> update
             (@PathVariable UUID id, @Valid @RequestBody PermissionUpdateRequest request) {
         PermissionResponse response = permissionService.update(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Đã cập nhật quyền", response));
+        return ResponseEntity.ok(ApiResponse.success("Updated permission successfully.", response));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         permissionService.delete(id);
-        return ResponseEntity.ok(ApiResponse.success("Đã xóa quyền", null));
+        return ResponseEntity.ok(ApiResponse.success("Deleted permission successfully.", null));
     }
 
     @GetMapping

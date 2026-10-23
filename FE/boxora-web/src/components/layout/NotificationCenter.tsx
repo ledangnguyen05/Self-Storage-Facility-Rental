@@ -1,232 +1,742 @@
-import React, { useState } from 'react'
-import { Bell, BellRing, CheckCheck, KeyRound, RefreshCw, ShieldAlert } from 'lucide-react'
-import { formatDateTime, formatRelativeTime } from '../../lib/format'
-import type { NotificationLog } from '../../services/notificationService'
-import { Alert, Badge, Button, EmptyState, IconButton, Popover, Skeleton, useToast } from '../ui'
-import { buttonVariants } from '../ui/buttonVariants'
-import { cn } from '../ui/cn'
-import { useNotificationFeed } from './notificationStore'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
+
+import { NotificationLog, notificationService } from '../../services/notificationService'
+import { reservationEmailService } from '../../services/reservationEmailService'
+import { useAuth } from '../../context/AuthContext'
+import { Check, X, Phone, Mail, Building2, Calendar, Clock, AlertCircle, FileText, Send, User, ChevronRight } from 'lucide-react'
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 interface NotificationCenterProps {
   userId?: string
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  HANDOVER_PIN: 'Bàn giao kho',
-  HANDOVER_CHECKIN: 'Bàn giao kho',
-  RENEWAL_REMINDER_3D: 'Sắp hết hạn',
-  RENEWAL_REMINDER_7D: 'Gia hạn',
-  OVERDUE_NOTICE: 'Quá hạn',
-  REFUND_STATUS: 'Hoàn tiền',
-  SEALING_NOTICE: 'Niêm phong',
-  UNSEALING_NOTICE: 'Mở niêm phong',
-  MASTER_KEY_ALERT: 'Cảnh báo an ninh',
-  TICKET_UPDATE: 'Phiếu hỗ trợ',
+const formatDate = (value?: string) => {
+  if (!value) return 'Thời gian không xác định'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Thời gian không xác định'
+  return new Intl.DateTimeFormat('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
 }
 
-/** Only email deliveries have a delivery state worth showing; in-app notifications are simply there. */
-function getDeliveryLabel(item: NotificationLog): string | undefined {
-  if (item.channel !== 'EMAIL') return undefined
-  if (item.status === 'FAILED') return 'Chưa gửi được email'
-  if (item.status === 'SENT') return 'Đã gửi email'
-  return undefined
-}
+const getTypeLabel = (type?: string) => {
+  switch (type) {
+    case 'NEW_BOOKING_RESERVATION': return 'Đơn giữ chỗ mới'
+    case 'HANDOVER_PIN':
+    case 'HANDOVER_CHECKIN': return 'Mã PIN & Bàn giao'
 
-const isHandoverNotification = (item: NotificationLog) =>
-  item.notificationType === 'HANDOVER_PIN' || item.notificationType === 'HANDOVER_CHECKIN'
-
-/** Topbar bell with the account's recent notifications. Read state is stored on the server. */
-const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
-  const toast = useToast()
-  const [open, setOpen] = useState(false)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const feed = useNotificationFeed(userId)
-  const { items, unreadCount, reload } = feed
-
-  const canFetch = Boolean(userId)
-  const isLoading = feed.isLoading && items.length === 0
-  const showError = Boolean(feed.error) && items.length === 0 && !feed.isLoading
-
-  const handleOpenChange = (next: boolean) => {
-    setOpen(next)
-    if (next && canFetch) void reload()
-    if (!next) setExpandedId(null)
+    case 'RENEWAL_REMINDER_3D': return 'Sắp hết hạn'
+    case 'RENEWAL_REMINDER_7D': return 'Gia hạn'
+    case 'REFUND_STATUS': return 'Hoàn tiền'
+    case 'SEALING_NOTICE': return 'Niêm phong'
+    case 'UNSEALING_NOTICE': return 'Mở niêm phong'
+    default: return type?.replaceAll('_', ' ') || 'Thông báo'
   }
+}
 
-  const toggleItem = async (item: NotificationLog) => {
-    setExpandedId((current) => (current === item.id ? null : item.id))
-    if (!item.read) {
-      const ok = await feed.markRead(item.id)
-      if (!ok) toast.error('Không đánh dấu được đã đọc', 'Vui lòng thử lại.')
+const getTypeBadgeStyle = (type?: string) => {
+  switch (type) {
+    case 'NEW_BOOKING_RESERVATION':
+      return 'bg-blue-100 text-blue-800 border-blue-200'
+    case 'HANDOVER_PIN':
+    case 'HANDOVER_CHECKIN':
+      return 'bg-cyan-100 text-cyan-800 border-cyan-200'
+    case 'RENEWAL_REJECTED':
+      return 'bg-rose-100 text-rose-800 border-rose-200'
+    case 'RENEWAL_APPROVED':
+    case 'RENEWAL_COMPLETED':
+      return 'bg-emerald-100 text-emerald-800 border-emerald-200'
+    case 'RENEWAL_REMINDER_3D':
+    case 'RENEWAL_REMINDER_7D':
+      return 'bg-amber-100 text-amber-800 border-amber-200'
+    case 'SEALING_NOTICE':
+      return 'bg-purple-100 text-purple-800 border-purple-200'
+    default:
+      return 'bg-slate-100 text-slate-700 border-slate-200'
+  }
+}
+
+const getReadNotificationIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem('boxora_read_notification_ids')
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw)
+    return new Set(Array.isArray(parsed) ? parsed : [])
+  } catch {
+    return new Set()
+  }
+}
+
+const saveReadNotificationIds = (ids: Set<string>) => {
+  try {
+    localStorage.setItem('boxora_read_notification_ids', JSON.stringify(Array.from(ids)))
+  } catch {
+    // Ignore storage quota
+  }
+}
+
+const getNotificationAction = (item: NotificationLog, role?: string | null) => {
+  if (item.notificationType === 'BOOKING_PREPARATION' && role === 'STAFF' && item.referenceId) {
+    return {
+      label: 'Xem chi tiết kho',
+      to: `/portal/staff?bookingId=${encodeURIComponent(item.referenceId)}`,
     }
   }
 
-  const readAll = async () => {
-    const ok = await feed.markAllRead()
-    if (!ok) toast.error('Không đánh dấu được tất cả đã đọc', 'Vui lòng thử lại.')
+  if (item.notificationType === 'BOOKING_CREATED' && role === 'CUSTOMER') {
+    return { label: 'Xem yêu cầu đặt chỗ', to: '/portal/customer?tab=requests' }
   }
 
-  const trigger = (
-    <button
-      type="button"
-      aria-label={unreadCount > 0 ? `Thông báo, ${unreadCount} chưa đọc` : 'Thông báo'}
-      className={buttonVariants({ variant: 'ghost', iconOnly: true, className: 'relative' })}
-    >
-      <Bell size={18} strokeWidth={1.75} aria-hidden="true" />
-      {unreadCount > 0 ? (
-        <span
-          aria-hidden="true"
-          className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-xs font-semibold leading-none text-on-accent tabular-nums ring-2 ring-surface"
-        >
-          {unreadCount > 9 ? '9+' : unreadCount}
-        </span>
-      ) : null}
-    </button>
-  )
-
-  return (
-    <Popover trigger={trigger} open={open} onOpenChange={handleOpenChange} aria-label="Thông báo gần đây" className="flex w-96 flex-col p-0">
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <h2 className="text-sm font-semibold text-fg">Thông báo</h2>
-          {unreadCount > 0 ? (
-            <Badge tone="accent" size="sm">
-              {unreadCount} mới
-            </Badge>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" leftIcon={CheckCheck} disabled={unreadCount === 0} onClick={() => void readAll()}>
-            Đã đọc tất cả
-          </Button>
-          {canFetch ? (
-            <IconButton
-              icon={RefreshCw}
-              size="sm"
-              aria-label="Làm mới thông báo"
-              loading={feed.isRefreshing}
-              onClick={() => void reload()}
-            />
-          ) : null}
-        </div>
-      </div>
-
-      <div className="max-h-96 min-h-0 flex-1 overflow-y-auto p-1.5" aria-busy={isLoading || undefined}>
-        {isLoading ? (
-          <div className="flex flex-col gap-3 p-2.5" aria-label="Đang tải thông báo">
-            {[0, 1, 2].map((row) => (
-              <div key={row} className="flex gap-3">
-                <Skeleton className="size-8 rounded-full" />
-                <div className="flex flex-1 flex-col gap-2">
-                  <Skeleton className="h-3.5 w-2/3" />
-                  <Skeleton className="h-3 w-full" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : showError ? (
-          <Alert
-            tone="danger"
-            className="m-1.5"
-            action={
-              <Button size="sm" variant="secondary" onClick={() => void reload()}>
-                Thử lại
-              </Button>
-            }
-          >
-            Không tải được thông báo.
-          </Alert>
-        ) : items.length === 0 ? (
-          <EmptyState
-            size="sm"
-            icon={BellRing}
-            title="Chưa có thông báo"
-            description={canFetch ? 'Thông báo mới sẽ được hiển thị tại đây.' : 'Đăng nhập để xem thông báo của bạn.'}
-          />
-        ) : (
-          <ul className="flex flex-col gap-0.5">
-            {items.map((item) => (
-              <NotificationRow
-                key={item.id}
-                item={item}
-                unread={!item.read}
-                expanded={expandedId === item.id}
-                onToggle={() => void toggleItem(item)}
-              />
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {items.length > 0 ? (
-        <p className="shrink-0 border-t border-line px-4 py-2 text-center text-xs text-fg-subtle">
-          Hiển thị {items.length} thông báo gần nhất
-        </p>
-      ) : null}
-    </Popover>
-  )
+  return null
 }
 
-function NotificationRow({
-  item,
-  unread,
-  expanded,
-  onToggle,
-}: {
-  item: NotificationLog
-  unread: boolean
-  expanded: boolean
-  onToggle: () => void
-}) {
-  const handover = isHandoverNotification(item)
-  const security = item.notificationType === 'MASTER_KEY_ALERT'
-  const Icon = security ? ShieldAlert : handover ? KeyRound : Bell
-  const typeLabel = (item.notificationType && TYPE_LABELS[item.notificationType]) || 'Thông báo'
-  const deliveryLabel = getDeliveryLabel(item)
+const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
+  const navigate = useNavigate()
+  const { user, role } = useAuth()
+
+  const [isOpen, setIsOpen] = useState(false)
+  const [items, setItems] = useState<NotificationLog[]>([])
+  const [readIds, setReadIds] = useState<Set<string>>(() => getReadNotificationIds())
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [hasNewAlert, setHasNewAlert] = useState(false)
+  const [activeTab, setActiveTab] = useState<'all' | 'unread' | 'important'>('all')
+
+  const markAsRead = (id: string) => {
+    setReadIds((prev) => {
+      const next = new Set(prev)
+      next.add(id)
+      saveReadNotificationIds(next)
+      return next
+    })
+  }
+
+  // Real-time floating Toast notification for new items
+  const [floatingToast, setFloatingToast] = useState<NotificationLog | null>(null)
+  const [reviewBooking, setReviewBooking] = useState<any | null>(null)
+  const [isRejecting, setIsRejecting] = useState<boolean>(false)
+  const [rejectionReason, setRejectionReason] = useState<string>('')
+  const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null)
+  const [isProcessingAction, setIsProcessingAction] = useState<boolean>(false)
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+
+  const panelRef = useRef<HTMLDivElement>(null)
+  const requestIdRef = useRef(0)
+
+  useEffect(() => {
+    requestIdRef.current += 1
+    setItems([])
+    setError('')
+    setExpandedId(null)
+    setIsLoading(false)
+  }, [userId])
+
+  const loadNotifications = useCallback(async () => {
+    if (!userId || !UUID_PATTERN.test(userId)) {
+      requestIdRef.current += 1
+      setItems([])
+      setError('Thông báo sẽ xuất hiện khi tài khoản có lịch sử được ghi nhận.')
+      return
+    }
+
+    const requestId = ++requestIdRef.current
+    setIsLoading(true)
+    setError('')
+    try {
+      const page = await notificationService.getRecent({ recipientId: userId, page: 0, size: 6 })
+      if (requestId === requestIdRef.current) setItems(page?.content ?? [])
+    } catch {
+      if (requestId === requestIdRef.current) setError('Không tải được thông báo. Vui lòng thử lại.')
+    } finally {
+      if (requestId === requestIdRef.current) setIsLoading(false)
+    }
+  }, [userId])
+
+  useEffect(() => {
+    if (userId && UUID_PATTERN.test(userId)) {
+      void loadNotifications()
+    }
+  }, [userId, loadNotifications])
+
+  useEffect(() => {
+    const refreshAfterBooking = () => { void loadNotifications() }
+    window.addEventListener('boxora:notifications-refresh', refreshAfterBooking)
+    return () => window.removeEventListener('boxora:notifications-refresh', refreshAfterBooking)
+  }, [loadNotifications])
+
+  useEffect(() => {
+    if (!userId || !UUID_PATTERN.test(userId)) return
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void loadNotifications()
+    }
+    const intervalId = window.setInterval(refreshWhenVisible, 30_000)
+    window.addEventListener('focus', refreshWhenVisible)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [userId, loadNotifications])
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (event.target instanceof Node && !panelRef.current?.contains(event.target)) {
+        setIsOpen(false)
+      }
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false)
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isOpen])
+
+  const togglePanel = () => {
+    const nextOpen = !isOpen
+    setIsOpen(nextOpen)
+    if (nextOpen) void loadNotifications()
+  }
+
+  const handleNotificationClick = (item: NotificationLog) => {
+    markAsRead(item.id)
+    setExpandedId((prev) => (prev === item.id ? null : item.id))
+
+    // Khi nhân viên nhấn vào thông báo trong nút chuông: nhảy vào mục Đơn chờ xử lý ở dashboard nhân viên
+    const isBookingNotif = item.notificationType === 'NEW_BOOKING_RESERVATION' ||
+      item.referenceType === 'BOOKING' ||
+      (item.title && (item.title.includes('Đơn giữ chỗ') || item.title.includes('đơn giữ chỗ')))
+
+    if (isBookingNotif) {
+      const code = item.referenceId || (item.title ? item.title.replace(/.*Đơn giữ chỗ(?: mới)?:?\s*/i, '').trim() : '')
+      setIsOpen(false)
+
+      const userRole = String(user?.role?.name || user?.roleName || '').toUpperCase()
+      if (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER' || userRole === 'OPERATIONS_STAFF') {
+        window.dispatchEvent(new CustomEvent('boxora_select_staff_pending_booking', { detail: { bookingCode: code } }))
+        navigate(`/staff?tab=pending_orders${code ? `&bookingCode=${encodeURIComponent(code)}` : ''}`)
+        return
+      }
+
+      if (code) {
+        let found = reservationEmailService.getReservationByCode(code)
+        if (!found) {
+          // Fallback parsing from notification details
+          found = {
+            id: `RES-${code}`,
+            bookingCode: code,
+            customerName: item.content?.match(/Khách hàng ([^(]+)/)?.[1]?.trim() || item.recipientName || 'Khách đặt giữ chỗ',
+            customerPhone: item.content?.match(/\(([^)]+)\)/)?.[1]?.trim() || '',
+            identityCardNumber: 'Đối chiếu khi check-in',
+            customerEmail: item.recipientEmail || 'customer@boxora.vn',
+            facilityName: item.facilityName || 'Cơ sở Boxora',
+            unitCode: item.content?.match(/kho ([^t]+) tại/)?.[1]?.trim() || 'Kho tự quản Boxora',
+            checkInDate: item.content?.match(/Lịch hẹn: ([^(]+)/)?.[1]?.trim() || 'Theo lịch hẹn',
+            checkInTime: item.content?.match(/\(([^)]+)\)\./)?.[1]?.trim() || 'Giờ tiếp đón',
+            status: 'PENDING_CONTACT',
+            createdAt: item.createdAt,
+            totalRentalFee: 0,
+            depositAmount: 0,
+          }
+        }
+        setReviewBooking(found)
+        setIsRejecting(false)
+        setRejectionReason('')
+        setActionSuccessMsg(null)
+      }
+    }
+  }
+
+  // Xử lý xác nhận đơn: chuyển trạng thái sang Chờ check in & gửi email cho khách
+  const handleConfirmReservationAction = () => {
+    if (!reviewBooking) return
+    setIsProcessingAction(true)
+    const res = reservationEmailService.confirmReservation(reviewBooking.bookingCode, {
+      id: user?.id,
+      fullName: user?.fullName || 'Nhân viên trực ca Boxora',
+    })
+    setIsProcessingAction(false)
+
+    if (res.success) {
+      setReviewBooking((prev: any) => ({ ...prev, status: 'CONFIRMED' }))
+      setActionSuccessMsg(res.message)
+      setTimeout(() => setActionSuccessMsg(null), 5000)
+    } else {
+      alert(res.message)
+    }
+  }
+
+  // Xử lý từ chối đơn: có điền lý do, chuyển trạng thái sang CANCELLED & gửi email cho khách
+  const handleRejectReservationAction = () => {
+    if (!reviewBooking) return
+    if (!rejectionReason.trim()) {
+      alert('Vui lòng điền lý do từ chối đơn đặt giữ chỗ.')
+      return
+    }
+    setIsProcessingAction(true)
+    const res = reservationEmailService.rejectReservation(reviewBooking.bookingCode, rejectionReason, {
+      id: user?.id,
+      fullName: user?.fullName || 'Nhân viên trực ca Boxora',
+    })
+    setIsProcessingAction(false)
+
+    if (res.success) {
+      setReviewBooking((prev: any) => ({ ...prev, status: 'CANCELLED', rejectionReason: rejectionReason.trim() }))
+      setIsRejecting(false)
+      setActionSuccessMsg(res.message)
+      setTimeout(() => setActionSuccessMsg(null), 5000)
+    } else {
+      alert(res.message)
+    }
+  }
+
+  const unreadCount = items.filter((item) => !readIds.has(item.id)).length
+
+  // Filtered items based on active tab
+  const filteredItems = items.filter((item) => {
+    if (activeTab === 'unread') return !readIds.has(item.id)
+    if (activeTab === 'important') {
+      const type = item.notificationType || ''
+      return type.includes('PIN') || type.includes('RENEWAL') || type.includes('SEALING')
+    }
+    return true
+  })
 
   return (
-    <li>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        className="flex w-full gap-3 rounded-lg px-2.5 py-2.5 text-left transition-colors hover:bg-surface-2"
-      >
-        <span
-          aria-hidden="true"
-          className={cn(
-            'mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full',
-            security ? 'bg-danger-subtle text-danger' : handover ? 'bg-accent-subtle text-accent-text' : 'bg-surface-2 text-fg-muted',
-          )}
-        >
-          <Icon size={16} strokeWidth={1.75} />
-        </span>
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="flex items-start justify-between gap-2">
-            <span className={cn('min-w-0 truncate text-sm', unread ? 'font-semibold text-fg' : 'font-medium text-fg-muted')}>
-              {item.title || 'Thông báo Boxora'}
-            </span>
-            {unread ? (
-              <span className="mt-1.5 size-2 shrink-0 rounded-full bg-accent">
-                <span className="sr-only">Chưa đọc</span>
+    <>
+      {/* FLOATING TOAST NOTIFICATION: Real-time pop-up banner when a new notification arrives */}
+      {floatingToast && (
+        <div className="fixed top-5 right-5 z-80 max-w-sm w-[calc(100vw-2.5rem)] animate-in slide-in-from-top-4 fade-in duration-300">
+          <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-2xl p-4 shadow-2xl border border-blue-500/50 flex flex-col gap-2 relative overflow-hidden ring-4 ring-blue-500/20">
+            {/* Ambient accent bar */}
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-cyan-400 to-indigo-500 animate-pulse" />
+
+            <div className="flex items-start justify-between gap-3 pt-0.5">
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-blue-500/20 text-blue-400 ring-1 ring-blue-400/40">
+                  <span className="material-symbols-outlined text-[18px] animate-bounce">notifications_active</span>
+                </span>
+                <div>
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <span>Thông Báo Mới</span>
+                    <span className="inline-block w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                  </h4>
+                  <span className="text-[10px] text-slate-400">{formatDate(floatingToast.createdAt)}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFloatingToast(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+                title="Đóng thông báo"
+              >
+                <span className="material-symbols-outlined text-[16px]">close</span>
+              </button>
+            </div>
+
+            <div className="text-xs font-bold text-blue-200 mt-1 line-clamp-2">
+              {floatingToast.title || 'Thông báo Boxora'}
+            </div>
+
+            <p className="text-[11px] text-slate-300 line-clamp-2 leading-relaxed">
+              {floatingToast.content}
+            </p>
+
+            <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-slate-800">
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-blue-950 text-blue-300 border border-blue-800">
+                {getTypeLabel(floatingToast.notificationType)}
               </span>
-            ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  handleNotificationClick(floatingToast)
+                  setFloatingToast(null)
+                }}
+                className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[14px]">visibility</span>
+                <span>Xem chi tiết</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bell Button and Dropdown Panel */}
+      <div ref={panelRef} className="relative">
+        <button
+          type="button"
+          onClick={togglePanel}
+          aria-label={unreadCount ? `Thông báo, ${unreadCount} chưa đọc` : 'Mở thông báo gần đây'}
+          aria-haspopup="dialog"
+          aria-expanded={isOpen}
+          aria-controls="dashboard-notifications-panel"
+          title="Thông báo hệ thống"
+          className={`relative flex h-9 w-9 items-center justify-center rounded-xl border transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer ${
+            isOpen
+              ? 'border-blue-400 bg-blue-50 text-blue-700 shadow-md ring-2 ring-blue-500/20 dark:border-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+              : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50/50 dark:hover:bg-slate-800 shadow-xs'
+          }`}
+        >
+          <span className={`material-symbols-outlined text-[20px] ${hasNewAlert || unreadCount > 0 ? 'animate-[wiggle_1s_ease-in-out_infinite]' : ''}`}>
+            notifications
           </span>
-          <span className={cn('mt-0.5 text-dense text-fg-muted', expanded ? 'whitespace-pre-wrap break-words' : 'line-clamp-2')}>
-            {item.content || 'Không có nội dung chi tiết.'}
-          </span>
-          <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-subtle">
-            <Badge size="sm" tone={security ? 'danger' : handover ? 'accent' : 'neutral'}>
-              {typeLabel}
-            </Badge>
-            <time dateTime={item.createdAt} title={formatDateTime(item.createdAt)} className="tabular-nums">
-              {item.createdAt ? formatRelativeTime(item.createdAt) : 'Thời gian không xác định'}
-            </time>
-            {deliveryLabel ? <span>· {deliveryLabel}</span> : null}
-          </span>
-        </span>
-      </button>
-    </li>
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white ring-2 ring-white dark:ring-slate-900">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+        </button>
+
+      {isOpen && (
+        <section
+          id="dashboard-notifications-panel"
+          role="dialog"
+          aria-label="Thông báo gần đây"
+          className="absolute right-0 top-[calc(100%+0.75rem)] z-[60] w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-[0_18px_55px_rgba(15,23,42,0.18)]"
+        >
+          <header className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Thông báo</h2>
+              <p className="mt-0.5 text-[11px] text-slate-500">Lịch sử mới nhất của tài khoản</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void loadNotifications()}
+              disabled={isLoading}
+              aria-label="Làm mới thông báo"
+              title="Làm mới"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+            >
+              <span className={`material-symbols-outlined text-[19px] ${isLoading ? 'animate-spin' : ''}`}>refresh</span>
+            </button>
+          </header>
+
+          <div className="max-h-[min(65vh,28rem)] overflow-y-auto p-2.5">
+            {isLoading && items.length === 0 ? (
+              <div className="space-y-2 p-2" aria-live="polite" aria-label="Đang tải thông báo">
+                {[0, 1, 2].map((row) => (
+                  <div key={row} className="animate-pulse rounded-xl border border-slate-100 p-3">
+                    <div className="h-3 w-2/3 rounded bg-slate-100" />
+                    <div className="mt-2 h-2.5 w-full rounded bg-slate-100" />
+                    <div className="mt-2 h-2.5 w-1/2 rounded bg-slate-100" />
+                  </div>
+                ))}
+              </div>
+            ) : error ? (
+              <div className="px-4 py-8 text-center">
+                <span className="material-symbols-outlined text-[28px] text-slate-300">notifications_off</span>
+                <p className="mt-2 text-xs leading-5 text-slate-500">{error}</p>
+                {userId && UUID_PATTERN.test(userId) && (
+                  <button
+                    type="button"
+                    onClick={() => void loadNotifications()}
+                    className="mt-3 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-200"
+                  >
+                    Thử lại
+                  </button>
+                )}
+              </div>
+            ) : items.length === 0 ? (
+              <div className="px-4 py-8 text-center">
+                <span className="material-symbols-outlined text-[30px] text-slate-300">notifications_none</span>
+                <p className="mt-2 text-xs font-semibold text-slate-700">Chưa có thông báo</p>
+                <p className="mt-1 text-[11px] leading-5 text-slate-500">Thông báo mới sẽ được hiển thị tại đây.</p>
+              </div>
+            ) : (
+              <ul className="space-y-1.5">
+                {items.map((item) => {
+                  const expanded = expandedId === item.id
+                  const action = getNotificationAction(item, role)
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedId(expanded ? null : item.id)}
+                        aria-expanded={expanded}
+                        className="w-full rounded-xl border border-transparent px-3 py-3 text-left transition-colors hover:border-slate-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-600"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="text-xs font-bold leading-5 text-slate-900">{item.title || 'Thông báo Boxora'}</span>
+                          <span className="shrink-0 rounded-full bg-cyan-50 px-2 py-1 text-[9px] font-bold text-cyan-800">
+                            {getTypeLabel(item.notificationType)}
+                          </span>
+                        </div>
+                        <p className={`mt-1.5 text-[11px] leading-[1.45rem] text-slate-600 ${expanded ? 'whitespace-pre-wrap' : 'line-clamp-2'}`}>
+                          {item.content || 'Không có nội dung chi tiết.'}
+                        </p>
+                        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[10px] text-slate-400">
+                          <span>{formatDate(item.createdAt)}</span>
+                          <span>{item.status === 'SENT' ? 'Đã gửi' : item.status || item.channel || 'Thông báo'}</span>
+                        </div>
+                      </button>
+                      {expanded && action && (
+                        <Link
+                          to={action.to}
+                          onClick={() => setIsOpen(false)}
+                          className="mx-2 mt-1 inline-flex items-center gap-1.5 rounded-lg bg-cyan-700 px-3 py-2 text-[11px] font-bold text-white transition-colors hover:bg-cyan-800"
+                        >
+                          <span>{action.label}</span>
+                          <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                        </Link>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        </section>
+        )}
+      </div>
+      {/* MODAL XEM CHI TIẾT ĐƠN GIỮ CHỖ & XÁC NHẬN / TỪ CHỐI (KHI BẤM TỪ THÔNG BÁO) */}
+      {reviewBooking && (
+        <div className="fixed inset-0 z-90 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-xl rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col text-left animate-in zoom-in-95 duration-200">
+            
+            {/* Modal Header */}
+            <div className="bg-slate-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-md shadow-blue-500/30">
+                  <FileText size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-extrabold text-base sm:text-lg tracking-tight">
+                      Xem Đơn Đặt Giữ Chỗ
+                    </h3>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
+                      reviewBooking.status === 'CONFIRMED'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : reviewBooking.status === 'CANCELLED'
+                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
+                    }`}>
+                      {reviewBooking.status === 'CONFIRMED'
+                        ? 'Chờ check in'
+                        : reviewBooking.status === 'CANCELLED'
+                        ? 'Đã từ chối'
+                        : 'Chờ xác nhận'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-mono text-cyan-300 mt-0.5">
+                    <span>Mã đơn: <strong>{reviewBooking.bookingCode}</strong></span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setReviewBooking(null)}
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 sm:p-6 space-y-4 overflow-y-auto text-xs sm:text-sm">
+              
+              {/* Toast thông báo kết quả thao tác */}
+              {actionSuccessMsg && (
+                <div className="p-3.5 rounded-2xl bg-emerald-600 text-white text-xs font-medium flex items-center gap-2 shadow-lg shadow-emerald-600/25 animate-in fade-in">
+                  <Check size={18} className="shrink-0" />
+                  <span>{actionSuccessMsg}</span>
+                </div>
+              )}
+
+              {/* Thông báo trạng thái */}
+              {reviewBooking.status === 'CONFIRMED' ? (
+                <div className="p-3.5 rounded-2xl bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-800/60 text-cyan-900 dark:text-cyan-200 text-xs flex items-start gap-2.5">
+                  <Clock size={16} className="text-cyan-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="block font-semibold">Đơn đã được xác nhận (Trạng thái: Chờ check in)</strong>
+                    <span>Khách hàng sẽ mang CCCD bản gốc đến cơ sở nhận kho theo lịch hẹn. Hệ thống đã gửi email xác nhận.</span>
+                  </div>
+                </div>
+              ) : reviewBooking.status === 'CANCELLED' ? (
+                <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-rose-900 dark:text-rose-200 text-xs flex items-start gap-2.5">
+                  <AlertCircle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="block font-semibold">Đơn này đã bị từ chối / hủy</strong>
+                    <span>Lý do từ chối: "{reviewBooking.rejectionReason || 'Theo thông báo của nhân viên'}"</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-2.5">
+                  <Clock size={16} className="text-amber-600 shrink-0 mt-0.5 animate-pulse" />
+                  <div>
+                    <strong className="block font-semibold">Đơn đang ở trạng thái: Chờ xác nhận</strong>
+                    <span>Vui lòng liên hệ khách hàng qua số điện thoại bên dưới để đối soát thông tin, sau đó bấm Xác nhận hoặc Từ chối kèm lý do.</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Grid thông tin chi tiết */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono">
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[10px] text-slate-400 block uppercase">Khách hàng:</span>
+                  <strong className="text-slate-900 dark:text-white font-sans text-xs">{reviewBooking.customerName}</strong>
+                  <div className="flex items-center gap-1.5 text-blue-600 dark:text-cyan-400 text-xs mt-0.5 font-mono">
+                    <Phone size={12} />
+                    <a href={`tel:${reviewBooking.customerPhone}`} className="hover:underline font-bold">
+                      {reviewBooking.customerPhone}
+                    </a>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[10px] text-slate-400 block uppercase">CCCD đối chiếu &amp; Email:</span>
+                  <strong className="text-slate-900 dark:text-white text-xs block">{reviewBooking.identityCardNumber || 'Chưa cung cấp'}</strong>
+                  <span className="text-[11px] text-slate-500 font-sans truncate block mt-0.5">
+                    {reviewBooking.customerEmail || 'customer@boxora.vn'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[10px] text-slate-400 block uppercase">Cơ sở tiếp đón:</span>
+                  <strong className="text-slate-900 dark:text-white font-sans text-xs">{reviewBooking.facilityName}</strong>
+                  <span className="text-[11px] text-slate-500 block truncate font-sans mt-0.5">
+                    Kho: {reviewBooking.unitCode || 'Kho tự quản Boxora'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[10px] text-slate-400 block uppercase">Lịch hẹn đón tiếp:</span>
+                  <strong className="text-emerald-600 dark:text-emerald-400 text-xs">
+                    {reviewBooking.checkInDate} ({reviewBooking.checkInTime})
+                  </strong>
+                  <span className="text-[10px] text-slate-400 block font-sans mt-0.5">
+                    Thời hạn thuê: {reviewBooking.rentalDurationText || (reviewBooking.rentalMonths ? `${reviewBooking.rentalMonths} tháng` : '1 tháng')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Khối Điền lý do từ chối (khi nhân viên chọn Từ chối) */}
+              {isRejecting && (
+                <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-300 dark:border-rose-800/80 space-y-3 animate-in fade-in">
+                  <div className="flex items-center gap-2 text-rose-900 dark:text-rose-200 font-bold text-xs">
+                    <AlertCircle size={16} className="text-rose-600" />
+                    <span>Lý do từ chối đơn đặt giữ chỗ (Bắt buộc):</span>
+                  </div>
+
+                  <textarea
+                    rows={3}
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    placeholder="Nhập chi tiết lý do từ chối đơn (nội dung này sẽ được gửi email tới khách hàng)..."
+                    className="w-full p-3 rounded-xl border border-rose-300 dark:border-rose-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-rose-500 outline-none resize-none"
+                  />
+
+                  {/* Các lý do mẫu để chọn nhanh */}
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-semibold text-rose-800 dark:text-rose-300 block">
+                      Chọn nhanh lý do mẫu:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5 text-[11px]">
+                      {[
+                        'Không liên lạc được qua số điện thoại sau nhiều lần gọi',
+                        'Khách hàng đổi ý / không còn nhu cầu thuê kho',
+                        'Cơ sở tạm hết buồng kho theo quy cách yêu cầu',
+                        'Thông tin CCCD hoặc số điện thoại không hợp lệ',
+                      ].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setRejectionReason(preset)}
+                          className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-rose-200 dark:border-rose-800 hover:bg-rose-100 text-slate-700 dark:text-slate-300 text-[10.5px] transition-colors cursor-pointer"
+                        >
+                          + {preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-1 border-t border-rose-200/60">
+                    <button
+                      type="button"
+                      onClick={() => setIsRejecting(false)}
+                      className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer"
+                    >
+                      Quay lại
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isProcessingAction || !rejectionReason.trim()}
+                      onClick={handleRejectReservationAction}
+                      className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-98 text-white text-xs font-bold transition-all cursor-pointer shadow-md disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      <Send size={13} />
+                      <span>{isProcessingAction ? 'Đang gửi...' : 'Xác nhận từ chối & Gửi mail cho khách'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              <span className="text-[11px] text-slate-500 font-mono">
+                {reviewBooking.createdAt ? `Gửi lúc: ${formatDate(reviewBooking.createdAt)}` : ''}
+              </span>
+
+              <div className="flex items-center gap-2">
+                {reviewBooking.status === 'PENDING_CONTACT' && !isRejecting && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setIsRejecting(true)}
+                      className="px-4 py-2.5 rounded-xl border border-rose-300 hover:bg-rose-50 text-rose-700 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                    >
+                      <X size={15} />
+                      <span>Từ chối đơn</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isProcessingAction}
+                      onClick={handleConfirmReservationAction}
+                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/25 transition-all cursor-pointer"
+                    >
+                      <Check size={16} />
+                      <span>{isProcessingAction ? 'Đang xác nhận...' : 'Xác nhận đơn (Chờ check in)'}</span>
+                    </button>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setReviewBooking(null)}
+                  className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-colors cursor-pointer"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+    </>
+
   )
 }
 

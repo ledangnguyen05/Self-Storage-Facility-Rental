@@ -34,29 +34,62 @@ public class ContractRenewalResponse {
     private LocalDate newEndDate;
     private Integer cycleMonths;
     private BigDecimal renewalFee;
-    /** Rent of the renewal cycle (pricing quote). */
-    private BigDecimal rentalFeeAmount;
-    /** Late fee of an overdue contract included in renewalFee. */
-    private BigDecimal lateFeeAmount;
 
     private ContractRenewalStatus status;
 
     private UUID paymentId;
     private PaymentStatus paymentStatus;
+    private String paymentMethod;
+    private LocalDate counterAppointmentDate;
+    private String counterAppointmentTime;
+    private String receiptVoucherCode;
+    private String cashierStaffName;
+    private LocalDateTime paidAt;
 
     private Long docusealSubmissionId;
     private String docusealSubmitterSlug;
     private String signingUrl;
     private String signedDocumentUrl;
     private LocalDateTime signedAt;
-    /** DOCUSEAL or IN_APP_TEST. */
-    private String signingMethod;
-    /** True when the addendum is signed in-app because DocuSeal is not configured (test environment). */
-    private Boolean signingSimulated;
-    private Boolean paid;
-    private Boolean signed;
-    private LocalDateTime cancelledAt;
-    private String cancelReason;
+    private String signatureData;
+
+    private UUID reviewedById;
+    private String reviewedByName;
+    private LocalDateTime reviewedAt;
+    private String rejectionReason;
+    private String notes;
+
+    private UUID assignedStaffId;
+    private String assignedStaffName;
+    private String assignedStaffEmail;
+    private LocalDateTime assignedStaffAt;
+
+    private Boolean identityVerified;
+    private String identityDocType;
+    private String identityNumber;
+    private String identityNotes;
+
+    private Boolean unitAudited;
+    private String unitAuditNotes;
+
+    private Boolean noBlockingIssues;
+    private String blockingNotes;
+
+    private Boolean termsConfirmed;
+    private String termsNotes;
+
+    private Boolean paymentConfirmed;
+
+    private UUID handledById;
+    private String handledByName;
+    private LocalDateTime handledAt;
+
+    private String receptionNotes;
+
+    // Quy tắc nghiệp vụ thời điểm check-in (Lịch hẹn tiếp đón)
+    private Boolean checkInTimeMet;
+    private String checkInTimeStatus; // BEFORE_DATE | BEFORE_TIME | ON_TIME | LATE
+    private String checkInTimeMessage;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

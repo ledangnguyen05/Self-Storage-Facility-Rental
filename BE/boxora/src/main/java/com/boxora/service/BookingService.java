@@ -3,6 +3,7 @@ package com.boxora.service;
 import com.boxora.dto.request.BookingCreateRequest;
 import com.boxora.dto.response.BookingResponse;
 import com.boxora.dto.response.BookingAccessCredentialsResponse;
+import com.boxora.enums.BookingStatus;
 
 import java.util.List;
 import java.util.UUID;
@@ -16,13 +17,11 @@ public interface BookingService {
     List<BookingResponse> getMyBookings(UUID customerId);
     List<BookingResponse> getMyActiveBookings(UUID customerId);
     List<BookingResponse> getUpcomingArrivals();
-    /**
-     * Role-scoped, paged booking list (GET /bookings): CUSTOMER sees own bookings; STAFF / FACILITY_MANAGER are
-     * forced to their assigned facility; BUSINESS_MANAGER / ADMIN see every facility or {@code facilityId}.
-     * {@code statusCsv} accepts one or more BookingStatus names separated by commas. PIN / QR are never included.
-     */
-    com.boxora.common.response.PageResponse<BookingResponse> searchBookings(
-            UUID customerId, UUID facilityId, String statusCsv, String q, int page, int size);
+    List<BookingResponse> getUpcomingArrivals(UUID facilityId);
+    List<BookingResponse> getUpcomingArrivals(UUID facilityId, String timeframe, java.time.LocalDate fromDate, java.time.LocalDate toDate);
+    BookingResponse claimCheckInReception(UUID bookingId);
+    List<BookingResponse> getBookings(UUID customerId, BookingStatus status, UUID facilityId);
+    BookingResponse renewBooking(UUID id, int extraMonths);
     BookingResponse remoteUnlock(UUID id);
     BookingResponse getById(UUID id);
     com.boxora.dto.response.BookingPinResponse getBookingPin(UUID id, String currentUserEmail);

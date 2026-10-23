@@ -19,5 +19,7 @@ public interface ShiftHandoverMapper {
     @Mapping(source = "incomingStaff.username", target = "incomingStaffUsername")
     @Mapping(source = "outgoingAssignment.id", target = "outgoingAssignmentId")
     @Mapping(source = "incomingAssignment.id", target = "incomingAssignmentId")
+    @Mapping(source = "dispatchedBy.id", target = "dispatchedById")
+    @Mapping(source = "dispatchedBy.fullName", target = "dispatchedByName")
     ShiftHandoverResponse toResponse(ShiftHandover entity);
 }

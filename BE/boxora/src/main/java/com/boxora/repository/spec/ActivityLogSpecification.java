@@ -13,7 +13,6 @@ import org.springframework.data.jpa.domain.Specification;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -30,18 +29,6 @@ public class ActivityLogSpecification {
     public static Specification<ActivityLog> build(
             UUID userId, UUID facilityId, ActivityLogType logType, ActivityAction action, ActivityLogStatus status,
             List<ActivityAction> criticalActions, String resourceType, UUID resourceId,
-            LocalDateTime fromDate, LocalDateTime toDate, String search) {
-        return build(userId, facilityId, logType, action, null, status, criticalActions, resourceType, resourceId,
-                fromDate, toDate, search);
-    }
-
-    /**
-     * @param actions restricts the log to any of these actions (a business area, see ActivityDomain); null / empty = no restriction
-     * @param resourceType one resource type, or several separated by commas (case-insensitive)
-     */
-    public static Specification<ActivityLog> build(
-            UUID userId, UUID facilityId, ActivityLogType logType, ActivityAction action, List<ActivityAction> actions,
-            ActivityLogStatus status, List<ActivityAction> criticalActions, String resourceType, UUID resourceId,
             LocalDateTime fromDate, LocalDateTime toDate, String search) {
 
         return (root, query, cb) -> {
@@ -71,9 +58,6 @@ public class ActivityLogSpecification {
             if (action != null) {
                 predicates.add(cb.equal(root.get("action"), action));
             }
-            if (actions != null && !actions.isEmpty()) {
-                predicates.add(root.get("action").in(actions));
-            }
             if (status != null) {
                 predicates.add(cb.equal(root.get("status"), status));
             }
@@ -81,14 +65,7 @@ public class ActivityLogSpecification {
                 predicates.add(root.get("action").in(criticalActions));
             }
             if (resourceType != null && !resourceType.isBlank()) {
-                List<String> types = Arrays.stream(resourceType.split(","))
-                        .map(String::trim)
-                        .filter(t -> !t.isEmpty())
-                        .map(String::toLowerCase)
-                        .toList();
-                if (!types.isEmpty()) {
-                    predicates.add(cb.lower(root.<String>get("resourceType")).in(types));
-                }
+                predicates.add(cb.equal(cb.lower(root.get("resourceType")), resourceType.trim().toLowerCase()));
             }
             if (resourceId != null) {
                 predicates.add(cb.equal(root.get("resourceId"), resourceId));

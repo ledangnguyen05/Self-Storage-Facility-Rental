@@ -20,7 +20,6 @@ public class FacilityResponse {
     private String contactPhone;
     private String email;
 
-    /** Chỉ có giá trị với tài khoản nội bộ; khách vãng lai và khách hàng không nhận thông tin người quản lý. */
     private UUID managerId;
     private String managerName;
 
@@ -31,11 +30,7 @@ public class FacilityResponse {
     private BigDecimal latitude;
     private BigDecimal longitude;
     private String layoutConfig;
-
-    /** Tổng số kho của cơ sở (mọi trạng thái). */
-    private Long totalUnits;
-    /** Số kho đang trống và có thể thuê ngay; bằng 0 khi cơ sở không ở trạng thái hoạt động. */
-    private Long availableUnits;
+    private String imageUrl;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

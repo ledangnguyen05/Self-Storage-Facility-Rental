@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 @Slf4j
@@ -120,7 +121,7 @@ public class JwtServiceImpl implements JwtService {
             Map<String, Object> extraClaims
     ) {
         var builder = Jwts.builder()
-                .id(java.util.UUID.randomUUID().toString()) // unique jti: two tokens issued in the same second must differ
+                .id(UUID.randomUUID().toString())
                 .subject(email)
                 .claim("type", tokenType.name())
                 .issuedAt(new Date())

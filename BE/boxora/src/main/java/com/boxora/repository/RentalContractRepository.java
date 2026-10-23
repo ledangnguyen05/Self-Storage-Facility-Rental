@@ -15,6 +15,10 @@ import java.util.UUID;
 @Repository
 public interface RentalContractRepository extends JpaRepository<RentalContract, UUID>, JpaSpecificationExecutor<RentalContract> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("SELECT c FROM RentalContract c WHERE c.id = :id")
+    Optional<RentalContract> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") UUID id);
+
     List<RentalContract> findByCustomerId(UUID customerId);
 
     Page<RentalContract> findByCustomerId(UUID customerId, Pageable pageable);
@@ -29,26 +33,23 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
 
     Optional<RentalContract> findByBookingId(UUID bookingId);
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("SELECT c FROM RentalContract c WHERE c.booking.id = :bookingId")
+    Optional<RentalContract> findByBookingIdForUpdate(@org.springframework.data.repository.query.Param("bookingId") UUID bookingId);
+
+    Optional<RentalContract> findByContractCodeIgnoreCase(String contractCode);
+
     List<RentalContract> findByStatus(RentalContractStatus status);
 
     boolean existsByUnit_Id(UUID unitId);
 
-    /** Hợp đồng hiện hành (chưa kết thúc) của một nhóm kho, mới nhất trước; một truy vấn cho cả sơ đồ kho. */
-    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "booking"})
-    @org.springframework.data.jpa.repository.Query("""
-            SELECT c FROM RentalContract c
-            WHERE c.unit.id IN :unitIds
-              AND c.status NOT IN (com.boxora.enums.RentalContractStatus.EXPIRED,
-                                   com.boxora.enums.RentalContractStatus.TERMINATED,
-                                   com.boxora.enums.RentalContractStatus.CANCELLED)
-            ORDER BY c.createdAt DESC
-            """)
-    List<RentalContract> findCurrentTenancyByUnitIds(
-            @org.springframework.data.repository.query.Param("unitIds") java.util.Collection<UUID> unitIds
-    );
+    boolean existsByUnit_IdAndStatusIn(UUID unitId, java.util.Collection<RentalContractStatus> statuses);
 
     @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "unit", "facility", "booking"})
     Optional<RentalContract> findFirstByUnit_IdOrderByCreatedAtDesc(UUID unitId);
+
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "unit", "facility", "booking"})
+    Optional<RentalContract> findFirstByUnit_IdAndStatusInOrderByCreatedAtDesc(UUID unitId, java.util.Collection<RentalContractStatus> statuses);
 
     @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "unit", "unit.facility", "facility", "booking"})
     @org.springframework.data.jpa.repository.Query("""

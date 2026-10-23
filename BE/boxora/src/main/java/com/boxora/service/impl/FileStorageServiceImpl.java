@@ -1,14 +1,10 @@
 package com.boxora.service.impl;
 
 import com.boxora.dto.response.FileUploadResponse;
-import com.boxora.entity.StoredFile;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
-import com.boxora.repository.StoredFileRepository;
-import com.boxora.security.RequestContext;
 import com.boxora.service.FileStorageService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -21,37 +17,35 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.regex.Pattern;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import com.boxora.service.CloudflareR2Service;
 
 @Service
 @Slf4j
 public class FileStorageServiceImpl implements FileStorageService {
+
+    @Autowired(required = false)
+    private CloudflareR2Service cloudflareR2Service;
 
     private final Path rootUploadPath;
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
     private static final Set<String> ALLOWED_IMAGE_EXTENSIONS = Set.of(
             "jpg", "jpeg", "png", "webp", "gif"
     );
-    /** Photos and scans staff attach to handovers and payments. */
     private static final Set<String> ALLOWED_DOCUMENT_EXTENSIONS = Set.of(
-            "jpg", "jpeg", "png", "webp", "pdf"
+            "pdf", "jpg", "jpeg", "png", "webp"
     );
-    private static final Pattern SAFE_SUB_DIRECTORY = Pattern.compile("^[A-Za-z0-9_-]{1,40}$");
+    private static final Set<String> ALLOWED_DOCUMENT_MIME_TYPES = Set.of(
+            "application/pdf",
+            "image/jpeg",
+            "image/jpg",
+            "image/png",
+            "image/webp",
+            "application/octet-stream"
+    );
 
-    private final StoredFileRepository storedFileRepository;
-    private final RequestContext requestContext;
-
-    /** Without a registry (plain unit tests) files are stored but not registered, so signed links and ownership checks are off. */
-    public FileStorageServiceImpl(String uploadDir) {
-        this(uploadDir, null, null);
-    }
-
-    @Autowired
-    public FileStorageServiceImpl(@Value("${app.upload.dir:uploads}") String uploadDir,
-                                  StoredFileRepository storedFileRepository,
-                                  RequestContext requestContext) {
-        this.storedFileRepository = storedFileRepository;
-        this.requestContext = requestContext;
+    public FileStorageServiceImpl(@Value("${app.upload.dir:uploads}") String uploadDir) {
         this.rootUploadPath = Paths.get(uploadDir).toAbsolutePath().normalize();
         try {
             Files.createDirectories(this.rootUploadPath);
@@ -63,6 +57,9 @@ public class FileStorageServiceImpl implements FileStorageService {
 
     @Override
     public FileUploadResponse storeFile(MultipartFile file, String subDirectory) {
+        if (cloudflareR2Service != null) {
+            return cloudflareR2Service.uploadFile(file, subDirectory);
+        }
         if (file == null || file.isEmpty()) {
             throw new AppException(ErrorCode.TICKET_IMAGE_UPLOAD_FAILED);
         }
@@ -81,19 +78,23 @@ public class FileStorageServiceImpl implements FileStorageService {
         }
 
         try {
-            String safeSubDir = sanitizeSubDirectory(subDirectory);
+            String safeSubDir = sanitizeSubDirectory(subDirectory, "general");
             Path targetDirectory = this.rootUploadPath.resolve(safeSubDir).normalize();
+            if (!targetDirectory.startsWith(this.rootUploadPath)) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Đường dẫn thư mục tải lên không hợp lệ");
+            }
             Files.createDirectories(targetDirectory);
 
-            // The name is a full random UUID; the file is only served through a short-lived signed link anyway.
-            String storedFileName = String.format("evidence-%s.%s", UUID.randomUUID(), extension.toLowerCase());
+            String storedFileName = String.format("evidence-%s-%d.%s",
+                    UUID.randomUUID().toString().substring(0, 8),
+                    System.currentTimeMillis(),
+                    extension.toLowerCase());
 
             Path targetPath = targetDirectory.resolve(storedFileName);
             Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
 
-            String fileUrl = "/uploads/" + safeSubDir + "/" + storedFileName;
+            String fileUrl = "/uploads/" + safeSubDir.replace('\\', '/') + "/" + storedFileName;
             log.info("Stored uploaded image at {} -> URL: {}", targetPath, fileUrl);
-            register(fileUrl, safeSubDir, originalFilename, file.getContentType(), file.getSize(), null, null);
 
             return FileUploadResponse.builder()
                     .fileName(storedFileName)
@@ -124,191 +125,200 @@ public class FileStorageServiceImpl implements FileStorageService {
     }
 
     @Override
-    public FileUploadResponse storeDocument(MultipartFile file, String subDirectory) {
-        return storeDocument(file, subDirectory, null, null);
-    }
-
-    @Override
-    public FileUploadResponse storeDocument(MultipartFile file, String subDirectory, UUID bookingId, UUID facilityId) {
+    public FileUploadResponse storeDocumentFile(MultipartFile file, String subDirectory) {
+        if (cloudflareR2Service != null) {
+            return cloudflareR2Service.uploadFile(file, subDirectory);
+        }
         if (file == null || file.isEmpty()) {
-            throw new AppException(ErrorCode.FILE_UPLOAD_EMPTY);
-        }
-        if (file.getSize() > MAX_FILE_SIZE) {
-            log.warn("Document size {} exceeds maximum 10MB limit", file.getSize());
-            throw new AppException(ErrorCode.FILE_TOO_LARGE);
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Tệp tài liệu tải lên không được để trống");
         }
 
-        String originalFilename = StringUtils.cleanPath(Objects.requireNonNullElse(file.getOriginalFilename(), ""));
-        String extension = originalFilename.contains(".") ? getFileExtension(originalFilename).toLowerCase() : "";
-        if (!ALLOWED_DOCUMENT_EXTENSIONS.contains(extension) || !isContentTypeCompatible(file.getContentType(), extension)) {
-            log.warn("Rejected document upload: extension={}, contentType={}", extension, file.getContentType());
-            throw new AppException(ErrorCode.FILE_FORMAT_NOT_ALLOWED);
+        if (file.getSize() > MAX_FILE_SIZE) {
+            log.warn("Document file size {} exceeds maximum 10MB limit", file.getSize());
+            throw new AppException(ErrorCode.TICKET_IMAGE_SIZE_EXCEEDED, "Kích thước tệp vượt quá giới hạn tối đa 10MB");
+        }
+
+        String rawFilename = Objects.requireNonNullElse(file.getOriginalFilename(), "");
+        String originalFilename = StringUtils.cleanPath(rawFilename);
+        if (originalFilename.isBlank() || originalFilename.contains("..")) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Tên tệp tải lên không hợp lệ");
+        }
+
+        String extension = getStrictFileExtension(originalFilename).toLowerCase(Locale.ROOT);
+        if (!ALLOWED_DOCUMENT_EXTENSIONS.contains(extension)) {
+            log.warn("Invalid document extension: {}. Allowed: PDF, JPG, JPEG, PNG, WEBP", extension);
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    "Định dạng tệp không hợp lệ. Chỉ chấp nhận PDF, JPG, JPEG, PNG, WEBP");
+        }
+
+        String contentType = file.getContentType();
+        if (contentType != null && !contentType.isBlank()) {
+            String normalizedMime = contentType.split(";")[0].trim().toLowerCase(Locale.ROOT);
+            if (!ALLOWED_DOCUMENT_MIME_TYPES.contains(normalizedMime)) {
+                log.warn("Invalid document MIME type: {} for file {}", normalizedMime, originalFilename);
+                throw new AppException(ErrorCode.INVALID_REQUEST,
+                        "Loại nội dung tệp (MIME type) không hợp lệ. Chỉ chấp nhận PDF hoặc hình ảnh JPG, PNG, WEBP");
+            }
+            if ("pdf".equals(extension) && normalizedMime.startsWith("image/")) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Tệp có phần mở rộng PDF nhưng MIME type là ảnh");
+            }
+            if (!"pdf".equals(extension) && "application/pdf".equals(normalizedMime)) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Tệp có phần mở rộng ảnh nhưng MIME type là PDF");
+            }
         }
 
         try {
-            byte[] content = file.getBytes();
-            if (!matchesMagicBytes(content, extension)) {
-                log.warn("Rejected document upload: content does not look like .{}", extension);
-                throw new AppException(ErrorCode.FILE_FORMAT_NOT_ALLOWED);
+            byte[] headerBytes;
+            try (var is = file.getInputStream()) {
+                headerBytes = is.readNBytes(12);
+            }
+            if (!isValidMagicBytes(extension, headerBytes)) {
+                log.warn("File magic bytes mismatch for extension {} on file {}", extension, originalFilename);
+                throw new AppException(ErrorCode.INVALID_REQUEST,
+                        "Nội dung tệp không hợp lệ hoặc bị giả mạo phần mở rộng (chữ ký tệp không khớp " + extension.toUpperCase(Locale.ROOT) + ")");
             }
 
-            String safeSubDir = sanitizeSubDirectory(subDirectory);
+            String safeSubDir = sanitizeSubDirectory(subDirectory, "handovers");
             Path targetDirectory = this.rootUploadPath.resolve(safeSubDir).normalize();
+            if (!targetDirectory.startsWith(this.rootUploadPath)) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Đường dẫn lưu trữ tài liệu không hợp lệ");
+            }
             Files.createDirectories(targetDirectory);
 
-            String storedFileName = UUID.randomUUID() + "." + (extension.equals("jpeg") ? "jpg" : extension);
-            Files.write(targetDirectory.resolve(storedFileName), content);
+            String storedFileName = String.format("doc-%s-%d.%s",
+                    UUID.randomUUID().toString().substring(0, 8),
+                    System.currentTimeMillis(),
+                    extension);
 
-            String fileUrl = "/uploads/" + safeSubDir + "/" + storedFileName;
-            log.info("Stored uploaded document {} ({} bytes)", fileUrl, content.length);
-            register(fileUrl, safeSubDir, originalFilename, file.getContentType(), content.length, bookingId, facilityId);
+            Path targetPath = targetDirectory.resolve(storedFileName).normalize();
+            if (!targetPath.startsWith(this.rootUploadPath)) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Đường dẫn tệp đích không hợp lệ");
+            }
+
+            try (var inputStream = file.getInputStream()) {
+                Files.copy(inputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            }
+
+            String fileUrl = "/uploads/" + safeSubDir.replace('\\', '/') + "/" + storedFileName;
+            if (fileUrl.length() > 500) {
+                Files.deleteIfExists(targetPath);
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Đường dẫn tệp sinh ra vượt quá 500 ký tự");
+            }
+
+            String resolvedContentType = "pdf".equals(extension)
+                    ? "application/pdf"
+                    : ("jpg".equals(extension) ? "image/jpeg" : "image/" + extension);
+
+            log.info("Stored document at {} -> URL: {}", targetPath, fileUrl);
 
             return FileUploadResponse.builder()
                     .fileName(storedFileName)
                     .fileUrl(fileUrl)
-                    .fileType(extension.equals("pdf") ? "application/pdf" : "image/" + (extension.equals("jpg") ? "jpeg" : extension))
-                    .fileSize(content.length)
+                    .fileType(resolvedContentType)
+                    .fileSize(file.getSize())
                     .uploadedAt(LocalDateTime.now())
                     .build();
+
+        } catch (AppException e) {
+            throw e;
         } catch (IOException e) {
-            log.error("Could not store document {}", originalFilename, e);
-            throw new AppException(ErrorCode.FILE_UPLOAD_FAILED);
+            log.error("Could not store document file {}", originalFilename, e);
+            throw new AppException(ErrorCode.TICKET_IMAGE_UPLOAD_FAILED, "Không thể lưu trữ tệp tài liệu tải lên");
         }
-    }
-
-    // =========================================================================
-    // Registry: who uploaded what, and which record a file may be used for
-    // =========================================================================
-
-    private void register(String fileUrl, String category, String originalName, String contentType, long size,
-                          UUID bookingId, UUID facilityId) {
-        if (storedFileRepository == null) {
-            return;
-        }
-        UUID uploaderId = requestContext != null ? requestContext.currentUserId() : null;
-        UUID scopeFacilityId = facilityId != null ? facilityId : (requestContext != null ? requestContext.currentUserFacilityId() : null);
-        storedFileRepository.save(StoredFile.builder()
-                .urlPath(fileUrl)
-                .category(category)
-                .originalName(originalName != null && originalName.length() > 255 ? originalName.substring(0, 255) : originalName)
-                .contentType(contentType != null && contentType.length() > 100 ? contentType.substring(0, 100) : contentType)
-                .sizeBytes(size)
-                .uploadedById(uploaderId)
-                .facilityId(scopeFacilityId)
-                .bookingId(bookingId)
-                .build());
     }
 
     @Override
-    public Path resolveStoredPath(String urlPath) {
-        if (urlPath == null) {
-            return null;
+    public void deleteFileIfExists(String fileUrl) {
+        if (fileUrl == null || fileUrl.isBlank() || !fileUrl.startsWith("/uploads/")) {
+            return;
         }
-        java.util.regex.Matcher matcher = UploadUrlSigner.UPLOAD_PATH.matcher(urlPath);
-        if (!matcher.matches()) {
-            return null;
+        try {
+            Path targetPath = resolveStoredFilePath(fileUrl);
+            if (targetPath != null && Files.exists(targetPath) && Files.isRegularFile(targetPath)) {
+                Files.deleteIfExists(targetPath);
+                log.info("Cleaned up stored file at {}", targetPath);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to delete file for URL {}: {}", fileUrl, e.getMessage());
         }
-        Path resolved = rootUploadPath.resolve(matcher.group(1)).resolve(matcher.group(2)).normalize();
-        if (!resolved.startsWith(rootUploadPath) || !Files.isRegularFile(resolved)) {
-            return null;
+    }
+
+    @Override
+    public Path resolveStoredFilePath(String fileUrl) {
+        if (fileUrl == null || fileUrl.isBlank() || !fileUrl.startsWith("/uploads/")) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Đường dẫn tệp lưu trữ không hợp lệ");
+        }
+        String relativePath = fileUrl.substring("/uploads/".length()).trim();
+        if (relativePath.isBlank() || relativePath.contains("..")) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Đường dẫn tệp chứa ký tự truy cập trái phép");
+        }
+        Path resolved = this.rootUploadPath.resolve(relativePath).normalize();
+        if (!resolved.startsWith(this.rootUploadPath)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Truy cập tệp ngoài phạm vi thư mục cho phép");
         }
         return resolved;
     }
 
-    @Override
-    public boolean exists(String urlPath) {
-        return resolveStoredPath(urlPath) != null;
+    private String sanitizeSubDirectory(String subDirectory, String defaultDir) {
+        if (subDirectory == null || subDirectory.isBlank()) {
+            return defaultDir;
+        }
+        String cleaned = subDirectory.trim().replace('\\', '/');
+        while (cleaned.startsWith("/")) {
+            cleaned = cleaned.substring(1);
+        }
+        while (cleaned.endsWith("/")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 1);
+        }
+        if (cleaned.isBlank() || cleaned.contains("..")) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Thư mục lưu trữ không hợp lệ");
+        }
+        return cleaned;
     }
 
-    @Override
-    public void requireBookingEvidence(Collection<String> urls, UUID bookingId, UUID bookingFacilityId) {
-        if (urls == null || urls.isEmpty()) {
-            return;
-        }
-        for (String url : urls) {
-            String path = UploadUrlSigner.normalizePath(url);
-            if (path == null || !exists(path)) {
-                throw new AppException(ErrorCode.HANDOVER_EVIDENCE_URL_INVALID);
-            }
-            if (storedFileRepository == null) {
-                continue;
-            }
-            StoredFile stored = storedFileRepository.findByUrlPath(path).orElse(null);
-            if (stored == null) {
-                // Not uploaded through this API (hand-typed path or a file from another system).
-                throw new AppException(ErrorCode.HANDOVER_EVIDENCE_URL_INVALID);
-            }
-            if (stored.getBookingId() != null && !stored.getBookingId().equals(bookingId)) {
-                throw new AppException(ErrorCode.HANDOVER_EVIDENCE_URL_INVALID,
-                        "Tệp minh chứng này đã được tải lên cho một đơn khác. Hãy tải lại tệp cho đơn hiện tại");
-            }
-            if (stored.getFacilityId() != null && bookingFacilityId != null && !stored.getFacilityId().equals(bookingFacilityId)) {
-                throw new AppException(ErrorCode.HANDOVER_EVIDENCE_URL_INVALID,
-                        "Tệp minh chứng này thuộc về một cơ sở khác. Hãy tải lại tệp cho đơn hiện tại");
-            }
-            if (stored.getBookingId() == null) {
-                // First use: the file now belongs to this booking and cannot be reused for another one.
-                stored.setBookingId(bookingId);
-                storedFileRepository.save(stored);
-            }
-        }
-    }
-
-    @Override
-    public void requireOwnUploads(Collection<String> urls, String category) {
-        if (urls == null || urls.isEmpty()) {
-            return;
-        }
-        UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
-        for (String url : urls) {
-            String path = UploadUrlSigner.normalizePath(url);
-            if (path == null || !path.startsWith("/uploads/" + category + "/") || !exists(path)) {
-                throw new AppException(ErrorCode.TICKET_EVIDENCE_INVALID);
-            }
-            if (storedFileRepository == null) {
-                continue;
-            }
-            StoredFile stored = storedFileRepository.findByUrlPath(path).orElse(null);
-            if (stored == null || stored.getUploadedById() == null || !stored.getUploadedById().equals(currentUserId)) {
-                throw new AppException(ErrorCode.TICKET_EVIDENCE_INVALID);
-            }
-        }
-    }
-
-    /** Only letters, digits, '-' and '_' are allowed, so a caller can never walk out of the upload root. */
-    private String sanitizeSubDirectory(String subDirectory) {
-        if (subDirectory != null && SAFE_SUB_DIRECTORY.matcher(subDirectory.trim()).matches()) {
-            return subDirectory.trim();
-        }
-        return "general";
-    }
-
-    private boolean isContentTypeCompatible(String contentType, String extension) {
-        if (contentType == null || contentType.isBlank() || "application/octet-stream".equalsIgnoreCase(contentType)) {
-            return true;
-        }
-        String type = contentType.toLowerCase();
-        return "pdf".equals(extension) ? type.equals("application/pdf") : type.startsWith("image/");
-    }
-
-    private boolean matchesMagicBytes(byte[] content, String extension) {
-        if (content.length < 12) {
+    private boolean isValidMagicBytes(String extension, byte[] header) {
+        if (header == null || header.length < 4) {
             return false;
         }
-        switch (extension) {
-            case "pdf":
-                return content[0] == '%' && content[1] == 'P' && content[2] == 'D' && content[3] == 'F' && content[4] == '-';
-            case "jpg":
-            case "jpeg":
-                return (content[0] & 0xFF) == 0xFF && (content[1] & 0xFF) == 0xD8 && (content[2] & 0xFF) == 0xFF;
-            case "png":
-                return (content[0] & 0xFF) == 0x89 && content[1] == 'P' && content[2] == 'N' && content[3] == 'G';
-            case "webp":
-                return content[0] == 'R' && content[1] == 'I' && content[2] == 'F' && content[3] == 'F'
-                        && content[8] == 'W' && content[9] == 'E' && content[10] == 'B' && content[11] == 'P';
-            default:
-                return false;
+        return switch (extension) {
+            case "pdf" -> header.length >= 5
+                    && header[0] == 0x25 // '%'
+                    && header[1] == 0x50 // 'P'
+                    && header[2] == 0x44 // 'D'
+                    && header[3] == 0x46 // 'F'
+                    && header[4] == 0x2D; // '-'
+            case "jpg", "jpeg" -> header.length >= 3
+                    && (header[0] & 0xFF) == 0xFF
+                    && (header[1] & 0xFF) == 0xD8
+                    && (header[2] & 0xFF) == 0xFF;
+            case "png" -> header.length >= 8
+                    && (header[0] & 0xFF) == 0x89
+                    && header[1] == 0x50 // 'P'
+                    && header[2] == 0x4E // 'N'
+                    && header[3] == 0x47 // 'G'
+                    && header[4] == 0x0D
+                    && header[5] == 0x0A
+                    && header[6] == 0x1A
+                    && header[7] == 0x0A;
+            case "webp" -> header.length >= 12
+                    && header[0] == 'R'
+                    && header[1] == 'I'
+                    && header[2] == 'F'
+                    && header[3] == 'F'
+                    && header[8] == 'W'
+                    && header[9] == 'E'
+                    && header[10] == 'B'
+                    && header[11] == 'P';
+            default -> false;
+        };
+    }
+
+    private String getStrictFileExtension(String filename) {
+        int dotIndex = filename.lastIndexOf('.');
+        if (dotIndex > 0 && dotIndex < filename.length() - 1) {
+            return filename.substring(dotIndex + 1);
         }
+        return "";
     }
 
     private String getFileExtension(String filename) {

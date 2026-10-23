@@ -16,4 +16,6 @@ public class ContractRenewalCreateRequest {
     @NotNull(message = "Cycle months is required")
     @Min(value = 1, message = "Cycle months must be at least 1")
     private Integer cycleMonths;
+
+    private String notes;
 }

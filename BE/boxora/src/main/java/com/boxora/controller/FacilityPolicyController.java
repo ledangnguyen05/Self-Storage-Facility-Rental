@@ -34,18 +34,17 @@ public class FacilityPolicyController {
         this.facilityPolicyService = facilityPolicyService;
     }
 
-    // Chính sách là điều khoản công khai: khách vãng lai cũng cần xem trước khi thuê (khớp SecurityConfig permitAll cho GET).
     @GetMapping("{id}")
-    @PreAuthorize("permitAll()")
-    @Operation(summary = "Lấy chính sách cơ sở theo ID (công khai; khách chỉ thấy chính sách đang áp dụng)")
+    @PreAuthorize("hasAuthority('POLICY_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF', 'CUSTOMER')")
+    @Operation(summary = "Lấy chính sách cơ sở theo ID")
     public ResponseEntity<ApiResponse<FacilityPolicyResponse>> getById(@PathVariable UUID id) {
         FacilityPolicyResponse response = facilityPolicyService.getById(id);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
     @GetMapping("/by-facility/{facilityId}")
-    @PreAuthorize("permitAll()")
-    @Operation(summary = "Lấy chính sách của một cơ sở (công khai; 404 khi cơ sở chưa có chính sách đang áp dụng)")
+    @PreAuthorize("hasAuthority('POLICY_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF', 'CUSTOMER')")
+    @Operation(summary = "Get facility policy by facility ID")
     public ResponseEntity<ApiResponse<FacilityPolicyResponse>> getByFacilityId(
             @PathVariable UUID facilityId) {
         FacilityPolicyResponse response = facilityPolicyService.getByFacilityId(facilityId);
@@ -61,7 +60,7 @@ public class FacilityPolicyController {
         FacilityPolicyResponse response = facilityPolicyService.create(request);
 
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Đã ban hành chính sách cơ sở", response));
+                .body(ApiResponse.success("Thiết lập chính sách cơ sở thành công", response));
     }
 
     @PutMapping("{id}")
@@ -74,7 +73,7 @@ public class FacilityPolicyController {
         FacilityPolicyResponse response = facilityPolicyService.update(id, request);
 
         return ResponseEntity.ok(
-                ApiResponse.success("Đã cập nhật chính sách cơ sở", response));
+                ApiResponse.success("Cập nhật chính sách cơ sở thành công", response));
     }
 
     @GetMapping("{id}/exceptions")
@@ -91,7 +90,7 @@ public class FacilityPolicyController {
             @PathVariable UUID id,
             @Valid @RequestBody FacilityPolicyExceptionGrantRequest request) {
         facilityPolicyService.setExceptionGrant(id, request.getFacilityManagerId(), request.getGranted());
-        return ResponseEntity.ok(ApiResponse.success("Đã cập nhật quyền sửa chính sách ngoại lệ", null));
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật đặc quyền ngoại lệ chính sách thành công", null));
     }
 
     @DeleteMapping("{id}")
@@ -101,7 +100,7 @@ public class FacilityPolicyController {
         facilityPolicyService.delete(id);
 
         return ResponseEntity.ok(
-                ApiResponse.success("Đã xóa chính sách cơ sở", null));
+                ApiResponse.success("Xóa chính sách cơ sở thành công", null));
     }
 
     @GetMapping

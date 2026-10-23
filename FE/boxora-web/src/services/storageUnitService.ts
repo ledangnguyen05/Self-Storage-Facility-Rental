@@ -1,5 +1,5 @@
 import { api } from '../lib/axios'
-import type { RequestOptions, StorageUnit, UnitType } from '../types'
+import { StorageUnit, UnitType } from '../types'
 
 export interface StorageUnitCreateRequest {
   unitCode: string
@@ -7,25 +7,27 @@ export interface StorageUnitCreateRequest {
   facilityId: string
   unitTypeId: string
   pricePerMonth?: number
+  imageUrl?: string
 }
 
 export const storageUnitService = {
-  /**
-   * `scope: 'public'` is for the public "Thuê kho" page: units of every ACTIVE branch (occupied ones included, shown as
-   * rented), never narrowed to the signed-in staff member's facility, and always without tenant data.
-   */
-  async getUnits(params?: { facilityId?: string; floorLevel?: string; status?: string; scope?: 'public' }, opts?: RequestOptions) {
-    const response = await api.get('/api/v1/storage-units', { params, signal: opts?.signal })
+  async uploadUnitImage(file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await api.post('/api/v1/storage-units/upload-image', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return response.data?.data as { fileUrl: string; fileName: string; fileSize?: number; fileType?: string }
+  },
+  async getUnits(params?: { facilityId?: string; floorLevel?: string; status?: string }) {
+    const response = await api.get('/api/v1/storage-units', { params })
     return response.data?.data as StorageUnit[]
   },
 
-  async getPublicUnits(opts?: RequestOptions) {
-    const units = await storageUnitService.getUnits({ scope: 'public' }, opts)
-    return Array.isArray(units) ? units : []
-  },
-
-  async getById(id: string, opts?: RequestOptions) {
-    const response = await api.get(`/api/v1/storage-units/${id}`, { signal: opts?.signal })
+  async getById(id: string) {
+    const response = await api.get(`/api/v1/storage-units/${id}`)
     return response.data?.data as StorageUnit
   },
 
@@ -49,8 +51,8 @@ export const storageUnitService = {
     return response.data?.data as StorageUnit
   },
 
-  async getUnitTypes(opts?: RequestOptions): Promise<UnitType[]> {
-    const response = await api.get('/api/v1/unit-types', { signal: opts?.signal })
+  async getUnitTypes(): Promise<UnitType[]> {
+    const response = await api.get('/api/v1/unit-types')
     return response.data?.data as UnitType[]
   },
 
@@ -67,7 +69,7 @@ export const storageUnitService = {
       ...data,
       cascadeToAvailableUnits: data.cascadeToAvailableUnits ?? true,
     })
-    return response.data?.data as UnitType
+    return response.data?.data
   },
 
   async updateUnitType(
@@ -82,7 +84,7 @@ export const storageUnitService = {
     }
   ) {
     const response = await api.put(`/api/v1/unit-types/${id}`, data)
-    return response.data?.data as UnitType
+    return response.data?.data
   },
 }
 

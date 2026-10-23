@@ -33,7 +33,4 @@ public class NotificationLogResponse {
     private Integer retryCount;
     private String errorMessage;
     private LocalDateTime createdAt;
-    /** Thời điểm người nhận đã đọc; null khi chưa đọc */
-    private LocalDateTime readAt;
-    private boolean read;
 }

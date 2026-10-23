@@ -1,7 +1,8 @@
 package com.boxora.dto.request;
 
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
 import java.math.BigDecimal;
@@ -18,23 +19,22 @@ public class RefundCreateRequest {
 
     private UUID contractId;
 
-    /** Ignored: the refundable amount is computed by the server from the collected deposit. */
+    @NotNull(message = "requestedAmount is required")
+    @DecimalMin(value = "1000", message = "Số tiền hoàn tối thiểu là 1,000 VND")
     private BigDecimal requestedAmount;
 
-    /** Ignored: deductions are decided by the cancellation policy or the return settlement. */
-    private BigDecimal deductionAmount;
+    @Builder.Default
+    private BigDecimal deductionAmount = BigDecimal.ZERO;
 
-    /** Optional: the customer can provide the bank account later (PUT /refunds/{id}/bank-account). */
-    @Size(max = 100, message = "Tên ngân hàng tối đa 100 ký tự")
+    @NotBlank(message = "bankName is required")
     private String bankName;
 
-    @Size(max = 24, message = "Số tài khoản tối đa 20 chữ số")
+    @NotBlank(message = "bankAccountNumber is required")
     private String bankAccountNumber;
 
-    @Size(max = 100, message = "Tên chủ tài khoản tối đa 100 ký tự")
+    @NotBlank(message = "bankAccountName is required")
     private String bankAccountName;
 
-    @NotBlank(message = "Vui lòng nhập lý do hoàn tiền")
-    @Size(max = 500, message = "Lý do hoàn tiền tối đa 500 ký tự")
+    @NotBlank(message = "reason is required")
     private String reason;
 }

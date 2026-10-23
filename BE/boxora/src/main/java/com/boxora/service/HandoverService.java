@@ -1,15 +1,11 @@
 package com.boxora.service;
 
 import com.boxora.dto.request.HandoverRequest;
-import com.boxora.dto.response.CustomerDebtResponse;
-import com.boxora.dto.response.FileUploadResponse;
-import com.boxora.dto.response.HandoverLookupResponse;
 import com.boxora.dto.response.HandoverResponse;
 
 import com.boxora.dto.response.HandoverPrerequisitesResponse;
 import com.boxora.dto.response.ReturnSettlementPreviewResponse;
 import com.boxora.dto.response.ReturnSettlementResponse;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
@@ -25,9 +21,6 @@ public interface HandoverService {
      */
     HandoverPrerequisitesResponse getCheckInPrerequisites(UUID bookingId);
 
-    /**
-     * Check-in bàn giao kho. Chỉ phản hồi này (và không phản hồi nào khác) mang mã PIN nguyên bản, đúng một lần.
-     */
     HandoverResponse checkIn(HandoverRequest request);
 
     /**
@@ -55,31 +48,11 @@ public interface HandoverService {
      */
     ReturnSettlementResponse processReturnSettlement(HandoverRequest request);
 
-    /** Lịch sử biên bản của một đơn. Khách chỉ xem đơn của mình, nhân viên chỉ xem cơ sở của mình. Không chứa mã PIN. */
     List<HandoverResponse> getByBookingId(UUID bookingId);
 
-    /**
-     * Gửi lại mã PIN tới email của khách trong hồ sơ. Gửi đồng bộ: trả về địa chỉ đã gửi khi máy chủ email nhận thư,
-     * ném lỗi khi không gửi được.
-     */
-    String sendHandoverPinEmail(UUID bookingId);
+    void sendHandoverPinEmail(UUID bookingId, String customEmail);
 
-    /** Thông báo trong ứng dụng cho khách (không chứa mã PIN). Gọi lại không tạo thông báo trùng. */
     com.boxora.dto.response.NotificationLogResponse sendHandoverWebNotification(UUID bookingId);
-
-    /** Tải lên ảnh nghiệm thu, bản scan hợp đồng giấy hoặc biên lai chuyển khoản; trả về URL /uploads/handover/... */
-    FileUploadResponse uploadEvidence(MultipartFile file, UUID bookingId);
-
-    /**
-     * Tra cứu đơn đặt kho tại quầy theo mã QR ("BOXORA-CHECKIN:&lt;mã đặt chỗ&gt;"), mã đặt chỗ hoặc UUID của đơn.
-     * Chỉ trong phạm vi cơ sở của nhân viên.
-     */
-    HandoverLookupResponse lookupBooking(String code);
-
-    /** Công nợ khách còn nợ sau quyết toán trả kho (khấu trừ vượt tiền cọc). */
-    List<CustomerDebtResponse> getCustomerDebts(UUID facilityId, String status);
-
-    CustomerDebtResponse resolveCustomerDebt(UUID debtId, String status, String note);
 
     // =========================================================================
     // QUY TRÌNH CHECK-IN ĐỐI SOÁT 4 ĐIỀU KIỆN & NGHIỆM THU HIỆN TRƯỜNG
@@ -105,4 +78,15 @@ public interface HandoverService {
 
     /** Bước 2: Lưu biên bản nghiệm thu 5 tiêu chuẩn hiện trường và ảnh kiểm định */
     HandoverResponse recordCheckInInspection(com.boxora.dto.request.CheckInInspectionRequest request);
+
+    /** Tải lên tài liệu nghiệp vụ bàn giao (Hợp đồng giấy scan / Chứng từ chuyển khoản: PDF, JPG, JPEG, PNG, WEBP) */
+    com.boxora.dto.response.FileUploadResponse uploadHandoverDocument(
+            UUID bookingId,
+            org.springframework.web.multipart.MultipartFile file,
+            String documentType
+    );
+
+    /** Kiểm tra quyền truy cập và phân giải đường dẫn tệp tài liệu nhạy cảm (Hợp đồng giấy / Chứng từ thanh toán) */
+    java.nio.file.Path getAuthorizedHandoverDocumentPath(UUID bookingId, String fileUrl);
 }
+

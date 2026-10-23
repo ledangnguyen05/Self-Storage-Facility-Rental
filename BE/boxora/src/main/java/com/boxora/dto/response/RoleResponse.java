@@ -11,8 +11,7 @@ public class RoleResponse {
     private UUID id;
     private String name;
     private String description;
-    /** Boxed so Jackson serialises the property as `isActive` (a primitive `isActive` would become `active`). */
-    private Boolean isActive;
+    private boolean isActive;
     private LocalDateTime createdAt;
     private LocalDateTime  updatedAt;
 }

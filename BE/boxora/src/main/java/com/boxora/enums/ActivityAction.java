@@ -4,9 +4,8 @@ import java.util.Arrays;
 import java.util.List;
 
 public enum ActivityAction {
-    // Authentication. A routine sign-in is not "critical" (it would drown the filter: most rows are sign-ins);
-    // a failed one is, because repeated failures are what an operator looks for.
-    LOGIN_SUCCESS(false), LOGIN_FAILED(true), LOGOUT(false),
+    // Authentication
+    LOGIN_SUCCESS(true), LOGIN_FAILED(true), LOGOUT(false),
     PASSWORD_CHANGE(true), PASSWORD_RESET_REQUESTED(false), PASSWORD_RESET_COMPLETED(true),
     REFRESH_TOKEN_REVOKED(false),
 
@@ -22,7 +21,6 @@ public enum ActivityAction {
     UNIT_TYPE_CREATE(false), UNIT_TYPE_UPDATE(false), UNIT_TYPE_DELETE(false),
     PRICE_CREATE(false), PRICE_UPDATE(true),
     FACILITY_POLICY_CREATE(false), FACILITY_POLICY_UPDATE(true),
-    FACILITY_POLICY_DELETE(true), FACILITY_POLICY_EXCEPTION(true),
     FEE_CREATE(false), FEE_UPDATE(false), FEE_WAIVE(true),
     DISCOUNT_CREATE(false), DISCOUNT_UPDATE(false), DISCOUNT_ACTIVATE(false), DISCOUNT_DEACTIVATE(false),
 
@@ -42,9 +40,11 @@ public enum ActivityAction {
     MASTER_KEY_OVERRIDE(true),
 
     // Renewal & Overdue
-    RENEWAL_REQUEST(false), RENEWAL_PAID(false), CONTRACT_EXTENDED(false),
-    OVERDUE_DETECTED(false), OVERDUE_ACCESS_DISABLED(true), OVERDUE_SEALING_APPROVED(true),
-    OVERDUE_UNIT_LOCKED(true), OVERDUE_REMINDER_SENT(false),
+    RENEWAL_REQUEST(false), RENEWAL_PAID(false), RENEWAL_APPROVED(true), RENEWAL_REJECTED(true),
+    RENEWAL_REACTIVATED(true), RENEWAL_APPROVAL_UNDONE(true), RENEWAL_STAFF_ASSIGNED(false), RENEWAL_RECEPTION_COMPLETE(true),
+    CONTRACT_EXTENDED(false),
+    OVERDUE_DETECTED(false), OVERDUE_REMINDER_SENT(false), OVERDUE_ACCESS_DISABLED(true), OVERDUE_SEALING_APPROVED(true),
+    OVERDUE_UNIT_LOCKED(true),
 
     // Checkout & Refund
     CHECKOUT_REQUEST(false), CHECKOUT_INSPECTION_COMPLETE(false), DAMAGE_FEE_RECORDED(true),
@@ -56,6 +56,10 @@ public enum ActivityAction {
     SUPPORT_TICKET_RESOLVE(false), SUPPORT_TICKET_CLOSE(false), SUPPORT_TICKET_REOPEN(false),
     SUPPORT_TICKET_CONTACT_BOM(true),
     STAFF_ASSIGNMENT_CREATE(false), STAFF_ASSIGNMENT_UPDATE(false), STAFF_ASSIGNMENT_REMOVE(false),
+    STAFF_CHECKIN(false), STAFF_CHECKOUT(false),
+    SHIFT_SWAP_REQUEST(false), SHIFT_SWAP_APPROVE(true), SHIFT_SWAP_REJECT(false),
+    SHIFT_HANDOVER_CREATE(false), SHIFT_HANDOVER_ACKNOWLEDGE(false),
+    SHIFT_HANDOVER_DISPATCH(true), SHIFT_HANDOVER_REJECT(false),
 
     // Reports
     REPORT_EXPORTED(false);

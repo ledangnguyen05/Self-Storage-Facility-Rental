@@ -16,7 +16,6 @@ import com.boxora.repository.DiscountRepository;
 import com.boxora.repository.FacilityRepository;
 import com.boxora.service.ActivityLogService;
 import com.boxora.service.DiscountService;
-import com.boxora.util.VndFormat;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -129,7 +128,7 @@ public class DiscountServiceImpl implements DiscountService {
                 "Discount",
                 saved.getId(),
                 String.format("Tạo chương trình ưu đãi %s (%s) - Loại: %s, Giá trị: %s",
-                        saved.getName(), saved.getCode(), discountTypeLabel(saved.getDiscountType()), discountValueText(saved)),
+                        saved.getName(), saved.getCode(), saved.getDiscountType(), saved.getDiscountValue()),
                 null,
                 null
         );
@@ -224,19 +223,15 @@ public class DiscountServiceImpl implements DiscountService {
         );
     }
 
-    /**
-     * Mã sai là lỗi nghiệp vụ (400), không phải lỗi hệ thống. {@code noRollbackFor} giữ giao dịch của người gọi
-     * (báo giá, đặt kho) không bị đánh dấu rollback-only khi người gọi tự bắt AppException này.
-     */
     @Override
-    @Transactional(readOnly = true, noRollbackFor = AppException.class)
+    @Transactional(readOnly = true)
     public DiscountValidateResponse validateAndCalculateDiscount(DiscountValidateRequest request) {
         String code = request.getCode().trim().toUpperCase();
         log.info("Validating discount code={} for baseAmount={}, rentalMonths={}",
                 code, request.getBaseAmount(), request.getRentalMonths());
 
         Discount discount = discountRepository.findByCode(code)
-                .orElseThrow(() -> new AppException(ErrorCode.DISCOUNT_CODE_INVALID, "Mã ưu đãi không tồn tại"));
+                .orElseThrow(() -> new AppException(ErrorCode.DISCOUNT_NOT_FOUND));
 
         if (Boolean.FALSE.equals(discount.getIsActive())) {
             throw new AppException(ErrorCode.DISCOUNT_EXPIRED);
@@ -298,47 +293,7 @@ public class DiscountServiceImpl implements DiscountService {
                 .discountValue(discount.getDiscountValue())
                 .discountAmount(discountAmount)
                 .finalAmount(finalAmount)
-                .message(String.format("Áp dụng thành công mã ưu đãi '%s'. Giảm %s.", discount.getCode(), VndFormat.format(discountAmount)))
+                .message(String.format("Áp dụng thành công mã ưu đãi '%s'. Giảm %s VNĐ.", discount.getCode(), discountAmount))
                 .build();
-    }
-
-    @Override
-    @Transactional
-    public void consumeDiscount(String code) {
-        if (code == null || code.isBlank()) {
-            return;
-        }
-        String normalized = code.trim().toUpperCase();
-        // Mã chiết khấu kỳ hạn tự sinh (TERM_xx) không nằm trong bảng ưu đãi nên không đếm lượt dùng.
-        if (normalized.startsWith("TERM_")) {
-            return;
-        }
-        if (discountRepository.incrementUsedCount(normalized) == 0) {
-            throw new AppException(ErrorCode.DISCOUNT_USAGE_LIMIT_EXCEEDED);
-        }
-    }
-
-    /** Tên loại ưu đãi cho nhật ký hoạt động (không để lộ mã kỹ thuật như FIXED_AMOUNT). */
-    private static String discountTypeLabel(DiscountType type) {
-        if (type == null) {
-            return "Không xác định";
-        }
-        return switch (type) {
-            case PERCENTAGE -> "Giảm theo phần trăm";
-            case FIXED_AMOUNT -> "Giảm số tiền cố định";
-            case TENURE_CYCLE -> "Giảm theo kỳ hạn thuê";
-        };
-    }
-
-    /** Giá trị ưu đãi: "15%" cho loại phần trăm và theo kỳ hạn, "200.000 ₫" cho số tiền cố định. */
-    private static String discountValueText(Discount discount) {
-        BigDecimal value = discount.getDiscountValue();
-        if (value == null) {
-            return "—";
-        }
-        if (discount.getDiscountType() == DiscountType.FIXED_AMOUNT) {
-            return VndFormat.format(value);
-        }
-        return value.stripTrailingZeros().toPlainString() + "%";
     }
 }

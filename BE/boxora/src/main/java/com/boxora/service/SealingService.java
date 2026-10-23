@@ -10,22 +10,18 @@ import java.util.UUID;
 
 public interface SealingService {
 
-    /**
-     * Seals an overdue unit: only from the sealing day of the facility policy, with a witness of the same facility.
-     * Revokes the tenant PIN/QR, locks unit and contract (OVERDUE_LOCKED) and emails the tenant.
-     */
+    /** Lập biên bản và thực hiện niêm phong kho, chuyển trạng thái sang OVERDUE_LOCKED. */
     SealingRecordResponse createSealing(SealingCreateRequest request);
 
-    /** Removes the seal and reopens tenant access (see AccessRestorationServiceImpl). */
+    /** Mở niêm phong kho sau khi xử lý nợ hoặc có quyết định của BGĐ. */
     SealingRecordResponse unseal(UUID sealingId, SealingUnsealRequest request);
 
+    /** Lấy chi tiết biên bản niêm phong theo ID. */
     SealingRecordResponse getById(UUID sealingId);
 
-    /** Active (SEALED) record of a contract, or null when there is none. */
+    /** Lấy biên bản niêm phong hiện tại của hợp đồng. */
     SealingRecordResponse getActiveSealingByContractId(UUID contractId);
 
-    /** Active (SEALED) record of a storage unit, or null when there is none. */
-    SealingRecordResponse getActiveSealingByUnitId(UUID unitId);
-
+    /** Lấy danh sách biên bản niêm phong phân trang theo bộ lọc. */
     PageResponse<SealingRecordResponse> getAll(UUID facilityId, SealingStatus status, int page, int size);
 }

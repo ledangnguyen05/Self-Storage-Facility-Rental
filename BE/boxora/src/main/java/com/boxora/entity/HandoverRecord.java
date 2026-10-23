@@ -44,12 +44,23 @@ public class HandoverRecord extends BaseEntity {
     @Column(name = "checklist_summary", columnDefinition = "TEXT")
     private String checklistSummary;
 
-    /** JSON array of uploaded file URLs (see EvidenceUrlCodec). Legacy rows may hold ';' joined text. */
     @Column(name = "evidence_photos", columnDefinition = "TEXT")
     private String evidencePhotos;
 
-    @Column(name = "rfid_card_number", length = 100)
-    private String rfidCardNumber;
+    @Column(name = "door_condition_passed")
+    private Boolean doorConditionPassed;
+
+    @Column(name = "cleanliness_passed")
+    private Boolean cleanlinessPassed;
+
+    @Column(name = "smart_lock_passed")
+    private Boolean smartLockPassed;
+
+    @Column(name = "sensor_passed")
+    private Boolean sensorPassed;
+
+    @Column(name = "wall_structure_passed")
+    private Boolean wallStructurePassed;
 
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;

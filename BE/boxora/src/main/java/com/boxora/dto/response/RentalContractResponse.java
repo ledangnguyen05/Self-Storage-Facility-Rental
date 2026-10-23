@@ -24,9 +24,9 @@ public class RentalContractResponse {
     private String customerName;
     private String customerEmail;
     private String customerPhone;
+    private String identityCardNumber;
+    private String identityCardType;
 
-    /** Storage unit UUID (same value as {@code unitId}, kept for the portal contract). */
-    private UUID storageUnitId;
     private UUID unitId;
     private String unitCode;
 
@@ -34,16 +34,11 @@ public class RentalContractResponse {
     private String facilityName;
 
     private UUID bookingId;
-    private String bookingCode;
-    private String bookingStatus;
-    private Integer rentalMonths;
 
     private LocalDate startDate;
     private LocalDate endDate;
     private BigDecimal monthlyFee;
     private BigDecimal depositHeld;
-    /** Deposit agreed in the booking (PricingService quote); depositHeld is what was actually collected. */
-    private BigDecimal depositAmount;
 
     private RentalContractStatus status;
 
@@ -64,19 +59,4 @@ public class RentalContractResponse {
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
-
-    // ---- Renewal eligibility (facility policy renewalWindowDays / overdueGraceDays), filled by the service ----
-    /** True when a renewal request is accepted today. */
-    private Boolean renewable;
-    /** First day a renewal request is accepted. */
-    private java.time.LocalDate renewalOpensOn;
-    /** Last day a renewal request is accepted (null: no limit while the contract is overdue). */
-    private java.time.LocalDate renewalClosesOn;
-    /** Why the renewal is not available today (Vietnamese, for the customer). */
-    private String renewalBlockedReason;
-    private Integer renewalWindowDays;
-    /** Open renewal request (PENDING_SIGNATURE / PENDING_PAYMENT), if any. */
-    private UUID pendingRenewalId;
-    /** True when DocuSeal is not configured and contracts are signed in-app (test environment). */
-    private Boolean signingSimulated;
 }

@@ -1,6 +1,5 @@
 package com.boxora.entity;
 
-import com.boxora.enums.RefreshTokenRevokeReason;
 import com.boxora.enums.TokenType;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotEmpty;
@@ -22,7 +21,7 @@ public class RefreshToken extends BaseEntity {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(nullable = false, unique = true, length = 1024)
+    @Column(nullable = false, unique = true, columnDefinition = "TEXT")
     @NotEmpty(message = "Token is required")
     private String token;
 
@@ -39,9 +38,4 @@ public class RefreshToken extends BaseEntity {
     @Column(nullable = false)
     @Builder.Default
     private Boolean revoked = false;
-
-    /** Null while the token is live (and for tokens revoked before the reason was recorded). */
-    @Enumerated(EnumType.STRING)
-    @Column(name = "revoked_reason", length = 30)
-    private RefreshTokenRevokeReason revokedReason;
 }

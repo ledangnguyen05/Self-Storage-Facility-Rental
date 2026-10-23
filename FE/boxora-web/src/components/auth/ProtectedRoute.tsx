@@ -1,41 +1,63 @@
 import React from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { buildLoginRedirect, getPortalForRole } from '../../constants/routes'
 import { useAuth } from '../../context/AuthContext'
-import type { RoleType } from '../../types'
+import { RoleType } from '../../types'
+import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 
 interface ProtectedRouteProps {
-  /** Roles allowed to see `children`. Omit to only require a signed-in user. */
-  allowedRoles?: readonly RoleType[]
+  allowedRoles?: RoleType[]
   children: React.ReactElement
 }
 
-/** Neutral full-area loading state used while the session is being resolved. */
-export const SessionLoading: React.FC<{ label?: string }> = ({ label = 'Đang tải phiên làm việc…' }) => (
-  <div className="flex min-h-[60vh] w-full flex-col items-center justify-center gap-3 bg-canvas text-fg-muted" role="status" aria-live="polite">
-    <span className="h-6 w-6 animate-spin rounded-full border-2 border-line-strong border-t-accent" aria-hidden="true" />
-    <span className="text-sm">{label}</span>
-  </div>
-)
-
-/**
- * Redirects anonymous users to `/login?redirect=…` and users whose role is not
- * in `allowedRoles` to their own portal.
- */
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, children }) => {
   const { user, role, isAuthenticated, isLoading } = useAuth()
   const location = useLocation()
 
-  if (isLoading) return <SessionLoading />
+  if (isLoading) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-3">
+        <div className="w-10 h-10 border-4 border-orange-500/20 border-t-orange-600 rounded-full animate-spin"></div>
+        <span className="font-mono text-xs text-slate-500 font-semibold tracking-wider uppercase">
+          Xác thực phiên làm việc Boxora...
+        </span>
+      </div>
+    )
+  }
 
+  // If not logged in, redirect to /login
   if (!isAuthenticated || !user) {
-    return <Navigate to={buildLoginRedirect(`${location.pathname}${location.search}`)} replace />
+    return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname)}`} replace />
   }
 
+  // If allowedRoles is specified and current role is not permitted, automatically route them to their proper portal
   if (allowedRoles && allowedRoles.length > 0 && role && !allowedRoles.includes(role)) {
-    return <Navigate to={getPortalForRole(role)} replace />
+    const getTargetPortal = (r: RoleType) => {
+      switch (r) {
+        case 'ADMIN':
+          return '/portal/admin'
+        case 'BUSINESS_MANAGER':
+          return '/portal/business-manager'
+        case 'FACILITY_MANAGER':
+          return '/portal/facility-manager'
+        case 'STAFF':
+          return '/portal/staff'
+        case 'CUSTOMER':
+        default: {
+          const access = checkCustomerPortalAccess(user)
+          return access.hasAccess ? '/portal/customer' : '/#units'
+        }
+      }
+    }
+    return <Navigate to={getTargetPortal(role)} replace />
   }
 
+  // Customer cannot enter /portal until they sign contract and pay
+  if (role === 'CUSTOMER' && location.pathname.startsWith('/portal')) {
+    const access = checkCustomerPortalAccess(user)
+    if (!access.hasAccess) {
+      return <Navigate to="/my-bookings" replace />
+    }
+  }
   return children
 }
 

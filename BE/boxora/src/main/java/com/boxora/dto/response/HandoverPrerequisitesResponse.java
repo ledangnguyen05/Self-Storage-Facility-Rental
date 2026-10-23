@@ -43,6 +43,8 @@ public class HandoverPrerequisitesResponse {
     private String contractStatus;
     private String contractSigningMethod;
     private String contractVerificationStatus;
+    private String signedDocumentUrl;
+    private java.time.LocalDateTime contractSignedAt;
     private String paperContractUrl;
     private String paperOriginalLocation;
     private String paperVerifiedByName;
@@ -52,8 +54,18 @@ public class HandoverPrerequisitesResponse {
     private boolean identityVerified;
     private String idCardType;
     private String idCardNumber;
+    private String registeredIdCardNumber;
+    private String registeredIdCardType;
     private String identityVerifiedByName;
     private java.time.LocalDateTime identityVerifiedAt;
+
+    // ==========================================
+    // THỜI ĐIỂM CHECK-IN HỢP LỆ (LỊCH HẸN NHẬN KHO)
+    // ==========================================
+    private boolean checkInTimeMet;
+    private String checkInTimeStatus; // BEFORE_DATE | BEFORE_TIME | ON_TIME | LATE
+    private String checkInTimeMessage;
+    private java.time.LocalDateTime expectedCheckInAt;
 
     // ==========================================
     // TỔNG KẾT & TIẾN TRÌNH

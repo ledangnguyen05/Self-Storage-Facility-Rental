@@ -24,8 +24,6 @@ public class UnitTypeResponse {
     private BigDecimal basePricePerMonth;
     private BigDecimal depositAmount;
     private Long activeUnitsCount;
-    /** Giá thuê thấp nhất đang niêm yết cho loại kho này trên các kho còn trống (đã tính giá riêng của cơ sở); null nếu hết kho. */
-    private BigDecimal lowestListedPrice;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

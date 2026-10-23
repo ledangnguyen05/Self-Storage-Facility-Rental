@@ -26,8 +26,6 @@ public class StaffAssignmentResponse {
     private String staffUsername;
     private String staffFullName;
     private String staffEmail;
-    private String staffPhone;
-    private String staffAvatar;
 
     // Facility details
     private UUID facilityId;
@@ -44,6 +42,14 @@ public class StaffAssignmentResponse {
     // Assigning manager info
     private UUID assignedById;
     private String assignedByName;
+
+    // Time and Attendance
+    private java.time.LocalTime startTime;
+    private java.time.LocalTime endTime;
+    private LocalDateTime checkedInAt;
+    private LocalDateTime checkedOutAt;
+    private String checkInNote;
+    private String checkOutNote;
 
     private String notes;
     private LocalDateTime createdAt;

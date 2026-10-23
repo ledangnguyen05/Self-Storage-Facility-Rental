@@ -18,4 +18,12 @@ docs/
 .env*
 !.env.example
 docker-compose*.yml
-*.txt
+uploads/
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+target/
+**/target/
+.wrangler/
+**/.wrangler/

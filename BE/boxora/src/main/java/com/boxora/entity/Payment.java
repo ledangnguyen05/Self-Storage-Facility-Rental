@@ -70,27 +70,4 @@ public class Payment extends BaseEntity {
 
     @Column(name = "payment_notes", columnDefinition = "TEXT")
     private String paymentNotes;
-
-    /** Part of the amount that settles the late fee of an overdue contract (RENTAL_FEE / RENEWAL_FEE). */
-    @Column(name = "late_fee_amount", nullable = false, precision = 15, scale = 2)
-    @Builder.Default
-    private BigDecimal lateFeeAmount = BigDecimal.ZERO;
-
-    /** Part of the amount that pays the rent for the time the unit was kept after the term. */
-    @Column(name = "overdue_rent_amount", nullable = false, precision = 15, scale = 2)
-    @Builder.Default
-    private BigDecimal overdueRentAmount = BigDecimal.ZERO;
-
-    /** Days the contract end date moves forward when this overdue settlement is paid. */
-    @Column(name = "extension_days", nullable = false)
-    @Builder.Default
-    private Integer extensionDays = 0;
-
-    /** VNPay {@code vnp_ResponseCode} of the last gateway result (00 = success), kept to explain a failure. */
-    @Column(name = "gateway_response_code", length = 10)
-    private String gatewayResponseCode;
-
-    /** VNPay {@code vnp_TransactionStatus} of the last gateway result. */
-    @Column(name = "gateway_transaction_status", length = 10)
-    private String gatewayTransactionStatus;
 }

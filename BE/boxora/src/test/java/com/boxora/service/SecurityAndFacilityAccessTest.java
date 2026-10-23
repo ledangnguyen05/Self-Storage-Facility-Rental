@@ -134,9 +134,27 @@ class SecurityAndFacilityAccessTest {
             facilityAccessGuard.checkFacilityAccess(anyFacilityId);
         });
 
-        testRequestContext.setRole("BUSINESS_OPERATIONS_MANAGER");
+        testRequestContext.setRole("BUSINESS_MANAGER");
         assertDoesNotThrow(() -> {
             facilityAccessGuard.checkFacilityAccess(anyFacilityId);
         });
+    }
+
+    @Test
+    @DisplayName("Facility-scoped roles without an assignment fail closed for list queries")
+    void testScopedFacilityWithoutAssignmentDenied() {
+        testRequestContext.setRole("STAFF");
+        testRequestContext.setFacilityId(null);
+
+        AppException ex = assertThrows(AppException.class, facilityAccessGuard::scopedFacilityIdOrNull);
+        assertEquals(ErrorCode.FACILITY_ACCESS_DENIED, ex.getErrorCode());
+    }
+
+    @Test
+    @DisplayName("Business Manager is the seeded chain-wide role")
+    void testBusinessManagerIsSystemWide() {
+        testRequestContext.setRole("BUSINESS_MANAGER");
+        assertFalse(facilityAccessGuard.isFacilityScoped());
+        assertNull(facilityAccessGuard.scopedFacilityIdOrNull());
     }
 }

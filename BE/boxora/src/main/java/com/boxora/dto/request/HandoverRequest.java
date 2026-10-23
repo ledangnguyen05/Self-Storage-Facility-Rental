@@ -15,15 +15,15 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class HandoverRequest {
-    @NotNull(message = "Thiếu mã đơn đặt kho")
+    @NotNull(message = "Booking ID is required")
     private UUID bookingId;
+
+    /** Mã kho khách chọn tại cơ sở; được xác nhận và gắn vào booking khi bàn giao hoàn tất. */
+    private String requestedUnitCode;
 
     private UUID staffId;
 
     private String recordType; // "CHECK_IN" or "RETURN"
-
-    /** CCCD hoặc PASSPORT; mặc định lấy loại giấy tờ đã đối chiếu trên đơn */
-    private String idCardType;
 
     private String idCardNumber;
 
@@ -73,21 +73,11 @@ public class HandoverRequest {
     /** Công nợ quá hạn / tiền phạt trễ hạn nếu có */
     private BigDecimal overdueDebt;
 
-    /** Chi tiết mô tả lỗi hư hại / hiện trường (ghi chú này không tự đưa kho vào bảo trì: chỉ phí hư hại, phí vệ sinh hoặc hạng mục không đạt mới làm điều đó) */
+    /** Chi tiết mô tả lỗi hư hại / hiện trường */
     private String damageNotes;
 
-    /** Lý do khấu trừ cọc. Bắt buộc khi khấu trừ vượt phí trễ hạn theo chính sách; nếu để trống sẽ dùng damageNotes. */
-    private String deductionReason;
-
-    /** Phương thức hoàn tiền: VNPAY_REFUND, BANK_TRANSFER hoặc CASH */
+    /** Phương thức hoàn tiền: VNPAY_REFUND hoặc BANK_TRANSFER */
     private String refundMethod;
-
-    /** Thông tin tài khoản nhận hoàn cọc (bắt buộc khi refundMethod = BANK_TRANSFER) */
-    private String refundBankName;
-
-    private String refundBankAccountNumber;
-
-    private String refundBankAccountName;
 
     /** Đánh dấu chuyển kế toán duyệt chi */
     private Boolean requiresAccountingReview;

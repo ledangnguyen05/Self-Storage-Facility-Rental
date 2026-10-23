@@ -1,7 +1,6 @@
 package com.boxora.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -18,16 +17,16 @@ public class SupportTicketRequest {
     private UUID customerId;
     private UUID bookingId;
     private UUID facilityId;
+    private UUID storageUnitId;
+    private String unitCode;
 
-    @NotBlank(message = "Chọn danh mục sự cố")
+    @NotBlank(message = "Category is required")
     private String category;
 
-    @NotBlank(message = "Nhập tiêu đề sự cố")
-    @Size(max = 255, message = "Tiêu đề tối đa 255 ký tự")
+    @NotBlank(message = "Title is required")
     private String title;
 
-    @NotBlank(message = "Mô tả sự cố không được để trống")
-    @Size(max = 4000, message = "Mô tả tối đa 4.000 ký tự")
+    @NotBlank(message = "Description is required")
     private String description;
 
     private String priority;

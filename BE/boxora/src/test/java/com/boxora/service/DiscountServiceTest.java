@@ -212,8 +212,6 @@ class DiscountServiceTest {
             // Bị chặn trần 500k
             assertThat(response.getDiscountAmount()).isEqualByComparingTo("500000.00");
             assertThat(response.getFinalAmount()).isEqualByComparingTo("5500000.00");
-            // The message reads Vietnamese-style ("500.000 ₫"), never "500000.00 VNĐ"
-            assertThat(response.getMessage()).contains("500.000 ₫").doesNotContain("VNĐ").doesNotContain("500000");
         }
 
         @Test

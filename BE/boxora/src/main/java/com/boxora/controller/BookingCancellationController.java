@@ -46,7 +46,7 @@ public class BookingCancellationController {
     }
 
     @PostMapping("/cron/auto-cancel-process")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Kích hoạt quét thủ công tự động hủy các booking PENDING_PAYMENT quá hạn thanh toán (mặc định 15 phút)")
     public ResponseEntity<ApiResponse<AutoCancelResult>> triggerAutoCancelProcess(
             @RequestParam(required = false, defaultValue = "15") Integer timeoutMinutes

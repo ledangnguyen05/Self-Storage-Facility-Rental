@@ -19,7 +19,6 @@ import com.boxora.security.FacilityAccessGuard;
 import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
 import com.boxora.service.StorageUnitPriceHistoryService;
-import com.boxora.util.VndFormat;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -128,8 +127,8 @@ public class StorageUnitPriceHistoryServiceImpl implements StorageUnitPriceHisto
                 ActivityAction.PRICE_UPDATE,
                 "StorageUnit",
                 unit.getId(),
-                String.format("Điều chỉnh đơn giá kho %s từ %s thành %s. Lý do: %s",
-                        unit.getUnitCode(), VndFormat.format(currentPrice), VndFormat.format(newPrice), reason.trim()),
+                String.format("Điều chỉnh đơn giá kho %s từ %s lên %s. Lý do: %s",
+                        unit.getUnitCode(), currentPrice, newPrice, reason.trim()),
                 currentPrice,
                 newPrice
         );
@@ -209,8 +208,8 @@ public class StorageUnitPriceHistoryServiceImpl implements StorageUnitPriceHisto
                 ActivityAction.PRICE_UPDATE,
                 "UnitType",
                 unitType.getId(),
-                String.format("Điều chỉnh giá niêm yết loại kho %s từ %s thành %s. Lý do: %s",
-                        unitType.getTypeName(), VndFormat.format(currentPrice), VndFormat.format(newPrice), reason.trim()),
+                String.format("Điều chỉnh giá niêm yết loại kho %s từ %s lên %s. Lý do: %s",
+                        unitType.getTypeName(), currentPrice, newPrice, reason.trim()),
                 currentPrice,
                 newPrice
         );

@@ -25,8 +25,7 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private String password;
 
-    /** Null for accounts created with Google sign-in until the customer completes the profile. */
-    @Column(length = 20)
+    @Column(nullable = false, length = 20)
     private String phone;
 
     @Column(length = 30)

@@ -31,14 +31,8 @@ public class ReturnSettlementPreviewResponse {
     /** Ngày thực hiện trả kho */
     private LocalDate actualReturnDate;
 
-    /** Trạng thái hiện tại của đơn (ACTIVE, CHECKOUT_REQUESTED, INSPECTED, OVERDUE...) */
-    private String bookingStatus;
-
     /** Số ngày quá hạn nếu có */
     private long overdueDays;
-
-    /** Số ngày ân hạn được miễn phí trước khi tính phí trễ hạn */
-    private Integer overdueGraceDays;
 
     /** Tiền đặt cọc ban đầu của khách */
     private BigDecimal depositPaid;

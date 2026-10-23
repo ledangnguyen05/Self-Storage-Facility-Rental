@@ -25,10 +25,12 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -80,6 +82,15 @@ class BookingServiceTest {
     @Mock
     private com.boxora.repository.RentalContractRepository rentalContractRepository;
 
+    @Mock
+    private ObjectProvider<ContractSigningService> contractSigningServiceProvider;
+
+    @Mock
+    private ContractSigningService contractSigningService;
+
+    @Mock
+    private com.boxora.repository.StaffAssignmentRepository staffAssignmentRepository;
+
     @InjectMocks
     private BookingServiceImpl bookingService;
 
@@ -94,6 +105,7 @@ class BookingServiceTest {
     void setUp() {
         ReflectionTestUtils.setField(bookingService, "softLockHours", 24L);
         ReflectionTestUtils.setField(bookingService, "maxAdvanceDays", 30);
+        lenient().when(contractSigningServiceProvider.getIfAvailable()).thenReturn(contractSigningService);
 
         lenient().when(pricingService.calculateQuote(any())).thenReturn(
                 com.boxora.dto.response.PricingQuoteResponse.builder()
@@ -160,6 +172,7 @@ class BookingServiceTest {
             assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.RESERVED);
 
             verify(storageUnitLockService).tryLockUnit(eq(unitId), any(), anyLong());
+            verify(contractSigningService).ensureContractForBooking(any());
             verify(activityLogService).record(
                     eq(testFacility.getId()),
                     eq(ActivityAction.RESERVATION_CREATE),
@@ -169,6 +182,34 @@ class BookingServiceTest {
                     isNull(),
                     eq(BookingStatus.PENDING_PAYMENT)
             );
+        }
+
+        @Test
+        @DisplayName("Free in-person reservation remains CONFIRMED and creates no payment transaction")
+        void createFreeInPersonReservationDoesNotCreatePayment() {
+            BookingCreateRequest request = BookingCreateRequest.builder()
+                    .storageUnitId(unitId)
+                    .customerId(customerId)
+                    .startDate(LocalDate.now().plusDays(5))
+                    .rentalMonths(2)
+                    .signingMethod("IN_PERSON")
+                    .build();
+
+            when(storageUnitRepository.findWithDetailsByIdForUpdate(unitId)).thenReturn(Optional.of(testUnit));
+            when(storageUnitLockService.isUnitLocked(unitId)).thenReturn(false);
+            when(storageUnitLockService.tryLockUnit(eq(unitId), any(), anyLong())).thenReturn(true);
+            when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(testPolicy));
+            when(bookingRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+            BookingResponse response = bookingService.createBooking(request);
+
+            assertThat(response.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+            assertThat(response.getPaymentStatus()).isEqualTo("UNPAID");
+            assertThat(response.getDepositPaid()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(response.getAccessPin()).isNull();
+            verify(paymentRepository, never()).save(any());
+            verify(contractSigningService).ensureContractForBooking(any());
         }
 
         @Test
@@ -285,7 +326,7 @@ class BookingServiceTest {
             when(storageUnitLockService.isUnitLocked(unitId)).thenThrow(new RuntimeException("Redis connection refused"));
             when(storageUnitLockService.tryLockUnit(eq(unitId), any(), eq(24L))).thenThrow(new RuntimeException("Redis connection timeout"));
             when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
-            when(facilityPolicyRepository.findByFacility_Id(testFacility.getId())).thenReturn(Optional.of(testPolicy));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(testPolicy));
             when(bookingRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
             BookingResponse response = bookingService.createBooking(request);
@@ -395,12 +436,12 @@ class BookingServiceTest {
         }
 
         @Test
-        @DisplayName("expireUnpaidBookings: Booking CONFIRMED đã thanh toán quá hạn lịch check-in -> OVERDUE (cơ sở xử lý tiếp) và giải phóng kho")
+        @DisplayName("expireUnpaidBookings: Booking CONFIRMED quá hạn lịch check-in -> Tự động chuyển sang OVERDUE và giải phóng kho")
         void expireUnpaidBookings_ConfirmedPastAppointment_TransitionsToOverdueAndReleasesUnit() {
             com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
                     .bookingCode("BX-2025-6291")
                     .status(BookingStatus.CONFIRMED)
-                    .paymentStatus("PAID")
+                    .paymentStatus("UNPAID")
                     .expectedCheckInAt(LocalDateTime.now().minusDays(3))
                     .storageUnit(testUnit)
                     .build();
@@ -411,7 +452,7 @@ class BookingServiceTest {
                     .thenReturn(java.util.List.of(booking));
             when(bookingRepository.findByIdForUpdate(booking.getId())).thenReturn(Optional.of(booking));
             when(paymentRepository.existsByBooking_IdAndStatus(booking.getId(), com.boxora.enums.PaymentStatus.PAID))
-                    .thenReturn(true);
+                    .thenReturn(false);
 
             when(storageUnitRepository.findWithDetailsByIdForUpdate(testUnit.getId())).thenReturn(Optional.of(testUnit));
             when(bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(eq(testUnit.getId()), any(), eq(booking.getId())))
@@ -490,6 +531,26 @@ class BookingServiceTest {
         }
 
         @Test
+        @DisplayName("Reschedule requires an explicit check-in appointment time")
+        void reschedule_RejectsMissingAppointmentTime() {
+            com.boxora.dto.request.BookingRescheduleRequest req = com.boxora.dto.request.BookingRescheduleRequest.builder()
+                    .newStartDate(LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).plusDays(5))
+                    .reason("Date-only request must not invent an appointment time")
+                    .build();
+
+            when(bookingRepository.findByIdForUpdate(bookingId)).thenReturn(Optional.of(eligibleBooking));
+            when(requestContext.currentUserId()).thenReturn(testCustomer.getId());
+            when(userRepository.findById(testCustomer.getId())).thenReturn(Optional.of(testCustomer));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            AppException exception = assertThrows(AppException.class,
+                    () -> bookingService.rescheduleBookingDetailed(bookingId, req));
+
+            assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+            verify(bookingRepository, never()).save(any());
+        }
+        @Test
         @DisplayName("2. Khách hàng không thể đổi lịch đơn của khách hàng khác -> FORBIDDEN")
         void reschedule_Forbidden_AnotherCustomer() {
             UUID strangerId = UUID.randomUUID();
@@ -559,6 +620,28 @@ class BookingServiceTest {
         }
 
         @Test
+        @DisplayName("5.1. Giờ hẹn check-in mới dưới 5 tiếng so với hiện tại -> Bị từ chối")
+        void reschedule_Rejected_LessThan5HoursNotice() {
+            when(bookingRepository.findByIdForUpdate(bookingId)).thenReturn(Optional.of(eligibleBooking));
+            when(requestContext.currentUserId()).thenReturn(testCustomer.getId());
+            when(userRepository.findById(testCustomer.getId())).thenReturn(Optional.of(testCustomer));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId()))
+                    .thenReturn(Optional.of(testPolicy));
+
+            LocalDateTime tooSoon = LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).plusHours(2);
+            com.boxora.dto.request.BookingRescheduleRequest req = com.boxora.dto.request.BookingRescheduleRequest.builder()
+                    .newStartDate(tooSoon.toLocalDate())
+                    .newExpectedCheckInAt(tooSoon)
+                    .newCheckInTime(String.format("%02d:%02d", tooSoon.getHour(), tooSoon.getMinute()))
+                    .reason("Dời lịch quá gấp")
+                    .build();
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.rescheduleBookingDetailed(bookingId, req));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+            assertThat(ex.getMessage()).contains("5 tiếng");
+        }
+
+        @Test
         @DisplayName("6. Hợp đồng đã ký điện tử: Bảo lưu chữ ký số và cập nhật lịch dự kiến")
         void reschedule_PreservesSignedContract() {
             LocalDate newDate = LocalDate.now().plusDays(7);
@@ -615,6 +698,65 @@ class BookingServiceTest {
             assertThat(res.getBookingId()).isEqualTo(bookingId);
             assertThat(res.getRestrictions()).isNotEmpty();
             assertThat(res.getAllowedMinDate()).isEqualTo(LocalDate.now());
+        }
+    }
+
+    @Nested
+    @DisplayName("Operational booking list scope tests")
+    class OperationalBookingScopeTests {
+
+        @Test
+        @DisplayName("Facility Manager arrivals are queried only for the assigned facility and hide credentials")
+        void arrivalsUseAssignedFacilityAndHideAccessCredentials() {
+            UUID facilityId = testFacility.getId();
+            com.boxora.entity.Booking arrival = com.boxora.entity.Booking.builder()
+                    .bookingCode("BX-ARRIVAL-01")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(LocalDate.now())
+                    .endDate(LocalDate.now().plusMonths(1))
+                    .expectedCheckInAt(LocalDate.now().atTime(10, 30))
+                    .rentalMonths(1)
+                    .totalRentalFee(new BigDecimal("3000000"))
+                    .depositPaid(BigDecimal.ZERO)
+                    .depositAmount(new BigDecimal("1500000"))
+                    .status(BookingStatus.CONFIRMED)
+                    .accessPin("encrypted-pin")
+                    .qrAccessToken("secret-qr")
+                    .build();
+
+            when(facilityAccessGuard.isFacilityScoped()).thenReturn(true);
+            when(facilityAccessGuard.scopedFacilityIdOrNull()).thenReturn(facilityId);
+            com.boxora.entity.Booking noAppointment = com.boxora.entity.Booking.builder()
+                    .bookingCode("BX-NO-APPOINTMENT")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(LocalDate.now())
+                    .endDate(LocalDate.now().plusMonths(1))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            noAppointment.setId(UUID.randomUUID());
+            when(bookingRepository.findByStorageUnit_Facility_Id(facilityId))
+                    .thenReturn(java.util.List.of(noAppointment, arrival));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facilityId)).thenReturn(Optional.empty());
+
+            var results = bookingService.getUpcomingArrivals();
+
+            assertThat(results).hasSize(1);
+            assertThat(results.get(0).getFacilityId()).isEqualTo(facilityId);
+            assertThat(results.get(0).getAccessPin()).isNull();
+            assertThat(results.get(0).getQrAccessToken()).isNull();
+            verify(bookingRepository).findByStorageUnit_Facility_Id(facilityId);
+            verify(bookingRepository, never()).findAll();
+        }
+
+        @Test
+        @DisplayName("Remote unlock reports unavailable when no physical SmartLock integration exists")
+        void remoteUnlockReportsUnavailableIntegration() {
+            AppException ex = assertThrows(AppException.class,
+                    () -> bookingService.remoteUnlock(UUID.randomUUID()));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.SMARTLOCK_INTEGRATION_UNAVAILABLE);
         }
     }
 
@@ -731,6 +873,215 @@ class BookingServiceTest {
                     () -> bookingService.getById(id)
             );
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.UNAUTHORIZED);
+        }
+    }
+
+    @Nested
+    @DisplayName("Upcoming Arrivals Scoping Tests")
+    class UpcomingArrivalsTests {
+
+        @Test
+        @DisplayName("getUpcomingArrivals: Lọc chính xác theo cơ sở và loại bỏ đơn cơ sở khác")
+        void getUpcomingArrivals_WithFacilityId_FiltersCorrectly() {
+            UUID fac1Id = testFacility.getId();
+            UUID fac2Id = UUID.randomUUID();
+            com.boxora.entity.Facility fac2 = com.boxora.entity.Facility.builder()
+                    .name("Boxora Chi Nhanh Khac")
+                    .code("BX-OTHER")
+                    .build();
+            fac2.setId(fac2Id);
+
+            StorageUnit unit2 = StorageUnit.builder()
+                    .unitCode("U-OTHER-01")
+                    .facility(fac2)
+                    .status(UnitStatus.AVAILABLE)
+                    .build();
+            unit2.setId(UUID.randomUUID());
+
+            com.boxora.entity.Booking b1 = com.boxora.entity.Booking.builder()
+                    .bookingCode("BK-ARR-001")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(LocalDate.now())
+                    .expectedCheckInAt(LocalDate.now().atTime(10, 0))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            b1.setId(UUID.randomUUID());
+
+            com.boxora.entity.Booking b2 = com.boxora.entity.Booking.builder()
+                    .bookingCode("BK-ARR-002")
+                    .customer(testCustomer)
+                    .storageUnit(unit2)
+                    .startDate(LocalDate.now())
+                    .expectedCheckInAt(LocalDate.now().atTime(11, 0))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            b2.setId(UUID.randomUUID());
+
+            when(facilityAccessGuard.isFacilityScoped()).thenReturn(false);
+            when(bookingRepository.findAll()).thenReturn(java.util.List.of(b1, b2));
+
+            java.util.List<com.boxora.dto.response.BookingResponse> result = bookingService.getUpcomingArrivals(fac1Id);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getBookingCode()).isEqualTo("BK-ARR-001");
+        }
+
+        @Test
+        @DisplayName("getUpcomingArrivals: Bị từ chối khi truy cập cơ sở ngoài phạm vi được phân công")
+        void getUpcomingArrivals_AccessDenied_ThrowsException() {
+            UUID assignedFacilityId = testFacility.getId();
+            UUID unauthorizedFacilityId = UUID.randomUUID();
+
+            when(facilityAccessGuard.isFacilityScoped()).thenReturn(true);
+            when(facilityAccessGuard.scopedFacilityIdOrNull()).thenReturn(assignedFacilityId);
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.getUpcomingArrivals(unauthorizedFacilityId));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FACILITY_ACCESS_DENIED);
+        }
+
+        @Test
+        @DisplayName("getUpcomingArrivals: Nhân sự chưa được gán cơ sở (scopedFacilityId == null) -> Bị từ chối deny-by-default")
+        void getUpcomingArrivals_ScopedUserWithoutFacility_ThrowsException() {
+            when(facilityAccessGuard.isFacilityScoped()).thenReturn(true);
+            when(facilityAccessGuard.scopedFacilityIdOrNull()).thenReturn(null);
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.getUpcomingArrivals(testFacility.getId()));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FACILITY_ACCESS_DENIED);
+        }
+    }
+
+    @Nested
+    @DisplayName("claimCheckInReception: Tiếp nhận lượt khách check-in")
+    class ClaimCheckInReceptionTests {
+
+        @Test
+        @DisplayName("Tiếp nhận thành công khi nhân viên có ca trực và đã điểm danh vào ca")
+        void claimCheckInReception_SuccessWhenCheckedInShift() {
+            UUID bookingId = UUID.randomUUID();
+            UUID staffId = UUID.randomUUID();
+            LocalDate today = LocalDate.now();
+
+            User staffUser = User.builder().fullName("Tran Staff").build();
+            staffUser.setId(staffId);
+
+            com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                    .bookingCode("BK-CLAIM-01")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(today)
+                    .expectedCheckInAt(today.atTime(9, 30))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            booking.setId(bookingId);
+
+            com.boxora.entity.StaffAssignment assignment = com.boxora.entity.StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(testFacility)
+                    .assignedDate(today)
+                    .status(com.boxora.enums.StaffAssignmentStatus.CHECKED_IN)
+                    .checkedInAt(today.atTime(8, 0))
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(staffAssignmentRepository.findByStaff_IdAndAssignedDate(staffId, today))
+                    .thenReturn(List.of(assignment));
+            when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            var res = bookingService.claimCheckInReception(bookingId);
+
+            assertThat(res.getAssignedStaffId()).isEqualTo(staffId);
+            assertThat(res.getAssignedStaffName()).isEqualTo("Tran Staff");
+        }
+
+        @Test
+        @DisplayName("Bị từ chối khi nhân viên chưa điểm danh vào ca trực ngày hẹn")
+        void claimCheckInReception_ThrowsWhenNotCheckedInShift() {
+            UUID bookingId = UUID.randomUUID();
+            UUID staffId = UUID.randomUUID();
+            LocalDate today = LocalDate.now();
+
+            User staffUser = User.builder().fullName("Tran Staff").build();
+            staffUser.setId(staffId);
+
+            com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                    .bookingCode("BK-CLAIM-02")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(today)
+                    .expectedCheckInAt(today.atTime(14, 0))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            booking.setId(bookingId);
+
+            // Ca trực đang ở trạng thái ASSIGNED (chưa check-in)
+            com.boxora.entity.StaffAssignment assignment = com.boxora.entity.StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(testFacility)
+                    .assignedDate(today)
+                    .status(com.boxora.enums.StaffAssignmentStatus.ASSIGNED)
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(staffAssignmentRepository.findByStaff_IdAndAssignedDate(staffId, today))
+                    .thenReturn(List.of(assignment));
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.claimCheckInReception(bookingId));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("Tiếp nhận thành công khi nhân viên trực ca đêm bắt đầu từ hôm trước")
+        void claimCheckInReception_SuccessWhenCheckedInOvernightShiftFromPreviousDay() {
+            UUID bookingId = UUID.randomUUID();
+            UUID staffId = UUID.randomUUID();
+            LocalDate today = LocalDate.now();
+            LocalDate yesterday = today.minusDays(1);
+
+            User staffUser = User.builder().fullName("Tran Staff Night").build();
+            staffUser.setId(staffId);
+
+            com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                    .bookingCode("BK-CLAIM-NIGHT")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(today)
+                    .expectedCheckInAt(today.atTime(2, 30))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            booking.setId(bookingId);
+
+            com.boxora.entity.StaffAssignment overnightAssignment = com.boxora.entity.StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(testFacility)
+                    .assignedDate(yesterday)
+                    .shift(com.boxora.enums.StaffShift.NIGHT)
+                    .startTime(java.time.LocalTime.of(22, 0))
+                    .endTime(java.time.LocalTime.of(6, 0))
+                    .status(com.boxora.enums.StaffAssignmentStatus.CHECKED_IN)
+                    .checkedInAt(yesterday.atTime(22, 5))
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(staffAssignmentRepository.findByStaff_IdAndAssignedDate(staffId, today))
+                    .thenReturn(List.of());
+            when(staffAssignmentRepository.findByStaff_IdAndAssignedDate(staffId, yesterday))
+                    .thenReturn(List.of(overnightAssignment));
+            when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            var res = bookingService.claimCheckInReception(bookingId);
+
+            assertThat(res.getAssignedStaffId()).isEqualTo(staffId);
+            assertThat(res.getAssignedStaffName()).isEqualTo("Tran Staff Night");
         }
     }
 }

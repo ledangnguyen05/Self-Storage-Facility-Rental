@@ -24,21 +24,20 @@ public class BookingResponse {
     private String customerPhone;
     private String customerEmail;
     private UUID storageUnitId;
-    /** Same value as storageUnitId (kept for clients that read unitId). */
-    private UUID unitId;
+    private UUID unitTypeId;
+    private String unitTypeName;
     private String unitCode;
     private UUID facilityId;
     private String facilityName;
     private String floorLevel;
     private LocalDate startDate;
+    private LocalDateTime expectedArrivalAt;
     private LocalDate endDate;
     private Integer rentalMonths;
     private BigDecimal totalRentalFee;
     private BigDecimal depositPaid;
     private BigDecimal depositAmount;
     private BigDecimal initialPaymentAmount;
-    /** What is still owed of the initial payment (first month + deposit) after the payments already received; 0 when settled. */
-    private BigDecimal initialPaymentDue;
     private Instant paymentExpiresAt;
     private Instant holdStartedAt;
     private Instant holdExpiresAt;
@@ -54,7 +53,6 @@ public class BookingResponse {
     private UUID assignedStaffId;
     private String assignedStaffName;
     private String staffAssignmentNotes;
-    private String cancellationReason;
-    private LocalDateTime cancelledAt;
-    private LocalDateTime createdAt;
+    private String identityCardNumber;
+    private String identityCardType;
 }

@@ -16,15 +16,6 @@ public interface DiscountRepository extends JpaRepository<Discount, UUID> {
     Optional<Discount> findByCode(String code);
     boolean existsByCode(String code);
 
-    /** Tăng lượt dùng nguyên tử; trả 0 nếu mã không tồn tại hoặc đã hết lượt. */
-    @org.springframework.transaction.annotation.Transactional
-    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true)
-    @Query("""
-            UPDATE Discount d SET d.usedCount = d.usedCount + 1
-            WHERE d.code = :code AND (d.usageLimit IS NULL OR d.usedCount < d.usageLimit)
-            """)
-    int incrementUsedCount(@Param("code") String code);
-
     @Query("""
             SELECT d FROM Discount d
             WHERE d.isActive = TRUE

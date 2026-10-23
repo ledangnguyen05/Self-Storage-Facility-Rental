@@ -1,42 +1,45 @@
 package com.boxora.service;
 
-import com.boxora.dto.response.AccessRestorationResponse;
-import com.boxora.dto.response.LockoutResponse;
-import com.boxora.dto.response.OverdueLedgerResponse;
+import com.boxora.common.response.PageResponse;
+import com.boxora.dto.request.UnsealRequest;
+import com.boxora.dto.response.OverdueContractDetail;
 import com.boxora.dto.response.OverdueProcessResult;
-import com.boxora.dto.response.OverdueReminderResponse;
+import com.boxora.dto.response.SealingRecordResponse;
+import com.boxora.enums.SealingStatus;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
-/**
- * Overdue lifecycle of rental contracts, driven by each facility policy through {@link OverdueFeeCalculator}:
- * ledger, nightly assessment (late fee persisted, access lockout, sealing eligibility), manual lockout,
- * access restoration and reminders.
- */
 public interface OverdueProcessingService {
 
     /**
-     * Runs the overdue assessment. FACILITY_MANAGER is limited to their facility and to today;
-     * ADMIN / BUSINESS_MANAGER may process every facility and pass a simulated reference date.
+     * Quy trình Cron / Quét thủ công xử lý hợp đồng quá hạn (+1 phạt 5%, +3 khóa PIN, +7 niêm phong BR-RULE-012).
      */
-    OverdueProcessResult processOverdueContracts(LocalDate referenceDate, UUID facilityId);
-
-    /** Facility-scoped overdue ledger (contracts ACTIVE past their end date, OVERDUE, OVERDUE_LOCKED, or EXPIRED but never returned). */
-    OverdueLedgerResponse getOverdueLedger(UUID facilityId);
-
-    /** Revokes the PIN/QR and locks the unit. Only from the access-disable day of the facility policy. */
-    LockoutResponse lockoutContract(UUID contractId, String reason);
+    OverdueProcessResult processOverdueContracts(LocalDate referenceDate);
 
     /**
-     * Same as above; {@code overrideAccessHold} is required to lock while a manager-granted access hold is still running
-     * (then {@code reason} must be a real written reason).
+     * Tra cứu danh sách tổng quan các hợp đồng đang bị quá hạn hiện tại.
      */
-    LockoutResponse lockoutContract(UUID contractId, String reason, boolean overrideAccessHold);
+    List<OverdueContractDetail> getOverdueContractsSummary();
 
-    /** Manager action "Mở khóa truy cập". */
-    AccessRestorationResponse restoreAccess(UUID contractId, String reason, LocalDate holdUntil);
+    /**
+     * Danh sách biên bản niêm phong kho (phân trang, lọc theo cơ sở và trạng thái).
+     */
+    PageResponse<SealingRecordResponse> getAllSealingRecords(UUID facilityId, SealingStatus status, int page, int size);
 
-    /** Emails the overdue notice synchronously; succeeds only when the mail server accepted it. */
-    OverdueReminderResponse sendReminder(UUID contractId);
+    /**
+     * Lấy chi tiết một biên bản niêm phong kho theo ID.
+     */
+    SealingRecordResponse getSealingRecordById(UUID id);
+
+    /**
+     * Mở niêm phong kho lưu trữ sau khi khách hàng đã thanh toán công nợ và phí quá hạn (BR-RULE-012).
+     */
+    SealingRecordResponse unsealUnit(UUID sealingRecordId, UnsealRequest request);
+
+    /**
+     * Khóa mã PIN và thu hồi quyền truy cập của hợp đồng quá hạn (P0-04, BR-RULE-012).
+     */
+    com.boxora.dto.response.LockoutResponse lockoutContract(UUID contractId, String reason);
 }

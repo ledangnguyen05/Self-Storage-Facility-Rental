@@ -1,32 +1,30 @@
 import { api } from '../lib/axios'
-import type { Facility, PageResult, RequestOptions } from '../types'
+import { Facility, FacilityPolicy } from '../types'
+import { PageResult } from './userService'
 
-/** `/api/v1/facilities`. Facility policies live in `facilityPolicyService`. */
 export const facilityService = {
-  /**
-   * `scope: 'public'` is for the public site (home, units explorer, contact menu): every ACTIVE branch, never narrowed
-   * to the signed-in staff member's facility, and without manager details. Portals omit it.
-   */
-  async getFacilities(
-    params?: { search?: string; status?: string; page?: number; size?: number; scope?: 'public' },
-    opts?: RequestOptions,
-  ) {
-    const response = await api.get('/api/v1/facilities', { params: { size: 50, ...params }, signal: opts?.signal })
+  async getFacilities(params?: { search?: string; status?: string; page?: number; size?: number }) {
+    const response = await api.get('/api/v1/facilities', { params: { size: 50, ...params } })
     return response.data?.data as PageResult<Facility>
   },
 
-  /** Active branches with real `totalUnits` / `availableUnits` for the public pages. */
-  async getPublicFacilities(opts?: RequestOptions) {
-    const page = await facilityService.getFacilities({ scope: 'public', size: 100 }, opts)
-    return Array.isArray(page?.content) ? page.content : []
-  },
-
-  async getFacilityById(id: string, opts?: RequestOptions) {
-    const response = await api.get(`/api/v1/facilities/${id}`, { signal: opts?.signal })
+  async getFacilityById(id: string) {
+    const response = await api.get(`/api/v1/facilities/${id}`)
     return response.data?.data as Facility
   },
 
-  async createFacility(data: Partial<Facility> & { status?: string }) {
+  async uploadFacilityImage(file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await api.post('/api/v1/facilities/upload-image', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return response.data?.data as { fileUrl: string; fileName: string; fileSize?: number; fileType?: string }
+  },
+
+  async createFacility(data: Partial<Facility>) {
     const response = await api.post('/api/v1/facilities', data)
     return response.data?.data as Facility
   },
@@ -38,6 +36,40 @@ export const facilityService = {
 
   async deleteFacility(id: string) {
     const response = await api.delete(`/api/v1/facilities/${id}`)
+    return response.data
+  },
+
+  // Facility Policies
+  async getPolicies(params?: { search?: string; page?: number; size?: number }) {
+    const response = await api.get('/api/v1/facility-policies', { params })
+    return response.data?.data as PageResult<FacilityPolicy>
+  },
+
+  async getPolicyByFacilityId(facilityId: string) {
+    const response = await api.get(`/api/v1/facility-policies/by-facility/${facilityId}`)
+    return response.data?.data as FacilityPolicy
+  },
+
+  async updatePolicy(id: string, data: Partial<FacilityPolicy>) {
+    const response = await api.put(`/api/v1/facility-policies/${id}`, data)
+    return response.data?.data as FacilityPolicy
+  },
+
+  async createPolicy(data: Partial<FacilityPolicy>) {
+    const response = await api.post('/api/v1/facility-policies', data)
+    return response.data?.data as FacilityPolicy
+  },
+
+  async getPolicyExceptionGrants(policyId: string) {
+    const response = await api.get(`/api/v1/facility-policies/${policyId}/exceptions`)
+    return response.data?.data as string[]
+  },
+
+  async setPolicyExceptionGrant(policyId: string, facilityManagerId: string, granted: boolean) {
+    const response = await api.put(`/api/v1/facility-policies/${policyId}/exceptions`, {
+      facilityManagerId,
+      granted,
+    })
     return response.data
   },
 }

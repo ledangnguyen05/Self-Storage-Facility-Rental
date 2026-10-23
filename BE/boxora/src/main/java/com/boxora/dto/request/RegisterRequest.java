@@ -1,7 +1,5 @@
 package com.boxora.dto.request;
 
-import com.boxora.validation.PlainText;
-import com.boxora.validation.ValidEmail;
 import jakarta.validation.constraints.*;
 import lombok.*;
 
@@ -12,32 +10,26 @@ import lombok.*;
 @Builder
 public class RegisterRequest {
 
-    /**
-     * Optional hint only. The server always produces a unique username (taken names get a numeric suffix),
-     * so a username collision is never surfaced to the visitor.
-     */
-    @Size(max = 60, message = "Tên đăng nhập quá dài")
-    @PlainText
+    @NotBlank(message = "Username is required")
+    @Size(min = 3, max = 30, message = "Username must be between 3 and 30 characters")
     private String username;
 
-    @NotBlank(message = "Vui lòng nhập email")
-    @ValidEmail
-    @Size(max = 255, message = "Email tối đa 255 ký tự")
+    @NotBlank(message = "Email is required")
+    @Email(message = "Email should be valid")
     private String email;
 
-    @NotBlank(message = "Vui lòng nhập mật khẩu")
-    @Size(min = 5, max = 72, message = "Mật khẩu cần từ 5 đến 72 ký tự")
+    @NotBlank(message = "Password is required")
+    @Size(min = 5, message = "Password must be at least 5 characters")
     private String password;
 
-    @NotBlank(message = "Vui lòng nhập họ và tên")
-    @Size(min = 3, max = 30, message = "Họ và tên cần từ 3 đến 30 ký tự")
-    @PlainText(message = "Họ và tên không được chứa ký tự < hoặc >")
+    @NotBlank(message = "Full name is required")
+    @Size(max = 30, message = "Full name must be less than 30 characters")
     private String fullName;
 
-    @NotBlank(message = "Vui lòng nhập số điện thoại")
+    @NotBlank(message = "Phone is required")
     @Pattern(
         regexp = "^(0|\\+84)(3|5|7|8|9)[0-9]{8}$",
-        message = "Số điện thoại Việt Nam chưa hợp lệ (ví dụ 0912345678)"
+        message = "Phone must be a valid Vietnamese phone number"
     )
     private String phone;
 

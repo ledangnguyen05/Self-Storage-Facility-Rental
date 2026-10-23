@@ -1,9 +1,6 @@
-import React from 'react'
-import { Moon, Sun } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
 import { useLanguage } from '../../context/LanguageContext'
-import { useWebSettings } from '../../hooks/useWebSettings'
-import { IconButton } from '../ui/Button'
-import { cn } from '../ui/cn'
+import { WebSettings, getWebSettings, getResolvedTheme, saveWebSettings } from '../../utils/webSettings'
 
 interface QuickThemeLanguageToggleProps {
   className?: string
@@ -11,56 +8,62 @@ interface QuickThemeLanguageToggleProps {
   showTheme?: boolean
 }
 
-const LANGUAGES = [
-  { value: 'vi', label: 'VI', name: 'Tiếng Việt' },
-  { value: 'en', label: 'EN', name: 'English' },
-] as const
-
-/** Theme switch (sun/moon) and a VI/EN toggle. Used in public headers and the portal topbar. */
 export const QuickThemeLanguageToggle: React.FC<QuickThemeLanguageToggleProps> = ({
   className = '',
-  showLanguage = true,
+  showLanguage: _showLanguage = false,
   showTheme = true,
 }) => {
-  const { language, setLanguage } = useLanguage()
-  const { isDark, toggleTheme } = useWebSettings()
-  const themeLabel = isDark ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'
+  const { t } = useLanguage()
+  const [settings, setSettings] = useState<WebSettings>(getWebSettings())
+  const [systemIsDark, setSystemIsDark] = useState(() => getResolvedTheme({ theme: 'system' }) === 'dark')
+
+  useEffect(() => {
+    const handleSettingsChange = (e: any) => {
+      if (e.detail) setSettings(e.detail)
+    }
+    window.addEventListener('boxora_settings_changed', handleSettingsChange)
+    return () => window.removeEventListener('boxora_settings_changed', handleSettingsChange)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const updateSystemTheme = (event: MediaQueryListEvent) => setSystemIsDark(event.matches)
+    setSystemIsDark(media.matches)
+    media.addEventListener?.('change', updateSystemTheme)
+    return () => media.removeEventListener?.('change', updateSystemTheme)
+  }, [])
+
+  const isDark = settings.theme === 'dark' || (settings.theme === 'system' && systemIsDark)
+
+  const handleToggleTheme = () => {
+    const nextTheme = isDark ? 'light' : 'dark'
+    const updated = saveWebSettings({ theme: nextTheme })
+    setSettings(updated)
+  }
 
   return (
-    <div className={cn('flex items-center gap-1.5', className)}>
-      {showTheme ? (
-        <IconButton icon={isDark ? Sun : Moon} aria-label={themeLabel} aria-pressed={isDark} tooltip={themeLabel} onClick={toggleTheme} />
-      ) : null}
-
-      {showLanguage ? (
-        <div
-          role="group"
-          aria-label="Chọn ngôn ngữ"
-          className="inline-flex h-8 items-center gap-0.5 rounded-md border border-line bg-surface-2 p-0.5"
+    <div className={`flex items-center gap-1.5 ${className}`}>
+      {/* Theme Toggle Button */}
+      {showTheme && (
+        <button
+          type="button"
+          onClick={handleToggleTheme}
+          title={isDark ? t('Chuyển sang giao diện sáng', 'Switch to light theme') : t('Chuyển sang giao diện tối', 'Switch to dark theme')}
+          aria-label={isDark ? t('Chuyển sang giao diện sáng', 'Switch to light theme') : t('Chuyển sang giao diện tối', 'Switch to dark theme')}
+          aria-pressed={isDark}
+          className="w-9 h-9 rounded-xl flex items-center justify-center border border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600 bg-white/90 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-amber-400 shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 cursor-pointer"
         >
-          {LANGUAGES.map(option => {
-            const active = language === option.value
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setLanguage(option.value)}
-                aria-pressed={active}
-                aria-label={option.name}
-                title={option.name}
-                className={cn(
-                  'h-6 min-w-8 rounded px-2 text-xs font-semibold transition-colors',
-                  active ? 'bg-surface text-fg shadow-xs' : 'text-fg-muted hover:text-fg',
-                )}
-              >
-                {option.label}
-              </button>
-            )
-          })}
-        </div>
-      ) : null}
+          {isDark ? (
+            <span className="material-symbols-outlined text-[17px] text-amber-400">light_mode</span>
+          ) : (
+            <span className="material-symbols-outlined text-[17px] text-slate-600">dark_mode</span>
+          )}
+        </button>
+      )}
     </div>
   )
 }
 
 export default QuickThemeLanguageToggle
+

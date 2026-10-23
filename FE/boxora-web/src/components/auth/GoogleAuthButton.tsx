@@ -1,187 +1,141 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { resolveGoogleClientId, useAuthConfig } from '../../hooks/useAuthConfig'
-import { Button, Skeleton } from '../ui'
-import { cn } from '../ui/cn'
 
-const GIS_SRC = 'https://accounts.google.com/gsi/client'
-const GIS_LOAD_TIMEOUT_MS = 10_000
-
-interface GoogleCredentialResponse {
-  credential?: string
+declare global {
+  interface Window {
+    google?: any
+  }
 }
 
-interface GoogleAccountsId {
-  initialize: (config: {
-    client_id: string
-    callback: (response: GoogleCredentialResponse) => void
-    auto_select?: boolean
-    cancel_on_tap_outside?: boolean
-  }) => void
-  renderButton: (
-    parent: HTMLElement,
-    options: {
-      type?: 'standard' | 'icon'
-      theme?: 'outline' | 'filled_blue' | 'filled_black'
-      size?: 'large' | 'medium' | 'small'
-      text?: 'signin_with' | 'signup_with' | 'continue_with' | 'signin'
-      shape?: 'rectangular' | 'pill'
-      logo_alignment?: 'left' | 'center'
-      width?: number
-      locale?: string
-    },
-  ) => void
-}
-
-const getGoogleId = (): GoogleAccountsId | undefined =>
-  (window as unknown as { google?: { accounts?: { id?: GoogleAccountsId } } }).google?.accounts?.id
-
-let scriptPromise: Promise<GoogleAccountsId> | null = null
-
-/**
- * Loads Google Identity Services once, on demand (not from index.html), and
- * rejects after a timeout or a network error so the UI can offer a retry.
- */
-function loadGoogleIdentity(): Promise<GoogleAccountsId> {
-  const ready = getGoogleId()
-  if (ready) return Promise.resolve(ready)
-  if (scriptPromise) return scriptPromise
-
-  scriptPromise = new Promise<GoogleAccountsId>((resolve, reject) => {
-    const script = document.createElement('script')
-    script.src = GIS_SRC
-    script.async = true
-    script.defer = true
-
-    const fail = (reason: string) => {
-      window.clearTimeout(timer)
-      script.remove()
-      scriptPromise = null
-      reject(new Error(reason))
-    }
-    const timer = window.setTimeout(() => fail('GOOGLE_SCRIPT_TIMEOUT'), GIS_LOAD_TIMEOUT_MS)
-
-    script.addEventListener('load', () => {
-      const google = getGoogleId()
-      if (!google) {
-        fail('GOOGLE_SCRIPT_UNAVAILABLE')
-        return
-      }
-      window.clearTimeout(timer)
-      resolve(google)
-    })
-    script.addEventListener('error', () => fail('GOOGLE_SCRIPT_ERROR'))
-    document.head.appendChild(script)
-  })
-  return scriptPromise
-}
+export const GOOGLE_CLIENT_ID = '564968487479-aooibm2esqg9bic2iuu1a729ci4qfo3q.apps.googleusercontent.com'
 
 interface GoogleAuthButtonProps {
   onSuccess: (idToken: string) => void
   onError: (error: string) => void
-  /** Kept for API compatibility; Google renders its own label from `mode`. */
   text?: string
   disabled?: boolean
   mode?: 'signin' | 'signup'
 }
 
-/**
- * Official "Sign in with Google" button. The OAuth client id comes from the backend
- * (`GET /auth/public-config`, the same value it verifies tokens against), so there is no hard-coded id.
- * While the backend has no GOOGLE_CLIENT_ID the button is not rendered at all.
- */
-export const GoogleAuthButton: React.FC<GoogleAuthButtonProps> = props => {
-  const clientId = resolveGoogleClientId(useAuthConfig())
-  if (clientId === undefined) {
-    return (
-      <div className="w-full">
-        <Skeleton className="h-10 w-full rounded-md" />
-      </div>
-    )
-  }
-  if (clientId === null) return null
-  return <GoogleSignInButton {...props} clientId={clientId} />
-}
-
-/**
- * Callbacks are read through refs, so a parent re-render (every keystroke in a form) never
- * re-initialises GIS or wipes the rendered button.
- */
-const GoogleSignInButton: React.FC<GoogleAuthButtonProps & { clientId: string }> = ({
+export const GoogleAuthButton: React.FC<GoogleAuthButtonProps> = ({
   onSuccess,
   onError,
+  text,
   disabled = false,
-  mode = 'signin',
-  clientId,
+  mode = 'signin'
 }) => {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const onSuccessRef = useRef(onSuccess)
-  const onErrorRef = useRef(onError)
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
-  const [attempt, setAttempt] = useState(0)
+  const googleBtnContainerRef = useRef<HTMLDivElement>(null)
+  const [isGsiLoaded, setIsGsiLoaded] = useState(false)
+
+  const defaultText = text || (mode === 'signup' ? 'Đăng ký nhanh bằng tài khoản Google' : 'Đăng nhập nhanh bằng tài khoản Google')
 
   useEffect(() => {
-    onSuccessRef.current = onSuccess
-    onErrorRef.current = onError
-  })
+    let checkInterval: any = null
 
-  useEffect(() => {
-    let cancelled = false
+    const initGsi = () => {
+      if (window.google?.accounts?.id && googleBtnContainerRef.current) {
+        try {
+          window.google.accounts.id.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback: (response: any) => {
+              if (response?.credential) {
+                onSuccess(response.credential)
+              } else {
+                onError('Không nhận được mã xác thực tài khoản từ Google.')
+              }
+            },
+            auto_select: false,
+            cancel_on_tap_outside: true
+          })
 
-    loadGoogleIdentity()
-      .then(google => {
-        const container = containerRef.current
-        if (cancelled || !container) return
-        google.initialize({
-          client_id: clientId,
-          callback: response => {
-            if (response.credential) onSuccessRef.current(response.credential)
-            else onErrorRef.current('Không nhận được mã xác thực từ Google. Vui lòng thử lại.')
-          },
-          auto_select: false,
-          cancel_on_tap_outside: true,
-        })
-        container.replaceChildren()
-        const width = Math.min(Math.max(container.parentElement?.offsetWidth || 380, 240), 400)
-        google.renderButton(container, {
-          type: 'standard',
-          theme: 'outline',
-          size: 'large',
-          text: mode === 'signup' ? 'signup_with' : 'signin_with',
-          shape: 'rectangular',
-          logo_alignment: 'left',
-          width,
-          locale: 'vi',
-        })
-        setStatus('ready')
-      })
-      .catch(() => {
-        if (!cancelled) setStatus('error')
-      })
+          googleBtnContainerRef.current.innerHTML = ''
+          const parentWidth = googleBtnContainerRef.current.parentElement?.offsetWidth || 380
+          const btnWidth = Math.min(Math.max(parentWidth, 240), 400)
+
+          window.google.accounts.id.renderButton(googleBtnContainerRef.current, {
+            type: 'standard',
+            theme: 'outline',
+            size: 'large',
+            text: mode === 'signup' ? 'signup_with' : 'signin_with',
+            shape: 'rectangular',
+            logo_alignment: 'left',
+            width: btnWidth,
+            locale: 'vi'
+          })
+
+          setIsGsiLoaded(true)
+          if (checkInterval) clearInterval(checkInterval)
+        } catch (err) {
+          console.error('Error initializing Google GIS:', err)
+        }
+      }
+    }
+
+    if (window.google?.accounts?.id) {
+      initGsi()
+    } else {
+      checkInterval = setInterval(() => {
+        if (window.google?.accounts?.id) {
+          initGsi()
+        }
+      }, 200)
+    }
 
     return () => {
-      cancelled = true
+      if (checkInterval) clearInterval(checkInterval)
     }
-  }, [mode, attempt, clientId])
+  }, [onSuccess, onError, mode])
 
-  const retry = () => {
-    setStatus('loading')
-    setAttempt(value => value + 1)
+  const handleClickFallback = () => {
+    if (window.google?.accounts?.id) {
+      window.google.accounts.id.prompt((notification: any) => {
+        if (notification.isNotDisplayed()) {
+          console.warn('Google One Tap suppressed:', notification.getNotDisplayedReason())
+        }
+      })
+    } else {
+      onError('Đang tải thư viện Google Sign-In, vui lòng thử lại sau giây lát.')
+    }
   }
 
   return (
-    <div className={cn('w-full', disabled && 'pointer-events-none opacity-60')}>
-      <div ref={containerRef} className={cn('flex w-full justify-center', status !== 'ready' && 'hidden')} />
-      {status === 'loading' ? <Skeleton className="h-10 w-full rounded-md" /> : null}
-      {status === 'error' ? (
-        <div className="space-y-2 text-center">
-          <p className="text-dense text-fg-muted">Không tải được đăng nhập Google. Kiểm tra kết nối mạng rồi thử lại.</p>
-          <Button variant="secondary" size="md" onClick={retry}>
-            Thử lại
-          </Button>
-        </div>
-      ) : null}
+    <div className={`w-full flex justify-center items-center my-0.5 ${disabled ? 'opacity-60 pointer-events-none' : ''}`}>
+      {/* Official Google Identity Services Button Container */}
+      <div
+        ref={googleBtnContainerRef}
+        className={`w-full flex justify-center items-center [&>div]:!mx-auto [&>div]:!w-full [&_iframe]:!mx-auto ${
+          !isGsiLoaded ? 'hidden' : ''
+        }`}
+      />
+
+      {/* Clean centered Fallback / Placeholder Button while GIS script loads */}
+      {!isGsiLoaded && (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={handleClickFallback}
+          className="w-full h-10 px-4 rounded-xl border border-slate-200 hover:border-cyan-400 bg-white hover:bg-slate-50 transition-all flex items-center justify-center gap-3 text-xs font-semibold text-slate-800 shadow-2xs cursor-pointer group disabled:opacity-60"
+        >
+          <svg className="w-4.5 h-4.5 shrink-0" viewBox="0 0 24 24">
+            <path
+              fill="#4285F4"
+              d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"
+            />
+            <path
+              fill="#34A853"
+              d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z"
+            />
+            <path
+              fill="#FBBC05"
+              d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"
+            />
+            <path
+              fill="#EA4335"
+              d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+            />
+          </svg>
+          <span>{defaultText}</span>
+        </button>
+      )}
     </div>
   )
 }
-
-export default GoogleAuthButton

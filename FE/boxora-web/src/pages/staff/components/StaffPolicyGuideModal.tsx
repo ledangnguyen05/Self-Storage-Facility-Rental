@@ -1,11 +1,8 @@
-import React from 'react'
-import { BookOpen } from 'lucide-react'
-import { Alert, Badge, Button, EmptyState, Modal, SkeletonText } from '@/components/ui'
-import { useAsyncData } from '@/hooks/useAsyncData'
-import { getApiErrorMessage, getApiErrorStatus } from '@/lib/apiError'
-import { formatCurrency, formatNumber } from '@/lib/format'
-import { facilityPolicyService } from '@/services/facilityPolicyService'
-import { resolvePolicy, type ResolvedFacilityPolicy } from '@/utils/facilityPolicyDefaults'
+import React, { useState, useEffect } from 'react'
+import { facilityService } from '../../../services/facilityService'
+import { FacilityPolicy } from '../../../types'
+import axios from 'axios'
+import { createDefaultFacilityPolicy } from '../../../utils/facilityPolicyDefaults'
 
 interface StaffPolicyGuideModalProps {
   isOpen: boolean
@@ -14,139 +11,197 @@ interface StaffPolicyGuideModalProps {
   facilityName?: string
 }
 
-/** Read-only operating rules for front-desk staff, from the facility policy (defaults when none is set). */
-export const StaffPolicyGuideModal: React.FC<StaffPolicyGuideModalProps> = ({ isOpen, onClose, facilityId, facilityName }) => {
-  const query = useAsyncData(
-    async (signal) => {
-      try {
-        return { policy: await facilityPolicyService.getByFacilityId(facilityId as string, { signal }), isDefault: false }
-      } catch (err) {
-        if (getApiErrorStatus(err) === 404) return { policy: null, isDefault: true }
-        throw err
-      }
-    },
-    [facilityId, isOpen],
-    { enabled: isOpen && Boolean(facilityId), keepPreviousData: false },
-  )
+export const StaffPolicyGuideModal: React.FC<StaffPolicyGuideModalProps> = ({
+  isOpen,
+  onClose,
+  facilityId,
+  facilityName = 'Cơ sở hiện tại'
+}) => {
+  const [policy, setPolicy] = useState<FacilityPolicy | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [reloadToken, setReloadToken] = useState(0)
 
-  const policy = query.data ? resolvePolicy(query.data.policy, facilityId) : null
+  useEffect(() => {
+    if (!isOpen || !facilityId) return
+
+    let isCurrentRequest = true
+    const loadPolicy = async () => {
+      setIsLoading(true)
+      setErrorMessage(null)
+      setPolicy(null)
+      try {
+        const res = await facilityService.getPolicyByFacilityId(facilityId)
+        if (isCurrentRequest) setPolicy(res)
+      } catch (error: unknown) {
+        if (!isCurrentRequest) return
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          setPolicy(createDefaultFacilityPolicy(facilityId))
+        } else {
+          setErrorMessage('Không thể tải chính sách của cơ sở. Vui lòng thử lại sau.')
+        }
+      } finally {
+        if (isCurrentRequest) setIsLoading(false)
+      }
+    }
+
+    void loadPolicy()
+    return () => {
+      isCurrentRequest = false
+    }
+  }, [isOpen, facilityId, reloadToken])
+
+  if (!isOpen) return null
+
+  const depositPct = policy?.depositPercentage ?? policy?.depositPercent ?? 100
+  const minMonths = policy?.minimumRentalMonths ?? 1
+  const renewalDays = policy?.renewalWindowDays ?? 3
+  const cancelFullHours = policy?.cancellationFullRefundHours ?? 48
+  const cancelPartHours = policy?.cancellationPartialRefundHours ?? 24
+  const cancelPartPct = policy?.cancellationPartialRefundPercent ?? 50
+  const noticeDays = policy?.returnNoticeDays ?? 0
+  const slaDays = policy?.depositRefundSlaDays ?? 5
+  const lateFee = Number(policy?.dailyLateFee ?? policy?.lateFeePerDay ?? 50000)
+  const graceDays = policy?.overdueGraceDays ?? policy?.gracePeriodDays ?? 1
+  const lockDays = policy?.overdueAccessDisableDays ?? 3
+  const sealDays = policy?.overdueSealingDays ?? 7
 
   return (
-    <Modal
-      open={isOpen}
-      onClose={onClose}
-      size="lg"
-      title="Hướng dẫn nghiệp vụ quầy"
-      description="Quy định áp dụng khi đón khách, bàn giao, trả kho và xử lý quá hạn."
-      footer={<Button onClick={onClose}>Đóng</Button>}
-    >
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone="neutral">{facilityName || 'Chưa xác định cơ sở'}</Badge>
-          {query.data?.isDefault ? <Badge tone="info">Chính sách mặc định</Badge> : null}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 max-h-[90vh] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-emerald-100 text-emerald-900">
+              <span className="material-symbols-outlined text-[26px]">menu_book</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold text-slate-900">Hướng Dẫn Nghiệp Vụ Nhân Viên Trạm</h2>
+                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-mono text-[11px] font-bold">
+                  {facilityName}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Hướng dẫn nghiệp vụ tra cứu quy định phục vụ đón tiếp, bàn giao kho &amp; giải quyết sự cố
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[22px]">close</span>
+          </button>
         </div>
 
-        <Alert tone="info">
-          Nhân viên quầy chỉ xem để đối chiếu. Đề xuất điều chỉnh gửi quản lý cơ sở hoặc giám đốc vận hành.
-        </Alert>
-
-        {!facilityId ? (
-          <EmptyState
-            icon={BookOpen}
-            size="sm"
-            title="Chưa chọn cơ sở"
-            description="Chọn một cơ sở ở thanh trên cùng để xem quy định đang áp dụng."
-          />
-        ) : query.isLoading ? (
-          <div className="flex flex-col gap-4" aria-busy="true">
-            <SkeletonText lines={4} />
-            <SkeletonText lines={4} />
+        {/* Note phân quyền */}
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-3 text-blue-950 text-xs">
+          <span className="material-symbols-outlined text-[20px] text-blue-700 shrink-0">badge</span>
+          <div>
+            <span className="font-bold">HƯỚNG DẪN DÀNH CHO VAI TRÒ NHÂN VIÊN (FACILITY STAFF)</span>
+            <p className="text-[11px] text-blue-900 mt-0.5 leading-relaxed">
+              Nhân viên chỉ có quyền xem quy định này để đối chiếu nghiệp vụ hiện trường. Mọi thắc mắc hoặc đề xuất điều chỉnh phải báo cáo lên Quản lý Cơ sở (Facility Manager) hoặc Business Operations Manager.
+            </p>
           </div>
-        ) : query.error ? (
-          <Alert
-            tone="danger"
-            title="Không tải được chính sách của cơ sở"
-            action={
-              <Button size="sm" variant="secondary" onClick={() => void query.reload()}>
-                Thử lại
-              </Button>
-            }
+        </div>
+
+        {errorMessage && (
+          <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between gap-3">
+            <span>{errorMessage}</span>
+            <button
+              type="button"
+              onClick={() => setReloadToken((current) => current + 1)}
+              className="shrink-0 font-bold underline"
+            >
+              Thử lại
+            </button>
+          </div>
+        )}
+        {isLoading && (
+          <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 text-xs">
+            Đang tải chính sách áp dụng...
+          </div>
+        )}
+        {!isLoading && policy?.isActive === false && (
+          <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+            Policy của cơ sở đã ngừng áp dụng. Vui lòng xác nhận quy định mặc định hiện hành với quản lý cơ sở.
+          </div>
+        )}
+
+        {/* Quy định thiết yếu */}
+        {policy && !isLoading && !errorMessage && <div className="flex flex-col gap-3 flex-1 overflow-y-auto pr-1">
+          {/* 1. Bàn giao & Cọc */}
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-blue-700 text-[18px]">verified</span>
+              <h4 className="font-bold text-xs text-slate-900 uppercase">1. Quy định Tiền Cọc &amp; Bàn Giao (Check-in)</h4>
+            </div>
+            <ul className="text-xs text-slate-700 space-y-1 list-disc pl-5">
+              <li>Mức thu tiền cọc bắt buộc: <strong className="text-slate-900 font-mono">{depositPct}% tiền thuê</strong>.</li>
+              <li>Thời gian thuê tối thiểu hợp đồng: <strong className="text-slate-900">{minMonths} tháng</strong>.</li>
+              <li>Cửa sổ đăng ký gia hạn: <strong className="text-slate-900">{renewalDays} ngày trước khi hợp đồng hết hạn</strong>.</li>
+              <li>Sau khi backend xác nhận đủ điều kiện, lập biên bản bàn giao và đối chiếu CCCD gốc. PIN phần mềm chưa được đồng bộ với khóa vật lý; không xác nhận khách đã mở được khóa nếu chưa kiểm tra trực tiếp tại cơ sở.</li>
+            </ul>
+          </div>
+
+          {/* 2. Trả kho & Hoàn cọc */}
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-emerald-700 text-[18px]">task_alt</span>
+              <h4 className="font-bold text-xs text-slate-900 uppercase">2. Nghiệm Thu Trả Kho &amp; Cam Kết SLA Hoàn Cọc</h4>
+            </div>
+            <ul className="text-xs text-slate-700 space-y-1 list-disc pl-5">
+              <li>Khách cần báo trước khi trả kho: <strong>{noticeDays > 0 ? `${noticeDays} ngày` : 'Không bắt buộc'}</strong>.</li>
+              <li>Quy chuẩn hoàn cọc SLA: Cam kết hoàn trả tài khoản khách trong vòng <strong className="text-emerald-700 font-bold">{slaDays} ngày làm việc</strong>.</li>
+              <li>Yêu cầu bắt buộc: Nhân viên phải chụp ảnh hiện trường, lập Biên bản kiểm định đạt chuẩn (Sạch sẽ, không hư hỏng chốt SmartLock).</li>
+              <li>Nếu có hư hỏng tài sản trạm: Khấu trừ tiền cọc theo biểu phí vật tư trước khi ký kết thúc hợp đồng.</li>
+            </ul>
+          </div>
+
+          {/* 3. Hủy booking */}
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-amber-600 text-[18px]">rule</span>
+              <h4 className="font-bold text-xs text-slate-900 uppercase">3. Hướng Dẫn Khách Hủy Booking</h4>
+            </div>
+            <ul className="text-xs text-slate-700 space-y-1 list-disc pl-5">
+              <li>Hủy trước &ge; <strong>{cancelFullHours} giờ</strong>: Hoàn 100% tiền cọc tự động về tài khoản.</li>
+              <li>Hủy trong khoảng {cancelPartHours}h - {cancelFullHours}h: Hoàn một phần <strong>{cancelPartPct}% tiền cọc</strong>.</li>
+              <li>Hủy dưới <strong>{cancelPartHours} giờ</strong>: Tịch thu tiền cọc theo BR-RULE-004.</li>
+            </ul>
+          </div>
+
+          {/* 4. Khóa nợ & Niêm phong */}
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-rose-600 text-[18px]">lock_clock</span>
+              <h4 className="font-bold text-xs text-slate-900 uppercase">4. Mốc Xử Lý Quá Hạn &amp; Niêm Phong Kho</h4>
+            </div>
+            <ul className="text-xs text-slate-700 space-y-1 list-disc pl-5">
+              <li>Thời gian ân hạn: <strong>{graceDays} ngày</strong> (Không tính phạt trễ hạn).</li>
+              <li>Phí phạt quá hạn: <strong>{lateFee.toLocaleString('vi-VN')} đ/ngày</strong> bắt đầu từ ngày hết ân hạn.</li>
+              <li>Ngắt mã PIN mở cửa: Tự động sau <strong>{lockDays} ngày</strong> quá hạn thanh toán.</li>
+              <li>Niêm phong kho hàng &amp; dán tem: Sau <strong>{sealDays} ngày</strong> quá hạn (Phải có nhân chứng hiện trường).</li>
+            </ul>
+          </div>
+        </div>}
+
+        {/* Footer */}
+        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+          <span className="text-[11px] text-slate-500">
+            Hướng dẫn nghiệp vụ trích xuất từ quy định vận hành Boxora
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-neutral-800 transition-all cursor-pointer"
           >
-            {getApiErrorMessage(query.error)}
-          </Alert>
-        ) : policy ? (
-          <PolicySections policy={policy} />
-        ) : null}
+            Đóng bảng tra cứu
+          </button>
+        </div>
       </div>
-    </Modal>
-  )
-}
-
-function PolicySection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-lg border border-line p-4">
-      <h3 className="text-sm font-semibold text-fg">{title}</h3>
-      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-fg-muted">{children}</ul>
-    </section>
-  )
-}
-
-const Strong = ({ children }: { children: React.ReactNode }) => <strong className="font-medium text-fg tabular-nums">{children}</strong>
-
-function PolicySections({ policy }: { policy: ResolvedFacilityPolicy }) {
-  return (
-    <>
-      {policy.isActive === false ? (
-        <Alert tone="warning">Chính sách của cơ sở đang tạm ngưng. Xác nhận quy định hiện hành với quản lý cơ sở.</Alert>
-      ) : null}
-      <PolicySection title="1. Tiền cọc và bàn giao">
-        <li>
-          Tiền cọc bắt buộc: <Strong>{formatNumber(policy.depositPercentage)}% tiền thuê</Strong>.
-        </li>
-        <li>
-          Thời gian thuê tối thiểu: <Strong>{policy.minimumRentalMonths} tháng</Strong>.
-        </li>
-        <li>
-          Đăng ký gia hạn trước khi hết hạn: <Strong>{policy.renewalWindowDays} ngày</Strong>.
-        </li>
-        <li>Chỉ bàn giao mã PIN sau khi đối chiếu giấy tờ gốc và đủ bốn điều kiện nhận kho.</li>
-      </PolicySection>
-      <PolicySection title="2. Nghiệm thu trả kho và hoàn cọc">
-        <li>
-          Khách báo trước khi trả kho: <Strong>{policy.returnNoticeDays > 0 ? `${policy.returnNoticeDays} ngày` : 'không bắt buộc'}</Strong>.
-        </li>
-        <li>
-          Hoàn cọc trong vòng <Strong>{policy.depositRefundSlaDays} ngày làm việc</Strong>.
-        </li>
-        <li>Bắt buộc chụp ảnh hiện trạng và lập biên bản nghiệm thu trước khi đề xuất hoàn cọc.</li>
-        <li>Hư hỏng tài sản được khấu trừ vào tiền cọc; đề xuất có khấu trừ cần kế toán duyệt.</li>
-      </PolicySection>
-      <PolicySection title="3. Hủy đặt kho">
-        <li>
-          Hủy trước ít nhất <Strong>{policy.cancellationFullRefundHours} giờ</Strong>: hoàn toàn bộ tiền cọc.
-        </li>
-        <li>
-          Hủy trong khoảng {policy.cancellationPartialRefundHours}–{policy.cancellationFullRefundHours} giờ: hoàn{' '}
-          <Strong>{formatNumber(policy.cancellationPartialRefundPercent)}% tiền cọc</Strong>.
-        </li>
-        <li>
-          Hủy dưới <Strong>{policy.cancellationPartialRefundHours} giờ</Strong>: không hoàn tiền cọc.
-        </li>
-      </PolicySection>
-      <PolicySection title="4. Quá hạn và niêm phong">
-        <li>
-          Thời gian ân hạn: <Strong>{policy.overdueGraceDays} ngày</Strong>, chưa tính phí trễ hạn.
-        </li>
-        <li>
-          Phí trễ hạn: <Strong>{formatCurrency(policy.dailyLateFee)}/ngày</Strong> sau thời gian ân hạn.
-        </li>
-        <li>
-          Tạm khóa mã PIN sau <Strong>{policy.overdueAccessDisableDays} ngày</Strong> quá hạn.
-        </li>
-        <li>
-          Niêm phong kho sau <Strong>{policy.overdueSealingDays} ngày</Strong> quá hạn, cần có người chứng kiến.
-        </li>
-      </PolicySection>
-    </>
+    </div>
   )
 }

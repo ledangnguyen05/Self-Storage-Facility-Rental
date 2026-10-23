@@ -6,7 +6,6 @@ import com.boxora.dto.request.UnitTypePriceAdjustmentRequest;
 import com.boxora.dto.request.UnitTypeUpdateRequest;
 import com.boxora.dto.response.StorageUnitPriceHistoryResponse;
 import com.boxora.dto.response.UnitTypeResponse;
-import com.boxora.entity.FacilityPolicy;
 import com.boxora.entity.StorageUnit;
 import com.boxora.entity.UnitType;
 import com.boxora.entity.User;
@@ -15,13 +14,11 @@ import com.boxora.enums.UnitStatus;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.UnitTypeMapper;
-import com.boxora.repository.FacilityPolicyRepository;
 import com.boxora.repository.StorageUnitRepository;
 import com.boxora.repository.UnitTypeRepository;
 import com.boxora.repository.UserRepository;
 import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
-import com.boxora.service.PricingRules;
 import com.boxora.service.StorageUnitPriceHistoryService;
 import com.boxora.service.UnitTypeService;
 import lombok.RequiredArgsConstructor;
@@ -31,11 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -50,7 +44,6 @@ public class UnitTypeServiceImpl implements UnitTypeService {
     private final StorageUnitPriceHistoryService storageUnitPriceHistoryService;
     private final ActivityLogService activityLogService;
     private final RequestContext requestContext;
-    private final FacilityPolicyRepository facilityPolicyRepository;
 
     @Override
     public UnitTypeResponse createUnitType(UnitTypeCreateRequest request) {
@@ -219,42 +212,12 @@ public class UnitTypeServiceImpl implements UnitTypeService {
     @Transactional(readOnly = true)
     public List<UnitTypeResponse> getAll() {
         List<UnitType> list = unitTypeRepository.findAllByOrderByCreatedAtAsc();
-        Map<UUID, BigDecimal> lowestPrices = lowestListedPrices(list);
         return list.stream()
                 .map(ut -> {
                     long count = storageUnitRepository.countByUnitType_Id(ut.getId());
-                    UnitTypeResponse response = unitTypeMapper.toResponse(ut, count);
-                    response.setLowestListedPrice(lowestPrices.get(ut.getId()));
-                    return response;
+                    return unitTypeMapper.toResponse(ut, count);
                 })
                 .toList();
-    }
-
-    /**
-     * Giá thấp nhất khách thực sự thấy trên các kho còn trống của loại kho này ("Giá từ" ở trang chủ). Dùng cùng quy tắc giá
-     * với danh sách kho: giá riêng của cơ sở thắng giá của kho và giá niêm yết chung.
-     */
-    private Map<UUID, BigDecimal> lowestListedPrices(List<UnitType> unitTypes) {
-        Map<UUID, UnitType> typeById = unitTypes.stream().collect(Collectors.toMap(UnitType::getId, ut -> ut));
-        Map<UUID, FacilityPolicy> policyByFacility = facilityPolicyRepository.findByIsActiveTrue().stream()
-                .collect(Collectors.toMap(policy -> policy.getFacility().getId(), policy -> policy, (first, second) -> first));
-        Map<UUID, BigDecimal> lowest = new HashMap<>();
-        for (Object[] row : storageUnitRepository.findAvailableMinPriceByTypeAndFacility()) {
-            UUID typeId = (UUID) row[0];
-            UUID facilityId = (UUID) row[1];
-            BigDecimal unitPrice = (BigDecimal) row[2];
-            UnitType type = typeById.get(typeId);
-            if (type == null) {
-                continue;
-            }
-            BigDecimal price = PricingRules.findPolicyPrice(policyByFacility.get(facilityId), typeId)
-                    .map(policyPrice -> policyPrice.getMonthlyPrice())
-                    .orElse(unitPrice != null && unitPrice.signum() > 0 ? unitPrice : type.getBasePricePerMonth());
-            if (price != null && price.signum() > 0) {
-                lowest.merge(typeId, price, BigDecimal::min);
-            }
-        }
-        return lowest;
     }
 
     @Override

@@ -25,33 +25,21 @@ public class PricingQuoteResponse {
     private LocalDate startDate;
     private LocalDate endDate;
 
-    /** Đơn giá thuê một tháng đã áp dụng (cùng giá với danh sách kho). */
-    private BigDecimal monthlyPrice;
-
-    /** Tên cũ của {@link #monthlyPrice}, giữ lại cho các màn hình đang dùng. */
+    /** Giá thuê niêm yết theo tháng */
     private BigDecimal monthlyRate;
 
-    /** Nguồn của đơn giá: FACILITY_POLICY (giá riêng của cơ sở), UNIT (giá của kho) hoặc UNIT_TYPE (giá niêm yết chung). */
-    private String priceSource;
-
-    /** Tổng tiền thuê cơ bản (monthlyPrice * rentalMonths) */
+    /** Tổng tiền thuê cơ bản (monthlyRate * rentalMonths) */
     private BigDecimal subtotalRentalFee;
 
-    /** Mã giảm giá (hoặc mã chiết khấu kỳ hạn TERM_xx) và số tiền chiết khấu */
+    /** Mã giảm giá và số tiền chiết khấu */
     private String discountCode;
-    /** Phần trăm chiết khấu làm tròn số nguyên (giữ cho màn hình cũ). */
     private Integer discountPercentage;
-    /** Phần trăm chiết khấu chính xác (có thể có số lẻ). */
-    private Double discountPercent;
     private BigDecimal discountAmount;
 
     /** Tổng tiền thuê sau chiết khấu */
     private BigDecimal totalRentalFee;
 
-    /** Tỷ lệ cọc theo chính sách cơ sở (mặc định 100%). */
-    private Double depositPercentage;
-
-    /** Tiền đặt cọc = đơn giá tháng x tỷ lệ cọc */
+    /** Tiền đặt cọc (Quy chuẩn SRS: 1 tháng tiền thuê cơ bản) */
     private BigDecimal depositAmount;
 
     /** Số tiền thanh toán ban đầu (Tháng đầu + Tiền cọc) */
@@ -60,7 +48,7 @@ public class PricingQuoteResponse {
     /** Tổng giá trị hợp đồng trọn gói (Thuê cả kỳ + Cọc) */
     private BigDecimal totalContractValue;
 
-    /** Thời hạn hoàn cọc tối đa (ngày) theo chính sách cơ sở */
+    /** Chính sách hoàn tiền cọc SLA (3-5 ngày làm việc) */
     private Integer refundSlaDays;
     private String cancellationPolicy;
 

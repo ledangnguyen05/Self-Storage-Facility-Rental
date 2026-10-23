@@ -1,261 +1,249 @@
-import React, { useEffect, useId, useRef, useState } from 'react'
-import { CameraOff, ImageUp, RefreshCw, ScanQrCode, Search } from 'lucide-react'
-import { Alert, Badge, Button, DescriptionList, Field, Input, Modal, Select, Spinner } from '@/components/ui'
-import { getBookingPaymentStatusMeta, getBookingStatusMeta } from '@/constants/statusMeta'
-import { isRequestCanceled } from '@/lib/apiError'
-import { formatCurrency, formatDate } from '@/lib/format'
-import type { Booking } from '@/types'
-import { useQrScanner } from '../dashboard/hooks/useQrScanner'
-import { parseBookingQr, resolveQrBooking } from '../dashboard/utils/qrBooking'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { Html5Qrcode } from 'html5-qrcode'
+import { Booking } from '../../../types'
+import { bookingService } from '../../../services/bookingService'
 
 interface QrCameraCheckInModalProps {
   isOpen: boolean
-  onClose: () => void
-  /** Facility-scoped arrivals from the page (the single source of bookings). */
-  arrivals: Booking[]
   facilityId?: string
-  /** Opens the check-in workbench for the scanned booking. Never checks in directly. */
-  onSelectBookingForWorkbench: (booking: Booking) => void
+  onClose: () => void
+  onSelectBookingForWorkbench?: (bookingId: string) => void
 }
 
-type View =
-  | { kind: 'scan' }
-  | { kind: 'resolving'; raw: string }
-  | { kind: 'found'; booking: Booking }
-  | { kind: 'failed'; title: string; message: string }
-
-export const QrCameraCheckInModal: React.FC<QrCameraCheckInModalProps> = (props) => {
-  // Mounted only while open: the camera, the view and the typed code reset on every open.
-  if (!props.isOpen) return null
-  return <QrScannerDialog {...props} />
+interface BookingReference {
+  bookingId?: string
+  bookingCode?: string
 }
 
-function QrScannerDialog({ onClose, arrivals, facilityId, onSelectBookingForWorkbench }: QrCameraCheckInModalProps) {
-  const elementId = `boxora-qr-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
-  const fileRef = useRef<HTMLInputElement>(null)
-  // Initial focus on a button, so phones do not open the keyboard for the code field.
-  const uploadButtonRef = useRef<HTMLButtonElement>(null)
-  const lookupRef = useRef<AbortController | null>(null)
-  const [view, setView] = useState<View>({ kind: 'scan' })
-  const [manualCode, setManualCode] = useState('')
-  const [manualError, setManualError] = useState<string | null>(null)
-  const [fileError, setFileError] = useState<string | null>(null)
+const normalizeBookingCode = (value: string) => value.trim().replace(/^#/, '').toUpperCase()
 
-  useEffect(() => () => lookupRef.current?.abort(), [])
+const parseBookingReference = (rawValue: string): BookingReference | null => {
+  const value = rawValue.trim()
+  if (!value) return null
 
-  const resolve = async (raw: string) => {
-    const ref = parseBookingQr(raw)
-    if (!ref) {
-      setView({ kind: 'failed', title: 'Mã không hợp lệ', message: 'Mã QR không chứa mã đặt chỗ hoặc mã booking của Boxora.' })
-      return
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (parsed && typeof parsed === 'object') {
+      const data = parsed as Record<string, unknown>
+      const bookingId = typeof data.bookingId === 'string' ? data.bookingId.trim() : undefined
+      const bookingCode = typeof data.bookingCode === 'string' ? data.bookingCode.trim() : undefined
+      if (bookingId || bookingCode) return { bookingId, bookingCode }
     }
-    lookupRef.current?.abort()
-    const controller = new AbortController()
-    lookupRef.current = controller
-    setView({ kind: 'resolving', raw })
-    try {
-      const result = await resolveQrBooking(ref, arrivals, facilityId, controller.signal)
-      if (controller.signal.aborted) return
-      if (result.kind === 'found') setView({ kind: 'found', booking: result.booking })
-      else
-        setView({
-          kind: 'failed',
-          title: result.kind === 'not-found' ? 'Không tìm thấy booking' : 'Không thể nhận kho',
-          message: result.message,
-        })
-    } catch (err) {
-      if (controller.signal.aborted || isRequestCanceled(err)) return
-      setView({ kind: 'failed', title: 'Không tra cứu được booking', message: err instanceof Error ? err.message : 'Vui lòng thử lại.' })
-    }
+  } catch {
+    // Plain booking codes are also accepted.
   }
 
-  const scanner = useQrScanner({
-    elementId,
-    enabled: view.kind === 'scan',
-    onDecode: (text) => void resolve(text),
-  })
+  if (/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value)) {
+    return { bookingId: value }
+  }
 
-  const handleFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  return { bookingCode: value }
+}
+
+const bookingStatusLabel: Record<string, string> = {
+  CONFIRMED: 'Đã xác nhận',
+  PENDING_PAYMENT: 'Chờ thanh toán',
+  PENDING_APPROVAL: 'Chờ duyệt',
+  PENDING_SIGNATURE: 'Chờ ký',
+  ACTIVE: 'Đang thuê',
+  COMPLETED: 'Đã hoàn tất',
+  CANCELLED: 'Đã hủy',
+  OVERDUE: 'Quá hạn',
+}
+
+export const QrCameraCheckInModal: React.FC<QrCameraCheckInModalProps> = ({
+  isOpen,
+  facilityId,
+  onClose,
+  onSelectBookingForWorkbench,
+}) => {
+  const [scannerState, setScannerState] = useState<'STARTING' | 'SCANNING' | 'ERROR'>('STARTING')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [matchedBooking, setMatchedBooking] = useState<Booking | null>(null)
+  const [manualCode, setManualCode] = useState('')
+  const [isLookingUp, setIsLookingUp] = useState(false)
+  const [scannerEpoch, setScannerEpoch] = useState(0)
+  const scannerRef = useRef<Html5Qrcode | null>(null)
+  const lookupInProgressRef = useRef(false)
+  const containerId = 'boxora-html5-qrcode-region'
+
+  const stopScanner = useCallback(async () => {
+    const scanner = scannerRef.current
+    scannerRef.current = null
+    if (!scanner) return
+    try {
+      if (scanner.isScanning) await scanner.stop()
+      scanner.clear()
+    } catch {
+      // The camera may already have stopped while the modal was closing.
+    }
+  }, [])
+
+  const lookupBooking = useCallback(async (rawValue: string) => {
+    if (lookupInProgressRef.current) return
+    lookupInProgressRef.current = true
+    setIsLookingUp(true)
+    setErrorMessage(null)
+    await stopScanner()
+
+    try {
+      if (!facilityId) {
+        throw new Error('Tài khoản nhân viên chưa được phân công cơ sở.')
+      }
+
+      const reference = parseBookingReference(rawValue)
+      if (!reference) {
+        throw new Error('Mã QR không chứa mã booking hợp lệ.')
+      }
+
+      const arrivals = await bookingService.getUpcomingArrivals(facilityId)
+      const matched = arrivals.find((booking) => {
+        const idMatches = reference.bookingId && booking.id.toLowerCase() === reference.bookingId.toLowerCase()
+        const codeMatches = reference.bookingCode
+          && normalizeBookingCode(booking.bookingCode) === normalizeBookingCode(reference.bookingCode)
+        return Boolean(idMatches || codeMatches)
+      })
+
+      if (!matched) {
+        throw new Error('Không tìm thấy booking sắp đến có mã này tại cơ sở được phân công.')
+      }
+
+      setMatchedBooking(matched)
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message || error?.message || 'Không thể tra cứu booking này.')
+    } finally {
+      lookupInProgressRef.current = false
+      setIsLookingUp(false)
+    }
+  }, [facilityId, stopScanner])
+
+  useEffect(() => {
+    if (!isOpen) return
+    let active = true
+    setScannerState('STARTING')
+    setErrorMessage(null)
+
+    const startScanner = async () => {
+      try {
+        const scanner = new Html5Qrcode(containerId)
+        scannerRef.current = scanner
+        const cameras = await Html5Qrcode.getCameras()
+        if (!active) return
+        await scanner.start(
+          cameras[0] ? { deviceId: { exact: cameras[0].id } } : { facingMode: 'environment' },
+          { fps: 10, qrbox: { width: 240, height: 240 } },
+          (decodedText) => {
+            if (active) void lookupBooking(decodedText)
+          },
+          () => {},
+        )
+        if (active) setScannerState('SCANNING')
+      } catch {
+        if (active) {
+          setScannerState('ERROR')
+          setErrorMessage('Không thể truy cập camera. Hãy nhập mã booking hoặc tải ảnh QR lên.')
+        }
+      }
+    }
+
+    void startScanner()
+    return () => {
+      active = false
+      void stopScanner()
+    }
+  }, [containerId, isOpen, lookupBooking, scannerEpoch, stopScanner])
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
-    setFileError(null)
+
     try {
-      const text = await scanner.scanFile(file)
-      void resolve(text)
+      await stopScanner()
+      const scanner = new Html5Qrcode(containerId)
+      scannerRef.current = scanner
+      const decodedText = await scanner.scanFile(file, true)
+      await lookupBooking(decodedText)
     } catch {
-      setFileError('Không nhận diện được mã QR trong ảnh này.')
-      void scanner.restart()
+      setErrorMessage('Không đọc được mã booking từ ảnh QR này.')
     }
   }
 
-  const submitManual = (event: React.FormEvent) => {
-    event.preventDefault()
-    if (!manualCode.trim()) {
-      setManualError('Nhập mã đặt chỗ hoặc mã booking.')
-      return
-    }
-    setManualError(null)
-    void resolve(manualCode)
+  const handleRescan = () => {
+    setMatchedBooking(null)
+    setErrorMessage(null)
+    setManualCode('')
+    setScannerEpoch((value) => value + 1)
   }
 
-  const rescan = () => {
-    lookupRef.current?.abort()
-    setFileError(null)
-    setView({ kind: 'scan' })
-  }
-
-  const openWorkbench = (booking: Booking) => {
-    onSelectBookingForWorkbench(booking)
-    onClose()
-  }
-
-  const footer =
-    view.kind === 'found' ? (
-      <>
-        <Button variant="secondary" onClick={rescan}>
-          Quét lại
-        </Button>
-        <Button onClick={() => openWorkbench(view.booking)}>Mở quy trình nhận kho</Button>
-      </>
-    ) : view.kind === 'failed' ? (
-      <>
-        <Button variant="secondary" onClick={onClose}>
-          Đóng
-        </Button>
-        <Button leftIcon={RefreshCw} onClick={rescan}>
-          Quét lại
-        </Button>
-      </>
-    ) : (
-      <Button variant="secondary" onClick={onClose}>
-        Đóng
-      </Button>
-    )
+  if (!isOpen) return null
 
   return (
-    <Modal
-      open
-      onClose={onClose}
-      size="md"
-      title="Quét mã QR nhận kho"
-      description="Quét mã trên ứng dụng của khách hoặc nhập mã đặt chỗ."
-      footer={footer}
-      initialFocusRef={uploadButtonRef}
-    >
-      {/* Kept mounted (hidden) outside the scan view so the camera is always stopped on a live element. */}
-      <div className={view.kind === 'scan' ? 'flex flex-col gap-4' : 'hidden'}>
-        <div className="relative mx-auto aspect-square w-full max-w-sm overflow-hidden rounded-lg border border-line bg-surface-2">
-          <div id={elementId} className="size-full [&_video]:size-full [&_video]:object-cover" />
-          {scanner.status === 'starting' ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-surface-2 text-sm text-fg-muted">
-              <Spinner size="md" label="" />
-              Đang bật camera…
-            </div>
-          ) : null}
-          {scanner.status === 'error' ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-surface-2 p-6 text-center">
-              <CameraOff size={28} strokeWidth={1.75} className="text-fg-subtle" aria-hidden="true" />
-              <p className="text-sm font-medium text-fg">Không dùng được camera</p>
-              <p className="text-xs text-fg-muted">{scanner.error}</p>
-              <Button size="sm" variant="secondary" leftIcon={RefreshCw} onClick={() => void scanner.restart()}>
-                Thử lại
-              </Button>
-            </div>
-          ) : null}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="staff-qr-title">
+      <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white text-left shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 p-5">
+          <div>
+            <h3 id="staff-qr-title" className="font-headline text-sm font-bold text-slate-900">Tra cứu booking bằng mã QR</h3>
+            <p className="mt-1 text-[11px] text-slate-500">Mã QR chỉ được dùng để tìm booking tại cơ sở được phân công.</p>
+          </div>
+          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200" aria-label="Close">
+            <span className="material-symbols-outlined text-[18px]">close</span>
+          </button>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          {scanner.cameras.length > 1 ? (
-            <Select
-              size="sm"
-              aria-label="Chọn camera"
-              className="w-full sm:w-64"
-              value={scanner.cameraId}
-              onChange={(e) => scanner.selectCamera(e.target.value)}
-              options={scanner.cameras.map((camera, index) => ({ value: camera.id, label: camera.label || `Camera ${index + 1}` }))}
-            />
+        <div className="flex-1 space-y-4 overflow-y-auto p-6">
+          {matchedBooking ? (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-blue-950">
+                <div className="text-xs font-bold">Đã tìm thấy booking. Chưa hoàn tất check-in.</div>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                  <div><span className="block text-[10px] text-blue-700">Mã booking</span><strong className="font-mono">{matchedBooking.bookingCode}</strong></div>
+                  <div><span className="block text-[10px] text-blue-700">Mã kho</span><strong className="font-mono">{matchedBooking.unitCode}</strong></div>
+                  <div><span className="block text-[10px] text-blue-700">Khách hàng</span><strong>{matchedBooking.customerName || 'Chưa có thông tin'}</strong></div>
+                  <div><span className="block text-[10px] text-blue-700">Trạng thái booking</span><strong>{bookingStatusLabel[matchedBooking.status] || matchedBooking.status}</strong></div>
+                </div>
+              </div>
+              <p className="text-xs leading-relaxed text-slate-600">Mở bàn giao để kiểm tra hợp đồng, thanh toán, giấy tờ và nghiệm thu đã lưu. Backend sẽ kiểm tra lại các điều kiện khi gửi yêu cầu check-in.</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSelectBookingForWorkbench?.(matchedBooking.id)
+                    onClose()
+                  }}
+                  className="flex-1 rounded-xl bg-cyan-700 px-4 py-3 text-xs font-bold text-white hover:bg-cyan-800"
+                >Mở quy trình bàn giao</button>
+                <button type="button" onClick={handleRescan} className="rounded-xl border border-slate-200 px-4 py-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">Quét lại</button>
+              </div>
+            </div>
           ) : (
-            <span className="flex items-center gap-1.5 text-xs text-fg-subtle">
-              <ScanQrCode size={16} strokeWidth={1.75} aria-hidden="true" />
-              Đưa mã QR vào giữa khung hình
-            </span>
+            <>
+              <div className="relative mx-auto aspect-square w-full max-w-[320px] overflow-hidden rounded-2xl bg-slate-950">
+                <div id={containerId} className="h-full w-full overflow-hidden [&_video]:object-cover" />
+                {scannerState === 'STARTING' && !isLookingUp && <div className="absolute inset-0 flex items-center justify-center text-xs text-cyan-200">Đang khởi động camera…</div>}
+                {scannerState === 'SCANNING' && <div className="pointer-events-none absolute inset-0 flex items-center justify-center"><div className="h-60 w-60 rounded-2xl border-2 border-cyan-400" /></div>}
+              </div>
+
+              {isLookingUp && <p className="text-center text-xs text-slate-600">Đang tra cứu booking…</p>}
+              {errorMessage && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">{errorMessage}</p>}
+
+              <form onSubmit={(event) => { event.preventDefault(); void lookupBooking(manualCode) }} className="space-y-2 border-t border-slate-100 pt-4">
+                <label htmlFor="staff-booking-code" className="block text-[11px] font-semibold text-slate-700">Hoặc nhập mã booking</label>
+                <div className="flex gap-2">
+                  <input id="staff-booking-code" value={manualCode} onChange={(event) => setManualCode(event.target.value)} placeholder="BX-…" className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-cyan-500/20" />
+                  <button type="submit" disabled={!manualCode.trim() || isLookingUp} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white disabled:bg-slate-300">Tra cứu</button>
+                </div>
+              </form>
+
+              <label className="flex cursor-pointer items-center gap-2 text-[11px] font-semibold text-cyan-800 hover:underline">
+                <span className="material-symbols-outlined text-[15px]">photo_camera</span>
+                Tải ảnh QR lên
+                <input type="file" accept="image/*" onChange={(event) => void handleFileUpload(event)} className="hidden" />
+              </label>
+            </>
           )}
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="sr-only"
-            tabIndex={-1}
-            aria-hidden="true"
-            onChange={handleFile}
-          />
-          <Button ref={uploadButtonRef} variant="ghost" size="sm" leftIcon={ImageUp} onClick={() => fileRef.current?.click()}>
-            Tải ảnh mã QR
-          </Button>
         </div>
-        {fileError ? <Alert tone="warning">{fileError}</Alert> : null}
-
-        <form onSubmit={submitManual} className="border-t border-line pt-4" noValidate>
-          <Field label="Hoặc nhập mã đặt chỗ" error={manualError ?? undefined}>
-            <div className="flex gap-2">
-              <Input
-                value={manualCode}
-                onChange={(e) => setManualCode(e.target.value)}
-                className="font-mono"
-                autoComplete="off"
-                placeholder="Mã đặt chỗ hoặc mã booking"
-              />
-              <Button type="submit" variant="secondary" leftIcon={Search} className="shrink-0">
-                Tìm
-              </Button>
-            </div>
-          </Field>
-        </form>
       </div>
-
-      {view.kind === 'resolving' ? (
-        <div className="flex flex-col items-center gap-2 py-10 text-sm text-fg-muted" aria-live="polite">
-          <Spinner size="md" label="" />
-          Đang tra cứu booking…
-        </div>
-      ) : null}
-
-      {view.kind === 'found' ? <ScannedBookingSummary booking={view.booking} /> : null}
-
-      {view.kind === 'failed' ? (
-        <Alert tone="danger" title={view.title}>
-          {view.message}
-        </Alert>
-      ) : null}
-    </Modal>
-  )
-}
-
-function ScannedBookingSummary({ booking }: { booking: Booking }) {
-  const status = getBookingStatusMeta(booking.status)
-  const payment = booking.paymentStatus ? getBookingPaymentStatusMeta(booking.paymentStatus) : null
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-base font-semibold text-fg">{booking.customerName || 'Khách hàng'}</span>
-        <Badge tone={status.tone} dot>
-          {status.label}
-        </Badge>
-        {payment ? <Badge tone={payment.tone}>{payment.label}</Badge> : null}
-      </div>
-      <DescriptionList
-        columns={2}
-        items={[
-          { label: 'Mã đặt chỗ', value: booking.bookingCode || '—', mono: true },
-          { label: 'Kho', value: booking.unitCode || '—', mono: true },
-          { label: 'Số điện thoại', value: booking.customerPhone || '—' },
-          { label: 'Ngày nhận', value: formatDate(booking.startDate) },
-          { label: 'Tiền cọc', value: formatCurrency(booking.depositPaid ?? booking.depositAmount) },
-          { label: 'Cơ sở', value: booking.facilityName || '—' },
-        ]}
-      />
-      <p className="text-xs text-fg-subtle">Điều kiện nhận kho (hợp đồng, cọc, tiền thuê, giấy tờ) được kiểm tra ở bước tiếp theo.</p>
     </div>
   )
 }

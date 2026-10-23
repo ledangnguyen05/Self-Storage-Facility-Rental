@@ -8,31 +8,21 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 public class MigrationVerificationTest {
 
-    private static final String POSTGRES_USER = envOr("DB_USERNAME", "postgres");
-    private static final String POSTGRES_PASSWORD = envOr("DB_PASSWORD", "postgres");
-
-    private static String envOr(String name, String fallback) {
-        String value = System.getenv(name);
-        return value == null || value.isBlank() ? fallback : value;
-    }
-
-    /** Highest V<n>__ script on the classpath, so the test never needs updating when a migration is added. */
-    private static String latestMigrationVersion(Flyway flyway) {
-        return java.util.Arrays.stream(flyway.info().all())
-                .map(info -> info.getVersion())
-                .filter(java.util.Objects::nonNull)
-                .max(org.flywaydb.core.api.MigrationVersion::compareTo)
-                .orElseThrow()
-                .getVersion();
-    }
+    private static final String POSTGRES_USER = "postgres";
+    private static final String POSTGRES_PASSWORD = "12345";
 
     @Test
     @DisplayName("Phase E: Verify all Flyway migrations succeed cleanly on a disposable clean database")
-    void testMigrationOnDisposableCleanDatabase() {
+    void testMigrationOnDisposableCleanDatabase() throws Exception {
         String cleanDbUrl = "jdbc:postgresql://localhost:5432/boxora_disposable_clean";
 
         Flyway flyway = Flyway.configure()
@@ -50,13 +40,32 @@ public class MigrationVerificationTest {
         MigrateResult result = flyway.migrate();
         assertTrue(result.success, "Clean database migration should succeed");
         assertTrue(result.migrationsExecuted > 0, "Should execute all migrations on a clean database");
-        assertEquals(latestMigrationVersion(flyway), flyway.info().current().getVersion().getVersion(),
-                "Database should be at the latest migration version");
+        assertEquals("46", flyway.info().current().getVersion().getVersion(), "Current version should be 46");
+        assertColumnExists(cleanDbUrl, "handover_records", "door_condition_passed");
+        assertColumnExists(cleanDbUrl, "bookings", "identity_original_document_seen");
+        assertRolePermission(cleanDbUrl, "ADMIN", "REPORT_VIEW", true);
+        assertRolePermission(cleanDbUrl, "ADMIN", "PAYMENT_VIEW", true);
+        assertRolePermission(cleanDbUrl, "ADMIN", "OVERDUE_VIEW", true);
+        assertRolePermission(cleanDbUrl, "ADMIN", "BOOKING_VIEW", true);
+        assertRolePermission(cleanDbUrl, "ADMIN", "CONTRACT_VIEW", true);
+        assertRolePermission(cleanDbUrl, "ADMIN", "HANDOVER_VIEW", true);
+        assertRolePermission(cleanDbUrl, "ADMIN", "ACCESS_CREDENTIAL_VIEW", true);
+        assertRolePermission(cleanDbUrl, "ADMIN", "RENEWAL_VIEW", true);
+        assertRolePermission(cleanDbUrl, "ADMIN", "REFUND_VIEW", true);
+        assertRolePermission(cleanDbUrl, "ADMIN", "PAYMENT_CREATE", false);
+        assertRolePermission(cleanDbUrl, "ADMIN", "OVERDUE_PROCESS", false);
+        assertRolePermission(cleanDbUrl, "ADMIN", "SEALING_CREATE", false);
+        assertRolePermission(cleanDbUrl, "ADMIN", "PRICE_ADJUST", false);
+        assertRolePermission(cleanDbUrl, "BUSINESS_MANAGER", "REPORT_VIEW", true);
+        assertRolePermission(cleanDbUrl, "BUSINESS_MANAGER", "OVERDUE_VIEW", true);
+        assertRolePermission(cleanDbUrl, "BUSINESS_MANAGER", "OVERDUE_PROCESS", false);
+        assertRolePermission(cleanDbUrl, "BUSINESS_MANAGER", "SEALING_CREATE", false);
+        assertRolePermission(cleanDbUrl, "FACILITY_MANAGER", "OVERDUE_PROCESS", true);
     }
 
     @Test
     @DisplayName("Phase E: Verify Flyway migrations succeed on a safe copy of the existing database")
-    void testMigrationOnSafeCopyOfExistingDatabase() {
+    void testMigrationOnSafeCopyOfExistingDatabase() throws Exception {
         String existingCopyUrl = "jdbc:postgresql://localhost:5432/boxora_existing_copy";
 
         Flyway flyway = Flyway.configure()
@@ -68,8 +77,45 @@ public class MigrationVerificationTest {
 
         MigrateResult result = flyway.migrate();
         assertTrue(result.success, "Migration on existing database copy should succeed");
-        assertEquals(latestMigrationVersion(flyway), flyway.info().current().getVersion().getVersion(),
-                "Database should be at the latest migration version");
+        assertEquals("46", flyway.info().current().getVersion().getVersion(), "Current version should be 46");
+        assertColumnExists(existingCopyUrl, "handover_records", "wall_structure_passed");
+        assertColumnExists(existingCopyUrl, "bookings", "identity_original_document_seen");
+        assertRolePermission(existingCopyUrl, "ADMIN", "PAYMENT_CREATE", false);
+        assertRolePermission(existingCopyUrl, "ADMIN", "BOOKING_VIEW", true);
+        assertRolePermission(existingCopyUrl, "BUSINESS_MANAGER", "OVERDUE_VIEW", true);
+        assertRolePermission(existingCopyUrl, "BUSINESS_MANAGER", "OVERDUE_PROCESS", false);
+        assertRolePermission(existingCopyUrl, "FACILITY_MANAGER", "OVERDUE_PROCESS", true);
+    }
+
+    private void assertRolePermission(String jdbcUrl, String roleName, String permissionName, boolean expectedActive)
+            throws Exception {
+        String sql = "SELECT EXISTS (SELECT 1 FROM role_permissions rp "
+                + "JOIN roles r ON r.id = rp.role_id "
+                + "JOIN permissions p ON p.id = rp.permission_id "
+                + "WHERE r.name = ? AND p.name = ? AND rp.is_active = TRUE AND p.is_active = TRUE)";
+        try (Connection connection = DriverManager.getConnection(jdbcUrl, POSTGRES_USER, POSTGRES_PASSWORD);
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, roleName);
+            statement.setString(2, permissionName);
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                assertEquals(expectedActive, result.getBoolean(1), roleName + " permission " + permissionName);
+            }
+        }
+    }
+
+    private void assertColumnExists(String jdbcUrl, String tableName, String columnName) throws Exception {
+        String sql = "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+                + "WHERE table_schema = 'public' AND table_name = ? AND column_name = ?)";
+        try (Connection connection = DriverManager.getConnection(jdbcUrl, POSTGRES_USER, POSTGRES_PASSWORD);
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, tableName);
+            statement.setString(2, columnName);
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                assertTrue(result.getBoolean(1), tableName + "." + columnName + " should exist after migration");
+            }
+        }
     }
 
     @Test

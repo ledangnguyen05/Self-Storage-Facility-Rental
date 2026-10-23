@@ -3,9 +3,7 @@ package com.boxora.controller;
 import com.boxora.common.response.ApiResponse;
 import com.boxora.dto.response.OccupancyReportResponse;
 import com.boxora.dto.response.OverdueDebtReportResponse;
-import com.boxora.dto.response.PaymentChannelReportResponse;
 import com.boxora.dto.response.RevenueReportResponse;
-import com.boxora.dto.response.RevenueTrendResponse;
 import com.boxora.service.ReportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -32,8 +30,8 @@ public class ReportController {
     private final ReportService reportService;
 
     @GetMapping("/revenue")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
-    @Operation(summary = "Báo cáo doanh thực thu (đã thu trừ hoàn tiền) toàn hệ thống hoặc theo cơ sở trong kỳ")
+    @PreAuthorize("hasAuthority('REPORT_VIEW')")
+    @Operation(summary = "Lấy báo cáo doanh thu toàn hệ thống hoặc theo cơ sở")
     public ResponseEntity<ApiResponse<RevenueReportResponse>> getRevenueReport(
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
@@ -52,44 +50,8 @@ public class ReportController {
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
-    @GetMapping("/revenue-trend")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
-    @Operation(summary = "Xu hướng doanh thu theo tháng của kỳ báo cáo, tách theo loại thanh toán")
-    public ResponseEntity<ApiResponse<RevenueTrendResponse>> getRevenueTrend(
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate fromDate,
-
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate toDate,
-
-            @RequestParam(required = false)
-            UUID facilityId
-    ) {
-        return ResponseEntity.ok(ApiResponse.success(reportService.getRevenueTrend(fromDate, toDate, facilityId)));
-    }
-
-    @GetMapping("/payment-channels")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
-    @Operation(summary = "Phân bổ giao dịch đã thanh toán theo kênh thanh toán trong kỳ báo cáo")
-    public ResponseEntity<ApiResponse<PaymentChannelReportResponse>> getPaymentChannels(
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate fromDate,
-
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate toDate,
-
-            @RequestParam(required = false)
-            UUID facilityId
-    ) {
-        return ResponseEntity.ok(ApiResponse.success(reportService.getPaymentChannels(fromDate, toDate, facilityId)));
-    }
-
     @GetMapping("/occupancy")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAuthority('REPORT_VIEW')")
     @Operation(summary = "Lấy báo cáo tỷ lệ lấp đầy kho toàn hệ thống hoặc theo cơ sở")
     public ResponseEntity<ApiResponse<OccupancyReportResponse>> getOccupancyReport(
             @RequestParam(required = false)
@@ -101,7 +63,7 @@ public class ReportController {
     }
 
     @GetMapping("/overdue-debt")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAuthority('REPORT_VIEW')")
     @Operation(summary = "Lấy báo cáo chi tiết và tổng hợp nợ cước quá hạn (Overdue Debt & Delinquency)")
     public ResponseEntity<ApiResponse<OverdueDebtReportResponse>> getOverdueDebtReport(
             @RequestParam(required = false) UUID facilityId
@@ -111,10 +73,10 @@ public class ReportController {
     }
 
     @PostMapping("/overdue-debt/{contractId}/send-reminder")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
-    @Operation(summary = "Gửi email nhắc nợ quá hạn tới khách hàng; chỉ báo thành công khi máy chủ mail đã nhận thư")
+    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'STAFF')")
+    @Operation(summary = "Gửi email thông báo nhắc nợ quá hạn và chi tiết tiền phạt trễ hạn tới khách hàng")
     public ResponseEntity<ApiResponse<Void>> sendOverdueReminder(@PathVariable UUID contractId) {
         reportService.sendOverdueReminder(contractId);
-        return ResponseEntity.ok(ApiResponse.success("Đã gửi email nhắc nợ quá hạn tới khách hàng", null));
+        return ResponseEntity.ok(ApiResponse.success("Đã gửi email thông báo nhắc nợ quá hạn thành công", null));
     }
 }

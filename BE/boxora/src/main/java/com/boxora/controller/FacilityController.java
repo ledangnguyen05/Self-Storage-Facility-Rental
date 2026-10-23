@@ -10,11 +10,17 @@ import com.boxora.service.FacilityService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import com.boxora.dto.response.FileUploadResponse;
+import com.boxora.service.CloudflareR2Service;
+import org.springframework.http.MediaType;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.UUID;
 
@@ -25,60 +31,68 @@ import java.util.UUID;
 public class FacilityController {
 
     private final FacilityService facilityService;
+    private final CloudflareR2Service cloudflareR2Service;
 
-    public FacilityController(FacilityService facilityService) {
+    public FacilityController(FacilityService facilityService, CloudflareR2Service cloudflareR2Service) {
         this.facilityService = facilityService;
+        this.cloudflareR2Service = cloudflareR2Service;
+    }
+
+    @PostMapping(value = "/upload-image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER', 'ADMIN')")
+    @Operation(summary = "Tải ảnh cơ sở lên Cloudflare R2")
+    public ResponseEntity<ApiResponse<FileUploadResponse>> uploadFacilityImage(@RequestParam("file") MultipartFile file) {
+        FileUploadResponse response = cloudflareR2Service.uploadFacilityImage(file);
+        return ResponseEntity.ok(ApiResponse.success("Tải ảnh cơ sở lên Cloudflare R2 thành công", response));
     }
 
     @GetMapping("{id}")
-    @Operation(summary = "Lấy cơ sở theo ID (kèm số kho trống)")
+    @Operation(summary = "Lấy cơ sở theo ID")
     public ResponseEntity<ApiResponse<FacilityResponse>> getById(@PathVariable UUID id) {
         FacilityResponse response = facilityService.getById(id);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
-    // SRS 3.3.2: Giám đốc vận hành và Quản trị viên hệ thống cùng quản lý dữ liệu cơ sở.
     @PostMapping
-    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'ADMIN')")
-    @Operation(summary = "Tạo cơ sở mới")
+    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
+    @Operation(summary = "Create a new facility")
     public ResponseEntity<ApiResponse<FacilityResponse>> create(
             @Valid @RequestBody FacilityCreateRequest request) {
         FacilityResponse response = facilityService.create(request);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Đã tạo cơ sở mới", response));
+                .body(ApiResponse.success("Tạo cơ sở kho thành công", response));
     }
 
     @PutMapping("{id}")
-    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'ADMIN')")
-    @Operation(summary = "Cập nhật cơ sở")
+    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
+    @Operation(summary = "Update an existing facility")
     public ResponseEntity<ApiResponse<FacilityResponse>> update(
             @PathVariable UUID id,
             @Valid @RequestBody FacilityUpdateRequest request) {
         FacilityResponse response = facilityService.update(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Đã cập nhật cơ sở", response));
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật thông tin cơ sở kho thành công", response));
     }
 
     @DeleteMapping("{id}")
-    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'ADMIN')")
-    @Operation(summary = "Ngừng hoạt động cơ sở (không xóa cứng; bị từ chối khi còn kho đang thuê hoặc giữ chỗ)")
+    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
+    @Operation(summary = "Delete a facility")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         facilityService.delete(id);
-        return ResponseEntity.ok(ApiResponse.success("Đã chuyển cơ sở sang trạng thái Ngừng hoạt động", null));
+        return ResponseEntity.ok(ApiResponse.success("Vô hiệu hóa cơ sở kho thành công", null));
     }
 
     @GetMapping
-    @Operation(summary = "Danh sách cơ sở có phân trang, tìm kiếm và số kho trống. scope=public: toàn bộ cơ sở đang hoạt động cho trang công khai")
+    @Operation(summary = "Get all facilities with pagination and search")
     public ResponseEntity<ApiResponse<PageResponse<FacilityResponse>>> getAll(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) FacilityStatus status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "createdAt") String sortBy,
-            @RequestParam(defaultValue = "desc") String sortDir,
-            @RequestParam(required = false) String scope
+            @RequestParam(defaultValue = "desc") String sortDir
     ) {
         PageResponse<FacilityResponse> response =
-                facilityService.getAll(search, status, page, size, sortBy, sortDir, "public".equalsIgnoreCase(scope));
+                facilityService.getAll(search, status, page, size, sortBy, sortDir);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 }

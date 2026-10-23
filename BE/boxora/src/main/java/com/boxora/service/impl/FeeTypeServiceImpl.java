@@ -12,7 +12,6 @@ import com.boxora.mapper.FeeTypeMapper;
 import com.boxora.repository.FeeTypeRepository;
 import com.boxora.service.ActivityLogService;
 import com.boxora.service.FeeTypeService;
-import com.boxora.util.VndFormat;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -98,7 +97,7 @@ public class FeeTypeServiceImpl implements FeeTypeService {
                 ActivityAction.FEE_CREATE,
                 "FeeType",
                 saved.getId(),
-                String.format("Tạo mới loại phí %s (%s) - Đơn giá: %s", saved.getName(), saved.getCode(), VndFormat.format(saved.getDefaultAmount())),
+                String.format("Tạo mới loại phí %s (%s) - Đơn giá: %s VNĐ", saved.getName(), saved.getCode(), saved.getDefaultAmount()),
                 null,
                 null
         );

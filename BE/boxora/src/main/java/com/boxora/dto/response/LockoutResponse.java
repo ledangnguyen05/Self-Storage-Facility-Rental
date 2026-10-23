@@ -22,8 +22,5 @@ public class LockoutResponse {
     private String reason;
     private LocalDateTime lockedAt;
     private boolean pinRevoked;
-    /** True only when the tenant email was accepted by the mail server; null when no email applies. */
-    private Boolean customerNotified;
-    /** Vietnamese explanation of how the tenant was told (in-app notification, email outcome). */
-    private String notificationMessage;
+    private String physicalLockState;
 }

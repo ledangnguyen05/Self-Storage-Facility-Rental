@@ -24,7 +24,6 @@ import com.boxora.enums.ActivityAction;
 import com.boxora.security.FacilityAccessGuard;
 import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
-import com.boxora.service.FacilityPolicyDefaults;
 import com.boxora.service.FacilityPolicyService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,11 +34,9 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.Set;
 import java.util.UUID;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -49,8 +46,6 @@ import java.util.stream.Collectors;
 @Slf4j
 @Transactional
 public class FacilityPolicyServiceImpl implements FacilityPolicyService {
-
-    private static final Set<String> SORTABLE_FIELDS = Set.of("id", "createdAt", "updatedAt", "isActive", "minimumRentalMonths");
 
     private final FacilityPolicyRepository facilityPolicyRepository;
     private final FacilityRepository facilityRepository;
@@ -62,31 +57,30 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
     private final UnitTypeRepository unitTypeRepository;
     private final RequestContext requestContext;
 
-    /**
-     * Chính sách là thông tin công khai (khách xem điều kiện thuê, hủy, cọc trước khi đặt) nên đọc không cần
-     * đăng nhập và không bị giới hạn theo cơ sở. Khách vãng lai và khách hàng chỉ thấy chính sách đang áp dụng:
-     * chính sách đã tắt coi như cơ sở dùng giá trị mặc định của hệ thống.
-     */
     @Override
-    @Transactional(readOnly = true)
     public FacilityPolicyResponse getById(UUID id) {
         FacilityPolicy policy = facilityPolicyRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.FACILITY_POLICY_NOT_FOUND));
-        return toVisibleResponse(policy);
+
+        facilityAccessGuard.checkFacilityAccess(policy.getFacility().getId());
+        return toResponse(policy);
     }
 
     @Override
-    @Transactional(readOnly = true)
     public FacilityPolicyResponse getByFacilityId(UUID facilityId) {
         FacilityPolicy policy = facilityPolicyRepository.findByFacility_Id(facilityId)
                 .orElseThrow(() -> new AppException(ErrorCode.FACILITY_POLICY_NOT_FOUND));
-        return toVisibleResponse(policy);
+        facilityAccessGuard.checkFacilityAccess(policy.getFacility().getId());
+        return toResponse(policy);
     }
 
     @Override
     public FacilityPolicyResponse create(FacilityPolicyCreateRequest request) {
-        validateCancellation(request.getCancellationFullRefundHours(), request.getCancellationPartialRefundHours());
-        validateOverdueStages(request.getOverdueGraceDays(), request.getOverdueAccessDisableDays(), request.getOverdueSealingDays());
+        if (request.getCancellationFullRefundHours() != null
+                && request.getCancellationPartialRefundHours() != null
+                && request.getCancellationFullRefundHours() < request.getCancellationPartialRefundHours()) {
+            throw new AppException(ErrorCode.FACILITY_POLICY_INVALID_CANCELLATION);
+        }
 
         Facility facility = facilityRepository.findById(request.getFacilityId())
                 .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
@@ -100,8 +94,6 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
                 .isActive(request.getIsActive() == null || request.getIsActive())
                 .depositPercentage(request.getDepositPercentage())
                 .renewalWindowDays(request.getRenewalWindowDays())
-                .holdGraceHours(request.getHoldGraceHours() != null ? request.getHoldGraceHours() : FacilityPolicyDefaults.HOLD_GRACE_HOURS)
-                .maxHoldDays(request.getMaxHoldDays() != null ? request.getMaxHoldDays() : FacilityPolicyDefaults.MAX_HOLD_DAYS)
                 .cancellationFullRefundHours(request.getCancellationFullRefundHours())
                 .cancellationPartialRefundHours(request.getCancellationPartialRefundHours())
                 .cancellationPartialRefundPercent(request.getCancellationPartialRefundPercent())
@@ -114,11 +106,11 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
                 .minimumRentalMonths(request.getMinimumRentalMonths())
                 .build();
 
-        syncPrices(policy, request.getPrices());
+        replacePrices(policy, request.getPrices());
         FacilityPolicy saved = facilityPolicyRepository.save(policy);
 
         activityLogService.record(facility.getId(), ActivityAction.FACILITY_POLICY_CREATE, "FACILITY_POLICY", saved.getId(),
-                "Ban hành chính sách cho cơ sở " + facility.getName(), null, facility.getId());
+                "Created policy for facility " + facility.getName(), null, facility.getId());
 
         return toResponse(saved);
     }
@@ -134,10 +126,6 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
                 policy.getId(), requestContext.currentUserId())) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
-        // Bảng giá thuộc thẩm quyền Giám đốc vận hành (SRS 3.1.2); quản lý cơ sở được cấp ngoại lệ chỉ sửa quy định vận hành.
-        if ("FACILITY_MANAGER".equalsIgnoreCase(requestContext.currentUserRole()) && request.getPrices() != null) {
-            throw new AppException(ErrorCode.FORBIDDEN, "Chỉ Giám đốc vận hành được thay đổi bảng giá của cơ sở");
-        }
 
         int fullHours = request.getCancellationFullRefundHours() != null
                 ? request.getCancellationFullRefundHours()
@@ -145,21 +133,19 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
         int partialHours = request.getCancellationPartialRefundHours() != null
                 ? request.getCancellationPartialRefundHours()
                 : policy.getCancellationPartialRefundHours();
-        validateCancellation(fullHours, partialHours);
 
-        validateOverdueStages(
-                request.getOverdueGraceDays() != null ? request.getOverdueGraceDays() : policy.getOverdueGraceDays(),
-                request.getOverdueAccessDisableDays() != null ? request.getOverdueAccessDisableDays() : policy.getOverdueAccessDisableDays(),
-                request.getOverdueSealingDays() != null ? request.getOverdueSealingDays() : policy.getOverdueSealingDays());
+        if (fullHours < partialHours) {
+            throw new AppException(ErrorCode.FACILITY_POLICY_INVALID_CANCELLATION);
+        }
 
         facilityPolicyMapper.updateEntityFromRequest(request, policy);
         if (request.getPrices() != null) {
-            syncPrices(policy, request.getPrices());
+            replacePrices(policy, request.getPrices());
         }
         FacilityPolicy updated = facilityPolicyRepository.save(policy);
 
         activityLogService.record(policy.getFacility().getId(), ActivityAction.FACILITY_POLICY_UPDATE, "FACILITY_POLICY", updated.getId(),
-                "Cập nhật chính sách cơ sở " + (policy.getFacility() != null ? policy.getFacility().getName() : updated.getId()), null, updated.getId());
+                "Updated policy for facility " + (policy.getFacility() != null ? policy.getFacility().getName() : updated.getId()), null, updated.getId());
 
         return toResponse(updated);
     }
@@ -173,8 +159,8 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
 
         facilityPolicyRepository.deleteById(policy.getId());
 
-        activityLogService.record(policy.getFacility().getId(), ActivityAction.FACILITY_POLICY_DELETE, "FACILITY_POLICY", policy.getId(),
-                "Xóa chính sách cơ sở " + (policy.getFacility() != null ? policy.getFacility().getName() : id), null, null);
+        activityLogService.record(policy.getFacility().getId(), ActivityAction.FACILITY_POLICY_UPDATE, "FACILITY_POLICY", policy.getId(),
+                "Deleted policy for facility " + (policy.getFacility() != null ? policy.getFacility().getName() : id), null, null);
     }
 
     @Override
@@ -202,18 +188,11 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
         User manager = userRepository.findById(facilityManagerId)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
 
-        // Only a grant needs an eligible manager. Revoking must always work, otherwise the grant of an account
-        // that was locked, re-assigned or demoted afterwards could never be removed.
-        if (granted) {
-            if (manager.getRole() == null || !"FACILITY_MANAGER".equals(manager.getRole().getName())) {
-                throw new AppException(ErrorCode.POLICY_EXCEPTION_NOT_FACILITY_MANAGER);
-            }
-            if (!Boolean.TRUE.equals(manager.getIsActive())) {
-                throw new AppException(ErrorCode.POLICY_EXCEPTION_MANAGER_INACTIVE);
-            }
-            if (manager.getFacility() == null || !manager.getFacility().getId().equals(policy.getFacility().getId())) {
-                throw new AppException(ErrorCode.POLICY_EXCEPTION_WRONG_FACILITY);
-            }
+        if (manager.getRole() == null || !"FACILITY_MANAGER".equals(manager.getRole().getName())
+                || !Boolean.TRUE.equals(manager.getIsActive())
+                || manager.getFacility() == null
+                || !manager.getFacility().getId().equals(policy.getFacility().getId())) {
+            throw new AppException(ErrorCode.FORBIDDEN);
         }
 
         User grantingManager = userRepository.findById(requestContext.currentUserId())
@@ -228,68 +207,26 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
         grant.setGrantedBy(grantingManager);
         grant.setIsActive(granted);
         exceptionGrantRepository.save(grant);
-        activityLogService.record(policy.getFacility().getId(), ActivityAction.FACILITY_POLICY_EXCEPTION,
+        activityLogService.record(policy.getFacility().getId(), ActivityAction.FACILITY_POLICY_UPDATE,
                 "FACILITY_POLICY", policy.getId(),
-                (granted ? "Cấp quyền sửa chính sách ngoại lệ cho " : "Thu hồi quyền sửa chính sách ngoại lệ của ") + manager.getEmail(),
+                (granted ? "Granted" : "Revoked") + " policy exception for " + manager.getEmail(),
                 null, null);
     }
 
     @Override
-    @Transactional(readOnly = true)
     public PageResponse<FacilityPolicyResponse> getAll(String search, int page, int size, String sortBy, String sortDir) {
-        String requestedSort = sortBy == null ? "id" : sortBy;
-        String resolvedSortBy = "facilityName".equalsIgnoreCase(requestedSort)
-                ? "facility.name"
-                : (SORTABLE_FIELDS.contains(requestedSort) ? requestedSort : "id");
-        Sort sort = "desc".equalsIgnoreCase(sortDir)
+        String resolvedSortBy = "facilityName".equalsIgnoreCase(sortBy) ? "facility.name" : sortBy;
+        Sort sort = sortDir.equalsIgnoreCase("desc")
                 ? Sort.by(resolvedSortBy).descending()
                 : Sort.by(resolvedSortBy).ascending();
-        Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 200), sort);
+        Pageable pageable = PageRequest.of(page, size, sort);
         UUID scopedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
         Page<FacilityPolicyResponse> result = facilityPolicyRepository.findAllWithFilters(search, scopedFacilityId, pageable)
                 .map(this::toResponse);
         return PageResponse.from(result);
     }
 
-    // ------------------------------------------------------------------ helpers
-
-    private boolean isPublicViewer() {
-        String role = requestContext.currentUserRole();
-        return role == null || "CUSTOMER".equalsIgnoreCase(role);
-    }
-
-    private FacilityPolicyResponse toVisibleResponse(FacilityPolicy policy) {
-        if (isPublicViewer() && !Boolean.TRUE.equals(policy.getIsActive())) {
-            throw new AppException(ErrorCode.FACILITY_POLICY_NOT_FOUND);
-        }
-        return toResponse(policy);
-    }
-
-    private void validateCancellation(Integer fullRefundHours, Integer partialRefundHours) {
-        if (fullRefundHours != null && partialRefundHours != null && fullRefundHours < partialRefundHours) {
-            throw new AppException(ErrorCode.FACILITY_POLICY_INVALID_CANCELLATION);
-        }
-    }
-
-    private void validateOverdueStages(Integer graceDays, Integer accessDisableDays, Integer sealingDays) {
-        if (graceDays == null || accessDisableDays == null || sealingDays == null) {
-            return;
-        }
-        if (accessDisableDays < graceDays) {
-            throw new AppException(ErrorCode.FACILITY_POLICY_INVALID_OVERDUE_STAGES,
-                    "Mốc khóa PIN phải lớn hơn hoặc bằng số ngày ân hạn");
-        }
-        if (sealingDays < accessDisableDays) {
-            throw new AppException(ErrorCode.FACILITY_POLICY_INVALID_OVERDUE_STAGES,
-                    "Mốc niêm phong phải lớn hơn hoặc bằng mốc khóa PIN");
-        }
-    }
-
-    /**
-     * Đồng bộ bảng giá riêng theo yêu cầu: cập nhật dòng đã có, thêm dòng mới, xóa dòng không còn.
-     * Không xóa rồi thêm lại vì Hibernate chạy INSERT trước DELETE, sẽ đụng ràng buộc duy nhất (chính sách, loại kho).
-     */
-    private void syncPrices(FacilityPolicy policy, List<FacilityPolicyPriceRequest> priceRequests) {
+    private void replacePrices(FacilityPolicy policy, List<FacilityPolicyPriceRequest> priceRequests) {
         if (priceRequests == null) return;
 
         List<UUID> unitTypeIds = priceRequests.stream()
@@ -305,40 +242,20 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
             throw new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND);
         }
 
-        Map<UUID, FacilityPolicyPriceRequest> requested = new LinkedHashMap<>();
+        List<FacilityPolicyPrice> prices = new ArrayList<>();
         for (FacilityPolicyPriceRequest priceRequest : priceRequests) {
-            requested.put(priceRequest.getUnitTypeId(), priceRequest);
+            UnitType unitType = unitTypes.get(priceRequest.getUnitTypeId());
+            prices.add(FacilityPolicyPrice.builder()
+                    .facilityPolicy(policy)
+                    .unitType(unitType)
+                    .monthlyPrice(priceRequest.getMonthlyPrice())
+                    .discount3MonthPercent(priceRequest.getDiscount3MonthPercent() == null ? 0.0 : priceRequest.getDiscount3MonthPercent())
+                    .discount6MonthPercent(priceRequest.getDiscount6MonthPercent() == null ? 0.0 : priceRequest.getDiscount6MonthPercent())
+                    .discount12MonthPercent(priceRequest.getDiscount12MonthPercent() == null ? 0.0 : priceRequest.getDiscount12MonthPercent())
+                    .build());
         }
-
-        // Xóa các dòng không còn trong yêu cầu
-        for (Iterator<FacilityPolicyPrice> it = policy.getPrices().iterator(); it.hasNext(); ) {
-            FacilityPolicyPrice existing = it.next();
-            if (!requested.containsKey(existing.getUnitType().getId())) {
-                it.remove();
-            }
-        }
-
-        Map<UUID, FacilityPolicyPrice> existingByType = policy.getPrices().stream()
-                .collect(Collectors.toMap(price -> price.getUnitType().getId(), Function.identity()));
-
-        for (FacilityPolicyPriceRequest priceRequest : requested.values()) {
-            FacilityPolicyPrice price = existingByType.get(priceRequest.getUnitTypeId());
-            if (price == null) {
-                price = FacilityPolicyPrice.builder()
-                        .facilityPolicy(policy)
-                        .unitType(unitTypes.get(priceRequest.getUnitTypeId()))
-                        .build();
-                policy.getPrices().add(price);
-            }
-            price.setMonthlyPrice(priceRequest.getMonthlyPrice());
-            price.setDiscount3MonthPercent(orZero(priceRequest.getDiscount3MonthPercent()));
-            price.setDiscount6MonthPercent(orZero(priceRequest.getDiscount6MonthPercent()));
-            price.setDiscount12MonthPercent(orZero(priceRequest.getDiscount12MonthPercent()));
-        }
-    }
-
-    private static double orZero(Double value) {
-        return value == null ? 0.0 : value;
+        policy.getPrices().clear();
+        policy.getPrices().addAll(prices);
     }
 
     private FacilityPolicyResponse toResponse(FacilityPolicy policy) {

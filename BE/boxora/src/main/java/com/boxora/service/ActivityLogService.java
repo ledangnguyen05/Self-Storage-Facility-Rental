@@ -7,7 +7,6 @@ import com.boxora.enums.ActivityLogStatus;
 import com.boxora.enums.ActivityLogType;
 
 import java.time.LocalDate;
-import java.util.List;
 import java.util.UUID;
 
 public interface ActivityLogService {
@@ -48,13 +47,6 @@ public interface ActivityLogService {
     PageResponse<ActivityLogResponse> getAll(
             UUID userId, UUID facilityId, ActivityLogType logType, ActivityAction action, ActivityLogStatus status,
             Boolean criticalOnly, String resourceType, UUID resourceId,
-            LocalDate fromDate, LocalDate toDate, String search,
-            int page, int size, String sortBy, String sortDir);
-
-    /** Same as the overload above, additionally restricted to {@code actions} (a business area); null = all actions. */
-    PageResponse<ActivityLogResponse> getAll(
-            UUID userId, UUID facilityId, ActivityLogType logType, ActivityAction action, List<ActivityAction> actions,
-            ActivityLogStatus status, Boolean criticalOnly, String resourceType, UUID resourceId,
             LocalDate fromDate, LocalDate toDate, String search,
             int page, int size, String sortBy, String sortDir);
 

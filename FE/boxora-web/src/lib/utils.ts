@@ -1,5 +1,12 @@
-// `cn` is the token-aware tailwind-merge from the design system.
-export { cn } from '../components/ui/cn'
+import { clsx, type ClassValue } from 'clsx'
+import { twMerge } from 'tailwind-merge'
 
-// Kept for backwards compatibility. New code imports from '@/lib/format'.
-export { formatCurrency } from './format'
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+
+export function formatCurrency(amount: number | string): string {
+  const num = typeof amount === 'string' ? parseFloat(amount) : amount
+  if (isNaN(num)) return '0 ₫'
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(num)
+}

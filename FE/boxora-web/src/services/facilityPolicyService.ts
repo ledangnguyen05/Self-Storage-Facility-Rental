@@ -1,28 +1,18 @@
 import { api } from '../lib/axios'
-import type {
-  FacilityPolicy,
-  FacilityPolicyCreateRequest,
-  FacilityPolicyUpdateRequest,
-  PageResult,
-  RequestOptions,
-} from '../types'
+import { FacilityPolicy, FacilityPolicyCreateRequest, FacilityPolicyUpdateRequest } from '../types'
+import { PageResult } from './userService'
 
-/**
- * `/api/v1/facility-policies`: the only service that talks to facility policy
- * endpoints. Merge missing numbers with `resolvePolicy()` from
- * `utils/facilityPolicyDefaults` before display.
- */
 export const facilityPolicyService = {
-  async getAll(
-    params?: {
-      search?: string
-      page?: number
-      size?: number
-      sortBy?: string
-      sortDir?: 'asc' | 'desc'
-    },
-    opts?: RequestOptions
-  ) {
+  /**
+   * Lấy danh sách chính sách cơ sở với phân trang và tìm kiếm
+   */
+  async getAll(params?: {
+    search?: string
+    page?: number
+    size?: number
+    sortBy?: string
+    sortDir?: 'asc' | 'desc'
+  }) {
     const response = await api.get('/api/v1/facility-policies', {
       params: {
         page: params?.page ?? 0,
@@ -31,50 +21,47 @@ export const facilityPolicyService = {
         sortBy: params?.sortBy ?? 'id',
         sortDir: params?.sortDir ?? 'desc',
       },
-      signal: opts?.signal,
     })
     return response.data?.data as PageResult<FacilityPolicy>
   },
 
-  async getById(id: string, opts?: RequestOptions) {
-    const response = await api.get(`/api/v1/facility-policies/${id}`, { signal: opts?.signal })
+  /**
+   * Lấy chi tiết chính sách theo ID
+   */
+  async getById(id: string) {
+    const response = await api.get(`/api/v1/facility-policies/${id}`)
     return response.data?.data as FacilityPolicy
   },
 
-  /** Rejects (404) when the facility has no policy yet. */
-  async getByFacilityId(facilityId: string, opts?: RequestOptions) {
-    const response = await api.get(`/api/v1/facility-policies/by-facility/${facilityId}`, { signal: opts?.signal })
+  /**
+   * Lấy chính sách theo facilityId
+   */
+  async getByFacilityId(facilityId: string) {
+    const response = await api.get(`/api/v1/facility-policies/by-facility/${facilityId}`)
     return response.data?.data as FacilityPolicy
   },
 
-  /** Business manager, admin. */
+  /**
+   * Tạo mới chính sách cho cơ sở (Business Manager, Admin)
+   */
   async create(data: FacilityPolicyCreateRequest) {
     const response = await api.post('/api/v1/facility-policies', data)
     return response.data?.data as FacilityPolicy
   },
 
-  /** Business manager, admin (or a facility manager holding an exception grant). */
+  /**
+   * Cập nhật chính sách cơ sở (Business Manager, Admin)
+   */
   async update(id: string, data: FacilityPolicyUpdateRequest) {
     const response = await api.put(`/api/v1/facility-policies/${id}`, data)
     return response.data?.data as FacilityPolicy
   },
 
+  /**
+   * Xóa chính sách cơ sở (Admin, Business Manager)
+   */
   async delete(id: string) {
     const response = await api.delete(`/api/v1/facility-policies/${id}`)
-    return response.data
-  },
-
-  /** Facility manager ids allowed to edit this policy. */
-  async getExceptionGrants(policyId: string, opts?: RequestOptions) {
-    const response = await api.get(`/api/v1/facility-policies/${policyId}/exceptions`, { signal: opts?.signal })
-    return (response.data?.data || []) as string[]
-  },
-
-  async setExceptionGrant(policyId: string, facilityManagerId: string, granted: boolean) {
-    const response = await api.put(`/api/v1/facility-policies/${policyId}/exceptions`, {
-      facilityManagerId,
-      granted,
-    })
     return response.data
   },
 }

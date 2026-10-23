@@ -18,11 +18,5 @@ public interface DiscountService {
     DiscountResponse updateDiscount(UUID id, DiscountUpdateRequest request);
     void deleteDiscount(UUID id);
     DiscountValidateResponse validateAndCalculateDiscount(DiscountValidateRequest request);
-
-    /**
-     * Tăng số lượt đã dùng của mã ưu đãi sau khi đặt kho thành công (nguyên tử, không vượt giới hạn).
-     * Bỏ qua mã rỗng và mã chiết khấu kỳ hạn tự sinh (TERM_...). Ném DISCOUNT_USAGE_LIMIT_EXCEEDED nếu mã vừa hết lượt.
-     */
-    void consumeDiscount(String code);
 }
 

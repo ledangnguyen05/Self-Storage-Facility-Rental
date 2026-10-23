@@ -48,21 +48,6 @@ public class EnvironmentSecurityValidator implements ApplicationRunner {
     @Value("${boxora.seed.enabled:false}")
     private boolean seedEnabled;
 
-    @Value("${app.frontend-url:}")
-    private String frontendUrl;
-
-    @Value("${spring.mail.host:}")
-    private String mailHost;
-
-    @Value("${spring.mail.username:}")
-    private String mailUsername;
-
-    @Value("${spring.mail.properties.mail.smtp.auth:true}")
-    private String mailSmtpAuth;
-
-    @Value("${google.client-id:}")
-    private String googleClientId;
-
     public EnvironmentSecurityValidator(Environment environment) {
         this.environment = environment;
     }
@@ -90,28 +75,10 @@ public class EnvironmentSecurityValidator implements ApplicationRunner {
             if (seedEnabled) {
                 throw new IllegalStateException("CRITICAL CONFIGURATION ERROR: Seed fixtures must not be enabled in production workflows (boxora.seed.enabled must be false).");
             }
-            if (frontendUrl == null || frontendUrl.isBlank() || frontendUrl.contains("localhost")) {
-                throw new IllegalStateException("CRITICAL CONFIGURATION ERROR: Production deployment must set APP_FRONTEND_URL to the public web address (used in password-reset emails, payment and e-contract return redirects and CORS).");
-            }
-            if (mailHost == null || mailHost.isBlank()
-                    || ("true".equalsIgnoreCase(mailSmtpAuth) && (mailUsername == null || mailUsername.isBlank()))) {
-                throw new IllegalStateException("CRITICAL CONFIGURATION ERROR: Production deployment must configure outgoing email (MAIL_HOST, MAIL_USERNAME, MAIL_PASSWORD); password reset, OTP and payment receipts depend on it.");
-            }
 
             log.info("Production environment secrets validation passed successfully.");
         } else {
             log.debug("Development/Test profile active. Default sandbox secrets permitted.");
-        }
-
-        // Features that silently degrade are announced once at startup, in every profile.
-        log.info("Web app URL for links and CORS: {}", frontendUrl);
-        boolean mailReady = mailHost != null && !mailHost.isBlank()
-                && (!"true".equalsIgnoreCase(mailSmtpAuth) || (mailUsername != null && !mailUsername.isBlank()));
-        if (!mailReady) {
-            log.warn("Outgoing email is NOT configured (set MAIL_USERNAME / MAIL_PASSWORD, or point MAIL_HOST/MAIL_PORT at a local mail catcher with MAIL_SMTP_AUTH=false). Password reset will answer 'email unavailable'.");
-        }
-        if (googleClientId == null || googleClientId.isBlank()) {
-            log.warn("GOOGLE_CLIENT_ID is blank: Google sign-in is disabled and the endpoint refuses ID tokens.");
         }
     }
 }

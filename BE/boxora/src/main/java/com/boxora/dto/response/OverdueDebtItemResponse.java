@@ -6,11 +6,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
 
-/**
- * Một khoản nợ quá hạn. Số tiền đã trừ các khoản khách đã thanh toán cho kỳ quá hạn
- * ({@code paidAmount}); {@code totalDebt = unpaidRent + totalLateFee} là số còn phải thu.
- * Các trường thông tin khách/cơ sở là {@code null} khi dữ liệu gốc không có, không bao giờ là giá trị giả.
- */
 @Getter
 @Setter
 @NoArgsConstructor
@@ -35,15 +30,7 @@ public class OverdueDebtItemResponse {
     private BigDecimal unpaidRent;
     private BigDecimal dailyLateFee;
     private BigDecimal totalLateFee;
-    /** Tổng tiền khách đã thanh toán cho kỳ quá hạn (đã được trừ khỏi unpaidRent và totalLateFee). */
-    private BigDecimal paidAmount;
     private BigDecimal totalDebt;
-    private String overdueStage; // GRACE_PERIOD, WARNING, ACCESS_BLOCKED, ELIGIBLE_FOR_SEALING
-    /** Trạng thái khóa thực tế: NORMAL, WARNING, TEMP_LOCKED (đã thu hồi PIN hoặc khóa kho), SEALED (đã niêm phong). */
-    private String smartLockStatus;
-    /** Hợp đồng ở trạng thái nào (RentalContractStatus), null với khoản chưa có hợp đồng. */
-    private String contractStatus;
-    private String unitStatus;
-    /** Kho đang bị khóa do quá hạn (kho OVERDUE_LOCKED, hợp đồng OVERDUE_LOCKED hoặc mã PIN/QR đã bị thu hồi). */
-    private boolean locked;
+    private String overdueStage; // GRACE_PERIOD, WARNING, ACCESS_BLOCKED, ELIGIBLE_FOR_SEALING, POLICY_UNCONFIGURED
+    private String smartLockStatus; // UNVERIFIED unless a physical device reports its actual state
 }

@@ -1,7 +1,6 @@
 package com.boxora.dto.request;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
@@ -19,24 +18,23 @@ import java.math.BigDecimal;
 @Schema(description = "Yêu cầu cập nhật thông tin loại kho lưu trữ (Unit Type)")
 public class UnitTypeUpdateRequest {
 
-    @Size(max = 100, message = "Tên loại kho tối đa 100 ký tự")
-    @Pattern(regexp = "^[^<>]*$", message = "Tên loại kho không được chứa ký tự < hoặc >")
+    @Size(max = 100, message = "Type name must not exceed 100 characters")
     @Schema(description = "Tên loại kho cập nhật", example = "Personal Locker (Mini Box Pro)")
     private String typeName;
 
-    @Size(max = 50, message = "Kích thước tối đa 50 ký tự")
+    @Size(max = 50, message = "Dimensions must not exceed 50 characters")
     @Schema(description = "Kích thước kho cập nhật", example = "1.0m x 1.0m x 1.2m")
     private String dimensions;
 
-    @Positive(message = "Diện tích phải lớn hơn 0")
+    @Positive(message = "Area must be greater than zero")
     @Schema(description = "Diện tích sàn cập nhật (m²)", example = "1.0")
     private Double areaSqm;
 
-    @Positive(message = "Đơn giá phải lớn hơn 0")
+    @Positive(message = "Base price per month must be greater than zero")
     @Schema(description = "Đơn giá cơ bản mới mỗi tháng (VNĐ)", example = "500000.00")
     private BigDecimal basePricePerMonth;
 
-    @PositiveOrZero(message = "Tiền cọc không được âm")
+    @PositiveOrZero(message = "Deposit amount cannot be negative")
     @Schema(description = "Tiền đặt cọc chuẩn mới (VNĐ)", example = "500000.00")
     private BigDecimal depositAmount;
 

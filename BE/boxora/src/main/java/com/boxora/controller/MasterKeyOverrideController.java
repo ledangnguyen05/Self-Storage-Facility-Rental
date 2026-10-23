@@ -20,7 +20,6 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/master-key")
 @Tag(name = "Master Key", description = "API ghi nhận việc sử dụng chìa khóa cơ tổng khẩn cấp (BR-RULE-009)")
-@PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
 @RequiredArgsConstructor
 @Slf4j
 public class MasterKeyOverrideController {
@@ -28,21 +27,24 @@ public class MasterKeyOverrideController {
     private final MasterKeyOverrideService masterKeyOverrideService;
 
     @PostMapping("/override")
+    @PreAuthorize("hasAuthority('MASTER_KEY_OVERRIDE')")
     @Operation(summary = "Ghi nhận sử dụng Master Key - bắt buộc xác thực 2 người (performer + witness xác nhận mật khẩu)")
     public ResponseEntity<ApiResponse<MasterKeyOverrideResponse>> create(
             @Valid @RequestBody MasterKeyOverrideRequest request) {
         MasterKeyOverrideResponse response = masterKeyOverrideService.create(request);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Đã ghi nhận lần sử dụng chìa khóa tổng", response));
+                .body(ApiResponse.success("Ghi nhận mở khóa khẩn cấp Master Key thành công", response));
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('MASTER_KEY_VIEW')")
     @Operation(summary = "Xem chi tiết một lần sử dụng Master Key")
     public ResponseEntity<ApiResponse<MasterKeyOverrideResponse>> getById(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(masterKeyOverrideService.getById(id)));
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('MASTER_KEY_VIEW')")
     @Operation(summary = "Tra cứu lịch sử sử dụng Master Key (phân quyền theo facility)")
     public ResponseEntity<ApiResponse<PageResponse<MasterKeyOverrideResponse>>> getAll(
             @RequestParam(required = false) UUID facilityId,
