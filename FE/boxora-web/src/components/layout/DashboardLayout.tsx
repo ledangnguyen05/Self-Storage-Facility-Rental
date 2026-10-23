@@ -128,7 +128,7 @@ export const DashboardLayout: React.FC = () => {
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--on-surface)] flex flex-col antialiased">
       {/* Fixed Top Header (80px) */}
-      <header className="fixed top-0 left-0 right-0 h-20 bg-white z-50 shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-slate-200">
+      <header className="fixed top-0 left-0 right-0 h-20 bg-white dark:bg-slate-900 z-50 shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-slate-200 dark:border-slate-800">
         <div className="w-full h-full px-4 sm:px-6 flex items-center justify-between gap-3">
           
           {/* Logo & Mobile Menu Toggle */}
@@ -239,13 +239,13 @@ export const DashboardLayout: React.FC = () => {
       )}
 
       {/* Sidebar (Responsive drawer on mobile, fixed column on lg) */}
-      <aside className={`fixed left-0 top-20 bottom-0 w-64 bg-white z-40 border-r border-slate-200 flex flex-col py-4 shadow-[0_1px_8px_rgba(0,0,0,0.02)] transition-transform duration-200 ease-in-out ${
+      <aside className={`fixed left-0 top-20 bottom-0 w-64 bg-white dark:bg-slate-900 z-40 border-r border-slate-200 dark:border-slate-800 flex flex-col py-4 shadow-[0_1px_8px_rgba(0,0,0,0.02)] transition-transform duration-200 ease-in-out ${
         isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       }`}>
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4">
           
           {/* Active Account Summary Card */}
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-left">
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-left">
             <div className="flex items-center justify-between mb-1.5">
               <span className="font-mono text-[9px] uppercase font-bold text-slate-400">
                 Phiên Đăng Nhập
@@ -264,7 +264,7 @@ export const DashboardLayout: React.FC = () => {
 
           {/* Mobile Facility Selector */}
           {role && role !== 'CUSTOMER' && (
-            <div className="sm:hidden p-3 rounded-xl bg-slate-50 border border-slate-200 text-left">
+            <div className="sm:hidden p-3 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-left">
               <span className="font-mono text-[9px] uppercase font-bold text-slate-400 block mb-1 tracking-wider">
                 CƠ SỞ TRỰC THUỘC
               </span>
@@ -307,8 +307,8 @@ export const DashboardLayout: React.FC = () => {
                   to="/portal/customer?tab=my-units"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
                     isCurrentPath('/portal/customer') && (!new URLSearchParams(location.search).get('tab') || new URLSearchParams(location.search).get('tab') === 'my-units')
-                      ? 'bg-slate-100 text-slate-900 font-bold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">inventory_2</span>
@@ -316,25 +316,24 @@ export const DashboardLayout: React.FC = () => {
                 </Link>
 
                 <Link
-                  to="/my-bookings"
+                  to="/portal/customer?tab=bookings"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    (isCurrentPath('/portal/customer') && (new URLSearchParams(location.search).get('tab') === 'bookings' || new URLSearchParams(location.search).get('tab') === 'requests')) ||
                     isCurrentPath('/my-bookings')
-
-                      ? 'bg-slate-100 text-slate-900 font-bold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">pending_actions</span>
                   <span>Đơn đặt giữ chỗ</span>
                 </Link>
 
-
                 <Link
                   to="/portal/customer?tab=explore"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
                     isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'explore'
-                      ? 'bg-slate-100 text-slate-900 font-bold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">travel_explore</span>
@@ -345,8 +344,8 @@ export const DashboardLayout: React.FC = () => {
                   to="/portal/customer?tab=contracts"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
                     isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'contracts'
-                      ? 'bg-slate-100 text-slate-900 font-bold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">receipt_long</span>
@@ -357,18 +356,18 @@ export const DashboardLayout: React.FC = () => {
                   to="/portal/customer?tab=support"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
                     isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'support'
-                      ? 'bg-slate-100 text-slate-900 font-bold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">support_agent</span>
                   <span>Trung tâm hỗ trợ</span>
                 </Link>
 
-                <div className="pt-2 mt-2 border-t border-slate-100">
+                <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-800">
                   <Link
                     to="/"
-                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition-all"
+                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-800 dark:hover:text-slate-100 transition-all"
                   >
                     <span className="material-symbols-outlined text-[18px]">home</span>
                     <span>Về trang chủ</span>
@@ -548,24 +547,96 @@ export const DashboardLayout: React.FC = () => {
                   to="/portal/business-manager"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/business-manager')
-                      ? 'bg-slate-100 text-slate-900'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">query_stats</span>
-                  <span>BÁO CÁO DOANH THU</span>
+                  <span>{t('BÁO CÁO DOANH THU')}</span>
                 </Link>
 
                 <Link
                   to="/portal/facility-manager"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/facility-manager')
-                      ? 'bg-slate-100 text-slate-900'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">apartment</span>
-                  <span>SƠ ĐỒ CƠ SỞ KHO</span>
+                  <span>{t('SƠ ĐỒ CƠ SỞ KHO')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/admin?tab=facilities"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/admin')
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">domain</span>
+                  <span>{t('CHÍNH SÁCH GIÁ & CHI NHÁNH')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/overdue"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/overdue')
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">money_off</span>
+                  <span>{t('XỬ LÝ NỢ CƯỚC QUÁ HẠN')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/shifts"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/shifts')
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">schedule</span>
+                  <span>{t('XỬ LÝ TRỰC CA')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/cashier"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/cashier')
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
+                  <span>{t('BÁO CÁO THU NGÂN')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/tickets"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/tickets')
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">build_circle</span>
+                  <span>{t('XỬ LÝ SỰ CỐ TẠI CHỖ')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/staff"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/staff')
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">badge</span>
+                  <span>{t('VẬN HÀNH QUẦY BÀN GIAO')}</span>
                 </Link>
               </nav>
             </div>
@@ -720,7 +791,7 @@ export const DashboardLayout: React.FC = () => {
 
       {/* Main Canvas Area */}
       <div className="lg:pl-64 pt-20 flex-1 min-w-0">
-        <main className="min-h-[calc(100vh-5rem)] w-full bg-slate-50 p-4 sm:p-6 lg:p-8">
+        <main className="min-h-[calc(100vh-5rem)] w-full bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 lg:p-8">
           <div className="dashboard-typography mx-auto w-full max-w-[1600px]">
             <Outlet context={{
               selectedFacility: isFacilityScopedRole && assignedFacilityId ? assignedFacilityId : selectedFacility,

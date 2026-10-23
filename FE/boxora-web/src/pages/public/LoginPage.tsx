@@ -114,7 +114,7 @@ export const LoginPage: React.FC = () => {
           (decoded.startsWith('/portal/staff') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/facility-manager') && (userRole === 'FACILITY_MANAGER' || userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/business-manager') && (userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
-          (decoded.startsWith('/portal/admin') && userRole === 'ADMIN') ||
+          (decoded.startsWith('/portal/admin') && (userRole === 'ADMIN' || userRole === 'BUSINESS_MANAGER')) ||
           (!decoded.startsWith('/portal/'))
 
         if (isAllowed) {
@@ -211,7 +211,7 @@ export const LoginPage: React.FC = () => {
           (decoded.startsWith('/portal/staff') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/facility-manager') && (userRole === 'FACILITY_MANAGER' || userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/business-manager') && (userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
-          (decoded.startsWith('/portal/admin') && userRole === 'ADMIN') ||
+          (decoded.startsWith('/portal/admin') && (userRole === 'ADMIN' || userRole === 'BUSINESS_MANAGER')) ||
           (!decoded.startsWith('/portal/'))
 
         if (isAllowed) {
@@ -231,7 +231,7 @@ export const LoginPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen w-full relative flex flex-col justify-between overflow-x-hidden font-sans text-slate-800 bg-[#f4f8ff]">
+    <div className="min-h-screen w-full relative flex flex-col justify-between overflow-x-hidden font-sans text-slate-800 dark:text-slate-200 bg-[#f4f8ff] dark:bg-slate-950">
       
       {/* ============================================================ */}
       {/* 1. BACKGROUND                                                */}
@@ -549,7 +549,7 @@ export const LoginPage: React.FC = () => {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-12 sm:h-12.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs sm:text-sm tracking-wider uppercase shadow-lg shadow-slate-900/15 hover:shadow-slate-900/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed mt-2"
+                className="w-full h-12 sm:h-12.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md shadow-blue-600/20 text-xs sm:text-sm tracking-wider uppercase shadow-lg shadow-slate-900/15 hover:shadow-slate-900/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed mt-2"
               >
                 {isLoading ? (
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -637,7 +637,7 @@ export const LoginPage: React.FC = () => {
       {/* ============================================================ */}
       {showForgotModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="w-full max-w-md rounded-3xl bg-white border border-slate-200 p-6 sm:p-7 space-y-4 shadow-2xl text-left animate-scaleUp">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 sm:p-7 space-y-4 shadow-2xl text-left animate-scaleUp">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2 text-teal-700 font-mono text-xs font-bold">
                 <HelpCircle className="w-4 h-4 text-teal-700" />
