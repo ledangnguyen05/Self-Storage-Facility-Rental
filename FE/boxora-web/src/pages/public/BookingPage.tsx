@@ -586,13 +586,15 @@ export const BookingPage: React.FC = () => {
   const sendReservationToStaff = (
     code: string,
     method: 'ONLINE' | 'PAY_LATER' = 'PAY_LATER',
-    isPaid = false
+    isPaid = false,
+    backendBookingId = ''
   ) => {
     const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ngày ' + new Date().toLocaleDateString('vi-VN')
 
     const nowIso = new Date().toISOString()
     const payload = {
-      id: `LOCAL-RES-${code}`,
+      id: backendBookingId || `LOCAL-RES-${code}`,
+      backendBookingId: backendBookingId || undefined,
       bookingCode: code,
       createdAt: nowIso,
       customer: { fullName: customerName, phone: customerPhone, idCard: customerIdCard, email: customerEmail },
@@ -627,6 +629,7 @@ export const BookingPage: React.FC = () => {
       expectedCheckInAt: `${checkInDate}T${selectedPeriod.hours[0]?.value || '09:00'}:00`,
       totalRentalFee: quoteCalculation.totalRent,
       depositAmount: quoteCalculation.depositAmount,
+      depositPaid: isPaid ? quoteCalculation.depositAmount : 0,
       totalEstimate: quoteCalculation.totalEstimate,
       paymentMethod: method === 'ONLINE' ? 'Thanh toán online (Trực tuyến)' : 'Thanh toán sau tại cơ sở kho',
       paymentStatus: isPaid ? 'PAID' : 'PENDING',
@@ -706,7 +709,19 @@ export const BookingPage: React.FC = () => {
 
     try {
       // Tìm buồng kho phù hợp tại cơ sở theo kích thước người dùng đã chọn
-      const facUnits = storageUnits.filter((u) => u.facilityId === selectedFacility?.id)
+      let allUnits = storageUnits
+      const availableInCurrent = allUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
+      if (availableInCurrent.length === 0) {
+        try {
+          const freshRes = await storageUnitService.getUnits({ status: 'AVAILABLE' })
+          const freshList = Array.isArray(freshRes) ? freshRes : ((freshRes as any)?.content || [])
+          if (freshList.length > 0) allUnits = freshList
+        } catch (uErr) {
+          console.warn('Refresh available units warning:', uErr)
+        }
+      }
+      const facUnits = allUnits.filter((u) => u.facilityId === selectedFacility?.id)
+      const availableAll = allUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
       const available = facUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
 
       let matchedUnit = available.find((u) => Math.abs((u.areaSqMeters || 0) - currentSelectedSize.areaM2) < 0.8)
@@ -714,7 +729,7 @@ export const BookingPage: React.FC = () => {
         matchedUnit = available.find((u) => (u.unitTypeName || '').toLowerCase().includes(currentSelectedSize.id))
       }
       if (!matchedUnit) {
-        matchedUnit = available[0] || facUnits[0] || storageUnits.find((u) => u.status === 'AVAILABLE') || storageUnits[0]
+        matchedUnit = available[0] || availableAll[0] || facUnits[0] || allUnits[0]
       }
 
       let effectiveBookingCode = generatedCode
@@ -723,15 +738,24 @@ export const BookingPage: React.FC = () => {
 
       if (isAuthenticated && matchedUnit?.id) {
         try {
-          const cleanTime = selectedPeriod.hours[0]?.value || '09:00'
+          const cleanTime = selectedPeriod.id === 'morning' ? '09:00' : (selectedPeriod.hours[0]?.value || '09:00')
+          let expectedCheckInStr = `${checkInDate}T${cleanTime}:00`
+          const parsedCheckIn = new Date(expectedCheckInStr)
+          const minAllowedMs = Date.now() + 5.25 * 3600 * 1000
+          if (!Number.isNaN(parsedCheckIn.getTime()) && parsedCheckIn.getTime() < minAllowedMs) {
+            const safeDate = new Date(minAllowedMs)
+            const pad = (n: number) => String(n).padStart(2, '0')
+            expectedCheckInStr = `${safeDate.getFullYear()}-${pad(safeDate.getMonth() + 1)}-${pad(safeDate.getDate())}T${pad(safeDate.getHours())}:${pad(safeDate.getMinutes())}:00`
+          }
           const res = await bookingService.createBooking({
             storageUnitId: matchedUnit.id,
             startDate: startDate,
             rentalMonths: isCustomDuration ? Math.max(1, Math.round(customDays / 30)) : rentalMonths,
             totalRentalFee: quoteCalculation.totalRent,
             depositPaid: selectedMethod === 'ONLINE' ? quoteCalculation.depositAmount : 0,
+            depositAmount: quoteCalculation.depositAmount,
             signingMethod: selectedMethod === 'ONLINE' ? 'ONLINE' : 'IN_PERSON',
-            expectedCheckInAt: `${checkInDate}T${cleanTime}:00`,
+            expectedCheckInAt: expectedCheckInStr,
             checkInTime: cleanTime,
             identityCardNumber: customerIdCard.trim(),
             identityCardType: 'CCCD',
@@ -772,10 +796,11 @@ export const BookingPage: React.FC = () => {
           paymentType: 'BOOKING_PAYMENT',
           amount: paymentAmount,
           orderInfo: `Thanh toan giu cho ${effectiveBookingCode}`,
+          returnUrl: `${window.location.origin}/payment-result`,
         })
 
         if (payRes?.paymentUrl) {
-          sendReservationToStaff(effectiveBookingCode, 'ONLINE', false)
+          sendReservationToStaff(effectiveBookingCode, 'ONLINE', false, backendBookingId)
           // Mở trực tiếp trang thanh toán
           window.location.assign(payRes.paymentUrl)
           return
@@ -785,7 +810,7 @@ export const BookingPage: React.FC = () => {
       } else {
         // Thanh toán sau khi nhận kho
         setIsOnlinePaid(false)
-        sendReservationToStaff(effectiveBookingCode, 'PAY_LATER', false)
+        sendReservationToStaff(effectiveBookingCode, 'PAY_LATER', false, backendBookingId)
         setCurrentStep(6)
         window.scrollTo({ top: 0, behavior: 'smooth' })
       }
@@ -2111,202 +2136,136 @@ export const BookingPage: React.FC = () => {
         {/* BƯỚC 5: PHƯƠNG THỨC THANH TOÁN (ONLINE HOẶC THANH TOÁN SAU)   */}
         {/* ============================================================== */}
         {currentStep === 5 && (
-          <div className="space-y-8 animate-in fade-in duration-300 max-w-4xl mx-auto">
-            
-            <div className="text-center space-y-2.5">
-              <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-mono text-xs font-bold">
-                <CreditCard size={13} />
-                BƯỚC 5: PHƯƠNG THỨC THANH TOÁN
+          <div className="space-y-6 animate-in fade-in duration-300 max-w-3xl mx-auto">
+            <div className="text-center space-y-1.5">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold">
+                Bước 5 / 5
               </span>
-              <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                Chọn phương thức thanh toán
+              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
+                Phương thức thanh toán
               </h1>
-              <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
-                Lựa chọn phương thức thanh toán an toàn, linh hoạt phù hợp với nhu cầu của quý khách.
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Chọn thanh toán trực tuyến hoặc thanh toán tại quầy khi nhận kho.
               </p>
             </div>
 
-            {/* Storage Unit Mini Bar Summary */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 p-1 flex items-center justify-center flex-shrink-0">
+            {/* Tóm tắt đơn đặt kho */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 p-1.5 flex items-center justify-center shrink-0">
                   <img src={currentSelectedSize.image} alt={currentSelectedSize.volumeText} className="max-h-full max-w-full object-contain" />
                 </div>
                 <div>
                   <span className="font-bold text-slate-900 dark:text-white block text-sm sm:text-base">
-                    Kho {currentSelectedSize.volumeText} ({isAcActive ? 'A/C Máy lạnh' : 'Non-A/C'}) • {selectedFacility?.name}
+                    Kho {currentSelectedSize.volumeText} ({isAcActive ? 'Máy lạnh' : 'Tiêu chuẩn'}) • {selectedFacility?.name}
                   </span>
-                  <span className="text-slate-500 dark:text-slate-400 text-xs font-mono">
-                    Thời hạn: <strong>{rentalDurationText}</strong> • Hẹn nhận kho: <strong>{checkInDate} ({checkInTime})</strong>
+                  <span className="text-slate-500 dark:text-slate-400 text-xs block mt-0.5">
+                    Thời hạn: <strong className="text-slate-700 dark:text-slate-200">{rentalDurationText}</strong> • Nhận kho: <strong className="text-slate-700 dark:text-slate-200">{checkInDate} ({checkInTime})</strong>
                   </span>
                 </div>
               </div>
-              <div className="text-left sm:text-right font-mono">
-                <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Tổng chi phí dự kiến:</span>
-                <strong className="text-lg text-blue-700 dark:text-cyan-400 font-black">
+              <div className="text-left sm:text-right border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-100 dark:border-slate-800">
+                <span className="text-xs text-slate-500 dark:text-slate-400 block">Tổng thanh toán</span>
+                <strong className="text-lg sm:text-xl text-blue-700 dark:text-cyan-400 font-bold font-mono">
                   {quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫
                 </strong>
-                <span className="text-[10px] text-slate-400 block">
-                  (Tiền thuê: {quoteCalculation.totalRent.toLocaleString('vi-VN')} ₫ + Cọc 1 tháng: {quoteCalculation.depositAmount.toLocaleString('vi-VN')} ₫)
+                <span className="text-[11px] text-slate-400 block">
+                  Thuê: {quoteCalculation.totalRent.toLocaleString('vi-VN')} ₫ + Cọc: {quoteCalculation.depositAmount.toLocaleString('vi-VN')} ₫
                 </span>
               </div>
             </div>
 
             {/* Hai tùy chọn thanh toán */}
-            <div className="space-y-4">
-              
-              {/* Tùy chọn 1: Thanh toán Online */}
+            <div className="grid grid-cols-1 gap-3.5">
+              {/* Tùy chọn 1: Thanh toán trực tuyến */}
               <div
                 onClick={() => setPaymentMethod('ONLINE')}
-                className={`p-6 sm:p-7 rounded-3xl border-2 transition-all cursor-pointer relative overflow-hidden ${
+                className={`p-5 rounded-2xl border-2 transition-all cursor-pointer ${
                   paymentMethod === 'ONLINE'
-                    ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-600 shadow-xl shadow-blue-600/10 ring-2 ring-blue-500/20'
+                    ? 'bg-blue-50/50 dark:bg-blue-950/30 border-blue-600'
                     : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                 }`}
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-start gap-3.5">
                     <div
-                      className={`w-6 h-6 rounded-full border-2 mt-1 flex items-center justify-center shrink-0 transition-colors ${
+                      className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
                         paymentMethod === 'ONLINE'
                           ? 'border-blue-600 bg-blue-600 text-white'
                           : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
                       }`}
                     >
-                      {paymentMethod === 'ONLINE' && <div className="w-2.5 h-2.5 rounded-full bg-white" />}
+                      {paymentMethod === 'ONLINE' && <div className="w-2 h-2 rounded-full bg-white" />}
                     </div>
 
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="px-3 py-1 rounded-full bg-blue-600 text-white text-[11px] font-bold uppercase tracking-wider font-mono">
-                          Khuyên dùng
-                        </span>
-                        <span className="px-2.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-xs font-semibold flex items-center gap-1">
-                          <Lock size={12} />
-                          Bảo mật SSL 256-bit
-                        </span>
-                        <span className="px-2.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-mono">
-                          Kích hoạt tức thì
-                        </span>
-                      </div>
-
-                      <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                          <CreditCard className="text-blue-600 shrink-0" size={20} />
-                          Thanh toán online
-                        </h3>
-                        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
-                          Thanh toán trực tiếp nhanh chóng qua cổng thanh toán online. Hỗ trợ quét mã <strong>QR ngân hàng</strong>, ứng dụng Mobile Banking, thẻ ATM nội địa Napas và thẻ quốc tế Visa / MasterCard / JCB.
-                        </p>
-                      </div>
-
-                      {/* Supported payment badges */}
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
-                        <span className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 shadow-2xs">
-                          <QrCode size={14} className="text-blue-600" />
-                          <span>VNPAY-QR / VietQR</span>
-                        </span>
-                        <span className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 shadow-2xs">
-                          <Smartphone size={14} className="text-emerald-600" />
-                          <span>Thẻ ATM / Mobile Banking</span>
-                        </span>
-                        <span className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 shadow-2xs">
-                          <CreditCard size={14} className="text-indigo-600" />
-                          <span>Visa / MasterCard / JCB</span>
-                        </span>
-                      </div>
-
-                      <div className="p-3 rounded-xl bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-900/40 text-xs text-blue-900 dark:text-blue-200 flex items-center gap-2">
-                        <ShieldCheck size={16} className="text-blue-600 shrink-0" />
-                        <span>Khi bấm thanh toán, hệ thống sẽ mở trực tiếp trang thanh toán an toàn để bạn quét mã hoặc nhập thông tin thẻ.</span>
-                      </div>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <CreditCard className="text-blue-600 shrink-0" size={18} />
+                        <span>Thanh toán trực tuyến (VNPay)</span>
+                      </h3>
+                      <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+                        Thanh toán qua mã QR ngân hàng, thẻ ATM nội địa hoặc thẻ Visa / MasterCard.
+                      </p>
                     </div>
                   </div>
 
-                  <div className="text-right shrink-0 hidden sm:block">
-                    <span className="font-mono text-xs text-slate-500 dark:text-slate-400 block">Số tiền thanh toán:</span>
-                    <strong className="text-xl font-black text-blue-700 dark:text-cyan-400 font-mono">
+                  <div className="text-right shrink-0">
+                    <span className="text-[11px] text-slate-400 block">Thanh toán ngay</span>
+                    <strong className="text-base sm:text-lg font-bold text-blue-700 dark:text-cyan-400 font-mono">
                       {quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫
                     </strong>
                   </div>
                 </div>
               </div>
 
-              {/* Tùy chọn 2: Thanh toán sau khi nhận kho (Pay Later) */}
+              {/* Tùy chọn 2: Thanh toán khi nhận kho */}
               <div
                 onClick={() => setPaymentMethod('PAY_LATER')}
-                className={`p-6 sm:p-7 rounded-3xl border-2 transition-all cursor-pointer relative overflow-hidden ${
+                className={`p-5 rounded-2xl border-2 transition-all cursor-pointer ${
                   paymentMethod === 'PAY_LATER'
-                    ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-600 shadow-xl shadow-blue-600/10 ring-2 ring-blue-500/20'
+                    ? 'bg-blue-50/50 dark:bg-blue-950/30 border-blue-600'
                     : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                 }`}
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-start gap-3.5">
                     <div
-                      className={`w-6 h-6 rounded-full border-2 mt-1 flex items-center justify-center shrink-0 transition-colors ${
+                      className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
                         paymentMethod === 'PAY_LATER'
                           ? 'border-blue-600 bg-blue-600 text-white'
                           : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
                       }`}
                     >
-                      {paymentMethod === 'PAY_LATER' && <div className="w-2.5 h-2.5 rounded-full bg-white" />}
+                      {paymentMethod === 'PAY_LATER' && <div className="w-2 h-2 rounded-full bg-white" />}
                     </div>
 
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="px-3 py-1 rounded-full bg-emerald-600 text-white text-[11px] font-bold uppercase tracking-wider font-mono">
-                          Giữ chỗ 0₫ hôm nay
-                        </span>
-                        <span className="px-2.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold">
-                          Thanh toán khi nhận kho
-                        </span>
-                      </div>
-
-                      <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                          <Building2 className="text-emerald-600 shrink-0" size={20} />
-                          Thanh toán sau khi nhận kho
-                        </h3>
-                        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
-                          Đặt giữ chỗ trước hoàn toàn miễn phí <strong>0 ₫</strong> hôm nay. Quý khách thanh toán toàn bộ chi phí khi đến tham quan buồng kho thực tế và làm thủ tục bàn giao tại cơ sở.
-                        </p>
-                      </div>
-
-                      {/* Details of pay later */}
-                      <div className="p-3.5 rounded-2xl bg-white/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 text-xs space-y-1.5">
-                        <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
-                          <span>Phí thanh toán giữ chỗ trực tuyến:</span>
-                          <strong className="text-emerald-600 font-bold font-mono">0 ₫ (Miễn phí)</strong>
-                        </div>
-                        <div className="flex items-center justify-between text-slate-700 dark:text-slate-300">
-                          <span>Chi phí thanh toán khi nhận kho:</span>
-                          <strong className="text-slate-900 dark:text-white font-bold font-mono">
-                            {quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫
-                          </strong>
-                        </div>
-                      </div>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <Building2 className="text-slate-600 dark:text-slate-300 shrink-0" size={18} />
+                        <span>Thanh toán khi nhận kho</span>
+                      </h3>
+                      <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+                        Đặt giữ chỗ trước, thanh toán tại cơ sở khi đến kiểm tra và nhận bàn giao kho.
+                      </p>
                     </div>
                   </div>
 
-                  <div className="text-right shrink-0 hidden sm:block">
-                    <span className="font-mono text-xs text-slate-500 dark:text-slate-400 block">Thanh toán hôm nay:</span>
-                    <strong className="text-xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
+                  <div className="text-right shrink-0">
+                    <span className="text-[11px] text-slate-400 block">Hôm nay</span>
+                    <strong className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-200 font-mono">
                       0 ₫
                     </strong>
                   </div>
                 </div>
               </div>
-
             </div>
 
             {submitError && (
-              <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-950/50 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 text-xs flex items-center gap-2">
+              <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs flex items-center gap-2">
                 <AlertCircle size={16} className="shrink-0" />
                 <span>{submitError}</span>
               </div>
             )}
-
           </div>
         )}
 
@@ -2870,7 +2829,7 @@ export const BookingPage: React.FC = () => {
                       </>
                     ) : (
                       <>
-                        <span>Mở trang thanh toán online ({quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫)</span>
+                        <span>Thanh toán ngay ({quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫)</span>
                         <ExternalLink size={17} />
                       </>
                     )}

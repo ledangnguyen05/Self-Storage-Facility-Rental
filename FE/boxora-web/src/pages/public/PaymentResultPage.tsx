@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
+import { activateCustomerRental } from '../../utils/rentalAccess'
 import { bookingService } from '../../services/bookingService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
 import { contractService } from '../../services/contractService'
 import { Booking, RentalContract, ContractRenewal } from '../../types'
 import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
+import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
 import { RenewalDocumentModal } from '../../components/modals/RenewalDocumentModal'
 import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
 import { LayoutDashboard } from 'lucide-react'
@@ -17,6 +20,8 @@ const dateTime = (value?: string | null) => value
   : 'Chưa lên lịch'
 
 export const PaymentResultPage = () => {
+  const { user } = useAuth()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const rawBookingId = searchParams.get('bookingId') || ''
   const bookingId = rawBookingId && rawBookingId !== 'null' && rawBookingId !== 'undefined' ? rawBookingId : ''
@@ -25,7 +30,12 @@ export const PaymentResultPage = () => {
   const paymentTypeParam = searchParams.get('paymentType') || ''
   const amountParam = searchParams.get('amount') || ''
   const txnRef = searchParams.get('txnRef') || searchParams.get('vnp_TxnRef') || ''
-  const gatewayStatus = searchParams.get('status') || ''
+  const vnpResponseCode = searchParams.get('vnp_ResponseCode') || ''
+  const vnpTransactionStatus = searchParams.get('vnp_TransactionStatus') || ''
+  const vnpSecureHash = searchParams.get('vnp_SecureHash') || ''
+  const vnpAmountRaw = searchParams.get('vnp_Amount') || ''
+  const effectiveAmountParam = amountParam || (vnpAmountRaw ? String(Math.round(Number(vnpAmountRaw) / 100)) : '')
+  const gatewayStatus = searchParams.get('status') || (vnpResponseCode === '00' && (!vnpTransactionStatus || vnpTransactionStatus === '00') ? 'PAID' : (vnpResponseCode ? 'FAILED' : ''))
 
   const [booking, setBooking] = useState<Booking | null>(null)
   const [contract, setContract] = useState<RentalContract | null>(null)
@@ -37,6 +47,9 @@ export const PaymentResultPage = () => {
   const [attempts, setAttempts] = useState(0)
   const [showContract, setShowContract] = useState(false)
   const [showRenewalDoc, setShowRenewalDoc] = useState(false)
+  const [contractForSimulation, setContractForSimulation] = useState<RentalContract | null>(null)
+  const [justSigned, setJustSigned] = useState(false)
+  const [openingSignModal, setOpeningSignModal] = useState(false)
 
   const refresh = useCallback(async (initial = false) => {
     if (initial) setLoading(true)
@@ -44,6 +57,21 @@ export const PaymentResultPage = () => {
       let resolvedPayment: PaymentItem | null = null
       let targetContractId = contractIdParam
       let targetBookingId = bookingId
+
+      // 0. If VNPay redirected directly to /payment-result with vnp_SecureHash, verify & commit payment on backend first
+      if (vnpSecureHash || vnpResponseCode) {
+        try {
+          const verified = await paymentService.verifyVNPayReturn(window.location.search)
+          if (verified) {
+            resolvedPayment = verified
+            setPayments([verified])
+            if (verified.contractId) targetContractId = verified.contractId
+            if (verified.bookingId) targetBookingId = verified.bookingId
+          }
+        } catch (verifyErr) {
+          console.warn('VNPay verify call warning:', verifyErr)
+        }
+      }
 
       // 1. Try to lookup payment by txnRef first
       if (txnRef) {
@@ -112,7 +140,7 @@ export const PaymentResultPage = () => {
         const fallbackPayment: PaymentItem = {
           id: txnRef,
           transactionId: txnRef,
-          amount: Number(amountParam || 0),
+          amount: Number(effectiveAmountParam || 0),
           status: 'PAID',
           paymentType: paymentTypeParam || (targetContractId ? 'RENEWAL_FEE' : 'BOOKING_PAYMENT'),
           paymentMethod: 'VNPAY',
@@ -136,7 +164,7 @@ export const PaymentResultPage = () => {
     } finally {
       if (initial) setLoading(false)
     }
-  }, [bookingId, contractIdParam, txnRef, gatewayStatus, amountParam, paymentTypeParam])
+  }, [bookingId, contractIdParam, txnRef, gatewayStatus, effectiveAmountParam, paymentTypeParam, vnpSecureHash, vnpResponseCode])
 
   useEffect(() => {
     void refresh(true)
@@ -157,15 +185,79 @@ export const PaymentResultPage = () => {
     return payments.find(payment => payment.status === 'PAID') || payments[0] || null
   }, [payments, txnRef])
 
-  const paid = authoritativePayment?.status === 'PAID' || gatewayStatus.toUpperCase() === 'PAID'
-  
+  const paid = authoritativePayment?.status === 'PAID' || gatewayStatus.toUpperCase() === 'PAID' || booking?.paymentStatus === 'PAID'
+
+  useEffect(() => {
+    if (!paid) return
+    const targetCode = booking?.bookingCode || authoritativePayment?.bookingCode
+    const targetBId = booking?.id || authoritativePayment?.bookingId || bookingId
+    if (!targetCode && !targetBId) return
+    try {
+      const raw = localStorage.getItem('boxora_guest_reservations')
+      if (raw) {
+        const list = JSON.parse(raw)
+        if (Array.isArray(list)) {
+          let changed = false
+          const updated = list.map((item: any) => {
+            if (
+              (targetCode && item.bookingCode === targetCode) ||
+              (targetBId && (item.id === targetBId || item.backendBookingId === targetBId))
+            ) {
+              changed = true
+              return {
+                ...item,
+                paymentStatus: 'PAID',
+                status: item.status === 'PENDING_CONTACT' || item.status === 'PENDING_PAYMENT' ? 'CONFIRMED' : item.status,
+                depositPaid: booking?.depositAmount || authoritativePayment?.amount || item.depositAmount || 0,
+                paidAt: new Date().toISOString(),
+              }
+            }
+            return item
+          })
+          if (changed) {
+            localStorage.setItem('boxora_guest_reservations', JSON.stringify(updated))
+            window.dispatchEvent(new CustomEvent('boxora_reservation_status_changed'))
+            window.dispatchEvent(new CustomEvent('boxora_rental_updated'))
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to sync local reservation paid state:', e)
+    }
+  }, [paid, booking, authoritativePayment, bookingId])
+
   const isRenewal = authoritativePayment?.paymentType === 'RENEWAL_FEE'
     || paymentTypeParam === 'RENEWAL_FEE'
     || Boolean(matchingRenewal)
-    || Boolean(contract && !booking)
+    || Boolean(contract && !booking && !bookingId && !authoritativePayment?.bookingId)
 
   const contractSigned = Boolean(contract?.signedAt)
-    && (contract?.status === 'PENDING_ACTIVATION' || contract?.status === 'ACTIVE')
+    || contract?.status === 'PENDING_ACTIVATION'
+    || contract?.status === 'ACTIVE'
+    || Boolean(booking?.contractSigned)
+
+  const handleOpenSignContract = async () => {
+    if (contract) {
+      setContractForSimulation(contract)
+      return
+    }
+    const targetBId = booking?.id || authoritativePayment?.bookingId || bookingId
+    if (!targetBId) return
+    setOpeningSignModal(true)
+    try {
+      const fetchedContract = await contractService.getContractByBookingId(targetBId)
+      if (fetchedContract) {
+        setContract(fetchedContract)
+        setContractForSimulation(fetchedContract)
+        return
+      }
+    } catch (err) {
+      console.warn('Could not load contract directly on payment-result, navigating:', err)
+    } finally {
+      setOpeningSignModal(false)
+    }
+    navigate(`/online-booking-contract?bookingId=${encodeURIComponent(targetBId)}&autoSign=true`)
+  }
 
   const pendingReconciliation = !paid && (
     gatewayStatus.toUpperCase() === 'PAID'
@@ -178,7 +270,7 @@ export const PaymentResultPage = () => {
     : false
 
   const retryPayment = async () => {
-    if (!booking || !contractSigned || paymentExpired) return
+    if (!booking || paymentExpired) return
     setRetrying(true)
     setError('')
     try {
@@ -187,6 +279,7 @@ export const PaymentResultPage = () => {
         paymentType: 'BOOKING_PAYMENT',
         amount: Number(booking.totalRentalFee || 0) + Number(booking.depositAmount || 0),
         orderInfo: `Thanh toan booking ${booking.bookingCode}`,
+        returnUrl: `${window.location.origin}/payment-result`,
       })
       window.location.assign(result.paymentUrl)
     } catch (requestError) {
@@ -267,7 +360,7 @@ export const PaymentResultPage = () => {
                 <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
                   <dt className="text-xs text-slate-500 font-medium">Số tiền cước gia hạn</dt>
                   <dd className="mt-1 font-mono font-bold text-emerald-700 text-base">
-                    {money(authoritativePayment?.amount || amountParam)}
+                    {money(authoritativePayment?.amount || effectiveAmountParam)}
                   </dd>
                 </div>
               </dl>
@@ -327,7 +420,7 @@ export const PaymentResultPage = () => {
                   <span className="material-symbols-outlined text-3xl">check_circle</span>
                 </div>
                 <p className="mt-3 text-xs font-bold uppercase tracking-wider text-emerald-700">
-                  Thanh toán đã được backend xác nhận
+                  Giao dịch đã được ghi nhận thành công
                 </p>
                 <h1 className="mt-1 text-2xl font-extrabold text-slate-900">
                   Đặt thuê và thanh toán thành công!
@@ -340,7 +433,7 @@ export const PaymentResultPage = () => {
                 <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Trạng thái hợp đồng</dt><dd className="mt-1 font-semibold text-emerald-700">{contractSigned ? 'Đã ký điện tử' : 'Chờ ký điện tử'}</dd>{contract?.contractCode && <dd className="font-mono text-xs text-slate-500">{contract.contractCode}</dd>}</div>
                 <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Trạng thái thanh toán</dt><dd className="mt-1 font-semibold text-emerald-700">Đã xác nhận</dd></div>
                 <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Mã giao dịch</dt><dd className="mt-1 break-all font-mono text-xs font-semibold">{authoritativePayment?.transactionId || txnRef || 'Đã xác nhận'}</dd></div>
-                <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Số tiền đã thanh toán</dt><dd className="mt-1 font-mono font-bold text-emerald-700">{money(authoritativePayment?.amount || amountParam)}</dd></div>
+                <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">Số tiền đã thanh toán</dt><dd className="mt-1 font-mono font-bold text-emerald-700">{money(authoritativePayment?.amount || effectiveAmountParam)}</dd></div>
               </dl>
 
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
@@ -349,28 +442,55 @@ export const PaymentResultPage = () => {
                 <p className="mt-1 text-xs leading-relaxed">Ngày bắt đầu và kết thúc thuê chính thức được Boxora ghi nhận khi hoàn tất check-in tại cơ sở. Thanh toán chưa tự kích hoạt PIN; PIN được cấp theo quy trình bàn giao.</p>
               </div>
 
+              {justSigned && (
+                <div className="rounded-2xl border border-emerald-300 bg-emerald-50/90 p-4 text-emerald-900 shadow-sm flex items-start gap-3">
+                  <span className="material-symbols-outlined text-2xl text-emerald-600 shrink-0">verified</span>
+                  <div className="flex-1 text-xs leading-relaxed">
+                    <strong className="block text-sm text-emerald-950 mb-0.5">Đã ký hợp đồng điện tử thành công!</strong>
+                    Hợp đồng thuê kho #{contract?.contractCode} đã được lưu chữ ký số hợp lệ. Đơn đặt thuê của bạn đã hoàn tất đầy đủ thủ tục trực tuyến.
+                  </div>
+                </div>
+              )}
+
               {!contractSigned ? (
                 <div className="rounded-2xl border-2 border-blue-500 bg-blue-50/90 p-5 sm:p-6 text-sm text-blue-950 shadow-md">
-                  <div className="flex items-center gap-2.5 font-bold text-base text-blue-900 mb-2">
-                    <span className="material-symbols-outlined text-[24px] text-blue-600">draw</span>
-                    <span>Bắt buộc: Ký hợp đồng điện tử để hoàn tất đặt thuê</span>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2.5 font-bold text-base text-blue-900">
+                      <span className="material-symbols-outlined text-[24px] text-blue-600">draw</span>
+                      <span>Bước tiếp theo: Ký hợp đồng điện tử</span>
+                    </div>
+                    {contract?.contractCode && (
+                      <span className="font-mono text-xs font-bold bg-white/80 text-blue-700 px-2.5 py-1 rounded-lg border border-blue-200">
+                        {contract.contractCode}
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-blue-800 leading-relaxed">
-                    Thanh toán của bạn đã được ghi nhận thành công! Theo quy định thuê kho tại Boxora, bạn cần hoàn thành ký hợp đồng điện tử trực tuyến ngay để đơn đặt thuê có hiệu lực và sẵn sàng cho thủ tục nhận bàn giao kho đúng lịch hẹn.
+                    Thanh toán của bạn đã được xác nhận thành công! Hợp đồng điện tử đã được khởi tạo theo thông tin đặt kho của bạn. Vui lòng kiểm tra và ký xác nhận hợp đồng điện tử ngay bên dưới để hoàn tất thủ tục.
                   </p>
-                  <div className="mt-5">
-                    <Link
-                      to={`/online-booking-contract?bookingId=${encodeURIComponent(bookingId)}`}
-                      className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 py-3.5 px-6 text-sm font-bold text-white shadow-lg shadow-blue-600/25 transition-all cursor-pointer"
+                  <div className="mt-4 flex flex-col sm:flex-row gap-2.5">
+                    <button
+                      type="button"
+                      disabled={openingSignModal}
+                      onClick={() => void handleOpenSignContract()}
+                      className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 py-3.5 px-5 text-sm font-bold text-white shadow-lg shadow-blue-600/25 transition-all cursor-pointer disabled:opacity-60"
                     >
                       <span className="material-symbols-outlined text-[20px]">draw</span>
-                      <span>Ký hợp đồng điện tử ngay</span>
-                      <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
-                    </Link>
+                      <span>{openingSignModal ? 'Đang mở hợp đồng...' : 'Ký hợp đồng điện tử ngay'}</span>
+                    </button>
+                    {contract && (
+                      <button
+                        type="button"
+                        onClick={() => setShowContract(true)}
+                        className="rounded-xl border border-blue-300 bg-white hover:bg-blue-50 py-3.5 px-4 text-sm font-bold text-blue-800 transition-all cursor-pointer"
+                      >
+                        Xem nội dung hợp đồng
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="flex flex-col gap-2.5 sm:flex-row">
                   {contract && (
                     <button
                       type="button"
@@ -380,6 +500,12 @@ export const PaymentResultPage = () => {
                       Xem hợp đồng đã ký
                     </button>
                   )}
+                  <Link
+                    to="/my-bookings"
+                    className="flex-1 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 px-4 py-3 text-center text-sm font-bold text-blue-800 transition cursor-pointer"
+                  >
+                    Đơn đặt chỗ của tôi
+                  </Link>
                   <Link
                     to="/portal/customer"
                     className="flex-1 rounded-xl bg-blue-700 hover:bg-blue-800 px-4 py-3 text-center text-sm font-bold text-white transition cursor-pointer"
@@ -425,6 +551,32 @@ export const PaymentResultPage = () => {
           contract={contract}
           booking={booking}
           onClose={() => setShowContract(false)}
+          onSignNow={!contractSigned ? () => {
+            setShowContract(false)
+            setContractForSimulation(contract)
+          } : undefined}
+        />
+      )}
+
+      {contractForSimulation && (
+        <DocuSealSimulationModal
+          contract={contractForSimulation}
+          booking={booking}
+          onClose={() => setContractForSimulation(null)}
+          onSignedSuccess={(updated) => {
+            setContract(updated)
+            setContractForSimulation(null)
+            setJustSigned(true)
+            if (booking && user) {
+              activateCustomerRental(
+                user,
+                booking.unitCode || 'KHO-BX',
+                booking.facilityName || 'Boxora Smart Storage',
+                updated.contractCode
+              )
+            }
+            void refresh()
+          }}
         />
       )}
 

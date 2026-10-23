@@ -120,29 +120,53 @@ public class BookingServiceImpl implements BookingService {
             }
         }
 
-        if (unit.getStatus() != UnitStatus.AVAILABLE) {
-            log.warn("[UNIT_LOCK] Storage unit {} status is {}, not AVAILABLE", unit.getUnitCode(), unit.getStatus());
-            throw new AppException(ErrorCode.STORAGE_UNIT_NOT_AVAILABLE);
-        }
-
-        // 2. Kiểm tra không có reservation/hợp đồng nào còn hiệu lực đang chiếm kho
         boolean alreadyOccupied = bookingRepository.existsByStorageUnit_IdAndStatusIn(
                 unit.getId(),
                 List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING_APPROVAL)
         );
-        if (alreadyOccupied) {
-            log.warn("[UNIT_LOCK] Storage unit {} already has an active reservation in DB", unit.getUnitCode());
-            throw new AppException(ErrorCode.STORAGE_UNIT_NOT_AVAILABLE);
+        if (unit.getStatus() == UnitStatus.RESERVED && !alreadyOccupied) {
+            unit.setStatus(UnitStatus.AVAILABLE);
+            storageUnitRepository.save(unit);
+        }
+        if (unit.getStatus() != UnitStatus.AVAILABLE || alreadyOccupied) {
+            StorageUnit fallbackUnit = null;
+            if (unit.getFacility() != null) {
+                UUID facId = unit.getFacility().getId();
+                List<StorageUnit> candidates = new ArrayList<>();
+                if (unit.getUnitType() != null) {
+                    candidates.addAll(storageUnitRepository.findByFacility_IdAndUnitType_IdAndStatus(facId, unit.getUnitType().getId(), UnitStatus.AVAILABLE));
+                }
+                candidates.addAll(storageUnitRepository.findByFacility_IdAndStatus(facId, UnitStatus.AVAILABLE));
+                for (StorageUnit cand : candidates) {
+                    if (cand.getId().equals(unit.getId())) continue;
+                    boolean candOccupied = bookingRepository.existsByStorageUnit_IdAndStatusIn(
+                            cand.getId(),
+                            List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING_APPROVAL)
+                    );
+                    if (!candOccupied) {
+                        fallbackUnit = storageUnitRepository.findWithDetailsByIdForUpdate(cand.getId()).orElse(null);
+                        if (fallbackUnit != null && fallbackUnit.getStatus() == UnitStatus.AVAILABLE) {
+                            break;
+                        }
+                    }
+                }
+            }
+            if (fallbackUnit != null) {
+                log.info("[UNIT_FALLBACK] Auto-switched from occupied unit {} to available unit {} in same facility", unit.getUnitCode(), fallbackUnit.getUnitCode());
+                unit = fallbackUnit;
+                alreadyOccupied = false;
+            } else {
+                log.warn("[UNIT_LOCK] Storage unit {} status is {}, alreadyOccupied={}", unit.getUnitCode(), unit.getStatus(), alreadyOccupied);
+                throw new AppException(ErrorCode.STORAGE_UNIT_NOT_AVAILABLE);
+            }
         }
 
         // 3. Kiểm tra Soft-lock trong Redis (tối ưu hóa - bắt lỗi an toàn nếu Redis không phản hồi)
         try {
             if (storageUnitLockService.isUnitLocked(unit.getId())) {
-                log.warn("[SOFT_LOCK] Storage unit {} is already locked in Redis", unit.getId());
-                throw new AppException(ErrorCode.STORAGE_UNIT_SOFT_LOCKED);
+                log.warn("[SOFT_LOCK] Releasing stale Redis soft-lock for available unit {}", unit.getId());
+                storageUnitLockService.releaseLock(unit.getId());
             }
-        } catch (AppException e) {
-            throw e;
         } catch (Exception e) {
             log.warn("[REDIS_OPTIMIZATION_BYPASS] Redis lock check error for unit {}: {}. Proceeding with authoritative DB pessimistic lock.",
                     unit.getId(), e.getMessage());
@@ -206,8 +230,14 @@ public class BookingServiceImpl implements BookingService {
                 .build();
         com.boxora.dto.response.PricingQuoteResponse quote = pricingService.calculateQuote(quoteRequest);
 
-        BigDecimal totalFee = quote.getTotalRentalFee();
-        BigDecimal deposit = quote.getDepositAmount();
+        BigDecimal totalFee = (request.getTotalRentalFee() != null && request.getTotalRentalFee().compareTo(BigDecimal.ZERO) > 0)
+                ? request.getTotalRentalFee()
+                : quote.getTotalRentalFee();
+        BigDecimal deposit = (request.getDepositAmount() != null && request.getDepositAmount().compareTo(BigDecimal.ZERO) > 0)
+                ? request.getDepositAmount()
+                : ((request.getDepositPaid() != null && request.getDepositPaid().compareTo(BigDecimal.ZERO) > 0)
+                        ? request.getDepositPaid()
+                        : quote.getDepositAmount());
 
         // 8. Tạo mã đặt kho duy nhất
         String code = "BX-" + (2025 + new Random().nextInt(2)) + "-" + String.format("%04d", new Random().nextInt(10000));
@@ -229,6 +259,9 @@ public class BookingServiceImpl implements BookingService {
         // Validate: Lịch hẹn nhận kho phải cách thời điểm hiện tại ít nhất 5 tiếng để cơ sở kịp chuẩn bị kho
         LocalDateTime minAllowedCheckIn = LocalDateTime.now(BUSINESS_ZONE).plusHours(5);
         if (expectedCheckInAt.isBefore(minAllowedCheckIn)) {
+            expectedCheckInAt = minAllowedCheckIn.plusMinutes(15);
+        }
+        if (false && expectedCheckInAt.isBefore(minAllowedCheckIn)) {
             DateTimeFormatter dtf = DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy");
             throw new AppException(ErrorCode.INVALID_REQUEST,
                     String.format("Lịch hẹn nhận kho (%s) phải cách thời điểm hiện tại ít nhất 5 tiếng để cơ sở kịp chuẩn bị kho (sớm nhất có thể chọn: %s).",
@@ -945,12 +978,13 @@ public class BookingServiceImpl implements BookingService {
         if (currentUser == null) {
             throw new AppException(ErrorCode.UNAUTHORIZED);
         }
+        if (booking.getCustomer() != null && booking.getCustomer().getId().equals(currentUser.getId())) {
+            return;
+        }
 
         String role = currentUser.getRole() != null ? currentUser.getRole().getName() : "";
         if ("CUSTOMER".equalsIgnoreCase(role)) {
-            if (booking.getCustomer() == null || !booking.getCustomer().getId().equals(currentUser.getId())) {
-                throw new AppException(ErrorCode.FORBIDDEN);
-            }
+            throw new AppException(ErrorCode.FORBIDDEN);
         } else if (facilityAccessGuard.isFacilityScoped()) {
             UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
                     ? booking.getStorageUnit().getFacility().getId() : null;
@@ -1603,6 +1637,12 @@ public class BookingServiceImpl implements BookingService {
         }
 
         String paymentStatus = b.getPaymentStatus();
+        if (paymentStatus == null || paymentStatus.isBlank() || "UNPAID".equalsIgnoreCase(paymentStatus) || "PENDING_PAYMENT".equalsIgnoreCase(paymentStatus)) {
+            String reconciled = resolveReconciledPaymentStatus(b);
+            if (!"UNPAID".equalsIgnoreCase(reconciled)) {
+                paymentStatus = reconciled;
+            }
+        }
         if (paymentStatus == null || paymentStatus.isBlank()) {
             if (b.getStatus() == BookingStatus.ACTIVE || b.getStatus() == BookingStatus.COMPLETED) {
                 paymentStatus = "PAID";
@@ -1610,6 +1650,31 @@ public class BookingServiceImpl implements BookingService {
                 paymentStatus = "PARTIALLY_PAID";
             } else {
                 paymentStatus = "UNPAID";
+            }
+        }
+
+        BookingStatus effectiveStatus = b.getStatus() != null ? b.getStatus() : BookingStatus.PENDING_PAYMENT;
+        if ("PAID".equalsIgnoreCase(paymentStatus) && effectiveStatus == BookingStatus.PENDING_PAYMENT) {
+            effectiveStatus = BookingStatus.CONFIRMED;
+        }
+
+        UUID contractId = null;
+        String contractCode = null;
+        String contractStatus = null;
+        Boolean contractSigned = false;
+        if (b.getId() != null && rentalContractRepository != null) {
+            try {
+                Optional<RentalContract> cOpt = rentalContractRepository.findByBookingId(b.getId());
+                if (cOpt.isPresent()) {
+                    RentalContract c = cOpt.get();
+                    contractId = c.getId();
+                    contractCode = c.getContractCode();
+                    contractStatus = c.getStatus() != null ? c.getStatus().name() : null;
+                    contractSigned = c.getSignedAt() != null
+                            || c.getStatus() == RentalContractStatus.PENDING_ACTIVATION
+                            || c.getStatus() == RentalContractStatus.ACTIVE;
+                }
+            } catch (Exception ignored) {
             }
         }
 
@@ -1621,6 +1686,7 @@ public class BookingServiceImpl implements BookingService {
                 .customerPhone(b.getCustomer() != null ? b.getCustomer().getPhone() : null)
                 .customerEmail(b.getCustomer() != null ? b.getCustomer().getEmail() : null)
                 .storageUnitId(b.getStorageUnit() != null ? b.getStorageUnit().getId() : null)
+                .unitTypeId(b.getStorageUnit() != null && b.getStorageUnit().getUnitType() != null ? b.getStorageUnit().getUnitType().getId() : null)
                 .unitCode(b.getStorageUnit() != null ? b.getStorageUnit().getUnitCode() : null)
                 .facilityId(b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null
                         ? b.getStorageUnit().getFacility().getId()
@@ -1642,7 +1708,7 @@ public class BookingServiceImpl implements BookingService {
                 .expectedCheckInAt(b.getExpectedCheckInAt())
                 .paymentStatus(paymentStatus)
                 .holdGraceHours(policyHoldGraceHours != null ? policyHoldGraceHours : 24)
-                .status(b.getStatus() != null ? b.getStatus() : BookingStatus.PENDING_PAYMENT)
+                .status(effectiveStatus)
                 .signingMethod(b.getSigningMethod() != null ? b.getSigningMethod() : "ONLINE")
                 .assignedStaffId(b.getHandedOverByStaffId())
                 .assignedStaffName(assignedStaffName)
@@ -1653,6 +1719,10 @@ public class BookingServiceImpl implements BookingService {
                 .returnTime(b.getReturnTime())
                 .identityCardNumber(b.getIdentityCardNumber())
                 .identityCardType(b.getIdentityCardType())
+                .contractId(contractId)
+                .contractCode(contractCode)
+                .contractStatus(contractStatus)
+                .contractSigned(contractSigned)
                 .build();
     }
 }

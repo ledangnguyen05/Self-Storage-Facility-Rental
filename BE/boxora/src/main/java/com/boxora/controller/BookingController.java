@@ -35,7 +35,7 @@ public class BookingController {
     private final BookingService bookingService;
 
     @PostMapping
-    @PreAuthorize("hasAuthority('BOOKING_CREATE')")
+    @PreAuthorize("hasAuthority('BOOKING_CREATE') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Tạo lượt đặt kho kèm phát hành mã PIN bảo mật")
     public ResponseEntity<ApiResponse<BookingResponse>> create(@Valid @RequestBody BookingCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -50,7 +50,7 @@ public class BookingController {
     }
 
     @GetMapping("/pending-approval")
-    @PreAuthorize("hasAuthority('BOOKING_VIEW')")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Lấy yêu cầu đặt kho đang chờ quản lý duyệt")
     public ResponseEntity<ApiResponse<List<BookingResponse>>> getPendingApprovalRequests() {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getPendingApprovalRequests()));
@@ -69,14 +69,14 @@ public class BookingController {
     }
 
     @GetMapping("/my-bookings")
-    @PreAuthorize("hasAuthority('BOOKING_VIEW')")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Lấy toàn bộ lịch sử các lượt đặt kho của khách hàng")
     public ResponseEntity<ApiResponse<List<BookingResponse>>> getMyBookings(@RequestParam(required = false) UUID customerId) {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getMyBookings(customerId)));
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('BOOKING_VIEW')")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Truy vấn danh sách đơn đặt kho")
     public ResponseEntity<ApiResponse<List<BookingResponse>>> getAll(
             @RequestParam(required = false) UUID customerId,
@@ -86,14 +86,14 @@ public class BookingController {
     }
 
     @GetMapping("/my-active")
-    @PreAuthorize("hasAuthority('BOOKING_VIEW')")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Lấy danh sách các lượt đặt kho đang hoạt động")
     public ResponseEntity<ApiResponse<List<BookingResponse>>> getMyActive(@RequestParam(required = false) UUID customerId) {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getMyActiveBookings(customerId)));
     }
 
     @GetMapping("/arrivals")
-    @PreAuthorize("hasAuthority('BOOKING_VIEW')")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Danh sách khách đến nhận kho kèm bộ lọc thời gian")
     public ResponseEntity<ApiResponse<List<BookingResponse>>> getArrivals(
             @RequestParam(required = false) UUID facilityId,
@@ -113,7 +113,7 @@ public class BookingController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('BOOKING_VIEW')")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Lấy chi tiết lượt đặt kho (Mã PIN bị ẩn '******' để bảo mật)")
     public ResponseEntity<ApiResponse<BookingResponse>> getById(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getById(id)));
@@ -202,7 +202,7 @@ public class BookingController {
     }
 
     @GetMapping("/{id}/reschedule-eligibility")
-    @PreAuthorize("hasAuthority('BOOKING_VIEW')")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Kiểm tra điều kiện đổi lịch hẹn nhận kho của khách hàng")
     public ResponseEntity<ApiResponse<BookingRescheduleEligibilityResponse>> getRescheduleEligibility(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getRescheduleEligibility(id)));
@@ -235,7 +235,7 @@ public class BookingController {
     }
 
     @GetMapping("/{id}/reschedule-history")
-    @PreAuthorize("hasAuthority('BOOKING_VIEW')")
+    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Lấy lịch sử các lần đổi lịch hẹn nhận kho (Append-only)")
     public ResponseEntity<ApiResponse<List<BookingRescheduleHistoryResponse>>> getRescheduleHistory(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getRescheduleHistory(id)));

@@ -261,7 +261,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   endDate: r.rentalEndDate || '',
                   rentalMonths: r.rentalMonths || 1,
                   totalRentalFee: r.totalRentalFee ?? r.totalRent ?? 0,
-                  depositPaid: 0,
+                  depositPaid: r.depositPaid ?? (r.paymentStatus === 'PAID' ? (r.depositAmount ?? 0) : 0),
                   depositAmount: r.depositAmount ?? 0,
                   status: (r.status as any) || 'PENDING_CONTACT',
                   accessCode: code,
@@ -269,7 +269,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   checkInTime: r.checkInTime,
                   identityCardNumber: r.customer?.idCard || '',
                   identityCardType: 'CCCD',
-                  paymentStatus: 'UNPAID_IN_PERSON',
+                  paymentStatus: r.paymentStatus === 'PAID' ? 'PAID' : 'UNPAID_IN_PERSON',
                 })
               }
             })
@@ -397,11 +397,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
   // Real Customer Financial Summaries from DB
   const totalAmountPaid = useMemo(() => {
-    return customerPayments.filter(p => p.status === 'SUCCESS').reduce((sum, p) => sum + (p.amount || 0), 0)
+    return customerPayments.filter(p => p.status === 'PAID' || p.status === 'SUCCESS').reduce((sum, p) => sum + (p.amount || 0), 0)
   }, [customerPayments])
 
   const totalDepositsHeld = useMemo(() => {
-    const fromPayments = customerPayments.filter(p => p.status === 'SUCCESS' && p.paymentType === 'DEPOSIT').reduce((sum, p) => sum + (p.amount || 0), 0)
+    const fromPayments = customerPayments.filter(p => (p.status === 'PAID' || p.status === 'SUCCESS') && (p.paymentType === 'DEPOSIT' || p.paymentType === 'BOOKING_PAYMENT')).reduce((sum, p) => sum + (p.amount || 0), 0)
     const fromContracts = contracts.reduce((sum, c) => sum + (c.depositHeld || 0), 0)
     return fromPayments > 0 ? fromPayments : fromContracts
   }, [customerPayments, contracts])
@@ -411,7 +411,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   }, [activatedContracts])
 
   const successfulPaymentsCount = useMemo(() => {
-    return customerPayments.filter(p => p.status === 'SUCCESS').length
+    return customerPayments.filter(p => p.status === 'PAID' || p.status === 'SUCCESS').length
   }, [customerPayments])
 
   // Support Ticket Form State

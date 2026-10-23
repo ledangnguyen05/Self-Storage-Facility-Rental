@@ -47,9 +47,21 @@ export const paymentService = {
     paymentType: PaymentType
     amount: number
     orderInfo?: string
+    returnUrl?: string
   }) {
-    const response = await api.post('/api/v1/payments/vnpay/create', data)
+    const returnUrl = data.returnUrl || (typeof window !== 'undefined' ? `${window.location.origin}/payment-result` : undefined)
+    const response = await api.post('/api/v1/payments/vnpay/create', { ...data, returnUrl })
     return response.data?.data as VNPayPayment
+  },
+
+  async verifyVNPayReturn(rawQueryOrParams: string | Record<string, string>): Promise<PaymentItem> {
+    if (typeof rawQueryOrParams === 'string') {
+      const query = rawQueryOrParams.startsWith('?') ? rawQueryOrParams : `?${rawQueryOrParams}`
+      const response = await api.get(`/api/v1/payments/vnpay-verify${query}`)
+      return response.data?.data as PaymentItem
+    }
+    const response = await api.get('/api/v1/payments/vnpay-verify', { params: rawQueryOrParams })
+    return response.data?.data as PaymentItem
   },
 
   async getPayments(params?: { status?: string; size?: number; page?: number; facilityId?: string; customerId?: string }) {
@@ -93,4 +105,3 @@ export const paymentService = {
     return (response.data?.data || []) as PaymentItem[]
   },
 }
-

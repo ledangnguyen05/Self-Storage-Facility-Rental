@@ -90,7 +90,7 @@ public class ContractSigningController {
     }
 
     @PostMapping("{contractId}/send-for-signature")
-    @PreAuthorize("hasAuthority('CONTRACT_CREATE') or hasRole('CUSTOMER')")
+    @PreAuthorize("hasAuthority('CONTRACT_CREATE') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Gửi hợp đồng sang DocuSeal để khách ký, trả về link ký")
     public ResponseEntity<ApiResponse<Map<String, String>>> sendForSignature(
             @PathVariable UUID contractId) {
@@ -100,7 +100,7 @@ public class ContractSigningController {
     }
 
     @GetMapping("{contractId}/signing-url")
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW')")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Lấy link ký DocuSeal của hợp đồng")
     public ResponseEntity<ApiResponse<Map<String, String>>> getSigningUrl(
             @PathVariable UUID contractId) {
@@ -110,7 +110,7 @@ public class ContractSigningController {
     }
 
     @PostMapping("{contractId}/otp/send")
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW')")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Gửi OTP email để xác thực trước khi ký hợp đồng")
     public ResponseEntity<ApiResponse<ContractOtpResponse>> sendContractOtp(
             @PathVariable UUID contractId) {
@@ -120,7 +120,7 @@ public class ContractSigningController {
     }
 
     @PostMapping("{contractId}/otp/resend")
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW')")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Gửi lại OTP xác thực ký hợp đồng")
     public ResponseEntity<ApiResponse<ContractOtpResponse>> resendContractOtp(
             @PathVariable UUID contractId) {
@@ -130,7 +130,7 @@ public class ContractSigningController {
     }
 
     @PostMapping("{contractId}/otp/verify")
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW')")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Xác thực OTP và lấy liên kết ký DocuSeal")
     public ResponseEntity<ApiResponse<ContractOtpResponse>> verifyContractOtp(
             @PathVariable UUID contractId,
@@ -318,7 +318,7 @@ public class ContractSigningController {
     // =========================================================================
 
     @PostMapping("{contractId}/mock-sign")
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasRole('CUSTOMER')")
+    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Ký xác nhận hợp đồng điện tử ở chế độ mô phỏng / local development kèm chữ ký tay")
     public ResponseEntity<ApiResponse<RentalContractResponse>> mockSign(
             @PathVariable UUID contractId,

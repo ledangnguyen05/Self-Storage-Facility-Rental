@@ -191,6 +191,10 @@ export interface Booking {
   staffAssignmentNotes?: string | null
   identityCardNumber?: string | null
   identityCardType?: string | null
+  contractId?: string | null
+  contractCode?: string | null
+  contractStatus?: string | null
+  contractSigned?: boolean | null
 }
 
 export interface BookingCancellationPreview {

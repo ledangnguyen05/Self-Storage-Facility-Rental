@@ -282,8 +282,8 @@ export const StaffDashboard: React.FC = () => {
                 rentalMonths: r.rentalMonths || 1,
                 totalRentalFee: r.totalRentalFee || 0,
                 depositAmount: r.depositAmount || 0,
-                depositPaid: 0,
-                paymentStatus: 'UNPAID',
+                depositPaid: r.depositPaid ?? (r.paymentStatus === 'PAID' ? (r.depositAmount || 0) : 0),
+                paymentStatus: r.paymentStatus === 'PAID' ? 'PAID' : 'UNPAID',
                 createdAt: r.createdAt,
               }))
 
@@ -327,8 +327,8 @@ export const StaffDashboard: React.FC = () => {
                 rentalMonths: r.rentalMonths || 1,
                 totalRentalFee: r.totalRentalFee || 0,
                 depositAmount: r.depositAmount || 0,
-                depositPaid: 0,
-                paymentStatus: 'UNPAID',
+                depositPaid: r.depositPaid ?? (r.paymentStatus === 'PAID' ? (r.depositAmount || 0) : 0),
+                paymentStatus: r.paymentStatus === 'PAID' ? 'PAID' : 'UNPAID',
                 createdAt: r.createdAt,
               }))
             setArrivals(localArrivals)
@@ -804,18 +804,18 @@ export const StaffDashboard: React.FC = () => {
 
   // Live shift revenue calculations from DB
   const shiftTotalCollected = useMemo(() => {
-    return shiftPayments.filter(p => p.status === 'SUCCESS').reduce((sum, p) => sum + (p.amount || 0), 0)
+    return shiftPayments.filter(p => p.status === 'PAID' || p.status === 'SUCCESS').reduce((sum, p) => sum + (p.amount || 0), 0)
   }, [shiftPayments])
 
   const shiftRentalRevenue = useMemo(() => {
     return shiftPayments
-      .filter(p => p.status === 'SUCCESS' && (!p.paymentType || p.paymentType === 'RENTAL' || p.paymentType === 'CONTRACT' || p.paymentType === 'EXTEND'))
+      .filter(p => (p.status === 'PAID' || p.status === 'SUCCESS') && (!p.paymentType || p.paymentType === 'RENTAL' || p.paymentType === 'RENTAL_FEE' || p.paymentType === 'BOOKING_PAYMENT' || p.paymentType === 'CONTRACT' || p.paymentType === 'EXTEND' || p.paymentType === 'RENEWAL_FEE'))
       .reduce((sum, p) => sum + (p.amount || 0), 0)
   }, [shiftPayments])
 
   const shiftDepositRevenue = useMemo(() => {
     return shiftPayments
-      .filter(p => p.status === 'SUCCESS' && p.paymentType === 'DEPOSIT')
+      .filter(p => (p.status === 'PAID' || p.status === 'SUCCESS') && p.paymentType === 'DEPOSIT')
       .reduce((sum, p) => sum + (p.amount || 0), 0)
   }, [shiftPayments])
 
