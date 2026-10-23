@@ -59,7 +59,7 @@ export const applyVietnamSovereignty = (map: L.Map): L.LayerGroup => {
   VIETNAM_SOVEREIGNTY_POINTS.forEach((point) => {
     const isSea = point.name === 'BIỂN ĐÔNG'
     const labelHtml = `
-      <div style="text-align: center; font-weight: 800; font-family: sans-serif; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.6); color: ${
+      <div style="text-align: center; font-weight: 800; font-family: 'Be Vietnam Pro', sans-serif; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.6); color: ${
         isSea ? '#0369a1' : '#b91c1c'
       }; font-size: ${isSea ? '13px' : '11px'}; letter-spacing: 0.5px;">
         <div>${point.name}</div>

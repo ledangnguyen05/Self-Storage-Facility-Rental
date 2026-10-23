@@ -299,7 +299,7 @@ export function DocuSealSimulationModal({
                         className="max-h-12 object-contain"
                       />
                     ) : (
-                      <span className="font-serif italic font-bold text-cyan-800 text-base">{signerName || customerDisplayName}</span>
+                      <span className="font-sans italic font-bold text-cyan-800 text-base">{signerName || customerDisplayName}</span>
                     )}
                   </div>
                 </div>
@@ -485,7 +485,7 @@ export function DocuSealSimulationModal({
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 font-medium"
                 />
                 <div className="flex h-20 items-center justify-center rounded-lg border border-cyan-200 bg-white shadow-inner">
-                  <span className="font-serif italic text-2xl text-cyan-900 font-bold tracking-wider select-none">
+                  <span className="font-sans italic text-2xl text-cyan-900 font-bold tracking-wider select-none">
                     {signerName || 'Chữ ký điện tử'}
                   </span>
                 </div>

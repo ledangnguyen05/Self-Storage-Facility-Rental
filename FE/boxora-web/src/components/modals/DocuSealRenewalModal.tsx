@@ -349,7 +349,7 @@ export function DocuSealRenewalModal({
                       value={signerName}
                       onChange={(e) => setSignerName(e.target.value)}
                       placeholder="Nhập họ và tên đầy đủ..."
-                      className="w-full h-11 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:border-blue-500 font-serif italic"
+                      className="w-full h-11 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:border-blue-500 font-sans italic"
                     />
                   </div>
                 )}

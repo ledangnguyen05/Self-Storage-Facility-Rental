@@ -109,7 +109,7 @@ export const RenewalDocumentModal: React.FC<RenewalDocumentModalProps> = ({
         </div>
 
         {/* Content - Formatted as Legal Document */}
-        <div className="flex-1 overflow-y-auto p-6 sm:p-12 text-slate-800 font-serif leading-relaxed print:p-0 print:overflow-visible">
+        <div className="flex-1 overflow-y-auto p-6 sm:p-12 text-slate-800 font-sans leading-relaxed print:p-0 print:overflow-visible">
           {/* Header Quốc Hiệu */}
           <div className="text-center pb-6 border-b border-slate-300">
             <h3 className="font-bold text-xs uppercase tracking-widest text-slate-900 font-sans">
