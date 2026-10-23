@@ -559,6 +559,9 @@ export const DICTIONARY: Record<string, string> = {
   'Hồ sơ tài khoản': 'Account Profile',
   'Chỉnh sửa hồ sơ': 'Edit Profile',
   'Chỉnh Sửa Hồ Sơ': 'Edit Profile',
+  'Tài khoản & Bảo mật': 'Account & Security',
+  'Hồ sơ cá nhân và mật khẩu': 'Profile and password',
+  'Chủ đề, phông chữ, ngôn ngữ': 'Theme, fonts, language',
   'Cập nhật họ tên, số điện thoại': 'Update full name, phone number',
   'Cập nhật thông tin cá nhân': 'Update personal details',
   'Cài đặt web & hệ thống': 'Web & System Settings',
@@ -873,6 +876,8 @@ Object.assign(DICTIONARY, {
   'Quy Trình Check-in & Nghiệm Thu Bàn Giao Kho': 'Check-in & Handover Acceptance Workflow',
   'Chuẩn hóa 4 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.':
     'Standardize 4 prerequisites (BR-RULE-005), 5-point inspection, on-site photo records, and secure PIN provisioning.',
+  'Chuẩn hóa 3 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.':
+    'Standardize 3 prerequisites (BR-RULE-005), 5-point inspection, on-site photo records, and secure PIN provisioning.',
   'Lịch Hẹn Bàn Giao Trong Ngày': "Today's Move-in Appointments",
   'Lịch Hẹn Nhận Kho Trong Ca': 'Shift Move-in Appointments',
   'Lịch Hẹn Nhận Kho': 'Move-in Appointments',
@@ -965,6 +970,7 @@ Object.assign(DICTIONARY, {
   'Đang trực ca': 'On Duty',
   'Đã kết thúc ca': 'Shift Ended',
   'Chưa vào ca': 'Not Checked In',
+  'Không đi làm': 'Absent',
   'Hôm nay không có lịch trực ca': 'No shift scheduled today',
   'Giám sát quản trị viên (Không trực ca)': 'Admin Oversight (No shift assignment)',
   'Tài khoản đăng nhập:': 'Signed-in account:',

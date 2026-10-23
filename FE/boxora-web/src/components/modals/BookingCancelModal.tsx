@@ -80,6 +80,38 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
     const finalReason = customReason.trim() || selectedReason || 'Khách hàng yêu cầu hủy đơn'
     setIsSubmitting(true)
     setSubmitError(null)
+
+    // Handle local guest reservations
+    if (booking.id?.startsWith('LOCAL-RES-')) {
+      try {
+        const raw = localStorage.getItem('boxora_guest_reservations')
+        if (raw) {
+          const list = JSON.parse(raw)
+          const remaining = list.filter((r: any) => r.bookingCode !== booking.bookingCode)
+          localStorage.setItem('boxora_guest_reservations', JSON.stringify(remaining))
+        }
+      } catch (e) {
+        console.warn('Error clearing local reservation:', e)
+      }
+      const localResult: BookingCancelResponse = {
+        bookingId: booking.id,
+        bookingCode: booking.bookingCode,
+        status: 'CANCELLED',
+        milestoneStage: 'STAGE_PENDING_NO_PAYMENT',
+        refundPercentage: 0,
+        refundAmount: 0,
+        penaltyAmount: 0,
+        unitReleased: true,
+        cancelledAt: new Date().toISOString(),
+        cancellationReason: finalReason,
+        message: 'Đã hủy đơn đặt giữ chỗ thành công.',
+      }
+      setSuccessResult(localResult)
+      onSuccess(localResult)
+      setIsSubmitting(false)
+      return
+    }
+
     try {
       const res = await bookingService.cancelBooking(booking.id, finalReason)
       setSuccessResult(res)

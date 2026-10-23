@@ -4,6 +4,7 @@ import com.boxora.common.response.ApiResponse;
 import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.ShiftHandoverAcknowledgeRequest;
 import com.boxora.dto.request.ShiftHandoverCreateRequest;
+import com.boxora.dto.request.ShiftHandoverDispatchRequest;
 import com.boxora.dto.response.ShiftHandoverResponse;
 import com.boxora.enums.ShiftHandoverStatus;
 import com.boxora.service.ShiftHandoverService;
@@ -51,6 +52,17 @@ public class ShiftHandoverController {
     ) {
         ShiftHandoverResponse response = shiftHandoverService.acknowledgeHandover(id, request);
         return ResponseEntity.ok(ApiResponse.success("Đã xác nhận tiếp nhận bàn giao ca", response));
+    }
+
+    @PatchMapping("/{id}/dispatch")
+    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @Operation(summary = "Quản lý cơ sở điều phối nhân sự tiếp nhận bàn giao ca (đặc biệt trong tình huống đột xuất)")
+    public ResponseEntity<ApiResponse<ShiftHandoverResponse>> dispatchRecipient(
+            @PathVariable UUID id,
+            @Valid @RequestBody ShiftHandoverDispatchRequest request
+    ) {
+        ShiftHandoverResponse response = shiftHandoverService.dispatchRecipient(id, request);
+        return ResponseEntity.ok(ApiResponse.success("Đã điều phối nhân sự tiếp nhận bàn giao thành công", response));
     }
 
     @GetMapping("/{id}")

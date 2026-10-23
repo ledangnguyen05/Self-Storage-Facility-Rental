@@ -59,6 +59,7 @@ public enum ActivityAction {
     STAFF_CHECKIN(false), STAFF_CHECKOUT(false),
     SHIFT_SWAP_REQUEST(false), SHIFT_SWAP_APPROVE(true), SHIFT_SWAP_REJECT(false),
     SHIFT_HANDOVER_CREATE(false), SHIFT_HANDOVER_ACKNOWLEDGE(false),
+    SHIFT_HANDOVER_DISPATCH(true), SHIFT_HANDOVER_REJECT(false),
 
     // Reports
     REPORT_EXPORTED(false);

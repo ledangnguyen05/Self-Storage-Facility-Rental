@@ -3,6 +3,7 @@ import { userService } from '../../../services/userService'
 import { staffAssignmentService } from '../../../services/staffAssignmentService'
 import { useAuth } from '../../../context/AuthContext'
 import { User, Facility } from '../../../types'
+import { STANDARD_SHIFTS_LIST, BOXORA_SHIFTS } from '../../../constants/shiftConstants'
 
 interface ShiftAssignmentModalProps {
   isOpen: boolean
@@ -258,24 +259,20 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
               Ca làm việc
             </label>
             <div className="grid grid-cols-3 gap-2">
-              {[
-                { type: 'MORNING' as const, label: 'Ca Sáng', time: '07:00 - 15:30' },
-                { type: 'AFTERNOON' as const, label: 'Ca Chiều', time: '14:30 - 22:00' },
-                { type: 'NIGHT' as const, label: 'Ca Đêm', time: '21:30 - 07:30' }
-              ].map(s => (
+              {STANDARD_SHIFTS_LIST.map(s => (
                 <button
                   key={s.type}
                   type="button"
-                  onClick={() => setShiftType(s.type)}
+                  onClick={() => setShiftType(s.type as 'MORNING' | 'AFTERNOON' | 'NIGHT')}
                   className={`p-2 rounded-lg border text-center transition-all cursor-pointer ${
                     shiftType === s.type
                       ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="font-bold block">{s.label}</span>
+                  <span className="font-bold block">{s.shortLabel}</span>
                   <span className={`text-[10px] block mt-0.5 ${shiftType === s.type ? 'text-slate-300' : 'text-slate-500'}`}>
-                    {s.time}
+                    {s.timeRange}
                   </span>
                 </button>
               ))}

@@ -37,6 +37,7 @@ interface FacilityDraft {
   geoSource: GeocodingSource
   geoConfidenceNote?: string
   layout: FacilityLayoutConfig
+  imageUrl?: string
 }
 
 const blankDraft = (): FacilityDraft => ({
@@ -53,6 +54,7 @@ const blankDraft = (): FacilityDraft => ({
   geoSource: 'UNVERIFIED',
   geoConfidenceNote: '',
   layout: { ...DEFAULT_FACILITY_LAYOUT_CONFIG },
+  imageUrl: '',
 })
 
 const inputClassName =
@@ -72,6 +74,7 @@ const toDraft = (facility: Facility): FacilityDraft => ({
   geoSource: facility.latitude != null && facility.longitude != null ? 'EXACT' : 'UNVERIFIED',
   geoConfidenceNote: facility.latitude != null && facility.longitude != null ? 'Tọa độ đã xác lập' : '',
   layout: parseFacilityLayoutConfig(facility.layoutConfig),
+  imageUrl: facility.imageUrl || '',
 })
 
 const getRequestError = (error: unknown) => {
@@ -126,6 +129,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [activeStep, setActiveStep] = useState<1 | 2 | 3 | 4>(1)
   const [draft, setDraft] = useState<FacilityDraft>(blankDraft)
+  const [selectedFloorIndex, setSelectedFloorIndex] = useState(0)
   const [isSaving, setIsSaving] = useState(false)
   const [isGeocoding, setIsGeocoding] = useState(false)
   const [formError, setFormError] = useState('')
@@ -188,6 +192,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   const startCreate = () => {
     setEditingFacility(null)
     setDraft(blankDraft())
+    setSelectedFloorIndex(0)
     setActiveStep(1)
     setFormError('')
     setNotice('')
@@ -199,6 +204,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   const startEdit = (facility: Facility) => {
     setEditingFacility(facility)
     setDraft(toDraft(facility))
+    setSelectedFloorIndex(0)
     setActiveStep(1)
     setFormError('')
     setNotice('')

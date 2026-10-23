@@ -501,6 +501,25 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
         return staffAssignmentMapper.toResponse(assignment);
     }
 
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 60_000L)
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void autoMarkAbsentShifts() {
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        LocalDate yesterday = today.minusDays(1);
+        java.time.LocalTime nowTime = java.time.LocalTime.now(BUSINESS_ZONE);
+        try {
+            int priorCount = staffAssignmentRepository.markPriorToYesterdayUncheckedInAsAbsent(yesterday);
+            int yesterdayCount = staffAssignmentRepository.markYesterdayEndedUncheckedInAsAbsent(yesterday, nowTime);
+            int todayCount = staffAssignmentRepository.markTodayEndedUncheckedInAsAbsent(today, nowTime);
+            if (priorCount > 0 || yesterdayCount > 0 || todayCount > 0) {
+                log.info("Auto-marked unchecked-in shifts as ABSENT: {} prior, {} yesterday, {} today",
+                        priorCount, yesterdayCount, todayCount);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to auto-mark absent shifts: {}", e.getMessage());
+        }
+    }
+
     @Override
     @Transactional(readOnly = true)
     public PageResponse<StaffAssignmentResponse> getAllAssignments(

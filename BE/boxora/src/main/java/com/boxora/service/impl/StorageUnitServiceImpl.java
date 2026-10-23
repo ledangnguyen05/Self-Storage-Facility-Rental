@@ -155,6 +155,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .facility(facility)
                 .unitType(unitType)
                 .pricePerMonth(initialPrice)
+                .imageUrl(request.getImageUrl() != null && !request.getImageUrl().isBlank() ? request.getImageUrl().trim() : null)
                 .build();
 
         unit = storageUnitRepository.save(unit);
@@ -200,6 +201,9 @@ public class StorageUnitServiceImpl implements StorageUnitService {
         unit.setUnitCode(trimmedCode);
         unit.setFloorLevel(request.getFloorLevel().trim());
         unit.setUnitType(unitType);
+        if (request.getImageUrl() != null) {
+            unit.setImageUrl(request.getImageUrl().trim().isEmpty() ? null : request.getImageUrl().trim());
+        }
 
         // BR-RULE-011: Nếu có cập nhật đơn giá, thực hiện quy trình điều chỉnh và ghi nhận lịch sử giá
         if (request.getPricePerMonth() != null) {
@@ -418,6 +422,7 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .contractId(contractId)
                 .startDate(startDate)
                 .dueDate(dueDate)
+                .imageUrl(u.getImageUrl())
                 .build();
     }
 }

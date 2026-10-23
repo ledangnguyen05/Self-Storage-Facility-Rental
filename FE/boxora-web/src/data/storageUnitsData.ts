@@ -14,6 +14,7 @@ export interface StorageUnitType {
   facilityId: string
   facilityName: string
   facilityAddress: string
+  floorLevel: string
   floorLocation: string
   coords?: { lat: number; lng: number } | null
   distanceKm?: number

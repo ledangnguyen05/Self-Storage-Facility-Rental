@@ -43,6 +43,10 @@ public interface StaffAssignmentRepository extends JpaRepository<StaffAssignment
 
     boolean existsByStaff_IdAndAssignedDateAndShiftAndIdNot(UUID staffId, LocalDate assignedDate, StaffShift shift, UUID id);
 
+    boolean existsByStaff_IdAndFacility_IdAndAssignedDateAndStatusNotIn(UUID staffId, UUID facilityId, LocalDate assignedDate, List<StaffAssignmentStatus> statuses);
+
+    boolean existsByStaff_IdAndFacility_Id(UUID staffId, UUID facilityId);
+
     @Override
     @EntityGraph(attributePaths = {"staff", "facility", "assignedBy"})
     Page<StaffAssignment> findAll(org.springframework.data.jpa.domain.Specification<StaffAssignment> spec, Pageable pageable);
@@ -68,4 +72,55 @@ public interface StaffAssignmentRepository extends JpaRepository<StaffAssignment
             @Param("toDate") LocalDate toDate,
             Pageable pageable
     );
+
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true)
+    @Query("""
+            UPDATE StaffAssignment a
+            SET a.status = com.boxora.enums.StaffAssignmentStatus.ABSENT
+            WHERE a.status = com.boxora.enums.StaffAssignmentStatus.ASSIGNED
+              AND a.checkedInAt IS NULL
+              AND a.assignedDate < :yesterday
+            """)
+    int markPriorToYesterdayUncheckedInAsAbsent(@Param("yesterday") LocalDate yesterday);
+
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true)
+    @Query("""
+            UPDATE StaffAssignment a
+            SET a.status = com.boxora.enums.StaffAssignmentStatus.ABSENT
+            WHERE a.status = com.boxora.enums.StaffAssignmentStatus.ASSIGNED
+              AND a.checkedInAt IS NULL
+              AND a.assignedDate = :yesterday
+              AND (
+                (a.shift != com.boxora.enums.StaffShift.NIGHT AND (a.endTime IS NULL OR a.startTime IS NULL OR a.endTime > a.startTime))
+                OR
+                ((a.shift = com.boxora.enums.StaffShift.NIGHT OR (a.endTime IS NOT NULL AND a.startTime IS NOT NULL AND a.endTime <= a.startTime))
+                 AND a.endTime IS NOT NULL AND a.endTime <= :nowTime)
+              )
+            """)
+    int markYesterdayEndedUncheckedInAsAbsent(@Param("yesterday") LocalDate yesterday, @Param("nowTime") java.time.LocalTime nowTime);
+
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true)
+    @Query("""
+            UPDATE StaffAssignment a
+            SET a.status = com.boxora.enums.StaffAssignmentStatus.ABSENT
+            WHERE a.status = com.boxora.enums.StaffAssignmentStatus.ASSIGNED
+              AND a.checkedInAt IS NULL
+              AND a.assignedDate = :today
+              AND a.endTime IS NOT NULL
+              AND (a.startTime IS NULL OR a.endTime > a.startTime)
+              AND a.shift != com.boxora.enums.StaffShift.NIGHT
+              AND a.endTime <= :nowTime
+            """)
+    int markTodayEndedUncheckedInAsAbsent(@Param("today") LocalDate today, @Param("nowTime") java.time.LocalTime nowTime);
+
+    @Deprecated
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true)
+    @Query("""
+            UPDATE StaffAssignment a
+            SET a.status = com.boxora.enums.StaffAssignmentStatus.ABSENT
+            WHERE a.status = com.boxora.enums.StaffAssignmentStatus.ASSIGNED
+              AND a.checkedInAt IS NULL
+              AND a.assignedDate < :today
+            """)
+    int markPastUncheckedInAsAbsent(@Param("today") LocalDate today);
 }

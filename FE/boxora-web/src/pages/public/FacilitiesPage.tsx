@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Building2, MapPin, Phone, Filter, Loader2 } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'

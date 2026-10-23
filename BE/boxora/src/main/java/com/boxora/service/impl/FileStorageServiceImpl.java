@@ -18,9 +18,15 @@ import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.*;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import com.boxora.service.CloudflareR2Service;
+
 @Service
 @Slf4j
 public class FileStorageServiceImpl implements FileStorageService {
+
+    @Autowired(required = false)
+    private CloudflareR2Service cloudflareR2Service;
 
     private final Path rootUploadPath;
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -51,6 +57,9 @@ public class FileStorageServiceImpl implements FileStorageService {
 
     @Override
     public FileUploadResponse storeFile(MultipartFile file, String subDirectory) {
+        if (cloudflareR2Service != null) {
+            return cloudflareR2Service.uploadFile(file, subDirectory);
+        }
         if (file == null || file.isEmpty()) {
             throw new AppException(ErrorCode.TICKET_IMAGE_UPLOAD_FAILED);
         }
@@ -117,6 +126,9 @@ public class FileStorageServiceImpl implements FileStorageService {
 
     @Override
     public FileUploadResponse storeDocumentFile(MultipartFile file, String subDirectory) {
+        if (cloudflareR2Service != null) {
+            return cloudflareR2Service.uploadFile(file, subDirectory);
+        }
         if (file == null || file.isEmpty()) {
             throw new AppException(ErrorCode.INVALID_REQUEST, "Tệp tài liệu tải lên không được để trống");
         }

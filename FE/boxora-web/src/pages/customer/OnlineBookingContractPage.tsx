@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { LayoutDashboard } from 'lucide-react'
 import axios from 'axios'
+import { useAuth } from '../../context/AuthContext'
+import { activateCustomerRental } from '../../utils/rentalAccess'
 import { Booking, RentalContract } from '../../types'
 import { bookingService } from '../../services/bookingService'
 import { contractService } from '../../services/contractService'
@@ -24,6 +26,7 @@ function isSigned(contract: RentalContract | null) {
 }
 
 export const OnlineBookingContractPage = () => {
+  const { user } = useAuth()
   const [searchParams] = useSearchParams()
   const bookingId = searchParams.get('bookingId') || ''
   const [booking, setBooking] = useState<Booking | null>(null)
@@ -97,6 +100,17 @@ export const OnlineBookingContractPage = () => {
   const paymentConfirmed = booking?.paymentStatus?.toUpperCase() === 'PAID'
   const signed = isSigned(contract)
   const payableTotal = Number(booking?.totalRentalFee || 0) + Number(booking?.depositAmount || 0)
+
+  useEffect(() => {
+    if (signed && paymentConfirmed && booking && user) {
+      activateCustomerRental(
+        user,
+        booking.unitCode || 'KHO-BX',
+        booking.facilityName || 'Boxora Smart Storage',
+        contract?.contractCode
+      )
+    }
+  }, [signed, paymentConfirmed, booking, user, contract?.contractCode])
   const paymentDeadline = booking?.paymentExpiresAt || booking?.holdExpiresAt
   const paymentExpired = booking?.status === 'PENDING_PAYMENT'
     && (!paymentDeadline || new Date(paymentDeadline).getTime() <= Date.now())
@@ -193,6 +207,18 @@ export const OnlineBookingContractPage = () => {
         {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          {/* Staff Handling Policy Notice */}
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/90 p-4 text-sm text-amber-950 flex items-start gap-3 shadow-xs">
+            <span className="material-symbols-outlined text-amber-700 text-2xl shrink-0 mt-0.5">verified_user</span>
+            <div className="space-y-1">
+              <p className="font-bold text-amber-900 text-sm">Quy định thủ tục ký hợp đồng &amp; thanh toán tại Boxora</p>
+              <p className="text-xs leading-relaxed text-amber-800">
+                Theo quy chuẩn an ninh và kiểm soát kho tự quản, <strong>thủ tục ký hợp đồng và thu phí thanh toán (tiền cọc + tiền thuê) do nhân viên tiếp đón (Staff) trực tiếp thực hiện tại cơ sở</strong> khi quý khách đến nhận buồng kho theo lịch hẹn. Khách hàng không cần và không được phép tự ký hoặc thanh toán trực tuyến.
+              </p>
+            </div>
+          </div>
+
+
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
               <p className="text-xs text-slate-500">Mã đặt thuê</p>

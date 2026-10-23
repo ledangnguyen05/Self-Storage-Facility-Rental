@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { staffAssignmentService, StaffAssignmentResponse } from '../../../services/staffAssignmentService'
+import { STANDARD_SHIFTS_LIST } from '../../../constants/shiftConstants'
 
 interface ShiftEditModalProps {
   isOpen: boolean

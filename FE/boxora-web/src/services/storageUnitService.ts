@@ -7,9 +7,20 @@ export interface StorageUnitCreateRequest {
   facilityId: string
   unitTypeId: string
   pricePerMonth?: number
+  imageUrl?: string
 }
 
 export const storageUnitService = {
+  async uploadUnitImage(file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await api.post('/api/v1/storage-units/upload-image', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return response.data?.data as { fileUrl: string; fileName: string; fileSize?: number; fileType?: string }
+  },
   async getUnits(params?: { facilityId?: string; floorLevel?: string; status?: string }) {
     const response = await api.get('/api/v1/storage-units', { params })
     return response.data?.data as StorageUnit[]

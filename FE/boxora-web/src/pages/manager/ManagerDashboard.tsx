@@ -19,6 +19,7 @@ import { CreateStorageUnitModal } from './modals/CreateStorageUnitModal'
 import { FacilityPolicyViewModal } from './modals/FacilityPolicyViewModal'
 import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
 import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
+import { HandoverCheckInWorkbench } from '../staff/components/HandoverCheckInWorkbench'
 
 interface InspectedUnit {
   id: string
@@ -38,6 +39,7 @@ interface InspectedUnit {
   pricePerMonth?: number
   facilityId?: string
   facilityName?: string
+  imageUrl?: string
 }
 
 type ManagerDashboardTab = 'overview' | 'renewals' | 'handovers-returns' | 'tickets' | 'performance' | 'policy'
@@ -122,6 +124,16 @@ export const ManagerDashboard: React.FC = () => {
   const [checkinFromDate, setCheckinFromDate] = useState<string>('')
   const [checkinToDate, setCheckinToDate] = useState<string>('')
   const [claimingBookingId, setClaimingBookingId] = useState<string | null>(null)
+  const [activeBookingId, setActiveBookingId] = useState<string>(
+    searchParams.get('bookingId') || searchParams.get('checkinBookingId') || ''
+  )
+
+  useEffect(() => {
+    const bId = searchParams.get('bookingId') || searchParams.get('checkinBookingId')
+    if (bId) {
+      setActiveBookingId(bId)
+    }
+  }, [searchParams])
 
   // Tickets queue pagination
   const [ticketCurrentPage, setTicketCurrentPage] = useState<number>(1)
@@ -270,7 +282,8 @@ export const ManagerDashboard: React.FC = () => {
             floorLevel: su.floorLevel || 'Not reported',
             pricePerMonth: su.pricePerMonth,
             facilityId: su.facilityId,
-            facilityName: su.facilityName
+            facilityName: su.facilityName,
+            imageUrl: su.imageUrl
           }
         })
         mapped.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }))

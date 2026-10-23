@@ -34,4 +34,5 @@ public class StorageUnitResponse {
     private UUID contractId;
     private String startDate;
     private String dueDate;
+    private String imageUrl;
 }

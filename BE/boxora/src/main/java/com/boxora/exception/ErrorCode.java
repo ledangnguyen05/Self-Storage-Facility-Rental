@@ -99,6 +99,7 @@ public enum ErrorCode {
     PERMISSION_NOT_FOUND(900, "Không tìm thấy quyền hạn", HttpStatus.NOT_FOUND),
     PERMISSION_NAME_EXISTED(901, "Tên quyền hạn đã tồn tại trong hệ thống", HttpStatus.BAD_REQUEST),
     PERMISSION_GROUP_EXISTED(902, "Nhóm quyền hạn đã tồn tại trong hệ thống", HttpStatus.BAD_REQUEST),
+    PERMISSION_IN_USE(903, "Không thể xóa quyền hạn vì đang được gán cho các vai trò", HttpStatus.CONFLICT),
     PERMISSION_INUSE(903, "Không thể xóa quyền hạn vì đang được gán cho các vai trò", HttpStatus.CONFLICT),
     PERMISSION_INACTIVE(904, "Quyền hạn hiện đang bị vô hiệu hóa", HttpStatus.BAD_REQUEST),
 
@@ -125,6 +126,7 @@ public enum ErrorCode {
     TICKET_FACILITY_MISMATCH(1205, "Không có quyền thao tác trên sự cố ngoài phạm vi cơ sở được phân công", HttpStatus.FORBIDDEN),
     TICKET_STAFF_NOT_IN_FACILITY(1206, "Nhân viên được phân công không thuộc cơ sở này", HttpStatus.BAD_REQUEST),
     TICKET_ALREADY_CLOSED(1207, "Phiếu sự cố đã được đóng hoàn tất", HttpStatus.BAD_REQUEST),
+    TICKET_UNIT_NOT_IN_FACILITY(1208, "Mã ngăn kho không tồn tại hoặc không thuộc cơ sở xảy ra sự cố", HttpStatus.BAD_REQUEST),
 
     // ========================= ACTIVITY_LOG (1300 - 1399) =========================
     ACTIVITY_LOG_NOT_FOUND(1300, "Không tìm thấy bản ghi nhật ký hoạt động", HttpStatus.NOT_FOUND),
@@ -197,6 +199,10 @@ public enum ErrorCode {
     SHIFT_HANDOVER_ALREADY_ACKNOWLEDGED(1714, "Biên bản bàn giao ca đã được tiếp nhận xác nhận", HttpStatus.BAD_REQUEST),
     SHIFT_HANDOVER_CHECKLIST_INCOMPLETE(1715, "Cần hoàn tất danh mục kiểm tra trước khi bàn giao", HttpStatus.BAD_REQUEST),
     SHIFT_UNAUTHORIZED_ACTION(1716, "Bạn không có quyền thao tác trên ca làm việc này", HttpStatus.FORBIDDEN),
+    SHIFT_HANDOVER_EMERGENCY_REASON_REQUIRED(1717, "Bàn giao đột xuất bắt buộc phải nêu rõ lý do", HttpStatus.BAD_REQUEST),
+    SHIFT_HANDOVER_SELF_RECEIVE_FORBIDDEN(1718, "Người bàn giao không thể tự tiếp nhận biên bản bàn giao của chính mình", HttpStatus.BAD_REQUEST),
+    SHIFT_HANDOVER_INVALID_RECIPIENT(1719, "Nhân sự tiếp nhận phải thuộc cùng cơ sở và có quyền phù hợp", HttpStatus.BAD_REQUEST),
+    SHIFT_HANDOVER_DISPATCH_NOT_ALLOWED(1720, "Chỉ Quản lý cơ sở mới có quyền điều phối người nhận bàn giao", HttpStatus.FORBIDDEN),
 
     // ========================= SEALING & OVERDUE (BR-RULE-012) (1800 - 1899) =========================
     SEALING_RECORD_NOT_FOUND(1800, "Không tìm thấy biên bản niêm phong kho", HttpStatus.NOT_FOUND),

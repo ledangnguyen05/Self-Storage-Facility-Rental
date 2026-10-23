@@ -8,6 +8,7 @@ import { ProtectedRoute } from './components/auth/ProtectedRoute'
 import { LoginPage } from './pages/public/LoginPage'
 import { RegisterPage } from './pages/public/RegisterPage'
 import { HomePage } from './pages/public/HomePage'
+import { BookingPage } from './pages/public/BookingPage'
 import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
 import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
 import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
@@ -32,7 +33,7 @@ import { ErrorBoundary } from './components/common/ErrorBoundary'
 
 // Root redirect handler based on user role
 function RootRedirect() {
-  const { isAuthenticated, role, user, isLoading } = useAuth()
+  const { isAuthenticated, role, isLoading } = useAuth()
 
   if (isLoading) {
     return (
@@ -57,13 +58,8 @@ function RootRedirect() {
     case 'STAFF':
       return <Navigate to="/portal/staff" replace />
     case 'CUSTOMER':
-    default: {
-      const access = checkCustomerPortalAccess(user)
-      if (!access.hasAccess) {
-        return <Navigate to="/units" replace />
-      }
+    default:
       return <Navigate to="/portal/customer" replace />
-    }
   }
 }
 
@@ -75,6 +71,8 @@ function MainContent() {
           {/* Public Landing Page & Authentication */}
           <Route path="/" element={<HomePage />} />
           <Route path="/landing" element={<HomePage />} />
+          <Route path="/booking" element={<BookingPage />} />
+          <Route path="/dat-kho" element={<BookingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
@@ -82,6 +80,17 @@ function MainContent() {
           {/* Dedicated Storage Units Explorer & Booking Dashboard */}
           <Route path="/units" element={<UnitsExplorerPage />} />
           <Route path="/explore-units" element={<UnitsExplorerPage />} />
+          <Route path="/facilities" element={<FacilitiesPage />} />
+          <Route path="/branches" element={<FacilitiesPage />} />
+          <Route path="/my-requests" element={<Navigate to="/portal/customer?tab=requests" replace />} />
+          <Route
+            path="/reserve"
+            element={
+              <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}>
+                <CustomerDashboard bookingOnly />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/payment-result" element={<PaymentResultPage />} />
           <Route
             path="/online-booking-contract"
@@ -93,6 +102,21 @@ function MainContent() {
           />
 
           {/* Boxora Terms & Standards Dashboard */}
+          <Route path="/terms" element={<TermsAndStandardsPage />} />
+          <Route path="/standards" element={<TermsAndStandardsPage />} />
+          <Route path="/policies" element={<TermsAndStandardsPage />} />
+
+          {/* Boxora Terms & Standards Dashboard */}
+          <Route
+            path="/my-bookings"
+            element={
+              <ProtectedRoute allowedRoles={['CUSTOMER']}>
+                <MyBookingsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/customer/bookings" element={<Navigate to="/my-bookings" replace />} />
+
           <Route path="/terms" element={<TermsAndStandardsPage />} />
           <Route path="/standards" element={<TermsAndStandardsPage />} />
           <Route path="/policies" element={<TermsAndStandardsPage />} />

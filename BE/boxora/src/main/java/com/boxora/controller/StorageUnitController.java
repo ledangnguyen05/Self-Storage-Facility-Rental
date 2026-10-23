@@ -12,6 +12,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import com.boxora.dto.response.FileUploadResponse;
+import com.boxora.service.CloudflareR2Service;
+import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 import java.util.UUID;
 
@@ -21,6 +24,14 @@ import java.util.UUID;
 public class StorageUnitController {
 
     private final StorageUnitService storageUnitService;
+    private final CloudflareR2Service cloudflareR2Service;
+
+    @PostMapping("/upload-image")
+    @PreAuthorize("hasAnyAuthority('STORAGE_UNIT_CREATE', 'STORAGE_UNIT_UPDATE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<FileUploadResponse>> uploadUnitImage(@RequestParam("file") MultipartFile file) {
+        FileUploadResponse response = cloudflareR2Service.uploadUnitImage(file);
+        return ResponseEntity.ok(ApiResponse.success("Tải ảnh ngăn kho lên Cloudflare R2 thành công", response));
+    }
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<StorageUnitResponse>>> getUnits(

@@ -3,6 +3,7 @@ package com.boxora.service.impl;
 import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.ShiftHandoverAcknowledgeRequest;
 import com.boxora.dto.request.ShiftHandoverCreateRequest;
+import com.boxora.dto.request.ShiftHandoverDispatchRequest;
 import com.boxora.dto.response.ShiftHandoverResponse;
 import com.boxora.entity.Facility;
 import com.boxora.entity.ShiftHandover;
@@ -10,6 +11,9 @@ import com.boxora.entity.StaffAssignment;
 import com.boxora.entity.User;
 import com.boxora.enums.ActivityAction;
 import com.boxora.enums.ShiftHandoverStatus;
+import com.boxora.enums.ShiftHandoverType;
+import com.boxora.enums.StaffAssignmentStatus;
+import com.boxora.enums.StaffShift;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.ShiftHandoverMapper;
@@ -86,14 +90,30 @@ public class ShiftHandoverServiceImpl implements ShiftHandoverService {
             incomingAssignment = staffAssignmentRepository.findById(request.getIncomingAssignmentId()).orElse(null);
         }
 
+        // Quyết định trạng thái khởi tạo
+        ShiftHandoverStatus initialStatus;
+        if (Boolean.TRUE.equals(request.getIsDraft())) {
+            initialStatus = ShiftHandoverStatus.DRAFT;
+        } else if (incomingStaff == null) {
+            initialStatus = ShiftHandoverStatus.PENDING_DISPATCH;
+        } else if (request.getCashDiscrepancy() != null && request.getCashDiscrepancy().compareTo(BigDecimal.ZERO) != 0) {
+            initialStatus = ShiftHandoverStatus.DISCREPANCY;
+        } else {
+            initialStatus = ShiftHandoverStatus.SUBMITTED;
+        }
+
         ShiftHandover handover = ShiftHandover.builder()
                 .facility(facility)
                 .handoverDate(request.getHandoverDate() != null ? request.getHandoverDate() : LocalDate.now())
                 .shift(request.getShift())
+                .targetShift(request.getTargetShift())
+                .handoverType(handoverType)
                 .outgoingStaff(outgoingStaff)
                 .incomingStaff(incomingStaff)
                 .outgoingAssignment(outgoingAssignment)
                 .incomingAssignment(incomingAssignment)
+                .emergencyReason(request.getEmergencyReason())
+                .transferScope(request.getTransferScope())
                 .pendingTasks(request.getPendingTasks())
                 .pendingTicketsCount(request.getPendingTicketsCount() != null ? request.getPendingTicketsCount() : 0)
                 .unresolvedBookingsCount(request.getUnresolvedBookingsCount() != null ? request.getUnresolvedBookingsCount() : 0)
@@ -160,6 +180,82 @@ public class ShiftHandoverServiceImpl implements ShiftHandoverService {
         );
 
         return shiftHandoverMapper.toResponse(updated);
+    }
+
+    @Override
+    public ShiftHandoverResponse dispatchRecipient(UUID handoverId, ShiftHandoverDispatchRequest request) {
+        log.info("Dispatching recipient for handover id={}, incomingStaffId={}", handoverId, request.getIncomingStaffId());
+
+        if (!requestContext.hasAnyRole("FACILITY_MANAGER", "BUSINESS_MANAGER", "ADMIN")) {
+            throw new AppException(ErrorCode.SHIFT_HANDOVER_DISPATCH_NOT_ALLOWED);
+        }
+
+        ShiftHandover handover = shiftHandoverRepository.findById(handoverId)
+                .orElseThrow(() -> new AppException(ErrorCode.SHIFT_HANDOVER_NOT_FOUND));
+
+        facilityAccessGuard.checkFacilityAccess(handover.getFacility().getId());
+
+        if (handover.getStatus() == ShiftHandoverStatus.ACKNOWLEDGED) {
+            throw new AppException(ErrorCode.SHIFT_HANDOVER_ALREADY_ACKNOWLEDGED);
+        }
+
+        UUID currentUserId = requestContext.currentUserId();
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+
+        if (request.getIncomingStaffId().equals(handover.getOutgoingStaff().getId())) {
+            throw new AppException(ErrorCode.SHIFT_HANDOVER_SELF_RECEIVE_FORBIDDEN);
+        }
+
+        User incomingStaff = userRepository.findById(request.getIncomingStaffId())
+                .orElseThrow(() -> new AppException(ErrorCode.STAFF_USER_NOT_FOUND));
+
+        if (!Boolean.TRUE.equals(incomingStaff.getIsActive())) {
+            throw new AppException(ErrorCode.USER_INACTIVE, "Tài khoản nhân sự tiếp nhận đã bị vô hiệu hóa");
+        }
+
+        if (!isStaffBelongingToFacility(incomingStaff, handover.getFacility().getId())) {
+            throw new AppException(ErrorCode.SHIFT_HANDOVER_INVALID_RECIPIENT,
+                    "Nhân sự tiếp nhận phải thuộc cùng chi nhánh cơ sở " + handover.getFacility().getName());
+        }
+
+        StaffAssignment incomingAssignment = null;
+        if (request.getIncomingAssignmentId() != null) {
+            incomingAssignment = staffAssignmentRepository.findById(request.getIncomingAssignmentId()).orElse(null);
+        }
+
+        handover.setIncomingStaff(incomingStaff);
+        handover.setIncomingAssignment(incomingAssignment);
+        handover.setDispatchedBy(currentUser);
+        handover.setDispatchedAt(LocalDateTime.now());
+        handover.setStatus(ShiftHandoverStatus.SUBMITTED);
+
+        if (request.getNotes() != null && !request.getNotes().isBlank()) {
+            String existingNotes = handover.getNotes() != null ? handover.getNotes() + "\n" : "";
+            handover.setNotes(existingNotes + "[Quản lý điều phối] " + request.getNotes());
+        }
+
+        ShiftHandover updated = shiftHandoverRepository.save(handover);
+
+        activityLogService.record(
+                handover.getFacility().getId(),
+                ActivityAction.SHIFT_HANDOVER_DISPATCH,
+                "ShiftHandover",
+                updated.getId(),
+                String.format("Quản lý %s điều phối nhân sự %s tiếp nhận biên bản bàn giao ca id=%s",
+                        currentUser.getFullName(), incomingStaff.getFullName(), updated.getId()),
+                null,
+                updated.getId().toString()
+        );
+
+        return shiftHandoverMapper.toResponse(updated);
+    }
+
+    private boolean isStaffBelongingToFacility(User user, UUID facilityId) {
+        if (user.getFacility() != null && facilityId.equals(user.getFacility().getId())) {
+            return true;
+        }
+        return staffAssignmentRepository.existsByStaff_IdAndFacility_Id(user.getId(), facilityId);
     }
 
     @Override

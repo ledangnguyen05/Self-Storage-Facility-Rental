@@ -30,4 +30,6 @@ public class StorageUnitCreateRequest {
     private BigDecimal pricePerMonth;
 
     private Double areaSqMeters;
+
+    private String imageUrl;
 }

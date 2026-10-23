@@ -11,6 +11,22 @@ const localDateInput = (date: Date) => {
   return `${year}-${month}-${day}`
 }
 
+const getWeekRange = (refDate: Date): { from: string; to: string } => {
+  const d = new Date(refDate)
+  const day = d.getDay()
+  const diffToMonday = day === 0 ? -6 : 1 - day
+  const monday = new Date(d)
+  monday.setDate(d.getDate() + diffToMonday)
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+  return {
+    from: localDateInput(monday),
+    to: localDateInput(sunday)
+  }
+}
+
+export type DatePreset = 'TODAY' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'ALL' | 'CUSTOM'
+
 const paymentTypeLabel = (type: string) => ({
   DEPOSIT: 'Tiền cọc',
   RENTAL_FEE: 'Tiền thuê',
@@ -98,6 +114,7 @@ export const CashierJournalPage: React.FC = () => {
       setIsLoading(false)
     }
   }
+
 
   useEffect(() => {
     fetchPayments()

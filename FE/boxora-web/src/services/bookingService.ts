@@ -13,6 +13,8 @@ export interface BookingCreatePayload {
   storageUnitId: string
   customerId?: string
   startDate: string
+  expectedArrivalAt?: string
+  requiresManagerApproval?: boolean
   rentalMonths: number
   totalRentalFee?: number
   depositPaid?: number

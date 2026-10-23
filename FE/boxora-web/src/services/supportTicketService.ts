@@ -42,6 +42,11 @@ export interface SupportTicketRecord {
   resolvedAt?: string
   closedAt?: string
   contactLogCount?: number
+  storageUnitId?: string
+  createdByStaffId?: string
+  createdByStaffName?: string
+  createdByStaffRole?: string
+  isStaffRecorded?: boolean
   createdAt?: string
   updatedAt?: string
 }
@@ -52,6 +57,8 @@ export interface CreateSupportTicketRequest {
   customerId?: string
   bookingId?: string
   facilityId?: string
+  storageUnitId?: string
+  unitCode?: string
   category: SupportTicketCategory
   title: string
   description: string

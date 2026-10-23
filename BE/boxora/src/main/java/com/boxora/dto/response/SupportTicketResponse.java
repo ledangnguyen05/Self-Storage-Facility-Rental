@@ -40,5 +40,10 @@ public class SupportTicketResponse {
     private LocalDateTime resolvedAt;
     private LocalDateTime closedAt;
     private Integer contactLogCount;
+    private UUID storageUnitId;
+    private UUID createdByStaffId;
+    private String createdByStaffName;
+    private String createdByStaffRole;
+    private Boolean isStaffRecorded;
     private LocalDateTime createdAt;
 }

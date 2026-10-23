@@ -326,6 +326,20 @@ export const DashboardLayout: React.FC = () => {
                 </Link>
 
                 <Link
+                  to="/my-bookings"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    isCurrentPath('/my-bookings')
+
+                      ? 'bg-slate-100 text-slate-900 font-bold'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">pending_actions</span>
+                  <span>Đơn đặt giữ chỗ</span>
+                </Link>
+
+
+                <Link
                   to="/portal/customer?tab=explore"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
                     isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'explore'
@@ -383,6 +397,18 @@ export const DashboardLayout: React.FC = () => {
                 </span>
               </div>
               <nav className="flex flex-col gap-1 text-left">
+                <Link
+                  to="/portal/facility-manager"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/facility-manager')
+                      ? 'bg-slate-100 text-slate-900'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">grid_view</span>
+                  <span>{t('SƠ ĐỒ CƠ SỞ KHO')}</span>
+                </Link>
+
                 <Link
                   to="/portal/staff"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${

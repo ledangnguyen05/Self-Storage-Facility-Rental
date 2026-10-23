@@ -26,7 +26,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
 
   // If not logged in, redirect to /login
   if (!isAuthenticated || !user) {
-    return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname)}`} replace />
+    return <Navigate to={`/login?redirect=${encodeURIComponent(`${location.pathname}${location.search}`)}`} replace />
   }
 
   // If allowedRoles is specified and current role is not permitted, automatically route them to their proper portal
@@ -44,20 +44,22 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
         case 'CUSTOMER':
         default: {
           const access = checkCustomerPortalAccess(user)
-          return access.hasAccess ? '/portal/customer' : '/#units'
+          return access.hasAccess ? '/portal/customer' : '/my-bookings'
         }
+
       }
     }
     return <Navigate to={getTargetPortal(role)} replace />
   }
 
-  // If role is CUSTOMER, only permit portal management when rental is active and app is confirmed
-  if (role === 'CUSTOMER') {
-    const customerAccess = checkCustomerPortalAccess(user)
-    if (!customerAccess.hasAccess) {
-      return <Navigate to="/#units" replace state={{ notice: 'rental_required' }} />
+  // Customer cannot enter /portal until they sign contract and pay
+  if (role === 'CUSTOMER' && location.pathname.startsWith('/portal')) {
+    const access = checkCustomerPortalAccess(user)
+    if (!access.hasAccess) {
+      return <Navigate to="/my-bookings" replace />
     }
   }
+
 
   return children
 }

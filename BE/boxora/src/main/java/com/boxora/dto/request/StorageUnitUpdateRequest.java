@@ -27,4 +27,6 @@ public class StorageUnitUpdateRequest {
     private java.math.BigDecimal pricePerMonth;
 
     private String priceChangeReason;
+
+    private String imageUrl;
 }

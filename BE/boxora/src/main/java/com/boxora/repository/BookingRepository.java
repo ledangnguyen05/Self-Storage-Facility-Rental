@@ -49,6 +49,9 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "storageUnit", "storageUnit.facility"})
     Optional<Booking> findFirstByStorageUnit_IdOrderByCreatedAtDesc(UUID storageUnitId);
 
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "storageUnit", "storageUnit.facility"})
+    Optional<Booking> findFirstByStorageUnit_IdAndStatusInOrderByCreatedAtDesc(UUID storageUnitId, Collection<BookingStatus> statuses);
+
     List<Booking> findByStatusAndCreatedAtBefore(BookingStatus status, LocalDateTime threshold);
 
     @Query("SELECT b FROM Booking b WHERE b.status = :status AND ("

@@ -1,4 +1,5 @@
 import { api } from '../lib/axios'
+import { getAssignmentWindow } from '../constants/shiftConstants'
 
 export interface StaffAssignmentCreatePayload {
   staffId: string
@@ -39,6 +40,31 @@ export interface StaffAssignmentResponse {
   updatedAt?: string
 }
 
+/**
+ * Kiểm tra xem một ca trực có thuộc diện "Không đi làm" (ABSENT) hay không:
+ * - Trạng thái đã là ABSENT trong cơ sở dữ liệu
+ * - HOẶC chưa check-in và chưa check-out (ASSIGNED) mà thời gian ca trực đã trôi qua
+ */
+export const isShiftAbsent = (assignment?: {
+  status: string
+  assignedDate: string
+  startTime?: string | null
+  endTime?: string | null
+  checkedInAt?: string | null
+  checkedOutAt?: string | null
+  shift?: string | null
+} | null, now = new Date()): boolean => {
+  if (!assignment) return false
+  if (assignment.status === 'ABSENT') return true
+  if (assignment.status === 'ASSIGNED' && !assignment.checkedInAt && !assignment.checkedOutAt) {
+    const win = getAssignmentWindow(assignment)
+    if (win) {
+      return now.getTime() >= win.end.getTime()
+    }
+  }
+  return false
+}
+
 export interface ShiftSwapRequest {
   id: string
   assignmentId: string
@@ -75,6 +101,8 @@ export interface ShiftHandover {
   facilityCode?: string
   handoverDate: string
   shift: 'MORNING' | 'AFTERNOON' | 'NIGHT' | 'FULL_DAY'
+  targetShift?: 'MORNING' | 'AFTERNOON' | 'NIGHT' | 'FULL_DAY'
+  handoverType: 'ROUTINE' | 'EMERGENCY' | 'RESPONSIBILITY_TRANSFER'
   outgoingStaffId: string
   outgoingStaffName?: string
   outgoingStaffUsername?: string
@@ -83,6 +111,8 @@ export interface ShiftHandover {
   incomingStaffUsername?: string
   outgoingAssignmentId?: string
   incomingAssignmentId?: string
+  emergencyReason?: string
+  transferScope?: string
   pendingTasks?: string
   pendingTicketsCount: number
   unresolvedBookingsCount: number
@@ -212,6 +242,15 @@ export const staffAssignmentService = {
 
   async acknowledgeHandover(id: string, data: { status: 'ACKNOWLEDGED' | 'REJECTED'; notes?: string }) {
     const response = await api.patch(`/api/v1/shift-handovers/${id}/acknowledge`, data)
+    return response.data?.data as ShiftHandover
+  },
+
+  async dispatchHandover(id: string, data: {
+    incomingStaffId: string
+    incomingAssignmentId?: string
+    notes?: string
+  }) {
+    const response = await api.patch(`/api/v1/shift-handovers/${id}/dispatch`, data)
     return response.data?.data as ShiftHandover
   },
 

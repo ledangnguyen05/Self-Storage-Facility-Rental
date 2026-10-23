@@ -4,6 +4,7 @@ import {
   User,
   Mail,
   Phone,
+  CreditCard,
   Lock,
   ArrowRight,
   CheckCircle2,
@@ -48,6 +49,7 @@ export const RegisterPage: React.FC = () => {
     fullName: googleRedirectState?.fullName || '',
     email: googleRedirectState?.email || '',
     phone: '',
+    identityCardNumber: '',
     password: '',
     confirmPassword: ''
   })
@@ -200,10 +202,15 @@ export const RegisterPage: React.FC = () => {
         captchaId,
         captchaCode: captchaInput.trim().toUpperCase()
       })
+      if (formData.identityCardNumber.trim()) {
+        localStorage.setItem('boxora_user_cccd_' + formData.email.trim(), formData.identityCardNumber.trim())
+        localStorage.setItem('boxora_user_cccd', formData.identityCardNumber.trim())
+      }
+
       setSuccess(true)
-      setTimeout(() => {
-        navigate('/login')
-      }, 1800)
+      navigate('/units', {
+        state: { welcomeMessage: 'Tài khoản đã tạo thành công! Hãy chọn kho lưu trữ gần bạn nhất.' }
+      })
     } catch (err: any) {
       console.error(err)
       setError(err?.response?.data?.message || 'Đăng ký không thành công. Vui lòng kiểm tra lại thông tin.')

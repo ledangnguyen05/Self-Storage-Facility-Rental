@@ -25,6 +25,18 @@ public class SupportTicket extends BaseEntity {
     @JoinColumn(name = "booking_id")
     private Booking booking;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "storage_unit_id")
+    private StorageUnit storageUnit;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by_staff_id")
+    private User createdByStaff;
+
+    @Column(name = "is_staff_recorded")
+    @Builder.Default
+    private Boolean isStaffRecorded = false;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
     private TicketCategory category;

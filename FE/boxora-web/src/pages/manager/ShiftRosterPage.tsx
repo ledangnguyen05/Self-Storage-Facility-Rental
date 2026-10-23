@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { useOutletContext } from 'react-router-dom'
 import { userService } from '../../services/userService'
 import { facilityService } from '../../services/facilityService'
 import {
@@ -13,6 +14,7 @@ import { ShiftAssignmentModal } from './modals/ShiftAssignmentModal'
 import { ShiftSwapModal } from './modals/ShiftSwapModal'
 import { ShiftHandoverModal } from './modals/ShiftHandoverModal'
 import { ShiftEditModal } from './modals/ShiftEditModal'
+import { canCheckInShift, formatShiftTimeRange, BOXORA_SHIFTS } from '../../constants/shiftConstants'
 
 const formatDateLocal = (d: Date): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -111,6 +113,12 @@ export const ShiftRosterPage: React.FC = () => {
   const [showHandoverModal, setShowHandoverModal] = useState(false)
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  // Dispatch Handover State (Quản lý điều phối bàn giao ca đột xuất / chờ người nhận)
+  const [dispatchHandoverTarget, setDispatchHandoverTarget] = useState<ShiftHandover | null>(null)
+  const [dispatchStaffId, setDispatchStaffId] = useState<string>('')
+  const [dispatchNotes, setDispatchNotes] = useState<string>('')
+  const [isDispatching, setIsDispatching] = useState(false)
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
@@ -214,6 +222,9 @@ export const ShiftRosterPage: React.FC = () => {
       } else if (Array.isArray(assignRes)) {
         assignList = assignRes
       }
+      if (targetFacilityId) {
+        assignList = assignList.filter(a => a.facilityId === targetFacilityId)
+      }
       setAssignments(assignList)
 
       // 2. Staff / Manager list
@@ -237,6 +248,9 @@ export const ShiftRosterPage: React.FC = () => {
       } else if (Array.isArray(swapRes)) {
         swapList = swapRes
       }
+      if (targetFacilityId) {
+        swapList = swapList.filter(s => s.facilityId === targetFacilityId)
+      }
       setSwapRequests(swapList)
 
       // 4. Shift handovers in range
@@ -251,6 +265,9 @@ export const ShiftRosterPage: React.FC = () => {
         handoverList = handoverRes.content
       } else if (Array.isArray(handoverRes)) {
         handoverList = handoverRes
+      }
+      if (targetFacilityId) {
+        handoverList = handoverList.filter(h => h.facilityId === targetFacilityId)
       }
       setHandovers(handoverList)
     } catch (err) {
@@ -368,6 +385,31 @@ export const ShiftRosterPage: React.FC = () => {
     }
   }
 
+  // Manager Dispatch Handover Action
+  const handleDispatchSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!dispatchHandoverTarget || !dispatchStaffId) {
+      showToast('Vui lòng chọn nhân sự tiếp nhận bàn giao.')
+      return
+    }
+    setIsDispatching(true)
+    try {
+      await staffAssignmentService.dispatchHandover(dispatchHandoverTarget.id, {
+        incomingStaffId: dispatchStaffId,
+        notes: dispatchNotes.trim() || undefined
+      })
+      showToast('Đã điều phối nhân sự tiếp nhận bàn giao thành công!')
+      setDispatchHandoverTarget(null)
+      setDispatchStaffId('')
+      setDispatchNotes('')
+      await fetchData()
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Lỗi khi điều phối nhân sự.')
+    } finally {
+      setIsDispatching(false)
+    }
+  }
+
   // Filtered Roster
   const filteredAssignments = useMemo(() => {
     return assignments.filter(a => {
@@ -378,6 +420,8 @@ export const ShiftRosterPage: React.FC = () => {
         a.assignedZone?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         a.notes?.toLowerCase().includes(searchTerm.toLowerCase())
 
+      const targetFacilityId = (!selectedFacilityId || selectedFacilityId.toUpperCase() === 'ALL') ? undefined : selectedFacilityId
+      if (targetFacilityId && a.facilityId !== targetFacilityId) return false
       if (!matchSearch) return false
       if (filterShift !== 'ALL' && a.shift !== filterShift) return false
       if (filterStaff !== 'ALL' && a.staffId !== filterStaff) return false
@@ -903,6 +947,7 @@ export const ShiftRosterPage: React.FC = () => {
                 <option value="ASSIGNED">Chưa vào ca (Chờ trực)</option>
                 <option value="CHECKED_IN">Đang trực ca (Checked-in)</option>
                 <option value="COMPLETED">Đã hoàn thành</option>
+                <option value="ABSENT">Không đi làm (Vắng mặt)</option>
                 <option value="CANCELLED">Đã hủy ca</option>
               </select>
 
@@ -1295,6 +1340,11 @@ export const ShiftRosterPage: React.FC = () => {
                     const isCancelled = swap.status === 'CANCELLED'
                     const isLoadingAction = actionLoadingId === swap.id
 
+                    const todayStr = formatDateLocal(new Date())
+                    const isPast = Boolean(swap.assignmentDate && swap.assignmentDate < todayStr)
+                    const isOverdue = (isPast && (isPending || isManagerApproved)) ||
+                      (isCancelled && (Boolean(swap.managerNotes?.includes('Quá hạn')) || isPast))
+
                     return (
                       <tr key={swap.id} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-3 px-4">
@@ -1316,6 +1366,9 @@ export const ShiftRosterPage: React.FC = () => {
                           <div className="text-slate-700 max-w-xs truncate" title={swap.reason}>
                             {swap.reason}
                           </div>
+                          {isOverdue && !swap.managerNotes && (
+                            <div className="text-[10px] text-slate-500 italic">Hệ thống tự động hủy: Quá hạn ngày đổi ca trực</div>
+                          )}
                           {swap.managerNotes && (
                             <div className="text-[10px] text-emerald-700 italic">Ý kiến QL: {swap.managerNotes}</div>
                           )}
@@ -1383,6 +1436,7 @@ export const ShiftRosterPage: React.FC = () => {
                       </tr>
                     )
                   })}
+
                 </tbody>
               </table>
             </div>
@@ -1434,6 +1488,11 @@ export const ShiftRosterPage: React.FC = () => {
                       <tr key={h.id} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-3 px-4">
                           <div className="font-bold text-slate-900">{h.shift}</div>
+                          {h.targetShift && h.targetShift !== h.shift && (
+                            <div className="text-[10px] text-blue-600 font-semibold">
+                              Ca nhận: {h.targetShift}
+                            </div>
+                          )}
                           <div className="text-[11px] text-slate-500 font-mono">{h.handoverDate}</div>
                         </td>
 
@@ -1489,6 +1548,95 @@ export const ShiftRosterPage: React.FC = () => {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* MODAL ĐIỀU PHỐI NHÂN SỰ TIẾP NHẬN BÀN GIAO CA (DÀNH CHO QUẢN LÝ) */}
+          {dispatchHandoverTarget && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+              <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 text-left">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-amber-50 text-amber-600 border border-amber-200">
+                      <span className="material-symbols-outlined text-[20px]">person_add</span>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">Điều Phối Nhân Sự Tiếp Nhận</h3>
+                      <p className="text-xs text-slate-500">{dispatchHandoverTarget.shift} • {dispatchHandoverTarget.handoverDate}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDispatchHandoverTarget(null)}
+                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">close</span>
+                  </button>
+                </div>
+
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1">
+                  <div>Người bàn giao: <strong>{dispatchHandoverTarget.outgoingStaffName || dispatchHandoverTarget.outgoingStaffUsername}</strong></div>
+                  <div>Loại bàn giao: <strong className="text-rose-700">{dispatchHandoverTarget.handoverType}</strong></div>
+                  {dispatchHandoverTarget.emergencyReason && (
+                    <div className="text-rose-600 italic">Lý do khẩn cấp: {dispatchHandoverTarget.emergencyReason}</div>
+                  )}
+                </div>
+
+                <form onSubmit={handleDispatchSubmit} className="flex flex-col gap-3 text-xs">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">
+                      Chỉ định nhân sự tiếp nhận bàn giao <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={dispatchStaffId}
+                      onChange={e => setDispatchStaffId(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-blue-500 focus:bg-white"
+                    >
+                      <option value="">-- Chọn nhân sự tại chi nhánh --</option>
+                      {staffList
+                        .filter(s => s.id !== dispatchHandoverTarget.outgoingStaffId && s.isActive !== false)
+                        .map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.fullName || s.username} ({s.email}) — [{s.roleName || 'Nhân sự'}]
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">
+                      Ghi chú điều phối của Quản lý
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={dispatchNotes}
+                      onChange={e => setDispatchNotes(e.target.value)}
+                      placeholder="Ghi chú phân công nhiệm vụ, căn cứ điều phối..."
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-blue-500 focus:bg-white resize-none"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setDispatchHandoverTarget(null)}
+                      disabled={isDispatching}
+                      className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isDispatching || !dispatchStaffId}
+                      className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl flex items-center gap-1 shadow-xs disabled:opacity-50"
+                    >
+                      {isDispatching && <span className="material-symbols-outlined text-[15px] animate-spin">progress_activity</span>}
+                      <span>Xác nhận điều phối</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           )}
         </div>

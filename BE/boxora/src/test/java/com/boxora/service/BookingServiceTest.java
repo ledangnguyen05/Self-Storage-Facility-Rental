@@ -1035,5 +1035,53 @@ class BookingServiceTest {
             AppException ex = assertThrows(AppException.class, () -> bookingService.claimCheckInReception(bookingId));
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
         }
+
+        @Test
+        @DisplayName("Tiếp nhận thành công khi nhân viên trực ca đêm bắt đầu từ hôm trước")
+        void claimCheckInReception_SuccessWhenCheckedInOvernightShiftFromPreviousDay() {
+            UUID bookingId = UUID.randomUUID();
+            UUID staffId = UUID.randomUUID();
+            LocalDate today = LocalDate.now();
+            LocalDate yesterday = today.minusDays(1);
+
+            User staffUser = User.builder().fullName("Tran Staff Night").build();
+            staffUser.setId(staffId);
+
+            com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                    .bookingCode("BK-CLAIM-NIGHT")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(today)
+                    .expectedCheckInAt(today.atTime(2, 30))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            booking.setId(bookingId);
+
+            com.boxora.entity.StaffAssignment overnightAssignment = com.boxora.entity.StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(testFacility)
+                    .assignedDate(yesterday)
+                    .shift(com.boxora.enums.StaffShift.NIGHT)
+                    .startTime(java.time.LocalTime.of(22, 0))
+                    .endTime(java.time.LocalTime.of(6, 0))
+                    .status(com.boxora.enums.StaffAssignmentStatus.CHECKED_IN)
+                    .checkedInAt(yesterday.atTime(22, 5))
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(staffAssignmentRepository.findByStaff_IdAndAssignedDate(staffId, today))
+                    .thenReturn(List.of());
+            when(staffAssignmentRepository.findByStaff_IdAndAssignedDate(staffId, yesterday))
+                    .thenReturn(List.of(overnightAssignment));
+            when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            var res = bookingService.claimCheckInReception(bookingId);
+
+            assertThat(res.getAssignedStaffId()).isEqualTo(staffId);
+            assertThat(res.getAssignedStaffName()).isEqualTo("Tran Staff Night");
+        }
     }
 }

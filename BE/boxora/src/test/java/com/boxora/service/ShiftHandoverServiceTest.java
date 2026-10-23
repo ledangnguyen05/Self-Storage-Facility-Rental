@@ -8,6 +8,7 @@ import com.boxora.entity.ShiftHandover;
 import com.boxora.entity.User;
 import com.boxora.enums.ActivityAction;
 import com.boxora.enums.ShiftHandoverStatus;
+import com.boxora.enums.ShiftHandoverType;
 import com.boxora.enums.StaffShift;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
@@ -80,6 +81,7 @@ class ShiftHandoverServiceTest {
         facilityId = UUID.randomUUID();
         staff1Id = UUID.randomUUID();
         staff2Id = UUID.randomUUID();
+        managerId = UUID.randomUUID();
 
         facility = Facility.builder().name("Boxora Tan Binh").code("HCM-TB").build();
         facility.setId(facilityId);
@@ -98,6 +100,8 @@ class ShiftHandoverServiceTest {
                 .facilityId(facilityId)
                 .handoverDate(LocalDate.now())
                 .shift(StaffShift.MORNING)
+                .targetShift(StaffShift.AFTERNOON)
+                .handoverType(ShiftHandoverType.ROUTINE)
                 .incomingStaffId(staff2Id)
                 .pendingTasks("Kiểm tra pin SmartLock buồng B104")
                 .pendingTicketsCount(1)
@@ -115,6 +119,8 @@ class ShiftHandoverServiceTest {
                 .facility(facility)
                 .handoverDate(req.getHandoverDate())
                 .shift(StaffShift.MORNING)
+                .targetShift(StaffShift.AFTERNOON)
+                .handoverType(ShiftHandoverType.ROUTINE)
                 .outgoingStaff(staff1)
                 .incomingStaff(staff2)
                 .checklistCompleted(true)
@@ -129,6 +135,7 @@ class ShiftHandoverServiceTest {
         ShiftHandoverResponse res = shiftHandoverService.createHandover(req);
 
         assertThat(res.getStatus()).isEqualTo(ShiftHandoverStatus.SUBMITTED);
+        assertThat(res.getHandoverType()).isEqualTo(ShiftHandoverType.ROUTINE);
         verify(activityLogService).record(eq(facilityId), eq(ActivityAction.SHIFT_HANDOVER_CREATE), eq("ShiftHandover"), eq(saved.getId()), any(), any(), any());
     }
 

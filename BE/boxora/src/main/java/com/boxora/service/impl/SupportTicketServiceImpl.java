@@ -30,6 +30,12 @@ import com.boxora.repository.UserRepository;
 import com.boxora.security.RequestContext;
 import com.boxora.service.FileStorageService;
 import com.boxora.service.SupportTicketService;
+import com.boxora.entity.StorageUnit;
+import com.boxora.entity.RentalContract;
+import com.boxora.enums.RentalContractStatus;
+import com.boxora.enums.BookingStatus;
+import com.boxora.repository.StorageUnitRepository;
+import com.boxora.repository.RentalContractRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -52,6 +58,8 @@ public class SupportTicketServiceImpl implements SupportTicketService {
     private final UserRepository userRepository;
     private final BookingRepository bookingRepository;
     private final FacilityRepository facilityRepository;
+    private final StorageUnitRepository storageUnitRepository;
+    private final RentalContractRepository rentalContractRepository;
     private final ActivityLogRepository activityLogRepository;
     private final FileStorageService fileStorageService;
     private final RequestContext requestContext;
@@ -170,6 +178,9 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .ticketCode(ticketCode)
                 .customer(customer)
                 .booking(booking)
+                .storageUnit(storageUnit)
+                .createdByStaff(createdByStaff)
+                .isStaffRecorded(isStaffRecorded)
                 .facility(facility)
                 .category(category)
                 .title(request.getTitle())
@@ -930,6 +941,21 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         boolean isResolvedOrClosed = t.getStatus() == TicketStatus.RESOLVED || t.getStatus() == TicketStatus.CLOSED;
         boolean isOverdue = !isResolvedOrClosed && t.getSlaDueAt() != null && LocalDateTime.now().isAfter(t.getSlaDueAt());
 
+        String unitCodeDisplay = "Chung";
+        UUID storageUnitId = null;
+        if (t.getStorageUnit() != null) {
+            unitCodeDisplay = t.getStorageUnit().getUnitCode();
+            storageUnitId = t.getStorageUnit().getId();
+        } else if (t.getBooking() != null && t.getBooking().getStorageUnit() != null) {
+            unitCodeDisplay = t.getBooking().getStorageUnit().getUnitCode();
+            storageUnitId = t.getBooking().getStorageUnit().getId();
+        }
+
+        String staffName = t.getCreatedByStaff() != null ? t.getCreatedByStaff().getFullName() : null;
+        String staffRole = (t.getCreatedByStaff() != null && t.getCreatedByStaff().getRole() != null)
+                ? t.getCreatedByStaff().getRole().getName()
+                : null;
+
         return SupportTicketResponse.builder()
                 .id(t.getId())
                 .ticketCode(t.getTicketCode())
@@ -946,6 +972,10 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .assignedStaffId(t.getAssignedStaff() != null ? t.getAssignedStaff().getId() : null)
                 .assignedStaffName(t.getAssignedStaff() != null ? t.getAssignedStaff().getFullName() : null)
                 .assignedStaffPhone(t.getAssignedStaff() != null ? t.getAssignedStaff().getPhone() : null)
+                .createdByStaffId(t.getCreatedByStaff() != null ? t.getCreatedByStaff().getId() : null)
+                .createdByStaffName(staffName)
+                .createdByStaffRole(staffRole)
+                .isStaffRecorded(Boolean.TRUE.equals(t.getIsStaffRecorded()))
                 .category(t.getCategory() != null ? t.getCategory().name() : null)
                 .title(t.getTitle())
                 .description(t.getDescription())

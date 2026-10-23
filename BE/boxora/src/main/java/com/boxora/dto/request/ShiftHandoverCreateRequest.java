@@ -1,5 +1,6 @@
 package com.boxora.dto.request;
 
+import com.boxora.enums.ShiftHandoverType;
 import com.boxora.enums.StaffShift;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
@@ -31,6 +32,13 @@ public class ShiftHandoverCreateRequest {
     @Schema(description = "Ca làm việc của người giao", example = "MORNING")
     private StaffShift shift;
 
+    @Schema(description = "Ca làm việc tiếp nhận (nếu có)", example = "AFTERNOON")
+    private StaffShift targetShift;
+
+    @Builder.Default
+    @Schema(description = "Loại bàn giao: ROUTINE (Định kỳ đổi ca), EMERGENCY (Đột xuất), RESPONSIBILITY_TRANSFER (Chuyển giao trách nhiệm trong ca)", example = "ROUTINE")
+    private ShiftHandoverType handoverType = ShiftHandoverType.ROUTINE;
+
     @Schema(description = "ID nhân sự nhận ca trực", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
     private UUID incomingStaffId;
 
@@ -39,6 +47,12 @@ public class ShiftHandoverCreateRequest {
 
     @Schema(description = "ID phân công ca của người nhận", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
     private UUID incomingAssignmentId;
+
+    @Schema(description = "Lý do bàn giao đột xuất (bắt buộc khi handoverType = EMERGENCY)", example = "Nhân viên bị sốt cấp tính cần rời ca khám bệnh")
+    private String emergencyReason;
+
+    @Schema(description = "Phạm vi chuyển giao trách nhiệm trong ca (ví dụ: CASH_DRAWER,CHECKIN_CHECKOUT,TICKETS,SECURITY_LOCK)", example = "CASH_DRAWER,TICKETS")
+    private String transferScope;
 
     @Schema(description = "Công việc tồn đọng cần ca sau theo dõi", example = "Khách đặt kho BX-88229 hẹn 15:00 đến nhận chìa; theo dõi pin SmartLock B104")
     private String pendingTasks;
@@ -65,4 +79,8 @@ public class ShiftHandoverCreateRequest {
 
     @Schema(description = "Ghi chú bổ sung", example = "Bàn giao chìa khóa vạn năng cho ca chiều")
     private String notes;
+
+    @Schema(description = "Lưu dưới dạng bản nháp (DRAFT)", example = "false")
+    @Builder.Default
+    private Boolean isDraft = false;
 }
