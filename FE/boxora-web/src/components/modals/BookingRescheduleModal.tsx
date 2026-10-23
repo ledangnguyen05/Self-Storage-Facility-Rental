@@ -238,7 +238,7 @@ export const BookingRescheduleModal: React.FC<BookingRescheduleModalProps> = ({
       <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] my-auto">
         
         {/* Modal Header */}
-        <div className="bg-slate-900 px-6 py-4 text-white flex items-center justify-between shrink-0">
+        <div className="bg-gradient-to-r from-blue-50 via-white to-cyan-50 dark:from-slate-900 dark:via-slate-850 dark:to-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white px-6 py-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
               <span className="material-symbols-outlined text-2xl">edit_calendar</span>
@@ -324,7 +324,7 @@ export const BookingRescheduleModal: React.FC<BookingRescheduleModalProps> = ({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="w-full max-w-md mx-auto py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-md"
+                  className="w-full max-w-md mx-auto py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer shadow-md"
                 >
                   Hoàn Tất &amp; Đóng
                 </button>
@@ -351,7 +351,7 @@ export const BookingRescheduleModal: React.FC<BookingRescheduleModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold cursor-pointer transition-colors"
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-xs cursor-pointer transition-colors"
               >
                 Đã Hiểu &amp; Quay Lại
               </button>

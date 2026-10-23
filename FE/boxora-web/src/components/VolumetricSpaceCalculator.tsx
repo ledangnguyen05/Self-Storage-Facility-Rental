@@ -703,7 +703,7 @@ export const VolumetricSpaceCalculator: React.FC = () => {
         
         {/* LEFT COLUMN: ITEM COUNTERS & QUANTITY CONTROLS (5 cols) */}
         <div className="lg:col-span-5 space-y-4">
-          <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs space-y-4">
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="font-bold text-sm text-slate-900">Danh Mục Đồ Đạc</h3>
@@ -791,7 +791,7 @@ export const VolumetricSpaceCalculator: React.FC = () => {
 
         {/* RIGHT COLUMN: 3D ISOMETRIC VAULT VISUALIZER (7 cols) */}
         <div className="lg:col-span-7 space-y-4">
-          <div className="relative rounded-2xl bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-slate-800 shadow-xl overflow-hidden">
+          <div className="relative rounded-2xl bg-gradient-to-b from-slate-50 via-white to-blue-50/50 dark:from-slate-900 dark:via-slate-850 dark:to-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
             
             {/* Top Bar */}
             <div className="absolute top-0 inset-x-0 z-10 px-4 py-3 bg-slate-900/80 backdrop-blur-md border-b border-slate-800/80 flex items-center justify-between text-white">
@@ -811,7 +811,7 @@ export const VolumetricSpaceCalculator: React.FC = () => {
                   className={`px-2.5 py-1 rounded text-[11px] font-mono transition-colors flex items-center gap-1 cursor-pointer ${
                     autoRotate
                       ? 'bg-[var(--brand-teal,#0891b2)] text-white font-semibold'
-                      : 'bg-slate-800/80 hover:bg-slate-750 text-slate-300'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[14px]">rotate_right</span>
@@ -828,7 +828,7 @@ export const VolumetricSpaceCalculator: React.FC = () => {
             />
 
             {/* Bottom HUD: Live Physical Telemetry */}
-            <div className="absolute bottom-0 inset-x-0 z-10 px-4 py-3 bg-slate-950/85 backdrop-blur-md border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-white">
+            <div className="absolute bottom-0 inset-x-0 z-10 px-4 py-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-3 text-white">
               
               <div className="flex items-center gap-4">
                 <div>
@@ -838,7 +838,7 @@ export const VolumetricSpaceCalculator: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="h-6 w-px bg-slate-800" />
+                <div className="h-6 w-px bg-slate-200" />
 
                 <div>
                   <span className="text-[10px] text-slate-400 block font-mono">DUNG TÍCH KHO</span>
@@ -847,7 +847,7 @@ export const VolumetricSpaceCalculator: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="h-6 w-px bg-slate-800" />
+                <div className="h-6 w-px bg-slate-200" />
 
                 <div>
                   <span className="text-[10px] text-slate-400 block font-mono">KÍCH THƯỚC</span>
@@ -860,7 +860,7 @@ export const VolumetricSpaceCalculator: React.FC = () => {
               {/* Capacity Progress Ring / Bar */}
               <div className="flex items-center gap-2.5">
                 <span className="text-[10px] text-slate-400 font-mono">ĐỘ LẤP ĐẦY:</span>
-                <div className="w-20 bg-slate-800 rounded-full h-2 overflow-hidden">
+                <div className="w-20 bg-slate-200 rounded-full h-2 overflow-hidden">
                   <div
                     className={`h-full transition-all duration-300 ${
                       fillPercentage > 85 ? 'bg-amber-400' : 'bg-[var(--brand-teal,#0891b2)]'
@@ -887,7 +887,7 @@ export const VolumetricSpaceCalculator: React.FC = () => {
           {/* ============================================================ */}
           {/* C. DYNAMIC RECOMMENDATION & DIRECT BOOKING CTA CARD          */}
           {/* ============================================================ */}
-          <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/90 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-5 text-left">
+          <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-5 text-left">
             <div className="space-y-1.5">
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-cyan-100 text-[var(--brand-teal,#0891b2)]">

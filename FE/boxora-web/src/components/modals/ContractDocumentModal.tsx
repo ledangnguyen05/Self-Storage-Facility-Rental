@@ -31,7 +31,7 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
       <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:border-none print:rounded-none">
         
         {/* Modal Top Bar - Hidden when printing */}
-        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white print:hidden shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-50 via-white to-cyan-50 dark:from-slate-900 dark:via-slate-850 dark:to-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white print:hidden shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-blue-400">
               <span className="material-symbols-outlined text-[20px]">description</span>
@@ -59,7 +59,7 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
             <button
               type="button"
               onClick={handlePrint}
-              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700"
+              className="px-3.5 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700"
               title="In hoặc lưu PDF"
             >
               <span className="material-symbols-outlined text-[16px]">print</span>
@@ -81,7 +81,7 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+              className="w-8 h-8 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors cursor-pointer"
             >
               <span className="material-symbols-outlined text-[20px]">close</span>
             </button>
@@ -353,7 +353,7 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
             >
               Đóng
             </button>

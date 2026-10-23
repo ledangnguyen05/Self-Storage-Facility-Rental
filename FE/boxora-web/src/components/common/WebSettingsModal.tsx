@@ -60,13 +60,13 @@ export const WebSettingsModal: React.FC<WebSettingsModalProps> = ({ isOpen, onCl
     <Modal isOpen={isOpen} onClose={onClose} maxWidth="md">
       <div className="flex flex-col gap-5 text-left">
         {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200/60 flex items-center justify-center text-blue-600">
               <span className="material-symbols-outlined text-[22px]">settings</span>
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900">{t('Cài đặt giao diện & hệ thống')}</h3>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">{t('Cài đặt giao diện & hệ thống')}</h3>
               <p className="text-xs text-slate-500">{t('Tùy chỉnh trải nghiệm làm việc theo nhu cầu cá nhân')}</p>
             </div>
           </div>
@@ -81,7 +81,7 @@ export const WebSettingsModal: React.FC<WebSettingsModalProps> = ({ isOpen, onCl
         {/* Content sections */}
         <div className="flex flex-col gap-4 max-h-[60vh] overflow-y-auto pr-1">
           {/* Section 1: Giao diện (Theme) */}
-          <div className="rounded-xl border border-slate-200/80 p-3.5 bg-white space-y-2.5">
+          <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 p-3.5 bg-white dark:bg-slate-900/90 space-y-2.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-[18px] text-slate-500">palette</span>

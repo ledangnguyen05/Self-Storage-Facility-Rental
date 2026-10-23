@@ -86,7 +86,7 @@ export const StorageUnitCard: React.FC<StorageUnitCardProps> = ({
       }`}
     >
       <div>
-        <div className="relative h-48 overflow-hidden bg-slate-900">
+        <div className="relative h-48 overflow-hidden bg-slate-100">
           <img
             src={primaryImage}
             alt={`Kho #${unitCode}`}
@@ -95,7 +95,7 @@ export const StorageUnitCard: React.FC<StorageUnitCardProps> = ({
 
           {/* Top badges: Unit code & floor level */}
           <div className="absolute top-3 left-3 flex gap-1.5">
-            <span className="bg-slate-900/90 backdrop-blur-md text-white font-mono text-xs px-2.5 py-1 rounded-md font-bold shadow-sm">
+            <span className="bg-white/95 backdrop-blur-md text-slate-900 border border-slate-200 font-mono text-xs px-2.5 py-1 rounded-md font-bold shadow-sm">
               #{unitCode}
             </span>
             <span className="bg-blue-600 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md shadow-sm">
@@ -206,7 +206,7 @@ export const StorageUnitCard: React.FC<StorageUnitCardProps> = ({
             event.stopPropagation()
             onReserve()
           }}
-          className="flex-1 h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-colors shadow-sm cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="flex-1 h-10 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-300"
         >
           <span>Đặt Giữ Chỗ</span>
           <span className="material-symbols-outlined text-[16px]">arrow_forward</span>

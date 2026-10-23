@@ -64,15 +64,15 @@ export const FacilitiesPage: React.FC = () => {
   })
 
   return (
-    <div className="bg-slate-50 min-h-screen pb-16 text-slate-900 font-sans antialiased text-left">
+    <div className="bg-slate-50 dark:bg-slate-950 min-h-screen pb-16 text-slate-900 dark:text-slate-100 font-sans antialiased text-left">
       {/* Top Brand Header */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 mb-8">
+      <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/90 dark:border-slate-800 mb-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between">
           <BrandLogo subtitle="HỆ THỐNG CƠ SỞ" />
           <div className="flex items-center gap-3">
             <Link
               to="/units"
-              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all shadow-xs flex items-center gap-1.5"
             >
               <span>Tìm &amp; Thuê Kho</span>
             </Link>
@@ -224,7 +224,7 @@ export const FacilitiesPage: React.FC = () => {
                         e.stopPropagation()
                         navigate(`/units?unit=${encodeURIComponent(unit.unitCode)}`)
                       }}
-                      className="bg-slate-900 hover:bg-slate-800 text-white text-[11px] py-1 px-2.5 cursor-pointer"
+                      className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] py-1 px-2.5 shadow-2xs cursor-pointer"
                     >
                       Giữ chỗ
                     </Button>

@@ -194,7 +194,7 @@ export function DocuSealSimulationModal({
         <div className="w-full max-w-2xl my-auto space-y-4 rounded-2xl border border-emerald-500/30 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
           
           {/* Header chúc mừng */}
-          <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 px-6 py-4 text-white flex items-center justify-between border-b border-emerald-800/40">
+          <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 px-6 py-4 text-white flex items-center justify-between border-b border-emerald-800/40">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                 <span className="material-symbols-outlined text-2xl">verified</span>
@@ -342,7 +342,7 @@ export function DocuSealSimulationModal({
       <div className="w-full max-w-3xl my-auto space-y-4 rounded-2xl border border-slate-700 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header ký hợp đồng điện tử trực tuyến */}
-        <div className="bg-gradient-to-r from-slate-900 via-cyan-950 to-slate-900 px-6 py-4 text-white flex items-center justify-between border-b border-cyan-800/40">
+        <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 px-6 py-4 text-white flex items-center justify-between border-b border-cyan-800/40">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
               <span className="material-symbols-outlined text-2xl">verified</span>

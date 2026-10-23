@@ -1,5 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
+import { useLanguage } from '../../context/LanguageContext'
 
 interface BrandLogoProps {
   to?: string
@@ -27,6 +28,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
     xl: { img: 'h-16 sm:h-20 w-auto', sub: 'text-xs' },
   }
 
+  const { t } = useLanguage()
   const { img, sub } = sizeMap[size]
 
   const content = (
@@ -39,7 +41,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
       {showText && subtitle && (
         <div className="hidden md:flex flex-col text-left leading-none">
           <span className={`font-mono text-blue-800/80 font-bold tracking-wider uppercase ${sub}`}>
-            {subtitle}
+            {t(subtitle)}
           </span>
         </div>
       )}
