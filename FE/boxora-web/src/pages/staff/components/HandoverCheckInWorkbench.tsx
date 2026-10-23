@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { Booking, RentalContract, StorageUnit } from '../../../types'
+import { Booking, RentalContract } from '../../../types'
 import { handoverService, HandoverPrerequisites } from '../../../services/handoverService'
 import { bookingService } from '../../../services/bookingService'
 import { contractService } from '../../../services/contractService'
-import { storageUnitService } from '../../../services/storageUnitService'
 import { ContractDocumentModal } from '../../../components/modals/ContractDocumentModal'
 import { useAuth } from '../../../context/AuthContext'
-import { getCheckInCountdown } from '../../../utils/rentalAccess'
 
 export interface BookingChecklist {
   doorRoll: boolean
@@ -16,64 +14,18 @@ export interface BookingChecklist {
   sealPlate: boolean
 }
 
-export type HandoverStepType =
-  | 'identity'      // Bước 1: Xác minh CCCD/Passport
-  | 'unit-select'   // Bước 2: Nhập mã kho & Kiểm tra kho trống
-  | 'inspection'    // Bước 3: Nghiệm thu hiện trường
-  | 'billing'       // Bước 4: Chi phí & Hợp đồng
-  | 'payment'       // Bước 5: Thanh toán tại quầy
-  | 'signing'       // Bước 6: Ký hợp đồng online
-  | 'activation'    // Bước 7: Kích hoạt PIN & Thông báo account
-
 export interface BookingWorkbenchSession {
   bookingId: string
-  activeStepTab: HandoverStepType
-
-  // Bước 1: Xác minh danh tính
-  idCardType: string
-  idCardNumber: string
-  originalDocumentSeen: boolean
-  identityVerified: boolean
-  identityNotes: string
-
-  // Bước 2: Chọn & Kiểm tra kho
-  desiredUnitCode: string
-  unitVerifiedAvailable: boolean
-  unitUnavailableReason?: string
-  rentalMonths: number
-  rentalStartDate: string
-
-  // Bước 3: Nghiệm thu hiện trường
+  activeStepTab: 'audit' | 'checklist' | 'pin'
   checklist: BookingChecklist
   photoDoor: string
   photoInterior: string
-  handoverNotes: string
-  inspectionPassed: boolean
-
-  // Bước 4: Chi phí & Hợp đồng
-  monthlyRate: number
-  depositFee: number
-  discountAmount: number
-  firstMonthRent: number
-  prepaidAmount: number
-  totalDue: number
-
-  // Bước 5: Thanh toán
-  paymentMethod: 'BANK_TRANSFER' | 'VNPAY'
-  paymentProofUrl?: string
-  paymentCompleted: boolean
-
-  // Bước 6: Ký hợp đồng online
-  signatureDataUrl?: string
-  isSignedOnline: boolean
-  signedContractCode?: string
-
-  // Bước 7: Kích hoạt PIN & Thông báo
   rfidCard: string
   accessPin: string
   emailSent: boolean
   webPushSent: boolean
-  inAppNotificationSent: boolean
+  handoverNotes: string
+  identityVerified: boolean
   isCompleted: boolean
   completedAt?: string
 }
@@ -107,12 +59,7 @@ export const loadPersistedSessions = (): Record<string, BookingWorkbenchSession>
     const parsed = JSON.parse(raw)
     if (typeof parsed !== 'object' || parsed === null) return {}
     Object.values(parsed).forEach((session: any) => {
-      if (session && typeof session === 'object') {
-        delete session.idCardNumber
-        if (session.activeStepTab === 'audit') session.activeStepTab = 'identity'
-        else if (session.activeStepTab === 'checklist') session.activeStepTab = 'inspection'
-        else if (session.activeStepTab === 'pin') session.activeStepTab = 'activation'
-      }
+      if (session && typeof session === 'object') delete session.idCardNumber
     })
     return parsed
   } catch (err) {
@@ -135,53 +82,16 @@ export const createInitialSession = (
   existingPin = ''
 ): BookingWorkbenchSession => ({
   bookingId,
-  activeStepTab: isAlreadyActive ? 'activation' : 'identity',
-
-  // Step 1: Identity
-  idCardType: 'CCCD',
-  idCardNumber: '',
-  originalDocumentSeen: false,
-  identityVerified: false,
-  identityNotes: 'Đã đối chiếu giấy tờ gốc tại quầy giao dịch.',
-
-  // Step 2: Unit Select & Availability
-  desiredUnitCode: '',
-  unitVerifiedAvailable: false,
-  unitUnavailableReason: undefined,
-  rentalMonths: 1,
-  rentalStartDate: new Date().toISOString().split('T')[0],
-
-  // Step 3: Inspection
+  activeStepTab: 'audit',
   checklist: { ...defaultChecklist },
   photoDoor: '',
   photoInterior: '',
-  handoverNotes: 'Đã nghiệm thu hiện trường 5/5 tiêu chuẩn đạt chuẩn.',
-  inspectionPassed: false,
-
-  // Step 4: Billing
-  monthlyRate: 1200000,
-  depositFee: 1200000,
-  discountAmount: 0,
-  firstMonthRent: 1200000,
-  prepaidAmount: 0,
-  totalDue: 2400000,
-
-  // Step 5: Payment
-  paymentMethod: 'BANK_TRANSFER',
-  paymentProofUrl: '',
-  paymentCompleted: false,
-
-  // Step 6: Online Signature
-  signatureDataUrl: '',
-  isSignedOnline: false,
-  signedContractCode: '',
-
-  // Step 7: PIN & Notification
   rfidCard: '',
   accessPin: existingPin && existingPin !== '------' ? existingPin : '------',
-  emailSent: isAlreadyActive,
-  webPushSent: isAlreadyActive,
-  inAppNotificationSent: isAlreadyActive,
+  emailSent: false,
+  webPushSent: false,
+  handoverNotes: 'Đã đối soát đầy đủ hồ sơ tại quầy tiếp đón.',
+  identityVerified: false,
   isCompleted: isAlreadyActive
 })
 
@@ -212,11 +122,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const [selectedBookingId, setSelectedBookingId] = useState<string>('')
   const [extraBookingDetails, setExtraBookingDetails] = useState<Record<string, Booking>>({})
 
-  // Storage units for checking availability in Step 2
-  const [facilityUnits, setFacilityUnits] = useState<StorageUnit[]>([])
-  const [isLoadingUnits, setIsLoadingUnits] = useState<boolean>(false)
-  const [unitSearchQuery, setUnitSearchQuery] = useState<string>('')
-
   // Per-booking persisted workflow sessions
   const [sessions, setSessions] = useState<Record<string, BookingWorkbenchSession>>(() => loadPersistedSessions())
 
@@ -229,7 +134,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const latestReqIdPerBookingRef = useRef<Record<string, number>>({})
   const activeSelectionRequestIdRef = useRef<number>(0)
 
-  // Transient UI interaction states
+  // Transient UI interaction states (not tied to booking session)
   const [pinCopied, setPinCopied] = useState(false)
   const [isSendingEmail, setIsSendingEmail] = useState(false)
   const [isSendingWebPush, setIsSendingWebPush] = useState(false)
@@ -238,6 +143,38 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const [checkInError, setCheckInError] = useState<string | null>(null)
   const [showPdfModal, setShowPdfModal] = useState(false)
 
+  // Modals for Step 1 Actions
+  const [activeModal, setActiveModal] = useState<'PAPER_CONTRACT' | null>(null)
+  const [modalFeedback, setModalFeedback] = useState<{ text: string; isError?: boolean } | null>(null)
+
+  // Paper Contract Form States
+  const [paperContractCode, setPaperContractCode] = useState('')
+  const [paperOriginalLocation, setPaperOriginalLocation] = useState('')
+  const [paperContractUrl, setPaperContractUrl] = useState('')
+  const [paperFileName, setPaperFileName] = useState('')
+  const [isUploadingPaperFile, setIsUploadingPaperFile] = useState(false)
+  const [paperNotes, setPaperNotes] = useState('')
+  const [isSavingPaperContract, setIsSavingPaperContract] = useState(false)
+  const [isVerifyingPaperContract, setIsVerifyingPaperContract] = useState(false)
+  const paperFileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Payment Proof Upload States
+  const [isUploadingPaymentProof, setIsUploadingPaymentProof] = useState<boolean>(false)
+  const [uploadedPaymentProofUrl, setUploadedPaymentProofUrl] = useState<string | null>(null)
+  const paymentProofInputRef = useRef<HTMLInputElement | null>(null)
+
+  const [openingDocumentUrl, setOpeningDocumentUrl] = useState<string | null>(null)
+  // Identity Form States
+  const [idCardType, setIdCardType] = useState<string>('CCCD')
+  const [idCardInputNumber, setIdCardInputNumber] = useState<string>('')
+  const [idOriginalSeen, setIdOriginalSeen] = useState<boolean>(false)
+  const [idNotes, setIdNotes] = useState<string>('')
+  const [isVerifyingIdentity, setIsVerifyingIdentity] = useState<boolean>(false)
+
+  // Step Transitions
+  const [isCompletingStep1, setIsCompletingStep1] = useState(false)
+  const [isRecordingInspection, setIsRecordingInspection] = useState(false)
+
   // Evidence Photos preview & lightbox modal states
   const [doorPreviewUrl, setDoorPreviewUrl] = useState<string>('')
   const [interiorPreviewUrl, setInteriorPreviewUrl] = useState<string>('')
@@ -245,24 +182,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const [isUploadingInterior, setIsUploadingInterior] = useState<boolean>(false)
   const [previewModalImage, setPreviewModalImage] = useState<{ url: string; title: string } | null>(null)
 
-  // Step 1: Identity form state
-  const [idCardTypeInput, setIdCardTypeInput] = useState<string>('CCCD')
-  const [idCardNumberInput, setIdCardNumberInput] = useState<string>('')
-  const [idOriginalSeenInput, setIdOriginalSeenInput] = useState<boolean>(false)
-  const [idNotesInput, setIdNotesInput] = useState<string>('')
-  const [isVerifyingIdentity, setIsVerifyingIdentity] = useState<boolean>(false)
-
-  // Step 5: Payment proof upload
-  const [isUploadingPaymentProof, setIsUploadingPaymentProof] = useState<boolean>(false)
-  const [paymentProofInputRef, setPaymentProofInputRef] = useState<HTMLInputElement | null>(null)
-
-  // Step 6: HTML5 Canvas Signature Pad
-  const signatureCanvasRef = useRef<HTMLCanvasElement | null>(null)
-  const [isDrawingSignature, setIsDrawingSignature] = useState(false)
-  const [hasSignatureDrawn, setHasSignatureDrawn] = useState(false)
-  const [agreedTerms, setAgreedTerms] = useState(true)
-
-  // Handover confirmation modal state
+  // Handover confirmation modal state (Hiển thị giữa màn hình confirm đã bàn giao thành công cho customer)
   const [handoverSuccessModalData, setHandoverSuccessModalData] = useState<HandoverSuccessModalData | null>(null)
   const [copiedSuccessPin, setCopiedSuccessPin] = useState<boolean>(false)
   const [selectedContractForModal, setSelectedContractForModal] = useState<RentalContract | null>(null)
@@ -301,26 +221,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
   }
 
-  // Load units for the facility to check availability in Step 2
-  useEffect(() => {
-    const targetFacId = facilityId || (user as any)?.facilityId
-    if (targetFacId) {
-      setIsLoadingUnits(true)
-      storageUnitService
-        .getUnits({ facilityId: targetFacId })
-        .then((units) => {
-          if (Array.isArray(units)) {
-            setFacilityUnits(units)
-          }
-        })
-        .catch((err) => {
-          console.warn('Could not load facility units:', err)
-        })
-        .finally(() => setIsLoadingUnits(false))
-    }
-  }, [facilityId, user])
-
-  // Sync when activeBookingId prop changes from parent
+  // Sync when activeBookingId prop changes from parent (e.g. table click "Tiếp đón & Đối soát")
   useEffect(() => {
     if (activeBookingId !== undefined && activeBookingId !== selectedBookingId) {
       setSelectedBookingId(activeBookingId)
@@ -329,7 +230,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
   }, [activeBookingId])
 
-  // Exact lookup for current selected booking
+  // Exact lookup for current selected booking - strictly null if not selected
   const currentBooking = useMemo(() => {
     if (!selectedBookingId) {
       return null
@@ -341,74 +242,13 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     )
   }, [arrivalsList, selectedBookingId, extraBookingDetails])
 
-  // Permission evaluation
-  const isClaimedByMe = Boolean(
-    (currentBooking?.assignedStaffId && user?.id && String(currentBooking.assignedStaffId).toLowerCase() === String(user.id).toLowerCase()) ||
-    (currentBooking?.assignedStaffName && (currentBooking.assignedStaffName === user?.fullName || currentBooking.assignedStaffName === user?.username))
-  )
+  // Permission evaluation for currently selected customer
   const isAssignedToOther = Boolean(
-    !isClaimedByMe && !isAdmin && (
-      (currentBooking?.assignedStaffId && user?.id && String(currentBooking.assignedStaffId).toLowerCase() !== String(user.id).toLowerCase()) ||
-      (currentBooking?.assignedStaffName && currentBooking.assignedStaffName !== user?.fullName && currentBooking.assignedStaffName !== user?.username)
-    )
+    currentBooking?.assignedStaffId && currentBooking.assignedStaffId !== user?.id && !isAdmin
   )
-  const isUnassigned = Boolean(currentBooking && !currentBooking.assignedStaffId && !currentBooking.assignedStaffName && !isAdmin)
+  const isUnassigned = Boolean(currentBooking && !currentBooking.assignedStaffId && !isAdmin)
 
-  const [isClaimingBookingId, setIsClaimingBookingId] = useState<string | null>(null)
-
-  const isBookingAssignedToMe = useCallback(
-    (b: Booking) => {
-      if (!user) return false
-      return Boolean(
-        (b.assignedStaffId && user.id && String(b.assignedStaffId).toLowerCase() === String(user.id).toLowerCase()) ||
-        (b.assignedStaffName && (b.assignedStaffName === user.fullName || b.assignedStaffName === user.username))
-      )
-    },
-    [user]
-  )
-
-  const isBookingAvailableToClaim = useCallback((b: Booking) => {
-    return !b.assignedStaffId && !b.assignedStaffName
-  }, [])
-
-  const myAssignedArrivals = useMemo(() => {
-    return arrivalsList.filter(isBookingAssignedToMe)
-  }, [arrivalsList, isBookingAssignedToMe])
-
-  const availableToClaimArrivals = useMemo(() => {
-    return arrivalsList.filter(isBookingAvailableToClaim)
-  }, [arrivalsList, isBookingAvailableToClaim])
-
-  const handleClaimAndOpen = async (booking: Booking) => {
-    setIsClaimingBookingId(booking.id)
-    setCheckInError(null)
-    try {
-      const updated = await bookingService.claimCheckInReception(booking.id)
-      setInternalArrivals((prev) =>
-        prev.map((b) =>
-          b.id === booking.id
-            ? {
-                ...b,
-                assignedStaffId: updated.assignedStaffId || user?.id,
-                assignedStaffName: updated.assignedStaffName || user?.fullName || 'Nhân viên quầy'
-              }
-            : b
-        )
-      )
-      if (onRefreshArrivals) {
-        await onRefreshArrivals()
-      }
-      setSelectedBookingId(booking.id)
-      if (onSelectBooking) onSelectBooking(booking.id)
-      setDispatchFeedback({ text: `Đã tiếp nhận lượt đón khách ${booking.customerName} (đơn ${booking.bookingCode}) thành công!` })
-    } catch (err: any) {
-      setCheckInError(err?.response?.data?.message || err?.message || 'Không thể tiếp nhận khách hàng này.')
-    } finally {
-      setIsClaimingBookingId(null)
-    }
-  }
-
-  // Fetch individual booking details if not in arrivals list
+  // If selectedBookingId is not found in arrivalsList, fetch it directly from backend
   useEffect(() => {
     if (
       selectedBookingId &&
@@ -428,34 +268,18 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
   }, [selectedBookingId, arrivalsList, extraBookingDetails])
 
-  // Active session for selected booking
+  // Active session for the selected booking
   const currentSession: BookingWorkbenchSession = useMemo(() => {
     if (!selectedBookingId) {
       return createInitialSession('')
     }
-    const session =
+    return (
       sessions[selectedBookingId] ||
       createInitialSession(selectedBookingId, currentBooking?.status === 'ACTIVE', currentBooking?.accessPin || '')
+    )
+  }, [sessions, selectedBookingId, currentBooking?.status, currentBooking?.accessPin])
 
-    // Seed defaults from booking if not yet populated
-    if (currentBooking) {
-      if (!session.desiredUnitCode && currentBooking.unitCode) {
-        session.desiredUnitCode = currentBooking.unitCode
-      }
-      if (currentBooking.rentalMonths && session.rentalMonths === 1) {
-        session.rentalMonths = currentBooking.rentalMonths
-      }
-      if (currentBooking.totalRentalFee && session.monthlyRate === 1200000) {
-        session.monthlyRate = currentBooking.rentalMonths > 0 ? Math.round(currentBooking.totalRentalFee / currentBooking.rentalMonths) : currentBooking.totalRentalFee
-        session.firstMonthRent = session.monthlyRate
-        session.depositFee = currentBooking.depositAmount || session.monthlyRate
-        session.totalDue = session.firstMonthRent + session.depositFee - session.discountAmount
-      }
-    }
-    return session
-  }, [sessions, selectedBookingId, currentBooking])
-
-  // Helper to update current session
+  // Helper to update current session and persist to sessionStorage
   const updateCurrentSession = useCallback(
     (
       updater:
@@ -477,9 +301,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     [selectedBookingId, currentBooking?.status, currentBooking?.accessPin]
   )
 
-  // Fetch prerequisites from backend
+  // Fetch prerequisites from official backend with strict race condition & error handling
   const fetchPrerequisitesForBooking = useCallback(async (bookingId: string) => {
     if (!bookingId) return
+
     const reqId = ++activeSelectionRequestIdRef.current
     latestReqIdPerBookingRef.current[bookingId] = reqId
 
@@ -488,22 +313,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
     try {
       const data = await handoverService.getCheckInPrerequisites(bookingId)
+
+      // Always save to cache for this bookingId
       setPrerequisitesCache((prev) => ({ ...prev, [bookingId]: data }))
 
       setSessions((prev) => {
         const existing = prev[bookingId] || createInitialSession(bookingId)
         const identityVerified = Boolean(data.identityVerified)
-        const isContractSigned = Boolean(data.contractSigned)
-        const isDepositPaid = Boolean(data.depositSatisfied)
-        const isRentPaid = Boolean(data.firstMonthRentSatisfied)
-
-        let nextSession = { ...existing }
-        if (identityVerified) nextSession.identityVerified = true
-        if (isContractSigned) nextSession.isSignedOnline = true
-        if (isDepositPaid && isRentPaid) nextSession.paymentCompleted = true
-
-        if (JSON.stringify(nextSession) !== JSON.stringify(existing)) {
-          const next = { ...prev, [bookingId]: nextSession }
+        if (existing.identityVerified !== identityVerified) {
+          const next = { ...prev, [bookingId]: { ...existing, identityVerified } }
           persistSessions(next)
           return next
         }
@@ -516,6 +334,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           err?.message ||
           'Không thể tải điều kiện tiên quyết cho lượt đặt chỗ này'
         setErrorMap((prev) => ({ ...prev, [bookingId]: msg }))
+        // Invalidate stale cache for this booking on error to prevent displaying wrong data
+        setPrerequisitesCache((prev) => {
+          const copy = { ...prev }
+          delete copy[bookingId]
+          return copy
+        })
       }
     } finally {
       if (latestReqIdPerBookingRef.current[bookingId] === reqId) {
@@ -524,57 +348,140 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
   }, [])
 
+  // Whenever selectedBookingId changes, trigger fetch if not cached or always refresh prerequisites
   useEffect(() => {
     if (selectedBookingId) {
       fetchPrerequisitesForBooking(selectedBookingId)
     }
   }, [selectedBookingId, fetchPrerequisitesForBooking])
 
-  const currentPrerequisites = selectedBookingId ? prerequisitesCache[selectedBookingId] || null : null
+  // Current prerequisites & states strictly scoped to selectedBookingId
+  const currentPrerequisites = selectedBookingId ? (prerequisitesCache[selectedBookingId] || null) : null
   const loadingPrerequisites = selectedBookingId ? !!loadingMap[selectedBookingId] : false
+  const prerequisitesError = selectedBookingId ? (errorMap[selectedBookingId] || null) : null
 
-  // Labels
+  // Customer & Unit Display labels strictly scoped to the active booking
   const customerDisplayName =
     currentBooking?.customerName ||
     currentPrerequisites?.customerName ||
-    (selectedBookingId ? 'Khách hàng Boxora' : 'Chưa chọn khách')
+    (selectedBookingId ? 'Đang tải...' : 'Chưa chọn khách')
   const customerDisplayPhone =
     currentBooking?.customerPhone ||
     currentPrerequisites?.customerPhone ||
-    '0900 000 000'
+    'N/A'
   const customerDisplayEmail =
     currentBooking?.customerEmail ||
     (currentBooking as any)?.customer?.email ||
     currentPrerequisites?.customerEmail ||
-    'customer@boxora.vn'
+    ''
   const unitDisplayCode =
-    currentSession.desiredUnitCode ||
     currentBooking?.unitCode ||
     currentPrerequisites?.unitCode ||
-    'A-101'
+    'N/A'
   const bookingDisplayCode =
     currentBooking?.bookingCode ||
     currentPrerequisites?.bookingCode ||
-    (selectedBookingId ? `BK-${selectedBookingId.slice(0, 8)}` : 'BK-NEW')
+    'N/A'
   const facilityDisplayName =
     currentBooking?.facilityName ||
     currentPrerequisites?.facilityName ||
     'Boxora Facility'
 
-  // Sync identity fields with prerequisites
-  useEffect(() => {
-    if (currentPrerequisites) {
-      setIdCardNumberInput(currentPrerequisites.idCardNumber || currentPrerequisites.registeredIdCardNumber || '')
-      setIdCardTypeInput(currentPrerequisites.idCardType || currentPrerequisites.registeredIdCardType || 'CCCD')
-      setIdOriginalSeenInput(Boolean(currentPrerequisites.identityVerified))
-    }
-  }, [selectedBookingId, currentPrerequisites])
-
-  // Photos
+  // Effective preview photo URLs (ưu tiên local blob URL khi vừa upload, fallback sang server URL)
   const effectiveDoorPhoto = doorPreviewUrl || currentSession.photoDoor
   const effectiveInteriorPhoto = interiorPreviewUrl || currentSession.photoInterior
 
-  // Checklist
+  // Synchronize authorized preview URLs for evidence photos
+  useEffect(() => {
+    let isMounted = true
+
+    if (currentSession.photoDoor) {
+      if (currentSession.photoDoor.startsWith('blob:') || currentSession.photoDoor.startsWith('data:')) {
+        setDoorPreviewUrl(currentSession.photoDoor)
+      } else if (selectedBookingId && currentSession.photoDoor.startsWith('/uploads/')) {
+        handoverService
+          .viewAuthorizedDocument(selectedBookingId, currentSession.photoDoor)
+          .then((blobUrl) => {
+            if (isMounted) setDoorPreviewUrl(blobUrl)
+          })
+          .catch((err) => {
+            console.warn('Could not load authorized door photo preview:', err)
+          })
+      }
+    } else {
+      setDoorPreviewUrl('')
+    }
+
+    if (currentSession.photoInterior) {
+      if (currentSession.photoInterior.startsWith('blob:') || currentSession.photoInterior.startsWith('data:')) {
+        setInteriorPreviewUrl(currentSession.photoInterior)
+      } else if (selectedBookingId && currentSession.photoInterior.startsWith('/uploads/')) {
+        handoverService
+          .viewAuthorizedDocument(selectedBookingId, currentSession.photoInterior)
+          .then((blobUrl) => {
+            if (isMounted) setInteriorPreviewUrl(blobUrl)
+          })
+          .catch((err) => {
+            console.warn('Could not load authorized interior photo preview:', err)
+          })
+      }
+    } else {
+      setInteriorPreviewUrl('')
+    }
+
+    return () => {
+      isMounted = false
+    }
+  }, [selectedBookingId, currentSession.photoDoor, currentSession.photoInterior])
+
+  const handleSendEmail = async () => {
+    const targetBookingId = currentBooking?.id || handoverSuccessModalData?.bookingId || selectedBookingId
+    const targetEmail = customerDisplayEmail || handoverSuccessModalData?.customerEmail
+    if (!targetBookingId) return
+    if (!targetEmail) {
+      setDispatchFeedback({ text: 'Không tìm thấy địa chỉ email hợp lệ của khách hàng.', isError: true })
+      return
+    }
+    setIsSendingEmail(true)
+    setDispatchFeedback(null)
+    try {
+      await handoverService.sendPinEmail(targetBookingId)
+      updateCurrentSession({ emailSent: true })
+      setDispatchFeedback({ text: `Đã gửi email thông báo mã PIN thành công đến ${targetEmail}.` })
+    } catch (err: any) {
+      updateCurrentSession({ emailSent: false })
+      setDispatchFeedback({ text: err?.response?.data?.message || err?.message || 'Không thể gửi email thông báo mã PIN.', isError: true })
+    } finally {
+      setIsSendingEmail(false)
+      setTimeout(() => setDispatchFeedback(null), 4000)
+    }
+  }
+  const handleSendWebPush = async () => {
+    const targetBookingId = currentBooking?.id || handoverSuccessModalData?.bookingId || selectedBookingId
+    if (!targetBookingId) return
+    setIsSendingWebPush(true)
+    setDispatchFeedback(null)
+    try {
+      await handoverService.sendWebNotification(targetBookingId)
+      updateCurrentSession({ webPushSent: true })
+      setDispatchFeedback({ text: 'Đã bắn thông báo trực tiếp đến tài khoản web của khách hàng.' })
+    } catch (err: any) {
+      updateCurrentSession({ webPushSent: false })
+      setDispatchFeedback({ text: err?.response?.data?.message || err?.message || 'Không thể gửi thông báo web cho khách hàng.', isError: true })
+    } finally {
+      setIsSendingWebPush(false)
+      setTimeout(() => setDispatchFeedback(null), 4000)
+    }
+  }
+  const handleCopyPin = () => {
+    if (currentSession.accessPin && currentSession.accessPin !== '------') {
+      navigator.clipboard.writeText(currentSession.accessPin)
+      setPinCopied(true)
+      setTimeout(() => setPinCopied(false), 2000)
+    }
+  }
+
+  // Checklist handlers per booking
   const handleToggleChecklist = (key: keyof BookingChecklist) => {
     updateCurrentSession((prev) => ({
       checklist: {
@@ -599,13 +506,14 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const checklistCount = Object.values(currentSession.checklist).filter(Boolean).length
   const isAllChecklistPassed = checklistCount === 5
 
-  // Photo uploads
+  // Upload evidence to the backend; session state stores only its persisted URL.
   const handlePhotoFileChange = async (type: 'door' | 'interior', e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     const input = e.target
-    const localBlobUrl = URL.createObjectURL(file)
 
+    // 1. Tạo ngay local object URL để hiển thị tức thời cho nhân viên kiểm tra, không bị đen/lỗi
+    const localBlobUrl = URL.createObjectURL(file)
     if (type === 'door') {
       setDoorPreviewUrl(localBlobUrl)
       setIsUploadingDoor(true)
@@ -615,125 +523,282 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
 
     try {
-      if (!selectedBookingId) throw new Error('Vui lòng chọn lượt nhận kho trước khi tải ảnh.')
+      if (!selectedBookingId) throw new Error('Vui lòng chọn lượt nhận kho trước khi tải ảnh hiện trường.')
       const stored = await handoverService.uploadHandoverDocument(selectedBookingId, file, 'CHECKIN_EVIDENCE')
-      const fileUrl = stored?.fileUrl || localBlobUrl
+      const fileUrl = stored?.fileUrl
+      if (!fileUrl) throw new Error('Upload thành công nhưng máy chủ không trả về đường dẫn tệp.')
+
       if (type === 'door') {
         updateCurrentSession({ photoDoor: fileUrl })
       } else {
         updateCurrentSession({ photoInterior: fileUrl })
       }
-      setDispatchFeedback({ text: `Đã lưu ảnh hiện trạng ${type === 'door' ? 'cửa ngoài' : 'sàn trong kho'}!` })
+      setDispatchFeedback({ text: `Đã lưu ảnh hiện trạng ${type === 'door' ? 'cửa ngoài' : 'nền sàn bên trong'} thành công!` })
     } catch (err: any) {
-      if (type === 'door') {
-        updateCurrentSession({ photoDoor: localBlobUrl })
-      } else {
-        updateCurrentSession({ photoInterior: localBlobUrl })
-      }
+      setCheckInError(err?.response?.data?.message || err?.message || 'Không thể tải ảnh nghiệm thu lên hệ thống.')
     } finally {
       if (type === 'door') setIsUploadingDoor(false)
       else setIsUploadingInterior(false)
       input.value = ''
     }
   }
+  // Overall check-in readiness (P0-02 & BR-RULE-005: Backend là nguồn chân lý duy nhất)
+  const isDepositMet = currentPrerequisites ? currentPrerequisites.depositSatisfied : false
+  const isRentMet = currentPrerequisites ? currentPrerequisites.firstMonthRentSatisfied : false
+  const isPaymentMet = isDepositMet && isRentMet
+  const isContractMet = currentPrerequisites ? currentPrerequisites.contractSigned : false
+  const isIdMet = currentPrerequisites ? currentPrerequisites.identityVerified : false
+  const isCheckInTimeMet = currentPrerequisites ? (currentPrerequisites.checkInTimeMet ?? true) : false
+  const isReadyForCheckIn = isPaymentMet && isContractMet && isIdMet && isCheckInTimeMet && (currentPrerequisites?.eligibleForInspection ?? false)
 
-  // --- UNIT VALIDATION HELPER (STEP 2) ---
-  const validateUnitAvailability = useCallback((codeToTest: string) => {
-    const trimmed = (codeToTest || '').trim().toUpperCase()
-    if (!trimmed) {
-      updateCurrentSession({
-        desiredUnitCode: '',
-        unitVerifiedAvailable: false,
-        unitUnavailableReason: 'Vui lòng nhập mã kho khách hàng mong muốn thuê.'
-      })
-      return false
-    }
-
-    // Match in facilityUnits
-    const matched = facilityUnits.find((u) => u.unitCode?.trim().toUpperCase() === trimmed)
-    if (!matched) {
-      // If facilityUnits is still empty, fallback check with booking's assigned unit
-      if (currentBooking?.unitCode?.trim().toUpperCase() === trimmed) {
-        updateCurrentSession({
-          desiredUnitCode: trimmed,
-          unitVerifiedAvailable: true,
-          unitUnavailableReason: undefined
-        })
-        return true
-      }
-      updateCurrentSession({
-        desiredUnitCode: trimmed,
-        unitVerifiedAvailable: false,
-        unitUnavailableReason: `Không tìm thấy mã kho #${trimmed} trong danh sách kho của cơ sở này.`
-      })
-      return false
-    }
-
-    const isAvailable = matched.status === 'AVAILABLE' || matched.unitCode === currentBooking?.unitCode
-    if (isAvailable) {
-      const price = matched.pricePerMonth || 1200000
-      const deposit = matched.depositAmount || price
-      const months = currentSession.rentalMonths || 1
-      const discount = months >= 6 ? Math.round(price * 0.1) : 0
-      const total = price + deposit - discount
-
-      updateCurrentSession({
-        desiredUnitCode: trimmed,
-        unitVerifiedAvailable: true,
-        unitUnavailableReason: undefined,
-        monthlyRate: price,
-        depositFee: deposit,
-        discountAmount: discount,
-        firstMonthRent: price,
-        totalDue: total
-      })
-      return true
-    } else {
-      const reasonLabel =
-        matched.status === 'OCCUPIED'
-          ? 'Kho hiện đang CÓ KHÁCH THUÊ (OCCUPIED)'
-          : matched.status === 'MAINTENANCE' || matched.status === 'UNDER_MAINTENANCE'
-          ? 'Kho hiện đang BẢO TRÌ KỸ THUẬT (MAINTENANCE)'
-          : matched.status === 'OVERDUE_LOCKED'
-          ? 'Kho đang bị KHÓA NỢ CƯỚC (OVERDUE)'
-          : `Kho đang ở trạng thái không khả dụng (${matched.status})`
-
-      updateCurrentSession({
-        desiredUnitCode: trimmed,
-        unitVerifiedAvailable: false,
-        unitUnavailableReason: `${reasonLabel}. Không thể bàn giao kho này, vui lòng chọn kho trống khác!`
-      })
-      return false
-    }
-  }, [facilityUnits, currentBooking, currentSession.rentalMonths, updateCurrentSession])
-
-  // Auto-validate current booking's unit initially
+  // Sync identity input with loaded prerequisites
   useEffect(() => {
-    if (currentBooking?.unitCode && !currentSession.desiredUnitCode) {
-      validateUnitAvailability(currentBooking.unitCode)
+    if (currentPrerequisites) {
+      setIdCardInputNumber(currentPrerequisites.idCardNumber || currentPrerequisites.registeredIdCardNumber || '')
+      setIdCardType(currentPrerequisites.idCardType || currentPrerequisites.registeredIdCardType || 'CCCD')
+      setIdOriginalSeen(Boolean(currentPrerequisites.identityVerified))
+    } else {
+      setIdCardInputNumber('')
+      setIdOriginalSeen(false)
     }
-  }, [currentBooking?.unitCode, currentSession.desiredUnitCode, validateUnitAvailability])
+    setUploadedPaymentProofUrl(null)
+  }, [selectedBookingId, currentPrerequisites])
 
-  // --- STEP 1: IDENTITY VERIFICATION ---
-  const handleVerifyIdentity = async () => {
+  // Step Tab Navigation Guards (Protect business conditions)
+  const handleSelectTab = (tab: 'audit' | 'checklist' | 'pin') => {
+    if (tab === 'checklist' && !isReadyForCheckIn) {
+      if (!isCheckInTimeMet) {
+        setCheckInError(currentPrerequisites?.checkInTimeMessage || 'Chưa đến thời điểm check-in hợp lệ theo lịch hẹn!')
+        return
+      }
+      setCheckInError('Cần thỏa mãn cả 3 điều kiện đối soát (Hợp đồng, bằng chứng chuyển khoản cọc & tiền thuê, CCCD gốc) và đến thời điểm check-in hợp lệ trước khi chuyển sang nghiệm thu!')
+      return
+    }
+    if (tab === 'pin' && (!isReadyForCheckIn || !isAllChecklistPassed || !currentSession.photoDoor || !currentSession.photoInterior)) {
+      setCheckInError('Cần thỏa mãn các điều kiện đối soát và đạt chuẩn 5/5 nghiệm thu hiện trường (kèm đủ 2 ảnh) trước khi chuyển sang cấp mã PIN!')
+      return
+    }
+    setCheckInError(null)
+    updateCurrentSession({ activeStepTab: tab })
+  }
+
+  // --- PAPER CONTRACT HANDLERS ---
+  const handleOpenPaperContractModal = () => {
+    setModalFeedback(null)
+    setPaperContractCode(currentPrerequisites?.contractCode || `HD-PAPER-${bookingDisplayCode}`)
+    setPaperOriginalLocation(currentPrerequisites?.paperOriginalLocation || 'Kệ A - Ngăn 01 - Tủ lưu trữ hồ sơ cơ sở')
+    setPaperContractUrl(currentPrerequisites?.paperContractUrl || '')
+    setPaperFileName(currentPrerequisites?.paperContractUrl ? 'Bản scan hợp đồng hiện có' : '')
+    setPaperNotes('')
+    setActiveModal('PAPER_CONTRACT')
+  }
+
+  const handlePaperFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
     if (!selectedBookingId) {
-      setCheckInError('Vui lòng chọn khách hàng tiếp nhận.')
+      setModalFeedback({ text: 'Vui lòng chọn lượt đặt kho trước khi tải tệp.', isError: true })
       return
     }
-    const num = idCardNumberInput.trim()
-    const isCccd = idCardTypeInput === 'CCCD'
-    const pattern = isCccd ? /^[0-9]{9,12}$/ : /^[A-Za-z0-9]{7,15}$/
 
-    if (!pattern.test(num)) {
-      setCheckInError(
-        isCccd
-          ? 'Số CCCD phải gồm từ 9 đến 12 chữ số hợp lệ.'
-          : 'Số Hộ chiếu (Passport) phải gồm từ 7 đến 15 ký tự chữ và số.'
-      )
+    const MAX_SIZE = 10 * 1024 * 1024
+    if (file.size > MAX_SIZE) {
+      setModalFeedback({ text: 'Dung lượng tệp vượt quá giới hạn cho phép (10MB).', isError: true })
       return
     }
-    if (!idOriginalSeenInput) {
-      setCheckInError('Nhân viên bắt buộc phải tích xác nhận đã xem và đối chiếu bản gốc CCCD/Passport tại quầy.')
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    if (!['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
+      setModalFeedback({ text: 'Chỉ chấp nhận tệp định dạng PDF, JPG, JPEG, PNG, WEBP.', isError: true })
+      return
+    }
+
+    setIsUploadingPaperFile(true)
+    setModalFeedback(null)
+    try {
+      const res = await handoverService.uploadHandoverDocument(selectedBookingId, file, 'PAPER_CONTRACT')
+      if (res?.fileUrl) {
+        setPaperContractUrl(res.fileUrl)
+        setPaperFileName(file.name)
+        setModalFeedback({ text: `Đã tải lên tệp ${file.name} thành công!`, isError: false })
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Tải lên hợp đồng giấy thất bại.'
+      setModalFeedback({ text: msg, isError: true })
+    } finally {
+      setIsUploadingPaperFile(false)
+      e.target.value = ''
+    }
+  }
+
+  const handleSubmitPaperContract = async () => {
+    if (!selectedBookingId) return
+    if (!paperContractUrl) {
+      setModalFeedback({ text: 'Vui lòng tải lên ảnh hoặc bản scan hợp đồng giấy đã ký.', isError: true })
+      return
+    }
+    setIsSavingPaperContract(true)
+    setModalFeedback(null)
+    try {
+      await handoverService.createOrUploadPaperContract({
+        bookingId: selectedBookingId,
+        contractCode: paperContractCode.trim() || undefined,
+        paperContractUrl: paperContractUrl.trim(),
+        paperOriginalLocation: paperOriginalLocation.trim() || undefined,
+        notes: paperNotes.trim() || undefined
+      })
+      await fetchPrerequisitesForBooking(selectedBookingId)
+      setActiveModal(null)
+      setDispatchFeedback({ text: 'Đã lưu hợp đồng giấy thành công! Vui lòng bấm Xác minh hồ sơ sau khi đối chiếu chữ ký.' })
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Lỗi khi lưu hợp đồng giấy.'
+      setModalFeedback({ text: msg, isError: true })
+    } finally {
+      setIsSavingPaperContract(false)
+    }
+  }
+
+  const handleVerifyPaperContract = async () => {
+    if (!selectedBookingId) return
+    setIsVerifyingPaperContract(true)
+    setCheckInError(null)
+    try {
+      await handoverService.verifyPaperContract(selectedBookingId, 'Nhân viên đã kiểm tra chữ ký và con dấu trên bản cứng.')
+      await fetchPrerequisitesForBooking(selectedBookingId)
+      setDispatchFeedback({ text: 'Đã xác minh hợp đồng giấy thành công! Điều kiện Hợp đồng đã đạt.' })
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Lỗi khi xác minh hợp đồng giấy.'
+      setCheckInError(msg)
+    } finally {
+      setIsVerifyingPaperContract(false)
+    }
+  }
+
+  const handleOpenAuthorizedDocument = async (fileUrl: string) => {
+    if (!fileUrl) return
+    if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+      window.open(fileUrl, '_blank')
+      return
+    }
+    if (!selectedBookingId) return
+    try {
+      setOpeningDocumentUrl(fileUrl)
+      const blobUrl = await handoverService.viewAuthorizedDocument(selectedBookingId, fileUrl)
+      window.open(blobUrl, '_blank')
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Không thể xem tài liệu hoặc bạn không có quyền truy cập.'
+      setDispatchFeedback({ text: msg, isError: true })
+    } finally {
+      setOpeningDocumentUrl(null)
+    }
+  }
+
+  const handlePaymentProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!selectedBookingId) {
+      setCheckInError('Vui lòng chọn lượt nhận kho trước khi tải ảnh chuyển khoản.')
+      return
+    }
+    const MAX_SIZE = 10 * 1024 * 1024
+    if (file.size > MAX_SIZE) {
+      setCheckInError('Dung lượng tệp vượt quá giới hạn cho phép (10MB).')
+      return
+    }
+
+    setIsUploadingPaymentProof(true)
+    setCheckInError(null)
+    try {
+      const res = await handoverService.uploadHandoverDocument(selectedBookingId, file, 'PAYMENT_PROOF')
+      if (res?.fileUrl) {
+        setUploadedPaymentProofUrl(res.fileUrl)
+        setDispatchFeedback({ text: 'Đã tải lên và lưu bằng chứng chuyển khoản thành công!' })
+        await fetchPrerequisitesForBooking(selectedBookingId)
+      }
+    } catch (err: any) {
+      setCheckInError(err?.response?.data?.message || err?.message || 'Không thể tải ảnh chuyển khoản lên hệ thống.')
+    } finally {
+      setIsUploadingPaymentProof(false)
+      e.target.value = ''
+    }
+  }
+
+  const handleViewElectronicContract = async () => {
+    const targetBookingId = selectedBookingId || currentBooking?.id
+    if (!targetBookingId) return
+    setIsLoadingContract(true)
+    try {
+      let contract = await contractService.getContractByBookingId(targetBookingId)
+      if (!contract && currentPrerequisites) {
+        contract = {
+          id: currentPrerequisites.contractCode || targetBookingId,
+          contractCode: currentPrerequisites.contractCode || `CTR-${bookingDisplayCode}`,
+          customerId: currentBooking?.customerId || '',
+          customerEmail: currentPrerequisites.customerEmail || currentBooking?.customerEmail || '',
+          customerName: currentPrerequisites.customerName || currentBooking?.customerName || customerDisplayName || 'Khách hàng',
+          customerPhone: currentPrerequisites.customerPhone || currentBooking?.customerPhone || customerDisplayPhone || '',
+          unitCode: currentPrerequisites.unitCode || currentBooking?.unitCode || unitDisplayCode,
+          facilityName: currentPrerequisites.facilityName || currentBooking?.facilityName || facilityDisplayName,
+          startDate: currentBooking?.startDate || (currentBooking as any)?.expectedStartDate || new Date().toISOString(),
+          endDate: currentBooking?.endDate || (currentBooking as any)?.expectedEndDate || new Date().toISOString(),
+          monthlyFee: currentPrerequisites.requiredFirstMonthRent || (currentBooking as any)?.monthlyRent || (currentBooking && currentBooking.rentalMonths > 0 ? currentBooking.totalRentalFee / currentBooking.rentalMonths : 0),
+          depositHeld: currentPrerequisites.depositPaid || currentBooking?.depositAmount || 0,
+          status: (currentPrerequisites.contractStatus as any) || 'PENDING_ACTIVATION',
+          signedDocumentUrl: currentPrerequisites.signedDocumentUrl,
+          signedAt: currentPrerequisites.contractSignedAt,
+          signingMethod: 'ONLINE'
+        }
+      }
+      if (contract) {
+        setSelectedContractForModal(contract)
+      } else {
+        setDispatchFeedback({ text: 'Không tìm thấy hồ sơ hợp đồng điện tử.', isError: true })
+      }
+    } catch (err) {
+      if (currentPrerequisites) {
+        const fallback: RentalContract = {
+          id: currentPrerequisites.contractCode || targetBookingId,
+          contractCode: currentPrerequisites.contractCode || `CTR-${bookingDisplayCode}`,
+          customerId: currentBooking?.customerId || '',
+          customerEmail: currentPrerequisites.customerEmail || currentBooking?.customerEmail || '',
+          customerName: currentPrerequisites.customerName || currentBooking?.customerName || customerDisplayName || 'Khách hàng',
+          customerPhone: currentPrerequisites.customerPhone || currentBooking?.customerPhone || customerDisplayPhone || '',
+          unitCode: currentPrerequisites.unitCode || currentBooking?.unitCode || unitDisplayCode,
+          facilityName: currentPrerequisites.facilityName || currentBooking?.facilityName || facilityDisplayName,
+          startDate: currentBooking?.startDate || (currentBooking as any)?.expectedStartDate || new Date().toISOString(),
+          endDate: currentBooking?.endDate || (currentBooking as any)?.expectedEndDate || new Date().toISOString(),
+          monthlyFee: currentPrerequisites.requiredFirstMonthRent || (currentBooking as any)?.monthlyRent || (currentBooking && currentBooking.rentalMonths > 0 ? currentBooking.totalRentalFee / currentBooking.rentalMonths : 0),
+          depositHeld: currentPrerequisites.depositPaid || currentBooking?.depositAmount || 0,
+          status: (currentPrerequisites.contractStatus as any) || 'PENDING_ACTIVATION',
+          signedDocumentUrl: currentPrerequisites.signedDocumentUrl,
+          signedAt: currentPrerequisites.contractSignedAt,
+          signingMethod: 'ONLINE'
+        }
+        setSelectedContractForModal(fallback)
+      } else {
+        setDispatchFeedback({ text: 'Lỗi khi tải thông tin hợp đồng điện tử.', isError: true })
+      }
+    } finally {
+      setIsLoadingContract(false)
+    }
+  }
+
+  // --- IDENTITY VERIFICATION HANDLER ---
+  const handleVerifyIdentity = async () => {
+    if (!selectedBookingId) return
+    const num = idCardInputNumber.trim()
+    if (!/^[0-9]{9,12}$/.test(num)) {
+      setCheckInError('Số CCCD / Hộ chiếu phải gồm từ 9 đến 12 chữ số hợp lệ.')
+      return
+    }
+    if (!idOriginalSeen) {
+      setCheckInError('Nhân viên bắt buộc phải tích chọn xác nhận đã trực tiếp xem giấy tờ gốc tại quầy.')
+      return
+    }
+
+    // Đối chiếu với số CCCD/Passport đã lưu trong CSDL của đơn đặt giữ chỗ
+    const expectedId = (currentPrerequisites?.registeredIdCardNumber || currentPrerequisites?.idCardNumber || '').trim()
+    if (expectedId && expectedId !== num) {
+      setCheckInError(`Số ${idCardType} đối chiếu (${num}) không trùng khớp với số ${currentPrerequisites?.registeredIdCardType || 'CCCD'} đã đăng ký trong hồ sơ đặt giữ chỗ (${expectedId}). Vui lòng kiểm tra lại giấy tờ gốc của khách hàng.`)
       return
     }
 
@@ -741,20 +806,14 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     setCheckInError(null)
     try {
       const updatedPrereq = await handoverService.verifyIdentity(selectedBookingId, {
-        idCardType: idCardTypeInput,
+        idCardType,
         idCardNumber: num,
-        originalDocumentSeen: idOriginalSeenInput,
-        notes: idNotesInput.trim() || `Nhân viên đã kiểm tra ${idCardTypeInput} gốc tại quầy giao dịch.`
+        originalDocumentSeen: idOriginalSeen,
+        notes: idNotes.trim() || 'Nhân viên đã kiểm tra thẻ căn cước / hộ chiếu gốc tại quầy giao dịch.'
       })
-      updateCurrentSession({
-        identityVerified: true,
-        idCardType: idCardTypeInput,
-        idCardNumber: num,
-        originalDocumentSeen: idOriginalSeenInput,
-        identityNotes: idNotesInput
-      })
+      updateCurrentSession({ identityVerified: true })
       setPrerequisitesCache((prev) => ({ ...prev, [selectedBookingId]: updatedPrereq }))
-      setDispatchFeedback({ text: `Đã xác minh thành công ${idCardTypeInput} số ${num} cho khách hàng!` })
+      setDispatchFeedback({ text: `Đã xác minh thành công giấy tờ gốc ${idCardType} số ${num}!` })
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Lỗi khi xác minh danh tính khách hàng.'
       setCheckInError(msg)
@@ -763,8 +822,29 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
   }
 
-  // --- STEP 3: RECORD INSPECTION ---
-  const handleSaveInspection = async () => {
+  // --- STEP TRANSITION HANDLERS ---
+  const handleCompleteStep1 = async () => {
+    if (!selectedBookingId) return
+    if (!isCheckInTimeMet) {
+      setCheckInError(currentPrerequisites?.checkInTimeMessage || 'Chưa đến thời điểm check-in hợp lệ theo lịch hẹn!')
+      return
+    }
+    setIsCompletingStep1(true)
+    setCheckInError(null)
+    try {
+      await handoverService.completeStep1(selectedBookingId)
+      await fetchPrerequisitesForBooking(selectedBookingId)
+      updateCurrentSession({ activeStepTab: 'checklist' })
+      setDispatchFeedback({ text: 'Đã hoàn tất đối soát 3 điều kiện! Chuyển sang bước Nghiệm thu hiện trường.' })
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Không thể chuyển bước: Chưa đáp ứng đủ 3 điều kiện đối soát.'
+      setCheckInError(msg)
+    } finally {
+      setIsCompletingStep1(false)
+    }
+  }
+
+  const handleCompleteInspection = async () => {
     if (!selectedBookingId) return
     if (!isAllChecklistPassed) {
       setCheckInError('Cần hoàn tất đạt chuẩn 5/5 tiêu chí nghiệm thu hiện trường trước khi tiếp tục.')
@@ -775,7 +855,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       return
     }
 
-    setIsSubmitting(true)
+    setIsRecordingInspection(true)
     setCheckInError(null)
     try {
       await handoverService.recordCheckInInspection({
@@ -789,193 +869,51 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         unitCondition: `${checklistCount}/5 tiêu chuẩn nghiệm thu đạt chuẩn (Ảnh cửa ngoài & trong kho đã lưu vết)`,
         notes: currentSession.handoverNotes
       })
-      updateCurrentSession({ inspectionPassed: true, activeStepTab: 'billing' })
-      setDispatchFeedback({ text: 'Đã lưu biên bản nghiệm thu hiện trường! Chuyển sang Bước 4: Chi Phí & Hợp Đồng.' })
+      await fetchPrerequisitesForBooking(selectedBookingId)
+      updateCurrentSession({ activeStepTab: 'pin' })
+      setDispatchFeedback({ text: 'Đã ghi nhận nghiệm thu hiện trường thành công! Chuyển sang bước Cấp mã PIN & Bàn giao.' })
     } catch (err: any) {
-      // Allow moving to billing even if mock/offline
-      updateCurrentSession({ inspectionPassed: true, activeStepTab: 'billing' })
-      setDispatchFeedback({ text: 'Đã ghi nhận nghiệm thu hiện trường thành công! Chuyển sang Bước 4: Chi Phí & Hợp Đồng.' })
+      const msg = err?.response?.data?.message || err?.message || 'Lỗi khi ghi nhận nghiệm thu hiện trường.'
+      setCheckInError(msg)
     } finally {
-      setIsSubmitting(false)
+      setIsRecordingInspection(false)
     }
   }
 
-  // --- STEP 5: PAYMENT CONFIRMATION ---
-  const handleConfirmPayment = () => {
-    updateCurrentSession({ paymentCompleted: true, activeStepTab: 'signing' })
-    setDispatchFeedback({ text: 'Đã xác nhận thanh toán đủ tiền thuê & tiền cọc! Chuyển sang Bước 6: Ký Hợp Đồng Online.' })
-  }
-
-  // --- STEP 6: DIGITAL SIGNATURE PAD CANVAS ---
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    const canvas = signatureCanvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    const rect = canvas.getBoundingClientRect()
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
-    ctx.beginPath()
-    ctx.moveTo(clientX - rect.left, clientY - rect.top)
-    setIsDrawingSignature(true)
-  }
-
-  const drawSignature = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawingSignature) return
-    const canvas = signatureCanvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    const rect = canvas.getBoundingClientRect()
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
-    ctx.lineTo(clientX - rect.left, clientY - rect.top)
-    ctx.strokeStyle = '#0f172a'
-    ctx.lineWidth = 2.5
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    ctx.stroke()
-    setHasSignatureDrawn(true)
-  }
-
-  const stopDrawing = () => {
-    setIsDrawingSignature(false)
-  }
-
-  const clearSignatureCanvas = () => {
-    const canvas = signatureCanvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    setHasSignatureDrawn(false)
-    updateCurrentSession({ signatureDataUrl: '', isSignedOnline: false })
-  }
-
-  const handleConfirmSignature = async () => {
-    if (!hasSignatureDrawn && !currentSession.signatureDataUrl) {
-      setCheckInError('Khách hàng vui lòng ký tên vào khung chữ ký điện tử bên dưới.')
-      return
-    }
-    if (!agreedTerms) {
-      setCheckInError('Cần tích chọn cam kết đồng ý với toàn bộ điều khoản Hợp đồng thuê kho Boxora.')
-      return
-    }
-
-    const canvas = signatureCanvasRef.current
-    const sigData = canvas ? canvas.toDataURL('image/png') : currentSession.signatureDataUrl || ''
-
-    setIsSubmitting(true)
-    setCheckInError(null)
-    try {
-      const contractCode = currentPrerequisites?.contractCode || `CTR-${bookingDisplayCode}`
-      const targetContractId = (currentPrerequisites as any)?.contractId || currentPrerequisites?.contractCode
-      if (targetContractId) {
-        await contractService.mockSignContract(targetContractId, sigData).catch(() => {})
-      }
-      updateCurrentSession({
-        signatureDataUrl: sigData,
-        isSignedOnline: true,
-        signedContractCode: contractCode,
-        activeStepTab: 'activation'
-      })
-      setDispatchFeedback({ text: 'Đã ký hợp đồng điện tử thành công! Chuyển sang Bước 7: Kích Hoạt Mã PIN & Gửi Thông Báo.' })
-
-      // Auto trigger activation in step 7
-      setTimeout(() => {
-        handleTriggerActivation()
-      }, 300)
-    } catch (err: any) {
-      updateCurrentSession({
-        signatureDataUrl: sigData,
-        isSignedOnline: true,
-        activeStepTab: 'activation'
-      })
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  // --- STEP 7: ACTIVATE PIN, SEND EMAIL & IN-APP CUSTOMER NOTIFICATION ---
-  const handleTriggerActivation = async () => {
+  // Submit Handover Check-in (P0-02 & P0-03)
+  const handleCompleteHandover = async () => {
     if (!currentBooking) return
+    if (!isReadyForCheckIn) {
+      setCheckInError('Chưa thỏa mãn 3 điều kiện tiên quyết (Hợp đồng, chuyển khoản cọc & thuê toàn hạn, CCCD gốc). Không thể bàn giao!')
+      return
+    }
+    if (!isAllChecklistPassed || !currentSession.photoDoor || !currentSession.photoInterior) {
+      setCheckInError('Chưa hoàn tất đạt chuẩn 5/5 tiêu chí nghiệm thu hiện trường kèm đủ 2 ảnh bằng chứng!')
+      return
+    }
+
     setIsSubmitting(true)
     setCheckInError(null)
-
     try {
-      // 1. Call backend checkIn to generate real 6-digit PIN & mark active
-      let generatedPin = currentSession.accessPin
-      try {
-        const res = await handoverService.checkIn({
-          bookingId: currentBooking.id,
-          recordType: 'CHECK_IN',
-          rfidCardNumber: currentSession.rfidCard.trim() || undefined,
-          notes: currentSession.handoverNotes
-        })
-        if (res?.accessPin) {
-          generatedPin = res.accessPin
-        }
-      } catch (err) {
-        // Fallback: Generate random secure 6-digit pin if backend checkIn has prerequisite check
-        if (!generatedPin || generatedPin === '------') {
-          generatedPin = String(Math.floor(100000 + Math.random() * 900000))
-        }
-      }
+      const res = await handoverService.checkIn({
+        bookingId: currentBooking.id,
+        recordType: 'CHECK_IN',
+        rfidCardNumber: currentSession.rfidCard.trim() || undefined,
+        notes: currentSession.handoverNotes
+      })
 
-      if (!generatedPin || generatedPin === '------') {
-        generatedPin = String(Math.floor(100000 + Math.random() * 900000))
-      }
-
+      const generatedPin = res?.accessPin
+      if (!generatedPin) throw new Error('Check-in completed without an access PIN in the server response.')
       const nowIso = new Date().toISOString()
-
-      // 2. Send PIN Email via backend
-      try {
-        await handoverService.sendPinEmail(currentBooking.id)
-      } catch (e) {
-        console.warn('Backend sendPinEmail:', e)
-      }
-
-      // 3. Send Web Notification via backend
-      try {
-        await handoverService.sendWebNotification(currentBooking.id)
-      } catch (e) {
-        console.warn('Backend sendWebNotification:', e)
-      }
-
-      // 4. Inject notification directly into localStorage 'boxora_in_app_notifications'
-      // so Customer account notification bell rings and shows the success immediately!
-      try {
-        const inAppNotif = {
-          id: 'notif-pin-' + Date.now(),
-          recipientId: currentBooking.customerId || (currentBooking as any)?.userId,
-          recipientEmail: customerDisplayEmail,
-          title: `Kích hoạt mã PIN kho #${unitDisplayCode} thành công!`,
-          message: `Chào mừng bạn đến với Boxora! Phòng kho #${unitDisplayCode} tại ${facilityDisplayName} đã hoàn tất bàn giao. Mã PIN mở khóa SmartLock của bạn là: ${generatedPin}. Mã này có hiệu lực 24/7 ngay lập tức.`,
-          type: 'HANDOVER_PIN',
-          channel: 'IN_APP',
-          status: 'SENT',
-          createdAt: nowIso
-        }
-
-        const existingRaw = localStorage.getItem('boxora_in_app_notifications')
-        const list = existingRaw ? JSON.parse(existingRaw) : []
-        localStorage.setItem('boxora_in_app_notifications', JSON.stringify([inAppNotif, ...list]))
-        window.dispatchEvent(new Event('storage'))
-      } catch (err) {
-        console.warn('Could not store customer notification in localStorage:', err)
-      }
-
-      // 5. Update session state
       updateCurrentSession({
         accessPin: generatedPin,
         isCompleted: true,
         completedAt: nowIso,
         emailSent: true,
-        webPushSent: true,
-        inAppNotificationSent: true
+        webPushSent: true
       })
 
-      // 6. Show success modal
+      // Kích hoạt hiển thị thông báo giữa màn hình confirm đã bàn giao thành công cho customer
       setHandoverSuccessModalData({
         bookingId: currentBooking.id,
         bookingCode: bookingDisplayCode,
@@ -988,89 +926,26 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         completedAt: nowIso
       })
 
-      setDispatchFeedback({
-        text: `Đã kích hoạt mã PIN ${generatedPin}, gửi email và gửi thông báo vào tài khoản khách hàng thành công!`
-      })
+      // Lưu trữ chi tiết booking hiện tại vào extraBookingDetails để không bị unmount khi danh sách arrivals làm mới
+      setExtraBookingDetails(prev => ({
+        ...prev,
+        [currentBooking.id]: {
+          ...currentBooking,
+          status: 'ACTIVE',
+          accessPin: generatedPin
+        }
+      }))
     } catch (err: any) {
-      setCheckInError(err?.response?.data?.message || err?.message || 'Lỗi khi kích hoạt bàn giao kho.')
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Có lỗi xảy ra khi thực hiện check-in bàn giao kho.'
+      setCheckInError(msg)
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const handleSendEmailAgain = async () => {
-    const targetBookingId = currentBooking?.id || selectedBookingId
-    if (!targetBookingId) return
-    setIsSendingEmail(true)
-    setDispatchFeedback(null)
-    try {
-      await handoverService.sendPinEmail(targetBookingId)
-      updateCurrentSession({ emailSent: true })
-      setDispatchFeedback({ text: `Đã gửi lại email mã PIN đến ${customerDisplayEmail}.` })
-    } catch (err: any) {
-      setDispatchFeedback({ text: 'Không thể gửi lại email.', isError: true })
-    } finally {
-      setIsSendingEmail(false)
-      setTimeout(() => setDispatchFeedback(null), 4000)
-    }
-  }
-
-  const handleCopyPin = () => {
-    if (currentSession.accessPin && currentSession.accessPin !== '------') {
-      navigator.clipboard.writeText(currentSession.accessPin)
-      setPinCopied(true)
-      setTimeout(() => setPinCopied(false), 2000)
-    }
-  }
-
-  // Step Navigation Guard
-  const handleSelectTab = (tab: HandoverStepType) => {
-    const stepOrder: HandoverStepType[] = [
-      'identity',
-      'unit-select',
-      'inspection',
-      'billing',
-      'payment',
-      'signing',
-      'activation'
-    ]
-    const currentIndex = stepOrder.indexOf(currentSession.activeStepTab)
-    const targetIndex = stepOrder.indexOf(tab)
-
-    // Going backwards is always allowed
-    if (targetIndex <= currentIndex) {
-      setCheckInError(null)
-      updateCurrentSession({ activeStepTab: tab })
-      return
-    }
-
-    // Step-by-step guards
-    if (targetIndex >= 1 && !currentSession.identityVerified) {
-      setCheckInError('Bước 1: Bắt buộc xác minh CCCD/Passport của khách hàng trước khi tiếp tục!')
-      return
-    }
-    if (targetIndex >= 2 && !currentSession.unitVerifiedAvailable) {
-      setCheckInError('Bước 2: Bắt buộc kiểm tra và chọn khoang kho còn trống (AVAILABLE) trước khi nghiệm thu hiện trường!')
-      return
-    }
-    if (targetIndex >= 3 && (!isAllChecklistPassed || !currentSession.photoDoor || !currentSession.photoInterior)) {
-      setCheckInError('Bước 3: Bắt buộc hoàn tất đạt chuẩn 5/5 tiêu chí nghiệm thu và đủ 2 ảnh hiện trường!')
-      return
-    }
-    if (targetIndex >= 5 && !currentSession.paymentCompleted) {
-      setCheckInError('Bước 5: Cần xác nhận thanh toán đủ tiền thuê & tiền cọc trước khi ký hợp đồng!')
-      return
-    }
-    if (targetIndex >= 6 && !currentSession.isSignedOnline) {
-      setCheckInError('Bước 6: Khách hàng cần thực hiện ký hợp đồng online trước khi kích hoạt mã PIN!')
-      return
-    }
-
-    setCheckInError(null)
-    updateCurrentSession({ activeStepTab: tab })
-  }
-
-  // Close success modal
   const handleCloseSuccessModal = () => {
     const completedBookingId = handoverSuccessModalData?.bookingId || currentBooking?.id || selectedBookingId
     setHandoverSuccessModalData(null)
@@ -1082,67 +957,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
   }
 
-  // View Contract Modal trigger
-  const handleViewContractModal = async () => {
-    const targetBookingId = selectedBookingId || currentBooking?.id
-    if (!targetBookingId) return
-    setIsLoadingContract(true)
-    try {
-      let contract = await contractService.getContractByBookingId(targetBookingId)
-      if (!contract) {
-        contract = {
-          id: currentPrerequisites?.contractCode || targetBookingId,
-          contractCode: currentPrerequisites?.contractCode || `CTR-${bookingDisplayCode}`,
-          customerId: currentBooking?.customerId || '',
-          customerEmail: customerDisplayEmail,
-          customerName: customerDisplayName,
-          customerPhone: customerDisplayPhone,
-          unitCode: unitDisplayCode,
-          facilityName: facilityDisplayName,
-          startDate: currentSession.rentalStartDate,
-          endDate: new Date(new Date(currentSession.rentalStartDate).setMonth(new Date(currentSession.rentalStartDate).getMonth() + currentSession.rentalMonths)).toISOString(),
-          monthlyFee: currentSession.monthlyRate,
-          depositHeld: currentSession.depositFee,
-          status: 'ACTIVE' as any,
-          signingMethod: 'ONLINE'
-        }
-      }
-      setSelectedContractForModal(contract)
-    } catch {
-      // Fallback contract preview
-      setSelectedContractForModal({
-        id: `CTR-${bookingDisplayCode}`,
-        contractCode: `CTR-${bookingDisplayCode}`,
-        customerId: currentBooking?.customerId || '',
-        customerEmail: customerDisplayEmail,
-        customerName: customerDisplayName,
-        customerPhone: customerDisplayPhone,
-        unitCode: unitDisplayCode,
-        facilityName: facilityDisplayName,
-        startDate: currentSession.rentalStartDate,
-        endDate: new Date(new Date(currentSession.rentalStartDate).setMonth(new Date(currentSession.rentalStartDate).getMonth() + currentSession.rentalMonths)).toISOString(),
-        monthlyFee: currentSession.monthlyRate,
-        depositHeld: currentSession.depositFee,
-        status: 'ACTIVE' as any,
-        signingMethod: 'ONLINE'
-      })
-    } finally {
-      setIsLoadingContract(false)
-    }
-  }
-
-  // Steps configuration for Navigation Bar
-  const stepsConfig: { id: HandoverStepType; num: number; title: string; icon: string }[] = [
-    { id: 'identity', num: 1, title: 'Xác Minh Danh Tính', icon: 'badge' },
-    { id: 'unit-select', num: 2, title: 'Chọn & Kiểm Tra Kho', icon: 'meeting_room' },
-    { id: 'inspection', num: 3, title: 'Nghiệm Thu Hiện Trường', icon: 'fact_check' },
-    { id: 'billing', num: 4, title: 'Chi Phí & Hợp Đồng', icon: 'receipt_long' },
-    { id: 'payment', num: 5, title: 'Thanh Toán Tại Quầy', icon: 'payments' },
-    { id: 'signing', num: 6, title: 'Ký Hợp Đồng Online', icon: 'draw' },
-    { id: 'activation', num: 7, title: 'Kích Hoạt PIN & Thông Báo', icon: 'key' }
-  ]
-
-  // Render Contract Modal
   const renderContractModal = () => {
     if (!selectedContractForModal) return null
     return (
@@ -1154,15 +968,16 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     )
   }
 
-  // Render Success Celebration Modal
   const renderSuccessModal = () => {
     if (!handoverSuccessModalData) return null
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-fadeIn">
         <div className="relative max-w-lg w-full bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden transform transition-all flex flex-col text-left">
+          {/* Top Accent Gradient Bar */}
           <div className="h-2.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 w-full" />
 
           <div className="p-6 sm:p-7 flex flex-col">
+            {/* Close Icon */}
             <button
               type="button"
               onClick={handleCloseSuccessModal}
@@ -1171,6 +986,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <span className="material-symbols-outlined text-[18px]">close</span>
             </button>
 
+            {/* Success Badge & Header */}
             <div className="text-center mb-5">
               <div className="w-16 h-16 rounded-full bg-emerald-50 border-4 border-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-3 shadow-inner">
                 <span className="material-symbols-outlined text-[36px] animate-bounce">task_alt</span>
@@ -1179,10 +995,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 ✓ Bàn Giao Hoàn Tất
               </span>
               <h3 className="font-headline text-xl sm:text-2xl font-extrabold text-slate-900">
-                Kích Hoạt &amp; Bàn Giao Thành Công!
+                Xác Nhận Bàn Giao Thành Công!
               </h3>
               <p className="text-xs text-slate-500 mt-1">
-                Đã tiếp nhận và bàn giao buồng kho #{handoverSuccessModalData.unitCode} cho khách hàng{' '}
+                Đã hoàn thành tiếp nhận và bàn giao phòng kho #{handoverSuccessModalData.unitCode} cho khách hàng{' '}
                 <strong className="text-slate-800">{handoverSuccessModalData.customerName}</strong>.
               </p>
             </div>
@@ -1190,16 +1006,14 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             {/* Notification Sent Info Alert */}
             <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 mb-4 flex items-center gap-2 text-xs text-emerald-800">
               <span className="material-symbols-outlined text-emerald-600 text-[18px] shrink-0">mark_email_read</span>
-              <span>
-                Hệ thống đã tự động gửi email mã PIN và bắn thông báo vào mục thông báo của tài khoản khách hàng!
-              </span>
+              <span>Hệ thống đã tự động gửi email và thông báo tiếp nhận kho đến tài khoản của khách hàng!</span>
             </div>
 
             {/* PIN Code Highlight Box */}
             <div className="p-4 rounded-2xl bg-slate-950 text-white border border-slate-800 shadow-xl mb-5 flex flex-col items-center">
               <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-cyan-400 tracking-widest uppercase mb-2">
                 <span className="material-symbols-outlined text-[16px]">pin</span>
-                <span>MÃ PIN MỞ KHÓA SMARTLOCK 24/7</span>
+                <span>MÃ PIN MỞ KHÓA SMARTLOCK</span>
               </div>
               <div className="flex items-center justify-center gap-1.5 sm:gap-2 my-1">
                 {(handoverSuccessModalData.pin || '------').split('').map((digit, idx) => (
@@ -1212,7 +1026,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 ))}
               </div>
               <p className="text-[11px] text-slate-400 text-center mt-2">
-                Mã số 6 chữ số để mở ổ khóa điện tử kho và cửa ra vào cơ sở.
+                Mã PIN 6 chữ số dùng để mở ổ khóa điện tử kho và cửa ra vào cơ sở.
               </p>
               <button
                 type="button"
@@ -1230,7 +1044,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </button>
             </div>
 
-            {/* Summary Details */}
+            {/* Handover Details Summary Grid */}
             <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs mb-5 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Phòng kho:</span>
@@ -1246,7 +1060,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Email:</span>
-                <span className="font-mono text-slate-800">{handoverSuccessModalData.customerEmail || 'N/A'}</span>
+                <span className="font-mono text-slate-800">{handoverSuccessModalData.customerEmail || 'Chưa cập nhật'}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Mã đơn đặt:</span>
+                <span className="font-mono text-slate-700">{handoverSuccessModalData.bookingCode}</span>
               </div>
               <div className="flex items-center justify-between border-t border-slate-200/80 pt-2 text-[11px]">
                 <span className="text-slate-500">Thời gian kích hoạt:</span>
@@ -1256,7 +1074,59 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </div>
             </div>
 
-            {/* Actions */}
+            {/* Quick Communication Actions */}
+            <div className="flex flex-col gap-2 mb-5">
+              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                Gửi mã PIN &amp; Biên bản cho khách:
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleSendEmail}
+                  disabled={isSendingEmail}
+                  className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                    currentSession.emailSent
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-300'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    {currentSession.emailSent ? 'mark_email_read' : 'mail'}
+                  </span>
+                  <span>
+                    {currentSession.emailSent
+                      ? 'Đã Gửi Email'
+                      : isSendingEmail
+                      ? 'Đang gửi...'
+                      : 'Gửi Email Khách'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSendWebPush}
+                  disabled={isSendingWebPush}
+                  className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                    currentSession.webPushSent
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-300'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    {currentSession.webPushSent ? 'notifications_active' : 'notifications'}
+                  </span>
+                  <span>
+                    {currentSession.webPushSent
+                      ? 'Đã Bắn Web Push'
+                      : isSendingWebPush
+                      ? 'Đang bắn...'
+                      : 'Bắn Thông Báo Web'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Main Completion CTA Button */}
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -1275,212 +1145,169 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 <span>Xác Nhận &amp; Hoàn Tất</span>
               </button>
             </div>
+
           </div>
         </div>
       </div>
     )
   }
 
-  // If no booking is selected, show selector
   if (!currentBooking) {
     return (
       <>
         {renderSuccessModal()}
         {renderContractModal()}
         <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
+          {/* 1. Process Header Card */}
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5">
             <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
               <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
             </div>
             <div>
               <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
-                Quy Trình Tiếp Nhận Khách Hàng Đến Nhận Kho
+                Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
               </h2>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                Chuẩn hóa 7 bước: Xác minh CCCD/Passport ➜ Kiểm tra kho trống ➜ Nghiệm thu ➜ Chi phí &amp; Hợp đồng ➜ Thanh toán ➜ Ký online ➜ Kích hoạt mã PIN &amp; Thông báo.
+                Chuẩn hóa 3 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
               </p>
             </div>
           </div>
 
-          <div className="py-6 px-2 flex flex-col gap-6">
-            <div className="text-center">
-              <div className="w-14 h-14 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center mx-auto mb-3 shadow-xs">
-                <span className="material-symbols-outlined text-[30px]">person_pin_circle</span>
-              </div>
-              <h3 className="font-headline text-base font-bold text-slate-900">
-                Chọn Lượt Khách Tiếp Nhận Bàn Giao Tại Quầy
-              </h3>
-              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
-                Vui lòng chọn khách hàng bạn đang phụ trách hoặc tiếp nhận lượt khách mới để bắt đầu quy trình bàn giao 7 bước.
+          {/* Empty State Card */}
+          <div className="py-12 px-4 flex flex-col items-center justify-center text-center">
+            <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4 shadow-xs">
+              <span className="material-symbols-outlined text-[34px]">person_pin_circle</span>
+            </div>
+            <h3 className="font-headline text-base font-bold text-slate-900">
+              Chưa Chọn Lượt Khách Tiếp Nhận Bàn Giao
+            </h3>
+            <p className="text-xs text-slate-500 mt-2 max-w-md mx-auto leading-relaxed">
+              {arrivalsList.length > 0
+                ? 'Vui lòng bấm "Tiếp nhận" hoặc chọn lượt khách bạn được phân công từ danh sách "Lịch Hẹn Nhận Kho Trong Ca" bên dưới để bắt đầu quy trình đối soát hồ sơ và bàn giao.'
+                : 'Hiện tại chưa có khách hẹn nhận kho trong ca làm việc này.'}
+            </p>
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  if (isAssignedToOther) {
+    return (
+      <>
+        {renderSuccessModal()}
+        {renderContractModal()}
+        <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
+          {/* 1. Process Header Card */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5 mb-5">
+            <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
+              <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
+            </div>
+            <div>
+              <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
+                Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                Chuẩn hóa 3 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
               </p>
             </div>
+          </div>
 
-            {/* PHẦN 1: KHÁCH HÀNG BẠN ĐANG PHỤ TRÁCH */}
-            <div className="p-4 rounded-2xl bg-blue-50/50 border border-blue-200">
-              <div className="flex items-center justify-between pb-3 mb-3 border-b border-blue-200/80">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-blue-700 text-[20px]">badge</span>
-                  <span className="font-headline text-xs font-bold text-blue-950 uppercase tracking-wider">
-                    1. Khách Hàng Bạn Đang Phụ Trách ({myAssignedArrivals.length})
-                  </span>
-                </div>
-                <span className="text-[11px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full">
-                  Đã phân công cho bạn
-                </span>
-              </div>
-
-              {myAssignedArrivals.length === 0 ? (
-                <div className="py-6 text-center text-xs text-slate-500 bg-white/70 rounded-xl border border-dashed border-blue-200">
-                  <span className="material-symbols-outlined text-[26px] text-blue-400 block mb-1">assignment_ind</span>
-                  <span>Bạn hiện chưa có lượt khách nào được phân công. Hãy tiếp nhận từ danh sách có thể tiếp nhận bên dưới!</span>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-left">
-                  {myAssignedArrivals.map((arr) => {
-                    const countdown = getCheckInCountdown(arr.expectedCheckInAt || arr.startDate)
-                    return (
-                      <div
-                        key={arr.id}
-                        className="p-3.5 rounded-xl border border-blue-200 bg-white shadow-xs hover:border-blue-500 hover:shadow-sm transition-all flex flex-col justify-between gap-3"
-                      >
-                        <div>
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <span className="font-bold text-slate-900 text-xs block">
-                                {arr.customerName}
-                              </span>
-                              <span className="font-mono text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-                                <span className="material-symbols-outlined text-[13px]">call</span>
-                                {arr.customerPhone || 'N/A'}
-                              </span>
-                            </div>
-                            <div className="flex flex-col items-end gap-1">
-                              <span className="font-mono text-xs font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded border border-cyan-200">
-                                #{arr.unitCode}
-                              </span>
-                              <span className="font-mono text-[10px] text-slate-500">
-                                {arr.bookingCode}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] flex-wrap gap-1">
-                            <span className="text-slate-500">
-                              Lịch hẹn: <strong className="text-slate-800">{arr.expectedCheckInAt ? new Date(arr.expectedCheckInAt).toLocaleDateString('vi-VN') : arr.startDate}</strong>
-                            </span>
-                            {countdown && (
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${countdown.badgeClass}`}>
-                                {countdown.text}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedBookingId(arr.id)
-                            if (onSelectBooking) onSelectBooking(arr.id)
-                          }}
-                          className="w-full py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
-                          <span>Vào Bàn Giao (7 Bước)</span>
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+          <div className="p-6 rounded-2xl bg-amber-50 border border-amber-200 text-center flex flex-col items-center">
+            <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mb-3">
+              <span className="material-symbols-outlined text-[30px]">lock_person</span>
             </div>
+            <h3 className="font-headline text-base font-bold text-amber-900">
+              Lượt Khách Đang Thuộc Về Nhân Viên Khác
+            </h3>
+            <p className="text-xs text-amber-800 mt-1.5 max-w-md leading-relaxed">
+              Đơn <strong>{currentBooking.bookingCode}</strong> (Khách hàng <strong>{currentBooking.customerName}</strong>) hiện đang do nhân viên <strong>{currentBooking.assignedStaffName || 'khác'}</strong> phụ trách tiếp đón.
+            </p>
+            <p className="text-[11px] text-amber-700 mt-1">
+              Theo quy định phân quyền, bạn chỉ được thao tác trên các đơn do bạn chủ động tiếp nhận hoặc được phân công.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedBookingId('')
+                if (onSelectBooking) onSelectBooking('')
+              }}
+              className="mt-4 px-4 py-2 bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold rounded-xl inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px]">close</span>
+              <span>Đóng Chi Tiết &amp; Quay Lại</span>
+            </button>
+          </div>
+        </div>
+      </>
+    )
+  }
 
-            {/* PHẦN 2: KHÁCH HÀNG CÓ THỂ TIẾP NHẬN */}
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
-              <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-cyan-700 text-[20px]">how_to_reg</span>
-                  <span className="font-headline text-xs font-bold text-slate-900 uppercase tracking-wider">
-                    2. Khách Hàng Có Thể Tiếp Nhận ({availableToClaimArrivals.length})
-                  </span>
-                </div>
-                <span className="text-[11px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
-                  Chưa có nhân viên tiếp đón
-                </span>
-              </div>
+  if (isUnassigned) {
+    return (
+      <>
+        {renderSuccessModal()}
+        {renderContractModal()}
+        <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
+          {/* 1. Process Header Card */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5 mb-5">
+            <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
+              <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
+            </div>
+            <div>
+              <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
+                Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                Chuẩn hóa 3 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+              </p>
+            </div>
+          </div>
 
-              {availableToClaimArrivals.length === 0 ? (
-                <div className="py-6 text-center text-xs text-slate-500 bg-white/70 rounded-xl border border-dashed border-slate-200">
-                  <span className="material-symbols-outlined text-[26px] text-slate-400 block mb-1">done_all</span>
-                  <span>Tất cả các lượt khách hiện tại đã được tiếp nhận hoặc chưa có đơn đặt mới cần nhận kho.</span>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-left">
-                  {availableToClaimArrivals.map((arr) => {
-                    const countdown = getCheckInCountdown(arr.expectedCheckInAt || arr.startDate)
-                    const isClaiming = isClaimingBookingId === arr.id
-                    return (
-                      <div
-                        key={arr.id}
-                        className="p-3.5 rounded-xl border border-slate-200 bg-white shadow-xs hover:border-cyan-500 hover:shadow-sm transition-all flex flex-col justify-between gap-3"
-                      >
-                        <div>
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <span className="font-bold text-slate-900 text-xs block">
-                                {arr.customerName}
-                              </span>
-                              <span className="font-mono text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-                                <span className="material-symbols-outlined text-[13px]">call</span>
-                                {arr.customerPhone || 'N/A'}
-                              </span>
-                            </div>
-                            <div className="flex flex-col items-end gap-1">
-                              <span className="font-mono text-xs font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded border border-cyan-200">
-                                #{arr.unitCode}
-                              </span>
-                              <span className="font-mono text-[10px] text-slate-500">
-                                {arr.bookingCode}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] flex-wrap gap-1">
-                            <span className="text-slate-500">
-                              Lịch hẹn: <strong className="text-slate-800">{arr.expectedCheckInAt ? new Date(arr.expectedCheckInAt).toLocaleDateString('vi-VN') : arr.startDate}</strong>
-                            </span>
-                            {countdown && (
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${countdown.badgeClass}`}>
-                                {countdown.text}
-                              </span>
-                            )}
-                          </div>
-
-                          {arr.depositAmount && (
-                            <div className="mt-1 text-[11px] text-slate-500 flex items-center justify-between">
-                              <span>Cọc giữ chỗ:</span>
-                              <span className="font-mono font-bold text-emerald-700">
-                                {arr.depositAmount.toLocaleString('vi-VN')} ₫
-                              </span>
-                            </div>
-                          )}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => handleClaimAndOpen(arr)}
-                          disabled={isClaiming}
-                          className="w-full py-2 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">
-                            {isClaiming ? 'hourglass_top' : 'how_to_reg'}
-                          </span>
-                          <span>{isClaiming ? 'Đang tiếp nhận...' : 'Tiếp Nhận & Mở Bàn Giao'}</span>
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+          <div className="p-6 rounded-2xl bg-blue-50 border border-blue-200 text-center flex flex-col items-center">
+            <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center mb-3">
+              <span className="material-symbols-outlined text-[30px]">how_to_reg</span>
+            </div>
+            <h3 className="font-headline text-base font-bold text-blue-900">
+              Chưa Tiếp Nhận Khách Hàng Này
+            </h3>
+            <p className="text-xs text-blue-800 mt-1.5 max-w-md leading-relaxed">
+              Đơn <strong>{currentBooking.bookingCode}</strong> (Khách hàng <strong>{currentBooking.customerName}</strong>) chưa có nhân sự tiếp đón tại quầy.
+            </p>
+            <p className="text-[11px] text-blue-700 mt-1">
+              Vui lòng bấm nút tiếp nhận bên dưới để đăng ký phụ trách khách hàng này trước khi thực hiện đối soát và bàn giao kho.
+            </p>
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const updated = await bookingService.claimCheckInReception(currentBooking.id)
+                    setInternalArrivals(prev => prev.map(b => b.id === currentBooking.id ? {
+                      ...b,
+                      assignedStaffId: updated.assignedStaffId || user?.id,
+                      assignedStaffName: updated.assignedStaffName || user?.fullName || 'Nhân viên quầy'
+                    } : b))
+                    if (onRefreshArrivals) onRefreshArrivals()
+                  } catch (err: any) {
+                    alert(err?.response?.data?.message || 'Không thể tiếp nhận đơn này.')
+                  }
+                }}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl inline-flex items-center gap-2 shadow-xs cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
+                <span>Tiếp Nhận Đơn Này Ngay</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedBookingId('')
+                  if (onSelectBooking) onSelectBooking('')
+                }}
+                className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+              >
+                Quay Lại
+              </button>
             </div>
           </div>
         </div>
@@ -1488,62 +1315,22 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     )
   }
 
-  // Assigned to another staff warning
-  if (isAssignedToOther) {
-    return (
-      <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
-        <div className="p-6 rounded-2xl bg-amber-50 border border-amber-200 text-center flex flex-col items-center">
-          <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mb-3">
-            <span className="material-symbols-outlined text-[30px]">lock_person</span>
-          </div>
-          <h3 className="font-headline text-base font-bold text-amber-900">
-            Lượt Khách Đang Thuộc Về Nhân Viên Khác
-          </h3>
-          <p className="text-xs text-amber-800 mt-1.5 max-w-md leading-relaxed">
-            Đơn <strong>{currentBooking.bookingCode}</strong> ({currentBooking.customerName}) đang do nhân viên <strong>{currentBooking.assignedStaffName || 'khác'}</strong> phụ trách tiếp đón.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedBookingId('')
-              if (onSelectBooking) onSelectBooking('')
-            }}
-            className="mt-4 px-4 py-2 bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold rounded-xl cursor-pointer"
-          >
-            Quay Lại Danh Sách
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
-      {/* 1. Header Card */}
-      <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3.5">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
-            <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
-          </div>
-          <div>
-            <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
-              Quy Trình Tiếp Nhận Khách Hàng Đến Nhận Kho
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-              Xác minh CCCD/Passport ➜ Kiểm tra kho trống ➜ Nghiệm thu hiện trường ➜ Chi phí &amp; Hợp đồng ➜ Thanh toán ➜ Ký online ➜ Kích hoạt PIN &amp; Thông báo.
-            </p>
-          </div>
+      
+      {/* 1. Process Header Card */}
+      <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5">
+        <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
+          <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setSelectedBookingId('')
-            if (onSelectBooking) onSelectBooking('')
-          }}
-          className="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold shrink-0 transition-colors cursor-pointer"
-        >
-          Đổi Khách
-        </button>
+        <div>
+          <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
+            Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+            Chuẩn hóa 3 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
+          </p>
+        </div>
       </div>
 
       {/* 2. Customer Spotlight Profile Card */}
@@ -1567,28 +1354,30 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 </span>
                 <span
                   className={`px-2 py-0.5 rounded-full border text-[10px] font-mono font-bold ${
-                    currentBooking?.status === 'ACTIVE'
+                    currentBooking?.status === 'CONFIRMED'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : currentBooking?.status === 'ACTIVE'
                       ? 'bg-blue-50 text-blue-700 border-blue-200'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-amber-50 text-amber-700 border-amber-200'
                   }`}
                 >
-                  {currentBooking?.status === 'ACTIVE' ? 'Đã nhận kho (ACTIVE)' : 'Đang tiếp nhận tại quầy'}
+                  Trạng thái: {currentBooking?.status === 'ACTIVE' ? 'Đã nhận kho (ACTIVE)' : currentBooking?.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Chờ cọc'}
                 </span>
                 {currentSession.isCompleted && (
                   <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-mono text-[10px] font-bold flex items-center gap-1">
                     <span className="material-symbols-outlined text-[13px]">check_circle</span>
-                    Hoàn tất bàn giao
+                    Đã hoàn tất ca tiếp đón
                   </span>
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-slate-600 text-xs">
-                <span className="flex items-center gap-1 font-mono">
+                <span className="flex items-center gap-1 font-mono tabular-nums">
                   <span className="material-symbols-outlined text-[15px] text-slate-400">call</span>
                   {customerDisplayPhone}
                 </span>
-                <span className="flex items-center gap-1 font-mono">
-                  <span className="material-symbols-outlined text-[15px] text-slate-400">mail</span>
-                  {customerDisplayEmail}
+                <span className="flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[15px] text-slate-400">domain</span>
+                  {facilityDisplayName}
                 </span>
                 <span className="flex items-center gap-1 font-mono font-bold text-cyan-700">
                   <span className="material-symbols-outlined text-[15px]">meeting_room</span>
@@ -1599,20 +1388,33 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           </div>
 
           <div className="flex md:flex-col items-end justify-between shrink-0 text-right">
-            <div className="text-[11px] text-slate-500">
-              Thời hạn thuê:{' '}
-              <strong className="font-mono text-slate-900 font-bold text-xs">{currentSession.rentalMonths} Tháng</strong>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-slate-500 font-medium">Thời hạn:</span>
+              <span className="font-mono font-bold text-slate-900 text-xs tabular-nums">
+                {currentBooking?.rentalMonths ?? 1} Tháng
+              </span>
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Mã hợp đồng: <strong className="font-mono text-slate-900 font-bold">{currentPrerequisites?.contractCode || `CTR-${bookingDisplayCode}`}</strong>
+              Hợp đồng: <strong className="font-mono text-slate-900 font-bold">{currentPrerequisites?.contractCode || 'Chưa khởi tạo'}</strong>
             </div>
+            {currentBooking?.signingMethod && (
+              <span
+                className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold mt-1.5 ${
+                  currentBooking.signingMethod === 'IN_PERSON'
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                    : 'bg-blue-100 text-blue-900 border border-blue-200'
+                }`}
+              >
+                {currentBooking.signingMethod === 'IN_PERSON' ? '🏢 Ký Trực Tiếp Tại Kho' : '✍️ Ký Điện Tử Trực Tuyến'}
+              </span>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Backend / Client Error Alert */}
+      {/* Backend Error Alert if any */}
       {checkInError && (
-        <div className="mt-4 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center justify-between gap-3 animate-fadeIn">
+        <div className="mt-4 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-[20px] text-rose-600 shrink-0">error</span>
             <span className="font-medium">{checkInError}</span>
@@ -1620,1292 +1422,1544 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           <button
             type="button"
             onClick={() => setCheckInError(null)}
-            className="text-rose-500 hover:text-rose-700 font-bold text-xs cursor-pointer"
+            className="text-rose-500 hover:text-rose-700 font-bold text-xs"
           >
             ✕
           </button>
         </div>
       )}
 
-      {/* Success / Feedback Toast Alert */}
-      {dispatchFeedback && (
-        <div
-          className={`mt-4 p-3.5 rounded-xl text-xs flex items-center justify-between gap-3 animate-fadeIn ${
-            dispatchFeedback.isError ? 'bg-rose-50 border border-rose-200 text-rose-800' : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+      {/* 3. Three-Tab Navigation */}
+      <div className="mt-6 flex border-b border-slate-200">
+        <button
+          onClick={() => handleSelectTab('audit')}
+          className={`pb-3 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+            currentSession.activeStepTab === 'audit'
+              ? 'border-cyan-600 text-cyan-700'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[20px] shrink-0">
-              {dispatchFeedback.isError ? 'warning' : 'check_circle'}
-            </span>
-            <span className="font-medium">{dispatchFeedback.text}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setDispatchFeedback(null)}
-            className="font-bold text-xs cursor-pointer opacity-70 hover:opacity-100"
+          <span className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center font-mono text-[10px]">
+            1
+          </span>
+          <span>Đối Soát 3 Điều Kiện</span>
+          {isReadyForCheckIn && (
+            <span className="material-symbols-outlined text-[16px] text-emerald-600">check_circle</span>
+          )}
+        </button>
+
+        <button
+          onClick={() => handleSelectTab('checklist')}
+          className={`pb-3 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+            currentSession.activeStepTab === 'checklist'
+              ? 'border-cyan-600 text-cyan-700'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <span className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center font-mono text-[10px]">
+            2
+          </span>
+          <span>Nghiệm Thu Hiện Trường (5/5) &amp; Ảnh</span>
+          <span
+            className={`px-1.5 py-0.2 rounded text-[10px] font-mono font-bold ${
+              isAllChecklistPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
+            }`}
           >
-            ✕
-          </button>
+            {checklistCount}/5
+          </span>
+        </button>
+
+        <button
+          onClick={() => handleSelectTab('pin')}
+          className={`pb-3 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+            currentSession.activeStepTab === 'pin'
+              ? 'border-cyan-600 text-cyan-700'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <span className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center font-mono text-[10px]">
+            3
+          </span>
+          <span>Cấp Mã PIN &amp; Bàn Giao</span>
+          {currentSession.isCompleted && (
+            <span className="material-symbols-outlined text-[16px] text-emerald-600">verified</span>
+          )}
+        </button>
+      </div>
+
+      {/* Tab 1 Content: Pre-requisites Audit */}
+      {currentSession.activeStepTab === 'audit' && (
+        <div className="mt-6 flex flex-col gap-4">
+          {loadingPrerequisites ? (
+            <div className="py-10 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+              <span className="material-symbols-outlined text-[20px] animate-spin text-cyan-600">
+                progress_activity
+              </span>
+              <span>Đang đối soát điều kiện tiên quyết từ máy chủ Boxora cho đơn #{bookingDisplayCode}...</span>
+            </div>
+          ) : prerequisitesError ? (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs">
+              <div className="font-bold flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[18px]">warning</span>
+                <span>Thông báo đối soát</span>
+              </div>
+              <p className="mt-1">{prerequisitesError}</p>
+              <button
+                type="button"
+                onClick={() => fetchPrerequisitesForBooking(selectedBookingId)}
+                className="mt-2 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded font-bold text-xs"
+              >
+                Thử lại
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Thẻ Quy Tắc Nghiệp Vụ Thời Điểm Check-in */}
+              {(() => {
+                const checkInStatus = currentPrerequisites?.checkInTimeStatus || 'ON_TIME'
+                const checkInMet = currentPrerequisites?.checkInTimeMet ?? true
+                const checkInMsg = currentPrerequisites?.checkInTimeMessage || 'Đã đến thời điểm hợp lệ để nhận kho'
+                const expDateStr = currentPrerequisites?.expectedCheckInAt || currentBooking?.expectedCheckInAt || currentBooking?.startDate
+
+                let statusBadgeLabel = 'Đã đến giờ check-in'
+                let actionAdvice = 'Kiểm tra các điều kiện bàn giao còn lại'
+                let cardClass = 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                let iconName = 'verified'
+                let iconColor = 'text-emerald-600'
+
+                if (checkInStatus === 'BEFORE_DATE') {
+                  statusBadgeLabel = 'Chưa đến ngày check-in'
+                  actionAdvice = 'Hiển thị thời điểm được phép nhận kho • Không cho phép bàn giao'
+                  cardClass = 'bg-rose-50 border-rose-300 text-rose-950'
+                  iconName = 'event_busy'
+                  iconColor = 'text-rose-600'
+                } else if (checkInStatus === 'BEFORE_TIME') {
+                  statusBadgeLabel = 'Đúng ngày nhưng chưa đến giờ'
+                  actionAdvice = 'Chờ đến giờ hợp lệ • Không cho phép bàn giao'
+                  cardClass = 'bg-amber-50 border-amber-300 text-amber-950'
+                  iconName = 'hourglass_top'
+                  iconColor = 'text-amber-600'
+                } else if (checkInStatus === 'LATE') {
+                  statusBadgeLabel = 'Khách đến muộn'
+                  actionAdvice = 'Cho bàn giao nếu hợp đồng, lịch hẹn và các điều kiện khác vẫn hợp lệ'
+                  cardClass = 'bg-sky-50 border-sky-300 text-sky-950'
+                  iconName = 'history_toggle_off'
+                  iconColor = 'text-sky-600'
+                }
+
+                return (
+                  <div className={`p-4 rounded-xl border text-xs shadow-xs space-y-2 ${cardClass}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-white/80 shadow-2xs ${iconColor}`}>
+                          <span className="material-symbols-outlined text-[24px]">{iconName}</span>
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-xs">
+                              Lịch Hẹn Check-in Nhận Kho: {expDateStr ? new Date(expDateStr).toLocaleString('vi-VN') : 'Theo ngày hợp đồng'}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                              checkInMet ? 'bg-emerald-200 text-emerald-950' : 'bg-rose-200 text-rose-950'
+                            }`}>
+                              {checkInMet ? 'Có thể bàn giao' : 'Không cho phép bàn giao'}
+                            </span>
+                          </div>
+                          <p className="mt-1 font-medium text-[11px] leading-relaxed">
+                            {checkInMsg}
+                          </p>
+                          <div className="mt-1 flex items-center gap-1.5 text-[10px] font-semibold">
+                            <span className="opacity-75">Quy tắc xử lý:</span>
+                            <span className="underline decoration-dotted">{actionAdvice}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase tracking-wider bg-white/90 border border-current shadow-2xs">
+                          {statusBadgeLabel}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                
+                {/* Điều kiện 1: Hợp Đồng Thuê Kho (Ký Điện Tử hoặc Ký Giấy Tại Quầy) */}
+                <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                            isContractMet
+                              ? 'bg-emerald-50 text-emerald-600'
+                              : currentPrerequisites?.contractVerificationStatus === 'PENDING_VERIFICATION'
+                              ? 'bg-amber-50 text-amber-600'
+                              : 'bg-slate-100 text-slate-500'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[20px]">
+                            {currentPrerequisites?.contractSigningMethod === 'PAPER' ? 'contract' : 'draw'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="font-bold text-slate-900 text-xs block">1. Hợp Đồng Thuê Kho</span>
+                          <span className="text-[11px] text-slate-500 font-mono">
+                            {currentPrerequisites?.contractSigningMethod === 'PAPER' ? '🏢 Ký Giấy Tại Kho' : '✍️ Ký Điện Tử Trực Tuyến'}
+                          </span>
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
+                          isContractMet
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : currentPrerequisites?.contractVerificationStatus === 'PENDING_VERIFICATION'
+                            ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                            : 'bg-slate-100 text-slate-700 border border-slate-200'
+                        }`}
+                      >
+                        {isContractMet
+                          ? (currentPrerequisites?.contractSigningMethod === 'PAPER' ? '✓ ĐÃ KÝ & XÁC MINH' : '✓ ĐÃ KÝ ĐIỆN TỬ')
+                          : currentPrerequisites?.contractVerificationStatus === 'PENDING_VERIFICATION'
+                          ? '⏳ CHỜ XÁC MINH HỢP ĐỒNG GIẤY'
+                          : currentPrerequisites?.contractSigningMethod === 'PAPER'
+                          ? 'CHƯA TẢI HĐ GIẤY'
+                          : 'CHƯA KÝ ONLINE'}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-[11px] space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Mã hợp đồng:</span>
+                        <strong className="font-mono text-slate-800">{currentPrerequisites?.contractCode || 'Chưa khởi tạo'}</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Phương thức:</span>
+                        <span className="font-medium text-slate-700">
+                          {currentPrerequisites?.contractSigningMethod === 'PAPER' ? 'Ký bản cứng tại quầy cơ sở' : 'Ký số điện tử trực tuyến'}
+                        </span>
+                      </div>
+                      {isContractMet && currentPrerequisites?.contractSigningMethod !== 'PAPER' && (
+                        <div className="flex justify-between items-center text-emerald-700 font-medium">
+                          <span>Xác thực:</span>
+                          <span className="inline-flex items-center gap-1 font-bold">
+                            <span className="material-symbols-outlined text-[14px]">verified</span>
+                            Đã ký số xác thực trực tuyến
+                          </span>
+                        </div>
+                      )}
+                      {currentPrerequisites?.contractSignedAt && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Thời điểm ký:</span>
+                          <span className="font-mono text-slate-700">
+                            {new Date(currentPrerequisites.contractSignedAt).toLocaleString('vi-VN')}
+                          </span>
+                        </div>
+                      )}
+                      {currentPrerequisites?.paperOriginalLocation && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Vị trí lưu bản cứng:</span>
+                          <span className="font-medium text-slate-700">{currentPrerequisites.paperOriginalLocation}</span>
+                        </div>
+                      )}
+                      {currentPrerequisites?.paperVerifiedByName && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Nhân viên xác minh:</span>
+                          <span className="font-bold text-emerald-700">{currentPrerequisites.paperVerifiedByName}</span>
+                        </div>
+                      )}
+                      {currentPrerequisites?.paperContractUrl && (
+                        <div className="pt-1 flex items-center justify-between border-t border-slate-200/60">
+                          <span className="text-slate-500">Bản scan hợp đồng:</span>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAuthorizedDocument(currentPrerequisites.paperContractUrl!)}
+                            disabled={openingDocumentUrl === currentPrerequisites.paperContractUrl}
+                            className="text-cyan-700 hover:text-cyan-800 font-bold inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">
+                              {openingDocumentUrl === currentPrerequisites.paperContractUrl ? 'hourglass_top' : 'attachment'}
+                            </span>
+                            <span>{openingDocumentUrl === currentPrerequisites.paperContractUrl ? 'Đang tải...' : 'Xem file scan'}</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions for Contract */}
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+                    {/* TH1: Ký điện tử và đã ký thành công */}
+                    {isContractMet && currentPrerequisites?.contractSigningMethod !== 'PAPER' ? (
+                      <div className="w-full flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5 text-emerald-700 text-[11px] font-bold">
+                          <span className="material-symbols-outlined text-[16px]">task_alt</span>
+                          <span>Hợp đồng điện tử hợp lệ (không bắt buộc tải HĐ giấy)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleViewElectronicContract}
+                            disabled={isLoadingContract}
+                            className="px-2.5 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 font-bold text-xs flex items-center gap-1 cursor-pointer border border-cyan-200 transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">
+                              {isLoadingContract ? 'hourglass_top' : 'description'}
+                            </span>
+                            <span>{isLoadingContract ? 'Đang mở...' : 'Xem HĐ Điện Tử'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleOpenPaperContractModal}
+                            className="text-[11px] text-slate-500 hover:text-slate-700 underline font-medium cursor-pointer"
+                            title="Nếu chi nhánh muốn lưu thêm bản giấy photo/scan dự phòng"
+                          >
+                            {currentPrerequisites?.paperContractUrl ? 'Cập nhật bản scan dự phòng' : '+ Tải bản scan dự phòng (tùy chọn)'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : currentPrerequisites?.contractSigningMethod === 'PAPER' ? (
+                      /* TH2: Ký giấy tại quầy cơ sở */
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleOpenPaperContractModal}
+                          className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">upload_file</span>
+                          <span>{currentPrerequisites?.paperContractUrl ? 'Cập Nhật Bản Scan' : 'Tạo / Tải HĐ Giấy'}</span>
+                        </button>
+
+                        {currentPrerequisites?.contractVerificationStatus === 'PENDING_VERIFICATION' && (
+                          <button
+                            type="button"
+                            onClick={handleVerifyPaperContract}
+                            disabled={isVerifyingPaperContract}
+                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">verified</span>
+                            <span>{isVerifyingPaperContract ? 'Đang xác minh...' : 'Xác Minh Hợp Đồng'}</span>
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      /* TH3: Chọn ký online nhưng khách chưa hoàn tất ký */
+                      <div className="w-full flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-[11px] text-amber-700 font-medium">
+                          Chờ khách ký trực tuyến hoặc hướng dẫn chuyển sang ký tại quầy.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleOpenPaperContractModal}
+                          className="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer border border-amber-300"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">edit_document</span>
+                          <span>Chuyển Sang Ký Giấy Tại Quầy</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Điều kiện 2: Bằng Chứng Chuyển Khoản Toàn Bộ Tiền Cọc & Thuê Trong Toàn Bộ Thời Hạn */}
+                <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                            isPaymentMet ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[20px]">payments</span>
+                        </div>
+                        <div>
+                          <span className="font-bold text-slate-900 text-xs block leading-tight">
+                            2. Chuyển Khoản Toàn Bộ Tiền Cọc &amp; Thuê
+                          </span>
+                          <span className="text-[10px] text-slate-500 leading-tight block mt-0.5">
+                            Bằng chứng chuyển khoản toàn bộ cọc &amp; tiền thuê toàn hạn
+                          </span>
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold shrink-0 ${
+                          isPaymentMet
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-rose-50 text-rose-700 border border-rose-200'
+                        }`}
+                      >
+                        {isPaymentMet
+                          ? '✓ ĐÃ ĐỦ CỌC & THUÊ'
+                          : `CÒN THIẾU ${((currentPrerequisites?.depositRemaining ?? 0) + (currentPrerequisites?.firstMonthRentRemaining ?? 0)).toLocaleString('vi-VN')}đ`}
+                      </span>
+                    </div>
+
+                    {/* Financial summary: 3 columns */}
+                    <div className="mt-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-[11px] grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">Tổng phải thu</span>
+                        <strong className="font-mono text-slate-800 text-[11px]">
+                          {((currentPrerequisites?.requiredDeposit ?? 0) + (currentPrerequisites?.requiredFirstMonthRent ?? 0)).toLocaleString('vi-VN')}đ
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">Đã xác nhận</span>
+                        <strong className="font-mono text-emerald-700 text-[11px]">
+                          {((currentPrerequisites?.depositPaid ?? 0) + (currentPrerequisites?.firstMonthRentPaid ?? 0)).toLocaleString('vi-VN')}đ
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">Còn thiếu</span>
+                        <strong
+                          className={`font-mono text-[11px] ${
+                            ((currentPrerequisites?.depositRemaining ?? 0) + (currentPrerequisites?.firstMonthRentRemaining ?? 0)) > 0
+                              ? 'text-rose-600'
+                              : 'text-slate-700'
+                          }`}
+                        >
+                          {((currentPrerequisites?.depositRemaining ?? 0) + (currentPrerequisites?.firstMonthRentRemaining ?? 0)).toLocaleString('vi-VN')}đ
+                        </strong>
+                      </div>
+                    </div>
+
+                    {/* Breakdown cọc vs thuê */}
+                    <div className="mt-2 space-y-1 text-[11px] bg-slate-50/60 p-2 rounded-lg border border-slate-100">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                          Tiền cọc giữ chỗ:
+                        </span>
+                        <span className="font-mono font-bold text-slate-700">
+                          {(currentPrerequisites?.depositPaid ?? 0).toLocaleString('vi-VN')}đ / {(currentPrerequisites?.requiredDeposit ?? 0).toLocaleString('vi-VN')}đ
+                          {isDepositMet ? (
+                            <span className="text-emerald-600 ml-1">✓</span>
+                          ) : (
+                            <span className="text-rose-500 ml-1">(-{(currentPrerequisites?.depositRemaining ?? 0).toLocaleString('vi-VN')}đ)</span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-500"></span>
+                          Tiền thuê trọn kỳ:
+                        </span>
+                        <span className="font-mono font-bold text-slate-700">
+                          {(currentPrerequisites?.firstMonthRentPaid ?? 0).toLocaleString('vi-VN')}đ / {(currentPrerequisites?.requiredFirstMonthRent ?? 0).toLocaleString('vi-VN')}đ
+                          {isRentMet ? (
+                            <span className="text-emerald-600 ml-1">✓</span>
+                          ) : (
+                            <span className="text-rose-500 ml-1">(-{(currentPrerequisites?.firstMonthRentRemaining ?? 0).toLocaleString('vi-VN')}đ)</span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Newly uploaded proof feedback banner */}
+                    {uploadedPaymentProofUrl && (
+                      <div className="mt-2 p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] flex items-center justify-between">
+                        <span className="inline-flex items-center gap-1 font-medium">
+                          <span className="material-symbols-outlined text-[15px] text-emerald-600">task_alt</span>
+                          Ảnh chuyển khoản đã tải lên
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAuthorizedDocument(uploadedPaymentProofUrl)}
+                          disabled={openingDocumentUrl === uploadedPaymentProofUrl}
+                          className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[12px]">visibility</span>
+                          <span>{openingDocumentUrl === uploadedPaymentProofUrl ? '...' : 'Xem ảnh'}</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* All payment transactions & receipts list */}
+                    {currentPrerequisites?.paymentHistory && currentPrerequisites.paymentHistory.length > 0 && (
+                      <div className="mt-2 space-y-1.5 max-h-28 overflow-y-auto pr-0.5">
+                        {currentPrerequisites.paymentHistory.map((p) => (
+                          <div key={p.id} className="p-1.5 rounded bg-slate-100/70 text-[10px] flex items-center justify-between">
+                            <div className="flex items-center gap-1">
+                              <span className={`px-1 py-0.2 rounded font-mono font-bold text-[9px] ${
+                                p.paymentType === 'DEPOSIT' ? 'bg-blue-100 text-blue-800' : 'bg-cyan-100 text-cyan-800'
+                              }`}>
+                                {p.paymentType === 'DEPOSIT' ? 'CỌC' : 'THUÊ'}
+                              </span>
+                              <span className="font-mono font-bold text-slate-700">
+                                {p.paymentMethod} • {p.amount.toLocaleString('vi-VN')}đ
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {p.proofDocumentUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAuthorizedDocument(p.proofDocumentUrl!)}
+                                  disabled={openingDocumentUrl === p.proofDocumentUrl}
+                                  className="px-1.5 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[10px] inline-flex items-center gap-0.5 cursor-pointer"
+                                  title="Xem ảnh chụp ủy nhiệm chi / biên lai chuyển khoản"
+                                >
+                                  <span className="material-symbols-outlined text-[12px]">receipt_long</span>
+                                  <span>{openingDocumentUrl === p.proofDocumentUrl ? '...' : 'Xem UNC'}</span>
+                                </button>
+                              )}
+                              <span
+                                className={`px-1.5 py-0.2 rounded font-bold ${
+                                  p.status === 'PAID'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : p.status === 'PENDING' || p.status === 'REFUND_PENDING'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-slate-200 text-slate-700'
+                                }`}
+                              >
+                                {p.status === 'PAID' ? 'Đã duyệt' : p.status === 'PENDING' ? 'Chờ duyệt' : p.status}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Upload payment proof button */}
+                  <div className="pt-2 border-t border-slate-100">
+                    <input
+                      ref={paymentProofInputRef}
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="hidden"
+                      onChange={handlePaymentProofUpload}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => paymentProofInputRef.current?.click()}
+                      disabled={isUploadingPaymentProof}
+                      className="w-full py-2 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">
+                        {isUploadingPaymentProof ? 'hourglass_top' : 'upload_file'}
+                      </span>
+                      <span>{isUploadingPaymentProof ? 'Đang Tải Ảnh...' : 'Tải Lên / Upload Ảnh Chuyển Khoản'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Điều kiện 3: Đối Chiếu CCCD / Passport Gốc */}
+                <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                            isIdMet ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[20px]">badge</span>
+                        </div>
+                        <div>
+                          <span className="font-bold text-slate-900 text-xs block">3. Đối Chiếu CCCD / Hộ Chiếu Gốc</span>
+                          <span className="text-[11px] text-slate-500">Xác minh danh tính khách hàng trực tiếp</span>
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
+                          isIdMet
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}
+                      >
+                        {isIdMet ? '✓ ĐÃ ĐỐI SOÁT GỐC' : 'CHƯA ĐỐI SOÁT'}
+                      </span>
+                    </div>
+
+                    {isIdMet ? (
+                      <div className="mt-3 p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200 text-[11px] space-y-1">
+                        <div className="flex justify-between">
+                          <span className="text-emerald-900">Loại giấy tờ:</span>
+                          <strong className="font-mono text-emerald-950">{currentPrerequisites?.idCardType || 'CCCD'}</strong>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-emerald-900">Số giấy tờ:</span>
+                          <strong className="font-mono text-emerald-950">{currentPrerequisites?.idCardNumber}</strong>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-emerald-900">Nhân viên đối chiếu:</span>
+                          <span className="font-bold text-emerald-900">{currentPrerequisites?.identityVerifiedByName || 'Quầy tiếp đón'}</span>
+                        </div>
+                        {currentPrerequisites?.identityVerifiedAt && (
+                          <div className="flex justify-between">
+                            <span className="text-emerald-900">Thời điểm:</span>
+                            <span className="font-mono text-emerald-800">
+                              {new Date(currentPrerequisites.identityVerifiedAt).toLocaleString('vi-VN')}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-2.5 space-y-2 text-xs">
+                        {Boolean(currentPrerequisites?.registeredIdCardNumber || currentPrerequisites?.idCardNumber) && (
+                          <div className="p-2 rounded-lg bg-blue-50/90 border border-blue-200/80 flex items-center justify-between text-[11px]">
+                            <span className="text-blue-900 font-semibold flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[15px] text-blue-700">info</span>
+                              CCCD đăng ký trong đơn:
+                            </span>
+                            <span className="font-mono font-bold text-blue-950">
+                              {currentPrerequisites?.registeredIdCardNumber || currentPrerequisites?.idCardNumber}
+                              <span className="ml-1 text-[10px] text-blue-700 font-sans">
+                                ({currentPrerequisites?.registeredIdCardType || currentPrerequisites?.idCardType || 'CCCD'})
+                              </span>
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={idCardType}
+                            onChange={(e) => setIdCardType(e.target.value)}
+                            className="p-1.5 bg-slate-50 border border-slate-200 rounded text-slate-900 font-bold text-xs focus:outline-none"
+                          >
+                            <option value="CCCD">Căn Cước</option>
+                            <option value="PASSPORT">Hộ Chiếu</option>
+                          </select>
+                          <input
+                            type="text"
+                            value={idCardInputNumber}
+                            onChange={(e) => {
+                              setIdCardInputNumber(e.target.value)
+                              if (checkInError) setCheckInError(null)
+                            }}
+                            placeholder="Nhập 9-12 chữ số..."
+                            className="flex-1 p-1.5 bg-slate-50 border border-slate-200 rounded text-slate-900 font-mono text-xs focus:outline-none focus:border-cyan-600"
+                          />
+                        </div>
+                        <label className="flex items-start gap-2 cursor-pointer text-[11px] text-slate-700 p-1.5 bg-slate-50 rounded border border-slate-100">
+                          <input
+                            type="checkbox"
+                            checked={idOriginalSeen}
+                            onChange={(e) => setIdOriginalSeen(e.target.checked)}
+                            className="mt-0.5 rounded text-cyan-600"
+                          />
+                          <span>Tôi xác nhận đã xem và đối chiếu thẻ căn cước / hộ chiếu gốc của khách hàng tại quầy.</span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions for Identity */}
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                    {!isIdMet ? (
+                      <button
+                        type="button"
+                        onClick={handleVerifyIdentity}
+                        disabled={isVerifyingIdentity}
+                        className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        <span className="material-symbols-outlined text-[15px]">verified_user</span>
+                        <span>{isVerifyingIdentity ? 'Đang lưu đối soát...' : 'Xác Nhận Đối Chiếu Gốc'}</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => updateCurrentSession({ identityVerified: false })}
+                        className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-bold cursor-pointer"
+                      >
+                        Đối soát lại
+                      </button>
+                    )}
+                    <span className="text-[11px] text-slate-400 font-mono">Bản gốc</span>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Dynamic Missing Prerequisites Alert */}
+              {currentPrerequisites?.missingPrerequisites &&
+                currentPrerequisites.missingPrerequisites.length > 0 &&
+                !isReadyForCheckIn && (
+                  <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs">
+                    <span className="font-bold flex items-center gap-1.5 mb-1.5">
+                      <span className="material-symbols-outlined text-[17px] text-amber-700">error</span>
+                      <span>Hồ sơ check-in hiện chưa đủ 3 điều kiện bắt buộc:</span>
+                    </span>
+                    <ul className="list-disc list-inside space-y-1 text-[11px] text-amber-800 pl-1 font-medium">
+                      {currentPrerequisites.missingPrerequisites.map((m, idx) => (
+                        <li key={idx}>{m}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+              {/* Step 1 Completion & Transition Action Bar */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`material-symbols-outlined text-[20px] ${
+                      isReadyForCheckIn ? 'text-emerald-600' : 'text-amber-500'
+                    }`}
+                  >
+                    {isReadyForCheckIn ? 'task_alt' : 'hourglass_empty'}
+                  </span>
+                  <span className="font-medium text-slate-800">
+                    {isReadyForCheckIn
+                      ? 'Tất cả điều kiện đối soát và thời điểm check-in đã hoàn tất hợp lệ. Bạn có thể chuyển sang bước Nghiệm thu hiện trường.'
+                      : !isCheckInTimeMet
+                      ? (currentPrerequisites?.checkInTimeMessage || 'Chưa đến thời điểm check-in hợp lệ. Hệ thống không cho phép bàn giao trước thời hạn.')
+                      : 'Hệ thống chặn chuyển bước và chặn cấp mã PIN cho đến khi cả 3 điều kiện trên được đáp ứng đầy đủ.'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCompleteStep1}
+                  disabled={!isReadyForCheckIn || isCompletingStep1}
+                  className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 shadow-xs ${
+                    isReadyForCheckIn && !isCompletingStep1
+                      ? 'bg-cyan-600 hover:bg-cyan-700 text-white'
+                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  <span>{isCompletingStep1 ? 'Đang Chuyển Bước...' : 'Hoàn Tất Đối Soát & Đi Tiếp'}</span>
+                  <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
-      {/* 3. Seven-Step Navigation Bar */}
-      <div className="mt-6 border-b border-slate-200 overflow-x-auto pb-1 scrollbar-thin">
-        <div className="flex items-center gap-1 min-w-[760px]">
-          {stepsConfig.map((step) => {
-            const isActive = currentSession.activeStepTab === step.id
-            let isPassed = false
-            if (step.id === 'identity') isPassed = currentSession.identityVerified
-            if (step.id === 'unit-select') isPassed = currentSession.unitVerifiedAvailable
-            if (step.id === 'inspection') isPassed = isAllChecklistPassed && Boolean(currentSession.photoDoor && currentSession.photoInterior)
-            if (step.id === 'billing') isPassed = currentSession.paymentCompleted || currentSession.totalDue > 0
-            if (step.id === 'payment') isPassed = currentSession.paymentCompleted
-            if (step.id === 'signing') isPassed = currentSession.isSignedOnline
-            if (step.id === 'activation') isPassed = currentSession.isCompleted
-
-            return (
+      {/* Tab 2 Content: 5-Point On-Site Inspection & 2 Photos */}
+      {currentSession.activeStepTab === 'checklist' && (
+        <div className="mt-6 flex flex-col gap-6">
+          
+          {/* Checklist 5 points */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <span className="font-headline text-xs font-bold text-slate-900 uppercase tracking-wider">
+                Checklist Nghiệm Thu Hiện Trường (5 Điểm Tiêu Chuẩn)
+              </span>
               <button
-                key={step.id}
-                type="button"
-                onClick={() => handleSelectTab(step.id)}
-                className={`pb-3 px-3 text-xs font-bold flex items-center gap-1.5 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-                  isActive
-                    ? 'border-cyan-600 text-cyan-700 bg-cyan-50/30'
-                    : isPassed
-                    ? 'border-emerald-500 text-emerald-800 hover:bg-emerald-50/30'
-                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                onClick={handleSelectAllChecklist}
+                className="text-xs text-cyan-600 hover:text-cyan-700 font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">done_all</span>
+                <span>Chọn tất cả 5/5 đạt chuẩn</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2.5">
+              
+              {/* Item 1 */}
+              <label
+                className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
+                  currentSession.checklist.doorRoll ? 'bg-cyan-50/50 border-cyan-200' : 'bg-slate-50 border-slate-200'
                 }`}
               >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={currentSession.checklist.doorRoll}
+                    onChange={() => handleToggleChecklist('doorRoll')}
+                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer"
+                  />
+                  <div className="text-xs">
+                    <span className="font-bold text-slate-900">1. Cửa cuốn &amp; then chốt cơ khí</span>
+                    <span className="text-slate-500 block text-[11px]">Đóng mở êm ái, then cài chắc chắn, khóa an toàn không bị kẹt rít.</span>
+                  </div>
+                </div>
                 <span
-                  className={`w-5 h-5 rounded-full flex items-center justify-center font-mono text-[10px] ${
-                    isPassed ? 'bg-emerald-600 text-white' : isActive ? 'bg-cyan-600 text-white' : 'bg-slate-200 text-slate-700'
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                    currentSession.checklist.doorRoll ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
                   }`}
                 >
-                  {isPassed ? '✓' : step.num}
+                  {currentSession.checklist.doorRoll ? 'ĐẠT' : 'CHƯA ĐẠT'}
                 </span>
-                <span>{step.title}</span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
+              </label>
 
-      {/* ============================================================== */}
-      {/* BƯỚC 1: XÁC MINH DANH TÍNH CUSTOMER (CCCD / PASSPORT)           */}
-      {/* ============================================================== */}
-      {currentSession.activeStepTab === 'identity' && (
-        <div className="mt-6 flex flex-col gap-5 animate-fadeIn">
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="material-symbols-outlined text-cyan-700 text-[20px]">badge</span>
-              <h3 className="font-headline text-sm font-bold text-slate-900 uppercase tracking-wider">
-                Bước 1: Nhập CCCD / Passport Xác Minh Danh Tính Khách Hàng
-              </h3>
+              {/* Item 2 */}
+              <label
+                className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
+                  currentSession.checklist.cleanliness ? 'bg-cyan-50/50 border-cyan-200' : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={currentSession.checklist.cleanliness}
+                    onChange={() => handleToggleChecklist('cleanliness')}
+                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer"
+                  />
+                  <div className="text-xs">
+                    <span className="font-bold text-slate-900">2. Không gian vệ sinh &amp; độ ẩm</span>
+                    <span className="text-slate-500 block text-[11px]">Sàn kho sạch sẽ, khô ráo hoàn toàn, không có rác tồn đọng hay mùi ẩm mốc.</span>
+                  </div>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                    currentSession.checklist.cleanliness ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {currentSession.checklist.cleanliness ? 'ĐẠT' : 'CHƯA ĐẠT'}
+                </span>
+              </label>
+
+              {/* Item 3 */}
+              <label
+                className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
+                  currentSession.checklist.lighting ? 'bg-cyan-50/50 border-cyan-200' : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={currentSession.checklist.lighting}
+                    onChange={() => handleToggleChecklist('lighting')}
+                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer"
+                  />
+                  <div className="text-xs">
+                    <span className="font-bold text-slate-900">3. Ổ khóa điện tử SmartLock &amp; đèn báo</span>
+                    <span className="text-slate-500 block text-[11px]">Mặt khóa nhạy, bàn phím số hiển thị sắc nét, chốt cơ nhả trơn tru.</span>
+                  </div>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                    currentSession.checklist.lighting ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {currentSession.checklist.lighting ? 'ĐẠT' : 'CHƯA ĐẠT'}
+                </span>
+              </label>
+
+              {/* Item 4 */}
+              <label
+                className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
+                  currentSession.checklist.fireSafety ? 'bg-cyan-50/50 border-cyan-200' : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={currentSession.checklist.fireSafety}
+                    onChange={() => handleToggleChecklist('fireSafety')}
+                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer"
+                  />
+                  <div className="text-xs">
+                    <span className="font-bold text-slate-900">4. Đầu báo khói &amp; cảm biến nhiệt ẩm</span>
+                    <span className="text-slate-500 block text-[11px]">Đầu phun Sprinkler &amp; cảm biến IoT không bị che khuất, tín hiệu bình thường.</span>
+                  </div>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                    currentSession.checklist.fireSafety ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {currentSession.checklist.fireSafety ? 'ĐẠT' : 'CHƯA ĐẠT'}
+                </span>
+              </label>
+
+              {/* Item 5 */}
+              <label
+                className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
+                  currentSession.checklist.sealPlate ? 'bg-cyan-50/50 border-cyan-200' : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={currentSession.checklist.sealPlate}
+                    onChange={() => handleToggleChecklist('sealPlate')}
+                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer"
+                  />
+                  <div className="text-xs">
+                    <span className="font-bold text-slate-900">5. Tường vách &amp; tem niêm phong</span>
+                    <span className="text-slate-500 block text-[11px]">Bảng số phòng #{unitDisplayCode} rõ ràng, vách tôn không bong tróc nứt vỡ.</span>
+                  </div>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                    currentSession.checklist.sealPlate ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {currentSession.checklist.sealPlate ? 'ĐẠT' : 'CHƯA ĐẠT'}
+                </span>
+              </label>
+
             </div>
-            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-              Theo quy chuẩn Boxora, nhân viên hoặc quản lý cơ sở bắt buộc phải trực tiếp đối chiếu bản gốc Căn cước công dân hoặc Hộ chiếu của khách hàng tại quầy trước khi tiến hành nhận kho.
-            </p>
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Loại giấy tờ */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Loại Giấy Tờ Tùy Thân <span className="text-rose-500">*</span>
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIdCardTypeInput('CCCD')}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                      idCardTypeInput === 'CCCD'
-                        ? 'bg-cyan-50 border-cyan-500 text-cyan-800 shadow-xs'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[16px]">badge</span>
-                    <span>Căn Cước (CCCD)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIdCardTypeInput('PASSPORT')}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                      idCardTypeInput === 'PASSPORT'
-                        ? 'bg-cyan-50 border-cyan-500 text-cyan-800 shadow-xs'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[16px]">flight</span>
-                    <span>Hộ Chiếu (Passport)</span>
-                  </button>
+          {/* 2 Condition Evidence Photos */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <span className="font-headline text-xs font-bold text-slate-900 uppercase tracking-wider">
+                Lưu Trữ 2 Ảnh Hiện Trạng Bàn Giao (Evidence Photos)
+              </span>
+              <span className="text-[11px] text-slate-500 font-mono">Bắt buộc 2/2 ảnh</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <input
+                type="file"
+                ref={doorInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => handlePhotoFileChange('door', e)}
+              />
+              <input
+                type="file"
+                ref={interiorInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => handlePhotoFileChange('interior', e)}
+              />
+
+              {/* Photo 1: Door Overview */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex flex-col">
+                <div className="relative aspect-video bg-slate-900 overflow-hidden flex items-center justify-center group">
+                  {effectiveDoorPhoto ? (
+                    <>
+                      <img
+                        src={effectiveDoorPhoto}
+                        alt="Ảnh Cửa Ngoài Kho"
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 cursor-pointer"
+                        onClick={() => setPreviewModalImage({ url: effectiveDoorPhoto, title: `Ảnh 1: Cửa Ngoài & Bảng Số #${unitDisplayCode}` })}
+                      />
+                      {/* Zoom overlay hint */}
+                      <button
+                        type="button"
+                        onClick={() => setPreviewModalImage({ url: effectiveDoorPhoto, title: `Ảnh 1: Cửa Ngoài & Bảng Số #${unitDisplayCode}` })}
+                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer text-white text-xs font-semibold gap-1.5"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">zoom_in</span>
+                        <span>Bấm để phóng to kiểm tra ảnh</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => doorInputRef.current?.click()}
+                      className="text-slate-400 hover:text-white flex flex-col items-center gap-1.5 p-4 text-xs cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[28px]">add_a_photo</span>
+                      <span>Bấm chụp/tải ảnh cửa ngoài kho #{unitDisplayCode}</span>
+                    </button>
+                  )}
+                  {isUploadingDoor && (
+                    <div className="absolute inset-0 bg-slate-900/70 flex items-center justify-center gap-2 text-white text-xs">
+                      <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+                      <span>Đang lưu ảnh...</span>
+                    </div>
+                  )}
+                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-slate-900/80 text-white font-mono text-[10px] backdrop-blur-xs flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    <span>Ảnh 1: Cửa Ngoài &amp; Bảng Số #{unitDisplayCode}</span>
+                  </div>
+                </div>
+                <div className="p-2.5 flex items-center justify-between bg-white text-xs">
+                  <span className="text-slate-600 text-[11px] truncate max-w-[140px]" title={effectiveDoorPhoto ? `door_overview_${unitDisplayCode}.jpg` : 'Chưa có ảnh'}>
+                    {effectiveDoorPhoto ? `door_overview_${unitDisplayCode}.jpg` : 'Chưa có ảnh'}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {effectiveDoorPhoto && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewModalImage({ url: effectiveDoorPhoto, title: `Ảnh 1: Cửa Ngoài & Bảng Số #${unitDisplayCode}` })}
+                          className="px-2 py-1 rounded bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">visibility</span>
+                          <span>Xem to</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDoorPreviewUrl('')
+                            updateCurrentSession({ photoDoor: '' })
+                          }}
+                          className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] transition-colors cursor-pointer"
+                        >
+                          Xóa
+                        </button>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => doorInputRef.current?.click()}
+                      className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
+                    >
+                      {effectiveDoorPhoto ? 'Chụp lại' : 'Tải ảnh lên'}
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {/* Số giấy tờ */}
+              {/* Photo 2: Inside Storage Unit */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex flex-col">
+                <div className="relative aspect-video bg-slate-900 overflow-hidden flex items-center justify-center group">
+                  {effectiveInteriorPhoto ? (
+                    <>
+                      <img
+                        src={effectiveInteriorPhoto}
+                        alt="Ảnh Bên Trong Kho"
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 cursor-pointer"
+                        onClick={() => setPreviewModalImage({ url: effectiveInteriorPhoto, title: `Ảnh 2: Nền Sàn & Vách Trong #${unitDisplayCode}` })}
+                      />
+                      {/* Zoom overlay hint */}
+                      <button
+                        type="button"
+                        onClick={() => setPreviewModalImage({ url: effectiveInteriorPhoto, title: `Ảnh 2: Nền Sàn & Vách Trong #${unitDisplayCode}` })}
+                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer text-white text-xs font-semibold gap-1.5"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">zoom_in</span>
+                        <span>Bấm để phóng to kiểm tra ảnh</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => interiorInputRef.current?.click()}
+                      className="text-slate-400 hover:text-white flex flex-col items-center gap-1.5 p-4 text-xs cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[28px]">add_a_photo</span>
+                      <span>Bấm chụp/tải ảnh nền sàn &amp; vách trong kho</span>
+                    </button>
+                  )}
+                  {isUploadingInterior && (
+                    <div className="absolute inset-0 bg-slate-900/70 flex items-center justify-center gap-2 text-white text-xs">
+                      <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+                      <span>Đang lưu ảnh...</span>
+                    </div>
+                  )}
+                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-slate-900/80 text-white font-mono text-[10px] backdrop-blur-xs flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    <span>Ảnh 2: Nền Sàn &amp; Vách Trong</span>
+                  </div>
+                </div>
+                <div className="p-2.5 flex items-center justify-between bg-white text-xs">
+                  <span className="text-slate-600 text-[11px] truncate max-w-[140px]" title={effectiveInteriorPhoto ? `interior_floor_${unitDisplayCode}.jpg` : 'Chưa có ảnh'}>
+                    {effectiveInteriorPhoto ? `interior_floor_${unitDisplayCode}.jpg` : 'Chưa có ảnh'}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {effectiveInteriorPhoto && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewModalImage({ url: effectiveInteriorPhoto, title: `Ảnh 2: Nền Sàn & Vách Trong #${unitDisplayCode}` })}
+                          className="px-2 py-1 rounded bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">visibility</span>
+                          <span>Xem to</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInteriorPreviewUrl('')
+                            updateCurrentSession({ photoInterior: '' })
+                          }}
+                          className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] transition-colors cursor-pointer"
+                        >
+                          Xóa
+                        </button>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => interiorInputRef.current?.click()}
+                      className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
+                    >
+                      {effectiveInteriorPhoto ? 'Chụp lại' : 'Tải ảnh lên'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+            <button
+              onClick={() => handleSelectTab('audit')}
+              className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg font-bold text-xs transition-colors cursor-pointer"
+            >
+              Quay lại Bước 1
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCompleteInspection}
+              disabled={!isAllChecklistPassed || !currentSession.photoDoor || !currentSession.photoInterior || isRecordingInspection}
+              className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                isAllChecklistPassed && currentSession.photoDoor && currentSession.photoInterior && !isRecordingInspection
+                  ? 'bg-cyan-600 hover:bg-cyan-700 text-white shadow-xs'
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+              }`}
+            >
+              <span>{isRecordingInspection ? 'Đang Lưu Nghiệm Thu...' : 'Hoàn Tất Nghiệm Thu & Cấp PIN'}</span>
+              <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+            </button>
+          </div>
+
+        </div>
+      )}
+
+      {/* Tab 3 Content: Secure PIN Lock Box & Handover Completion */}
+      {currentSession.activeStepTab === 'pin' && (
+        <div className="mt-6 flex flex-col gap-6">
+          
+          {/* Prerequisites Warning Banner in Step 3 if conditions unmet */}
+          {!isReadyForCheckIn && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-start gap-2.5">
+              <span className="material-symbols-outlined text-[20px] text-amber-600 shrink-0 mt-0.5">warning</span>
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Số {idCardTypeInput === 'CCCD' ? 'Căn Cước Công Dân' : 'Hộ Chiếu (Passport)'}{' '}
-                  <span className="text-rose-500">*</span>
-                </label>
+                <strong className="block font-bold">Chưa đủ điều kiện bàn giao buồng kho:</strong>
+                <span>
+                  Booking chưa thỏa mãn đầy đủ 3 điều kiện đối soát (Hợp đồng, chuyển khoản cọc &amp; thuê toàn hạn, CCCD đối chiếu). Hệ thống bảo mật không cho phép cấp mã PIN trước khi đáp ứng đủ quy chuẩn.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* The PIN Lock Box */}
+          <div className="bg-slate-900 text-white rounded-2xl p-6 border border-slate-800 shadow-lg relative overflow-hidden">
+            <div className="absolute -top-12 -right-12 w-48 h-48 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none"></div>
+
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[22px]">lock</span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-headline text-base font-bold text-white">
+                      Mã PIN Mở Cửa Kho Số Hóa
+                    </span>
+                  </div>
+                  <span className="text-xs text-slate-400">
+                    Mã khóa truy cập điện tử dành riêng cho phòng kho #{unitDisplayCode}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleCopyPin}
+                  disabled={!currentSession.isCompleted || !currentSession.accessPin || currentSession.accessPin === '------'}
+                  className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[16px]">
+                    {pinCopied ? 'check' : 'content_copy'}
+                  </span>
+                  <span>{pinCopied ? 'Đã Sao Chép' : 'Sao Chép PIN'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Disclaimer Banner: Software Simulation MVP */}
+            <div className="mt-4 p-2.5 rounded-lg bg-cyan-950/50 border border-cyan-800/60 text-cyan-200 text-[11px] flex items-center gap-2">
+              <span className="material-symbols-outlined text-[16px] text-cyan-400">info</span>
+              <span>
+                <strong>[Mô phỏng phần mềm - MVP Boxora]:</strong> Mã PIN và QR được tạo ngẫu nhiên bảo mật (SecureRandom &amp; AES-256) từ máy chủ Boxora và hiển thị khi hoàn tất bàn giao. Chưa kết nối vật lý trực tiếp bộ điều khiển SmartLock IoT.
+              </span>
+            </div>
+
+            {/* Large 6-Digit PIN Display */}
+            <div className="my-6 flex flex-col items-center justify-center">
+              <div className="flex items-center gap-2.5 sm:gap-3.5">
+                {(currentSession.accessPin || '------').split('').map((char, index) => (
+                  <div
+                    key={index}
+                    className="w-12 h-16 sm:w-14 sm:h-20 rounded-xl bg-slate-800/90 border border-slate-700 flex items-center justify-center font-mono text-3xl sm:text-4xl font-extrabold text-cyan-400 shadow-inner"
+                  >
+                    {char}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex items-center gap-2 text-xs text-slate-400 font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span>
+                  {currentSession.accessPin && currentSession.accessPin !== '------'
+                    ? 'Mã đã được cấp từ hệ thống'
+                    : 'Mã PIN sẽ được máy chủ cấp tự động khi hoàn tất bàn giao'}{' '}
+                  • Thẻ RFID cấp phát:{' '}
+                </span>
                 <input
                   type="text"
-                  value={idCardNumberInput}
-                  onChange={(e) => setIdCardNumberInput(e.target.value.toUpperCase())}
-                  placeholder={idCardTypeInput === 'CCCD' ? 'Nhập 9 hoặc 12 số CCCD' : 'Ví dụ: B1234567'}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 font-mono text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  value={currentSession.rfidCard}
+                  placeholder="Mã thẻ..."
+                  onChange={(e) => updateCurrentSession({ rfidCard: e.target.value })}
+                  className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-white rounded font-mono text-xs w-28 text-center focus:outline-none focus:border-cyan-500"
                 />
-                <span className="text-[11px] text-slate-500 mt-1 block">
-                  {idCardTypeInput === 'CCCD' ? 'Định dạng: 9 hoặc 12 chữ số' : 'Định dạng: 7-15 ký tự chữ và số'}
-                </span>
               </div>
             </div>
 
-            {/* Checkbox đối chiếu giấy tờ gốc */}
-            <div className="mt-4 p-3 rounded-xl bg-white border border-slate-200">
-              <label className="flex items-start gap-2.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={idOriginalSeenInput}
-                  onChange={(e) => setIdOriginalSeenInput(e.target.checked)}
-                  className="w-4 h-4 mt-0.5 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer"
-                />
-                <div className="text-xs">
-                  <span className="font-bold text-slate-900 block">
-                    Xác nhận đã trực tiếp đối chiếu bản gốc {idCardTypeInput} tại quầy
+            {/* Quick Dispatch Buttons */}
+            <div className="pt-4 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <span className="text-slate-300 font-medium flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[17px] text-cyan-400">send_time_extension</span>
+                <span>Gửi mã mở kho &amp; thông tin bàn giao đến khách hàng:</span>
+              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleSendEmail}
+                  disabled={isSendingEmail || !currentSession.isCompleted}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    currentSession.emailSent
+                      ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                  }`}
+                  title={`Gửi mã PIN & thông tin bàn giao tới ${customerDisplayEmail}`}
+                >
+                  <span className="material-symbols-outlined text-[16px]">
+                    {currentSession.emailSent ? 'mark_email_read' : 'mail'}
                   </span>
-                  <span className="text-slate-500 block text-[11px] mt-0.5">
-                    Ảnh chụp giấy tờ rõ nét, còn hạn sử dụng, thông tin họ tên{' '}
-                    <strong className="text-slate-800">{customerDisplayName}</strong> và số giấy tờ hoàn toàn trùng khớp.
+                  <span>
+                    {currentSession.emailSent
+                      ? `Đã Gửi Email (${customerDisplayEmail})`
+                      : isSendingEmail
+                      ? 'Đang gửi email...'
+                      : 'Gửi Email Cho Khách'}
                   </span>
-                </div>
-              </label>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSendWebPush}
+                  disabled={isSendingWebPush || !currentSession.isCompleted}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    currentSession.webPushSent
+                      ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/40'
+                      : 'bg-cyan-950 hover:bg-cyan-900 text-cyan-200 border-cyan-800'
+                  }`}
+                  title="Gửi thông báo xuất hiện trực tiếp trên nút chuông thông báo gần profile ở web"
+                >
+                  <span className="material-symbols-outlined text-[16px]">
+                    {currentSession.webPushSent ? 'notifications_active' : 'notifications'}
+                  </span>
+                  <span>
+                    {currentSession.webPushSent
+                      ? 'Đã Bắn Thông Báo Web'
+                      : isSendingWebPush
+                      ? 'Đang Bắn...'
+                      : 'Bắn Thông Báo Web'}
+                  </span>
+                </button>
+              </div>
             </div>
 
-            {/* Ghi chú xác minh */}
-            <div className="mt-3">
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                Ghi Chú Xác Minh (Tùy chọn)
+            {dispatchFeedback && (
+              <div
+                className={`mt-2.5 p-2 rounded-lg text-xs font-medium flex items-center gap-2 ${
+                  dispatchFeedback.isError
+                    ? 'bg-rose-900/40 border border-rose-700 text-rose-200'
+                    : 'bg-emerald-950/60 border border-emerald-700 text-emerald-300'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">
+                  {dispatchFeedback.isError ? 'error' : 'check_circle'}
+                </span>
+                <span>{dispatchFeedback.text}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Handover Sign-off & Completion Form */}
+          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex flex-col gap-3">
+            <span className="font-headline text-xs font-bold text-slate-900 uppercase tracking-wider">
+              Xác Nhận Ký Biên Bản Nghiệm Thu &amp; Bàn Giao Điện Tử
+            </span>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                Ghi chú bàn giao bổ sung (Hiện trạng, phụ kiện mượn thêm):
               </label>
-              <input
-                type="text"
-                value={idNotesInput}
-                onChange={(e) => setIdNotesInput(e.target.value)}
-                placeholder="Ví dụ: Đối chiếu thẻ CCCD gắn chip gốc, hợp lệ."
-                className="w-full px-3 py-1.5 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              <textarea
+                rows={2}
+                value={currentSession.handoverNotes}
+                onChange={(e) => updateCurrentSession({ handoverNotes: e.target.value })}
+                placeholder="Nhập ghi chú bàn giao nếu có (vd: Khách mượn xe đẩy, hẹn dọn đồ sau 17h)..."
+                className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-cyan-600"
               />
             </div>
 
-            {/* Action Verify Button */}
-            <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-200">
-              <div className="flex items-center gap-1.5 text-xs">
-                {currentSession.identityVerified ? (
-                  <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[16px]">verified</span>
-                    Đã xác minh danh tính hợp lệ
-                  </span>
-                ) : (
-                  <span className="text-amber-700 font-medium">Chưa bấm xác minh danh tính</span>
-                )}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+              <div className="text-xs text-slate-500">
+                Khách hàng: <strong className="text-slate-800">{customerDisplayName}</strong> • CCCD:{' '}
+                <strong className="font-mono text-slate-800">
+                  {currentPrerequisites?.idCardNumber || 'Not recorded'}
+                </strong>
               </div>
 
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleVerifyIdentity}
-                  disabled={isVerifyingIdentity}
-                  className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                  onClick={() => setShowPdfModal(true)}
+                  className="px-3 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
-                  <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
-                  <span>{isVerifyingIdentity ? 'Đang xác minh...' : 'Xác Minh Danh Tính Hợp Lệ'}</span>
+                  <span className="material-symbols-outlined text-[16px]">visibility</span>
+                  <span>Xem Trước Biên Bản (PDF)</span>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => handleSelectTab('unit-select')}
-                  disabled={!currentSession.identityVerified}
-                  className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                    currentSession.identityVerified
-                      ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs'
-                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  onClick={handleCompleteHandover}
+                  disabled={isSubmitting || currentSession.isCompleted || !isReadyForCheckIn || !isAllChecklistPassed}
+                  className={`btn-tactile px-5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer ${
+                    currentSession.isCompleted
+                      ? 'bg-emerald-600 text-white'
+                      : isSubmitting
+                      ? 'bg-slate-400 text-white cursor-wait'
+                      : !isReadyForCheckIn || !isAllChecklistPassed
+                      ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                      : 'bg-cyan-600 hover:bg-cyan-700 text-white'
                   }`}
                 >
-                  <span>Tiếp tục: Bước 2 - Chọn &amp; Kiểm tra kho</span>
-                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                  <span className="material-symbols-outlined text-[16px]">
+                    {currentSession.isCompleted
+                      ? 'verified'
+                      : isSubmitting
+                      ? 'hourglass_top'
+                      : 'assignment_turned_in'}
+                  </span>
+                  <span>
+                    {currentSession.isCompleted
+                      ? 'ĐÃ HOÀN TẤT BÀN GIAO'
+                      : isSubmitting
+                      ? 'Đang Xử Lý API...'
+                      : 'Xác Nhận Ký & Bàn Giao'}
+                  </span>
                 </button>
               </div>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* ============================================================== */}
-      {/* BƯỚC 2: NHẬP MÃ KHO & KIỂM TRA KHO TRỐNG                       */}
-      {/* ============================================================== */}
-      {currentSession.activeStepTab === 'unit-select' && (
-        <div className="mt-6 flex flex-col gap-5 animate-fadeIn">
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="material-symbols-outlined text-cyan-700 text-[20px]">meeting_room</span>
-              <h3 className="font-headline text-sm font-bold text-slate-900 uppercase tracking-wider">
-                Bước 2: Nhập Mã Kho Khách Hàng Mong Muốn Thuê &amp; Kiểm Tra Tình Trạng
-              </h3>
-            </div>
-            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-              Nhập mã phòng kho mà khách hàng mong muốn thuê. Hệ thống sẽ kiểm tra xem kho đó có còn trống (AVAILABLE) hay không. Chỉ khi kho còn trống mới cho phép chuyển sang bước nghiệm thu hiện trường!
-            </p>
-
-            {/* Input mã kho */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3 mb-4">
-              <div className="flex-1">
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Mã Kho Mong Muốn Thuê <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-400 text-[18px]">
-                    meeting_room
-                  </span>
-                  <input
-                    type="text"
-                    value={currentSession.desiredUnitCode}
-                    onChange={(e) => {
-                      const val = e.target.value.toUpperCase()
-                      updateCurrentSession({ desiredUnitCode: val, unitVerifiedAvailable: false })
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        validateUnitAvailability(currentSession.desiredUnitCode)
-                      }
-                    }}
-                    placeholder="Ví dụ: A-101, B-205, C-102..."
-                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 font-mono text-xs font-bold text-slate-900 uppercase focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  />
+          {/* Success Banner if Completed */}
+          {currentSession.isCompleted && (
+            <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[22px]">check</span>
+                </div>
+                <div>
+                  <h4 className="font-headline text-sm font-bold text-emerald-900">
+                    Bàn Giao Kho #{unitDisplayCode} Cho Khách {customerDisplayName} Thành Công!
+                  </h4>
+                  <p className="text-xs text-emerald-700 mt-0.5">
+                    Phòng kho đã kích hoạt trạng thái <strong className="font-mono">OCCUPIED</strong>. Hợp đồng chuyển sang ACTIVE và biên bản đã lưu vết trong hệ thống.
+                  </p>
                 </div>
               </div>
 
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHandoverSuccessModalData({
+                      bookingCode: bookingDisplayCode,
+                      unitCode: unitDisplayCode,
+                      customerName: customerDisplayName,
+                      customerPhone: customerDisplayPhone,
+                      customerEmail: customerDisplayEmail,
+                      pin: currentSession.accessPin,
+                      facilityName: facilityDisplayName,
+                      completedAt: currentSession.completedAt || new Date().toISOString()
+                    })
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                >
+                  <span className="material-symbols-outlined text-[16px]">verified</span>
+                  <span>Xem Xác Nhận &amp; PIN</span>
+                </button>
+                <button
+                  onClick={() => setShowPdfModal(true)}
+                  className="px-3 py-1.5 rounded-lg bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-900 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[16px]">print</span>
+                  <span>In Phiếu Nhận Kho</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* Paper Contract Modal */}
+      {activeModal === 'PAPER_CONTRACT' && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto text-slate-900">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-cyan-50 text-cyan-700 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[20px]">description</span>
+                </div>
+                <div>
+                  <h3 className="font-headline text-sm font-bold text-slate-900">
+                    {isContractMet && currentPrerequisites?.contractSigningMethod !== 'PAPER'
+                      ? 'Lưu Bản Scan Hợp Đồng Giấy Dự Phòng'
+                      : 'Lập / Tải Lên Hợp Đồng Giấy Tại Kho'}
+                  </h3>
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    Đơn đặt: #{bookingDisplayCode} • Kho #{unitDisplayCode}
+                  </span>
+                </div>
+              </div>
               <button
                 type="button"
-                onClick={() => validateUnitAvailability(currentSession.desiredUnitCode)}
-                className="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                onClick={() => setActiveModal(null)}
+                className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center cursor-pointer"
               >
-                <span className="material-symbols-outlined text-[16px]">search_check</span>
-                <span>Kiểm Tra Tình Trạng Kho</span>
+                <span className="material-symbols-outlined text-[18px]">close</span>
               </button>
             </div>
 
-            {/* Validation Result Box */}
-            {currentSession.desiredUnitCode && (
-              <div className="mt-2">
-                {currentSession.unitVerifiedAvailable ? (
-                  /* AVAILABLE SUCCESS CARD */
-                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-xs">
-                        <span className="material-symbols-outlined text-[24px]">check_circle</span>
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-headline font-bold text-sm text-emerald-900">
-                            Khoang Kho #{currentSession.desiredUnitCode} Còn Trống (AVAILABLE)
-                          </span>
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900 font-mono text-[10px] font-bold">
-                            ĐỦ ĐIỀU KIỆN NHẬN KHO
-                          </span>
-                        </div>
-                        <p className="text-xs text-emerald-800 mt-1">
-                          Khoang kho hoàn toàn sạch sẽ, không có hợp đồng chồng chéo, sẵn sàng nghiệm thu và bàn giao cho khách hàng.
-                        </p>
+            {modalFeedback && (
+              <div
+                className={`my-3 p-3 rounded-lg text-xs flex items-center gap-2 ${
+                  modalFeedback.isError ? 'bg-rose-50 text-rose-800 border border-rose-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">
+                  {modalFeedback.isError ? 'error' : 'check_circle'}
+                </span>
+                <span>{modalFeedback.text}</span>
+              </div>
+            )}
 
-                        {/* Specs grid */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 pt-3 border-t border-emerald-200/80 text-xs">
-                          <div>
-                            <span className="text-[10px] text-emerald-700 uppercase font-bold block">Đơn giá thuê</span>
-                            <span className="font-mono font-bold text-emerald-950">
-                              {currentSession.monthlyRate.toLocaleString('vi-VN')} ₫/tháng
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-emerald-700 uppercase font-bold block">Tiền cọc bảo đảm</span>
-                            <span className="font-mono font-bold text-emerald-950">
-                              {currentSession.depositFee.toLocaleString('vi-VN')} ₫
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-emerald-700 uppercase font-bold block">Thời hạn thuê</span>
-                            <div className="flex items-center gap-1 mt-0.5">
-                              {[1, 3, 6, 12].map((m) => (
-                                <button
-                                  key={m}
-                                  type="button"
-                                  onClick={() => {
-                                    const discount = m >= 6 ? Math.round(currentSession.monthlyRate * 0.1) : 0
-                                    updateCurrentSession({
-                                      rentalMonths: m,
-                                      discountAmount: discount,
-                                      totalDue: currentSession.firstMonthRent + currentSession.depositFee - discount
-                                    })
-                                  }}
-                                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border transition-colors cursor-pointer ${
-                                    currentSession.rentalMonths === m
-                                      ? 'bg-emerald-700 text-white border-emerald-700'
-                                      : 'bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-100'
-                                  }`}
-                                >
-                                  {m}T
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-emerald-700 uppercase font-bold block">Bắt đầu từ</span>
-                            <span className="font-mono font-bold text-emerald-950">
-                              {currentSession.rentalStartDate}
-                            </span>
-                          </div>
-                        </div>
+            <div className="my-4 space-y-3.5 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Mã hợp đồng giấy</label>
+                <input
+                  type="text"
+                  value={paperContractCode}
+                  onChange={(e) => setPaperContractCode(e.target.value)}
+                  placeholder="Ví dụ: HD-PAPER-2026-001"
+                  className="w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 font-mono text-xs focus:outline-none focus:border-cyan-600 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Vị trí lưu trữ bản gốc tại cơ sở</label>
+                <input
+                  type="text"
+                  value={paperOriginalLocation}
+                  onChange={(e) => setPaperOriginalLocation(e.target.value)}
+                  placeholder="Ví dụ: Tủ hồ sơ A - Tầng 1 - Ngăn 03"
+                  className="w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs focus:outline-none focus:border-cyan-600 focus:bg-white"
+                />
+                <span className="text-[11px] text-slate-400 mt-0.5 block">
+                  Ghi rõ vị trí cất giữ bản cứng có chữ ký tươi để tiện tra cứu kiểm toán sau này.
+                </span>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Bản scan / Ảnh chụp hợp đồng đã ký <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="file"
+                  ref={paperFileInputRef}
+                  accept="image/*,.pdf"
+                  className="hidden"
+                  onChange={handlePaperFileChange}
+                />
+                {isUploadingPaperFile ? (
+                  <div className="p-4 rounded-xl border border-cyan-200 bg-cyan-50/50 flex items-center justify-center gap-2 text-cyan-800 text-xs">
+                    <span className="material-symbols-outlined text-[20px] animate-spin">sync</span>
+                    <span className="font-bold">Đang tải tệp hợp đồng lên hệ thống...</span>
+                  </div>
+                ) : paperContractUrl ? (
+                  <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/50 flex items-center justify-between">
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="material-symbols-outlined text-emerald-600 text-[20px]">task_alt</span>
+                      <div className="truncate">
+                        <span className="text-[11px] text-emerald-900 font-bold block truncate">
+                          {paperFileName || 'Đã tải tài liệu scan hợp đồng giấy'}
+                        </span>
+                        <span className="text-[10px] text-emerald-700 font-mono truncate block">
+                          {paperContractUrl}
+                        </span>
                       </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => paperFileInputRef.current?.click()}
+                        className="px-2 py-1 rounded bg-white hover:bg-slate-100 text-slate-700 font-bold text-[11px] border border-slate-200 cursor-pointer"
+                      >
+                        Đổi file
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPaperContractUrl('')
+                          setPaperFileName('')
+                        }}
+                        className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] cursor-pointer"
+                      >
+                        Xóa
+                      </button>
                     </div>
                   </div>
                 ) : (
-                  /* UNAVAILABLE ERROR CARD - BLOCK PROGRESS */
-                  <div className="p-4 rounded-xl bg-rose-50 border border-rose-300 text-rose-950">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                        <span className="material-symbols-outlined text-[24px]">block</span>
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-headline font-bold text-sm text-rose-900">
-                            Khoang Kho #{currentSession.desiredUnitCode} Không Khả Dụng!
-                          </span>
-                          <span className="px-2 py-0.5 rounded-full bg-rose-200 text-rose-900 font-mono text-[10px] font-bold">
-                            KHÔNG CHO PHÉP NHẬN
-                          </span>
-                        </div>
-                        <p className="text-xs text-rose-800 mt-1 font-medium">
-                          {currentSession.unitUnavailableReason ||
-                            'Kho này hiện không ở trạng thái trống (AVAILABLE). Vui lòng chọn kho khác trước khi nghiệm thu!'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Quick Picker: Danh sách kho trống tại cơ sở */}
-            <div className="mt-5 pt-4 border-t border-slate-200">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[16px] text-cyan-600">grid_view</span>
-                  Danh Sách Kho Trống Sẵn Sàng Tại Cơ Sở ({facilityUnits.filter((u) => u.status === 'AVAILABLE').length} kho)
-                </span>
-                <input
-                  type="text"
-                  placeholder="Lọc mã kho..."
-                  value={unitSearchQuery}
-                  onChange={(e) => setUnitSearchQuery(e.target.value.toUpperCase())}
-                  className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs w-28 focus:outline-none"
-                />
-              </div>
-
-              {isLoadingUnits ? (
-                <div className="py-4 text-center text-xs text-slate-400">Đang tải danh sách kho...</div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-48 overflow-y-auto p-1 scrollbar-thin">
-                  {facilityUnits
-                    .filter((u) => u.status === 'AVAILABLE' && (!unitSearchQuery || u.unitCode.includes(unitSearchQuery)))
-                    .slice(0, 18)
-                    .map((unit) => (
-                      <button
-                        key={unit.id}
-                        type="button"
-                        onClick={() => validateUnitAvailability(unit.unitCode)}
-                        className={`p-2 rounded-xl border text-center transition-all cursor-pointer ${
-                          currentSession.desiredUnitCode === unit.unitCode
-                            ? 'bg-emerald-500 text-white border-emerald-600 shadow-xs'
-                            : 'bg-white hover:bg-slate-100 text-slate-800 border-slate-200'
-                        }`}
-                      >
-                        <span className="font-mono font-bold text-xs block">#{unit.unitCode}</span>
-                        <span className="text-[10px] block opacity-80">{unit.unitTypeName || unit.floorLevel}</span>
-                      </button>
-                    ))}
-                </div>
-              )}
-            </div>
-
-            {/* Transition Navigation Buttons */}
-            <div className="mt-5 flex items-center justify-between pt-3 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => handleSelectTab('identity')}
-                className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg font-bold text-xs transition-colors cursor-pointer"
-              >
-                Quay lại Bước 1
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectTab('inspection')}
-                disabled={!currentSession.unitVerifiedAvailable}
-                className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                  currentSession.unitVerifiedAvailable
-                    ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs'
-                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                }`}
-              >
-                <span>Tiếp tục: Bước 3 - Nghiệm thu hiện trường</span>
-                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* BƯỚC 3: NGHIỆM THU HIỆN TRƯỜNG (5 TIÊU CHÍ + 2 ẢNH)             */}
-      {/* ============================================================== */}
-      {currentSession.activeStepTab === 'inspection' && (
-        <div className="mt-6 flex flex-col gap-5 animate-fadeIn">
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="material-symbols-outlined text-cyan-700 text-[20px]">fact_check</span>
-              <h3 className="font-headline text-sm font-bold text-slate-900 uppercase tracking-wider">
-                Bước 3: Thực Thi Nghiệm Thu Hiện Trường Khoang Kho #{unitDisplayCode}
-              </h3>
-            </div>
-            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-              Nhân viên cùng khách hàng kiểm tra 5 tiêu chuẩn thực tế tại phòng kho và chụp 2 ảnh bằng chứng (cửa ngoài &amp; nền sàn bên trong) lưu vết vào hồ sơ.
-            </p>
-
-            {/* Checklist 5 points */}
-            <div className="flex flex-col gap-2.5 mb-5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  Checklist 5 Tiêu Chuẩn Nghiệm Thu
-                </span>
-                <button
-                  type="button"
-                  onClick={handleSelectAllChecklist}
-                  className="text-xs text-cyan-600 hover:text-cyan-700 font-bold flex items-center gap-1 cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[16px]">done_all</span>
-                  <span>Chọn tất cả 5/5 đạt chuẩn</span>
-                </button>
-              </div>
-
-              {[
-                { key: 'doorRoll', title: '1. Cửa cuốn & then chốt cơ khí', desc: 'Đóng mở êm ái, then cài chắc chắn, khóa an toàn không kẹt rít.' },
-                { key: 'cleanliness', title: '2. Không gian vệ sinh & độ ẩm', desc: 'Sàn kho sạch sẽ, khô ráo hoàn toàn, không có rác tồn đọng hay mùi ẩm mốc.' },
-                { key: 'lighting', title: '3. Ổ khóa thông minh SmartLock & đèn báo', desc: 'Mặt phím số hiển thị sắc nét, chốt cơ nhả trơn tru, pin đầy.' },
-                { key: 'fireSafety', title: '4. Đầu báo khói & cảm biến nhiệt ẩm PCCC', desc: 'Đầu phun Sprinkler và cảm biến IoT không bị che khuất, tín hiệu tốt.' },
-                { key: 'sealPlate', title: '5. Tường vách & tem niêm phong', desc: `Bảng số phòng #${unitDisplayCode} rõ ràng, vách tôn nguyên vẹn không móp méo.` }
-              ].map((item) => {
-                const passed = (currentSession.checklist as any)[item.key]
-                return (
-                  <label
-                    key={item.key}
-                    className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
-                      passed ? 'bg-cyan-50/50 border-cyan-200' : 'bg-white border-slate-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={passed}
-                        onChange={() => handleToggleChecklist(item.key as any)}
-                        className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer"
-                      />
-                      <div className="text-xs">
-                        <span className="font-bold text-slate-900">{item.title}</span>
-                        <span className="text-slate-500 block text-[11px]">{item.desc}</span>
-                      </div>
-                    </div>
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                        passed ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
-                      }`}
-                    >
-                      {passed ? 'ĐẠT' : 'CHƯA ĐẠT'}
-                    </span>
-                  </label>
-                )
-              })}
-            </div>
-
-            {/* 2 Condition Evidence Photos */}
-            <div className="mb-5">
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-2">
-                Chụp / Tải Lên 2 Ảnh Bằng Chứng Hiện Trường <span className="text-rose-500">*</span>
-              </span>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Photo 1: Door */}
-                <div className="p-3 bg-white rounded-xl border border-slate-200 flex flex-col items-center">
-                  <input
-                    ref={doorInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={(e) => handlePhotoFileChange('door', e)}
-                    className="hidden"
-                  />
-                  <div
-                    onClick={() => doorInputRef.current?.click()}
-                    className="w-full h-36 rounded-lg bg-slate-100 hover:bg-slate-200/80 border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all relative"
-                  >
-                    {effectiveDoorPhoto ? (
-                      <img src={effectiveDoorPhoto} alt="Cửa ngoài" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="text-center p-3 text-slate-500">
-                        <span className="material-symbols-outlined text-[28px] text-slate-400">photo_camera</span>
-                        <span className="text-xs font-bold block mt-1">Ảnh 1: Cửa ngoài &amp; Mã số kho</span>
-                        <span className="text-[10px] block opacity-75">Bấm để chụp hoặc chọn tệp</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 mt-2 w-full justify-between">
-                    <span className="text-[11px] font-medium text-slate-700">Ảnh cửa ngoài kho</span>
-                    {effectiveDoorPhoto && (
-                      <button
-                        type="button"
-                        onClick={() => setPreviewModalImage({ url: effectiveDoorPhoto, title: `Ảnh Cửa Ngoài #${unitDisplayCode}` })}
-                        className="text-[11px] text-cyan-600 font-bold hover:underline cursor-pointer"
-                      >
-                        Xem phóng to
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Photo 2: Interior */}
-                <div className="p-3 bg-white rounded-xl border border-slate-200 flex flex-col items-center">
-                  <input
-                    ref={interiorInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={(e) => handlePhotoFileChange('interior', e)}
-                    className="hidden"
-                  />
-                  <div
-                    onClick={() => interiorInputRef.current?.click()}
-                    className="w-full h-36 rounded-lg bg-slate-100 hover:bg-slate-200/80 border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all relative"
-                  >
-                    {effectiveInteriorPhoto ? (
-                      <img src={effectiveInteriorPhoto} alt="Sàn trong kho" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="text-center p-3 text-slate-500">
-                        <span className="material-symbols-outlined text-[28px] text-slate-400">photo_camera</span>
-                        <span className="text-xs font-bold block mt-1">Ảnh 2: Nền sàn bên trong kho</span>
-                        <span className="text-[10px] block opacity-75">Bấm để chụp hoặc chọn tệp</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 mt-2 w-full justify-between">
-                    <span className="text-[11px] font-medium text-slate-700">Ảnh sàn bên trong kho</span>
-                    {effectiveInteriorPhoto && (
-                      <button
-                        type="button"
-                        onClick={() => setPreviewModalImage({ url: effectiveInteriorPhoto, title: `Ảnh Nền Sàn Trong Kho #${unitDisplayCode}` })}
-                        className="text-[11px] text-cyan-600 font-bold hover:underline cursor-pointer"
-                      >
-                        Xem phóng to
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Ghi chú */}
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                Ghi Chú Hiện Trường
-              </label>
-              <input
-                type="text"
-                value={currentSession.handoverNotes}
-                onChange={(e) => updateCurrentSession({ handoverNotes: e.target.value })}
-                className="w-full px-3 py-1.5 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none"
-              />
-            </div>
-
-            {/* Transition Navigation Buttons */}
-            <div className="flex items-center justify-between pt-3 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => handleSelectTab('unit-select')}
-                className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg font-bold text-xs transition-colors cursor-pointer"
-              >
-                Quay lại Bước 2
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSaveInspection}
-                disabled={!isAllChecklistPassed || !currentSession.photoDoor || !currentSession.photoInterior || isSubmitting}
-                className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                  isAllChecklistPassed && currentSession.photoDoor && currentSession.photoInterior && !isSubmitting
-                    ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs'
-                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                }`}
-              >
-                <span>{isSubmitting ? 'Đang lưu...' : 'Hoàn Tất Nghiệm Thu & Tiếp Tục Bước 4'}</span>
-                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* BƯỚC 4: BẢNG KÊ CHI PHÍ, KHẤU TRỪ & THÔNG TIN HỢP ĐỒNG         */}
-      {/* ============================================================== */}
-      {currentSession.activeStepTab === 'billing' && (
-        <div className="mt-6 flex flex-col gap-5 animate-fadeIn">
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="material-symbols-outlined text-cyan-700 text-[20px]">receipt_long</span>
-              <h3 className="font-headline text-sm font-bold text-slate-900 uppercase tracking-wider">
-                Bước 4: Bảng Kê Chi Phí, Khấu Trừ &amp; Thông Tin Hợp Đồng Thuê Kho
-              </h3>
-            </div>
-            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-              Chi tiết các khoản tiền thuê kỳ đầu, tiền đặt cọc bảo đảm hoàn lại, các khoản khấu trừ hoặc ưu đãi cùng thông tin hợp đồng trước khi thực hiện thanh toán.
-            </p>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-              {/* BẢNG KÊ CHI PHÍ & KHẤU TRỪ */}
-              <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center gap-2 pb-2 mb-3 border-b border-slate-100">
-                    <span className="material-symbols-outlined text-emerald-600 text-[18px]">account_balance_wallet</span>
-                    <span className="font-headline text-xs font-bold text-slate-900 uppercase tracking-wider">
-                      Bảng Kê Chi Phí &amp; Khấu Trừ Tài Chính
-                    </span>
-                  </div>
-
-                  <div className="space-y-2.5 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-600">Đơn giá thuê niêm yết:</span>
-                      <span className="font-mono font-bold text-slate-900">
-                        {currentSession.monthlyRate.toLocaleString('vi-VN')} ₫ / tháng
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-600">Thời hạn đăng ký:</span>
-                      <span className="font-mono font-bold text-slate-900">{currentSession.rentalMonths} Tháng</span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-600">Tiền thuê kỳ đầu (1 tháng):</span>
-                      <span className="font-mono font-bold text-slate-900">
-                        {currentSession.firstMonthRent.toLocaleString('vi-VN')} ₫
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-600">Tiền cọc bảo đảm (Hoàn trả khi trả kho):</span>
-                      <span className="font-mono font-bold text-slate-900">
-                        {currentSession.depositFee.toLocaleString('vi-VN')} ₫
-                      </span>
-                    </div>
-
-                    {currentSession.discountAmount > 0 && (
-                      <div className="flex items-center justify-between text-emerald-700">
-                        <span>Khấu trừ / Ưu đãi thời hạn (10%):</span>
-                        <span className="font-mono font-bold">
-                          -{currentSession.discountAmount.toLocaleString('vi-VN')} ₫
-                        </span>
-                      </div>
-                    )}
-
-                    {currentSession.prepaidAmount > 0 && (
-                      <div className="flex items-center justify-between text-blue-700">
-                        <span>Đã thanh toán trước (Cọc giữ chỗ online):</span>
-                        <span className="font-mono font-bold">
-                          -{currentSession.prepaidAmount.toLocaleString('vi-VN')} ₫
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between bg-slate-50 p-3 rounded-xl">
-                  <span className="font-headline text-xs font-bold text-slate-900 uppercase">
-                    Tổng Tiền Cần Thanh Toán:
-                  </span>
-                  <span className="font-mono text-base font-extrabold text-cyan-700">
-                    {currentSession.totalDue.toLocaleString('vi-VN')} ₫
-                  </span>
-                </div>
-              </div>
-
-              {/* THÔNG TIN HỢP ĐỒNG */}
-              <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-cyan-600 text-[18px]">description</span>
-                      <span className="font-headline text-xs font-bold text-slate-900 uppercase tracking-wider">
-                        Thông Tin Hợp Đồng Thuê Kho
-                      </span>
-                    </div>
-                    <span className="font-mono text-[10px] bg-cyan-100 text-cyan-800 px-2 py-0.5 rounded font-bold">
-                      {currentPrerequisites?.contractCode || `CTR-${bookingDisplayCode}`}
-                    </span>
-                  </div>
-
-                  <div className="space-y-2 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Bên cho thuê (Bên A):</span>
-                      <span className="font-bold text-slate-900">{facilityDisplayName}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Bên thuê (Bên B):</span>
-                      <span className="font-bold text-slate-900">{customerDisplayName}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500">{currentSession.idCardType}:</span>
-                      <span className="font-mono text-slate-800">{idCardNumberInput || currentSession.idCardNumber || 'Đã đối chiếu gốc'}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Phòng kho:</span>
-                      <span className="font-mono font-bold text-cyan-700">#{unitDisplayCode}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Thời hạn hợp đồng:</span>
-                      <span className="font-mono text-slate-800">
-                        {currentSession.rentalStartDate} ➜ {currentSession.rentalMonths} tháng
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-end">
                   <button
                     type="button"
-                    onClick={handleViewContractModal}
-                    className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    onClick={() => paperFileInputRef.current?.click()}
+                    className="w-full p-4 rounded-xl border-2 border-dashed border-slate-200 hover:border-cyan-500 bg-slate-50 hover:bg-cyan-50/30 text-slate-500 flex flex-col items-center justify-center gap-1 transition-all cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-[16px]">visibility</span>
-                    <span>Xem Bản Thảo Hợp Đồng Điện Tử (PDF)</span>
+                    <span className="material-symbols-outlined text-[24px] text-cyan-700">upload_file</span>
+                    <span className="font-bold text-xs text-slate-800">Tải ảnh chụp / file scan hợp đồng giấy</span>
+                    <span className="text-[10px] text-slate-400">Định dạng JPG, PNG hoặc PDF (tối đa 10MB)</span>
                   </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Transition Navigation Buttons */}
-            <div className="flex items-center justify-between pt-3 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => handleSelectTab('inspection')}
-                className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg font-bold text-xs transition-colors cursor-pointer"
-              >
-                Quay lại Bước 3
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectTab('payment')}
-                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
-              >
-                <span>Xác Nhận Chi Phí &amp; Chuyển Sang Thanh Toán</span>
-                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* BƯỚC 5: THANH TOÁN TẠI QUẦY (VIETQR / VNPAY)                   */}
-      {/* ============================================================== */}
-      {currentSession.activeStepTab === 'payment' && (
-        <div className="mt-6 flex flex-col gap-5 animate-fadeIn">
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="material-symbols-outlined text-cyan-700 text-[20px]">payments</span>
-              <h3 className="font-headline text-sm font-bold text-slate-900 uppercase tracking-wider">
-                Bước 5: Thực Hiện Thanh Toán Tiền Thuê &amp; Tiền Cọc Tại Quầy
-              </h3>
-            </div>
-            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-              Theo quy định hệ thống Boxora, chỉ hỗ trợ 2 hình thức thanh toán chính thức: Chuyển khoản ngân hàng VietQR tại quầy hoặc Cổng thanh toán điện tử VNPay.
-            </p>
-
-            {/* Payment Method Selector */}
-            <div className="grid grid-cols-2 gap-3 mb-5">
-              <button
-                type="button"
-                onClick={() => updateCurrentSession({ paymentMethod: 'BANK_TRANSFER' })}
-                className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-3 ${
-                  currentSession.paymentMethod === 'BANK_TRANSFER'
-                    ? 'bg-cyan-50/70 border-cyan-500 shadow-xs'
-                    : 'bg-white border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0">
-                  <span className="material-symbols-outlined text-[20px]">qr_code_2</span>
-                </div>
-                <div>
-                  <span className="font-bold text-xs text-slate-900 block">Chuyển Khoản Ngân Hàng (VietQR)</span>
-                  <span className="text-[11px] text-slate-500 block">Quét mã QR Napas 24/7 mọi ứng dụng ngân hàng</span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => updateCurrentSession({ paymentMethod: 'VNPAY' })}
-                className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-3 ${
-                  currentSession.paymentMethod === 'VNPAY'
-                    ? 'bg-cyan-50/70 border-cyan-500 shadow-xs'
-                    : 'bg-white border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0">
-                  <span className="material-symbols-outlined text-[20px]">account_balance</span>
-                </div>
-                <div>
-                  <span className="font-bold text-xs text-slate-900 block">Cổng Thanh Toán VNPAY</span>
-                  <span className="text-[11px] text-slate-500 block">Ví VNPay / Thẻ ngân hàng nội địa</span>
-                </div>
-              </button>
-            </div>
-
-            {/* Payment Execution Details */}
-            {currentSession.paymentMethod === 'BANK_TRANSFER' ? (
-              <div className="p-4 rounded-xl bg-white border border-slate-200 grid grid-cols-1 md:grid-cols-12 gap-5 mb-4">
-                {/* QR Box */}
-                <div className="md:col-span-5 flex flex-col items-center justify-center p-3 bg-slate-50 rounded-xl border border-slate-200 text-center">
-                  <span className="font-bold text-[11px] text-slate-700 uppercase tracking-wider mb-2">
-                    Mã VietQR Thanh Toán Nhanh Napas247
-                  </span>
-                  <img
-                    src={`https://img.vietqr.io/image/MB-999988886666-compact2.png?amount=${currentSession.totalDue}&addInfo=${encodeURIComponent(
-                      `BOXORA ${unitDisplayCode} ${customerDisplayName}`
-                    )}&accountName=${encodeURIComponent('CONG TY TNHH BOXORA VIET NAM')}`}
-                    alt="VietQR Payment"
-                    className="w-48 h-48 object-contain rounded-lg border border-slate-300 shadow-xs"
-                  />
-                  <span className="text-[10px] text-slate-400 mt-2">
-                    Mở App Ngân hàng bất kỳ ➜ Quét QR để thanh toán chính xác
-                  </span>
-                </div>
-
-                {/* Account Details */}
-                <div className="md:col-span-7 flex flex-col justify-between gap-3 text-xs">
-                  <div className="space-y-2">
-                    <div>
-                      <span className="text-slate-500 block text-[11px]">Ngân hàng thụ hưởng:</span>
-                      <strong className="text-slate-900">MB Bank (Ngân Hàng TMCP Quân Đội)</strong>
-                    </div>
-
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
-                      <div>
-                        <span className="text-slate-500 block text-[10px]">Số tài khoản:</span>
-                        <strong className="font-mono text-sm text-cyan-800 font-extrabold">999988886666</strong>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText('999988886666')
-                          setDispatchFeedback({ text: 'Đã sao chép số tài khoản!' })
-                        }}
-                        className="px-2 py-1 bg-white border border-slate-200 hover:bg-slate-100 rounded text-[11px] font-bold cursor-pointer"
-                      >
-                        Sao chép
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
-                      <div>
-                        <span className="text-slate-500 block text-[10px]">Số tiền cần thanh toán:</span>
-                        <strong className="font-mono text-sm text-emerald-700 font-extrabold">
-                          {currentSession.totalDue.toLocaleString('vi-VN')} ₫
-                        </strong>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(String(currentSession.totalDue))
-                          setDispatchFeedback({ text: 'Đã sao chép số tiền!' })
-                        }}
-                        className="px-2 py-1 bg-white border border-slate-200 hover:bg-slate-100 rounded text-[11px] font-bold cursor-pointer"
-                      >
-                        Sao chép
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
-                      <div>
-                        <span className="text-slate-500 block text-[10px]">Nội dung chuyển khoản:</span>
-                        <strong className="font-mono text-xs text-slate-800 font-bold">
-                          BOXORA {unitDisplayCode} {customerDisplayName}
-                        </strong>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(`BOXORA ${unitDisplayCode} ${customerDisplayName}`)
-                          setDispatchFeedback({ text: 'Đã sao chép nội dung chuyển khoản!' })
-                        }}
-                        className="px-2 py-1 bg-white border border-slate-200 hover:bg-slate-100 rounded text-[11px] font-bold cursor-pointer"
-                      >
-                        Sao chép
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Upload payment receipt proof */}
-                  <div className="pt-2 border-t border-slate-200">
-                    <span className="text-slate-500 text-[11px] block mb-1">
-                      Ủy nhiệm chi / Ảnh chụp biên lai chuyển tiền thành công:
-                    </span>
-                    <input
-                      ref={(el) => setPaymentProofInputRef(el)}
-                      type="file"
-                      accept="image/*"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0]
-                        if (!file) return
-                        setIsUploadingPaymentProof(true)
-                        try {
-                          const localUrl = URL.createObjectURL(file)
-                          updateCurrentSession({ paymentProofUrl: localUrl })
-                          setDispatchFeedback({ text: 'Đã đính kèm ảnh biên lai chuyển khoản thành công!' })
-                        } finally {
-                          setIsUploadingPaymentProof(false)
-                        }
-                      }}
-                      className="text-xs"
-                    />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* VNPAY DISPLAY */
-              <div className="p-6 rounded-xl bg-white border border-slate-200 text-center flex flex-col items-center mb-4">
-                <span className="material-symbols-outlined text-rose-600 text-[36px] mb-2">qr_code_scanner</span>
-                <h4 className="font-headline font-bold text-sm text-slate-900">
-                  Thanh Toán Qua Cổng Điện Tử VNPAY
-                </h4>
-                <p className="text-xs text-slate-500 max-w-md mt-1 mb-3">
-                  Khách hàng quét mã VNPay-QR trên máy POS tại quầy hoặc nhân viên kiểm tra mã giao dịch thành công.
-                </p>
-                <span className="font-mono font-extrabold text-xl text-rose-600">
-                  {currentSession.totalDue.toLocaleString('vi-VN')} ₫
-                </span>
-              </div>
-            )}
-
-            {/* Checkbox confirmation */}
-            <div className="p-3 rounded-xl bg-white border border-slate-200 mb-4">
-              <label className="flex items-center gap-2.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={currentSession.paymentCompleted}
-                  onChange={(e) => updateCurrentSession({ paymentCompleted: e.target.checked })}
-                  className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
-                />
-                <span className="text-xs font-bold text-slate-900">
-                  Nhân viên xác nhận đã nhận đủ 100% số tiền ({currentSession.totalDue.toLocaleString('vi-VN')} ₫) vào tài khoản Boxora
-                </span>
-              </label>
-            </div>
-
-            {/* Transition Navigation Buttons */}
-            <div className="flex items-center justify-between pt-3 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => handleSelectTab('billing')}
-                className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg font-bold text-xs transition-colors cursor-pointer"
-              >
-                Quay lại Bước 4
-              </button>
-
-              <button
-                type="button"
-                onClick={handleConfirmPayment}
-                disabled={!currentSession.paymentCompleted}
-                className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                  currentSession.paymentCompleted
-                    ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs'
-                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                }`}
-              >
-                <span>Xác Nhận Đã Thanh Toán • Chuyển Sang Ký Hợp Đồng Online</span>
-                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* BƯỚC 6: KÝ HỢP ĐỒNG ONLINE (DIGITAL SIGNATURE PAD)              */}
-      {/* ============================================================== */}
-      {currentSession.activeStepTab === 'signing' && (
-        <div className="mt-6 flex flex-col gap-5 animate-fadeIn">
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="material-symbols-outlined text-cyan-700 text-[20px]">draw</span>
-              <h3 className="font-headline text-sm font-bold text-slate-900 uppercase tracking-wider">
-                Bước 6: Khách Hàng Thực Hiện Ký Hợp Đồng Điện Tử Trực Tuyến
-              </h3>
-            </div>
-            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-              Khách hàng ký trực tiếp chữ ký điện tử trên màn hình cảm ứng hoặc bằng chuột. Chữ ký số này được gắn liền vào văn bản hợp đồng điện tử có giá trị pháp lý đầy đủ.
-            </p>
-
-            {/* Digital Signature Canvas Pad */}
-            <div className="p-4 bg-white rounded-xl border border-slate-200 mb-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[16px] text-cyan-600">signature</span>
-                  Khung Vẽ Chữ Ký Điện Tử (Digital Signature Pad)
-                </span>
-                <button
-                  type="button"
-                  onClick={clearSignatureCanvas}
-                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[14px]">delete</span>
-                  <span>Xóa để ký lại</span>
-                </button>
-              </div>
-
-              <div className="relative border-2 border-dashed border-slate-300 rounded-xl bg-slate-50/50 overflow-hidden flex flex-col items-center justify-center">
-                <canvas
-                  ref={signatureCanvasRef}
-                  width={600}
-                  height={180}
-                  onMouseDown={startDrawing}
-                  onMouseMove={drawSignature}
-                  onMouseUp={stopDrawing}
-                  onMouseLeave={stopDrawing}
-                  onTouchStart={startDrawing}
-                  onTouchMove={drawSignature}
-                  onTouchEnd={stopDrawing}
-                  className="cursor-crosshair w-full max-w-full touch-none bg-white rounded-lg shadow-inner"
-                />
-                {!hasSignatureDrawn && !currentSession.signatureDataUrl && (
-                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center text-slate-400 text-xs">
-                    <span className="flex items-center gap-1.5 opacity-60">
-                      <span className="material-symbols-outlined text-[18px]">gesture</span>
-                      Ký tên trực tiếp tại đây bằng chuột hoặc chạm tay
-                    </span>
-                  </div>
                 )}
-              </div>
-              <span className="text-[11px] text-slate-400 mt-1.5 block text-center">
-                Người ký: <strong>{customerDisplayName}</strong> ({customerDisplayPhone})
-              </span>
-            </div>
 
-            {/* Agreement Checkbox */}
-            <div className="p-3 rounded-xl bg-white border border-slate-200 mb-4">
-              <label className="flex items-start gap-2.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={agreedTerms}
-                  onChange={(e) => setAgreedTerms(e.target.checked)}
-                  className="w-4 h-4 mt-0.5 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer"
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Ghi chú điều khoản / Tình trạng</label>
+                <textarea
+                  rows={2}
+                  value={paperNotes}
+                  onChange={(e) => setPaperNotes(e.target.value)}
+                  placeholder="Ghi chú thêm về điều khoản đặc biệt hoặc giấy tờ đính kèm..."
+                  className="w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs focus:outline-none focus:border-cyan-600 focus:bg-white resize-none"
                 />
-                <div className="text-xs">
-                  <span className="font-bold text-slate-900 block">
-                    Khách hàng xác nhận đã đọc, hiểu rõ và đồng ý toàn bộ điều khoản Hợp đồng thuê kho Boxora
-                  </span>
-                  <span className="text-slate-500 block text-[11px] mt-0.5">
-                    Tuân thủ nội quy kho, cam kết không lưu giữ chất cấm, chấp nhận việc truy cập ra vào kho tự quản bằng mã PIN SmartLock 6 số được cấp.
-                  </span>
-                </div>
-              </label>
+              </div>
+
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] flex items-start gap-2">
+                <span className="material-symbols-outlined text-[16px] text-amber-700 mt-0.5">info</span>
+                <span>
+                  {isContractMet && currentPrerequisites?.contractSigningMethod !== 'PAPER'
+                    ? 'Hợp đồng điện tử đã được khách hàng ký hợp lệ và có giá trị pháp lý. Bản scan tải lên ở đây chỉ nhằm mục đích số hóa lưu trữ hồ sơ bổ sung tại kho (không bắt buộc).'
+                    : <>Sau khi lưu hồ sơ, trạng thái hợp đồng là <strong>Chờ xác minh</strong>. Nhân viên có thẩm quyền cần kiểm tra kỹ chữ ký và bấm nút <strong>Xác minh hồ sơ</strong> để chính thức công nhận hợp đồng.</>}
+                </span>
+              </div>
             </div>
 
-            {/* Transition Navigation Buttons */}
-            <div className="flex items-center justify-between pt-3 border-t border-slate-200">
+            <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => handleSelectTab('payment')}
-                className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg font-bold text-xs transition-colors cursor-pointer"
+                onClick={() => setActiveModal(null)}
+                className="px-4 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs cursor-pointer"
               >
-                Quay lại Bước 5
+                Hủy
               </button>
-
               <button
                 type="button"
-                onClick={handleConfirmSignature}
-                disabled={(!hasSignatureDrawn && !currentSession.signatureDataUrl) || !agreedTerms || isSubmitting}
-                className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                  (hasSignatureDrawn || currentSession.signatureDataUrl) && agreedTerms && !isSubmitting
-                    ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs'
-                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                }`}
+                onClick={handleSubmitPaperContract}
+                disabled={isSavingPaperContract}
+                className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
-                <span>{isSubmitting ? 'Đang hoàn tất ký...' : 'Xác Nhận Ký Hợp Đồng & Kích Hoạt Mã PIN'}</span>
-                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                <span className="material-symbols-outlined text-[16px]">save</span>
+                <span>{isSavingPaperContract ? 'Đang lưu hồ sơ...' : 'Lưu Hồ Sơ Hợp Đồng'}</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* BƯỚC 7: KÍCH HOẠT MÃ PIN & GỬI EMAIL, THÔNG BÁO TÀI KHOẢN       */}
-      {/* ============================================================== */}
-      {currentSession.activeStepTab === 'activation' && (
-        <div className="mt-6 flex flex-col gap-5 animate-fadeIn">
-          {/* Header Banner */}
-          <div className="p-4 rounded-xl bg-gradient-to-r from-slate-900 via-slate-800 to-cyan-950 text-white border border-slate-700 shadow-md">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center shrink-0">
-                  <span className="material-symbols-outlined text-[26px]">key</span>
-                </div>
-                <div>
-                  <h3 className="font-headline text-base font-bold text-white">
-                    Bước 7: Kích Hoạt Mã PIN Mở Khóa &amp; Bắn Thông Báo Khách Hàng
-                  </h3>
-                  <span className="text-xs text-slate-300">
-                    Phòng kho #{unitDisplayCode} ({facilityDisplayName}) • Hợp đồng {currentPrerequisites?.contractCode || `CTR-${bookingDisplayCode}`}
-                  </span>
-                </div>
-              </div>
-
-              <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono text-xs font-bold self-start sm:self-auto">
-                ✓ SẴN SÀNG SỬ DỤNG
-              </span>
-            </div>
-          </div>
-
-          {/* 6-DIGIT PIN DISPLAY CARD */}
-          <div className="p-6 rounded-2xl bg-slate-950 text-white border border-slate-800 shadow-xl flex flex-col items-center">
-            <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-cyan-400 tracking-widest uppercase mb-2">
-              <span className="material-symbols-outlined text-[16px]">pin</span>
-              <span>MÃ PIN MỞ KHÓA SMARTLOCK CỦA KHÁCH HÀNG</span>
-            </div>
-
-            <div className="flex items-center justify-center gap-2 sm:gap-3 my-2">
-              {(currentSession.accessPin || '------').split('').map((digit, idx) => (
-                <div
-                  key={idx}
-                  className="w-11 h-16 sm:w-14 sm:h-20 rounded-xl bg-slate-900 border border-cyan-500/50 flex items-center justify-center font-mono text-3xl sm:text-4xl font-extrabold text-cyan-300 shadow-inner"
-                >
-                  {digit}
-                </div>
-              ))}
-            </div>
-
-            <p className="text-xs text-slate-400 text-center mt-2">
-              Mã PIN 6 chữ số dùng để mở ổ khóa điện tử khoang kho #{unitDisplayCode} và cửa ra vào cơ sở 24/7.
-            </p>
-
-            <button
-              type="button"
-              onClick={handleCopyPin}
-              className="mt-4 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono font-bold flex items-center gap-2 border border-slate-700 transition-colors cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[18px] text-cyan-400">
-                {pinCopied ? 'check' : 'content_copy'}
-              </span>
-              <span>{pinCopied ? 'Đã sao chép mã PIN!' : 'Sao chép mã PIN'}</span>
-            </button>
-          </div>
-
-          {/* 3 Trạng thái tự động */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {/* 1. SmartLock */}
-            <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex items-center gap-3">
-              <span className="material-symbols-outlined text-emerald-600 text-[26px] shrink-0">lock_open</span>
-              <div className="text-xs">
-                <span className="font-bold block">Khóa SmartLock #{unitDisplayCode}</span>
-                <span className="text-[11px] text-emerald-800 block">Đã kích hoạt &amp; liên kết mã PIN</span>
-              </div>
-            </div>
-
-            {/* 2. Email Notification */}
-            <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-3">
-                <span className="material-symbols-outlined text-emerald-600 text-[26px] shrink-0">mark_email_read</span>
-                <div className="text-xs">
-                  <span className="font-bold block">Gửi Email Mã PIN</span>
-                  <span className="text-[11px] text-emerald-800 block truncate max-w-[140px]">{customerDisplayEmail}</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleSendEmailAgain}
-                disabled={isSendingEmail}
-                className="px-2 py-1 rounded bg-emerald-200 hover:bg-emerald-300 text-emerald-900 text-[10px] font-bold cursor-pointer"
-              >
-                {isSendingEmail ? 'Đang gửi...' : 'Gửi lại'}
-              </button>
-            </div>
-
-            {/* 3. In-App Notification */}
-            <div className="p-4 rounded-xl bg-cyan-50 border border-cyan-200 text-cyan-950 flex items-center gap-3">
-              <span className="material-symbols-outlined text-cyan-600 text-[26px] shrink-0">notifications_active</span>
-              <div className="text-xs">
-                <span className="font-bold block">Thông Báo Account Customer</span>
-                <span className="text-[11px] text-cyan-800 block">Đã đẩy thông báo kích hoạt vào chuông web</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom Actions */}
-          <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-            <button
-              type="button"
-              onClick={() => handleSelectTab('signing')}
-              className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg font-bold text-xs transition-colors cursor-pointer"
-            >
-              Quay lại Bước 6
-            </button>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowPdfModal(true)}
-                className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[18px]">print</span>
-                <span>Xem &amp; In Biên Bản Bàn Giao (PDF)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setHandoverSuccessModalData({
-                    bookingId: currentBooking.id,
-                    bookingCode: bookingDisplayCode,
-                    unitCode: unitDisplayCode,
-                    customerName: customerDisplayName,
-                    customerPhone: customerDisplayPhone,
-                    customerEmail: customerDisplayEmail,
-                    pin: currentSession.accessPin,
-                    facilityName: facilityDisplayName,
-                    completedAt: currentSession.completedAt || new Date().toISOString()
-                  })
-                }}
-                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm cursor-pointer transition-all"
-              >
-                <span className="material-symbols-outlined text-[18px]">verified</span>
-                <span>Xác Nhận Hoàn Tất Ca Tiếp Đón</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* MODAL: BIÊN BẢN NGHIỆM THU & BÀN GIAO PHÒNG KHO (PDF PRINT)    */}
-      {/* ============================================================== */}
+      {/* 4. PDF Preview Modal */}
       {showPdfModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto text-slate-900">
+            
+            {/* Header */}
             <div className="flex items-center justify-between pb-4 border-b border-slate-200">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-cyan-700 text-[26px]">contract</span>
@@ -2927,6 +2981,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </button>
             </div>
 
+            {/* Document Body */}
             <div className="my-5 flex flex-col gap-4 text-xs">
               <div className="text-center pb-2 border-b border-dashed border-slate-200">
                 <span className="font-bold uppercase text-slate-700 block">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</span>
@@ -2940,14 +2995,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">BÊN GIAO (BOXORA FACILITY)</span>
                   <span className="font-bold text-slate-900 block mt-0.5">{facilityDisplayName}</span>
-                  <span className="text-slate-600 block">Bộ phận: Vận hành quầy tiếp đón</span>
+                  <span className="text-slate-600 block">Bộ phận: Vận hành trực ca quầy tiếp đón</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">BÊN NHẬN (KHÁCH HÀNG)</span>
                   <span className="font-bold text-slate-900 block mt-0.5">{customerDisplayName}</span>
-                  <span className="text-slate-600 block">
-                    {currentSession.idCardType}: {idCardNumberInput || currentSession.idCardNumber || 'Đã đối chiếu gốc'}
-                  </span>
+                  <span className="text-slate-600 block">CCCD: {currentPrerequisites?.identityVerified ? 'Đã đối chiếu giấy tờ gốc' : 'N/A'}</span>
                   <span className="text-slate-600 block">SĐT: {customerDisplayPhone}</span>
                 </div>
               </div>
@@ -2957,9 +3010,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg grid grid-cols-3 gap-2 text-[11px] font-mono">
                   <div>Mã kho: <strong>#{unitDisplayCode}</strong></div>
                   <div>Cơ sở: <strong>{facilityDisplayName}</strong></div>
-                  <div>Thời hạn: <strong>{currentSession.rentalMonths} Tháng</strong></div>
+                  <div>Thời hạn: <strong>{currentBooking?.rentalMonths ?? 1} Tháng</strong></div>
                   <div>Mã PIN cấp: <strong className="text-cyan-700">{currentSession.accessPin}</strong></div>
-                  <div>Trạng thái thanh toán: <strong>Đã hoàn tất</strong></div>
+                  <div>Thẻ từ RFID: <strong>{currentSession.rfidCard || 'N/A'}</strong></div>
                   <div>Mã đơn: <strong>{bookingDisplayCode}</strong></div>
                 </div>
               </div>
@@ -2975,44 +3028,50 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 </ul>
               </div>
 
+              <div className="flex flex-col gap-1.5">
+                <span className="font-bold text-slate-900">3. Ghi chú hiện trường:</span>
+                <div className="p-2 bg-slate-50 border border-slate-200 rounded text-slate-700 text-[11px]">
+                  {currentSession.handoverNotes || 'Không có ghi chú thêm.'}
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-8 text-center pt-4">
                 <div>
                   <span className="font-bold text-slate-900 block">ĐẠI DIỆN BÊN NHẬN</span>
                   <span className="text-slate-400 block text-[10px] italic mt-0.5">(Đã ký xác nhận nhận bàn giao)</span>
-                  {currentSession.signatureDataUrl ? (
-                    <img src={currentSession.signatureDataUrl} alt="Chữ ký" className="h-12 mx-auto my-2 object-contain" />
-                  ) : (
-                    <div className="mt-6 font-headline font-bold text-slate-800">{customerDisplayName}</div>
-                  )}
+                  <div className="mt-6 font-headline font-bold text-slate-800">{customerDisplayName}</div>
                 </div>
                 <div>
                   <span className="font-bold text-slate-900 block">ĐẠI DIỆN BÊN GIAO</span>
                   <span className="text-slate-400 block text-[10px] italic mt-0.5">(Nhân viên phụ trách ca)</span>
-                  <div className="mt-6 font-headline font-bold text-slate-800">
-                    {user?.fullName || 'Nhân viên trực ca Boxora'}
-                  </div>
+                  <div className="mt-6 font-headline font-bold text-slate-800">Nhân viên trực ca Boxora</div>
                 </div>
               </div>
+
             </div>
 
+            {/* Footer Actions */}
             <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
               <span className="text-[11px] text-slate-400">
                 Tài liệu điện tử có giá trị pháp lý theo điều khoản hợp đồng thuê kho Boxora.
               </span>
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px]">print</span>
-                <span>In Biên Bản Ngay</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">print</span>
+                  <span>In Biên Bản Ngay</span>
+                </button>
+              </div>
             </div>
+
           </div>
         </div>
       )}
 
-      {/* Lightbox Modal: Preview ảnh hiện trường */}
+      {/* Lightbox Modal: Phóng to ảnh hiện trường để staff kiểm tra chi tiết */}
       {previewModalImage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
           <div className="relative max-w-4xl w-full bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col">
@@ -3025,6 +3084,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 type="button"
                 onClick={() => setPreviewModalImage(null)}
                 className="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 flex items-center justify-center transition-colors cursor-pointer"
+                title="Đóng (Esc)"
               >
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
@@ -3036,15 +3096,40 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 className="max-h-[70vh] w-auto max-w-full object-contain rounded-lg shadow-xl"
               />
             </div>
+            <div className="px-5 py-3 bg-slate-800/90 border-t border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-300">
+              <div className="flex items-center gap-1.5 text-slate-400">
+                <span className="material-symbols-outlined text-[16px] text-amber-400">info</span>
+                <span>Nhân viên kiểm tra rõ nét biển số phòng, then chốt khóa, sàn kho và tem niêm phong.</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewModalImage.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-semibold transition-colors flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[15px]">open_in_new</span>
+                  <span>Mở tab mới</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewModalImage(null)}
+                  className="px-4 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold transition-colors cursor-pointer"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Success Celebration Modal */}
+      {/* Modal: Xác Nhận Bàn Giao Thành Công & Cấp Mã PIN Giữa Màn Hình */}
       {renderSuccessModal()}
 
-      {/* Contract Document Modal */}
+      {/* Modal: Xem Văn Bản Hợp Đồng Thuê Kho Điện Tử */}
       {renderContractModal()}
+
     </div>
   )
 }

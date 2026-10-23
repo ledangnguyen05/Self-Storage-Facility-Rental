@@ -5,7 +5,7 @@ interface ContractDocumentModalProps {
   contract: RentalContract | null
   booking?: Booking | null
   onClose: () => void
-  onSignNow?: (contract: RentalContract) => void
+  onSignNow?: (contract?: any) => void
   isSigning?: boolean
 }
 

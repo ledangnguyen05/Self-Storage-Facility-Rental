@@ -6,8 +6,6 @@ export interface User {
   email: string
   fullName?: string
   phone?: string
-  identityCardNumber?: string
-  identityCardType?: string
   avatar?: string
   role?: {
     id?: string
@@ -22,6 +20,8 @@ export interface User {
   isActive?: boolean
   createdAt?: string
   updatedAt?: string
+  identityCardNumber?: string
+  identityCardType?: string
 }
 
 export interface Facility {
@@ -124,7 +124,7 @@ export type UnitStatusType = 'AVAILABLE' | 'RESERVED' | 'OCCUPIED' | 'MAINTENANC
 
 export interface StorageUnit {
   id: string
-  unitCode: string // e.g. "A-102"
+  unitCode: string
   floorLevel: string // e.g. "Floor 1"
   status: UnitStatusType
   facilityId: string
@@ -149,7 +149,7 @@ export interface StorageUnit {
   primaryImageUrl?: string
 }
 
-export type BookingStatusType = 'PENDING_APPROVAL' | 'PENDING_PAYMENT' | 'CONFIRMED' | 'PENDING_SIGNATURE' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
+export type BookingStatusType = 'PENDING_APPROVAL' | 'PENDING_CONTACT' | 'PENDING_PAYMENT' | 'CONFIRMED' | 'PENDING_SIGNATURE' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
 
 export interface Booking {
   id: string
@@ -159,14 +159,12 @@ export interface Booking {
   customerEmail: string
   customerPhone: string
   storageUnitId: string
-  unitTypeId?: string
-  unitTypeName?: string
   unitCode: string
+  unitTypeName?: string
   facilityId?: string
   facilityName: string
   floorLevel?: string
   startDate: string
-  expectedArrivalAt?: string | null
   endDate: string
   rentalMonths: number
   totalRentalFee: number
@@ -177,6 +175,7 @@ export interface Booking {
   holdStartedAt?: string | null
   holdExpiresAt?: string | null
   expectedCheckInAt?: string | null
+  expectedArrivalAt?: string | null
   checkInTime?: string | null
   paymentStatus?: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | string
   holdGraceHours?: number
@@ -231,6 +230,7 @@ export interface BookingRescheduleEligibility {
   bookingId: string
   bookingCode: string
   unitCode: string | null
+  unitTypeName?: string | null
   facilityName: string | null
   eligible: boolean
   reasonIfNotEligible: string | null
@@ -313,6 +313,7 @@ export interface RentalContract {
   storageUnitId?: string
   facilityId?: string
   unitCode: string
+  unitTypeName?: string | null
   facilityName: string
   startDate: string
   endDate: string
@@ -325,7 +326,6 @@ export interface RentalContract {
   signedAt?: string | null
   signingMethod?: 'ONLINE' | 'IN_PERSON' | string
   signatureData?: string | null
-  unitTypeName?: string | null
   unitPricePerMonth?: number | null
   paperContractUrl?: string | null
   paperOriginalLocation?: string | null
@@ -353,6 +353,7 @@ export interface ContractRenewal {
   facilityId?: string
   facilityName: string
   unitCode: string
+  unitTypeName?: string
   oldEndDate: string
   newEndDate: string
   cycleMonths: number
@@ -428,6 +429,7 @@ export interface HandoverRecord {
   bookingCode: string
   customerName: string
   unitCode: string
+  unitTypeName?: string
   staffName: string
   recordType: 'CHECK_IN' | 'RETURN'
   status?: 'PENDING_CHECKIN' | 'HANDED_OVER' | 'RETURN_INSPECTED'
@@ -640,6 +642,7 @@ export interface OverdueDebtItem {
   customerEmail?: string
   unitId?: string
   unitCode: string
+  unitTypeName?: string
   facilityId?: string
   facilityName?: string
   startDate?: string

@@ -51,14 +51,13 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
     return <Navigate to={getTargetPortal(role)} replace />
   }
 
-  // If role is CUSTOMER, only permit portal management when rental is active and app is confirmed
-  if (role === 'CUSTOMER') {
-    const customerAccess = checkCustomerPortalAccess(user)
-    if (!customerAccess.hasAccess) {
-      return <Navigate to="/#units" replace state={{ notice: 'rental_required' }} />
+  // Customer cannot enter /portal until they sign contract and pay
+  if (role === 'CUSTOMER' && location.pathname.startsWith('/portal')) {
+    const access = checkCustomerPortalAccess(user)
+    if (!access.hasAccess) {
+      return <Navigate to="/my-bookings" replace />
     }
   }
-
   return children
 }
 

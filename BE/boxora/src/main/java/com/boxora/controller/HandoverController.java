@@ -35,8 +35,8 @@ public class HandoverController {
     }
 
     @PostMapping("/check-in")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
-    @Operation(summary = "Record check-in and issue an access PIN; physical SmartLock state is not verified by Boxora")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @Operation(summary = "Thực hiện check-in bàn giao kho vật lý và cấp mã PIN SmartLock")
     public ResponseEntity<ApiResponse<HandoverResponse>> checkIn(@Valid @RequestBody HandoverRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Bàn giao nhận kho và cấp mã PIN truy cập thành công", handoverService.checkIn(request)));

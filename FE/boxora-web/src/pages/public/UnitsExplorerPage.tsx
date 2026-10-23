@@ -304,6 +304,7 @@ export const UnitsExplorerPage: React.FC = () => {
         facilityName: unit.facilityName || facility?.name || '',
         facilityAddress: facility?.address || '',
         floorLocation: `${cleanFloor}`,
+        floorLevel: cleanFloor,
         coords: facility?.coords || null,
         imageUrl: getCardImage(category),
       }

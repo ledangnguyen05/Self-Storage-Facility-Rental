@@ -520,7 +520,7 @@ public class ContractSigningServiceImpl implements ContractSigningService {
     @Override
     @Transactional
     public RentalContractResponse mockSign(UUID contractId) {
-        return mockSign(contractId, null);
+        return mockSign(contractId, "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
     }
 
     @Override

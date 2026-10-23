@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { useOutletContext, Link, useSearchParams, useNavigate } from 'react-router-dom'
+import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { storageUnitService } from '../../services/storageUnitService'
 import { facilityService } from '../../services/facilityService'
 import { facilityPolicyService } from '../../services/facilityPolicyService'
@@ -18,6 +18,8 @@ import { AssetSealingModal } from './modals/AssetSealingModal'
 import { CreateStorageUnitModal } from './modals/CreateStorageUnitModal'
 import { FacilityPolicyViewModal } from './modals/FacilityPolicyViewModal'
 import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
+import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
+import { HandoverCheckInWorkbench } from '../staff/components/HandoverCheckInWorkbench'
 
 interface InspectedUnit {
   id: string
@@ -37,9 +39,10 @@ interface InspectedUnit {
   pricePerMonth?: number
   facilityId?: string
   facilityName?: string
+  imageUrl?: string
 }
 
-type ManagerDashboardTab = 'overview' | 'tickets' | 'performance' | 'policy'
+type ManagerDashboardTab = 'overview' | 'renewals' | 'handovers-returns' | 'tickets' | 'performance' | 'policy'
 
 export const ManagerDashboard: React.FC = () => {
   const { t } = useLanguage()
@@ -53,26 +56,16 @@ export const ManagerDashboard: React.FC = () => {
   const isFacilityScoped = role === 'FACILITY_MANAGER' || role === 'STAFF'
   const assignedFacilityId = user?.facilityId
 
-  const navigate = useNavigate()
-
   // Tab State
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab') as ManagerDashboardTab | null
 
-  // If redirected from legacy desk tab or bookmark, navigate to /portal/staff
-  useEffect(() => {
-    const rawTab = searchParams.get('tab')
-    if (rawTab === 'handovers-returns' || rawTab === 'renewals') {
-      navigate('/portal/staff', { replace: true })
-    }
-  }, [searchParams, navigate])
-
   const isTabAllowed = (tab: ManagerDashboardTab | null): boolean => {
     if (!tab) return false
     if (role === 'STAFF') {
-      return tab === 'overview' || tab === 'tickets'
+      return tab === 'overview' || tab === 'renewals' || tab === 'handovers-returns' || tab === 'tickets'
     }
-    return tab === 'overview' || tab === 'tickets' || tab === 'performance' || tab === 'policy'
+    return tab === 'overview' || tab === 'renewals' || tab === 'handovers-returns' || tab === 'tickets' || tab === 'performance' || tab === 'policy'
   }
 
   const [activeTab, setActiveTabState] = useState<ManagerDashboardTab>(
@@ -289,7 +282,8 @@ export const ManagerDashboard: React.FC = () => {
             floorLevel: su.floorLevel || 'Not reported',
             pricePerMonth: su.pricePerMonth,
             facilityId: su.facilityId,
-            facilityName: su.facilityName
+            facilityName: su.facilityName,
+            imageUrl: su.imageUrl
           }
         })
         mapped.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }))
@@ -769,7 +763,7 @@ export const ManagerDashboard: React.FC = () => {
             <span className="material-symbols-outlined text-cyan-500 text-[14px]" title="Vi khí hậu 18-22°C">device_thermostat</span>
           ) : (
             <span className="text-[10px] font-mono text-slate-400 font-medium">
-              {unit.smartlock === 'Not reported' ? '' : unit.smartlock.startsWith('SL-') ? unit.smartlock.slice(-4) : 'ID'}
+              {unit.smartlock === 'Not reported' ? 'No lock data' : unit.smartlock.startsWith('SL-') ? unit.smartlock.slice(-4) : 'ID'}
             </span>
           )}
         </div>
@@ -1025,6 +1019,32 @@ export const ManagerDashboard: React.FC = () => {
 
         <button
           type="button"
+          onClick={() => setActiveTab('renewals')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'renewals'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">autorenew</span>
+          <span>2. Xử Lý Gia Hạn Hợp Đồng</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('handovers-returns')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'handovers-returns'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">badge</span>
+          <span>3. Bàn Vận Hành Quầy &amp; Tiếp Đón ({upcomingHandovers.length})</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('tickets')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
             activeTab === 'tickets'
@@ -1033,7 +1053,7 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">build_circle</span>
-          <span>2. Sự Cố &amp; SLA ({tickets.filter(t => t.status !== 'RESOLVED').length})</span>
+          <span>4. Sự Cố &amp; SLA ({tickets.filter(t => t.status !== 'RESOLVED').length})</span>
         </button>
 
         {role !== 'STAFF' && (
@@ -1048,7 +1068,7 @@ export const ManagerDashboard: React.FC = () => {
               }`}
             >
               <span className="material-symbols-outlined text-[18px]">trending_up</span>
-              <span>3. Hiệu Suất &amp; Ngoại Lệ</span>
+              <span>4. Hiệu Suất &amp; Ngoại Lệ</span>
             </button>
 
             <button
@@ -1061,7 +1081,7 @@ export const ManagerDashboard: React.FC = () => {
               }`}
             >
               <span className="material-symbols-outlined text-[18px]">policy</span>
-              <span>4. Chính Sách Vận Hành Cơ Sở</span>
+              <span>5. Chính Sách Vận Hành Cơ Sở</span>
             </button>
           </>
         )}
@@ -1380,7 +1400,363 @@ export const ManagerDashboard: React.FC = () => {
       )}
 
       {/* ============================================================== */}
-      {/* TAB 2: SỰ CỐ & SLA VẬN HÀNH */}
+      {/* TAB: XỬ LÝ GIA HẠN HỢP ĐỒNG (THẨM ĐỊNH & THU CƯỚC) */}
+      {/* ============================================================== */}
+      {activeTab === 'renewals' && (
+        <section className="flex flex-col gap-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+            <div>
+              <h3 className="font-headline text-lg font-bold text-slate-900 flex items-center gap-2">
+                <span className="material-symbols-outlined text-blue-600">autorenew</span>
+                Quản Lý &amp; Thẩm Định Gia Hạn Hợp Đồng
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Xem xét, phê duyệt yêu cầu gia hạn kho và thu cước tại quầy cơ sở theo thẩm quyền
+              </p>
+            </div>
+          </div>
+
+          <ContractRenewalsManagementPanel
+            currentFacilityId={selectedFacilityId}
+            facilities={facilities}
+            userRole={role}
+            showChainWideFilter={role === 'BUSINESS_MANAGER' || role === 'ADMIN'}
+          />
+        </section>
+      )}
+
+      {/* ============================================================== */}
+      {/* TAB 3: BÀN VẬN HÀNH QUẦY & TIẾP ĐÓN BÀN GIAO */}
+      {/* ============================================================== */}
+      {activeTab === 'handovers-returns' && (
+        <section className="flex flex-col gap-6">
+          
+          {/* Header Bàn Vận Hành Quầy & Tiếp Đón */}
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center border border-cyan-400/30 shrink-0">
+                <span className="material-symbols-outlined text-[26px]">badge</span>
+              </div>
+              <div>
+                <h3 className="font-headline text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                  Bàn Vận Hành Quầy &amp; Tiếp Đón Bàn Giao
+                  <span className="px-2 py-0.5 rounded-full bg-cyan-400/20 text-cyan-300 text-[10px] font-mono font-bold border border-cyan-400/30">
+                    Facility Manager Desk
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
+                  Quản lý cơ sở trực tiếp tiếp nhận khách hàng, đối soát CCCD / giấy tờ tùy thân, nghiệm thu hiện trường 5 hạng mục và cấp phát mã PIN bảo mật bàn giao kho.
+                </p>
+              </div>
+            </div>
+            {activeBookingId && (
+              <button
+                type="button"
+                onClick={() => setActiveBookingId('')}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[15px]">close</span>
+                <span>Thu gọn bàn thao tác</span>
+              </button>
+            )}
+          </div>
+
+          {/* BÀN THAO TÁC CHECK-IN & BÀN GIAO KHO */}
+          <div id="handover-workbench-section" className="scroll-mt-6">
+            <HandoverCheckInWorkbench
+              facilityId={selectedFacilityId || user?.facilityId}
+              arrivals={upcomingHandovers}
+              activeBookingId={activeBookingId}
+              onSelectBooking={setActiveBookingId}
+              onHandoverComplete={(bookingId) => {
+                setActiveBookingId('')
+                fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, checkinFromDate, checkinToDate)
+                const targetFac = selectedFacilityId || user?.facilityId
+                if (targetFac) void fetchUnits(targetFac)
+                triggerAction('Đã hoàn tất bàn giao kho và cấp phát mã PIN cho khách hàng thành công!')
+              }}
+            />
+          </div>
+
+          {/* Upcoming Handovers Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-cyan-600 text-[20px]">how_to_reg</span>
+                <h3 className="font-headline text-sm font-bold text-slate-900">
+                  Lịch Hẹn Nhận Kho &amp; Chờ Bàn Giao ({upcomingHandovers.length} đơn)
+                </h3>
+              </div>
+              <span className="text-xs text-slate-500 font-mono">Nhân viên quầy &amp; Quản lý tiếp đón trực tiếp</span>
+            </div>
+
+            {/* Filter Bar: Khung thời gian & Khoảng ngày */}
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 mb-5 p-3 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+              {/* Timeframe Tabs */}
+              <div className="flex items-center gap-1.5 p-1 bg-white border border-slate-200/80 rounded-xl shadow-2xs overflow-x-auto">
+                {[
+                  { id: 'current', label: 'Hôm nay', icon: 'schedule' },
+                  { id: 'past', label: 'Quá khứ', icon: 'history' },
+                  { id: 'future', label: 'Tương lai', icon: 'upcoming' },
+                  { id: 'all', label: 'Tất cả', icon: 'clear_all' },
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => handleCheckinTimeframeChange(tab.id as any)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                      checkinTimeframe === tab.id
+                        ? 'bg-cyan-700 text-white shadow-xs font-bold'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[15px]">{tab.icon}</span>
+                    <span>{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Date Range Picker (Từ ngày - Đến ngày) */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs shadow-2xs">
+                  <span className="material-symbols-outlined text-[15px] text-slate-400">calendar_month</span>
+                  <span className="text-slate-500 font-medium text-[11px]">Từ ngày:</span>
+                  <input
+                    type="date"
+                    value={checkinFromDate}
+                    onChange={(e) => handleCheckinDateFilterApply(e.target.value, checkinToDate)}
+                    className="bg-transparent border-none text-slate-800 text-xs font-mono focus:outline-none cursor-pointer"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs shadow-2xs">
+                  <span className="material-symbols-outlined text-[15px] text-slate-400">event</span>
+                  <span className="text-slate-500 font-medium text-[11px]">Đến ngày:</span>
+                  <input
+                    type="date"
+                    value={checkinToDate}
+                    onChange={(e) => handleCheckinDateFilterApply(checkinFromDate, e.target.value)}
+                    className="bg-transparent border-none text-slate-800 text-xs font-mono focus:outline-none cursor-pointer"
+                  />
+                </div>
+                {(checkinFromDate || checkinToDate) && (
+                  <button
+                    type="button"
+                    onClick={handleResetCheckinDateFilter}
+                    className="px-2.5 py-1.5 text-[11px] font-bold text-slate-600 hover:text-rose-600 bg-white hover:bg-rose-50 border border-slate-200 rounded-xl transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                    title="Xóa bộ lọc ngày"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">close</span>
+                    <span>Xóa lọc</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {upcomingHandovers.length === 0 ? (
+              <p className="text-xs text-slate-400 py-6 text-center">Hiện không có lịch hẹn bàn giao kho nào trong danh sách lọc.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-500 font-mono uppercase text-[11px]">
+                      <th className="py-2.5 px-3 rounded-l-lg">Khách Hàng</th>
+                      <th className="py-2.5 px-3">Mã Đặt Chỗ</th>
+                      <th className="py-2.5 px-3">Kho Đăng Ký</th>
+                      <th className="py-2.5 px-3">Ngày Check-in</th>
+                      <th className="py-2.5 px-3">Trạng Thái Đơn</th>
+                      <th className="py-2.5 px-3">Cọc Giữ Chỗ</th>
+                      <th className="py-2.5 px-3 rounded-r-lg text-right">Chi Tiết / Tiếp Nhận</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {upcomingHandovers.map(b => (
+                      <tr key={b.id} className="hover:bg-slate-50/80">
+                        <td className="py-3 px-3">
+                          <span className="font-bold text-slate-900 block">{b.customerName || 'N/A'}</span>
+                          <span className="text-[11px] text-slate-500 font-mono">{b.customerPhone || 'N/A'}</span>
+                        </td>
+                        <td className="py-3 px-3 font-mono font-bold text-slate-900">{b.bookingCode}</td>
+                        <td className="py-3 px-3 font-mono font-bold text-cyan-800">#{b.unitCode}</td>
+                        <td className="py-3 px-3">
+                          <div className="font-mono tabular-nums">
+                            {b.expectedCheckInAt ? (
+                              <>
+                                <span className="font-bold text-slate-900">{new Date(b.expectedCheckInAt).toLocaleDateString('vi-VN')}</span>
+                                <span className="text-[11px] text-cyan-700 font-semibold block">
+                                  {new Date(b.expectedCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-slate-700">{b.startDate}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            b.status === 'CONFIRMED'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-amber-50 text-amber-700 border border-amber-200'
+                          }`}>
+                            {b.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Chờ hoàn tất cọc'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 font-mono font-bold text-slate-900">
+                          {(b.depositPaid || b.depositAmount || 0).toLocaleString('vi-VN')} đ
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <div className="flex items-center justify-end gap-2 flex-wrap">
+                            {b.assignedStaffName ? (
+                              <div className="flex items-center gap-1.5">
+                                <div
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold"
+                                  title={b.staffAssignmentNotes || undefined}
+                                >
+                                  <span className="material-symbols-outlined text-[14px] text-emerald-600">person_check</span>
+                                  <span>{b.assignedStaffName}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveBookingId(b.id)
+                                    const el = document.getElementById('handover-workbench-section')
+                                    if (el) el.scrollIntoView({ behavior: 'smooth' })
+                                  }}
+                                  className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 shadow-xs ${
+                                    activeBookingId === b.id
+                                      ? 'bg-cyan-700 text-white ring-2 ring-cyan-300'
+                                      : 'bg-cyan-600 hover:bg-cyan-700 text-white'
+                                  }`}
+                                  title="Mở bàn vận hành tiếp đón & bàn giao cho đơn này"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">desktop_windows</span>
+                                  <span>{activeBookingId === b.id ? 'Đang mở bàn' : 'Vận hành bàn giao'}</span>
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={claimingBookingId === b.id}
+                                onClick={() => handleManagerClaimReception(b)}
+                                className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
+                                <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận & Mở bàn'}</span>
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReadOnlyTargetBookingId(b.id)
+                                setShowReadOnlyBookingModal(true)
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold transition cursor-pointer"
+                            >
+                              Xem hồ sơ đối soát
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Overdue Returns Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-amber-600 text-[20px]">assignment_return</span>
+                <h3 className="font-headline text-sm font-bold text-slate-900">
+                  Hợp Đồng Đến Hạn &amp; Chờ Nghiệm Thu Trả Kho ({activeRentals.length} hợp đồng)
+                </h3>
+              </div>
+              <span className="text-xs text-slate-500 font-mono">Thẩm định hiện trường bởi nhân viên quầy</span>
+            </div>
+
+            {activeRentals.length === 0 ? (
+              <p className="text-xs text-slate-400 py-6 text-center">Không có hợp đồng nào đang chờ nghiệm thu trả kho.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-500 font-mono uppercase text-[11px]">
+                      <th className="py-2.5 px-3 rounded-l-lg">Khách Hàng</th>
+                      <th className="py-2.5 px-3">Mã Hợp Đồng</th>
+                      <th className="py-2.5 px-3">Kho</th>
+                      <th className="py-2.5 px-3">Hạn Kết Thúc</th>
+                      <th className="py-2.5 px-3">Hết Hạn Sau</th>
+                      <th className="py-2.5 px-3">Tiền Cọc Bảo Lãnh</th>
+                      <th className="py-2.5 px-3 rounded-r-lg text-right">Hành Động Quản Lý</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(showAllRentals ? activeRentals : activeRentals.slice(0, 10)).map(r => {
+                      const countdown = getExpirationCountdown(r.endDate)
+                      return (
+                        <tr key={r.id} className="hover:bg-slate-50/80">
+                          <td className="py-3 px-3">
+                            <span className="font-bold text-slate-900 block">{r.customerName || 'N/A'}</span>
+                            <span className="text-[11px] text-slate-500 font-mono">{r.customerPhone || 'N/A'}</span>
+                          </td>
+                          <td className="py-3 px-3 font-mono font-bold text-blue-600">{r.bookingCode}</td>
+                          <td className="py-3 px-3 font-mono font-bold text-cyan-800">#{r.unitCode}</td>
+                          <td className="py-3 px-3 font-mono text-slate-700">{r.endDate || 'Hôm nay'}</td>
+                          <td className="py-3 px-3">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] border shadow-2xs ${countdown.badgeClass}`}
+                              title={`Hạn hợp đồng: ${r.endDate || 'N/A'}`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${countdown.dotClass}`}></span>
+                              <span className="font-mono">{countdown.text}</span>
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 font-mono font-bold text-slate-900">
+                            {(r.depositPaid || r.depositAmount || 0).toLocaleString('vi-VN')} đ
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReadOnlyTargetBookingId(r.id)
+                                setShowReadOnlyBookingModal(true)
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-[11px] transition cursor-pointer"
+                            >
+                              Xem chi tiết
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+
+                {activeRentals.length > 10 && (
+                  <div className="pt-3.5 mt-2 flex items-center justify-between border-t border-slate-100 text-xs text-slate-500">
+                    <span>
+                      Hiển thị <strong>{showAllRentals ? activeRentals.length : 10}</strong> trên tổng số <strong>{activeRentals.length}</strong> hợp đồng
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowAllRentals(!showAllRentals)}
+                      className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition cursor-pointer shadow-2xs"
+                    >
+                      {showAllRentals ? 'Thu gọn (10 hợp đồng)' : `Xem tất cả ${activeRentals.length} hợp đồng`}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+        </section>
+      )}
+
+      {/* ============================================================== */}
+      {/* TAB 3: SỰ CỐ & SLA VẬN HÀNH */}
       {/* ============================================================== */}
       {activeTab === 'tickets' && (
         <section className="flex flex-col gap-6">

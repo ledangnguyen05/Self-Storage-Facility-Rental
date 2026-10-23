@@ -2,9 +2,9 @@ import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { LogOut, LayoutDashboard, ArrowRight, Menu, X, Pencil, Compass, Box, FileText, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import { Button } from '../ui/Button'
 import { BrandLogo } from '../common/BrandLogo'
-import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import { AccountProfileModal } from '../common/AccountProfileModal'
 import { LogoutConfirmModal } from '../common/LogoutConfirmModal'
 import { WebSettingsModal } from '../common/WebSettingsModal'
@@ -22,7 +22,7 @@ export const Navbar: React.FC = () => {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
 
   const isCustomer = role === 'CUSTOMER'
-  const canAccessPortal = checkCustomerPortalAccess(user).hasAccess
+  const canAccessPortal = role !== 'CUSTOMER' || checkCustomerPortalAccess(user).hasAccess
 
   const handleDashboardRedirect = () => {
     if (!role) return

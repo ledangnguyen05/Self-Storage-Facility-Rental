@@ -31,7 +31,7 @@ export const HomePage: React.FC = () => {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
 
   const isCustomer = user?.role?.name === 'CUSTOMER'
-  const canAccessPortal = checkCustomerPortalAccess(user).hasAccess
+  const canAccessPortal = !isCustomer || checkCustomerPortalAccess(user).hasAccess
 
   // Booking Navigation
   const handleOpenBooking = (tier?: SizeTierKey) => {

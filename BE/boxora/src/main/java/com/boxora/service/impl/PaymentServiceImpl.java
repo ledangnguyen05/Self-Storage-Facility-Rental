@@ -12,12 +12,14 @@ import com.boxora.enums.ActivityAction;
 import com.boxora.enums.BookingStatus;
 import com.boxora.enums.PaymentStatus;
 import com.boxora.enums.PaymentType;
+import com.boxora.enums.UnitStatus;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.PaymentMapper;
 import com.boxora.repository.BookingRepository;
 import com.boxora.repository.PaymentRepository;
 import com.boxora.repository.RentalContractRepository;
+import com.boxora.repository.StorageUnitRepository;
 import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
 import com.boxora.service.ContractRenewalService;
@@ -65,6 +67,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractSigningService> contractSigningServiceProvider;
     private final com.boxora.service.StorageUnitLockService storageUnitLockService;
     private final com.boxora.repository.RefundRequestRepository refundRequestRepository;
+    private final com.boxora.repository.StorageUnitRepository storageUnitRepository;
     private final com.boxora.config.DocuSealConfig docuSealConfig;
 
     private UUID extractFacilityId(Payment payment) {
@@ -384,6 +387,61 @@ public class PaymentServiceImpl implements PaymentService {
         booking.setPaymentStatus(summary.resolvedPaymentStatus());
     }
 
+    private void cancelUnpaidBookingAfterPaymentFailure(Booking paymentBooking, String transactionRef) {
+        if (paymentBooking == null || paymentBooking.getId() == null) {
+            return;
+        }
+
+        Booking booking = bookingRepository.findByIdForUpdate(paymentBooking.getId()).orElse(null);
+        if (booking == null
+                || (booking.getStatus() != BookingStatus.PENDING_PAYMENT
+                && booking.getStatus() != BookingStatus.PENDING_APPROVAL)) {
+            return;
+        }
+
+        if (paymentRepository.existsByBooking_IdAndStatus(booking.getId(), PaymentStatus.PAID)
+                || paymentRepository.existsByBooking_IdAndStatus(booking.getId(), PaymentStatus.PENDING)) {
+            return;
+        }
+
+        booking.setStatus(BookingStatus.CANCELLED);
+        booking.setCancellationReason("Hệ thống tự hủy do thanh toán thất bại hoặc bị hủy");
+        booking.setCancelledAt(LocalDateTime.now());
+        booking.setPaymentExpiresAt(null);
+        booking.setHoldExpiresAt(null);
+        booking.setPaymentStatus("UNPAID");
+        booking.setAccessPin(null);
+        booking.setQrAccessToken("REVOKED_AUTO_CANCEL");
+        bookingRepository.save(booking);
+
+        StorageUnit unit = booking.getStorageUnit();
+        if (unit != null) {
+            StorageUnit lockedUnit = storageUnitRepository.findWithDetailsByIdForUpdate(unit.getId()).orElse(null);
+            if (lockedUnit != null) {
+                boolean hasOtherActive = bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(
+                        lockedUnit.getId(),
+                        List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED,
+                                BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING_APPROVAL),
+                        booking.getId());
+                if (!hasOtherActive) {
+                    if (lockedUnit.getStatus() == UnitStatus.RESERVED) {
+                        lockedUnit.setStatus(UnitStatus.AVAILABLE);
+                        storageUnitRepository.save(lockedUnit);
+                    }
+                    storageUnitLockService.releaseLock(lockedUnit.getId());
+                }
+            }
+        }
+
+        UUID facilityId = unit != null && unit.getFacility() != null ? unit.getFacility().getId() : null;
+        activityLogService.recordSystem(
+                facilityId,
+                ActivityAction.RESERVATION_EXPIRE,
+                "Booking",
+                booking.getId(),
+                String.format("Tự hủy đơn %s ngay sau khi giao dịch %s thất bại hoặc bị hủy; kho được trả về trạng thái trống.",
+                        booking.getBookingCode(), transactionRef));
+    }
     @Override
     public VNPayPaymentResponse createVNPayPayment(PaymentCreateRequest request, HttpServletRequest httpRequest) {
         Booking booking = bookingRepository.findById(request.getBookingId())
