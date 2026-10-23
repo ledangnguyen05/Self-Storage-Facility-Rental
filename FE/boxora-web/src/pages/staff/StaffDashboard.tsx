@@ -10,13 +10,15 @@ import { masterKeyService } from '../../services/masterKeyService'
 import { supportTicketService } from '../../services/supportTicketService'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
-import { Booking, StorageUnit, Facility, FacilityPolicy, OccupancyReport } from '../../types'
+import { contractService } from '../../services/contractService'
+import { Booking, StorageUnit, Facility, FacilityPolicy, OccupancyReport, RentalContract } from '../../types'
 import { extractFloor, resolveBookingFloor, filterArrivals, AppointmentStatusFilter } from '../../utils/floorUtils'
 import { reservationEmailService } from '../../services/reservationEmailService'
 
 import { HandoverCheckInWorkbench } from './components/HandoverCheckInWorkbench'
 import { QrCameraCheckInModal } from './components/QrCameraCheckInModal'
 import { StaffPolicyGuideModal } from './components/StaffPolicyGuideModal'
+import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
 import { staffAssignmentService, StaffAssignmentResponse, isShiftAbsent } from '../../services/staffAssignmentService'
 import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
 import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
@@ -58,7 +60,11 @@ export const StaffDashboard: React.FC = () => {
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [checkInSuccessMsg, setCheckInSuccessMsg] = useState<string | null>(null)
 
-  const currentTargetFacility = selectedFacility || (facilities.length > 0 ? facilities[0].id : '')
+  const currentTargetFacility = useMemo(() => {
+    if (user?.facilityId) return user.facilityId
+    if (selectedFacility && selectedFacility !== 'ALL') return selectedFacility
+    return facilities.length > 0 ? facilities[0].id : ''
+  }, [user?.facilityId, selectedFacility, facilities])
 
   // Master Key Emergency Override Modal (BR-RULE-009)
   const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false)
@@ -94,8 +100,11 @@ export const StaffDashboard: React.FC = () => {
     return 'pending_orders'
   })
   const [pendingSearchTerm, setPendingSearchTerm] = useState('')
-  const [pendingFilterStatus, setPendingFilterStatus] = useState<'PENDING_CONFIRMATION' | 'CONFIRMED' | 'CANCELLED' | 'ALL'>('PENDING_CONFIRMATION')
+  const [pendingFilterStatus, setPendingFilterStatus] = useState<'PENDING_CONFIRMATION' | 'CONFIRMED' | 'CANCELLED' | 'ALL'>('ALL')
   const [highlightedBookingCode, setHighlightedBookingCode] = useState<string | null>(null)
+  const [viewingContract, setViewingContract] = useState<RentalContract | null>(null)
+  const [viewingContractBooking, setViewingContractBooking] = useState<Booking | null>(null)
+  const [loadingContractBookingId, setLoadingContractBookingId] = useState<string | null>(null)
   const [myTodayAssignment, setMyTodayAssignment] = useState<StaffAssignmentResponse | null>(null)
   const [isAttendanceLoading, setIsAttendanceLoading] = useState(false)
   const [showStaffSwapModal, setShowStaffSwapModal] = useState(false)
@@ -128,7 +137,7 @@ export const StaffDashboard: React.FC = () => {
   // Filter & Search states
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedFloor, setSelectedFloor] = useState<string>('all')
-  const [selectedShiftFilter, setSelectedShiftFilter] = useState<'current' | 'today' | 'past' | 'future' | 'all'>('current')
+  const [selectedShiftFilter, setSelectedShiftFilter] = useState<'current' | 'today' | 'past' | 'future' | 'all'>('all')
   const [filterFromDate, setFilterFromDate] = useState<string>('')
   const [filterToDate, setFilterToDate] = useState<string>('')
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<AppointmentStatusFilter>('ALL')
@@ -136,6 +145,30 @@ export const StaffDashboard: React.FC = () => {
   const [rejectingBooking, setRejectingBooking] = useState<Booking | null>(null)
   const [rejectionReasonText, setRejectionReasonText] = useState<string>('')
   const [reviewDetailBooking, setReviewDetailBooking] = useState<Booking | null>(null)
+
+  const handleOpenContractModal = async (booking: Booking) => {
+    if (!booking?.id) return
+    setLoadingContractBookingId(booking.id)
+    try {
+      let contract: RentalContract | null = null
+      if (booking.contractId) {
+        contract = await contractService.getContractById(booking.contractId)
+      }
+      if (!contract && !booking.id.startsWith('LOCAL-RES-')) {
+        contract = await contractService.getContractByBookingId(booking.id)
+      }
+      if (contract) {
+        setViewingContractBooking(booking)
+        setViewingContract(contract)
+      } else {
+        alert('Đơn đặt kho này chưa khởi tạo hợp đồng điện tử.')
+      }
+    } catch {
+      alert('Không thể tải văn bản hợp đồng lúc này. Vui lòng thử lại.')
+    } finally {
+      setLoadingContractBookingId(null)
+    }
+  }
   const [receptionAlertData, setReceptionAlertData] = useState<{
     isOpen: boolean
     message: string
@@ -221,18 +254,18 @@ export const StaffDashboard: React.FC = () => {
 
   const fetchArrivals = async (
     facilityId?: string,
-    timeframe?: 'current' | 'today' | 'past' | 'future' | 'all',
+    _timeframe?: 'current' | 'today' | 'past' | 'future' | 'all',
     fromDate?: string,
     toDate?: string
   ) => {
     try {
-      const targetId = facilityId || currentTargetFacility
-      const tf = timeframe !== undefined ? timeframe : selectedShiftFilter
+      const rawTarget = facilityId || currentTargetFacility
+      const targetId = (!rawTarget || rawTarget === 'ALL') ? undefined : rawTarget
       const from = fromDate !== undefined ? fromDate : filterFromDate
       const to = toDate !== undefined ? toDate : filterToDate
 
       const data = await bookingService.getUpcomingArrivals(targetId, {
-        timeframe: tf?.toUpperCase(),
+        timeframe: 'ALL',
         fromDate: from || undefined,
         toDate: to || undefined,
       })
@@ -526,8 +559,9 @@ export const StaffDashboard: React.FC = () => {
         const unit = (b.unitCode || '').toLowerCase()
         const fac = (b.facilityName || '').toLowerCase()
         const cccd = (b.identityCardNumber || '').toLowerCase()
+        const ctr = (b.contractCode || '').toLowerCase()
 
-        if (!code.includes(q) && !name.includes(q) && !phone.includes(q) && !email.includes(q) && !unit.includes(q) && !fac.includes(q) && !cccd.includes(q)) {
+        if (!code.includes(q) && !name.includes(q) && !phone.includes(q) && !email.includes(q) && !unit.includes(q) && !fac.includes(q) && !cccd.includes(q) && !ctr.includes(q)) {
           return false
         }
       }
@@ -538,11 +572,20 @@ export const StaffDashboard: React.FC = () => {
         if (a.bookingCode === highlightedBookingCode) return -1
         if (b.bookingCode === highlightedBookingCode) return 1
       }
-      const aPending = (a.status === 'PENDING_CONTACT' || a.status === 'PENDING_APPROVAL' || a.status === 'PENDING_PAYMENT') ? 1 : 0
-      const bPending = (b.status === 'PENDING_CONTACT' || b.status === 'PENDING_APPROVAL' || b.status === 'PENDING_PAYMENT') ? 1 : 0
-      if (aPending !== bPending) return bPending - aPending
+      const getPriority = (item: Booking) => {
+        const st = String(item.status || '')
+        if (st === 'CONFIRMED' && item.contractSigned) return 4
+        if (st === 'PENDING_CONTACT' || st === 'PENDING_CONFIRMATION' || st === 'PENDING_APPROVAL' || st === 'PENDING_PAYMENT') return 3
+        if (st === 'CONFIRMED' || st === 'AWAITING_CHECKIN') return 2
+        if (st === 'ACTIVE' || st === 'COMPLETED') return 1
+        return 0
+      }
+      const pDiff = getPriority(b) - getPriority(a)
+      if (pDiff !== 0) return pDiff
 
-      return new Date((b as any).createdAt || 0).getTime() - new Date((a as any).createdAt || 0).getTime()
+      const timeB = new Date((b as any).createdAt || b.expectedCheckInAt || b.startDate || 0).getTime()
+      const timeA = new Date((a as any).createdAt || a.expectedCheckInAt || a.startDate || 0).getTime()
+      return timeB - timeA
     })
   }, [arrivals, pendingFilterStatus, pendingSearchTerm, highlightedBookingCode])
 
@@ -1183,11 +1226,11 @@ export const StaffDashboard: React.FC = () => {
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="bg-slate-50/80 text-slate-500 font-mono uppercase tracking-wider text-[11px] border-b border-slate-200">
-                    <th className="py-3 px-4 font-semibold">Mã đơn &amp; Ngày gửi</th>
+                    <th className="py-3 px-4 font-semibold">Mã đơn &amp; Hợp đồng</th>
                     <th className="py-3 px-4 font-semibold">Khách hàng</th>
                     <th className="py-3 px-4 font-semibold">Cơ sở &amp; Kho</th>
                     <th className="py-3 px-4 font-semibold">Lịch hẹn check-in</th>
-                    <th className="py-3 px-4 font-semibold">Trạng thái</th>
+                    <th className="py-3 px-4 font-semibold">Trạng thái &amp; Chữ ký</th>
                     <th className="py-3 px-4 font-semibold text-right">Thao tác xử lý</th>
                   </tr>
                 </thead>
@@ -1207,8 +1250,11 @@ export const StaffDashboard: React.FC = () => {
                       const s = String(b.status || '')
                       const isPending = s === 'PENDING_CONTACT' || s === 'PENDING_CONFIRMATION' || s === 'PENDING_APPROVAL' || s === 'PENDING_PAYMENT'
                       const isConfirmed = s === 'CONFIRMED' || s === 'AWAITING_CHECKIN'
+                      const isActiveOrCompleted = s === 'ACTIVE' || s === 'COMPLETED'
                       const isCancelled = s === 'CANCELLED'
                       const isHighlighted = highlightedBookingCode === b.bookingCode
+                      const isContractSigned = Boolean(b.contractSigned) || b.contractStatus === 'PENDING_ACTIVATION' || b.contractStatus === 'ACTIVE'
+                      const hasContract = Boolean(b.contractCode || b.contractId || b.paymentStatus === 'PAID' || isConfirmed || isActiveOrCompleted)
 
                       return (
                         <tr
@@ -1226,9 +1272,15 @@ export const StaffDashboard: React.FC = () => {
                                 <span className="px-1.5 py-0.2 rounded bg-amber-200 text-amber-900 text-[9px] font-bold">Vừa mở</span>
                               )}
                             </div>
-                            <span className="text-[10px] text-slate-400 block mt-0.5">
-                              {(b as any).createdAt ? new Date((b as any).createdAt).toLocaleDateString('vi-VN') : 'Mới tạo'}
-                            </span>
+                            {b.contractCode ? (
+                              <span className="text-[10px] text-blue-700 font-bold block mt-0.5">
+                                HĐ: {b.contractCode}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 block mt-0.5">
+                                {(b as any).createdAt ? new Date((b as any).createdAt).toLocaleDateString('vi-VN') : 'Mới tạo'}
+                              </span>
+                            )}
                           </td>
 
                           <td className="py-3.5 px-4">
@@ -1255,42 +1307,92 @@ export const StaffDashboard: React.FC = () => {
                           <td className="py-3.5 px-4">
                             <span className="text-slate-800 font-semibold block text-xs">{b.facilityName}</span>
                             <span className="text-[11px] text-slate-500 font-mono block">
-                              {b.unitCode} · {b.rentalMonths} tháng
+                              Kho #{b.unitCode} · {b.rentalMonths} tháng
                             </span>
                           </td>
 
                           <td className="py-3.5 px-4">
                             <div className="font-semibold text-slate-800 text-xs flex items-center gap-1">
                               <span className="material-symbols-outlined text-[14px] text-blue-500">calendar_today</span>
-                              <span>{(b as any).checkInDate || b.startDate}</span>
+                              <span>
+                                {b.expectedCheckInAt
+                                  ? new Date(b.expectedCheckInAt).toLocaleDateString('vi-VN')
+                                  : ((b as any).checkInDate || b.startDate)}
+                              </span>
                             </div>
                             <span className="text-[10px] text-slate-500 block font-mono mt-0.5">
-                              {(b as any).checkInTime || 'Giờ tiếp đón'}
+                              {b.expectedCheckInAt
+                                ? new Date(b.expectedCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                                : ((b as any).checkInTime || 'Giờ tiếp đón')}
                             </span>
                           </td>
 
                           <td className="py-3.5 px-4">
-                            {isPending && (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                                <span>Chờ xác nhận</span>
-                              </span>
-                            )}
-                            {isConfirmed && (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-300">
-                                <span className="material-symbols-outlined text-[14px]">check</span>
-                                <span>Chờ check in</span>
-                              </span>
-                            )}
-                            {isCancelled && (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
-                                <span>Đã từ chối / Hủy</span>
-                              </span>
-                            )}
+                            <div className="flex flex-col items-start gap-1">
+                              {isPending && (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                  <span>Chờ xác nhận</span>
+                                </span>
+                              )}
+                              {isConfirmed && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-300">
+                                  <span className="material-symbols-outlined text-[13px]">check</span>
+                                  <span>Chờ check in</span>
+                                </span>
+                              )}
+                              {isActiveOrCompleted && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                  <span className="material-symbols-outlined text-[13px]">verified</span>
+                                  <span>{s === 'ACTIVE' ? 'Đang thuê (ACTIVE)' : 'Đã hoàn tất'}</span>
+                                </span>
+                              )}
+                              {isCancelled && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                                  <span>Đã từ chối / Hủy</span>
+                                </span>
+                              )}
+
+                              {!isCancelled && (
+                                isContractSigned ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    <span className="material-symbols-outlined text-[12px]">draw</span>
+                                    <span>Đã ký HĐ điện tử</span>
+                                  </span>
+                                ) : b.signingMethod === 'IN_PERSON' ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                    <span>🏢 Ký giấy tại quầy</span>
+                                  </span>
+                                ) : hasContract ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                                    <span>⏳ Chờ khách ký HĐ</span>
+                                  </span>
+                                ) : null
+                              )}
+                            </div>
                           </td>
 
                           <td className="py-3.5 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
+                            <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                              {hasContract && !b.id.startsWith('LOCAL-RES-') && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenContractModal(b)}
+                                  disabled={loadingContractBookingId === b.id}
+                                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer border ${
+                                    isContractSigned
+                                      ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                                      : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200'
+                                  }`}
+                                  title="Mở xem văn bản Hợp đồng điện tử & chữ ký của khách hàng"
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">
+                                    {loadingContractBookingId === b.id ? 'hourglass_top' : 'description'}
+                                  </span>
+                                  <span>{loadingContractBookingId === b.id ? 'Đang tải...' : 'Xem Hợp Đồng'}</span>
+                                </button>
+                              )}
+
                               <button
                                 type="button"
                                 onClick={() => setReviewDetailBooking(b)}
@@ -1328,18 +1430,22 @@ export const StaffDashboard: React.FC = () => {
                                 </>
                               )}
 
-                              {isConfirmed && (
+                              {(isConfirmed || isActiveOrCompleted) && (
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    setActiveBookingId(b.id)
                                     setStaffActiveTab('reception')
                                     setSearchParams({ tab: 'reception' })
+                                    setTimeout(() => {
+                                      document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                                    }, 100)
                                   }}
-                                  className="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                                  title="Chuyển sang Bàn Tiếp Đón &amp; Trả Kho"
+                                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                  title="Chuyển sang Bàn Tiếp Đón &amp; Nghiệm Thu Bàn Giao Kho"
                                 >
                                   <span className="material-symbols-outlined text-[15px]">desk</span>
-                                  <span>Vào Tiếp Đón</span>
+                                  <span>{isActiveOrCompleted ? 'Hồ Sơ Bàn Giao' : 'Vào Tiếp Đón'}</span>
                                 </button>
                               )}
                             </div>
@@ -1476,7 +1582,9 @@ export const StaffDashboard: React.FC = () => {
           </span>
           <input
             type="text"
-            placeholder="Tìm kiếm nhanh tên khách hàng, SĐT, mã đặt chỗ #RES-XXXX, hoặc mã số kho..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Tìm kiếm nhanh tên khách hàng, SĐT, mã đặt chỗ #BX-XXXX, mã hợp đồng, hoặc mã số kho..."
             className="w-full pl-10 pr-3 py-2 bg-slate-50 text-slate-900 text-xs rounded-xl border border-slate-200 focus:outline-none focus:bg-white focus:border-blue-600 transition-all"
           />
         </div>
@@ -1484,19 +1592,38 @@ export const StaffDashboard: React.FC = () => {
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
             <span className="text-slate-500 font-medium">Khu vực:</span>
-            <select className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer">
+            <select
+              value={selectedFloor}
+              onChange={(e) => setSelectedFloor(e.target.value)}
+              className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
+            >
               <option value="all">Tất cả tầng</option>
-              <option value="Tầng 1">Tầng 1</option>
-              <option value="Tầng 2">Tầng 2</option>
-              <option value="Tầng 3">Tầng 3</option>
+              {availableFloors.length > 0 ? (
+                availableFloors.map(fl => (
+                  <option key={fl} value={fl}>Tầng {fl}</option>
+                ))
+              ) : (
+                <>
+                  <option value="1">Tầng 1</option>
+                  <option value="2">Tầng 2</option>
+                  <option value="3">Tầng 3</option>
+                </>
+              )}
             </select>
           </div>
 
           <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
             <span className="text-slate-500 font-medium">Khung giờ:</span>
-            <select className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer">
-              <option value="current">Ca Hiện Tại (08:00 - 16:30)</option>
+            <select
+              value={selectedShiftFilter}
+              onChange={(e) => handleTimeframeChange(e.target.value as any)}
+              className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
+            >
+              <option value="all">Tất cả lịch hẹn (Hôm nay &amp; Sắp tới)</option>
+              <option value="current">Ca Hiện Tại</option>
               <option value="today">Trọn Vẹn Hôm Nay</option>
+              <option value="future">Lịch Hẹn Sắp Tới</option>
+              <option value="past">Lịch Sử Đã Qua</option>
             </select>
           </div>
         </div>
@@ -1524,7 +1651,7 @@ export const StaffDashboard: React.FC = () => {
             {/* Upcoming Appointments Table */}
             <div className="flex items-center justify-between mb-4">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-900 font-mono">
-                Danh sách hẹn tiếp theo trong ca trực
+                Danh sách hẹn nhận kho &amp; Hợp đồng tại cơ sở
               </span>
               <span className="text-xs text-slate-500 font-mono">
                 {arrivals.length} lượt khách
@@ -1536,10 +1663,10 @@ export const StaffDashboard: React.FC = () => {
                 <thead>
                   <tr className="bg-slate-50 text-slate-500 font-mono uppercase tracking-wider text-[11px]">
                     <th className="py-2.5 px-3 rounded-l-lg font-semibold">Khách hàng</th>
-                    <th className="py-2.5 px-3 font-semibold">Mã Đặt Chỗ</th>
+                    <th className="py-2.5 px-3 font-semibold">Mã Đơn &amp; Hợp Đồng</th>
                     <th className="py-2.5 px-3 font-semibold">Kho Đăng Ký</th>
                     <th className="py-2.5 px-3 font-semibold">Ngày Bắt Đầu</th>
-                    <th className="py-2.5 px-3 font-semibold">Trạng Thái</th>
+                    <th className="py-2.5 px-3 font-semibold">Trạng Thái &amp; Chữ Ký</th>
                     <th className="py-2.5 px-3 font-semibold">Cọc Giữ Chỗ</th>
                     <th className="py-2.5 px-3 rounded-r-lg text-right font-semibold">Hành động</th>
                   </tr>
@@ -1552,44 +1679,77 @@ export const StaffDashboard: React.FC = () => {
                       </td>
                     </tr>
                   ) : (
-                    arrivals.map((b) => (
-                      <tr key={b.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-3.5 px-3">
-                          <div className="font-bold text-slate-900 text-xs">{b.customerName || 'Khách vãng lai'}</div>
-                          <div className="text-slate-500 font-mono text-[11px] tabular-nums mt-0.5">{b.customerPhone || 'N/A'}</div>
-                        </td>
-                        <td className="py-3.5 px-3 font-mono font-bold text-slate-900">{b.bookingCode}</td>
-                        <td className="py-3.5 px-3">
-                          <span className="font-mono font-bold text-cyan-700">Kho #{b.unitCode}</span>
-                          <span className="text-slate-500 block text-[10px]">{b.facilityName || 'Boxora'}</span>
-                        </td>
-                        <td className="py-3.5 px-3 font-mono tabular-nums text-slate-700">{b.startDate}</td>
-                        <td className="py-3.5 px-3">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            b.status === 'CONFIRMED'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-amber-50 text-amber-700 border border-amber-200'
-                          }`}>
-                            {b.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Chờ cọc'}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-3 font-mono font-bold text-slate-900 tabular-nums">
-                          {(b.depositPaid || b.depositAmount || 0).toLocaleString('vi-VN')}đ
-                        </td>
-                        <td className="py-3.5 px-3 text-right">
-                          <button
-                            onClick={() => {
-                              setActiveBookingId(b.id)
-                              setFocusedBookingNotice(`Đã chọn tiếp đón khách hàng ${b.customerName} (${b.bookingCode})`)
-                              document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-                            }}
-                            className="px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg font-semibold text-[11px] transition-colors cursor-pointer"
-                          >
-                            Tiếp đón
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                    arrivals.map((b) => {
+                      const isContractSigned = Boolean(b.contractSigned) || b.contractStatus === 'PENDING_ACTIVATION' || b.contractStatus === 'ACTIVE'
+                      const hasContract = Boolean(b.contractCode || b.contractId || b.paymentStatus === 'PAID' || b.status === 'CONFIRMED' || b.status === 'ACTIVE')
+                      return (
+                        <tr key={b.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-3.5 px-3">
+                            <div className="font-bold text-slate-900 text-xs">{b.customerName || 'Khách vãng lai'}</div>
+                            <div className="text-slate-500 font-mono text-[11px] tabular-nums mt-0.5">{b.customerPhone || 'N/A'}</div>
+                          </td>
+                          <td className="py-3.5 px-3 font-mono">
+                            <div className="font-bold text-slate-900">{b.bookingCode}</div>
+                            {b.contractCode && (
+                              <span className="text-[10px] text-blue-700 font-bold block mt-0.5">{b.contractCode}</span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-3">
+                            <span className="font-mono font-bold text-cyan-700">Kho #{b.unitCode}</span>
+                            <span className="text-slate-500 block text-[10px]">{b.facilityName || 'Boxora'}</span>
+                          </td>
+                          <td className="py-3.5 px-3 font-mono tabular-nums text-slate-700">{b.startDate}</td>
+                          <td className="py-3.5 px-3">
+                            <div className="flex flex-col items-start gap-1">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                b.status === 'ACTIVE'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : b.status === 'CONFIRMED'
+                                  ? 'bg-cyan-50 text-cyan-700 border border-cyan-200'
+                                  : b.status === 'CANCELLED'
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`}>
+                                {b.status === 'ACTIVE' ? 'Đang thuê (ACTIVE)' : b.status === 'CONFIRMED' ? 'Chờ check-in' : b.status === 'CANCELLED' ? 'Đã hủy' : 'Chờ cọc'}
+                              </span>
+                              {b.status !== 'CANCELLED' && isContractSigned && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  ✓ Đã ký HĐ điện tử
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-3 font-mono font-bold text-slate-900 tabular-nums">
+                            {(b.depositPaid || b.depositAmount || 0).toLocaleString('vi-VN')}đ
+                          </td>
+                          <td className="py-3.5 px-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {hasContract && !b.id.startsWith('LOCAL-RES-') && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenContractModal(b)}
+                                  disabled={loadingContractBookingId === b.id}
+                                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg font-bold text-[11px] transition-colors cursor-pointer"
+                                  title="Xem văn bản Hợp đồng điện tử"
+                                >
+                                  {loadingContractBookingId === b.id ? 'Đang tải...' : 'Xem HĐ'}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => {
+                                  setActiveBookingId(b.id)
+                                  setFocusedBookingNotice(`Đã chọn tiếp đón khách hàng ${b.customerName} (${b.bookingCode})`)
+                                  document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                                }}
+                                className="px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg font-semibold text-[11px] transition-colors cursor-pointer"
+                              >
+                                Tiếp đón
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })
                   )}
                 </tbody>
               </table>
@@ -2143,7 +2303,17 @@ export const StaffDashboard: React.FC = () => {
                           </div>
                           <div className="text-slate-500 font-mono text-[11px] tabular-nums mt-0.5">{b.customerPhone || 'N/A'}</div>
                         </td>
-                        <td className="py-3.5 px-3 font-mono font-bold text-slate-900">{b.bookingCode}</td>
+                        <td className="py-3.5 px-3">
+                          <div className="font-mono font-bold text-slate-900">{b.bookingCode}</div>
+                          <div className="text-[10px] font-mono text-indigo-700 font-semibold mt-0.5">
+                            HĐ: {b.contractCode || `CTR-${b.bookingCode}`}
+                          </div>
+                          {(b.contractSigned || b.status === 'CONFIRMED' || b.status === 'ACTIVE') && (
+                            <span className="mt-0.5 inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-700">
+                              ✓ Đã ký HĐ điện tử
+                            </span>
+                          )}
+                        </td>
                         <td className="py-3.5 px-3">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-mono font-bold text-cyan-700">Kho #{b.unitCode}</span>
@@ -2215,6 +2385,16 @@ export const StaffDashboard: React.FC = () => {
                         </td>
                         <td className="py-3.5 px-3 text-right">
                           <div className="flex items-center justify-end gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              disabled={loadingContractBookingId === b.id}
+                              onClick={() => handleOpenContractModal(b)}
+                              className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors cursor-pointer flex items-center gap-1"
+                              title="Xem hợp đồng thuê kho điện tử"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">description</span>
+                              <span>{loadingContractBookingId === b.id ? 'Đang tải...' : 'Xem HĐ'}</span>
+                            </button>
                             {b.status === 'ACTIVE' || b.status === 'COMPLETED' ? (
                               <button
                                 type="button"
@@ -2759,8 +2939,37 @@ export const StaffDashboard: React.FC = () => {
             </div>
 
             <div className="p-5 space-y-4 overflow-y-auto max-h-[70vh] text-xs sm:text-sm">
-              <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 text-amber-900 dark:text-amber-200 text-xs">
-                <strong>Trạng thái: Chờ xác nhận</strong> · Hãy liên hệ với khách hàng để đối soát thông tin trước khi xác nhận hoặc từ chối.
+              <div className={`p-3.5 rounded-2xl border text-xs flex items-center justify-between gap-3 ${
+                reviewDetailBooking.status === 'CONFIRMED'
+                  ? 'bg-cyan-50 dark:bg-cyan-950/40 border-cyan-200 text-cyan-900 dark:text-cyan-200'
+                  : reviewDetailBooking.status === 'ACTIVE'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 text-emerald-900 dark:text-emerald-200'
+                  : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 text-amber-900 dark:text-amber-200'
+              }`}>
+                <div>
+                  <strong>
+                    Trạng thái:{' '}
+                    {reviewDetailBooking.status === 'CONFIRMED'
+                      ? 'Đã ký HĐ điện tử · Chờ khách đến kho Check-in'
+                      : reviewDetailBooking.status === 'ACTIVE'
+                      ? 'Đang thuê (Hợp đồng ACTIVE)'
+                      : 'Chờ xác nhận'}
+                  </strong>
+                  <div className="mt-0.5 text-[11px] opacity-90">
+                    Mã hợp đồng: <span className="font-mono font-bold">{reviewDetailBooking.contractCode || `CTR-${reviewDetailBooking.bookingCode}`}</span>
+                    {(reviewDetailBooking.contractSigned || reviewDetailBooking.status === 'CONFIRMED' || reviewDetailBooking.status === 'ACTIVE') && (
+                      <span> · ✓ Đã ký điện tử hợp lệ</span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleOpenContractModal(reviewDetailBooking)}
+                  className="shrink-0 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[15px]">description</span>
+                  <span>Xem Hợp Đồng Điện Tử</span>
+                </button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono">
@@ -2812,18 +3021,46 @@ export const StaffDashboard: React.FC = () => {
                 >
                   Đóng
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleStaffConfirmBooking(reviewDetailBooking)}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md cursor-pointer"
-                >
-                  Xác nhận đơn (Chờ check in)
-                </button>
+                {((reviewDetailBooking.status as string) === 'PENDING_CONTACT' || (reviewDetailBooking.status as string) === 'PENDING_CONFIRMATION') ? (
+                  <button
+                    type="button"
+                    onClick={() => handleStaffConfirmBooking(reviewDetailBooking)}
+                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md cursor-pointer"
+                  >
+                    Xác nhận đơn (Chờ check in)
+                  </button>
+                ) : reviewDetailBooking.status === 'CONFIRMED' ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = reviewDetailBooking
+                      setReviewDetailBooking(null)
+                      setStaffActiveTab('reception')
+                      setSearchParams({ tab: 'reception' })
+                      setActiveBookingId(target.id)
+                      setTimeout(() => {
+                        document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                      }, 100)
+                    }}
+                    className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md cursor-pointer"
+                  >
+                    Chuyển sang Tiếp Đón &amp; Nghiệm Thu Check-in
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>
         </div>
       )}
+
+      <ContractDocumentModal
+        contract={viewingContract}
+        booking={viewingContractBooking}
+        onClose={() => {
+          setViewingContract(null)
+          setViewingContractBooking(null)
+        }}
+      />
 
     </div>
   )
