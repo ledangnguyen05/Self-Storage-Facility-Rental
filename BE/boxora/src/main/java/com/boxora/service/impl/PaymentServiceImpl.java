@@ -779,6 +779,29 @@ public class PaymentServiceImpl implements PaymentService {
                     ? "booking " + payment.getBooking().getBookingCode()
                     : "hop dong " + (payment.getContract() != null ? payment.getContract().getId() : "N/A");
 
+            EmailService emailService = emailServiceProvider != null ? emailServiceProvider.getIfAvailable() : null;
+            if (emailService != null) {
+                try {
+                    String customerEmail = null;
+                    String customerName = "Quý khách";
+                    if (payment.getBooking() != null) {
+                        customerEmail = payment.getBooking().getCustomer() != null ? payment.getBooking().getCustomer().getEmail() : payment.getBooking().getCustomerEmail();
+                        customerName = payment.getBooking().getCustomer() != null ? payment.getBooking().getCustomer().getFullName() : payment.getBooking().getCustomerName();
+                    } else if (payment.getContract() != null) {
+                        customerEmail = payment.getContract().getCustomer() != null ? payment.getContract().getCustomer().getEmail() : null;
+                        customerName = payment.getContract().getCustomer() != null ? payment.getContract().getCustomer().getFullName() : "Quý khách";
+                    }
+                    if (customerEmail != null && !customerEmail.isBlank()) {
+                        String bookingCode = payment.getBooking() != null ? payment.getBooking().getBookingCode() : "N/A";
+                        String desc = "Hóa đơn thanh toán cọc & giữ chỗ cho đơn #" + bookingCode;
+                        emailService.sendPaymentSuccessEmail(customerEmail, customerName, txnRef, payment.getAmount(), desc);
+                        log.info("[PAYMENT_EMAIL] Sent invoice email to {} for txnRef {}", customerEmail, txnRef);
+                    }
+                } catch (Exception mailEx) {
+                    log.warn("[PAYMENT_EMAIL] Failed to send payment invoice email: {}", mailEx.getMessage());
+                }
+            }
+
             UUID facilityId = extractFacilityId(payment);
             activityLogService.record(
                     facilityId,
@@ -901,6 +924,29 @@ public class PaymentServiceImpl implements PaymentService {
                 ContractRenewalService renewalService = contractRenewalServiceProvider.getIfAvailable();
                 if (renewalService != null) {
                     renewalService.handleRenewalPaid(payment);
+                }
+            }
+
+            EmailService ipnEmailService = emailServiceProvider != null ? emailServiceProvider.getIfAvailable() : null;
+            if (ipnEmailService != null) {
+                try {
+                    String customerEmail = null;
+                    String customerName = "Quý khách";
+                    if (payment.getBooking() != null) {
+                        customerEmail = payment.getBooking().getCustomer() != null ? payment.getBooking().getCustomer().getEmail() : payment.getBooking().getCustomerEmail();
+                        customerName = payment.getBooking().getCustomer() != null ? payment.getBooking().getCustomer().getFullName() : payment.getBooking().getCustomerName();
+                    } else if (payment.getContract() != null) {
+                        customerEmail = payment.getContract().getCustomer() != null ? payment.getContract().getCustomer().getEmail() : null;
+                        customerName = payment.getContract().getCustomer() != null ? payment.getContract().getCustomer().getFullName() : "Quý khách";
+                    }
+                    if (customerEmail != null && !customerEmail.isBlank()) {
+                        String bookingCode = payment.getBooking() != null ? payment.getBooking().getBookingCode() : "N/A";
+                        String desc = "Hóa đơn thanh toán cọc & giữ chỗ cho đơn #" + bookingCode;
+                        ipnEmailService.sendPaymentSuccessEmail(customerEmail, customerName, txnRef, payment.getAmount(), desc);
+                        log.info("[PAYMENT_IPN_EMAIL] Sent invoice email to {} for txnRef {}", customerEmail, txnRef);
+                    }
+                } catch (Exception mailEx) {
+                    log.warn("[PAYMENT_IPN_EMAIL] Failed to send payment invoice email: {}", mailEx.getMessage());
                 }
             }
 

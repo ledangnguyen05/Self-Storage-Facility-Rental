@@ -1861,23 +1861,41 @@ public class BookingServiceImpl implements BookingService {
         booking = bookingRepository.save(booking);
 
         Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
+        RentalContract contract = null;
         if (contractOpt.isPresent()) {
-            RentalContract contract = contractOpt.get();
+            contract = contractOpt.get();
             contract.setUnit(unit);
             if (contract.getFacility() == null) {
                 contract.setFacility(unit.getFacility());
             }
-            rentalContractRepository.save(contract);
+            contract = rentalContractRepository.save(contract);
         }
 
-        String customerEmail = booking.getCustomer() != null ? booking.getCustomer().getEmail() : null;
-        String customerName = booking.getCustomer() != null ? booking.getCustomer().getFullName() : null;
+        String customerEmail = booking.getCustomer() != null ? booking.getCustomer().getEmail() : booking.getCustomerEmail();
+        String customerName = booking.getCustomer() != null ? booking.getCustomer().getFullName() : booking.getCustomerName();
         String facilityName = unit.getFacility() != null ? unit.getFacility().getName() : (booking.getFacility() != null ? booking.getFacility().getName() : "Boxora Facility");
         if (customerEmail != null && !customerEmail.isBlank()) {
             try {
-                emailService.sendHandoverPinEmail(customerEmail, customerName, unit.getUnitCode(), booking.getBookingCode(), pin, facilityName);
+                String contractCode = contract != null ? contract.getContractCode() : ("HD-" + booking.getBookingCode());
+                String startDateStr = booking.getStartDate() != null ? booking.getStartDate().toString() : "";
+                String endDateStr = booking.getEndDate() != null ? booking.getEndDate().toString() : "";
+                String feeStr = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee().toString() : "0";
+                String contractUrl = "/online-booking-contract?bookingId=" + booking.getId();
+                emailService.sendHandoverWithContractEmail(
+                        customerEmail,
+                        customerName,
+                        unit.getUnitCode(),
+                        booking.getBookingCode(),
+                        pin,
+                        facilityName,
+                        contractCode,
+                        startDateStr,
+                        endDateStr,
+                        feeStr,
+                        contractUrl
+                );
             } catch (Exception ex) {
-                log.warn("Lỗi gửi email bàn giao mã PIN IoT cho đơn {}: {}", booking.getBookingCode(), ex.getMessage());
+                log.warn("Lỗi gửi email bàn giao mã PIN IoT va Hop dong hoan chinh cho don {}: {}", booking.getBookingCode(), ex.getMessage());
             }
         }
 

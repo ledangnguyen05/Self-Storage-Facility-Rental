@@ -841,6 +841,10 @@ export const BookingPage: React.FC = () => {
     return Object.keys(errors).length === 0
   }
 
+  // Handle Process Payment & Confirm (DocuSeal E-sign -> VNPay Sandbox)
+  const handleProcessPaymentAndConfirm = async (overrideMethod?: 'ONLINE' | 'PAY_LATER') => {
+    const selectedMethod = overrideMethod || paymentMethod
+
     if (!customerName.trim() || !customerPhone.trim() || !customerIdCard.trim()) {
       setSubmitError('Vui lòng kiểm tra và điền đầy đủ Họ tên, Số điện thoại và Số CCCD.')
       setCurrentStep(3)
@@ -1132,154 +1136,7 @@ export const BookingPage: React.FC = () => {
     }
   }
 
-  // Handle Process Payment & Confirm
-  const handleProcessPaymentAndConfirm = async (overrideMethod?: 'ONLINE' | 'PAY_LATER') => {
-    const selectedMethod = overrideMethod || paymentMethod
-    if (!policyAccepted) {
-      alert('Quý khách vui lòng đồng ý với chính sách và quy chế giữ chỗ kho của Boxora.')
-      setCurrentStep(4)
-      return
-    }
 
-    if (!validateContactDetails()) {
-      setCurrentStep(4)
-      return
-    }
-
-    if (selectedMethod === 'ONLINE' && !isAuthenticated) {
-      setShowAuthModal(true)
-      return
-    }
-
-    setIsSubmitting(true)
-    setSubmitError(null)
-
-    const randomSuffix = Math.floor(1000 + Math.random() * 9000)
-    const nowStr = new Date().toISOString().slice(2, 10).replace(/-/g, '')
-    const generatedCode = `BX-${nowStr}-${randomSuffix}`
-
-    try {
-      // Find matching available unit strictly in selectedFacility (Task 1: No leaking across facilities)
-      const facUnits = storageUnits.filter((u) => u.facilityId === selectedFacility?.id)
-      const available = facUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
-
-      if (available.length === 0) {
-        setSubmitError('Cơ sở này hiện không còn buồng kho khả dụng. Vui lòng chọn cơ sở khác.')
-        setIsSubmitting(false)
-        return
-      }
-
-      let matchedUnit = available.find((u) => Math.abs((u.areaSqMeters || 0) - currentSelectedSize.areaM2) < 0.8)
-      if (!matchedUnit) {
-        matchedUnit = available.find((u) => (u.unitTypeName || '').toLowerCase().includes(currentSelectedSize.id))
-      }
-      if (!matchedUnit) {
-        matchedUnit = available[0]
-      }
-
-      if (!matchedUnit || matchedUnit.facilityId !== selectedFacility?.id) {
-        setSubmitError('Không tìm thấy buồng kho khả dụng tại cơ sở đã chọn.')
-        setIsSubmitting(false)
-        return
-      }
-
-      let effectiveBookingCode = generatedCode
-      let backendBookingId = ''
-      let createdBooking: any = null
-
-      if (isAuthenticated && matchedUnit?.id) {
-        try {
-          const cleanTime = selectedPeriod.id === 'morning' ? '09:00' : (selectedPeriod.hours[0]?.value || '09:00')
-          let expectedCheckInStr = `${checkInDate}T${cleanTime}:00`
-          const parsedCheckIn = new Date(expectedCheckInStr)
-          const minAllowedMs = Date.now() + 5.25 * 3600 * 1000
-          if (!Number.isNaN(parsedCheckIn.getTime()) && parsedCheckIn.getTime() < minAllowedMs) {
-            const safeDate = new Date(minAllowedMs)
-            const pad = (n: number) => String(n).padStart(2, '0')
-            expectedCheckInStr = `${safeDate.getFullYear()}-${pad(safeDate.getMonth() + 1)}-${pad(safeDate.getDate())}T${pad(safeDate.getHours())}:${pad(safeDate.getMinutes())}:00`
-          }
-
-          const res = await bookingService.createBooking({
-            facilityId: selectedFacility?.id,
-            storageUnitId: matchedUnit.id,
-            startDate: startDate,
-            rentalMonths: isCustomDuration ? Math.max(1, Math.round(customDays / 30)) : rentalMonths,
-            totalRentalFee: quoteCalculation.totalRent,
-            depositPaid: selectedMethod === 'ONLINE' ? quoteCalculation.depositAmount : 0,
-            depositAmount: quoteCalculation.depositAmount,
-            signingMethod: selectedMethod === 'ONLINE' ? 'ONLINE' : 'IN_PERSON',
-            expectedCheckInAt: expectedCheckInStr,
-            checkInTime: cleanTime,
-            identityCardNumber: customerIdCard.trim().toUpperCase(),
-            identityCardType: idCardType,
-            fullName: customerName.trim(),
-            customerPhone: customerPhone.trim(),
-            customerEmail: customerEmail.trim() || undefined,
-            specialNotes: specialNotes.trim() || undefined,
-          })
-
-          if (res?.bookingCode || res?.id) {
-            effectiveBookingCode = res.bookingCode || `BX-${res.id.slice(0, 8).toUpperCase()}`
-            backendBookingId = res.id
-            createdBooking = res
-          }
-        } catch (apiErr: any) {
-          console.warn('Backend booking API error:', apiErr)
-          const msg = apiErr?.response?.data?.message || apiErr?.message
-          if (selectedMethod === 'ONLINE') {
-            setSubmitError(msg || 'Không thể tạo đơn giữ chỗ trực tuyến. Vui lòng thử lại.')
-            setIsSubmitting(false)
-            return
-          }
-        }
-      }
-
-      setBookingCode(effectiveBookingCode)
-
-      if (selectedMethod === 'ONLINE') {
-        const depositToPay = quoteCalculation.depositAmount
-        const paymentRes = await paymentService.createVNPayPayment({
-          bookingId: backendBookingId || effectiveBookingCode,
-          paymentType: 'DEPOSIT',
-          amount: depositToPay,
-          orderInfo: `Boxora: Dat coc giu cho kho ${currentSelectedSize.volumeText} tai ${selectedFacility?.name || 'Boxora'} (Ma: ${effectiveBookingCode})`,
-        })
-
-        if (paymentRes?.paymentUrl) {
-          try {
-            sessionStorage.setItem('boxora_pending_vnpay_booking', JSON.stringify({
-              bookingCode: effectiveBookingCode,
-              backendBookingId,
-              unitName: `Kho ${currentSelectedSize.volumeText}`,
-              facilityName: selectedFacility?.name,
-              amount: depositToPay,
-            }))
-          } catch (e) {
-            console.warn(e)
-          }
-          window.location.href = paymentRes.paymentUrl
-          return
-        } else {
-          setIsOnlinePaid(true)
-          setCurrentStep(6)
-        }
-      } else {
-        setIsOnlinePaid(false)
-        setCurrentStep(6)
-      }
-
-      sendReservationToStaff(effectiveBookingCode, selectedMethod, isOnlinePaid, backendBookingId)
-    } catch (err: any) {
-      console.error('Lỗi quy trình đặt giữ chỗ:', err)
-      const errorMsg =
-        err?.response?.data?.message ||
-        err?.message ||
-        'Có lỗi xảy ra khi xác nhận đặt chỗ. Vui lòng thử lại hoặc liên hệ Hotline 1900-BOXORA.'
-      setSubmitError(errorMsg)
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
 
   const handleCopyCode = () => {
     if (!bookingCode) return

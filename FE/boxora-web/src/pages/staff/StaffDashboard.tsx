@@ -845,7 +845,108 @@ export const StaffDashboard: React.FC = () => {
     }, 1500)
   }
 
-  const currentReturnBooking = activeRentals.find(r => r.id === selectedReturnBookingId)
+  // Danh sách các yêu cầu hoàn trả kho của khách hàng
+  const customerReturnRequests = useMemo(() => {
+    const list: Array<{
+      id: string
+      bookingId: string
+      unitCode: string
+      customerName: string
+      customerPhone: string
+      facilityName: string
+      requestDate: string
+      reason: string
+      status: 'PENDING' | 'INSPECTING' | 'COMPLETED'
+      contractCode?: string
+      depositPaid?: number
+      depositAmount?: number
+      endDate?: string
+    }> = []
+
+    // 1. Yêu cầu trả kho lưu trong localStorage
+    try {
+      const raw = localStorage.getItem('boxora_return_requests')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) {
+          parsed.forEach((item: any) => {
+            list.push({
+              id: item.id || `RET-${item.bookingId || Math.random()}`,
+              bookingId: item.bookingId || item.id,
+              unitCode: item.unitCode || 'N/A',
+              customerName: item.customerName || 'Khách hàng',
+              customerPhone: item.customerPhone || 'Theo hồ sơ',
+              facilityName: item.facilityName || 'Boxora Facility',
+              requestDate: item.requestDate || item.createdAt || new Date().toISOString().split('T')[0],
+              reason: item.reason || 'Khách yêu cầu thanh lý hợp đồng & trả buồng kho',
+              status: item.status || 'PENDING',
+              contractCode: item.contractCode,
+              depositPaid: item.depositPaid || item.depositAmount,
+              depositAmount: item.depositAmount || item.depositPaid,
+              endDate: item.endDate,
+            })
+          })
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading boxora_return_requests:', e)
+    }
+
+    // 2. Yêu cầu trả kho từ Support Tickets
+    tickets.forEach((t: any) => {
+      const isReturn =
+        t.category === 'return' ||
+        t.type === 'return' ||
+        t.title?.toLowerCase().includes('trả kho') ||
+        t.title?.toLowerCase().includes('hoàn trả') ||
+        t.description?.toLowerCase().includes('trả kho')
+
+      if (isReturn) {
+        const unitMatch = t.title?.match(/#([A-Z0-9-]+)/i) || t.description?.match(/#([A-Z0-9-]+)/i)
+        const unitCode = unitMatch ? unitMatch[1] : (t.unitCode || 'N/A')
+        const existing = list.find((item) => item.unitCode === unitCode)
+        if (!existing) {
+          list.push({
+            id: `TICKET-RET-${t.id}`,
+            bookingId: t.bookingId || t.id,
+            unitCode: unitCode,
+            customerName: t.customerName || 'Khách hàng',
+            customerPhone: t.customerPhone || 'Theo hồ sơ',
+            facilityName: t.facilityName || 'Cơ sở hiện tại',
+            requestDate: t.createdAt ? String(t.createdAt).split('T')[0] : new Date().toISOString().split('T')[0],
+            reason: t.description || t.title || 'Khách gửi yêu cầu trả kho qua ứng dụng',
+            status: t.status === 'RESOLVED' ? 'COMPLETED' : 'PENDING',
+          })
+        }
+      }
+    })
+
+    // 3. Các hợp đồng đang thuê sắp đến hạn trả kho
+    activeRentals.forEach((r, idx) => {
+      const existing = list.find((item) => item.bookingId === r.id || item.unitCode === r.unitCode)
+      if (!existing && idx < 3) {
+        list.push({
+          id: `ACT-RET-${r.id}`,
+          bookingId: r.id,
+          unitCode: r.unitCode || 'A-101',
+          customerName: r.customerName || 'Khách thuê',
+          customerPhone: r.customerPhone || 'N/A',
+          facilityName: r.facilityName || 'Cơ sở đã chọn',
+          requestDate: r.endDate || new Date().toISOString().split('T')[0],
+          reason: 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc',
+          status: 'PENDING',
+          contractCode: (r as any).contractCode,
+          depositPaid: r.depositPaid,
+          depositAmount: r.depositAmount,
+          endDate: r.endDate,
+        })
+      }
+    })
+
+    return list
+  }, [tickets, activeRentals])
+
+  const currentReturnBooking = activeRentals.find(r => r.id === selectedReturnBookingId) || (customerReturnRequests.find(r => r.bookingId === selectedReturnBookingId || r.id === selectedReturnBookingId) as any)
   const returnDepositAmt = currentReturnBooking ? (currentReturnBooking.depositPaid || currentReturnBooking.depositAmount || 0) : 0
   const facilityTotalUnits = facilities.find(facility => facility.id === selectedFacility)?.totalUnits
   const facilityOccupancy = occupancyData?.byFacility?.find(facility => facility.facilityId === selectedFacility)
@@ -1844,13 +1945,16 @@ export const StaffDashboard: React.FC = () => {
             </div>
 
 
-            {/* Radar Floor Units Indicator */}
-            <div className="mt-6 pt-4 border-t border-slate-100">
-              <div className="flex items-center justify-between mb-3">
+            {/* Yêu Cầu Hoàn Trả Kho Của Khách Hàng */}
+            <div className="mt-6 pt-4 border-t border-slate-100 space-y-3">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px] text-slate-700">map</span>
-                  <span className="font-headline text-xs font-bold text-slate-900">
-                    Sơ Đồ Lô Kho Bàn Giao Thực Tế {radarUnits.length > 0 ? `(${radarUnits.length} lô kho)` : ''}
+                  <span className="material-symbols-outlined text-[20px] text-amber-600">assignment_return</span>
+                  <span className="font-headline text-xs sm:text-sm font-bold text-slate-900">
+                    Yêu Cầu Hoàn Trả Kho Của Khách Hàng
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                    {customerReturnRequests.length} yêu cầu
                   </span>
                 </div>
                 <span className="font-mono text-[11px] text-slate-400">
@@ -1860,38 +1964,75 @@ export const StaffDashboard: React.FC = () => {
                 </span>
               </div>
 
-              {radarUnits.length === 0 ? (
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center text-slate-400 text-xs">
-                  Không có dữ liệu lô kho tại cơ sở này.
+              {customerReturnRequests.length === 0 ? (
+                <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl text-center space-y-1">
+                  <span className="material-symbols-outlined text-[28px] text-slate-400">check_circle</span>
+                  <p className="text-xs font-semibold text-slate-700">Chưa có yêu cầu trả kho nào đang chờ</p>
+                  <p className="text-[11px] text-slate-400">
+                    Khi khách hàng gửi yêu cầu trả kho qua Portal, danh sách sẽ hiển thị tại đây để nhân viên xử lý nghiệm thu.
+                  </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl font-unit-code text-center">
-                  {radarUnits.slice(0, 8).map((u) => {
-                    const isTargetHandover = arrivals.some(a => a.unitCode === u.unitCode)
-                    if (isTargetHandover) {
-                      return (
-                        <div key={u.id} className="p-2 rounded bg-blue-600 text-white font-bold text-xs shadow-xs">
-                          #{u.unitCode}<br/><span className="text-[10px] uppercase font-semibold">BÀN GIAO</span>
-                        </div>
-                      )
-                    }
-                    if (u.status === 'AVAILABLE') {
-                      return (
-                        <div key={u.id} className="p-2 rounded bg-white border border-slate-200 text-slate-800 text-xs">
-                          #{u.unitCode}<br/><span className="text-[10px] text-emerald-600 font-bold">TRỐNG</span>
-                        </div>
-                      )
-                    }
-                    if (u.status === 'MAINTENANCE' || u.status === 'UNDER_MAINTENANCE') {
-                      return (
-                        <div key={u.id} className="p-2 rounded bg-purple-50 border border-purple-200 text-purple-800 text-xs">
-                          #{u.unitCode}<br/><span className="text-[10px] text-purple-700 font-bold">BẢO TRÌ</span>
-                        </div>
-                      )
-                    }
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  {customerReturnRequests.map((req) => {
+                    const isSelected = selectedReturnBookingId === req.bookingId || selectedReturnBookingId === req.id
                     return (
-                      <div key={u.id} className="p-2 rounded bg-slate-200 text-slate-600 text-xs">
-                        #{u.unitCode}<br/><span className="text-[10px] text-slate-400 font-normal">Đang thuê</span>
+                      <div
+                        key={req.id}
+                        className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between gap-3 ${
+                          isSelected
+                            ? 'bg-amber-50/70 border-amber-300 shadow-xs ring-1 ring-amber-300'
+                            : 'bg-white border-slate-200 hover:border-amber-300 hover:shadow-xs'
+                        }`}
+                      >
+                        <div className="space-y-1.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-black px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                                #{req.unitCode}
+                              </span>
+                              <strong className="text-xs text-slate-900 truncate max-w-[140px]">
+                                {req.customerName}
+                              </strong>
+                            </div>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              req.status === 'COMPLETED'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-amber-100 text-amber-800 animate-pulse'
+                            }`}>
+                              {req.status === 'COMPLETED' ? 'Đã nghiệm thu' : 'Chờ nghiệm thu'}
+                            </span>
+                          </div>
+
+                          <p className="text-[11px] text-slate-600 line-clamp-2 leading-relaxed">
+                            {req.reason}
+                          </p>
+
+                          <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono pt-1 border-t border-slate-100">
+                            <span>SĐT: {req.customerPhone}</span>
+                            <span>Hạn/Ngày gửi: {req.requestDate}</span>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-100 flex items-center justify-end">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedReturnBookingId(req.bookingId)
+                              setReturnConfirmed(false)
+                              setSettlementSuccessMsg(null)
+                              document.getElementById('return-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                            }}
+                            className={`w-full py-1.5 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-amber-600 text-white shadow-xs'
+                                : 'bg-slate-100 hover:bg-amber-600 hover:text-white text-slate-700'
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-[15px]">fact_check</span>
+                            <span>{isSelected ? 'Đang chọn nghiệm thu' : 'Xử lý trả kho'}</span>
+                          </button>
+                        </div>
                       </div>
                     )
                   })}
@@ -1903,7 +2044,7 @@ export const StaffDashboard: React.FC = () => {
         </div>
 
         {/* Right Side: Return & Condition Inspection Flow (Col 4) */}
-        <div className="xl:col-span-4 flex flex-col gap-6">
+        <div id="return-workbench" className="xl:col-span-4 flex flex-col gap-6">
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col">
             <div>
               <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">

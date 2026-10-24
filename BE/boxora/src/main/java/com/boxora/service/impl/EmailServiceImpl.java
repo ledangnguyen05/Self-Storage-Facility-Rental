@@ -432,7 +432,7 @@ public class EmailServiceImpl implements EmailService {
                 + "</table>";
 
         String note = renderSecurityNote(
-                "Biên lai điện tử này được lưu trữ tự động trong tài khoản của quý khách trên hệ thống Boxora. Cảm ơn quý khách đã tin tưởng sử dụng dịch vụ."
+                "Đơn đặt giữ chỗ của quý khách đang được chuyển đến nhân viên tại cơ sở để xếp buồng kho thực tế. Ngay sau khi gán kho, hệ thống sẽ gửi email chứa Hợp đồng hoàn chỉnh đã có mã ô kho cụ thể và mã khóa thông minh IoT 24/7 cho quý khách."
         );
 
         String html = buildMasterTemplate(
@@ -982,6 +982,95 @@ public class EmailServiceImpl implements EmailService {
                 Trân trọng,
                 Đội ngũ Boxora Self-Storage
                 """, fullName, bookingCode, facilityName, unitCode, accessPin);
+
+        sendHtmlEmail(toEmail, subject, html, plainText);
+    }
+
+    @Override
+    @Async
+    public void sendHandoverWithContractEmail(String toEmail, String fullName, String unitCode, String bookingCode, String accessPin, String facilityName, String contractCode, String startDate, String endDate, String rentalFee, String contractUrl) {
+        String safeName = escape(fullName != null ? fullName : "Quý khách");
+        String safeUnit = escape(unitCode != null ? unitCode : "N/A");
+        String safeBooking = escape(bookingCode != null ? bookingCode : "N/A");
+        String safeFacility = escape(facilityName != null && !facilityName.isBlank() ? facilityName : "Boxora Facility");
+        String safePin = escape(accessPin != null ? accessPin : "");
+        String safeContract = escape(contractCode != null ? contractCode : "N/A");
+        String safeStart = escape(startDate != null ? startDate : "N/A");
+        String safeEnd = escape(endDate != null ? endDate : "N/A");
+        String safeFee = escape(rentalFee != null ? rentalFee : "0");
+        String resolvedUrl = resolveUrl(contractUrl != null && !contractUrl.isBlank() ? contractUrl : "/my-bookings");
+
+        String subject = String.format("[Boxora] Bàn giao ô kho #%s & Hợp đồng thuê hoàn chỉnh - Đơn %s", safeUnit, safeBooking);
+
+        String badge = renderBadge("BÀN GIAO THÀNH CÔNG • ĐÃ GÁN MÃ KHO", "#ecfdf5", "#047857");
+        String intro = String.format(
+                "Nhân viên Boxora tại cơ sở <strong>%s</strong> đã hoàn tất xếp buồng kho thực tế cho đơn đặt chỗ <strong>%s</strong> của quý khách. Dưới đây là mã định danh ô kho, mã khóa thông minh IoT 24/7 và văn bản Hợp đồng thuê hoàn chỉnh.",
+                safeFacility, safeBooking
+        );
+
+        String details = "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin: 16px 0; border: 1px solid #f1f5f9; border-radius: 8px; overflow: hidden;\">"
+                + renderDetailRow("Mã đơn đặt", "<strong>" + safeBooking + "</strong>")
+                + renderDetailRow("Cơ sở lưu trữ", safeFacility)
+                + renderDetailRow("Buồng kho vật lý chính thức", "<span style=\"font-size: 16px; font-weight: 800; color: #0284c7;\">#" + safeUnit + "</span>")
+                + renderDetailRow("Mã hợp đồng thuê", "<strong>" + safeContract + "</strong>")
+                + renderDetailRow("Thời hạn thuê", safeStart + " đến " + safeEnd)
+                + renderDetailRow("Trạng thái", "<span style=\"color: #047857; font-weight: 700;\">ĐÃ GÁN KHO & ĐÃ KÝ HỢP ĐỒNG ĐIỆN TỬ</span>")
+                + "</table>";
+
+        String highlightBox = "";
+        if (!safePin.isBlank()) {
+            highlightBox = renderHighlightBox(
+                "MÃ KHÓA THÔNG MINH IOT (MÃ PIN TRUY CẬP 24/7)",
+                    safePin,
+                    "#f0fdf4",
+                    "#15803d",
+                    "#86efac"
+            );
+        }
+
+        String contractSummary = "<div style=\"background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 16px 0;\">"
+                + "<h4 style=\"margin: 0 0 10px 0; color: #0f172a; font-size: 14px; font-weight: 700;\">Tóm Tắt Hợp Đồng Thuê Kho Tự Quản</h4>"
+                + "<p style=\"margin: 0 0 8px 0; color: #334155; font-size: 12px; line-height: 1.6;\">"
+                + "• <strong>Bên cho thuê:</strong> Hệ thống kho tự quản thông minh Boxora (" + safeFacility + ")<br/>"
+                + "• <strong>Bên thuê:</strong> " + safeName + " (" + escape(toEmail) + ")<br/>"
+                + "• <strong>Vị trí kho thuê:</strong> Buồng kho số <strong>#" + safeUnit + "</strong><br/>"
+                + "• <strong>Hiệu lực pháp lý:</strong> Đã ký kết trực tuyến qua hệ thống ký số điện tử DocuSeal, có giá trị pháp lý đầy đủ."
+                + "</p>"
+                + "</div>";
+
+        String button = renderButton("Xem & Tải Hợp Đồng Hoàn Chỉnh", resolvedUrl, "#0284c7");
+
+        String note = renderSecurityNote(
+                "Quý khách có thể sử dụng mã PIN trên hoặc mở khóa thông minh qua Portal khách hàng 24/7. Vui lòng bảo mật thông tin mã PIN để bảo vệ tài sản lưu trữ của quý khách."
+        );
+
+        String html = buildMasterTemplate(
+                "Bàn Giao Kho & Hợp Đồng Hoàn Chỉnh",
+                badge,
+                "Bàn Giao Buồng Kho & Hợp Đồng Hoàn Chỉnh",
+                "Kính gửi <strong>" + safeName + "</strong>,",
+                intro,
+                details,
+                highlightBox + contractSummary,
+                button,
+                note
+        );
+
+        String plainText = String.format("""
+                BOXORA - BÀN GIAO KHO & HỢP ĐỒNG HOÀN CHỈNH
+                ===========================================
+                Kính gửi %s,
+
+                Đơn đặt chỗ %s tại cơ sở %s đã được nhân viên hoàn tất xếp buồng kho thực tế.
+                - Mã buồng kho: #%s
+                - Mã hợp đồng: %s
+                - Mã khóa thông minh IoT: %s
+                - Thời hạn thuê: %s đến %s
+                - Xem hợp đồng hoàn chỉnh: %s
+
+                Trân trọng,
+                Đội ngũ Boxora Self-Storage
+                """, safeName, safeBooking, safeFacility, safeUnit, safeContract, safePin, safeStart, safeEnd, resolvedUrl);
 
         sendHtmlEmail(toEmail, subject, html, plainText);
     }
