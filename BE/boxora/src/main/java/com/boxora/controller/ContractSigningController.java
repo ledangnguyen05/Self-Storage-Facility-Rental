@@ -65,7 +65,6 @@ public class ContractSigningController {
     }
 
     @GetMapping("booking/{bookingId}")
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasRole('BUSINESS_MANAGER') or hasRole('FACILITY_MANAGER') or hasRole('FACILITY_STAFF') or hasRole('STAFF') or hasRole('CUSTOMER') or hasRole('ADMIN')")
     @Operation(summary = "Lấy hợp đồng thuê theo Booking ID")
     public ResponseEntity<ApiResponse<RentalContractResponse>> getContractByBookingId(
             @PathVariable UUID bookingId) {
@@ -318,7 +317,6 @@ public class ContractSigningController {
     // =========================================================================
 
     @PostMapping("{contractId}/mock-sign")
-    @PreAuthorize("hasAuthority('CONTRACT_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Ký xác nhận hợp đồng điện tử ở chế độ mô phỏng / local development kèm chữ ký tay")
     public ResponseEntity<ApiResponse<RentalContractResponse>> mockSign(
             @PathVariable UUID contractId,

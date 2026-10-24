@@ -145,7 +145,7 @@ export const HomePage: React.FC = () => {
                     {t('Đăng Nhập')}
                   </Link>
                   <Link
-                    to="/units"
+                    to="/booking"
                     className="inline-flex items-center gap-1.5 rounded-full bg-blue-700 hover:bg-blue-800 px-4 py-2.5 text-[13px] font-semibold text-white transition-colors shadow-xs"
                   >
                     <span>{t('Thuê Kho Ngay')}</span>
@@ -335,7 +335,7 @@ export const HomePage: React.FC = () => {
                 © 2026 Boxora Smart Storage. Tất cả các quyền được bảo lưu.
               </div>
               <div className="flex items-center gap-6">
-                <Link to="/units" className="hover:text-slate-900 text-blue-700 font-bold transition-colors">
+                <Link to="/booking" className="hover:text-slate-900 text-blue-700 font-bold transition-colors">
                   Dashboard Tìm Kho
                 </Link>
                 <Link to="/login" className="hover:text-slate-900 transition-colors">

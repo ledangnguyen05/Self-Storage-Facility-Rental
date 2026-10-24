@@ -103,7 +103,7 @@ export const LoginPage: React.FC = () => {
             return '/portal/staff'
           case 'CUSTOMER':
           default:
-            return customerPortalAccess ? '/portal/customer' : '/units'
+            return customerPortalAccess ? '/portal/customer' : '/my-bookings'
         }
       }
 
@@ -200,7 +200,7 @@ export const LoginPage: React.FC = () => {
             return '/portal/staff'
           case 'CUSTOMER':
           default:
-            return customerPortalAccess ? '/portal/customer' : '/units'
+            return customerPortalAccess ? '/portal/customer' : '/my-bookings'
         }
       }
 

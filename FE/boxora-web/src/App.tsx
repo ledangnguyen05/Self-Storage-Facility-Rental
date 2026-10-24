@@ -9,7 +9,6 @@ import { LoginPage } from './pages/public/LoginPage'
 import { RegisterPage } from './pages/public/RegisterPage'
 import { HomePage } from './pages/public/HomePage'
 import { BookingPage } from './pages/public/BookingPage'
-import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
 import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
 import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
 import { PaymentResultPage } from './pages/public/PaymentResultPage'
@@ -60,8 +59,10 @@ function RootRedirect() {
     case 'STAFF':
       return <Navigate to="/portal/staff" replace />
     case 'CUSTOMER':
-    default:
-      return <Navigate to="/portal/customer" replace />
+    default: {
+      const hasAccess = checkCustomerPortalAccess(user).hasAccess
+      return <Navigate to={hasAccess ? "/portal/customer" : "/my-bookings"} replace />
+    }
   }
 }
 
@@ -80,11 +81,11 @@ function MainContent() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           {/* Dedicated Storage Units Explorer & Booking Dashboard */}
-          <Route path="/units" element={<UnitsExplorerPage />} />
-          <Route path="/explore-units" element={<UnitsExplorerPage />} />
+          <Route path="/units" element={<Navigate to="/booking" replace />} />
+          <Route path="/explore-units" element={<Navigate to="/booking" replace />} />
           <Route path="/facilities" element={<FacilitiesPage />} />
           <Route path="/branches" element={<FacilitiesPage />} />
-          <Route path="/my-requests" element={<Navigate to="/portal/customer?tab=bookings" replace />} />
+          <Route path="/my-requests" element={<ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}><MyBookingsPage /></ProtectedRoute>} />
           <Route
             path="/reserve"
             element={
@@ -104,8 +105,8 @@ function MainContent() {
           />
 
           {/* My Bookings route keeps the customer in the Portal with the left sidebar */}
-          <Route path="/my-bookings" element={<Navigate to="/portal/customer?tab=bookings" replace />} />
-          <Route path="/customer/bookings" element={<Navigate to="/portal/customer?tab=bookings" replace />} />
+          <Route path="/my-bookings" element={<ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}><MyBookingsPage /></ProtectedRoute>} />
+          <Route path="/customer/bookings" element={<ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}><MyBookingsPage /></ProtectedRoute>} />
 
           <Route path="/terms" element={<TermsAndStandardsPage />} />
           <Route path="/standards" element={<TermsAndStandardsPage />} />

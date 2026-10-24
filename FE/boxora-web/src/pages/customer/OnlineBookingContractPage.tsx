@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { LayoutDashboard, CheckCircle2, CreditCard, FileText, Lock } from 'lucide-react'
 import axios from 'axios'
 import { useAuth } from '../../context/AuthContext'
-import { activateCustomerRental } from '../../utils/rentalAccess'
+import { activateCustomerRental, checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import { Booking, RentalContract, FacilityPolicy } from '../../types'
 import { bookingService } from '../../services/bookingService'
 import { contractService } from '../../services/contractService'
@@ -440,7 +440,9 @@ export const OnlineBookingContractPage = () => {
               <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/70 p-4 text-sm text-blue-950">
                 <p className="font-bold">Hiệu lực hợp đồng &amp; Bàn giao kho</p>
                 <p className="mt-1 text-xs leading-relaxed">
-                  Hợp đồng điện tử có giá trị pháp lý ngay sau khi quý khách ký xác nhận trực tuyến. Khi đến cơ sở theo lịch hẹn, nhân viên sẽ đối chiếu CCCD và kích hoạt bàn giao kho cùng mã PIN khóa thông minh.
+                  {signed
+                    ? `Hợp đồng điện tử đã ký kết thành công và có hiệu lực ngay lập tức! Hệ thống đã tự động gán ô kho ${booking.unitCode ? `số #${booking.unitCode}` : ''} và gửi email thông tin nhận kho cùng mã khóa thông minh IoT thẳng đến email của quý khách.`
+                    : 'Hợp đồng điện tử có giá trị pháp lý ngay sau khi quý khách ký xác nhận trực tuyến. Hệ thống sẽ tự động gán ô kho vật lý và gửi email mã khóa thông minh IoT ngay lập tức cho quý khách.'}
                 </p>
               </div>
 
@@ -470,7 +472,7 @@ export const OnlineBookingContractPage = () => {
                   <LayoutDashboard className="h-4 w-4" />
                   <span>Về đơn đặt chỗ của tôi</span>
                 </Link>
-                {signed && (
+                {signed && checkCustomerPortalAccess(user).hasAccess && (
                   <Link
                     to="/portal/customer"
                     className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700 transition"

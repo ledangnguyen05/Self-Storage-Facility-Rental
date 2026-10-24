@@ -124,7 +124,7 @@ export const BoxoraChatWidget: React.FC = () => {
             {
               role: 'assistant',
               content:
-                'Xin lỗi bạn, kết nối đến hệ thống hỗ trợ tạm thời gián đoạn. Bạn có thể kiểm tra trực tiếp tại [Khám phá kho](/units) hoặc thử lại sau giây lát.',
+                'Xin lỗi bạn, kết nối đến hệ thống hỗ trợ tạm thời gián đoạn. Bạn có thể kiểm tra trực tiếp tại [Đặt thuê kho](/booking) hoặc thử lại sau giây lát.',
               timestamp: Date.now()
             }
           ])

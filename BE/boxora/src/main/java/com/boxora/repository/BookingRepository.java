@@ -25,6 +25,16 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     @Query("SELECT b FROM Booking b WHERE b.id = :id")
     Optional<Booking> findByIdForUpdate(@Param("id") UUID id);
 
+    Optional<Booking> findByBookingCode(String bookingCode);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM Booking b WHERE b.bookingCode = :bookingCode")
+    Optional<Booking> findByBookingCodeForUpdate(@Param("bookingCode") String bookingCode);
+
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "storageUnit", "storageUnit.facility", "facility", "unitType"})
+    @Query("SELECT b FROM Booking b WHERE (b.storageUnit IS NOT NULL AND b.storageUnit.facility.id = :facilityId) OR (b.storageUnit IS NULL AND b.facility.id = :facilityId)")
+    List<Booking> findAllByFacilityIdIncludingNullUnit(@Param("facilityId") UUID facilityId);
+
     List<Booking> findByCustomer_Id(UUID customerId);
 
     @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "storageUnit", "storageUnit.facility"})

@@ -1,8 +1,8 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { LogOut, LayoutDashboard, ArrowRight, Menu, X, Pencil, Compass, Box, FileText, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
+import { checkCustomerPortalAccess, syncCustomerPortalAccess } from '../../utils/rentalAccess'
 import { Button } from '../ui/Button'
 import { BrandLogo } from '../common/BrandLogo'
 import { AccountProfileModal } from '../common/AccountProfileModal'
@@ -22,7 +22,25 @@ export const Navbar: React.FC = () => {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
 
   const isCustomer = role === 'CUSTOMER'
-  const canAccessPortal = role !== 'CUSTOMER' || checkCustomerPortalAccess(user).hasAccess
+  const [customerAccess, setCustomerAccess] = useState(() => checkCustomerPortalAccess(user))
+  const canAccessPortal = role !== 'CUSTOMER' || customerAccess.hasAccess
+
+  useEffect(() => {
+    const handleRentalChange = () => {
+      setCustomerAccess(checkCustomerPortalAccess(user))
+    }
+    window.addEventListener('boxora_rental_updated', handleRentalChange)
+    return () => window.removeEventListener('boxora_rental_updated', handleRentalChange)
+  }, [user])
+
+  useEffect(() => {
+    setCustomerAccess(checkCustomerPortalAccess(user))
+    if (user && role === 'CUSTOMER') {
+      void syncCustomerPortalAccess(user).then(() => {
+        setCustomerAccess(checkCustomerPortalAccess(user))
+      })
+    }
+  }, [user, role])
 
   const handleDashboardRedirect = () => {
     if (!role) return
@@ -56,8 +74,8 @@ export const Navbar: React.FC = () => {
 
           {/* Desktop Navigation Links */}
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
-            <Link to="/units" className="text-cyan-800 font-bold hover:text-cyan-900 transition-colors flex items-center gap-1">
-              <span>{t('Tìm & Thuê Kho', 'Find & Rent Units')}</span>
+            <Link to="/booking" className="text-cyan-800 font-bold hover:text-cyan-900 transition-colors flex items-center gap-1">
+              <span>{t('Đặt Thuê Kho', 'Rent Storage')}</span>
             </Link>
             <Link to="/facilities" className="hover:text-slate-900 transition-colors">
               {t('Hệ thống cơ sở')}
@@ -94,12 +112,12 @@ export const Navbar: React.FC = () => {
                 </button>
               ) : (
                 <Link
-                  to="/portal/customer?tab=bookings"
-                  title={t('Xem đơn đặt giữ chỗ của bạn')}
+                  to="/my-bookings"
+                  title={t('Xem các trạng thái đơn yêu cầu của bạn')}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100/80 border border-blue-200 text-blue-700 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-300 transition-all text-xs font-semibold cursor-pointer"
                 >
                   <FileText size={14} />
-                  <span>{t('Đơn giữ chỗ')}</span>
+                  <span>{t('Đơn yêu cầu của tôi')}</span>
                 </Link>
               )}
 
@@ -233,12 +251,12 @@ export const Navbar: React.FC = () => {
                   </button>
                 ) : (
                   <Link
-                    to="/portal/customer?tab=bookings"
+                    to="/my-bookings"
                     onClick={() => setIsMobileMenuOpen(false)}
                     className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-medium text-sm transition-colors border border-blue-200 dark:border-blue-800"
                   >
                     <FileText size={16} />
-                    <span>{t('Đơn đặt giữ chỗ của bạn')}</span>
+                    <span>{t('Đơn yêu cầu của tôi')}</span>
                   </Link>
                 )}
 

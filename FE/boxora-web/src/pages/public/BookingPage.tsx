@@ -38,11 +38,13 @@ import {
   Smartphone,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import { Facility, StorageUnit } from '../../types'
+import { Facility, StorageUnit, RentalContract } from '../../types'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { bookingService } from '../../services/bookingService'
 import { paymentService } from '../../services/paymentService'
+import { contractService } from '../../services/contractService'
+import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
 import { BrandLogo } from '../../components/common/BrandLogo'
 import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
 import { AccountProfileModal } from '../../components/common/AccountProfileModal'
@@ -443,7 +445,12 @@ export const BookingPage: React.FC = () => {
   const [bookingCode, setBookingCode] = useState<string>('')
   const [copiedCode, setCopiedCode] = useState<boolean>(false)
 
-  // Fetch real facilities and storage units on mount
+  // DocuSeal e-Signing state (Bước 2: Ký hợp đồng trực tuyến trước khi thanh toán)
+  const [showDocuSealModal, setShowDocuSealModal] = useState<boolean>(false)
+  const [contractForSigning, setContractForSigning] = useState<RentalContract | null>(null)
+  const [createdBookingForSigning, setCreatedBookingForSigning] = useState<any>(null)
+
+  // Load backend data
   useEffect(() => {
     let isMounted = true
     setLoadingData(true)
@@ -834,7 +841,201 @@ export const BookingPage: React.FC = () => {
     return Object.keys(errors).length === 0
   }
 
-  // Handle Next Step
+    if (!customerName.trim() || !customerPhone.trim() || !customerIdCard.trim()) {
+      setSubmitError('Vui lòng kiểm tra và điền đầy đủ Họ tên, Số điện thoại và Số CCCD.')
+      setCurrentStep(3)
+      return
+    }
+
+    // Lưu lại số CCCD để tiện tái sử dụng
+    if (customerIdCard.trim()) {
+      if (user?.email) localStorage.setItem('boxora_user_cccd_' + user.email, customerIdCard.trim())
+      localStorage.setItem('boxora_user_cccd', customerIdCard.trim())
+    }
+
+    // Nếu chọn Thanh toán online nhưng chưa đăng nhập tài khoản
+    if (selectedMethod === 'ONLINE' && !isAuthenticated) {
+      setShowAuthModal(true)
+      return
+    }
+
+    setIsSubmitting(true)
+    setSubmitError(null)
+
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000)
+    const nowStr = new Date().toISOString().slice(2, 10).replace(/-/g, '')
+    const generatedCode = `BX-${nowStr}-${randomSuffix}`
+
+    try {
+      // Tìm buồng kho phù hợp tại cơ sở theo kích thước người dùng đã chọn
+      let allUnits = storageUnits
+      const availableInCurrent = allUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
+      if (availableInCurrent.length === 0) {
+        try {
+          const freshRes = await storageUnitService.getUnits({ status: 'AVAILABLE' })
+          const freshList = Array.isArray(freshRes) ? freshRes : ((freshRes as any)?.content || [])
+          if (freshList.length > 0) allUnits = freshList
+        } catch (uErr) {
+          console.warn('Refresh available units warning:', uErr)
+        }
+      }
+      const facUnits = allUnits.filter((u) => u.facilityId === selectedFacility?.id)
+      const availableAll = allUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
+      const available = facUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
+
+      let matchedUnit = available.find((u) => Math.abs((u.areaSqMeters || 0) - currentSelectedSize.areaM2) < 0.8)
+      if (!matchedUnit) {
+        matchedUnit = available.find((u) => (u.unitTypeName || '').toLowerCase().includes(currentSelectedSize.id))
+      }
+      if (!matchedUnit) {
+        matchedUnit = available[0] || availableAll[0] || facUnits[0] || allUnits[0]
+      }
+
+      let effectiveBookingCode = generatedCode
+      let backendBookingId = ''
+      let createdBooking: any = null
+
+      if (isAuthenticated) {
+        try {
+          const cleanTime = selectedPeriod.id === 'morning' ? '09:00' : (selectedPeriod.hours[0]?.value || '09:00')
+          let expectedCheckInStr = `${checkInDate}T${cleanTime}:00`
+          const parsedCheckIn = new Date(expectedCheckInStr)
+          const minAllowedMs = Date.now() + 5.25 * 3600 * 1000
+          if (!Number.isNaN(parsedCheckIn.getTime()) && parsedCheckIn.getTime() < minAllowedMs) {
+            const safeDate = new Date(minAllowedMs)
+            const pad = (n: number) => String(n).padStart(2, '0')
+            expectedCheckInStr = `${safeDate.getFullYear()}-${pad(safeDate.getMonth() + 1)}-${pad(safeDate.getDate())}T${pad(safeDate.getHours())}:${pad(safeDate.getMinutes())}:00`
+          }
+
+          // Quy tắc quan trọng: KHÔNG gửi storageUnitId khi đặt kho trực tuyến!
+          // Chỉ gửi loại kho (unitTypeId) và cơ sở (facilityId). Ô kho vật lý cụ thể (A-105) sẽ do Nhân viên quầy gán sau.
+          const resolvedUnitTypeId = matchedUnit?.unitTypeId || '10000000-0000-0000-0000-000000000001'
+
+          const res = await bookingService.createBooking({
+            facilityId: selectedFacility?.id || matchedUnit?.facilityId,
+            unitTypeId: resolvedUnitTypeId,
+            customerName: customerName.trim(),
+            customerPhone: customerPhone.trim(),
+            customerEmail: customerEmail.trim(),
+            startDate: startDate,
+            rentalMonths: isCustomDuration ? Math.max(1, Math.round(customDays / 30)) : rentalMonths,
+            totalRentalFee: quoteCalculation.totalRent,
+            depositPaid: 0,
+            depositAmount: quoteCalculation.depositAmount,
+            signingMethod: selectedMethod === 'ONLINE' ? 'ONLINE' : 'IN_PERSON',
+            initialStatus: selectedMethod === 'ONLINE' ? 'PENDING_SIGNATURE' : 'PENDING_CONTACT',
+            expectedCheckInAt: expectedCheckInStr,
+            checkInTime: cleanTime,
+            identityCardNumber: customerIdCard.trim(),
+            identityCardType: 'CCCD',
+          })
+
+          if (res?.bookingCode || res?.id) {
+            effectiveBookingCode = res.bookingCode || `BX-${res.id.slice(0, 8).toUpperCase()}`
+            backendBookingId = res.id
+            createdBooking = res
+          }
+        } catch (apiErr: any) {
+          console.warn('Backend booking API error:', apiErr)
+          const msg = apiErr?.response?.data?.message || apiErr?.message
+          if (selectedMethod === 'ONLINE') {
+            throw new Error(msg || 'Không thể tạo phiên giữ chỗ trên hệ thống để kết nối cổng thanh toán. Quý khách vui lòng thử lại hoặc chọn Thanh toán sau khi nhận kho.')
+          }
+        }
+      }
+
+      setBookingCode(effectiveBookingCode)
+
+      // Xử lý theo phương thức thanh toán đã chọn
+      if (selectedMethod === 'ONLINE') {
+        if (!backendBookingId) {
+          throw new Error('Chưa thể khởi tạo thông tin giao dịch trực tuyến. Quý khách vui lòng thử lại hoặc chọn hình thức Thanh toán sau khi nhận kho.')
+        }
+
+        // Bước 1 & 2: Lấy hợp đồng điện tử DocuSeal (ghi theo Size_ID) và mở modal cho khách ký trước khi thanh toán
+        setCreatedBookingForSigning(createdBooking)
+        let contract = null
+        try {
+          contract = await contractService.getContractByBookingId(backendBookingId)
+        } catch (cErr) {
+          console.warn('Error fetching contract for signing:', cErr)
+        }
+
+        if (!contract) {
+          throw new Error('Không thể khởi tạo tài liệu hợp đồng điện tử DocuSeal. Vui lòng thử lại.')
+        }
+
+        setContractForSigning(contract)
+        setShowDocuSealModal(true)
+        setIsSubmitting(false)
+        return
+      } else {
+        // Thanh toán sau khi nhận kho: Lưu đơn PENDING_CONTACT, chưa khóa ô kho nào
+        setIsOnlinePaid(false)
+        sendReservationToStaff(effectiveBookingCode, 'PAY_LATER', false, backendBookingId)
+        setCurrentStep(6)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      }
+    } catch (err: any) {
+      console.error('Reservation error:', err)
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'Có lỗi xảy ra khi xác nhận đặt chỗ. Vui lòng thử lại hoặc liên hệ Hotline 1900-BOXORA.'
+      setSubmitError(errorMsg)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+
+  // Bước 3: Sau khi khách ký hợp đồng trực tuyến DocuSeal thành công -> Tạo VNPay và chuyển hướng sang Sandbox
+  const handleDocuSealSignedSuccess = async (_signedContract: RentalContract) => {
+    setShowDocuSealModal(false)
+    setIsSubmitting(true)
+    setSubmitError(null)
+
+    try {
+      if (!createdBookingForSigning) {
+        throw new Error('Không tìm thấy thông tin đơn đặt chỗ đã ký.')
+      }
+
+      const paymentAmount = (createdBookingForSigning?.totalRentalFee != null && createdBookingForSigning?.depositAmount != null)
+        ? Math.round(Number(createdBookingForSigning.totalRentalFee) + Number(createdBookingForSigning.depositAmount))
+        : (createdBookingForSigning?.initialPaymentAmount != null
+            ? Math.round(Number(createdBookingForSigning.initialPaymentAmount))
+            : quoteCalculation.totalEstimate)
+
+      const payRes = await paymentService.createVNPayPayment({
+        bookingId: createdBookingForSigning.id,
+        paymentType: 'BOOKING_PAYMENT',
+        amount: paymentAmount,
+        orderInfo: `Thanh toan giu cho ${createdBookingForSigning.bookingCode}`,
+        returnUrl: `${window.location.origin}/payment-result`,
+      })
+
+      if (payRes?.paymentUrl) {
+        sendReservationToStaff(createdBookingForSigning.bookingCode, 'ONLINE', false, createdBookingForSigning.id)
+        window.location.assign(payRes.paymentUrl)
+      } else {
+        throw new Error('Cổng thanh toán không phản hồi đường dẫn giao dịch. Vui lòng thử lại trong giây lát.')
+      }
+    } catch (err: any) {
+      console.error('VNPay redirect after sign error:', err)
+      setSubmitError(err?.message || 'Hợp đồng đã ký thành công, nhưng không thể kết nối tới cổng thanh toán VNPay Sandbox. Vui lòng thử lại.')
+      setIsSubmitting(false)
+    }
+  }
+
+  const isStep3Valid = Boolean(
+    isDurationValid &&
+    customerName.trim().length > 0 &&
+    customerPhone.trim().length > 0 &&
+    customerIdCard.trim().length > 0
+  )
+
+
   const handleNextStep = () => {
     if (currentStep === 1) {
       if (!selectedFacility && sortedFacilities.length > 0) {
@@ -1155,7 +1356,7 @@ export const BookingPage: React.FC = () => {
                   {t('Đăng Nhập')}
                 </Link>
                 <Link
-                  to="/units"
+                  to="/booking"
                   className="inline-flex items-center gap-1.5 rounded-full bg-blue-700 hover:bg-blue-800 px-4 py-2.5 text-[13px] font-semibold text-white transition-colors shadow-xs"
                 >
                   <span>{t('Thuê Kho Ngay')}</span>
@@ -2806,7 +3007,179 @@ export const BookingPage: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL NHẮC ĐĂNG NHẬP (Guest Flow Persistence) */}
+      {/* ================================================================ */}
+      {/* MODAL ZOOM INSPECTING STORAGE UNIT DETAIL                          */}
+      {/* ================================================================ */}
+      {inspectingSizeUnit && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200"
+          onClick={() => setInspectingSizeUnit(null)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 max-w-lg w-full p-6 space-y-5 shadow-2xl relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setInspectingSizeUnit(null)}
+              className="absolute right-4 top-4 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center cursor-pointer"
+            >
+              <X size={16} />
+            </button>
+
+            <div className="flex items-center gap-3">
+              <span className="w-10 h-10 rounded-2xl bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 flex items-center justify-center font-bold text-base font-mono">
+                {inspectingSizeUnit.volumeText}
+              </span>
+              <div>
+                <h3 className="font-bold text-lg text-slate-900 dark:text-white">
+                  Chi tiết quy cách kho {inspectingSizeUnit.volumeText}
+                </h3>
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  Sức chứa tương đương {inspectingSizeUnit.capacityText}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  Minh họa không gian &amp; sức chứa:
+                </span>
+                <div className="inline-flex p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setInspectVisualTab('3D')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                      inspectVisualTab === '3D'
+                        ? 'bg-white dark:bg-slate-900 text-blue-600 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Mô hình 3D
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInspectVisualTab('PHOTO')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                      inspectVisualTab === 'PHOTO'
+                        ? 'bg-white dark:bg-slate-900 text-blue-600 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Ảnh kho thực tế
+                  </button>
+                </div>
+              </div>
+
+              <div className="h-56 bg-gradient-to-b from-slate-50 to-blue-50/40 dark:from-slate-800/60 dark:to-slate-800/30 rounded-2xl overflow-hidden flex items-center justify-center border border-slate-200/80 dark:border-slate-800 relative">
+                {inspectVisualTab === '3D' ? (
+                  <div className="w-full h-full p-3 flex items-center justify-center">
+                    <StorageSizeIsometric3D
+                      sizeId={inspectingSizeUnit.id}
+                      volumeM3={inspectingSizeUnit.volumeNumber}
+                      dimensions={inspectingSizeUnit.dimensions}
+                      isAc={(acSelectionMap[inspectingSizeUnit.id] || 'NON_AC') === 'AC'}
+                      showDimensions={true}
+                    />
+                  </div>
+                ) : (
+                  <div className="w-full h-full relative">
+                    <img
+                      src={getRealPhotoForSize(
+                        inspectingSizeUnit.volumeNumber,
+                        (acSelectionMap[inspectingSizeUnit.id] || 'NON_AC') === 'AC'
+                      ).photoUrl}
+                      alt={`Ảnh thực tế kho ${inspectingSizeUnit.volumeText}`}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/80 via-slate-950/40 to-transparent px-4 py-2.5 text-[11px] text-white">
+                      {
+                        getRealPhotoForSize(
+                          inspectingSizeUnit.volumeNumber,
+                          (acSelectionMap[inspectingSizeUnit.id] || 'NON_AC') === 'AC'
+                        ).caption
+                      }
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
+                <span className="text-slate-400 block text-[10px]">KÍCH THƯỚC:</span>
+                <strong className="text-slate-900 dark:text-white">{inspectingSizeUnit.dimensions}</strong>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
+                <span className="text-slate-400 block text-[10px]">DIỆN TÍCH MẶT SÀN:</span>
+                <strong className="text-slate-900 dark:text-white">{inspectingSizeUnit.areaM2} m²</strong>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
+                Tài sản phù hợp lưu trữ:
+              </span>
+              <ul className="grid grid-cols-1 gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+                {inspectingSizeUnit.fitsDetailed.map((item, idx) => (
+                  <li key={idx} className="flex items-center gap-2">
+                    <span className="text-blue-600 text-sm">✓</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedSizeId(inspectingSizeUnit.id)
+                  setInspectingSizeUnit(null)
+                }}
+                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-600/25 cursor-pointer"
+              >
+                Chọn kích thước này
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Account / Settings / Logout Modals */}
+      <AccountProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+      />
+      <WebSettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+      />
+      <LogoutConfirmModal
+        isOpen={isLogoutConfirmOpen}
+        onClose={() => setIsLogoutConfirmOpen(false)}
+        onConfirm={async () => {
+          await logout()
+          navigate('/login')
+        }}
+        userName={user?.fullName || user?.username}
+        userEmail={user?.email}
+        userRole={user?.role?.name || 'CUSTOMER'}
+      />
+
+      {/* Modal Ký Hợp Đồng Điện Tử DocuSeal (Theo kích thước Size_ID) */}
+      {showDocuSealModal && contractForSigning && (
+        <DocuSealSimulationModal
+          contract={contractForSigning}
+          booking={createdBookingForSigning}
+          onClose={() => setShowDocuSealModal(false)}
+          onSignedSuccess={handleDocuSealSignedSuccess}
+        />
+      )}
+
+      {/* Modal nhắc đăng nhập khi chọn Thanh toán Online */}
+
       {showAuthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-w-md rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-7 shadow-2xl text-left animate-in zoom-in-95 duration-200 space-y-5">

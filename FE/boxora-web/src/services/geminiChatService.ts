@@ -23,7 +23,7 @@ export const QUICK_SUGGESTIONS = [
 export async function sendChatMessage(
   messages: ChatMessage[],
   signal?: AbortSignal,
-  unavailableMessage = 'Boxora AI is temporarily unavailable. Please try again later or browse storage options at /units.'
+  unavailableMessage = 'Boxora AI is temporarily unavailable. Please try again later or browse storage options at /booking.'
 ): Promise<string> {
   const lastMessage = messages[messages.length - 1]?.content || ''
   const history = messages.slice(0, messages.length - 1).map(msg => ({

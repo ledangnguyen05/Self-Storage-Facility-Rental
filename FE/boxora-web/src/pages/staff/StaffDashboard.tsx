@@ -19,6 +19,7 @@ import { HandoverCheckInWorkbench } from './components/HandoverCheckInWorkbench'
 import { QrCameraCheckInModal } from './components/QrCameraCheckInModal'
 import { StaffPolicyGuideModal } from './components/StaffPolicyGuideModal'
 import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
+import { AssignPhysicalUnitModal } from '../../components/modals/AssignPhysicalUnitModal'
 import { staffAssignmentService, StaffAssignmentResponse, isShiftAbsent } from '../../services/staffAssignmentService'
 import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
 import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
@@ -102,6 +103,26 @@ export const StaffDashboard: React.FC = () => {
   const [pendingSearchTerm, setPendingSearchTerm] = useState('')
   const [pendingFilterStatus, setPendingFilterStatus] = useState<'PENDING_CONFIRMATION' | 'CONFIRMED' | 'CANCELLED' | 'ALL'>('ALL')
   const [highlightedBookingCode, setHighlightedBookingCode] = useState<string | null>(null)
+  const [assignModalBooking, setAssignModalBooking] = useState<Booking | null>(null)
+
+  const handleCreatePaymentLinkForCustomer = async (b: Booking) => {
+    try {
+      const payableTotal = (b.totalRentalFee || 0) + (b.depositAmount || 0) || 1000000
+      const res = await paymentService.createVNPayPayment({
+        bookingId: b.id,
+        amount: payableTotal,
+        paymentType: 'BOOKING_PAYMENT',
+        orderInfo: `Thanh toan giu cho ${b.bookingCode}`,
+      })
+      if (res?.paymentUrl) {
+        await navigator.clipboard.writeText(res.paymentUrl)
+        alert(`Đã tạo link thanh toán VNPay và sao chép vào bộ nhớ tạm:\n\n${res.paymentUrl}\n\nSau khi khách hàng thanh toán xong, đơn sẽ tự động chuyển sang trạng thái "ĐÃ THANH TOÁN - CHỜ GÁN KHO".`)
+      }
+    } catch (err: any) {
+      console.error('Create payment link error:', err)
+      alert(err?.response?.data?.message || 'Không thể tạo link thanh toán VNPay cho đơn này.')
+    }
+  }
   const [viewingContract, setViewingContract] = useState<RentalContract | null>(null)
   const [viewingContractBooking, setViewingContractBooking] = useState<Booking | null>(null)
   const [loadingContractBookingId, setLoadingContractBookingId] = useState<string | null>(null)
@@ -542,7 +563,8 @@ export const StaffDashboard: React.FC = () => {
   const filteredPendingOrders = useMemo(() => {
     return arrivals.filter((b) => {
       const s = (b.status as string) || ''
-      const isPending = s === 'PENDING_CONTACT' || s === 'PENDING_CONFIRMATION' || s === 'PENDING_APPROVAL' || s === 'PENDING_PAYMENT'
+      const isPaidPending = s === 'PAID_PENDING_ASSIGNMENT' || s === 'PAID_AND_SIGNED' || (s === 'CONFIRMED' && !b.storageUnitId)
+      const isPending = s === 'PENDING_CONTACT' || s === 'PENDING_CONFIRMATION' || s === 'PENDING_APPROVAL' || s === 'PENDING_PAYMENT' || isPaidPending
       const isConfirmed = s === 'CONFIRMED' || s === 'AWAITING_CHECKIN'
       const isCancelled = s === 'CANCELLED'
 
@@ -574,6 +596,7 @@ export const StaffDashboard: React.FC = () => {
       }
       const getPriority = (item: Booking) => {
         const st = String(item.status || '')
+        if (st === 'PAID_PENDING_ASSIGNMENT' || st === 'PAID_AND_SIGNED' || (st === 'CONFIRMED' && !item.storageUnitId)) return 10
         if (st === 'CONFIRMED' && item.contractSigned) return 4
         if (st === 'PENDING_CONTACT' || st === 'PENDING_CONFIRMATION' || st === 'PENDING_APPROVAL' || st === 'PENDING_PAYMENT') return 3
         if (st === 'CONFIRMED' || st === 'AWAITING_CHECKIN') return 2
@@ -1248,8 +1271,9 @@ export const StaffDashboard: React.FC = () => {
                   ) : (
                     filteredPendingOrders.map((b) => {
                       const s = String(b.status || '')
-                      const isPending = s === 'PENDING_CONTACT' || s === 'PENDING_CONFIRMATION' || s === 'PENDING_APPROVAL' || s === 'PENDING_PAYMENT'
-                      const isConfirmed = s === 'CONFIRMED' || s === 'AWAITING_CHECKIN'
+                      const isPaidPending = s === 'PAID_PENDING_ASSIGNMENT' || s === 'PAID_AND_SIGNED' || (s === 'CONFIRMED' && !b.storageUnitId)
+                      const isPending = s === 'PENDING_CONTACT' || s === 'PENDING_CONFIRMATION' || s === 'PENDING_APPROVAL' || s === 'PENDING_PAYMENT' || isPaidPending
+                      const isConfirmed = (s === 'CONFIRMED' && Boolean(b.storageUnitId)) || s === 'AWAITING_CHECKIN'
                       const isActiveOrCompleted = s === 'ACTIVE' || s === 'COMPLETED'
                       const isCancelled = s === 'CANCELLED'
                       const isHighlighted = highlightedBookingCode === b.bookingCode
@@ -1306,9 +1330,20 @@ export const StaffDashboard: React.FC = () => {
 
                           <td className="py-3.5 px-4">
                             <span className="text-slate-800 font-semibold block text-xs">{b.facilityName}</span>
-                            <span className="text-[11px] text-slate-500 font-mono block">
-                              Kho #{b.unitCode} · {b.rentalMonths} tháng
-                            </span>
+                            {isPaidPending || !b.unitCode ? (
+                              <div className="mt-0.5 space-y-0.5">
+                                <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                  Chưa gán ô kho vật lý
+                                </span>
+                                <span className="text-[11px] text-slate-500 font-mono block">
+                                  Cỡ: {b.unitTypeName || 'Tiêu chuẩn'} · {b.rentalMonths} tháng
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-slate-500 font-mono block">
+                                Kho #{b.unitCode} · {b.rentalMonths} tháng
+                              </span>
+                            )}
                           </td>
 
                           <td className="py-3.5 px-4">
@@ -1329,12 +1364,22 @@ export const StaffDashboard: React.FC = () => {
 
                           <td className="py-3.5 px-4">
                             <div className="flex flex-col items-start gap-1">
-                              {isPending && (
+                              {isPaidPending ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs">
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                                  <span>ĐÃ THANH TOÁN - CHỜ GÁN KHO</span>
+                                </span>
+                              ) : s === 'PENDING_CONTACT' ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                  <span>CHỜ LIÊN HỆ TƯ VẤN</span>
+                                </span>
+                              ) : isPending ? (
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
                                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
                                   <span>Chờ xác nhận</span>
                                 </span>
-                              )}
+                              ) : null}
                               {isConfirmed && (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-300">
                                   <span className="material-symbols-outlined text-[13px]">check</span>
@@ -1403,7 +1448,50 @@ export const StaffDashboard: React.FC = () => {
                                 <span>Xem chi tiết</span>
                               </button>
 
-                              {isPending && (
+                              {isPaidPending ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setAssignModalBooking(b)}
+                                  className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm ring-2 ring-emerald-400/40"
+                                  title="Chọn ô kho vật lý đang trống để gán vào đơn và kích hoạt gửi mã PIN IoT qua email"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">key</span>
+                                  <span>Gán kho &amp; Bàn giao</span>
+                                </button>
+                              ) : s === 'PENDING_CONTACT' ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCreatePaymentLinkForCustomer(b)}
+                                    className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                                    title="Tạo link thanh toán VNPay gửi cho khách hàng"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">link</span>
+                                    <span>Gửi link TT</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStaffConfirmBooking(b)}
+                                    className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                    title="Xác nhận đơn"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                                    <span>Xác nhận</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setRejectingBooking(b)
+                                      setRejectionReasonText('')
+                                    }}
+                                    className="px-2 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                                    title="Từ chối đơn và điền lý do"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">cancel</span>
+                                    <span>Từ chối</span>
+                                  </button>
+                                </>
+                              ) : isPending ? (
                                 <>
                                   <button
                                     type="button"
@@ -1428,7 +1516,7 @@ export const StaffDashboard: React.FC = () => {
                                     <span>Từ chối</span>
                                   </button>
                                 </>
-                              )}
+                              ) : null}
 
                               {(isConfirmed || isActiveOrCompleted) && (
                                 <button
@@ -3059,6 +3147,18 @@ export const StaffDashboard: React.FC = () => {
         onClose={() => {
           setViewingContract(null)
           setViewingContractBooking(null)
+        }}
+      />
+
+      <AssignPhysicalUnitModal
+        isOpen={Boolean(assignModalBooking)}
+        booking={assignModalBooking}
+        facilityId={selectedFacility || assignModalBooking?.facilityId}
+        onClose={() => setAssignModalBooking(null)}
+        onSuccess={(_updated) => {
+          setAssignModalBooking(null)
+          fetchArrivals()
+          window.dispatchEvent(new Event('boxora:notifications-refresh'))
         }}
       />
 

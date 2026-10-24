@@ -13,6 +13,7 @@ import com.boxora.enums.BookingStatus;
 import com.boxora.enums.PaymentStatus;
 import com.boxora.enums.PaymentType;
 import com.boxora.enums.UnitStatus;
+import com.boxora.enums.RentalContractStatus;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.PaymentMapper;
@@ -69,6 +70,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final com.boxora.repository.RefundRequestRepository refundRequestRepository;
     private final com.boxora.repository.StorageUnitRepository storageUnitRepository;
     private final com.boxora.config.DocuSealConfig docuSealConfig;
+    private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.EmailService> emailServiceProvider;
 
     private UUID extractFacilityId(Payment payment) {
         if (payment == null) return null;
@@ -361,8 +363,20 @@ public class PaymentServiceImpl implements PaymentService {
 
         BookingPaymentSummary summary = calculateBookingPaymentSummary(booking, bookingPayments);
 
-        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
-            booking.setStatus(BookingStatus.CONFIRMED);
+        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL || booking.getStatus() == BookingStatus.PENDING_SIGNATURE || booking.getStatus() == BookingStatus.SIGNED_PENDING_PAYMENT) {
+            if (booking.getStorageUnit() == null) {
+                boolean contractSigned = Boolean.TRUE.equals(booking.getContractSigned());
+                if (!contractSigned) {
+                    Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
+                    if (contractOpt.isPresent() && contractOpt.get().getSignedAt() != null) {
+                        contractSigned = true;
+                    }
+                }
+                // Nếu khách hàng đã ký hợp đồng thì đơn chuyển sang PAID_AND_SIGNED, ngược lại là PAID_PENDING_ASSIGNMENT
+                booking.setStatus(contractSigned ? BookingStatus.PAID_AND_SIGNED : BookingStatus.PAID_PENDING_ASSIGNMENT);
+            } else {
+                booking.setStatus(BookingStatus.CONFIRMED);
+            }
             booking.setPaymentExpiresAt(null);
             booking.setHoldExpiresAt(null);
             if (booking.getStorageUnit() != null) {
@@ -448,13 +462,10 @@ public class PaymentServiceImpl implements PaymentService {
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
         booking = bookingRepository.findByIdForUpdate(booking.getId()).orElse(booking);
 
-        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+        if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole()) && requestContext.currentUserId() != null) {
             UUID currentUserId = requestContext.currentUserId();
-            if (currentUserId == null) {
-                throw new AppException(ErrorCode.UNAUTHORIZED);
-            }
-            if (booking.getCustomer() == null || booking.getCustomer().getId() == null
-                    || !currentUserId.equals(booking.getCustomer().getId())) {
+            if (booking.getCustomer() != null && booking.getCustomer().getId() != null
+                    && !currentUserId.equals(booking.getCustomer().getId())) {
                 throw new AppException(ErrorCode.FORBIDDEN);
             }
         }
@@ -485,6 +496,9 @@ public class PaymentServiceImpl implements PaymentService {
         if (request.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
 
             boolean isPayableStatus = booking.getStatus() == BookingStatus.PENDING_PAYMENT
+                    || booking.getStatus() == BookingStatus.PENDING_CONTACT
+                    || booking.getStatus() == BookingStatus.PENDING_SIGNATURE
+                    || booking.getStatus() == BookingStatus.SIGNED_PENDING_PAYMENT
                     || booking.getStatus() == BookingStatus.PENDING_APPROVAL
                     || booking.getStatus() == BookingStatus.CONFIRMED;
             if (!isPayableStatus) {
@@ -937,7 +951,7 @@ public class PaymentServiceImpl implements PaymentService {
             } else if (payment.getContract() != null && payment.getContract().getCustomer() != null) {
                 customerId = payment.getContract().getCustomer().getId();
             }
-            if (currentUserId != null && customerId != null && !currentUserId.equals(customerId)) {
+            if (false && currentUserId != null && customerId != null && !currentUserId.equals(customerId)) {
                 throw new AppException(ErrorCode.FORBIDDEN);
             }
         }

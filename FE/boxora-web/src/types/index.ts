@@ -149,7 +149,19 @@ export interface StorageUnit {
   primaryImageUrl?: string
 }
 
-export type BookingStatusType = 'PENDING_APPROVAL' | 'PENDING_CONTACT' | 'PENDING_PAYMENT' | 'CONFIRMED' | 'PENDING_SIGNATURE' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
+export type BookingStatusType =
+  | 'PENDING_APPROVAL'
+  | 'PENDING_CONTACT'
+  | 'PENDING_PAYMENT'
+  | 'PAID_PENDING_ASSIGNMENT'
+  | 'PAID_AND_SIGNED'
+  | 'CONFIRMED'
+  | 'PENDING_SIGNATURE'
+  | 'ACTIVE'
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'OVERDUE'
+  | string
 
 export interface Booking {
   id: string
@@ -158,8 +170,9 @@ export interface Booking {
   customerName: string
   customerEmail: string
   customerPhone: string
-  storageUnitId: string
-  unitCode: string
+  storageUnitId?: string | null
+  unitCode?: string | null
+  unitTypeId?: string | null
   unitTypeName?: string
   facilityId?: string
   facilityName: string
@@ -195,6 +208,8 @@ export interface Booking {
   contractCode?: string | null
   contractStatus?: string | null
   contractSigned?: boolean | null
+  createdAt?: string
+  updatedAt?: string
 }
 
 export interface BookingCancellationPreview {

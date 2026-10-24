@@ -31,6 +31,9 @@ import {
   Layers
 } from 'lucide-react'
 import { BoxoraKineticVault3D } from './BoxoraKineticVault3D'
+import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
+import { useAuth } from '../../context/AuthContext'
+import { FileText } from 'lucide-react'
 
 export interface BoxoraHeroProps {
   onStartForFree?: () => void
@@ -52,6 +55,22 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
   hideHeader = false
 }) => {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const isCustomer = (userRole || user?.role?.name) === 'CUSTOMER'
+  const [customerAccess, setCustomerAccess] = useState(() => checkCustomerPortalAccess(user))
+  const canAccessPortal = !isCustomer || customerAccess.hasAccess
+
+  useEffect(() => {
+    const handleRentalChange = () => {
+      setCustomerAccess(checkCustomerPortalAccess(user))
+    }
+    window.addEventListener('boxora_rental_updated', handleRentalChange)
+    return () => window.removeEventListener('boxora_rental_updated', handleRentalChange)
+  }, [user])
+
+  useEffect(() => {
+    setCustomerAccess(checkCustomerPortalAccess(user))
+  }, [user])
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [heroMode, setHeroMode] = useState<'smartlock' | 'kinetic3d'>('smartlock')
   
@@ -82,7 +101,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
 
   // Boxora Navigation Links (used when standalone header is rendered)
   const navLinks = [
-    { name: 'Phòng Kho & Bảng Giá', href: '/units', isRoute: true },
+    { name: 'Đặt Thuê Kho', href: '/booking', isRoute: true },
     { name: 'Quy Trình 3 Bước', href: '#process', isRoute: false },
     { name: 'Khóa IoT 24/7', href: '#iot-access', isRoute: false },
     { name: 'Dịch Vụ & Tiện Ích', href: '#services', isRoute: false },
@@ -93,7 +112,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
     if (onStartForFree) {
       onStartForFree()
     } else {
-      navigate('/units')
+      navigate('/booking')
     }
   }
 
@@ -101,7 +120,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
     if (onSignIn) {
       onSignIn()
     } else {
-      navigate(isAuthenticated ? '/portal' : '/login')
+      navigate(isAuthenticated ? (canAccessPortal ? '/portal' : '/my-bookings') : '/login')
     }
   }
 
@@ -109,7 +128,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
     if (onGetItFree) {
       onGetItFree()
     } else {
-      navigate('/units')
+      navigate('/booking')
     }
   }
 
@@ -708,7 +727,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
 
               {/* Action Link to Units */}
               <Link
-                to="/units"
+                to="/booking"
                 className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md"
               >
                 <span>Xem Bản Đồ &amp; Đặt Thuê Buồng Này</span>
@@ -859,7 +878,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
                     className="w-full py-3 px-5 rounded-full text-sm font-semibold transition-all hover:bg-slate-200/80 active:scale-95 cursor-pointer border border-slate-200 text-slate-800"
                     style={{ backgroundColor: 'var(--color-login-bg, #f1f5f9)' }}
                   >
-                    {isAuthenticated ? 'Vào Portal' : 'Đăng Nhập'}
+                    {isAuthenticated ? (canAccessPortal ? 'Vào Portal' : 'Đơn Yêu Cầu Của Tôi') : 'Đăng Nhập'}
                   </button>
                 </div>
               </motion.div>

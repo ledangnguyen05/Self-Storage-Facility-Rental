@@ -34,6 +34,10 @@ import { CHECK_IN_PERIOD_GROUPS, CHECK_IN_HOURS_24, getPeriodForHour } from '../
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { bookingService } from '../../services/bookingService'
+import { contractService } from '../../services/contractService'
+import { paymentService } from '../../services/paymentService'
+import { DocuSealSimulationModal } from '../modals/DocuSealSimulationModal'
+import { RentalContract, Booking as BookingType } from '../../types'
 import { geocodeAddressWithNominatim } from '../../services/nominatimGeocodingService'
 import { calculateDistanceKm } from '../../data/storageUnitsData'
 import { useNavigate } from 'react-router-dom'
@@ -59,6 +63,13 @@ interface SizeTierOption {
   badge: string
   door: string
   category: 'mini' | 'personal' | 'business' | 'special'
+}
+
+const FALLBACK_UNIT_TYPE_IDS: Record<SizeTierKey, string> = {
+  LOCKER: '10000000-0000-0000-0000-000000000001',
+  STANDARD: '10000000-0000-0000-0000-000000000003',
+  LARGE: '10000000-0000-0000-0000-000000000004',
+  ENTERPRISE: '10000000-0000-0000-0000-000000000004',
 }
 
 const SIZE_TIERS: Record<SizeTierKey, SizeTierOption> = {
@@ -182,6 +193,13 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   const [sentToStaffTime, setSentToStaffTime] = useState<string>('')
   const [isResendingToStaff, setIsResendingToStaff] = useState<boolean>(false)
   const [sendSuccessToast, setSendSuccessToast] = useState<string | null>(null)
+  const [isPayNowProcessing, setIsPayNowProcessing] = useState<boolean>(false)
+  const [isPayLaterProcessing, setIsPayLaterProcessing] = useState<boolean>(false)
+  const [createdBookingForSigning, setCreatedBookingForSigning] = useState<BookingType | null>(null)
+  const [contractForSigning, setContractForSigning] = useState<RentalContract | null>(null)
+  const [showDocuSealModal, setShowDocuSealModal] = useState<boolean>(false)
+  const [paymentRedirectUrl, setPaymentRedirectUrl] = useState<string | null>(null)
+  const [payLaterConfirmed, setPayLaterConfirmed] = useState<boolean>(false)
 
   // Load facilities and storage units
   useEffect(() => {
@@ -475,63 +493,133 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     }
   }
 
-  // Confirm Reservation (Step 4 -> Step 5)
-  const handleConfirmReservation = async () => {
-    setIsSubmitting(true)
+  // Luồng 1: Thanh toán ngay (DocuSeal E-signing -> VNPay Sandbox)
+  const handlePayNow = async () => {
+    setIsPayNowProcessing(true)
     setSubmitError(null)
 
-    // Generate readable booking code fallback
-    const randomSuffix = Math.floor(1000 + Math.random() * 9000)
-    const nowStr = new Date().toISOString().slice(2, 10).replace(/-/g, '')
-    const generatedCode = `BX-${nowStr}-${randomSuffix}`
+    try {
+      const unitTypeId = tierAvailability.matchedUnit?.unitTypeId || FALLBACK_UNIT_TYPE_IDS[selectedTierKey]
+      const newBooking = await bookingService.createBooking({
+        facilityId: selectedFacility?.id,
+        unitTypeId: unitTypeId,
+        customerName: fullName.trim(),
+        customerPhone: phone.trim(),
+        customerEmail: email.trim(),
+        identityCardNumber: idCard.trim(),
+        identityCardType: idCardType,
+        startDate: startDate,
+        rentalMonths: rentalMonths,
+        totalRentalFee: quoteCalculation.totalRent,
+        depositAmount: quoteCalculation.depositAmount,
+        depositPaid: 0,
+        signingMethod: 'ONLINE',
+        initialStatus: 'PENDING_SIGNATURE',
+        expectedArrivalAt: `${checkInDate}T${selectedPeriod.hours[0]?.value || '09:00'}:00`,
+        expectedCheckInAt: `${checkInDate}T${selectedPeriod.hours[0]?.value || '09:00'}:00`,
+        checkInTime: checkInTime,
+      })
+
+      setCreatedBookingForSigning(newBooking)
+      setBookingCode(newBooking.bookingCode)
+
+      // Gọi API DocuSeal tạo hợp đồng số (mẫu theo kích thước Size_ID)
+      const contract = await contractService.getContractByBookingId(newBooking.id)
+      if (!contract) {
+        throw new Error('Không thể khởi tạo hợp đồng điện tử DocuSeal.')
+      }
+
+      setContractForSigning(contract)
+      setShowDocuSealModal(true)
+    } catch (err: any) {
+      console.error('Pay now initiation error:', err)
+      setSubmitError(err?.response?.data?.message || err?.message || 'Có lỗi xảy ra khi tạo hợp đồng điện tử.')
+    } finally {
+      setIsPayNowProcessing(false)
+    }
+  }
+
+  // Callback sau khi ký DocuSeal thành công -> Chuyển hướng sang VNPay Sandbox
+  const handleDocuSealSignedSuccess = async (_signedContract: RentalContract) => {
+    setShowDocuSealModal(false)
+    setIsPayNowProcessing(true)
 
     try {
-      // If user is authenticated and we have a backend storage unit ID, submit real booking
-      if (isAuthenticated && tierAvailability.matchedUnit?.id) {
-        try {
-          const res = await bookingService.createBooking({
-            storageUnitId: tierAvailability.matchedUnit.id,
-            startDate: startDate,
-            rentalMonths: rentalMonths,
-            totalRentalFee: quoteCalculation.totalRent,
-            depositPaid: 0,
-            signingMethod: 'IN_PERSON',
-            expectedCheckInAt: `${checkInDate}T${selectedPeriod.hours[0]?.value || '09:00'}:00`,
-            checkInTime: checkInTime,
-            identityCardNumber: idCard.trim(),
-            identityCardType: idCardType,
-          })
+      if (!createdBookingForSigning) return
+      const payableTotal = (createdBookingForSigning.totalRentalFee || quoteCalculation.totalRent) +
+        (createdBookingForSigning.depositAmount || quoteCalculation.depositAmount)
 
-          if (res?.bookingCode || res?.id) {
-            setBookingCode(res.bookingCode || `BX-${res.id.slice(0, 8).toUpperCase()}`)
-          } else {
-            setBookingCode(generatedCode)
-          }
-        } catch (apiErr: any) {
-          console.warn('Backend booking API error, using safe reservation log:', apiErr)
-          // Even if backend fails (e.g., token expired or permission constraint), we don't block the user's booking request!
-          setBookingCode(generatedCode)
-        }
+      const vnpayRes = await paymentService.createVNPayPayment({
+        bookingId: createdBookingForSigning.id,
+        amount: payableTotal,
+        paymentType: 'BOOKING_PAYMENT',
+        orderInfo: `Thanh toan don dat cho ${createdBookingForSigning.bookingCode}`,
+      })
+
+      if (vnpayRes?.paymentUrl) {
+        setPaymentRedirectUrl(vnpayRes.paymentUrl)
+        window.location.href = vnpayRes.paymentUrl
       } else {
-        setBookingCode(generatedCode)
+        throw new Error('Cổng thanh toán không trả về đường dẫn thanh toán hợp lệ.')
       }
+    } catch (paymentErr: any) {
+      console.error('VNPay create error:', paymentErr)
+      setSubmitError(paymentErr?.response?.data?.message || 'Hợp đồng đã ký thành công, nhưng không thể kết nối tới cổng thanh toán VNPay Sandbox. Vui lòng thử lại.')
+    } finally {
+      setIsPayNowProcessing(false)
+    }
+  }
+
+  // Luồng 2: Thanh toán sau (Tư vấn hotline, lưu PENDING_CONTACT, unit_id = null)
+  const handlePayLater = async () => {
+    setIsPayLaterProcessing(true)
+    setSubmitError(null)
+
+    try {
+      const unitTypeId = tierAvailability.matchedUnit?.unitTypeId || FALLBACK_UNIT_TYPE_IDS[selectedTierKey]
+      let resBooking: BookingType | null = null
+
+      try {
+        resBooking = await bookingService.createBooking({
+          facilityId: selectedFacility?.id,
+          unitTypeId: unitTypeId,
+          customerName: fullName.trim(),
+          customerPhone: phone.trim(),
+          customerEmail: email.trim(),
+          identityCardNumber: idCard.trim(),
+          identityCardType: idCardType,
+          startDate: startDate,
+          rentalMonths: rentalMonths,
+          totalRentalFee: quoteCalculation.totalRent,
+          depositAmount: quoteCalculation.depositAmount,
+          depositPaid: 0,
+          signingMethod: 'IN_PERSON',
+          initialStatus: 'PENDING_CONTACT',
+          expectedArrivalAt: `${checkInDate}T${selectedPeriod.hours[0]?.value || '09:00'}:00`,
+          expectedCheckInAt: `${checkInDate}T${selectedPeriod.hours[0]?.value || '09:00'}:00`,
+          checkInTime: checkInTime,
+        })
+      } catch (beErr) {
+        console.warn('Backend booking fallback for pay later:', beErr)
+      }
+
+      const generatedCode = resBooking?.bookingCode || `BX-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`
+      setBookingCode(generatedCode)
 
       const nowIso = new Date().toISOString()
       const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ngày ' + new Date().toLocaleDateString('vi-VN')
       setSentToStaffTime(timeStr)
 
-      // Save reservation to local storage for Staff and Customer
+      // Lưu log cho Staff
       const savedReservations = JSON.parse(localStorage.getItem('boxora_guest_reservations') || '[]')
       const reservationRecord = {
-        id: `LOCAL-RES-${generatedCode}`,
+        id: resBooking?.id || `LOCAL-RES-${generatedCode}`,
         bookingCode: generatedCode,
         createdAt: nowIso,
-        customer: { fullName, phone, idCard, email, notes: specialNotes },
         customerName: fullName,
         customerPhone: phone,
-        identityCardNumber: idCard,
         customerEmail: email,
-        facility: { id: selectedFacility?.id, name: selectedFacility?.name, address: selectedFacility?.address, contactPhone: selectedFacility?.contactPhone },
+        identityCardNumber: idCard,
         facilityId: selectedFacility?.id,
         facilityName: selectedFacility?.name,
         unitCode: SIZE_TIERS[selectedTierKey].name,
@@ -549,39 +637,21 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
       }
       savedReservations.unshift(reservationRecord)
       localStorage.setItem('boxora_guest_reservations', JSON.stringify(savedReservations))
+      window.dispatchEvent(new CustomEvent('boxora_staff_reservation_created', { detail: reservationRecord }))
 
-      // Push in-app notification to Staff
-      try {
-        const staffNotification = {
-          id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          facilityId: selectedFacility?.id,
-          facilityName: selectedFacility?.name,
-          channel: 'STAFF_PORTAL',
-          notificationType: 'NEW_BOOKING_RESERVATION',
-          referenceType: 'BOOKING',
-          referenceId: generatedCode,
-          title: `Đơn giữ chỗ mới: ${generatedCode}`,
-          content: `Khách hàng ${fullName} (${phone}) đã gửi đơn đặt giữ chỗ ${SIZE_TIERS[selectedTierKey].name} tại ${selectedFacility?.name}. Lịch hẹn: ${checkInDate} (${checkInTime}).`,
-          status: 'UNREAD',
-          createdAt: nowIso,
-        }
-        const existingNotifs = JSON.parse(localStorage.getItem('boxora_in_app_notifications') || '[]')
-        existingNotifs.unshift(staffNotification)
-        localStorage.setItem('boxora_in_app_notifications', JSON.stringify(existingNotifs))
-        window.dispatchEvent(new CustomEvent('boxora_notification_pushed', { detail: staffNotification }))
-        window.dispatchEvent(new CustomEvent('boxora_staff_reservation_created', { detail: reservationRecord }))
-      } catch (e) {
-        console.warn('Modal staff notification error:', e)
-      }
-
-      // Move to step 5!
+      setPayLaterConfirmed(true)
       setCurrentStep(5)
     } catch (err: any) {
-      console.error('Reservation submission error:', err)
-      setSubmitError('Có lỗi xảy ra khi xử lý yêu cầu đặt kho. Vui lòng thử lại hoặc gọi hotline 1900-BOXORA.')
+      console.error('Pay later error:', err)
+      setSubmitError('Có lỗi xảy ra khi xử lý yêu cầu đặt kho. Vui lòng thử lại.')
     } finally {
-      setIsSubmitting(false)
+      setIsPayLaterProcessing(false)
     }
+  }
+
+  // Confirm Reservation (Step 4 -> Step 5)
+  const handleConfirmReservation = async () => {
+    setCurrentStep(5)
   }
 
   // Copy booking code to clipboard
@@ -1462,24 +1532,208 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
           {/* ============================================================== */}
           {/* BƯỚC 5: HIỂN THỊ THÔNG BÁO ĐẶT GIỮ CHỖ THÀNH CÔNG              */}
           {/* ============================================================== */}
-          {currentStep === 5 && (
+          {/* ============================================================== */}
+          {/* BƯỚC 5: CHỌN PHƯƠNG THỨC THANH TOÁN & HOÀN TẤT                   */}
+          {/* ============================================================== */}
+          {currentStep === 5 && !payLaterConfirmed && (
+            <div className="space-y-6 py-2">
+              <div className="text-center space-y-1">
+                <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-cyan-700 bg-cyan-50 px-3 py-1 rounded-full border border-cyan-200">
+                  Bước 5: Lựa chọn phương thức xác nhận &amp; hoàn tất
+                </span>
+                <h4 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+                  Chọn hình thức thanh toán cho đơn đặt kho
+                </h4>
+                <p className="text-xs sm:text-sm text-slate-600 max-w-lg mx-auto">
+                  Quý khách vui lòng chọn 1 trong 2 phương thức thanh toán bên dưới:
+                </p>
+              </div>
+
+              {submitError && (
+                <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 max-w-2xl mx-auto flex items-center gap-2">
+                  <span className="material-symbols-outlined text-base">error</span>
+                  <span>{submitError}</span>
+                </div>
+              )}
+
+              {paymentRedirectUrl && (
+                <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 max-w-xl mx-auto text-center space-y-2">
+                  <div className="font-bold flex items-center justify-center gap-2">
+                    <span className="animate-spin text-sm">⟳</span>
+                    <span>Đang chuyển hướng sang cổng thanh toán VNPay Sandbox...</span>
+                  </div>
+                  <p className="text-[11px] text-blue-700">
+                    Nếu trang không tự chuyển hướng trong vài giây:
+                  </p>
+                  <a
+                    href={paymentRedirectUrl}
+                    className="inline-block px-4 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700"
+                  >
+                    Mở cổng thanh toán VNPay Sandbox ngay
+                  </a>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl mx-auto pt-2">
+                
+                {/* PHƯƠNG THỨC 1: THANH TOÁN NGAY & KÝ HỢP ĐỒNG ĐIỆN TỬ */}
+                <div className="rounded-2xl border-2 border-emerald-500 bg-gradient-to-b from-emerald-50/40 via-white to-white p-5 flex flex-col justify-between shadow-md relative overflow-hidden">
+                  <div className="absolute top-0 right-0 bg-emerald-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl uppercase tracking-wider">
+                    Khuyên Dùng
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shadow-xs">
+                      <CreditCard size={24} />
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-slate-900 text-base">
+                        1. Thanh Toán Ngay (Pay Now)
+                      </h5>
+                      <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                        Ký hợp đồng thuê tự quản trực tuyến qua <strong>DocuSeal</strong>, sau đó thanh toán an toàn qua cổng <strong>VNPay Sandbox</strong>.
+                      </p>
+                    </div>
+
+                    <ul className="text-xs space-y-1.5 text-slate-700 pt-2 border-t border-emerald-100">
+                      <li className="flex items-center gap-2">
+                        <Check size={14} className="text-emerald-600 shrink-0" />
+                        <span>Ký hợp đồng online bảo mật qua DocuSeal</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check size={14} className="text-emerald-600 shrink-0" />
+                        <span>Thanh toán VNPay Sandbox đối soát tức thì</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check size={14} className="text-emerald-600 shrink-0" />
+                        <span>Được ưu tiên gán kho và nhận mã khóa IoT qua email</span>
+                      </li>
+                    </ul>
+
+                    <div className="p-2.5 rounded-xl bg-emerald-100/60 font-mono text-xs text-emerald-950 flex justify-between items-center">
+                      <span>Tổng thanh toán:</span>
+                      <strong className="text-sm text-emerald-800 font-bold">
+                        {(quoteCalculation.totalRent + quoteCalculation.depositAmount).toLocaleString('vi-VN')} ₫
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 mt-2">
+                    <button
+                      type="button"
+                      disabled={isPayNowProcessing}
+                      onClick={handlePayNow}
+                      className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold text-xs shadow-md shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {isPayNowProcessing ? (
+                        <>
+                          <span className="animate-spin text-sm">⟳</span>
+                          <span>Đang chuẩn bị HĐ DocuSeal...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Ký hợp đồng &amp; Thanh toán ngay</span>
+                          <ArrowRight size={16} />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* PHƯƠNG THỨC 2: THANH TOÁN SAU (TƯ VẤN HOTLINE) */}
+                <div className="rounded-2xl border border-slate-300 bg-white p-5 flex flex-col justify-between shadow-sm hover:border-slate-400 transition-all">
+                  <div className="space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center shadow-xs">
+                      <PhoneCall size={24} />
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-slate-900 text-base">
+                        2. Thanh Toán Sau (Pay Later)
+                      </h5>
+                      <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                        Chuyên viên Boxora sẽ gọi điện qua số điện thoại để hỗ trợ tư vấn kích thước, chốt ngày giờ nhận kho và gửi link thanh toán sau.
+                      </p>
+                    </div>
+
+                    <ul className="text-xs space-y-1.5 text-slate-600 pt-2 border-t border-slate-100">
+                      <li className="flex items-center gap-2">
+                        <Check size={14} className="text-blue-600 shrink-0" />
+                        <span>Chưa cần thanh toán tại bước này</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check size={14} className="text-blue-600 shrink-0" />
+                        <span>Hệ thống chưa khóa bất kỳ ô kho vật lý nào</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check size={14} className="text-blue-600 shrink-0" />
+                        <span>Nhận link thanh toán chuyển sang luồng gán kho</span>
+                      </li>
+                    </ul>
+
+                    <div className="p-2.5 rounded-xl bg-slate-50 font-mono text-xs text-slate-700 flex justify-between items-center">
+                      <span>Phí thanh toán hiện tại:</span>
+                      <strong className="text-sm text-slate-900 font-bold">
+                        0 ₫
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 mt-2">
+                    <button
+                      type="button"
+                      disabled={isPayLaterProcessing}
+                      onClick={handlePayLater}
+                      className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-900 active:scale-98 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {isPayLaterProcessing ? (
+                        <>
+                          <span className="animate-spin text-sm">⟳</span>
+                          <span>Đang gửi yêu cầu...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Xác nhận đặt giữ chỗ (Trả sau)</span>
+                          <CheckCircle2 size={16} />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Back to Step 4 button */}
+              <div className="text-center pt-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(4)}
+                  className="text-xs text-slate-500 hover:text-slate-800 underline cursor-pointer"
+                >
+                  ← Quay lại kiểm tra thông tin đơn đặt hàng (Bước 4)
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* HIỂN THỊ KẾT QUẢ KHI CHỌN THANH TOÁN SAU (PENDING_CONTACT) */}
+          {currentStep === 5 && payLaterConfirmed && (
             <div className="space-y-6 text-center py-4">
               
               {/* Success Badge Animation */}
-              <div className="mx-auto w-20 h-20 rounded-full bg-emerald-100 border-4 border-emerald-300 text-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <div className="mx-auto w-20 h-20 rounded-full bg-amber-100 border-4 border-amber-300 text-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
                 <CheckCircle2 size={44} className="stroke-[2.5]" />
               </div>
 
               <div className="space-y-2 max-w-lg mx-auto">
-                <span className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
-                  Bước 5: Đơn Đặt Giữ Chỗ - Chờ Xác Nhận
+                <span className="text-xs font-mono font-bold uppercase tracking-wider text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                  ĐÃ TIẾP NHẬN ĐƠN — CHỜ LIÊN HỆ (PENDING_CONTACT)
                 </span>
                 <h4 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                  Đơn Giữ Chỗ Đang Ở Trạng Thái Chờ Xác Nhận
+                  Đơn Đặt Giữ Chỗ Đã Được Ghi Nhận
                 </h4>
                 <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                  Đơn giữ chỗ của bạn đang ở trạng thái <strong className="text-amber-700 font-bold">Chờ xác nhận</strong>. Chuyên viên Boxora sẽ gọi điện qua số điện thoại{' '}
-                  <strong className="text-blue-700 font-mono">{phone}</strong> trong vòng <strong>15–30 phút</strong> để đối soát thông tin. Sau khi nhân viên xác nhận, đơn sẽ tự động chuyển sang trạng thái <strong className="text-emerald-700 font-bold">Chờ check in</strong>.
+                  Đơn của bạn đang ở trạng thái <strong className="text-amber-700 font-bold">Chờ liên hệ (PENDING_CONTACT)</strong>. Hệ thống chưa khóa bất kỳ ô kho vật lý nào. Chuyên viên Boxora sẽ gọi điện qua số{' '}
+                  <strong className="text-blue-700 font-mono">{phone}</strong> trong vòng <strong>15–30 phút</strong> để tư vấn, chốt lịch và gửi link thanh toán trực tuyến.
                 </p>
               </div>
 
@@ -1506,26 +1760,6 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                     Đã sao chép mã đơn vào bộ nhớ tạm!
                   </span>
                 )}
-              </div>
-
-              {/* THẺ XÁC NHẬN ĐÃ GỬI ĐƠN CHO STAFF TIẾP ĐÓN */}
-              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-left max-w-xl mx-auto shadow-xs space-y-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping" />
-                    <strong className="text-emerald-950 font-bold">Đã gửi đơn giữ chỗ cho nhân viên (Staff)</strong>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono text-[10px] font-bold">
-                    ĐÃ GỬI TỚI STAFF TRỰC CA
-                  </span>
-                </div>
-                <p className="text-[11px] text-emerald-800 leading-relaxed">
-                  Đơn giữ chỗ <strong>{bookingCode}</strong> đã được chuyển trực tiếp vào ca trực của Staff cơ sở <strong>{selectedFacility?.name}</strong>. Nhân viên sẽ gọi điện cho quý khách trong 15-30 phút.
-                </p>
-                <div className="flex items-center justify-between pt-1 border-t border-emerald-200/80 text-[10px] text-emerald-700 font-mono">
-                  <span>Gửi lúc: {sentToStaffTime || 'Vừa xong'}</span>
-                  <span>Hotline: {selectedFacility?.contactPhone || '1900-BOXORA'}</span>
-                </div>
               </div>
 
               {/* Quick Summary Box */}
@@ -1555,11 +1789,11 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                 </div>
 
                 <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 leading-relaxed">
-                  💡 <strong>Bước tiếp theo:</strong> Khi đến cơ sở nhận kho, vui lòng mang theo CCCD/Hộ chiếu bản gốc để đối chiếu và nhận mã PIN truy cập kho độc quyền trên ứng dụng Boxora.
+                  💡 <strong>Bước tiếp theo:</strong> Sau khi hoàn tất thanh toán qua link do nhân viên gửi, hệ thống sẽ tự động gán mã kho vật lý và gửi mã PIN truy cập IoT tới email của quý khách.
                 </div>
               </div>
 
-              {/* Action Buttons for Step 5 */}
+              {/* Action Buttons */}
               <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
                 <button
                   type="button"
@@ -1569,19 +1803,6 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                   <span>Hoàn tất &amp; Về trang chủ</span>
                   <Check size={16} />
                 </button>
-
-                {isAuthenticated && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose()
-                      navigate('/portal/customer')
-                    }}
-                    className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs shadow-xs transition-colors cursor-pointer"
-                  >
-                    Vào trang quản lý của tôi
-                  </button>
-                )}
               </div>
 
             </div>
@@ -1628,21 +1849,11 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
               ) : (
                 <button
                   type="button"
-                  onClick={handleConfirmReservation}
-                  disabled={isSubmitting}
-                  className="px-7 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-bold shadow-md shadow-emerald-600/30 flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                  onClick={() => setCurrentStep(5)}
+                  className="px-7 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white text-xs font-bold shadow-md shadow-blue-600/30 flex items-center gap-2 transition-all cursor-pointer"
                 >
-                  {isSubmitting ? (
-                    <>
-                      <span className="animate-spin text-sm">⟳</span>
-                      <span>Đang xác nhận đặt chỗ...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Xác nhận đặt giữ chỗ kho</span>
-                      <CheckCircle2 size={16} />
-                    </>
-                  )}
+                  <span>Tiếp tục sang Bước 5: Chọn thanh toán &amp; Ký HĐ</span>
+                  <ArrowRight size={16} />
                 </button>
               )}
             </div>
@@ -1650,6 +1861,15 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
         )}
 
       </div>
+
+      {showDocuSealModal && contractForSigning && (
+        <DocuSealSimulationModal
+          contract={contractForSigning}
+          booking={createdBookingForSigning}
+          onClose={() => setShowDocuSealModal(false)}
+          onSignedSuccess={handleDocuSealSignedSuccess}
+        />
+      )}
     </div>
   )
 }

@@ -88,7 +88,7 @@ export const RegisterPage: React.FC = () => {
       if (userRole === 'ADMIN') {
         navigate('/portal/admin')
       } else {
-        navigate('/units', {
+        navigate('/booking', {
           state: { welcomeMessage: 'Tài khoản đã tạo thành công! Hãy chọn kho lưu trữ gần bạn nhất.' }
         })
       }
@@ -214,7 +214,7 @@ export const RegisterPage: React.FC = () => {
       }
 
       setSuccess(true)
-      navigate('/units', {
+      navigate('/booking', {
         state: { welcomeMessage: 'Tài khoản đã tạo thành công! Hãy chọn kho lưu trữ gần bạn nhất.' }
       })
     } catch (err: any) {

@@ -837,14 +837,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     if (!bookingOnly) return
     if (selectedBookingUnit) return
     if (!bookingUnitParam) {
-      navigate('/units', { replace: true })
+      navigate('/booking', { replace: true })
       return
     }
     if (loadingUnits) return
 
     const unit = availableUnits.find(candidate => candidate.id === bookingUnitParam)
     if (!unit) {
-      navigate('/units', { replace: true })
+      navigate('/booking', { replace: true })
       return
     }
 
@@ -1318,7 +1318,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
   const closeBookingModal = () => {
     if (bookingOnly) {
-      navigate('/units')
+      navigate('/booking')
       return
     }
     setSelectedBookingUnit(null)
@@ -2262,6 +2262,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
                 {[
                   { key: 'ALL', label: 'Tất cả', count: customerBookings.length },
+                  { key: 'PAID_PENDING_ASSIGNMENT', label: 'Chờ xếp kho', count: customerBookings.filter(b => b.status === 'PAID_AND_SIGNED' || b.status === 'PAID_PENDING_ASSIGNMENT').length },
                   { key: 'PENDING_CONTACT', label: 'Chờ xác nhận', count: customerBookings.filter(b => (b.status as string) === 'PENDING_CONTACT' || (b.status as string) === 'PENDING_CONFIRMATION' || b.id?.startsWith('LOCAL-RES-')).length },
                   { key: 'CONFIRMED', label: 'Chờ check in', count: customerBookings.filter(b => b.status === 'CONFIRMED').length },
                   { key: 'ACTIVE', label: 'Đang dùng', count: customerBookings.filter(b => b.status === 'ACTIVE').length },
@@ -2298,7 +2299,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           ) : (() => {
             const filteredBookings = customerBookings.filter((b) => {
               if (bookingStatusFilter !== 'ALL') {
-                if (bookingStatusFilter === 'CANCELLED') {
+                if (bookingStatusFilter === 'PAID_PENDING_ASSIGNMENT') {
+                  if (b.status !== 'PAID_AND_SIGNED' && b.status !== 'PAID_PENDING_ASSIGNMENT') return false
+                } else if (bookingStatusFilter === 'CANCELLED') {
                   if (b.status !== 'CANCELLED' && b.status !== 'OVERDUE') return false
                 } else if (b.status !== bookingStatusFilter) {
                   return false
@@ -2374,6 +2377,19 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                           <div className="text-right flex flex-col items-end gap-1">
                             {(() => {
                               const info = getBookingNoticeInfo(b)
+                              if (b.status === 'PAID_AND_SIGNED' || b.status === 'PAID_PENDING_ASSIGNMENT') {
+                                return (
+                                  <>
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse"></span>
+                                      Chờ xếp kho
+                                    </span>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                      ⚡ Đã ký HĐ & cọc
+                                    </span>
+                                  </>
+                                )
+                              }
                               if (b.status === 'CANCELLED' || b.status === 'OVERDUE') {
                                 return (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">

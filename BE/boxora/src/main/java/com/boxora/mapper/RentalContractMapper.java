@@ -29,11 +29,6 @@ public interface RentalContractMapper {
         if (contract == null || contract.getUnit() == null) {
             return null;
         }
-        if (contract.getBooking() != null
-                && "ONLINE".equalsIgnoreCase(contract.getBooking().getSigningMethod())
-                && contract.getBooking().getStatus() != BookingStatus.ACTIVE) {
-            return null;
-        }
         return contract.getUnit().getUnitCode();
     }
 }

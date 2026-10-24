@@ -16,12 +16,20 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class BookingCreateRequest {
-    @NotNull(message = "Storage unit ID is required")
     private UUID storageUnitId;
 
     /** ID cơ sở lưu trữ được khách chọn ở Bước 1 */
     private UUID facilityId;
 
+    private UUID unitTypeId;
+
+    private String customerName;
+
+    private String customerPhone;
+
+    private String customerEmail;
+
+    private String initialStatus;
     private UUID customerId;
 
     /** Họ và tên người đặt */

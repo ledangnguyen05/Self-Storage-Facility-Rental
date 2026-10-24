@@ -259,7 +259,7 @@ export function DocuSealSimulationModal({
                 </div>
                 <div className="space-y-1">
                   <span className="text-[11px] text-slate-500">Ngăn kho & Cơ sở:</span>
-                  <p className="font-bold text-slate-800">{signedResult.unitCode || contract.unitCode} · {signedResult.facilityName || contract.facilityName || 'Boxora Storage'}</p>
+                  <p className="font-bold text-slate-800">{signedResult.unitCode || contract.unitCode || (booking?.unitTypeName ? `Kích thước: ${booking.unitTypeName} (Mã định danh ô kho chi tiết sẽ được xác nhận qua email bàn giao)` : 'Theo kích thước tiêu chuẩn')} · {signedResult.facilityName || contract.facilityName || 'Boxora Storage'}</p>
                 </div>
                 <div className="space-y-1">
                   <span className="text-[11px] text-slate-500">Kỳ hạn thuê dự kiến:</span>
@@ -414,7 +414,7 @@ export function DocuSealSimulationModal({
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1 text-[11px]">
                 <div className="bg-slate-50 p-2 rounded border border-slate-100">
                   <span className="text-slate-500 block">Ngăn kho:</span>
-                  <strong className="text-cyan-800 font-mono">{contract.unitCode}</strong>
+                  <strong className="text-cyan-800 font-mono">{contract.unitCode || (booking?.unitTypeName ? `Kích thước: ${booking.unitTypeName} (Mã định danh ô kho chi tiết sẽ được xác nhận qua email bàn giao)` : 'Theo kích thước đăng ký (Chờ gán kho)')}</strong>
                 </div>
                 <div className="bg-slate-50 p-2 rounded border border-slate-100">
                   <span className="text-slate-500 block">Thời hạn thuê:</span>

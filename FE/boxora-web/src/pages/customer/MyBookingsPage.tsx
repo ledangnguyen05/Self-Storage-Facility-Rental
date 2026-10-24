@@ -6,23 +6,23 @@ import {
   Clock,
   Building2,
   Box,
-  CreditCard,
   PhoneCall,
   CheckCircle2,
-  AlertCircle,
   Copy,
   ChevronRight,
   RefreshCw,
   Search,
-  Filter,
   FileText,
   ShieldCheck,
   ArrowRight,
-  ExternalLink,
   X,
   Lock,
   Unlock,
   Sparkles,
+  Layers,
+  MapPin,
+  Check,
+  AlertCircle,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { bookingService } from '../../services/bookingService'
@@ -39,7 +39,7 @@ import { BookingCancelModal } from '../../components/modals/BookingCancelModal'
 import { BookingRescheduleModal } from '../../components/modals/BookingRescheduleModal'
 import { CustomerPolicyModal, PolicyTab } from '../../components/modals/CustomerPolicyModal'
 import { useLanguage } from '../../context/LanguageContext'
-import { checkCustomerPortalAccess, activateCustomerRental } from '../../utils/rentalAccess'
+import { checkCustomerPortalAccess, syncCustomerPortalAccess } from '../../utils/rentalAccess'
 
 const safeFormatDateTime = (dateVal?: string | null, fallback = ''): string => {
   if (!dateVal) return fallback
@@ -63,6 +63,111 @@ const safeFormatDate = (dateVal?: string | null, fallback = ''): string => {
   }
 }
 
+export type BookingStageType =
+  | 'PENDING_ASSIGNMENT' // Đã thanh toán & ký HĐ -> Chờ nhân viên xếp buồng kho
+  | 'PENDING_CONTACT'    // Khách chọn trả sau -> Chờ nhân viên CSKH tư vấn
+  | 'CONFIRMED'          // Đã xếp ô kho cụ thể -> Sẵn sàng tiếp đón
+  | 'ACTIVE'             // Đang thuê hoạt động -> Cấp quyền mở khóa IoT
+  | 'CANCELLED'          // Đã hủy
+
+export interface BookingStageInfo {
+  stage: BookingStageType
+  label: string
+  badgeClass: string
+  dotClass: string
+  description: string
+  step: number // 1 to 4
+  stepLabel: string
+  priorityTag?: string
+  priorityTagClass?: string
+}
+
+export function getBookingStage(b: Booking): BookingStageInfo {
+  const status = (b.status || '').toUpperCase()
+  const isCancelled = status === 'CANCELLED' || status === 'OVERDUE'
+  if (isCancelled) {
+    return {
+      stage: 'CANCELLED',
+      label: 'Đã hủy',
+      badgeClass: 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/80 dark:text-rose-300 dark:border-rose-800',
+      dotClass: 'bg-rose-500',
+      description: 'Đơn đặt giữ chỗ đã được hủy theo yêu cầu hoặc quá thời hạn giữ chỗ.',
+      step: 0,
+      stepLabel: 'Đã hủy',
+    }
+  }
+
+  const isActive = status === 'ACTIVE' || status === 'COMPLETED'
+  if (isActive) {
+    return {
+      stage: 'ACTIVE',
+      label: 'Đang thuê hoạt động',
+      badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-300 dark:border-emerald-800',
+      dotClass: 'bg-emerald-500',
+      description: 'Hợp đồng đang có hiệu lực. Quý khách có thể sử dụng Portal điều khiển khóa thông minh IoT 24/7.',
+      step: 4,
+      stepLabel: 'Đã cấp khóa IoT',
+      priorityTag: '✓ Đã mở Portal IoT',
+      priorityTagClass: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800',
+    }
+  }
+
+  // If unit is assigned by staff (CONFIRMED or READY_FOR_CHECKIN or has storageUnitId/unitCode)
+  const isAssigned =
+    status === 'CONFIRMED' ||
+    status === 'READY_FOR_CHECKIN' ||
+    (Boolean(b.storageUnitId) && !b.storageUnitId?.startsWith('UNIT-'))
+
+  if (isAssigned) {
+    return {
+      stage: 'CONFIRMED',
+      label: 'Sẵn sàng nhận kho',
+      badgeClass: 'bg-cyan-100 text-cyan-800 border-cyan-300 dark:bg-cyan-950/80 dark:text-cyan-300 dark:border-cyan-800',
+      dotClass: 'bg-cyan-500 animate-pulse',
+      description: `Nhân viên đã xếp buồng kho ${b.unitCode ? '#' + b.unitCode : ''} tại ${b.facilityName}. Quý khách vui lòng đến theo lịch hẹn mang CCCD. Mã khóa IoT đã gửi qua email.`,
+      step: 3,
+      stepLabel: 'Đã xếp buồng kho',
+      priorityTag: '✓ Đã xếp buồng kho',
+      priorityTagClass: 'text-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800',
+    }
+  }
+
+  // Pay Now order that signed contract and paid, awaiting staff unit assignment
+  const isPaid =
+    b.paymentStatus === 'PAID' ||
+    Number(b.depositPaid || 0) > 0 ||
+    status === 'PAID_CONFIRMED' ||
+    status === 'PAID_AND_SIGNED' ||
+    status === 'PAID_PENDING_ASSIGNMENT'
+
+  if (isPaid || status === 'PAID_AND_SIGNED' || status === 'PAID_PENDING_ASSIGNMENT') {
+    return {
+      stage: 'PENDING_ASSIGNMENT',
+      label: 'Chờ xếp buồng kho',
+      badgeClass: 'bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/80 dark:text-indigo-300 dark:border-indigo-800',
+      dotClass: 'bg-indigo-500 animate-pulse',
+      description: 'Hợp đồng điện tử DocuSeal đã ký & thanh toán thành công. Nhân viên cơ sở đang kiểm tra kho thực tế để hoàn tất bàn giao.',
+      step: 2,
+      stepLabel: 'Đã ký & thanh toán',
+      priorityTag: '⚡ Ưu tiên xếp kho',
+      priorityTagClass: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800',
+    }
+  }
+
+  // Pay Later / pending contact
+  return {
+    stage: 'PENDING_CONTACT',
+    label: 'Chờ liên hệ tư vấn',
+    badgeClass: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800',
+    dotClass: 'bg-amber-500 animate-pulse',
+    description: 'Chuyên viên CSKH sẽ liên hệ qua điện thoại trong 15-30 phút để xác nhận nhu cầu và hỗ trợ hoàn tất đơn.',
+    step: 1,
+    stepLabel: 'Chờ CSKH gọi',
+    priorityTag: '📞 CSKH gọi 15-30p',
+    priorityTagClass: 'text-amber-700 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800',
+  }
+}
+
 export const MyBookingsPage: React.FC = () => {
   const navigate = useNavigate()
   const { user, isAuthenticated, logout } = useAuth()
@@ -83,7 +188,12 @@ export const MyBookingsPage: React.FC = () => {
 
   useEffect(() => {
     setCustomerAccess(checkCustomerPortalAccess(user))
-  }, [user])
+    if (user && isCustomer) {
+      void syncCustomerPortalAccess(user).then(() => {
+        setCustomerAccess(checkCustomerPortalAccess(user))
+      })
+    }
+  }, [user, isCustomer])
 
   // Modals state
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
@@ -103,7 +213,7 @@ export const MyBookingsPage: React.FC = () => {
   const [bookings, setBookings] = useState<Booking[]>([])
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [loading, setLoading] = useState<boolean>(true)
-  const [error, setError] = useState<string | null>(null)
+  const [, setError] = useState<string | null>(null)
 
   // Filter & Search states
   const [searchTerm, setSearchTerm] = useState('')
@@ -158,8 +268,9 @@ export const MyBookingsPage: React.FC = () => {
                   customerEmail: r.customer?.email || r.customerEmail || user?.email || '',
                   customerPhone: r.customer?.phone || r.customerPhone || user?.phone || '',
                   identityCardNumber: r.identityCardNumber || r.customer?.idCard || '',
-                  storageUnitId: `UNIT-${r.size?.volumeText || 'std'}`,
-                  unitCode: r.unitCode || r.size?.volumeText || 'Kho Boxora',
+                  storageUnitId: null,
+                  unitCode: r.unitCode || null,
+                  unitTypeName: r.size?.volumeText || r.unitTypeName || 'Kho Boxora',
                   facilityId: r.facility?.id || r.facilityId || 'FAC-LOCAL-1',
                   facilityName: r.facility?.name || r.facilityName || 'Boxora Smart Storage',
                   startDate: r.startDate || new Date().toISOString().split('T')[0],
@@ -185,6 +296,7 @@ export const MyBookingsPage: React.FC = () => {
         console.warn('Error merging local reservations:', e)
       }
 
+      // Reconcile payments
       try {
         const myPayments = await paymentService.getMyPayments().catch(() => [])
         if (Array.isArray(myPayments) && myPayments.length > 0) {
@@ -196,10 +308,13 @@ export const MyBookingsPage: React.FC = () => {
           )
           list = list.map((bk) => {
             if (paidBookingIds.has(bk.id) || (bk.bookingCode && paidBookingCodes.has(bk.bookingCode))) {
+              const currentStatus = (bk.status || '').toUpperCase()
               return {
                 ...bk,
                 paymentStatus: 'PAID',
-                status: bk.status === 'PENDING_PAYMENT' ? 'CONFIRMED' : bk.status,
+                status: currentStatus === 'PENDING_PAYMENT' || currentStatus === 'PENDING_CONTACT'
+                  ? 'PAID_AND_SIGNED'
+                  : bk.status,
               }
             }
             return bk
@@ -208,6 +323,14 @@ export const MyBookingsPage: React.FC = () => {
       } catch (payErr) {
         console.warn('Reconcile payments warning:', payErr)
       }
+
+      // Sort newest bookings first
+      list.sort((a, b) => {
+        const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0
+        const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0
+        return tB - tA
+      })
+
       setBookings(list)
     } catch (err: any) {
       console.error('Failed to load bookings:', err)
@@ -285,38 +408,28 @@ export const MyBookingsPage: React.FC = () => {
   // Filtered Bookings
   const filteredBookings = useMemo(() => {
     return bookings.filter((b) => {
-      // Search
+      const stageInfo = getBookingStage(b)
+
+      // Search filter
       if (searchTerm.trim()) {
         const q = searchTerm.toLowerCase().trim()
         const matchCode = b.bookingCode?.toLowerCase().includes(q)
         const matchUnit = b.unitCode?.toLowerCase().includes(q)
+        const matchType = b.unitTypeName?.toLowerCase().includes(q)
         const matchFac = b.facilityName?.toLowerCase().includes(q)
         const matchPhone = b.customerPhone?.toLowerCase().includes(q)
-        if (!matchCode && !matchUnit && !matchFac && !matchPhone) return false
+        if (!matchCode && !matchUnit && !matchType && !matchFac && !matchPhone) return false
       }
 
-      // Facility
+      // Facility filter
       if (facilityFilter !== 'ALL') {
         const facMatch = b.facilityId === facilityFilter || b.facilityName === facilityFilter
         if (!facMatch) return false
       }
 
-      // Status
+      // Status filter
       if (statusFilter !== 'ALL') {
-        if (statusFilter === 'PENDING_CONTACT') {
-          const isPending =
-            (b.status as string) === 'PENDING_CONTACT' ||
-            (b.status as string) === 'PENDING_CONFIRMATION' ||
-            b.id?.startsWith('LOCAL-RES-')
-          if (!isPending) return false
-        } else if (statusFilter === 'CONFIRMED') {
-          if (b.status !== 'CONFIRMED') return false
-        } else if (statusFilter === 'ACTIVE_OR_SIGNED') {
-          const isSigned = (b.status as string) === 'ACTIVE' || (b.status as string) === 'COMPLETED'
-          if (!isSigned) return false
-        } else if (statusFilter === 'CANCELLED') {
-          if (b.status !== 'CANCELLED') return false
-        } else if (b.status !== statusFilter) {
+        if (statusFilter !== stageInfo.stage) {
           return false
         }
       }
@@ -327,21 +440,38 @@ export const MyBookingsPage: React.FC = () => {
 
   // Metric counts
   const totalCount = bookings.length
-  const pendingContactCount = bookings.filter(
-    (b) =>
-      (b.status as string) === 'PENDING_CONTACT' ||
-      (b.status as string) === 'PENDING_CONFIRMATION' ||
-      b.id?.startsWith('LOCAL-RES-')
-  ).length
-  const confirmedCount = bookings.filter((b) => b.status === 'CONFIRMED').length
-  const activeOrSignedCount = bookings.filter(
-    (b) => (b.status as string) === 'ACTIVE' || (b.status as string) === 'COMPLETED'
-  ).length
+  const pendingAssignmentCount = useMemo(
+    () => bookings.filter((b) => getBookingStage(b).stage === 'PENDING_ASSIGNMENT').length,
+    [bookings]
+  )
+  const pendingContactCount = useMemo(
+    () => bookings.filter((b) => getBookingStage(b).stage === 'PENDING_CONTACT').length,
+    [bookings]
+  )
+  const confirmedCount = useMemo(
+    () => bookings.filter((b) => getBookingStage(b).stage === 'CONFIRMED').length,
+    [bookings]
+  )
+  const activeCount = useMemo(
+    () => bookings.filter((b) => getBookingStage(b).stage === 'ACTIVE').length,
+    [bookings]
+  )
+  const cancelledCount = useMemo(
+    () => bookings.filter((b) => getBookingStage(b).stage === 'CANCELLED').length,
+    [bookings]
+  )
+
+  const stepsList = [
+    { num: 1, label: 'Đặt chỗ' },
+    { num: 2, label: 'Ký HĐ & Cọc' },
+    { num: 3, label: 'Xếp buồng kho' },
+    { num: 4, label: 'Mã IoT 24/7' },
+  ]
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
       {/* ================================================================ */}
-      {/* 1. TOP UNIFIED NAVIGATION BAR (FROM HOMEPAGE & BOOKINGPAGE)       */}
+      {/* 1. TOP UNIFIED NAVIGATION BAR                                    */}
       {/* ================================================================ */}
       <header className="sticky top-0 z-[100] border-b border-slate-200/70 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl transition-colors">
         <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between px-4 sm:px-6 lg:px-10">
@@ -381,7 +511,7 @@ export const MyBookingsPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => navigate(isCustomer ? '/portal/customer' : '/portal')}
-                        className="w-full py-2.5 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs flex items-center justify-between hover:bg-neutral-800 dark:hover:bg-blue-700 transition-all shadow-xs cursor-pointer"
+                        className="w-full py-2.5 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs flex items-center justify-between transition-all cursor-pointer"
                       >
                         <span className="flex items-center gap-2">
                           <span className="material-symbols-outlined text-[18px] text-emerald-400">dashboard</span>
@@ -414,7 +544,7 @@ export const MyBookingsPage: React.FC = () => {
                   {t('Đăng Nhập')}
                 </Link>
                 <Link
-                  to="/units"
+                  to="/booking"
                   className="inline-flex items-center gap-1.5 rounded-full bg-blue-700 hover:bg-blue-800 px-4 py-2.5 text-[13px] font-semibold text-white transition-colors shadow-xs"
                 >
                   <span>{t('Thuê Kho Ngay')}</span>
@@ -438,13 +568,13 @@ export const MyBookingsPage: React.FC = () => {
                 Trang chủ
               </Link>
               <span>/</span>
-              <span className="text-slate-800 dark:text-slate-200 font-semibold">Đơn đặt chỗ của tôi</span>
+              <span className="text-slate-800 dark:text-slate-200 font-semibold">Đơn đặt giữ chỗ của tôi</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
               Đơn Đặt Giữ Chỗ Của Tôi
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-              Dashboard riêng quản lý tiến trình giữ chỗ, lịch hẹn tiếp đón tại cơ sở và hoàn tất hợp đồng thuê kho.
+              Theo dõi tiến trình xét duyệt đơn, ký hợp đồng điện tử DocuSeal, gán buồng kho và nhận mã khóa IoT 24/7.
             </p>
           </div>
 
@@ -455,7 +585,7 @@ export const MyBookingsPage: React.FC = () => {
                 setPolicyModalTab('cancellation')
                 setIsPolicyModalOpen(true)
               }}
-              className="px-3.5 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all flex items-center gap-1.5 shadow-2xs"
+              className="px-3.5 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
             >
               <FileText size={15} className="text-blue-600" />
               <span>Chính sách cọc &amp; hủy</span>
@@ -465,112 +595,92 @@ export const MyBookingsPage: React.FC = () => {
               to="/booking"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-bold text-white shadow-md shadow-blue-600/20 transition-all cursor-pointer"
             >
-              <span>+ Đặt giữ thêm kho</span>
+              <span>+ Đặt thuê thêm kho</span>
             </Link>
           </div>
         </div>
 
         {/* ============================================================== */}
-        {/* ACCESS LOCK STATUS BANNER (CRITICAL USER SPECIFICATION)        */}
+        {/* 4-STEP PROCESS ROADMAP BANNER                                  */}
         {/* ============================================================== */}
-        {!canAccessPortal ? (
-          <div className="rounded-2xl border-2 border-amber-300 dark:border-amber-700/80 bg-gradient-to-r from-amber-50 via-amber-50/60 to-orange-50/40 dark:from-amber-950/40 dark:via-slate-900 dark:to-slate-900 p-5 sm:p-6 shadow-sm">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
-                  <Lock size={24} />
-                </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-bold text-[11px] uppercase tracking-wider">
-                      Trạng thái bảo mật
-                    </span>
-                    <h3 className="font-extrabold text-slate-900 dark:text-white text-base">
-                      Portal Quản Lý Kho &amp; Mã PIN IoT đang khóa
-                    </h3>
-                  </div>
-                  <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed max-w-3xl">
-                    Quý khách đang ở <strong>Dashboard riêng xem Đơn đặt giữ chỗ</strong>. Theo quy trình tại Boxora, <strong>thủ tục ký hợp đồng và thanh toán sẽ do nhân viên (Staff) thực hiện trực tiếp tại cơ sở</strong> khi quý khách đến nhận buồng kho theo lịch hẹn. Sau khi nhân viên hoàn tất thủ tục bàn giao, Portal quản lý khóa thông minh IoT 24/7 sẽ tự động mở khóa.
-                  </p>
-                </div>
+        <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 shadow-xs">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+                <Sparkles size={20} />
               </div>
-
-              <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-                <a
-                  href="#bookings-list"
-                  className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all"
-                >
-                  <span>Xem danh sách đơn giữ chỗ</span>
-                  <ChevronRight size={16} />
-                </a>
+              <div>
+                <h3 className="font-bold text-slate-900 dark:text-white text-sm sm:text-base">
+                  Quy Trình Hoàn Tất Đơn Đặt Kho Thông Minh Boxora
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Tự động hóa toàn trình từ ký hợp đồng điện tử trực tuyến đến bàn giao mã khóa thông minh IoT 24/7.
+                </p>
               </div>
             </div>
 
-            {/* 4-Step Progress Roadmap */}
-            <div className="mt-5 pt-4 border-t border-amber-200/80 dark:border-amber-900/50 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-              <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-amber-200 dark:border-amber-900/40">
-                <span className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs font-bold shrink-0">
-                  ✓
+            {canAccessPortal && (
+              <button
+                type="button"
+                onClick={() => navigate('/portal/customer')}
+                className="self-start sm:self-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer shrink-0"
+              >
+                <Unlock size={14} />
+                <span>Vào Portal Kho Đang Thuê</span>
+              </button>
+            )}
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800">
+              <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
+                1
+              </span>
+              <div>
+                <span className="font-bold text-slate-900 dark:text-white block">1. Đặt chỗ trực tuyến</span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
+                  Chọn kích thước &amp; chi nhánh phù hợp
                 </span>
-                <span className="font-medium text-slate-800 dark:text-slate-200">1. Đã tiếp nhận đặt giữ chỗ</span>
               </div>
-              <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-amber-200 dark:border-amber-900/40">
-                <span className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold shrink-0">
-                  2
+            </div>
+
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800">
+              <span className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
+                2
+              </span>
+              <div>
+                <span className="font-bold text-slate-900 dark:text-white block">2. Ký HĐ &amp; Thanh toán</span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
+                  Ký điện tử DocuSeal và thanh toán online
                 </span>
-                <span className="font-medium text-slate-800 dark:text-slate-200">2. Chờ nhân viên xác nhận đơn</span>
               </div>
-              <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-amber-100/90 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800">
-                <span className="w-6 h-6 rounded-full bg-amber-600 text-white flex items-center justify-center text-xs font-bold shrink-0 animate-pulse">
-                  3
+            </div>
+
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800">
+              <span className="w-6 h-6 rounded-full bg-cyan-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
+                3
+              </span>
+              <div>
+                <span className="font-bold text-slate-900 dark:text-white block">3. Nhân viên xếp ô kho</span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
+                  Staff kiểm tra cơ sở và gán mã buồng kho
                 </span>
-                <span className="font-bold text-amber-950 dark:text-amber-200">3. Nhân viên tiếp đón &amp; Ký HĐ, thanh toán</span>
               </div>
-              <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 text-slate-400">
-                <span className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-500 flex items-center justify-center text-xs font-bold shrink-0">
-                  4
+            </div>
+
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800">
+              <span className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
+                4
+              </span>
+              <div>
+                <span className="font-bold text-slate-900 dark:text-white block">4. Nhận mã PIN IoT 24/7</span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
+                  Tự động gửi email &amp; kích hoạt Portal
                 </span>
-                <span>4. Mở Portal &amp; Mã PIN IoT 24/7</span>
               </div>
             </div>
           </div>
-        ) : (
-          /* Unlocked Portal Congratulatory Banner */
-          <div className="rounded-2xl border-2 border-emerald-400 dark:border-emerald-600 bg-gradient-to-r from-emerald-50 via-teal-50/60 to-cyan-50/40 dark:from-emerald-950/40 dark:via-slate-900 dark:to-slate-900 p-5 sm:p-6 shadow-sm">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
-                  <Unlock size={24} />
-                </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-200 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-200 font-bold text-[11px] uppercase tracking-wider">
-                      Đã kích hoạt thành công
-                    </span>
-                    <h3 className="font-extrabold text-slate-900 dark:text-white text-base">
-                      Portal Quản Lý Kho &amp; Mã Khóa IoT Đã Mở Khóa!
-                    </h3>
-                  </div>
-                  <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed max-w-3xl">
-                    Quý khách đã hoàn tất ký hợp đồng và xác nhận thanh toán. Giờ đây quý khách có thể vào Portal điều khiển mã khóa IoT, xem mã PIN truy cập buồng kho và quản lý hợp đồng lưu kho 24/7.
-                  </p>
-                </div>
-              </div>
-
-              <div className="shrink-0">
-                <button
-                  type="button"
-                  onClick={() => navigate('/portal/customer')}
-                  className="w-full sm:w-auto px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/25 transition-all cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[20px]">dashboard</span>
-                  <span>Vào Portal Quản Lý Kho (Khóa IoT)</span>
-                  <ArrowRight size={16} />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        </div>
 
         {/* ============================================================== */}
         {/* 3. SUMMARY STATS METRICS CARDS                                 */}
@@ -578,7 +688,7 @@ export const MyBookingsPage: React.FC = () => {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between">
             <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-semibold uppercase tracking-wider">Tổng đơn giữ chỗ</span>
+              <span className="text-xs font-semibold uppercase tracking-wider">Tổng đơn đặt</span>
               <Box size={20} className="text-blue-600" />
             </div>
             <div className="mt-3 flex items-baseline gap-2">
@@ -591,7 +701,20 @@ export const MyBookingsPage: React.FC = () => {
 
           <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between">
             <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-semibold uppercase tracking-wider">Chờ xác nhận</span>
+              <span className="text-xs font-semibold uppercase tracking-wider">Chờ xếp buồng kho</span>
+              <Clock size={20} className="text-indigo-600" />
+            </div>
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="text-2xl sm:text-3xl font-extrabold text-indigo-600 dark:text-indigo-400 font-mono">
+                {pendingAssignmentCount}
+              </span>
+              <span className="text-xs text-slate-400">đã ký &amp; cọc</span>
+            </div>
+          </div>
+
+          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+            <div className="flex items-center justify-between text-slate-400">
+              <span className="text-xs font-semibold uppercase tracking-wider">Chờ tư vấn</span>
               <PhoneCall size={20} className="text-amber-500" />
             </div>
             <div className="mt-3 flex items-baseline gap-2">
@@ -604,27 +727,14 @@ export const MyBookingsPage: React.FC = () => {
 
           <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between">
             <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-semibold uppercase tracking-wider">Chờ check in</span>
-              <CheckCircle2 size={20} className="text-cyan-500" />
-            </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl sm:text-3xl font-extrabold text-cyan-600 dark:text-cyan-400 font-mono">
-                {confirmedCount}
-              </span>
-              <span className="text-xs text-slate-400">đã tiếp nhận</span>
-            </div>
-          </div>
-
-          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between">
-            <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-semibold uppercase tracking-wider">Đã nhận kho</span>
+              <span className="text-xs font-semibold uppercase tracking-wider">Sẵn sàng / Đang thuê</span>
               <ShieldCheck size={20} className="text-emerald-500" />
             </div>
             <div className="mt-3 flex items-baseline gap-2">
               <span className="text-2xl sm:text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">
-                {activeOrSignedCount}
+                {confirmedCount + activeCount}
               </span>
-              <span className="text-xs text-slate-400">đã mở Portal</span>
+              <span className="text-xs text-slate-400">đã gán ô kho</span>
             </div>
           </div>
         </div>
@@ -639,7 +749,7 @@ export const MyBookingsPage: React.FC = () => {
               <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Tìm theo mã đơn (BX-...), kích thước, số điện thoại hoặc tên cơ sở..."
+                placeholder="Tìm theo mã đơn (BX-...), loại kho, số điện thoại hoặc cơ sở..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-500 transition-colors"
@@ -687,14 +797,15 @@ export const MyBookingsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Status Filter Pills */}
+          {/* Status Filter Tabs */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1">
             {[
-              { key: 'ALL', label: 'Tất cả đơn', count: totalCount },
-              { key: 'PENDING_CONTACT', label: 'Chờ xác nhận', count: pendingContactCount },
-              { key: 'CONFIRMED', label: 'Chờ check in', count: confirmedCount },
-              { key: 'ACTIVE_OR_SIGNED', label: 'Đã nhận kho', count: activeOrSignedCount },
-              { key: 'CANCELLED', label: 'Đã hủy', count: bookings.filter((b) => b.status === 'CANCELLED').length },
+              { key: 'ALL', label: 'Tất cả', count: totalCount },
+              { key: 'PENDING_ASSIGNMENT', label: 'Chờ xếp kho', count: pendingAssignmentCount },
+              { key: 'PENDING_CONTACT', label: 'Chờ tư vấn', count: pendingContactCount },
+              { key: 'CONFIRMED', label: 'Sẵn sàng nhận', count: confirmedCount },
+              { key: 'ACTIVE', label: 'Đang thuê', count: activeCount },
+              { key: 'CANCELLED', label: 'Đã hủy', count: cancelledCount },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -722,7 +833,7 @@ export const MyBookingsPage: React.FC = () => {
         </div>
 
         {/* ============================================================== */}
-        {/* 5. BOOKINGS LIST GRID                                          */}
+        {/* 5. BOOKINGS LIST GRID (REORGANIZED DISPLAY)                     */}
         {/* ============================================================== */}
         {loading ? (
           <div className="p-16 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-center flex flex-col items-center justify-center gap-3">
@@ -752,13 +863,13 @@ export const MyBookingsPage: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {filteredBookings.map((b) => {
-              const isLocal = b.id?.startsWith('LOCAL-RES-')
-              const isPaid = b.paymentStatus === 'PAID' || (b.status as string) === 'PAID_CONFIRMED' || Number(b.depositPaid || 0) > 0
-              const isActiveOrSigned = b.status === 'ACTIVE' || b.status === 'COMPLETED'
-              const isCancelled = b.status === 'CANCELLED'
-              const isPendingPayment = b.status === 'PENDING_PAYMENT' && !isPaid && !isCancelled
-              const isConfirmed = (b.status === 'CONFIRMED' || (isPaid && !isActiveOrSigned)) && !isCancelled
-              const isPendingContact = !isConfirmed && !isPendingPayment && !isActiveOrSigned && !isCancelled && ((b.status as string) === 'PENDING_CONTACT' || (b.status as string) === 'PENDING_CONFIRMATION' || isLocal)
+              const stageInfo = getBookingStage(b)
+              const isPaid =
+                b.paymentStatus === 'PAID' ||
+                Number(b.depositPaid || 0) > 0 ||
+                stageInfo.stage === 'PENDING_ASSIGNMENT' ||
+                stageInfo.stage === 'CONFIRMED' ||
+                stageInfo.stage === 'ACTIVE'
 
               return (
                 <div
@@ -766,91 +877,53 @@ export const MyBookingsPage: React.FC = () => {
                   className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 shadow-xs hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-md transition-all flex flex-col justify-between gap-4"
                 >
                   <div className="space-y-4">
-                    {/* Header: Unit Code & Status Badge */}
+                    {/* Header: Storage Room Title & Status Badge */}
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black text-sm">
-                          {b.unitCode ? b.unitCode.substring(0, 3) : 'KHO'}
+                        <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black text-sm shrink-0">
+                          {b.unitCode ? b.unitCode.substring(0, 3) : <Layers size={22} />}
                         </div>
                         <div>
                           <div className="flex items-center gap-1.5">
-                            <h3 className="font-mono text-base font-extrabold text-slate-900 dark:text-white">
-                              {b.unitCode ? `#${b.unitCode}` : 'Kho Boxora'}
+                            <h3 className="font-extrabold text-base text-slate-900 dark:text-white tracking-tight">
+                              {b.unitCode ? `Kho #${b.unitCode}` : (b.unitTypeName || 'Kho Boxora')}
                             </h3>
                           </div>
-                          <span className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[170px] block">
-                            {b.facilityName}
+                          <span className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[190px] flex items-center gap-1 mt-0.5">
+                            <MapPin size={12} className="text-slate-400 shrink-0" />
+                            <span className="truncate">{b.facilityName}</span>
                           </span>
                         </div>
                       </div>
 
                       {/* Status Badges */}
                       <div className="text-right flex flex-col items-end gap-1">
-                        {isPendingContact && (
-                          <>
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                              <span>Chờ xác nhận</span>
-                            </span>
-                            <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold">
-                              📞 CSKH gọi 15-30p
-                            </span>
-                          </>
-                        )}
-
-                        {isPendingPayment && (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                            <span>Chờ thanh toán</span>
-                          </span>
-                        )}
-
-                        {isConfirmed && (
-                          <>
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-cyan-100 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-800">
-                              <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse"></span>
-                              <span>Chờ check in</span>
-                            </span>
-                            {isPaid ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                <CheckCircle2 size={11} />
-                                <span>Đã thanh toán</span>
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
-                                ✓ Đã xác nhận đón
-                              </span>
-                            )}
-                          </>
-                        )}
-
-                        {isActiveOrSigned && (
-                          <>
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                              <CheckCircle2 size={12} className="text-emerald-600" />
-                              <span>Đã Ký &amp; Thanh Toán</span>
-                            </span>
-                            <span className="text-[10px] text-emerald-600 font-semibold">
-                              ✓ Đã mở Portal IoT
-                            </span>
-                          </>
-                        )}
-
-                        {isCancelled && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
-                            Đã Hủy
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${stageInfo.badgeClass}`}>
+                          <span className={`w-2 h-2 rounded-full ${stageInfo.dotClass}`} />
+                          <span>{stageInfo.label}</span>
+                        </span>
+                        {stageInfo.priorityTag && (
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${stageInfo.priorityTagClass || 'text-blue-600'}`}>
+                            {stageInfo.priorityTag}
                           </span>
                         )}
                       </div>
                     </div>
 
-                    {/* Booking Code with Copy */}
+                    {/* Booking Code with Quick Copy Bar */}
                     <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs">
-                      <span className="text-slate-400 font-mono">MÃ ĐƠN:</span>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+                        <span className="font-mono text-[11px]">MÃ ĐƠN:</span>
                         <strong className="font-mono text-slate-900 dark:text-white font-bold text-sm">
                           {b.bookingCode}
                         </strong>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {b.createdAt && (
+                          <span className="text-[10px] text-slate-400 hidden sm:inline">
+                            {safeFormatDateTime(b.createdAt)}
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleCopyCode(b.bookingCode)}
@@ -862,17 +935,65 @@ export const MyBookingsPage: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Booking Details Grid */}
+                    {/* Visual 4-Step Progress Track */}
+                    {stageInfo.stage !== 'CANCELLED' && (
+                      <div className="p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/70">
+                        <div className="flex items-center justify-between gap-1">
+                          {stepsList.map((step) => {
+                            const isPassed = step.num < stageInfo.step
+                            const isCurrent = step.num === stageInfo.step
+                            return (
+                              <div key={step.num} className="flex-1 flex flex-col items-center gap-1">
+                                <div
+                                  className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-all ${
+                                    isPassed
+                                      ? 'bg-emerald-500 text-white'
+                                      : isCurrent
+                                      ? 'bg-blue-600 text-white ring-2 ring-blue-300 dark:ring-blue-900 animate-pulse'
+                                      : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                  }`}
+                                >
+                                  {isPassed ? <Check size={11} /> : step.num}
+                                </div>
+                                <span
+                                  className={`text-[9px] text-center font-medium leading-tight ${
+                                    isCurrent
+                                      ? 'text-blue-700 dark:text-blue-400 font-bold'
+                                      : isPassed
+                                      ? 'text-slate-700 dark:text-slate-300'
+                                      : 'text-slate-400'
+                                  }`}
+                                >
+                                  {step.label}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Key Specifications Grid (2x2) */}
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                        <span className="text-slate-400 block text-[10px]">LỊCH HẸN CHECK-IN</span>
-                        <div className="flex items-center gap-1 mt-1 font-semibold text-slate-800 dark:text-slate-200">
-                          <Calendar size={13} className="text-blue-500 shrink-0" />
+                        <span className="text-slate-400 block text-[10px]">LOẠI BUỒNG KHO</span>
+                        <div className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5 truncate">
+                          {b.unitTypeName || (b.unitCode ? `Mã kho #${b.unitCode}` : 'Theo kích thước đăng ký')}
+                        </div>
+                        {b.floorLevel && (
+                          <span className="text-[10px] text-slate-400 block mt-0.5">{b.floorLevel}</span>
+                        )}
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                        <span className="text-slate-400 block text-[10px]">LỊCH HẸN TIẾP ĐÓN</span>
+                        <div className="flex items-center gap-1 mt-0.5 font-semibold text-slate-800 dark:text-slate-200">
+                          <Calendar size={12} className="text-blue-500 shrink-0" />
                           <span>{(b as any).checkInDate || safeFormatDate(b.expectedCheckInAt)}</span>
                         </div>
                         {b.checkInTime && (
-                          <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
-                            <Clock size={12} />
+                          <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-0.5">
+                            <Clock size={11} />
                             <span>{b.checkInTime}</span>
                           </div>
                         )}
@@ -880,107 +1001,102 @@ export const MyBookingsPage: React.FC = () => {
 
                       <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                         <span className="text-slate-400 block text-[10px]">THỜI HẠN THUÊ</span>
-                        <strong className="block mt-1 font-semibold text-slate-800 dark:text-slate-200">
+                        <strong className="block mt-0.5 font-semibold text-slate-800 dark:text-slate-200">
                           {b.rentalMonths} tháng
                         </strong>
-                        <span className="text-[10px] text-slate-400 block">
+                        <span className="text-[10px] text-slate-400 block mt-0.5">
                           {safeFormatDate(b.startDate)} - {safeFormatDate(b.endDate)}
                         </span>
                       </div>
+
+                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                        <span className="text-slate-400 block text-[10px]">TIỀN THUÊ &amp; CỌC</span>
+                        <div className="font-bold text-slate-900 dark:text-white mt-0.5 font-mono">
+                          {Number(b.totalRentalFee || 0).toLocaleString('vi-VN')} ₫
+                        </div>
+                        <span className={`text-[10px] font-semibold block mt-0.5 ${isPaid ? 'text-emerald-600' : 'text-amber-600'}`}>
+                          {isPaid ? '✓ Đã thanh toán cọc' : '• Thanh toán sau'}
+                        </span>
+                      </div>
                     </div>
 
-                    {/* Price Breakdown */}
-                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-1.5 text-xs">
-                      <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                        <span>Tiền thuê hàng tháng:</span>
-                        <span className="font-semibold text-slate-800 dark:text-slate-200 font-mono">
-                          {Number(b.totalRentalFee / (b.rentalMonths || 1)).toLocaleString('vi-VN')} ₫
+                    {/* Notice Callout Box */}
+                    <div
+                      className={`p-3 rounded-xl border text-xs space-y-1 ${
+                        stageInfo.stage === 'PENDING_ASSIGNMENT'
+                          ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-900/60 text-indigo-950 dark:text-indigo-200'
+                          : stageInfo.stage === 'CONFIRMED'
+                          ? 'bg-cyan-50/80 dark:bg-cyan-950/40 border-cyan-200 dark:border-cyan-900/60 text-cyan-950 dark:text-cyan-200'
+                          : stageInfo.stage === 'ACTIVE'
+                          ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900/60 text-emerald-950 dark:text-emerald-200'
+                          : stageInfo.stage === 'CANCELLED'
+                          ? 'bg-rose-50/80 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900/60 text-rose-950 dark:text-rose-200'
+                          : 'bg-amber-50/80 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900/60 text-amber-950 dark:text-amber-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-bold">
+                        {stageInfo.stage === 'PENDING_ASSIGNMENT' && <Clock size={14} className="text-indigo-600 shrink-0" />}
+                        {stageInfo.stage === 'CONFIRMED' && <ShieldCheck size={14} className="text-cyan-600 shrink-0" />}
+                        {stageInfo.stage === 'ACTIVE' && <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />}
+                        {stageInfo.stage === 'PENDING_CONTACT' && <PhoneCall size={14} className="text-amber-600 shrink-0" />}
+                        {stageInfo.stage === 'CANCELLED' && <AlertCircle size={14} className="text-rose-600 shrink-0" />}
+                        <span>
+                          {stageInfo.stage === 'PENDING_ASSIGNMENT' && 'Hợp đồng điện tử đã ký — Chờ gán buồng kho'}
+                          {stageInfo.stage === 'CONFIRMED' && `Đã xếp ô kho #${b.unitCode || 'thực tế'} sẵn sàng đón`}
+                          {stageInfo.stage === 'ACTIVE' && 'Hợp đồng kho đang hoạt động 24/7'}
+                          {stageInfo.stage === 'PENDING_CONTACT' && 'Chờ chuyên viên liên hệ xác nhận'}
+                          {stageInfo.stage === 'CANCELLED' && 'Đơn đặt giữ chỗ đã hủy'}
                         </span>
                       </div>
-                      <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                        <span>Tiền cọc giữ chỗ (1 tháng):</span>
-                        <span className="font-semibold text-slate-800 dark:text-slate-200 font-mono">
-                          {Number(b.depositAmount || b.totalRentalFee / (b.rentalMonths || 1)).toLocaleString('vi-VN')} ₫
-                        </span>
-                      </div>
-                      <div className="pt-1.5 border-t border-slate-200 dark:border-slate-700 flex justify-between font-bold text-sm text-blue-700 dark:text-blue-400">
-                        <span>Tổng thanh toán:</span>
-                        <span className="font-mono">
-                          {(
-                            Number(b.totalRentalFee || 0) +
-                            Number(b.depositAmount || b.totalRentalFee / (b.rentalMonths || 1))
-                          ).toLocaleString('vi-VN')} ₫
-                        </span>
-                      </div>
+                      <p className="text-[11px] leading-relaxed opacity-90">
+                        {stageInfo.description}
+                      </p>
                     </div>
                   </div>
 
-                  {/* Actions Bar */}
+                  {/* Actions Footer Bar */}
                   <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
-                    {/* Primary Action Button */}
-                    {!isCancelled && (
-                      isActiveOrSigned ? (
-                        <button
-                          type="button"
-                          onClick={() => navigate('/portal/customer')}
-                          className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                        >
-                          <span className="material-symbols-outlined text-[17px]">dashboard</span>
-                          <span>Vào Portal Quản Lý Kho (Khóa IoT)</span>
-                        </button>
-                      ) : isPaid ? (
-                        <div className="space-y-2">
-                          <div className="w-full p-2.5 rounded-xl bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-left space-y-1">
-                            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900 dark:text-emerald-300">
-                              <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
-                              <span>{b.contractSigned ? 'Đã thanh toán & Đã ký HĐ điện tử' : 'Đã thanh toán trực tuyến thành công'}</span>
-                            </div>
-                            <p className="text-[11px] text-emerald-800 dark:text-emerald-300/90 leading-relaxed">
-                              {b.contractSigned ? 'Hợp đồng điện tử đã ký thành công. Vui lòng mang theo CCCD khi đến nhận kho theo lịch hẹn.' : 'Kho đã được giữ chỗ cho bạn. Vui lòng hoàn tất ký hợp đồng điện tử và mang theo CCCD khi đến nhận kho.'}
-                            </p>
-                          </div>
-                          {!isLocal && (
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}${b.contractSigned ? '' : '&autoSign=true'}`)}
-                              className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                            >
-                              <span>{b.contractSigned ? 'Xem hợp đồng điện tử đã ký' : 'Ký hợp đồng điện tử ngay'}</span>
-                            </button>
-                          )}
-                        </div>
-                      ) : isPendingPayment && !isLocal ? (
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}`)}
-                          className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                        >
-                          <span>Thanh toán trực tuyến ngay</span>
-                        </button>
-                      ) : (
-                        <div className="w-full p-2.5 rounded-xl bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-900/60 text-left space-y-1">
-                          <div className="flex items-center gap-1.5 text-xs font-bold text-blue-900 dark:text-blue-300">
-                            <span className="material-symbols-outlined text-[16px] text-blue-600 dark:text-cyan-400">badge</span>
-                            <span>Thanh toán tại quầy khi nhận kho</span>
-                          </div>
-                          <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                            Vui lòng mang theo CCCD bản gốc đến cơ sở vào ngày hẹn để đối soát, ký hợp đồng và thanh toán nhận kho.
-                          </p>
-                        </div>
-                      )
-                    )}
+                    {/* Primary Workflow CTA */}
+                    {stageInfo.stage === 'ACTIVE' ? (
+                      <button
+                        type="button"
+                        onClick={() => navigate('/portal/customer')}
+                        className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[17px]">dashboard</span>
+                        <span>Vào Portal Quản Lý Kho (Khóa IoT)</span>
+                      </button>
+                    ) : stageInfo.stage === 'PENDING_ASSIGNMENT' || stageInfo.stage === 'CONFIRMED' ? (
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}`)}
+                        className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                      >
+                        <FileText size={15} />
+                        <span>Xem hợp đồng điện tử đã ký</span>
+                      </button>
+                    ) : stageInfo.stage === 'PENDING_CONTACT' ? (
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}&autoSign=true`)}
+                        className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                      >
+                        <span>Ký HĐ &amp; Thanh toán ngay</span>
+                        <ArrowRight size={14} />
+                      </button>
+                    ) : null}
 
-                    {/* Secondary Action Buttons */}
+                    {/* Secondary Utility Actions */}
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => setSelectedBookingForDetail(b)}
-                        className="flex-1 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors cursor-pointer"
+                        className="flex-1 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors cursor-pointer text-center"
                       >
-                        Xem phiếu hẹn
+                        Xem phiếu hẹn &amp; QR
                       </button>
 
-                      {!isCancelled && !isActiveOrSigned && (
+                      {stageInfo.stage !== 'CANCELLED' && stageInfo.stage !== 'ACTIVE' && (
                         <>
                           <button
                             type="button"

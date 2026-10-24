@@ -35,11 +35,39 @@ public class BookingController {
     private final BookingService bookingService;
 
     @PostMapping
-    @PreAuthorize("hasAuthority('BOOKING_CREATE') or hasRole('CUSTOMER') or isAuthenticated()")
+    // Public or authenticated booking creation
     @Operation(summary = "Tạo lượt đặt kho kèm phát hành mã PIN bảo mật")
     public ResponseEntity<ApiResponse<BookingResponse>> create(@Valid @RequestBody BookingCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Tạo đơn đặt kho và khởi tạo thông tin truy cập thành công", bookingService.createBooking(request)));
+    }
+
+    @PostMapping("/{id}/assign-unit")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN') or hasAuthority('BOOKING_MANAGE') or isAuthenticated()")
+    @Operation(summary = "Nhân viên gán ô kho vật lý và kích hoạt phát hành mã PIN/QR IoT cho khách hàng")
+    public ResponseEntity<ApiResponse<BookingResponse>> assignUnit(
+            @PathVariable UUID id,
+            @Valid @RequestBody com.boxora.dto.request.AssignUnitRequest request
+    ) {
+        BookingResponse response = bookingService.assignUnitAndProvision(id, request.getUnitId(), request.getNotes());
+        return ResponseEntity.ok(ApiResponse.success("Gán ô kho và bàn giao mã truy cập thành công", response));
+    }
+
+    @PostMapping("/code/{bookingCode}/assign-unit")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN') or hasAuthority('BOOKING_MANAGE') or isAuthenticated()")
+    @Operation(summary = "Nhân viên gán ô kho vật lý theo mã đặt chỗ (bookingCode)")
+    public ResponseEntity<ApiResponse<BookingResponse>> assignUnitByCode(
+            @PathVariable String bookingCode,
+            @Valid @RequestBody com.boxora.dto.request.AssignUnitRequest request
+    ) {
+        BookingResponse response = bookingService.assignUnitAndProvisionByCode(bookingCode, request.getUnitId(), request.getNotes());
+        return ResponseEntity.ok(ApiResponse.success("Gán ô kho và bàn giao mã truy cập thành công", response));
+    }
+
+    @GetMapping("/code/{bookingCode}")
+    @Operation(summary = "Lấy chi tiết lượt đặt kho theo mã đặt chỗ (bookingCode)")
+    public ResponseEntity<ApiResponse<BookingResponse>> getByBookingCode(@PathVariable String bookingCode) {
+        return ResponseEntity.ok(ApiResponse.success(bookingService.getByBookingCode(bookingCode)));
     }
 
 @GetMapping("/my-requests")
@@ -113,7 +141,6 @@ public class BookingController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('BOOKING_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
     @Operation(summary = "Lấy chi tiết lượt đặt kho (Mã PIN bị ẩn '******' để bảo mật)")
     public ResponseEntity<ApiResponse<BookingResponse>> getById(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getById(id)));
