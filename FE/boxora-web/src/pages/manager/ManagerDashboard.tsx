@@ -136,6 +136,14 @@ export const ManagerDashboard: React.FC = () => {
     }
   }, [searchParams])
 
+  // Handover / Reception pagination
+  const [handoverPage, setHandoverPage] = useState<number>(1)
+  const [handoverPageSize] = useState<number>(5)
+
+  // Expiring rentals / Return inspection pagination
+  const [rentalPage, setRentalPage] = useState<number>(1)
+  const [rentalPageSize] = useState<number>(5)
+
   // Tickets queue pagination
   const [ticketCurrentPage, setTicketCurrentPage] = useState<number>(1)
   const [ticketPageSize, setTicketPageSize] = useState<number>(5)
@@ -328,8 +336,10 @@ export const ManagerDashboard: React.FC = () => {
           filteredArrivals = filteredArrivals.filter(b => b.facilityId === targetId)
         }
         setUpcomingHandovers(filteredArrivals)
+        setHandoverPage(1)
       } else {
         setUpcomingHandovers([])
+        setHandoverPage(1)
       }
 
       // 5. Active Rentals / Returns
@@ -339,6 +349,7 @@ export const ManagerDashboard: React.FC = () => {
           filteredRentals = filteredRentals.filter(b => b.facilityId === targetId)
         }
         setActiveRentals(filteredRentals)
+        setRentalPage(1)
       } else {
         setActiveRentals([])
       }
@@ -389,28 +400,34 @@ export const ManagerDashboard: React.FC = () => {
           filteredArrivals = filteredArrivals.filter(b => b.facilityId === targetId)
         }
         setUpcomingHandovers(filteredArrivals)
+        setHandoverPage(1)
       } else {
         setUpcomingHandovers([])
+        setHandoverPage(1)
       }
     } catch {
       setUpcomingHandovers([])
+      setHandoverPage(1)
     }
   }
 
   const handleCheckinTimeframeChange = (tf: 'current' | 'today' | 'past' | 'future' | 'all') => {
     setCheckinTimeframe(tf)
+    setHandoverPage(1)
     fetchUpcomingHandovers(selectedFacilityId, tf, checkinFromDate, checkinToDate)
   }
 
   const handleCheckinDateFilterApply = (from: string, to: string) => {
     setCheckinFromDate(from)
     setCheckinToDate(to)
+    setHandoverPage(1)
     fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, from, to)
   }
 
   const handleResetCheckinDateFilter = () => {
     setCheckinFromDate('')
     setCheckinToDate('')
+    setHandoverPage(1)
     fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, '', '')
   }
 
@@ -601,6 +618,31 @@ export const ManagerDashboard: React.FC = () => {
 
   const facilityProfile = useMemo(() => parseFacilityLayoutConfig(currentFacility?.layoutConfig), [currentFacility])
   const selectedUnitOverdue = overdueItems.find(item => item.unitCode === selectedUnit?.id)
+
+  // Handover & Return paginated datasets
+  const totalHandoverPages = Math.max(1, Math.ceil(upcomingHandovers.length / handoverPageSize))
+  const paginatedUpcomingHandovers = useMemo(() => {
+    const start = (handoverPage - 1) * handoverPageSize
+    return upcomingHandovers.slice(start, start + handoverPageSize)
+  }, [upcomingHandovers, handoverPage, handoverPageSize])
+
+  const totalRentalPages = Math.max(1, Math.ceil(activeRentals.length / rentalPageSize))
+  const paginatedRentals = useMemo(() => {
+    const start = (rentalPage - 1) * rentalPageSize
+    return activeRentals.slice(start, start + rentalPageSize)
+  }, [activeRentals, rentalPage, rentalPageSize])
+
+  useEffect(() => {
+    if (handoverPage > totalHandoverPages) {
+      setHandoverPage(totalHandoverPages)
+    }
+  }, [totalHandoverPages, handoverPage])
+
+  useEffect(() => {
+    if (rentalPage > totalRentalPages) {
+      setRentalPage(totalRentalPages)
+    }
+  }, [totalRentalPages, rentalPage])
 
   // Current shift identification
   const currentShiftText = useMemo(() => {
@@ -1572,7 +1614,7 @@ export const ManagerDashboard: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {upcomingHandovers.map(b => (
+                    {paginatedUpcomingHandovers.map(b => (
                       <tr key={b.id} className="hover:bg-slate-50/80">
                         <td className="py-3 px-3">
                           <span className="font-bold text-slate-900 block">{b.customerName || 'N/A'}</span>
@@ -1609,46 +1651,28 @@ export const ManagerDashboard: React.FC = () => {
                         <td className="py-3 px-3 text-right">
                           <div className="flex items-center justify-end gap-2 flex-wrap">
                             {b.assignedStaffName ? (
-                              <div className="flex items-center gap-1.5">
-                                <div
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold"
-                                  title={b.staffAssignmentNotes || undefined}
-                                >
-                                  <span className="material-symbols-outlined text-[14px] text-emerald-600">person_check</span>
-                                  <span>{b.assignedStaffName}</span>
-                                </div>
-                                {!isAdmin && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setActiveBookingId(b.id)
-                                      const el = document.getElementById('handover-workbench-section')
-                                      if (el) el.scrollIntoView({ behavior: 'smooth' })
-                                    }}
-                                    className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 shadow-xs ${
-                                      activeBookingId === b.id
-                                        ? 'bg-cyan-700 text-white ring-2 ring-cyan-300'
-                                        : 'bg-cyan-600 hover:bg-cyan-700 text-white'
-                                    }`}
-                                    title="Mở bàn vận hành tiếp đón & bàn giao cho đơn này"
-                                  >
-                                    <span className="material-symbols-outlined text-[14px]">desktop_windows</span>
-                                    <span>{activeBookingId === b.id ? 'Đang mở bàn' : 'Vận hành bàn giao'}</span>
-                                  </button>
-                                )}
+                              <div
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold"
+                                title={b.staffAssignmentNotes || undefined}
+                              >
+                                <span className="material-symbols-outlined text-[14px] text-emerald-600">person_check</span>
+                                <span>{b.assignedStaffName}</span>
                               </div>
+                            ) : (role === 'FACILITY_MANAGER' || role === 'STAFF') && !isAdmin ? (
+                              <button
+                                type="button"
+                                disabled={claimingBookingId === b.id}
+                                onClick={() => handleManagerClaimReception(b)}
+                                className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
+                                <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận & Mở bàn'}</span>
+                              </button>
                             ) : (
-                              !isAdmin && (
-                                <button
-                                  type="button"
-                                  disabled={claimingBookingId === b.id}
-                                  onClick={() => handleManagerClaimReception(b)}
-                                  className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
-                                >
-                                  <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
-                                  <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận & Mở bàn'}</span>
-                                </button>
-                              )
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-semibold">
+                                <span className="material-symbols-outlined text-[14px] text-amber-600">hourglass_empty</span>
+                                <span>Chờ tiếp nhận</span>
+                              </span>
                             )}
 
                             <button
@@ -1667,6 +1691,78 @@ export const ManagerDashboard: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
+
+                {/* Table 1 Pagination - Centered */}
+                {upcomingHandovers.length > 0 && (
+                  <div className="relative flex flex-col md:flex-row items-center justify-between gap-3 pt-3.5 mt-2 border-t border-slate-100 text-xs text-slate-500">
+                    <div className="text-center md:text-left">
+                      Hiển thị <span className="font-semibold text-slate-800 font-mono">{paginatedUpcomingHandovers.length}</span> trên tổng số{' '}
+                      <span className="font-semibold text-slate-800 font-mono">{upcomingHandovers.length}</span> đơn hẹn
+                    </div>
+
+                    {/* Center: Pagination Controls */}
+                    <div className="flex items-center justify-center gap-1.5 md:absolute md:left-1/2 md:-translate-x-1/2">
+                      <button
+                        type="button"
+                        onClick={() => setHandoverPage(p => Math.max(1, p - 1))}
+                        disabled={handoverPage === 1}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-xs font-semibold text-slate-700 transition flex items-center gap-1 shadow-2xs"
+                        title="Trang trước"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+                        <span className="hidden md:inline">Trước</span>
+                      </button>
+
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: totalHandoverPages }, (_, i) => i + 1).map(pageNum => {
+                          if (
+                            totalHandoverPages > 6 &&
+                            pageNum !== 1 &&
+                            pageNum !== totalHandoverPages &&
+                            Math.abs(pageNum - handoverPage) > 1
+                          ) {
+                            if (pageNum === 2 || pageNum === totalHandoverPages - 1) {
+                              return (
+                                <span key={pageNum} className="px-1 text-slate-400 font-mono">
+                                  ...
+                                </span>
+                              )
+                            }
+                            return null
+                          }
+                          const isActive = handoverPage === pageNum
+                          return (
+                            <button
+                              key={pageNum}
+                              type="button"
+                              onClick={() => setHandoverPage(pageNum)}
+                              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer ${
+                                isActive
+                                  ? 'bg-slate-900 text-white shadow-xs'
+                                  : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                              }`}
+                            >
+                              {pageNum}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setHandoverPage(p => Math.min(totalHandoverPages, p + 1))}
+                        disabled={handoverPage === totalHandoverPages}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-xs font-semibold text-slate-700 transition flex items-center gap-1 shadow-2xs"
+                        title="Trang sau"
+                      >
+                        <span className="hidden md:inline">Sau</span>
+                        <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                      </button>
+                    </div>
+
+                    <div className="hidden md:block w-28 pointer-events-none" aria-hidden="true" />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1700,7 +1796,7 @@ export const ManagerDashboard: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {(showAllRentals ? activeRentals : activeRentals.slice(0, 10)).map(r => {
+                    {paginatedRentals.map(r => {
                       const countdown = getExpirationCountdown(r.endDate)
                       return (
                         <tr key={r.id} className="hover:bg-slate-50/80">
@@ -1741,18 +1837,75 @@ export const ManagerDashboard: React.FC = () => {
                   </tbody>
                 </table>
 
-                {activeRentals.length > 10 && (
-                  <div className="pt-3.5 mt-2 flex items-center justify-between border-t border-slate-100 text-xs text-slate-500">
-                    <span>
-                      Hiển thị <strong>{showAllRentals ? activeRentals.length : 10}</strong> trên tổng số <strong>{activeRentals.length}</strong> hợp đồng
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setShowAllRentals(!showAllRentals)}
-                      className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition cursor-pointer shadow-2xs"
-                    >
-                      {showAllRentals ? 'Thu gọn (10 hợp đồng)' : `Xem tất cả ${activeRentals.length} hợp đồng`}
-                    </button>
+                {/* Table 2 Pagination - Centered */}
+                {activeRentals.length > 0 && (
+                  <div className="relative flex flex-col md:flex-row items-center justify-between gap-3 pt-3.5 mt-2 border-t border-slate-100 text-xs text-slate-500">
+                    <div className="text-center md:text-left">
+                      Hiển thị <span className="font-semibold text-slate-800 font-mono">{paginatedRentals.length}</span> trên tổng số{' '}
+                      <span className="font-semibold text-slate-800 font-mono">{activeRentals.length}</span> hợp đồng
+                    </div>
+
+                    {/* Center: Pagination Controls */}
+                    <div className="flex items-center justify-center gap-1.5 md:absolute md:left-1/2 md:-translate-x-1/2">
+                      <button
+                        type="button"
+                        onClick={() => setRentalPage(p => Math.max(1, p - 1))}
+                        disabled={rentalPage === 1}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-xs font-semibold text-slate-700 transition flex items-center gap-1 shadow-2xs"
+                        title="Trang trước"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+                        <span className="hidden md:inline">Trước</span>
+                      </button>
+
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: totalRentalPages }, (_, i) => i + 1).map(pageNum => {
+                          if (
+                            totalRentalPages > 6 &&
+                            pageNum !== 1 &&
+                            pageNum !== totalRentalPages &&
+                            Math.abs(pageNum - rentalPage) > 1
+                          ) {
+                            if (pageNum === 2 || pageNum === totalRentalPages - 1) {
+                              return (
+                                <span key={pageNum} className="px-1 text-slate-400 font-mono">
+                                  ...
+                                </span>
+                              )
+                            }
+                            return null
+                          }
+                          const isActive = rentalPage === pageNum
+                          return (
+                            <button
+                              key={pageNum}
+                              type="button"
+                              onClick={() => setRentalPage(pageNum)}
+                              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer ${
+                                isActive
+                                  ? 'bg-slate-900 text-white shadow-xs'
+                                  : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                              }`}
+                            >
+                              {pageNum}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setRentalPage(p => Math.min(totalRentalPages, p + 1))}
+                        disabled={rentalPage === totalRentalPages}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-xs font-semibold text-slate-700 transition flex items-center gap-1 shadow-2xs"
+                        title="Trang sau"
+                      >
+                        <span className="hidden md:inline">Sau</span>
+                        <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                      </button>
+                    </div>
+
+                    <div className="hidden md:block w-28 pointer-events-none" aria-hidden="true" />
                   </div>
                 )}
               </div>

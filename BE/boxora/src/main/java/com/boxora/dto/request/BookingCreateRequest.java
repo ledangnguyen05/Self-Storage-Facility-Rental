@@ -19,7 +19,22 @@ public class BookingCreateRequest {
     @NotNull(message = "Storage unit ID is required")
     private UUID storageUnitId;
 
+    /** ID cơ sở lưu trữ được khách chọn ở Bước 1 */
+    private UUID facilityId;
+
     private UUID customerId;
+
+    /** Họ và tên người đặt */
+    private String fullName;
+
+    /** Số điện thoại liên hệ */
+    private String phone;
+
+    /** Địa chỉ email nhận phiếu hẹn */
+    private String email;
+
+    /** Ghi chú yêu cầu đặc biệt */
+    private String specialNotes;
 
     @NotNull(message = "Start date is required")
     private LocalDate startDate;

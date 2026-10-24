@@ -1,6 +1,7 @@
 import { useLanguage } from '../../context/LanguageContext'
 import React, { useState, useEffect, useMemo } from 'react'
 import {
+  AlertCircle,
   X,
   MapPin,
   Search,
@@ -331,7 +332,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
       return {
         ...fac,
         distanceKm,
-        availableCount: availableCount > 0 ? availableCount : (unitsInFac.length > 0 ? 0 : 8), // sensible fallback if mockup
+        availableCount: availableCount, // Real available count only
       }
     }).sort((a, b) => {
       if (a.distanceKm != null && b.distanceKm != null) {
@@ -363,7 +364,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     }) || available[0] || null
 
     return {
-      count: available.length > 0 ? available.length : 5,
+      count: available.length,
       matchedUnit: matched,
     }
   }, [selectedFacility, storageUnits, selectedTierKey])
@@ -400,17 +401,45 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   // Form Validation
   const validateStep3 = () => {
     const errors: Record<string, string> = {}
-    if (!fullName.trim()) errors.fullName = 'Vui lòng nhập họ và tên của bạn'
-    if (!phone.trim()) {
+    const nameTrim = fullName.trim()
+    if (!nameTrim) {
+      errors.fullName = 'Vui lòng nhập họ và tên của bạn'
+    } else if (nameTrim.length < 2 || nameTrim.length > 100) {
+      errors.fullName = 'Họ và tên phải từ 2 đến 100 ký tự'
+    } else if (!/^[\p{L}\s'.-]+$/u.test(nameTrim)) {
+      errors.fullName = 'Họ và tên chỉ được chứa chữ cái tiếng Việt/Latin và khoảng trắng'
+    } else if (nameTrim.split(/\s+/).filter(Boolean).length < 2) {
+      errors.fullName = 'Vui lòng nhập đầy đủ cả họ và tên (tối thiểu 2 từ)'
+    }
+
+    const cleanPhone = phone.trim().replace(/[\s.-]/g, '')
+    if (!cleanPhone) {
       errors.phone = 'Vui lòng nhập số điện thoại liên hệ'
-    } else if (!/^(0[3|5|7|8|9])[0-9]{8}$/.test(phone.trim().replace(/\s/g, ''))) {
-      errors.phone = 'Số điện thoại không đúng định dạng (10 số, bắt đầu bằng 03, 05, 07, 08, 09)'
+    } else if (!/^(0|\+84)(3[2-9]|5[2689]|7[06-9]|8[1-9]|9[0-9])[0-9]{7}$/.test(cleanPhone)) {
+      errors.phone = 'Số điện thoại di động Việt Nam không hợp lệ (10 số, bắt đầu bằng 03, 05, 07, 08, 09 hoặc +84)'
     }
-    if (!idCard.trim()) {
-      errors.idCard = 'Vui lòng nhập số CCCD hoặc Hộ chiếu'
-    } else if (idCard.trim().length < 8 || idCard.trim().length > 15) {
-      errors.idCard = 'Số CCCD/Hộ chiếu hợp lệ từ 9 đến 12 ký tự'
+
+    const cleanId = idCard.trim().toUpperCase()
+    if (!cleanId) {
+      errors.idCard = idCardType === 'CCCD' ? 'Vui lòng nhập số CCCD 12 chữ số' : 'Vui lòng nhập số Hộ chiếu'
+    } else if (idCardType === 'CCCD') {
+      if (!/^\d{12}$/.test(cleanId)) {
+        errors.idCard = 'Số CCCD phải bao gồm đúng 12 chữ số'
+      }
+    } else {
+      if (!/^[A-Z][0-9]{7,8}$/.test(cleanId)) {
+        errors.idCard = 'Số Hộ chiếu không hợp lệ (1 chữ cái in hoa theo sau là 7-8 chữ số)'
+      }
     }
+
+    if (email.trim() && !/^[A-Za-z0-9+_.-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})$/.test(email.trim())) {
+      errors.email = 'Địa chỉ email không đúng định dạng (ví dụ: name@domain.com)'
+    }
+
+    if (specialNotes && specialNotes.length > 500) {
+      errors.specialNotes = 'Ghi chú tối đa 500 ký tự'
+    }
+
     if (!checkInDate) {
       errors.checkInDate = 'Vui lòng chọn ngày dự kiến đến nhận kho'
     }
@@ -847,6 +876,12 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
               </div>
 
               {/* 4 Size Tier Options */}
+              {tierAvailability.count === 0 && (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2.5">
+                  <AlertCircle size={16} className="text-amber-600 flex-shrink-0" />
+                  <span>Cơ sở này hiện chưa có kho khả dụng cho gói này. Vui lòng chọn gói kích thước khác hoặc đổi cơ sở.</span>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {(Object.keys(SIZE_TIERS) as SizeTierKey[]).map((tierKey) => {
                   const tier = SIZE_TIERS[tierKey]

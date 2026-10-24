@@ -293,6 +293,147 @@ class BookingServiceTest {
         }
 
         @Test
+        @DisplayName("Cơ sở không khớp: Khách gửi unitId thuộc cơ sở khác với facilityId đã chọn -> Ném INVALID_REQUEST")
+        void createBooking_FacilityMismatch_ThrowsException() {
+            UUID wrongFacilityId = UUID.randomUUID();
+            BookingCreateRequest request = BookingCreateRequest.builder()
+                    .storageUnitId(unitId)
+                    .facilityId(wrongFacilityId)
+                    .customerId(customerId)
+                    .startDate(LocalDate.now().plusDays(2))
+                    .rentalMonths(1)
+                    .build();
+
+            when(storageUnitRepository.findWithDetailsByIdForUpdate(unitId)).thenReturn(Optional.of(testUnit));
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.createBooking(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+            assertThat(ex.getMessage()).contains("không thuộc về cơ sở lưu trữ tương ứng");
+        }
+
+        @Test
+        @DisplayName("Họ và tên không hợp lệ (ví dụ: 'ưer' chỉ 1 từ / vô nghĩa): Ném INVALID_REQUEST")
+        void createBooking_InvalidFullName_ThrowsException() {
+            BookingCreateRequest request = BookingCreateRequest.builder()
+                    .storageUnitId(unitId)
+                    .customerId(customerId)
+                    .fullName("ưer")
+                    .startDate(LocalDate.now().plusDays(2))
+                    .rentalMonths(1)
+                    .build();
+
+            when(storageUnitRepository.findWithDetailsByIdForUpdate(unitId)).thenReturn(Optional.of(testUnit));
+            when(storageUnitLockService.isUnitLocked(unitId)).thenReturn(false);
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(testPolicy));
+            when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.createBooking(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+            assertThat(ex.getMessage().toLowerCase()).contains("họ và tên");
+        }
+
+        @Test
+        @DisplayName("Số điện thoại không hợp lệ (ví dụ: '0'): Ném INVALID_REQUEST")
+        void createBooking_InvalidPhone_ThrowsException() {
+            BookingCreateRequest request = BookingCreateRequest.builder()
+                    .storageUnitId(unitId)
+                    .customerId(customerId)
+                    .fullName("Nguyễn Văn An")
+                    .phone("0")
+                    .startDate(LocalDate.now().plusDays(2))
+                    .rentalMonths(1)
+                    .build();
+
+            when(storageUnitRepository.findWithDetailsByIdForUpdate(unitId)).thenReturn(Optional.of(testUnit));
+            when(storageUnitLockService.isUnitLocked(unitId)).thenReturn(false);
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(testPolicy));
+            when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.createBooking(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+            assertThat(ex.getMessage()).contains("Số điện thoại");
+        }
+
+        @Test
+        @DisplayName("Số CCCD không hợp lệ (ví dụ: '2' không đủ 12 chữ số): Ném INVALID_REQUEST")
+        void createBooking_InvalidCccd_ThrowsException() {
+            BookingCreateRequest request = BookingCreateRequest.builder()
+                    .storageUnitId(unitId)
+                    .customerId(customerId)
+                    .fullName("Nguyễn Văn An")
+                    .phone("0912345678")
+                    .identityCardType("CCCD")
+                    .identityCardNumber("2")
+                    .startDate(LocalDate.now().plusDays(2))
+                    .rentalMonths(1)
+                    .build();
+
+            when(storageUnitRepository.findWithDetailsByIdForUpdate(unitId)).thenReturn(Optional.of(testUnit));
+            when(storageUnitLockService.isUnitLocked(unitId)).thenReturn(false);
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(testPolicy));
+            when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.createBooking(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+            assertThat(ex.getMessage()).contains("CCCD");
+        }
+
+        @Test
+        @DisplayName("Số Hộ chiếu không hợp lệ (ví dụ: '2' sai định dạng): Ném INVALID_REQUEST")
+        void createBooking_InvalidPassport_ThrowsException() {
+            BookingCreateRequest request = BookingCreateRequest.builder()
+                    .storageUnitId(unitId)
+                    .customerId(customerId)
+                    .fullName("John Doe")
+                    .phone("0912345678")
+                    .identityCardType("PASSPORT")
+                    .identityCardNumber("2")
+                    .startDate(LocalDate.now().plusDays(2))
+                    .rentalMonths(1)
+                    .build();
+
+            when(storageUnitRepository.findWithDetailsByIdForUpdate(unitId)).thenReturn(Optional.of(testUnit));
+            when(storageUnitLockService.isUnitLocked(unitId)).thenReturn(false);
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(testPolicy));
+            when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
+
+            AppException ex = assertThrows(AppException.class, () -> bookingService.createBooking(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+            assertThat(ex.getMessage()).contains("Hộ chiếu");
+        }
+
+        @Test
+        @DisplayName("Đặt giữ chỗ thành công với Hộ chiếu hợp lệ: lưu đúng identityCardType và identityCardNumber")
+        void createBooking_ValidPassport_Success() {
+            BookingCreateRequest request = BookingCreateRequest.builder()
+                    .storageUnitId(unitId)
+                    .facilityId(testFacility.getId())
+                    .customerId(customerId)
+                    .fullName("David Miller")
+                    .phone("0912345678")
+                    .identityCardType("PASSPORT")
+                    .identityCardNumber("B1234567")
+                    .startDate(LocalDate.now().plusDays(2))
+                    .rentalMonths(1)
+                    .build();
+
+            when(storageUnitRepository.findWithDetailsByIdForUpdate(unitId)).thenReturn(Optional.of(testUnit));
+            when(storageUnitLockService.isUnitLocked(unitId)).thenReturn(false);
+            when(storageUnitLockService.tryLockUnit(eq(unitId), any(), anyLong())).thenReturn(true);
+            when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
+            when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(testPolicy));
+            when(bookingRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+            BookingResponse response = bookingService.createBooking(request);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getIdentityCardType()).isEqualTo("PASSPORT");
+            assertThat(response.getIdentityCardNumber()).isEqualTo("B1234567");
+            assertThat(response.getAccessPin()).isNull();
+            assertThat(response.getQrAccessToken()).isNull();
+        }
+
+        @Test
         @DisplayName("Số tháng thuê nhỏ hơn quy định chính sách cơ sở: Ném BOOKING_MINIMUM_DURATION_INVALID")
         void createBooking_BelowPolicyMinimum_ThrowsException() {
             testPolicy.setMinimumRentalMonths(3);
