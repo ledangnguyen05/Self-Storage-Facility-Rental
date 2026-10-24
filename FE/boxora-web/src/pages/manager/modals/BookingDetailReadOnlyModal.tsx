@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react'
+import { useAuth } from '../../../context/AuthContext'
 import { handoverService, HandoverPrerequisites } from '../../../services/handoverService'
 import { bookingService } from '../../../services/bookingService'
 import { Booking } from '../../../types'
@@ -18,6 +19,8 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
   unitCode,
   unitBackendId,
 }) => {
+  const { role } = useAuth()
+  const isAdmin = role === 'ADMIN'
   const [loading, setLoading] = useState<boolean>(true)
   const [prereq, setPrereq] = useState<HandoverPrerequisites | null>(null)
   const [booking, setBooking] = useState<Booking | null>(null)
@@ -367,27 +370,29 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
                   )}
                 </div>
 
-                {/* Upload Button */}
-                <div className="mt-2.5 pt-2 border-t border-slate-100">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*,application/pdf"
-                    className="hidden"
-                    onChange={handleUploadProof}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadingProof}
-                    className="w-full py-1.5 px-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-[11px] flex items-center justify-center gap-1 transition cursor-pointer disabled:opacity-50"
-                  >
-                    <span className="material-symbols-outlined text-[14px]">
-                      {uploadingProof ? 'hourglass_top' : 'upload_file'}
-                    </span>
-                    <span>{uploadingProof ? 'Đang Tải...' : 'Upload Ảnh Chuyển Khoản'}</span>
-                  </button>
-                </div>
+                {/* Upload Button: Chế độ giám sát của Admin không được thực hiện thao tác upload */}
+                {!isAdmin && (
+                  <div className="mt-2.5 pt-2 border-t border-slate-100">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="hidden"
+                      onChange={handleUploadProof}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingProof}
+                      className="w-full py-1.5 px-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-[11px] flex items-center justify-center gap-1 transition cursor-pointer disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">
+                        {uploadingProof ? 'hourglass_top' : 'upload_file'}
+                      </span>
+                      <span>{uploadingProof ? 'Đang Tải...' : 'Upload Ảnh Chuyển Khoản'}</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Điều kiện 3: Đối soát CCCD */}
@@ -445,7 +450,11 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-600 leading-relaxed flex items-start gap-2">
               <span className="material-symbols-outlined text-[16px] text-blue-600 shrink-0 mt-0.5">policy</span>
               <div>
-                <strong>Quy định phân quyền:</strong> Đây là chế độ xem hồ sơ giám sát của <strong>Quản lý cơ sở</strong>. Các thao tác tiếp đón khách, đối soát CCCD, nghiệm thu 5 hạng mục hiện trường và phát hành mã PIN bàn giao được thực hiện trực tiếp bởi <strong>Nhân viên quầy (Facility Staff)</strong> tại Bàn Vận Hành Quầy &amp; Tiếp Đón.
+                <strong>Quy định phân quyền:</strong> {isAdmin ? (
+                  <span>Tài khoản <strong>Quản Trị Viên (Admin)</strong> đang theo dõi ở chế độ chỉ đọc giám sát toàn hệ thống. Mọi thao tác thu tiền, bổ sung chứng từ, kiểm tra CCCD và bàn giao kho thuộc thẩm quyền của Nhân viên quầy và Quản lý cơ sở.</span>
+                ) : (
+                  <span>Đây là chế độ xem hồ sơ giám sát của <strong>Quản lý cơ sở</strong>. Các thao tác tiếp đón khách, đối soát CCCD, nghiệm thu 5 hạng mục hiện trường và phát hành mã PIN bàn giao được thực hiện trực tiếp bởi <strong>Nhân viên quầy (Facility Staff)</strong> tại Bàn Vận Hành Quầy &amp; Tiếp Đón.</span>
+                )}
               </div>
             </div>
 

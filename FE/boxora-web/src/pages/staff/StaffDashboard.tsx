@@ -1231,7 +1231,7 @@ export const StaffDashboard: React.FC = () => {
                     <th className="py-3 px-4 font-semibold">Cơ sở &amp; Kho</th>
                     <th className="py-3 px-4 font-semibold">Lịch hẹn check-in</th>
                     <th className="py-3 px-4 font-semibold">Trạng thái &amp; Chữ ký</th>
-                    <th className="py-3 px-4 font-semibold text-right">Thao tác xử lý</th>
+                    <th className="py-3 px-4 font-semibold text-right">Hành Động</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -1396,11 +1396,11 @@ export const StaffDashboard: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={() => setReviewDetailBooking(b)}
-                                className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
+                                className="px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
                                 title="Xem chi tiết đơn"
                               >
                                 <span className="material-symbols-outlined text-[15px]">visibility</span>
-                                <span>Xem đơn</span>
+                                <span>Xem chi tiết</span>
                               </button>
 
                               {isPending && (
@@ -2459,11 +2459,11 @@ export const StaffDashboard: React.FC = () => {
                                     <button
                                       type="button"
                                       onClick={() => setReviewDetailBooking(b)}
-                                      className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer flex items-center gap-1"
+                                      className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer flex items-center gap-1"
                                       title="Xem chi tiết đơn giữ chỗ"
                                     >
                                       <span className="material-symbols-outlined text-[14px]">visibility</span>
-                                      <span>Xem đơn</span>
+                                      <span>Xem chi tiết</span>
                                     </button>
                                     <button
                                       type="button"

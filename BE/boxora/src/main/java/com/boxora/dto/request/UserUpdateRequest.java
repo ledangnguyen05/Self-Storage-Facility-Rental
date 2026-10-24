@@ -20,7 +20,6 @@ public class UserUpdateRequest {
 
     private Boolean isActive;
 
-    @NotBlank(message = "Phone is required")
     @Pattern(
         regexp = "^(0|\\+84)(3|5|7|8|9)[0-9]{8}$",
         message = "Phone must be a valid Vietnamese phone number"

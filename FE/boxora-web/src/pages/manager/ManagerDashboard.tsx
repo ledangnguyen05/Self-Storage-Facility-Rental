@@ -53,6 +53,7 @@ export const ManagerDashboard: React.FC = () => {
     facilities?: Facility[]
   }>() || {}
 
+  const isAdmin = role === 'ADMIN'
   const isFacilityScoped = role === 'FACILITY_MANAGER' || role === 'STAFF'
   const assignedFacilityId = user?.facilityId
 
@@ -1449,7 +1450,7 @@ export const ManagerDashboard: React.FC = () => {
                 </p>
               </div>
             </div>
-            {activeBookingId && (
+            {activeBookingId && !isAdmin && (
               <button
                 type="button"
                 onClick={() => setActiveBookingId('')}
@@ -1461,22 +1462,24 @@ export const ManagerDashboard: React.FC = () => {
             )}
           </div>
 
-          {/* BÀN THAO TÁC CHECK-IN & BÀN GIAO KHO */}
-          <div id="handover-workbench-section" className="scroll-mt-6">
-            <HandoverCheckInWorkbench
-              facilityId={selectedFacilityId || user?.facilityId}
-              arrivals={upcomingHandovers}
-              activeBookingId={activeBookingId}
-              onSelectBooking={setActiveBookingId}
-              onHandoverComplete={(bookingId) => {
-                setActiveBookingId('')
-                fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, checkinFromDate, checkinToDate)
-                const targetFac = selectedFacilityId || user?.facilityId
-                if (targetFac) void fetchUnits(targetFac)
-                triggerAction('Đã hoàn tất bàn giao kho và cấp phát mã PIN cho khách hàng thành công!')
-              }}
-            />
-          </div>
+          {/* BÀN THAO TÁC CHECK-IN & BÀN GIAO KHO (Chỉ dành cho Quản lý cơ sở & Nhân viên quầy thực địa, Admin chỉ giám sát) */}
+          {!isAdmin && (
+            <div id="handover-workbench-section" className="scroll-mt-6">
+              <HandoverCheckInWorkbench
+                facilityId={selectedFacilityId || user?.facilityId}
+                arrivals={upcomingHandovers}
+                activeBookingId={activeBookingId}
+                onSelectBooking={setActiveBookingId}
+                onHandoverComplete={(bookingId) => {
+                  setActiveBookingId('')
+                  fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, checkinFromDate, checkinToDate)
+                  const targetFac = selectedFacilityId || user?.facilityId
+                  if (targetFac) void fetchUnits(targetFac)
+                  triggerAction('Đã hoàn tất bàn giao kho và cấp phát mã PIN cho khách hàng thành công!')
+                }}
+              />
+            </div>
+          )}
 
           {/* Upcoming Handovers Table */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
@@ -1565,7 +1568,7 @@ export const ManagerDashboard: React.FC = () => {
                       <th className="py-2.5 px-3">Ngày Check-in</th>
                       <th className="py-2.5 px-3">Trạng Thái Đơn</th>
                       <th className="py-2.5 px-3">Cọc Giữ Chỗ</th>
-                      <th className="py-2.5 px-3 rounded-r-lg text-right">Chi Tiết / Tiếp Nhận</th>
+                      <th className="py-2.5 px-3 rounded-r-lg text-right">Hành Động</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1614,34 +1617,38 @@ export const ManagerDashboard: React.FC = () => {
                                   <span className="material-symbols-outlined text-[14px] text-emerald-600">person_check</span>
                                   <span>{b.assignedStaffName}</span>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setActiveBookingId(b.id)
-                                    const el = document.getElementById('handover-workbench-section')
-                                    if (el) el.scrollIntoView({ behavior: 'smooth' })
-                                  }}
-                                  className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 shadow-xs ${
-                                    activeBookingId === b.id
-                                      ? 'bg-cyan-700 text-white ring-2 ring-cyan-300'
-                                      : 'bg-cyan-600 hover:bg-cyan-700 text-white'
-                                  }`}
-                                  title="Mở bàn vận hành tiếp đón & bàn giao cho đơn này"
-                                >
-                                  <span className="material-symbols-outlined text-[14px]">desktop_windows</span>
-                                  <span>{activeBookingId === b.id ? 'Đang mở bàn' : 'Vận hành bàn giao'}</span>
-                                </button>
+                                {!isAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveBookingId(b.id)
+                                      const el = document.getElementById('handover-workbench-section')
+                                      if (el) el.scrollIntoView({ behavior: 'smooth' })
+                                    }}
+                                    className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 shadow-xs ${
+                                      activeBookingId === b.id
+                                        ? 'bg-cyan-700 text-white ring-2 ring-cyan-300'
+                                        : 'bg-cyan-600 hover:bg-cyan-700 text-white'
+                                    }`}
+                                    title="Mở bàn vận hành tiếp đón & bàn giao cho đơn này"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">desktop_windows</span>
+                                    <span>{activeBookingId === b.id ? 'Đang mở bàn' : 'Vận hành bàn giao'}</span>
+                                  </button>
+                                )}
                               </div>
                             ) : (
-                              <button
-                                type="button"
-                                disabled={claimingBookingId === b.id}
-                                onClick={() => handleManagerClaimReception(b)}
-                                className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
-                              >
-                                <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
-                                <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận & Mở bàn'}</span>
-                              </button>
+                              !isAdmin && (
+                                <button
+                                  type="button"
+                                  disabled={claimingBookingId === b.id}
+                                  onClick={() => handleManagerClaimReception(b)}
+                                  className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
+                                  <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận & Mở bàn'}</span>
+                                </button>
+                              )
                             )}
 
                             <button
@@ -1650,9 +1657,9 @@ export const ManagerDashboard: React.FC = () => {
                                 setReadOnlyTargetBookingId(b.id)
                                 setShowReadOnlyBookingModal(true)
                               }}
-                              className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold transition cursor-pointer"
+                              className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-[11px] transition cursor-pointer"
                             >
-                              Xem hồ sơ đối soát
+                              Xem chi tiết
                             </button>
                           </div>
                         </td>
@@ -1689,7 +1696,7 @@ export const ManagerDashboard: React.FC = () => {
                       <th className="py-2.5 px-3">Hạn Kết Thúc</th>
                       <th className="py-2.5 px-3">Hết Hạn Sau</th>
                       <th className="py-2.5 px-3">Tiền Cọc Bảo Lãnh</th>
-                      <th className="py-2.5 px-3 rounded-r-lg text-right">Hành Động Quản Lý</th>
+                      <th className="py-2.5 px-3 rounded-r-lg text-right">Hành Động</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">

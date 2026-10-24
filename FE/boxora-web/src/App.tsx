@@ -132,11 +132,11 @@ function MainContent() {
               }
             />
 
-            {/* 2. Staff Portal: Staff, Facility Manager, Admin */}
+            {/* 2. Staff Portal: Staff, Facility Manager */}
             <Route
               path="staff"
               element={
-                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'ADMIN']}>
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER']}>
                   <StaffDashboard />
                 </ProtectedRoute>
               }

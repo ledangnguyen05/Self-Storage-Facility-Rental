@@ -137,9 +137,10 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
 }) => {
   const { user } = useAuth()
   const roleName = (userRole || user?.role?.name || (typeof user?.role === 'string' ? user?.role : '') || '').toUpperCase()
-  const isManager = roleName === 'FACILITY_MANAGER' || roleName === 'BUSINESS_MANAGER' || roleName === 'ADMIN' || roleName === 'SYSTEM_ADMIN'
-  const isStaff = roleName === 'STAFF'
-  const isBusinessManager = roleName === 'BUSINESS_MANAGER' || roleName === 'ADMIN'
+  const isAdmin = roleName === 'ADMIN' || roleName === 'SYSTEM_ADMIN'
+  const isManager = !isAdmin && (roleName === 'FACILITY_MANAGER' || roleName === 'BUSINESS_MANAGER')
+  const isStaff = !isAdmin && roleName === 'STAFF'
+  const isBusinessManager = !isAdmin && roleName === 'BUSINESS_MANAGER'
 
   // Query & Filter States
   const [selectedFacility, setSelectedFacility] = useState<string>(currentFacilityId || 'all')
@@ -829,7 +830,7 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
                 <th className="py-3 px-4 font-semibold">Thời Hạn Mới</th>
                 <th className="py-3 px-4 font-semibold text-right">Phí Gia Hạn</th>
                 <th className="py-3 px-4 font-semibold text-center">Trạng Thái</th>
-                <th className="py-3 px-4 font-semibold text-right">Thao Tác Nghiệp Vụ</th>
+                <th className="py-3 px-4 font-semibold text-right">Hành Động</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
@@ -963,10 +964,10 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
                         <button
                           type="button"
                           onClick={() => setSelectedRenewalForDetail(r)}
-                          className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-semibold text-xs transition cursor-pointer"
+                          className="px-2.5 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md font-bold text-xs transition cursor-pointer"
                           title="Xem chi tiết"
                         >
-                          Chi tiết
+                          Xem chi tiết
                         </button>
 
                         {/* Phê duyệt & Từ chối: dành cho Facility Manager / Business Manager */}
@@ -1028,8 +1029,8 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
                           </button>
                         )}
 
-                        {/* Tiếp nhận 6 tiêu chí tại quầy: CHỈ khi là tại quầy (COUNTER) */}
-                        {r.paymentMethod === 'COUNTER' && (r.status === 'PENDING_SIGNATURE' || r.status === 'PENDING_PAYMENT') && (
+                        {/* Tiếp nhận 6 tiêu chí tại quầy: CHỈ khi là nhân viên hoặc quản lý trực tiếp tại quầy (COUNTER) */}
+                        {!isAdmin && (isStaff || isManager) && r.paymentMethod === 'COUNTER' && (r.status === 'PENDING_SIGNATURE' || r.status === 'PENDING_PAYMENT') && (
                           <button
                             type="button"
                             onClick={() => handleOpenReception(r)}
