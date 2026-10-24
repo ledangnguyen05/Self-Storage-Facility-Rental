@@ -78,7 +78,7 @@ export const ShiftRosterPage: React.FC = () => {
 
   const userRole = (typeof user?.role === 'object' ? user?.role?.name : user?.role) || user?.roleName
   const isBusinessManager = userRole === 'BUSINESS_MANAGER'
-  const isAdmin = userRole === 'ADMIN'
+  const isAdmin = userRole === 'ADMIN' || userRole === 'SYSTEM_ADMIN'
   const isFacilityManager = userRole === 'FACILITY_MANAGER'
   const canFilterFacility = isBusinessManager || isAdmin
 
@@ -390,6 +390,10 @@ export const ShiftRosterPage: React.FC = () => {
   }
 
   const handleDeleteAssignment = async (id: string) => {
+    if (isAdmin) {
+      showToast('Tài khoản Quản trị viên chỉ có quyền xem, giám sát ca trực toàn hệ thống.')
+      return
+    }
     if (!window.confirm('Bạn có chắc chắn muốn hủy phân công ca trực này?')) return
     setActionLoadingId(id)
     try {
@@ -405,6 +409,10 @@ export const ShiftRosterPage: React.FC = () => {
 
   // Swap Review Actions
   const handleReviewSwap = async (swapId: string, status: 'APPROVED' | 'REJECTED') => {
+    if (isAdmin) {
+      showToast('Tài khoản Quản trị viên chỉ có quyền xem, giám sát ca trực toàn hệ thống.')
+      return
+    }
     setActionLoadingId(swapId)
     try {
       await staffAssignmentService.reviewSwapRequest(swapId, {
@@ -619,7 +627,12 @@ export const ShiftRosterPage: React.FC = () => {
               <span>Làm mới</span>
             </button>
 
-            {isBusinessManager ? (
+            {isAdmin ? (
+              <div className="px-3.5 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-semibold border border-slate-200 flex items-center gap-1.5 shadow-2xs">
+                <span className="material-symbols-outlined text-[16px] text-slate-500">visibility</span>
+                <span>Giám sát hệ thống (Chỉ xem)</span>
+              </div>
+            ) : isBusinessManager ? (
               <button
                 type="button"
                 onClick={() => setShowShiftModal(true)}
@@ -1162,14 +1175,16 @@ export const ShiftRosterPage: React.FC = () => {
                               Cơ sở hiện có {totalStaffCount} nhân viên thuộc biên chế. Quản lý có thể chọn nút bên dưới để lên lịch phân công ca trực hoặc chuyển sang xem tuần này / tháng này.
                             </p>
                             <div className="flex items-center gap-2 mt-2 flex-wrap justify-center">
-                              <button
-                                type="button"
-                                onClick={() => setShowShiftModal(true)}
-                                className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
-                              >
-                                <span className="material-symbols-outlined text-[18px]">person_add</span>
-                                <span>Phân công ca trực ngay</span>
-                              </button>
+                              {!isAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowShiftModal(true)}
+                                  className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">person_add</span>
+                                  <span>Phân công ca trực ngay</span>
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => applyShortcut('THIS_WEEK')}
@@ -1570,7 +1585,12 @@ export const ShiftRosterPage: React.FC = () => {
                               Quá hạn
                             </span>
                           ) : isPending && (
-                            swap.requesterId === user?.id || swap.targetStaffId === user?.id ? (
+                            isAdmin ? (
+                              <span className="text-[11px] font-medium text-slate-500 italic flex items-center justify-end gap-1">
+                                <span className="material-symbols-outlined text-[14px]">visibility</span>
+                                Giám sát (Chỉ xem)
+                              </span>
+                            ) : swap.requesterId === user?.id || swap.targetStaffId === user?.id ? (
                               <span className="text-[11px] font-semibold text-slate-400 italic">
                                 Đơn cá nhân (Chờ cấp trên duyệt)
                               </span>

@@ -11,6 +11,11 @@ import { PageResult } from './userService'
 
 export interface BookingCreatePayload {
   storageUnitId: string
+  facilityId?: string
+  fullName?: string
+  customerPhone?: string
+  customerEmail?: string
+  specialNotes?: string
   customerId?: string
   startDate: string
   expectedArrivalAt?: string

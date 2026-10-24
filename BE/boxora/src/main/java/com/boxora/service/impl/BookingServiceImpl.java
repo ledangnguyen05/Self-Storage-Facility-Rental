@@ -105,6 +105,15 @@ public class BookingServiceImpl implements BookingService {
         StorageUnit unit = storageUnitRepository.findWithDetailsByIdForUpdate(request.getStorageUnitId())
                 .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
 
+        // 1.0 Kiểm tra khớp nối cơ sở: từ chối request cố tình gửi unitId của cơ sở khác (Task 1 Rule 6)
+        if (request.getFacilityId() != null) {
+            if (unit.getFacility() == null || !request.getFacilityId().equals(unit.getFacility().getId())) {
+                log.warn("[FACILITY_MISMATCH] Storage unit {} belongs to facility {}, but request specified facility {}",
+                        unit.getId(), unit.getFacility() != null ? unit.getFacility().getId() : null, request.getFacilityId());
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Kho đã chọn không thuộc về cơ sở lưu trữ tương ứng.");
+            }
+        }
+
         // 1.1 Kiểm tra trạng thái hoạt động của chi nhánh/cơ sở trực thuộc
         if (unit.getFacility() != null) {
             Facility facility = unit.getFacility();
@@ -152,6 +161,9 @@ public class BookingServiceImpl implements BookingService {
                 }
             }
             if (fallbackUnit != null) {
+                if (request.getFacilityId() != null && (fallbackUnit.getFacility() == null || !request.getFacilityId().equals(fallbackUnit.getFacility().getId()))) {
+                    throw new AppException(ErrorCode.STORAGE_UNIT_NOT_AVAILABLE, "Cơ sở này hiện không còn kho khả dụng phù hợp.");
+                }
                 log.info("[UNIT_FALLBACK] Auto-switched from occupied unit {} to available unit {} in same facility", unit.getUnitCode(), fallbackUnit.getUnitCode());
                 unit = fallbackUnit;
                 alreadyOccupied = false;
@@ -164,9 +176,11 @@ public class BookingServiceImpl implements BookingService {
         // 3. Kiểm tra Soft-lock trong Redis (tối ưu hóa - bắt lỗi an toàn nếu Redis không phản hồi)
         try {
             if (storageUnitLockService.isUnitLocked(unit.getId())) {
-                log.warn("[SOFT_LOCK] Releasing stale Redis soft-lock for available unit {}", unit.getId());
-                storageUnitLockService.releaseLock(unit.getId());
+                log.warn("[SOFT_LOCK] Storage unit {} is already locked in Redis", unit.getId());
+                throw new AppException(ErrorCode.STORAGE_UNIT_SOFT_LOCKED);
             }
+        } catch (AppException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("[REDIS_OPTIMIZATION_BYPASS] Redis lock check error for unit {}: {}. Proceeding with authoritative DB pessimistic lock.",
                     unit.getId(), e.getMessage());
@@ -307,12 +321,64 @@ public class BookingServiceImpl implements BookingService {
             holdExpiresAt = now.plusSeconds(timeoutSec);
         }
 
+        // Task 3: Validation thông tin người đặt & nhận bàn giao kho
+        String fullName = request.getFullName();
+        if (fullName != null && !fullName.isBlank()) {
+            fullName = fullName.trim();
+            if (fullName.length() < 2 || fullName.length() > 100) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Họ và tên người đặt phải từ 2 đến 100 ký tự.");
+            }
+            if (!fullName.matches("^[\\p{L}\\s'-\\.]+$")) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Họ và tên chỉ được chứa chữ cái và khoảng trắng hợp lệ.");
+            }
+            if (fullName.split("\\s+").length < 2) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Họ và tên người đặt phải có tối thiểu 2 từ (cả họ và tên).");
+            }
+        }
+
+        String phone = request.getPhone();
+        if (phone != null && !phone.isBlank()) {
+            phone = phone.trim();
+            if (!phone.matches("^(0|\\+84)(3[2-9]|5[2689]|7[06-9]|8[1-9]|9[0-9])[0-9]{7}$")) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Số điện thoại không đúng định dạng di động Việt Nam (10 chữ số).");
+            }
+        }
+
         String idNumber = request.getIdentityCardNumber() != null && !request.getIdentityCardNumber().isBlank()
                 ? request.getIdentityCardNumber().trim()
                 : null;
         String idType = request.getIdentityCardType() != null && !request.getIdentityCardType().isBlank()
-                ? request.getIdentityCardType().trim()
+                ? request.getIdentityCardType().trim().toUpperCase()
                 : "CCCD";
+
+        if (idNumber != null) {
+            if ("PASSPORT".equals(idType)) {
+                if (!idNumber.matches("^[A-Z][0-9]{7,8}$")) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST, "Số Hộ chiếu không hợp lệ (1 chữ cái in hoa theo sau bởi 7–8 chữ số, VD: B1234567).");
+                }
+            } else {
+                if (!idNumber.matches("^[0-9]{12}$")) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST, "Số CCCD phải bao gồm đúng 12 chữ số theo quy chuẩn Bộ Công An.");
+                }
+            }
+        }
+
+        String email = request.getEmail();
+        if (email != null && !email.isBlank()) {
+            email = email.trim();
+            if (!email.matches("^[A-Za-z0-9+_.-]+@([A-Za-z0-9.-]+\\.[A-Za-z]{2,})$")) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Địa chỉ email không đúng định dạng.");
+            }
+        }
+
+        String notes = request.getSpecialNotes();
+        if (notes != null) {
+            notes = notes.trim();
+            if (notes.length() > 500) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Ghi chú không được vượt quá 500 ký tự.");
+            }
+            notes = notes.replaceAll("<[^>]*>", "");
+        }
 
         Booking booking = Booking.builder()
                 .bookingCode(code)
@@ -333,6 +399,7 @@ public class BookingServiceImpl implements BookingService {
                 .signingMethod(resolvedSigningMethod)
                 .identityCardNumber(idNumber)
                 .identityCardType(idType)
+                .staffAssignmentNotes(notes)
                 .accessPin(null) // Chưa cấp PIN trước khi bàn giao
                 .qrAccessToken(null) // Chưa cấp QR trước khi bàn giao
                 .build();
