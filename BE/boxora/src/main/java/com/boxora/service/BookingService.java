@@ -36,4 +36,6 @@ public interface BookingService {
     BookingResponse assignUnitAndProvision(UUID bookingId, UUID unitId, String notes);
     BookingResponse assignUnitAndProvisionByCode(String bookingCode, UUID unitId, String notes);
     BookingResponse getByBookingCode(String bookingCode);
+    BookingResponse confirmBooking(UUID bookingId, String notes);
+    BookingResponse confirmBookingByCode(String bookingCode, String notes);
 }

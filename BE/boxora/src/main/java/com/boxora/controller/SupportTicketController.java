@@ -157,6 +157,36 @@ public class SupportTicketController {
         return ResponseEntity.ok(ApiResponse.success("Đã mở lại phiếu sự cố để xử lý lại", supportTicketService.reopenTicket(id, request.getReason())));
     }
 
+    @PostMapping("/{id}/approve-refund")
+    @PreAuthorize("hasAuthority('SUPPORT_UPDATE') or hasRole('FACILITY_MANAGER') or hasRole('ADMIN')")
+    @Operation(summary = "Quản lý cơ sở hoặc Admin phê duyệt hoàn tiền cho yêu cầu trả kho")
+    public ResponseEntity<ApiResponse<SupportTicketResponse>> approveRefund(
+            @PathVariable UUID id,
+            @Valid @RequestBody com.boxora.dto.request.TicketApproveRefundRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success("Đã phê duyệt số tiền hoàn trả cho yêu cầu", supportTicketService.approveRefund(id, request)));
+    }
+
+    @PostMapping("/{id}/submit-bank-info")
+    @PreAuthorize("hasRole('CUSTOMER') or hasAuthority('SUPPORT_VIEW')")
+    @Operation(summary = "Khách hàng gửi thông tin tài khoản ngân hàng để nhận giải ngân tiền hoàn")
+    public ResponseEntity<ApiResponse<SupportTicketResponse>> submitBankInfo(
+            @PathVariable UUID id,
+            @Valid @RequestBody com.boxora.dto.request.TicketBankInfoRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success("Đã tiếp nhận thông tin ngân hàng của khách hàng", supportTicketService.submitBankInfo(id, request)));
+    }
+
+    @PostMapping("/{id}/admin-confirm-payout")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('REFUND_APPROVE')")
+    @Operation(summary = "Admin xác nhận đã chuyển khoản thành công và đính kèm biên lai ảnh cloud")
+    public ResponseEntity<ApiResponse<SupportTicketResponse>> adminConfirmPayout(
+            @PathVariable UUID id,
+            @Valid @RequestBody com.boxora.dto.request.TicketAdminPayoutRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success("Đã ghi nhận chuyển khoản hoàn tất thành công", supportTicketService.adminConfirmPayout(id, request)));
+    }
+
     @PostMapping("/{id}/contact-logs")
     @PreAuthorize("hasAuthority('SUPPORT_ESCALATE')")
     @Operation(summary = "Facility Manager ghi nhận nhật ký liên hệ hỗ trợ quản lý với BOM khi sự cố vượt thẩm quyền")

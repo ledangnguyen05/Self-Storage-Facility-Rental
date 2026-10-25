@@ -24,6 +24,7 @@ import { staffAssignmentService, StaffAssignmentResponse, isShiftAbsent } from '
 import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
 import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
 import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
+import { EarlyCheckInConfirmModal, isBookingBeforeCheckInTime, EarlyCheckInActionType, getBookingScheduleInfo } from '../../components/modals/EarlyCheckInConfirmModal'
 import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
 import { getAssignmentWindow } from '../../constants/shiftConstants'
 
@@ -165,7 +166,16 @@ export const StaffDashboard: React.FC = () => {
   const [claimingBookingId, setClaimingBookingId] = useState<string | null>(null)
   const [rejectingBooking, setRejectingBooking] = useState<Booking | null>(null)
   const [rejectionReasonText, setRejectionReasonText] = useState<string>('')
+  const [isRejectingSubmitting, setIsRejectingSubmitting] = useState<boolean>(false)
+  const [confirmingBooking, setConfirmingBooking] = useState<Booking | null>(null)
+  const [confirmingNotes, setConfirmingNotes] = useState<string>('')
+  const [isConfirmingSubmitting, setIsConfirmingSubmitting] = useState<boolean>(false)
   const [reviewDetailBooking, setReviewDetailBooking] = useState<Booking | null>(null)
+  const [earlyConfirmState, setEarlyConfirmState] = useState<{
+    booking: Booking
+    actionType: EarlyCheckInActionType
+    onConfirm: () => void
+  } | null>(null)
 
   const handleOpenContractModal = async (booking: Booking) => {
     if (!booking?.id) return
@@ -645,37 +655,76 @@ export const StaffDashboard: React.FC = () => {
     fetchArrivals(currentTargetFacility, selectedShiftFilter, '', '')
   }
 
-  // Nhân viên bấm xác nhận đơn: chuyển sang "Chờ check in" và gửi email đến khách hàng
+  // Mở modal xác nhận đơn đặt giữ chỗ
   const handleStaffConfirmBooking = (booking: Booking) => {
+    setConfirmingBooking(booking)
+    setConfirmingNotes('')
+  }
+
+  // Thực thi xác nhận đơn: gọi backend API chuyển trạng thái sang CONFIRMED và đồng bộ email
+  const executeStaffConfirmBooking = async (booking: Booking, notes?: string) => {
+    setIsConfirmingSubmitting(true)
+    try {
+      const isBackendId = booking.id && !booking.id.startsWith('LOCAL-RES-')
+      const targetIdOrCode = isBackendId ? booking.id : booking.bookingCode
+      await bookingService.confirmBooking(targetIdOrCode, notes)
+    } catch (err: any) {
+      console.warn('Backend confirm booking error:', err)
+      const errMsg = err.response?.data?.message || err.message
+      if (!booking.id?.startsWith('LOCAL-RES-')) {
+        alert(`Không thể xác nhận đơn trên máy chủ: ${errMsg}`)
+        setIsConfirmingSubmitting(false)
+        return
+      }
+    }
+
     const res = reservationEmailService.confirmReservation(booking.bookingCode, {
       id: user?.id,
       fullName: user?.fullName || 'Nhân viên trực ca Boxora',
     })
 
-    if (res.success) {
-      setArrivals(prev => prev.map(b =>
-        (b.id === booking.id || b.bookingCode === booking.bookingCode)
-          ? {
-              ...b,
-              status: 'CONFIRMED' as any,
-              assignedStaffId: user?.id,
-              assignedStaffName: user?.fullName || 'Nhân viên trực ca Boxora',
-            }
-          : b
-      ))
-      setAttendanceSuccessMsg(res.message)
-      setTimeout(() => setAttendanceSuccessMsg(null), 5000)
-      setReviewDetailBooking(null)
-    } else {
-      alert(res.message)
-    }
+    setArrivals(prev => prev.map(b =>
+      (b.id === booking.id || b.bookingCode === booking.bookingCode)
+        ? {
+            ...b,
+            status: 'CONFIRMED' as any,
+            assignedStaffId: user?.id,
+            assignedStaffName: user?.fullName || 'Nhân viên trực ca Boxora',
+            staffAssignmentNotes: notes?.trim() || b.staffAssignmentNotes,
+          }
+        : b
+    ))
+    setAttendanceSuccessMsg(res.message || 'Đã xác nhận đơn đặt giữ chỗ thành công (Chờ check in).')
+    setTimeout(() => setAttendanceSuccessMsg(null), 5000)
+    setConfirmingBooking(null)
+    setConfirmingNotes('')
+    setReviewDetailBooking(null)
+    setIsConfirmingSubmitting(false)
+
+    window.dispatchEvent(new Event('boxora:storage-units-refresh'))
+    fetchArrivals(selectedFacility !== 'ALL' ? selectedFacility : undefined)
   }
 
   // Nhân viên từ chối đơn: có điền lý do, chuyển sang CANCELLED và gửi email đến khách hàng
-  const handleStaffRejectBooking = (booking: Booking, reason: string) => {
+  const handleStaffRejectBooking = async (booking: Booking, reason: string) => {
     if (!reason.trim()) {
-      alert('Vui lòng điền lý do từ chối đơn đặt giữ chỗ.')
+      alert('Vui lòng điền hoặc chọn lý do từ chối đơn đặt giữ chỗ.')
       return
+    }
+
+    setIsRejectingSubmitting(true)
+    try {
+      const isBackendId = booking.id && !booking.id.startsWith('LOCAL-RES-')
+      const targetIdOrCode = isBackendId ? booking.id : booking.bookingCode
+      await bookingService.cancelBooking(targetIdOrCode, reason.trim())
+    } catch (err: any) {
+      console.error('Backend cancel booking error on reject:', err)
+      const errMsg = err.response?.data?.message || err.message || 'Lỗi xử lý hủy đơn trên máy chủ'
+      if (!booking.id?.startsWith('LOCAL-RES-')) {
+        alert(`Không thể từ chối đơn trên máy chủ: ${errMsg}`)
+        setIsRejectingSubmitting(false)
+        return
+      }
     }
 
     const res = reservationEmailService.rejectReservation(booking.bookingCode, reason, {
@@ -683,24 +732,26 @@ export const StaffDashboard: React.FC = () => {
       fullName: user?.fullName || 'Nhân viên trực ca Boxora',
     })
 
-    if (res.success) {
-      setArrivals(prev => prev.map(b =>
-        (b.id === booking.id || b.bookingCode === booking.bookingCode)
-          ? {
-              ...b,
-              status: 'CANCELLED' as any,
-              rejectionReason: reason.trim() as any,
-            }
-          : b
-      ))
-      setAttendanceSuccessMsg(res.message)
-      setTimeout(() => setAttendanceSuccessMsg(null), 5000)
-      setRejectingBooking(null)
-      setRejectionReasonText('')
-      setReviewDetailBooking(null)
-    } else {
-      alert(res.message)
-    }
+    setArrivals(prev => prev.map(b =>
+      (b.id === booking.id || b.bookingCode === booking.bookingCode)
+        ? {
+            ...b,
+            status: 'CANCELLED' as any,
+            rejectionReason: reason.trim() as any,
+          }
+        : b
+    ))
+    setAttendanceSuccessMsg(res.message || 'Đã từ chối đơn đặt giữ chỗ.')
+    setTimeout(() => setAttendanceSuccessMsg(null), 5000)
+    setRejectingBooking(null)
+    setRejectionReasonText('')
+    setReviewDetailBooking(null)
+    setIsRejectingSubmitting(false)
+
+    window.dispatchEvent(new Event('boxora:storage-units-refresh'))
+    fetchArrivals(selectedFacility !== 'ALL' ? selectedFacility : undefined)
+    fetchOccupancy(selectedFacility !== 'ALL' ? selectedFacility : undefined)
+    loadRadarUnits(selectedFacility !== 'ALL' ? selectedFacility : undefined)
   }
 
   const handleClaimReception = async (booking: Booking) => {
@@ -1456,11 +1507,21 @@ export const StaffDashboard: React.FC = () => {
                                   : ((b as any).checkInDate || b.startDate)}
                               </span>
                             </div>
-                            <span className="text-[10px] text-slate-500 block font-mono mt-0.5">
-                              {b.expectedCheckInAt
-                                ? new Date(b.expectedCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-                                : ((b as any).checkInTime || 'Giờ tiếp đón')}
-                            </span>
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              {(() => {
+                                const sched = getBookingScheduleInfo(b)
+                                return (
+                                  <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${sched.badgeClass}`}>
+                                    {sched.relativeText}
+                                  </span>
+                                )
+                              })()}
+                              <span className="text-[10px] text-slate-500 font-mono">
+                                {b.expectedCheckInAt
+                                  ? new Date(b.expectedCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                                  : ((b as any).checkInTime || 'Giờ tiếp đón')}
+                              </span>
+                            </div>
                           </td>
 
                           <td className="py-3.5 px-4">
@@ -1552,14 +1613,25 @@ export const StaffDashboard: React.FC = () => {
                               {isPaidPending ? (
                                 <button
                                   type="button"
-                                  onClick={() => setAssignModalBooking(b)}
+                                  onClick={() => {
+                                    const { isPremature } = isBookingBeforeCheckInTime(b)
+                                    if (isPremature) {
+                                      setEarlyConfirmState({
+                                        booking: b,
+                                        actionType: 'ASSIGN_PHYSICAL_UNIT',
+                                        onConfirm: () => setAssignModalBooking(b),
+                                      })
+                                    } else {
+                                      setAssignModalBooking(b)
+                                    }
+                                  }}
                                   className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm ring-2 ring-emerald-400/40"
                                   title="Chọn ô kho vật lý đang trống để gán vào đơn và kích hoạt gửi mã PIN IoT qua email"
                                 >
                                   <span className="material-symbols-outlined text-[16px]">key</span>
                                   <span>Gán kho &amp; Bàn giao</span>
                                 </button>
-                              ) : s === 'PENDING_CONTACT' ? (
+                              ) : (s === 'PENDING_CONTACT' || (s as string) === 'PENDING_SIGNATURE') ? (
                                 <>
                                   <button
                                     type="button"
@@ -1623,12 +1695,24 @@ export const StaffDashboard: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setActiveBookingId(b.id)
-                                    setStaffActiveTab('reception')
-                                    setSearchParams({ tab: 'reception' })
-                                    setTimeout(() => {
-                                      document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-                                    }, 100)
+                                    const proceed = () => {
+                                      setActiveBookingId(b.id)
+                                      setStaffActiveTab('reception')
+                                      setSearchParams({ tab: 'reception' })
+                                      setTimeout(() => {
+                                        document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                                      }, 100)
+                                    }
+                                    const { isPremature } = isBookingBeforeCheckInTime(b)
+                                    if (isPremature && !isActiveOrCompleted) {
+                                      setEarlyConfirmState({
+                                        booking: b,
+                                        actionType: 'ENTER_RECEPTION',
+                                        onConfirm: proceed,
+                                      })
+                                    } else {
+                                      proceed()
+                                    }
                                   }}
                                   className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
                                   title="Chuyển sang Bàn Tiếp Đón &amp; Nghiệm Thu Bàn Giao Kho"
@@ -2683,7 +2767,7 @@ export const StaffDashboard: React.FC = () => {
                               </>
                             ) : (
                               <>
-                                {(b.status as string) === 'PENDING_CONTACT' || (b.status as string) === 'PENDING_CONFIRMATION' ? (
+                                {(b.status as string) === 'PENDING_CONTACT' || (b.status as string) === 'PENDING_CONFIRMATION' || (b.status as string) === 'PENDING_SIGNATURE' ? (
                                   <div className="flex items-center gap-1.5">
                                     <button
                                       type="button"
@@ -2720,7 +2804,18 @@ export const StaffDashboard: React.FC = () => {
                                   <button
                                     type="button"
                                     disabled={claimingBookingId === b.id}
-                                    onClick={() => handleClaimReception(b)}
+                                    onClick={() => {
+                                      const { isPremature } = isBookingBeforeCheckInTime(b)
+                                      if (isPremature) {
+                                        setEarlyConfirmState({
+                                          booking: b,
+                                          actionType: 'CLAIM_RECEPTION',
+                                          onConfirm: () => handleClaimReception(b),
+                                        })
+                                      } else {
+                                        handleClaimReception(b)
+                                      }
+                                    }}
                                     className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
                                   >
                                     <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
@@ -3059,7 +3154,7 @@ export const StaffDashboard: React.FC = () => {
 
       {/* MODAL NHẬP LÝ DO TỪ CHỐI ĐƠN ĐẶT GIỮ CHỖ */}
       {rejectingBooking && (
-        <div className="fixed inset-0 z-90 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-w-lg rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col text-left animate-in zoom-in-95 duration-200">
             <div className="bg-slate-900 text-white p-5 flex items-center justify-between border-b border-slate-800">
               <div className="flex items-center gap-2.5">
@@ -3073,6 +3168,7 @@ export const StaffDashboard: React.FC = () => {
               </div>
               <button
                 type="button"
+                disabled={isRejectingSubmitting}
                 onClick={() => setRejectingBooking(null)}
                 className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
               >
@@ -3083,7 +3179,7 @@ export const StaffDashboard: React.FC = () => {
             <div className="p-5 space-y-4 text-xs sm:text-sm">
               <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-1 font-mono text-xs">
                 <div>Khách hàng: <strong className="text-slate-900 dark:text-white">{rejectingBooking.customerName}</strong> ({rejectingBooking.customerPhone})</div>
-                <div>Cơ sở: <strong>{rejectingBooking.facilityName}</strong> · Kho {rejectingBooking.unitCode}</div>
+                <div>Cơ sở: <strong>{rejectingBooking.facilityName}</strong> · Kho {rejectingBooking.unitCode || 'Chưa gán kho vật lý'}</div>
                 <div>Lịch hẹn: <strong>{(rejectingBooking as any).checkInDate || rejectingBooking.startDate}</strong> ({(rejectingBooking as any).checkInTime || 'Giờ tiếp đón'})</div>
               </div>
 
@@ -3126,18 +3222,114 @@ export const StaffDashboard: React.FC = () => {
             <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">
               <button
                 type="button"
+                disabled={isRejectingSubmitting}
                 onClick={() => setRejectingBooking(null)}
-                className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold cursor-pointer transition disabled:opacity-50"
               >
                 Hủy bỏ
               </button>
               <button
                 type="button"
-                disabled={!rejectionReasonText.trim()}
+                disabled={isRejectingSubmitting || !rejectionReasonText.trim()}
                 onClick={() => handleStaffRejectBooking(rejectingBooking, rejectionReasonText)}
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md cursor-pointer disabled:opacity-50"
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md cursor-pointer disabled:opacity-50 transition flex items-center gap-1.5"
               >
-                Xác nhận từ chối &amp; Gửi mail cho khách
+                {isRejectingSubmitting ? (
+                  <>
+                    <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Đang xử lý...</span>
+                  </>
+                ) : (
+                  <span>Xác nhận từ chối &amp; Gửi mail cho khách</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL XÁC NHẬN ĐƠN ĐẶT GIỮ CHỖ CỦA NHÂN VIÊN */}
+      {confirmingBooking && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-lg rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col text-left animate-in zoom-in-95 duration-200">
+            <div className="bg-emerald-700 text-white p-5 flex items-center justify-between border-b border-emerald-800">
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-xl bg-white/20 text-white flex items-center justify-center font-bold">
+                  <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                </span>
+                <div>
+                  <h3 className="font-extrabold text-base">Xác Nhận Đơn Đặt Giữ Chỗ</h3>
+                  <span className="text-xs font-mono text-emerald-100">Mã đơn: {confirmingBooking.bookingCode}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isConfirmingSubmitting}
+                onClick={() => setConfirmingBooking(null)}
+                className="w-8 h-8 rounded-full bg-emerald-800 hover:bg-emerald-900 text-white flex items-center justify-center transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs sm:text-sm">
+              <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/50 space-y-1.5 font-mono text-xs">
+                <div>Khách hàng: <strong className="text-slate-900 dark:text-white font-sans">{confirmingBooking.customerName}</strong> ({confirmingBooking.customerPhone || 'Không có SĐT'})</div>
+                {confirmingBooking.customerEmail && (
+                  <div>Email: <strong className="font-sans text-slate-700 dark:text-slate-300">{confirmingBooking.customerEmail}</strong></div>
+                )}
+                <div>Cơ sở: <strong className="text-slate-900 dark:text-white">{confirmingBooking.facilityName}</strong> · {confirmingBooking.unitCode ? `Kho #${confirmingBooking.unitCode}` : 'Chưa gán ô kho vật lý'}</div>
+                <div>Lịch hẹn nhận kho: <strong className="text-emerald-700 dark:text-emerald-400">{(confirmingBooking as any).checkInDate || confirmingBooking.startDate}</strong> ({(confirmingBooking as any).checkInTime || (confirmingBooking.expectedCheckInAt ? confirmingBooking.expectedCheckInAt.slice(11, 16) : '09:00')})</div>
+                <div>Thời hạn thuê: <strong>{confirmingBooking.rentalMonths || 1} tháng</strong> · Tiền thuê: <strong>{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(Number(confirmingBooking.totalRentalFee || 0))}</strong></div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 text-amber-800 dark:text-amber-300 text-xs flex items-start gap-2.5">
+                <span className="material-symbols-outlined text-[20px] text-amber-600 shrink-0 mt-0.5">info</span>
+                <p className="leading-relaxed">
+                  Bạn có chắc chắn muốn xác nhận đơn đặt giữ chỗ này? Trạng thái đơn sẽ chuyển sang <strong className="font-bold underline">Chờ check in</strong> (CONFIRMED) và hệ thống sẽ gửi thông báo xác nhận lịch hẹn nhận kho cho khách hàng.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-900 dark:text-white block text-xs">
+                  Ghi chú nội bộ nhân viên (tùy chọn):
+                </label>
+                <textarea
+                  rows={2}
+                  value={confirmingNotes}
+                  onChange={(e) => setConfirmingNotes(e.target.value)}
+                  placeholder="Ví dụ: Đã gọi điện nhắc khách mang CCCD bản gốc, chuẩn bị ô kho tầng 1..."
+                  className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={isConfirmingSubmitting}
+                onClick={() => setConfirmingBooking(null)}
+                className="px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold cursor-pointer transition disabled:opacity-50"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                disabled={isConfirmingSubmitting}
+                onClick={() => executeStaffConfirmBooking(confirmingBooking, confirmingNotes)}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md cursor-pointer transition disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isConfirmingSubmitting ? (
+                  <>
+                    <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Đang xác nhận...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                    <span>Xác nhận đơn (Chờ check in)</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -3146,7 +3338,7 @@ export const StaffDashboard: React.FC = () => {
 
       {/* MODAL XEM CHI TIẾT ĐƠN ĐẶT GIỮ CHỖ CỦA STAFF */}
       {reviewDetailBooking && (
-        <div className="fixed inset-0 z-90 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-w-xl rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col text-left animate-in zoom-in-95 duration-200">
             <div className="bg-slate-900 text-white p-5 flex items-center justify-between border-b border-slate-800">
               <div className="flex items-center gap-2.5">
@@ -3250,10 +3442,14 @@ export const StaffDashboard: React.FC = () => {
                 >
                   Đóng
                 </button>
-                {((reviewDetailBooking.status as string) === 'PENDING_CONTACT' || (reviewDetailBooking.status as string) === 'PENDING_CONFIRMATION') ? (
+                {((reviewDetailBooking.status as string) === 'PENDING_CONTACT' || (reviewDetailBooking.status as string) === 'PENDING_CONFIRMATION' || (reviewDetailBooking.status as string) === 'PENDING_SIGNATURE') ? (
                   <button
                     type="button"
-                    onClick={() => handleStaffConfirmBooking(reviewDetailBooking)}
+                    onClick={() => {
+                      const target = reviewDetailBooking
+                      setReviewDetailBooking(null)
+                      handleStaffConfirmBooking(target)
+                    }}
                     className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md cursor-pointer"
                   >
                     Xác nhận đơn (Chờ check in)
@@ -3263,13 +3459,25 @@ export const StaffDashboard: React.FC = () => {
                     type="button"
                     onClick={() => {
                       const target = reviewDetailBooking
-                      setReviewDetailBooking(null)
-                      setStaffActiveTab('reception')
-                      setSearchParams({ tab: 'reception' })
-                      setActiveBookingId(target.id)
-                      setTimeout(() => {
-                        document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-                      }, 100)
+                      const proceed = () => {
+                        setReviewDetailBooking(null)
+                        setStaffActiveTab('reception')
+                        setSearchParams({ tab: 'reception' })
+                        setActiveBookingId(target.id)
+                        setTimeout(() => {
+                          document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                        }, 100)
+                      }
+                      const { isPremature } = isBookingBeforeCheckInTime(target)
+                      if (isPremature) {
+                        setEarlyConfirmState({
+                          booking: target,
+                          actionType: 'ENTER_RECEPTION',
+                          onConfirm: proceed,
+                        })
+                      } else {
+                        proceed()
+                      }
                     }}
                     className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md cursor-pointer"
                   >
@@ -3301,6 +3509,18 @@ export const StaffDashboard: React.FC = () => {
           fetchArrivals()
           window.dispatchEvent(new Event('boxora:notifications-refresh'))
         }}
+      />
+
+      <EarlyCheckInConfirmModal
+        isOpen={Boolean(earlyConfirmState)}
+        booking={earlyConfirmState?.booking || null}
+        actionType={earlyConfirmState?.actionType || 'ENTER_RECEPTION'}
+        onConfirm={() => {
+          const action = earlyConfirmState?.onConfirm
+          setEarlyConfirmState(null)
+          if (action) action()
+        }}
+        onClose={() => setEarlyConfirmState(null)}
       />
 
     </div>

@@ -45,6 +45,16 @@ public class BookingCancellationController {
         return ResponseEntity.ok(ApiResponse.success(response.getMessage(), response));
     }
 
+    @PostMapping("/bookings/code/{bookingCode}/cancel")
+    @Operation(summary = "Hủy đơn đặt kho qua mã đặt chỗ (bookingCode)")
+    public ResponseEntity<ApiResponse<BookingCancelResponse>> cancelBookingByCode(
+            @PathVariable String bookingCode,
+            @Valid @RequestBody(required = false) BookingCancelRequest request
+    ) {
+        BookingCancelResponse response = bookingCancellationService.cancelBookingByCode(bookingCode, request);
+        return ResponseEntity.ok(ApiResponse.success(response.getMessage(), response));
+    }
+
     @PostMapping("/cron/auto-cancel-process")
     @PreAuthorize("hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Kích hoạt quét thủ công tự động hủy các booking PENDING_PAYMENT quá hạn thanh toán (mặc định 15 phút)")

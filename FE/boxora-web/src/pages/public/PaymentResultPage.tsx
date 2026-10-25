@@ -80,6 +80,7 @@ export const PaymentResultPage = () => {
             setPayments([verified])
             if (verified.contractId) targetContractId = verified.contractId
             if (verified.bookingId) targetBookingId = verified.bookingId
+            window.dispatchEvent(new Event('boxora:storage-units-refresh'))
           }
         } catch (verifyErr) {
           console.warn('VNPay verify call warning:', verifyErr)

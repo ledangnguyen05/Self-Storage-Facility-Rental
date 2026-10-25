@@ -28,9 +28,19 @@ import { IncidentTicketsPage } from './pages/staff/IncidentTicketsPage'
 import { OverdueManagementPage } from './pages/manager/OverdueManagementPage'
 import { ShiftRosterPage } from './pages/manager/ShiftRosterPage'
 import { BoxoraChatWidget } from './components/chat/BoxoraChatWidget'
-import { StaffMyShiftsPage } from './pages/staff/StaffMyShiftsPage'
+import { StaffShiftRosterPage } from './pages/staff/StaffShiftRosterPage'
 import { checkCustomerPortalAccess } from './utils/rentalAccess'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
+
+// Dynamic shift roster routing based on role (Staff gets peer swap & personal roster, Manager gets full workforce control)
+const ShiftRosterRoute: React.FC = () => {
+  const { user } = useAuth()
+  const role = (typeof user?.role === 'string' ? user?.role : user?.role?.name || user?.roleName || '').toUpperCase()
+  if (role === 'STAFF') {
+    return <StaffShiftRosterPage />
+  }
+  return <ShiftRosterPage />
+}
 
 // Root redirect handler based on user role
 function RootRedirect() {
@@ -146,7 +156,7 @@ function MainContent() {
               path="staff/shifts"
               element={
                 <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER']}>
-                  <StaffMyShiftsPage />
+                  <StaffShiftRosterPage />
                 </ProtectedRoute>
               }
             />
@@ -210,12 +220,12 @@ function MainContent() {
               }
             />
 
-            {/* 9. Shift Roster & Workforce: Facility Manager, Business Manager, Admin */}
+            {/* 9. Shift Roster & Workforce: Staff, Facility Manager, Business Manager, Admin */}
             <Route
               path="shifts"
               element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
-                  <ShiftRosterPage />
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
+                  <ShiftRosterRoute />
                 </ProtectedRoute>
               }
             />

@@ -143,7 +143,17 @@ public class BookingServiceImpl implements BookingService {
 
             boolean alreadyOccupied = bookingRepository.existsByStorageUnit_IdAndStatusIn(
                     unit.getId(),
-                    List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING_APPROVAL)
+                    List.of(
+                            BookingStatus.ACTIVE,
+                            BookingStatus.CONFIRMED,
+                            BookingStatus.PENDING_PAYMENT,
+                            BookingStatus.PENDING_APPROVAL,
+                            BookingStatus.PENDING_SIGNATURE,
+                            BookingStatus.PENDING_CONTACT,
+                            BookingStatus.PAID_AND_SIGNED,
+                            BookingStatus.PAID_PENDING_ASSIGNMENT,
+                            BookingStatus.READY_FOR_CHECKIN
+                    )
             );
             if (unit.getStatus() == UnitStatus.RESERVED && !alreadyOccupied) {
                 unit.setStatus(UnitStatus.AVAILABLE);
@@ -162,7 +172,17 @@ public class BookingServiceImpl implements BookingService {
                         if (cand.getId().equals(unit.getId())) continue;
                         boolean candOccupied = bookingRepository.existsByStorageUnit_IdAndStatusIn(
                                 cand.getId(),
-                                List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING_APPROVAL)
+                                List.of(
+                                        BookingStatus.ACTIVE,
+                                        BookingStatus.CONFIRMED,
+                                        BookingStatus.PENDING_PAYMENT,
+                                        BookingStatus.PENDING_APPROVAL,
+                                        BookingStatus.PENDING_SIGNATURE,
+                                        BookingStatus.PENDING_CONTACT,
+                                        BookingStatus.PAID_AND_SIGNED,
+                                        BookingStatus.PAID_PENDING_ASSIGNMENT,
+                                        BookingStatus.READY_FOR_CHECKIN
+                                )
                         );
                         if (!candOccupied) {
                             fallbackUnit = storageUnitRepository.findWithDetailsByIdForUpdate(cand.getId()).orElse(null);
@@ -208,6 +228,25 @@ public class BookingServiceImpl implements BookingService {
                 if (facility.getStatus() == com.boxora.enums.FacilityStatus.MAINTENANCE) {
                     throw new AppException(ErrorCode.FACILITY_UNDER_MAINTENANCE, "Chi nhánh " + facility.getName() + " hiện đang bảo trì.");
                 }
+
+                // Kiểm tra xem cơ sở còn buồng kho khả dụng (AVAILABLE) theo loại kho hay không
+                List<StorageUnit> candidates = new ArrayList<>();
+                if (unitType != null) {
+                    candidates.addAll(storageUnitRepository.findByFacility_IdAndUnitType_IdAndStatus(facility.getId(), unitType.getId(), UnitStatus.AVAILABLE));
+                }
+                if (candidates.isEmpty()) {
+                    candidates.addAll(storageUnitRepository.findByFacility_IdAndStatus(facility.getId(), UnitStatus.AVAILABLE));
+                }
+
+                if (candidates.isEmpty()) {
+                    log.warn("[AUTO_ALLOCATE_FAILED] No available storage unit found for facility {} and unitType {}",
+                            facility.getId(), unitType != null ? unitType.getId() : "null");
+                    throw new AppException(ErrorCode.STORAGE_UNIT_NOT_AVAILABLE, "Rất tiếc, cơ sở hiện đã hết buồng kho khả dụng cho kích thước này.");
+                }
+
+                // Không tự động gán buồng kho cụ thể khi đặt chỗ mới.
+                // Khách hàng và nhân viên sẽ chọn vị trí kho mong muốn khi check-in tại cơ sở.
+                unit = null;
             }
         }
         LocalDate startDate = request.getStartDate() != null ? request.getStartDate() : LocalDate.now(BUSINESS_ZONE);
@@ -332,12 +371,10 @@ public class BookingServiceImpl implements BookingService {
         boolean isDirect = request.getSigningMethod() != null &&
                 ("DIRECT".equalsIgnoreCase(request.getSigningMethod().trim()) || "IN_PERSON".equalsIgnoreCase(request.getSigningMethod().trim()));
         BookingStatus initialStatus;
-        if ("PENDING_CONTACT".equalsIgnoreCase(request.getInitialStatus())) {
+        if ("PENDING_CONTACT".equalsIgnoreCase(request.getInitialStatus()) || isDirect) {
             initialStatus = BookingStatus.PENDING_CONTACT;
         } else if ("PENDING_SIGNATURE".equalsIgnoreCase(request.getInitialStatus()) || unit == null) {
             initialStatus = BookingStatus.PENDING_SIGNATURE;
-        } else if (isDirect) {
-            initialStatus = BookingStatus.CONFIRMED;
         } else {
             initialStatus = BookingStatus.PENDING_PAYMENT;
         }
@@ -525,8 +562,8 @@ public class BookingServiceImpl implements BookingService {
     public BookingResponse reviewBookingRequest(UUID id, boolean approved, UUID assignedStaffId, String notes) {
         Booking booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
-        if (booking.getStatus() != BookingStatus.PENDING_APPROVAL && booking.getStatus() != BookingStatus.CONFIRMED) {
-            throw new AppException(ErrorCode.BOOKING_REQUEST_NOT_PENDING_APPROVAL);
+        if (booking.getStatus() == BookingStatus.ACTIVE || booking.getStatus() == BookingStatus.COMPLETED || booking.getStatus() == BookingStatus.CANCELLED) {
+            throw new AppException(ErrorCode.BOOKING_CANNOT_BE_CANCELLED, "Đơn đặt kho ở trạng thái " + booking.getStatus() + " không thể phê duyệt hoặc từ chối.");
         }
 
         StorageUnit unit = booking.getStorageUnit();
@@ -590,6 +627,9 @@ public class BookingServiceImpl implements BookingService {
         } else {
             booking.setStatus(BookingStatus.CANCELLED);
             booking.setPaymentExpiresAt(null);
+            if (notes != null && !notes.isBlank()) {
+                booking.setCancellationReason(notes.trim());
+            }
             if (unit != null) {
                 unit.setStatus(UnitStatus.AVAILABLE);
                 storageUnitRepository.save(unit);
@@ -1938,5 +1978,51 @@ public class BookingServiceImpl implements BookingService {
         }
 
         return mapToResponse(booking);
+    }
+
+    @Override
+    @Transactional
+    public BookingResponse confirmBooking(UUID bookingId, String notes) {
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        BookingStatus oldStatus = booking.getStatus();
+        booking.setStatus(BookingStatus.CONFIRMED);
+        if (requestContext != null && requestContext.currentUserId() != null) {
+            booking.setHandedOverByStaffId(requestContext.currentUserId());
+        }
+        if (notes != null && !notes.isBlank()) {
+            booking.setStaffAssignmentNotes(notes.trim());
+        }
+        booking.setPaymentExpiresAt(null);
+
+        booking = bookingRepository.save(booking);
+
+        UUID facilityId = booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null
+                ? booking.getStorageUnit().getFacility().getId()
+                : (booking.getFacility() != null ? booking.getFacility().getId() : null);
+
+        activityLogService.record(
+                facilityId,
+                ActivityAction.RESERVATION_UPDATE,
+                "BOOKING",
+                booking.getId(),
+                "Nhân viên đã xác nhận đơn đặt giữ chỗ " + booking.getBookingCode() + (notes != null && !notes.isBlank() ? " (Ghi chú: " + notes.trim() + ")" : ""),
+                oldStatus,
+                BookingStatus.CONFIRMED
+        );
+
+        return mapToResponse(booking);
+    }
+
+    @Override
+    @Transactional
+    public BookingResponse confirmBookingByCode(String bookingCode, String notes) {
+        if (bookingCode == null || bookingCode.isBlank()) {
+            throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
+        }
+        Booking booking = bookingRepository.findByBookingCodeForUpdate(bookingCode.trim())
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        return confirmBooking(booking.getId(), notes);
     }
 }

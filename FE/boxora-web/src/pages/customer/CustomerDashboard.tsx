@@ -244,6 +244,22 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
             localItems.forEach((r: any, idx: number) => {
               const code = r.bookingCode || `BX-LOCAL-${idx}`
+
+              // Chỉ merge đơn lưu tạm trong máy NẾU đơn này trùng khớp email hoặc số điện thoại của tài khoản đang đăng nhập
+              const resEmail = (r.customer?.email || r.customerEmail || '').trim().toLowerCase()
+              const resPhone = (r.customer?.phone || r.customerPhone || '').trim()
+              const currentUserEmail = (user?.email || '').trim().toLowerCase()
+              const currentUserPhone = (user?.phone || '').trim()
+
+              const isMatch = Boolean(
+                (currentUserEmail && resEmail && resEmail === currentUserEmail) ||
+                (currentUserPhone && resPhone && resPhone === currentUserPhone)
+              )
+
+              if (!isMatch) {
+                return
+              }
+
               if (!existingCodes.has(code)) {
                 localAsBookings.push({
                   id: `LOCAL-RES-${idx}-${code}`,
@@ -252,9 +268,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   customerName: r.customer?.fullName || user?.fullName || 'Khách hàng',
                   customerEmail: r.customer?.email || user?.email || '',
                   customerPhone: r.customer?.phone || user?.phone || '',
-                  storageUnitId: `UNIT-${r.size?.volumeText || 'std'}`,
-                  unitCode: r.size?.volumeText ? `Kho ${r.size.volumeText}` : 'Kho Tiêu chuẩn',
-                  unitTypeName: `Kho ${r.size?.volumeText || 'Tiêu chuẩn'} (${r.size?.mode || 'A/C Máy lạnh'})`,
+                  storageUnitId: null,
+                  unitCode: r.unitCode || null,
+                  unitTypeName: r.unitTypeName || r.sizeName || (r.size?.volumeText ? `Kho ${r.size.volumeText}` : 'Kho Tiêu chuẩn (A/C Máy lạnh)'),
                   facilityId: r.facility?.id,
                   facilityName: r.facility?.name || 'Cơ sở Boxora',
                   floorLevel: '1',
@@ -3544,12 +3560,17 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 <div className="pt-2 flex flex-col sm:flex-row gap-2">
                   <button
                     onClick={() => {
+                      const code = createdBookingResult?.bookingCode
                       if (bookingOnly) {
-                        navigate('/portal/customer?tab=bookings')
+                        navigate(code ? `/portal/customer?tab=bookings&bookingCode=${encodeURIComponent(code)}` : '/portal/customer?tab=bookings')
                       } else {
                         setBookingSuccess(false)
                         setSelectedBookingUnit(null)
-                        handleTabChange('bookings')
+                        if (code) {
+                          setSearchParams({ tab: 'bookings', bookingCode: code })
+                        } else {
+                          handleTabChange('bookings')
+                        }
                       }
                     }}
                     className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-all cursor-pointer"
@@ -4777,7 +4798,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     <div className="grid grid-cols-2 gap-2.5">
                       <div>
                         <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                          {selectedBookingForModal.handoverTime ? 'Thời điểm bàn giao thực tế:' : 'Lịch hẹn check-in nhận kho:'}
+                          {selectedBookingForModal.handoverTime ? 'Thời điểm bàn giao thực tế:' : 'Lịch hẹn nhận kho:'}
                         </span>
                         <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                           <strong className="font-mono text-slate-900 text-xs">
@@ -4925,6 +4946,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             fetchCustomerPayments(),
             fetchAvailableUnits(),
           ])
+          window.dispatchEvent(new Event('boxora:storage-units-refresh'))
         }}
       />
 

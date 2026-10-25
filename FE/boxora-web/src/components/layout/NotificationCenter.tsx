@@ -36,6 +36,9 @@ const getTypeLabel = (type?: string) => {
     case 'REFUND_STATUS': return 'Hoàn tiền'
     case 'SEALING_NOTICE': return 'Niêm phong'
     case 'UNSEALING_NOTICE': return 'Mở niêm phong'
+    case 'SUPPORT_TICKET_UPDATE': return 'Cập nhật yêu cầu'
+    case 'REFUND_BANK_INFO_REQUIRED': return 'Cần nhập STK'
+    case 'REFUND_PAYOUT_COMPLETED': return 'Đã hoàn tiền'
     default: return type?.replaceAll('_', ' ') || 'Thông báo'
   }
 }
@@ -51,10 +54,14 @@ const getTypeBadgeStyle = (type?: string) => {
       return 'bg-rose-100 text-rose-800 border-rose-200'
     case 'RENEWAL_APPROVED':
     case 'RENEWAL_COMPLETED':
+    case 'REFUND_PAYOUT_COMPLETED':
       return 'bg-emerald-100 text-emerald-800 border-emerald-200'
     case 'RENEWAL_REMINDER_3D':
     case 'RENEWAL_REMINDER_7D':
+    case 'REFUND_BANK_INFO_REQUIRED':
       return 'bg-amber-100 text-amber-800 border-amber-200'
+    case 'SUPPORT_TICKET_UPDATE':
+      return 'bg-blue-100 text-blue-800 border-blue-200'
     case 'SEALING_NOTICE':
       return 'bg-purple-100 text-purple-800 border-purple-200'
     default:
@@ -91,6 +98,15 @@ const getNotificationAction = (item: NotificationLog, role?: string | null) => {
 
   if (item.notificationType === 'BOOKING_CREATED' && role === 'CUSTOMER') {
     return { label: 'Xem đơn đặt giữ chỗ', to: '/portal/customer?tab=bookings' }
+  }
+
+  if (
+    (item.notificationType === 'SUPPORT_TICKET_UPDATE' ||
+      item.notificationType === 'REFUND_BANK_INFO_REQUIRED' ||
+      item.notificationType === 'REFUND_PAYOUT_COMPLETED') &&
+    role === 'CUSTOMER'
+  ) {
+    return { label: 'Xem yêu cầu hỗ trợ', to: '/portal/customer?tab=support' }
   }
 
   return null

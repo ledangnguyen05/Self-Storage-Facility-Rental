@@ -5,6 +5,7 @@ import { facilityService } from '../../services/facilityService'
 import { facilityPolicyService } from '../../services/facilityPolicyService'
 import { reportService } from '../../services/reportService'
 import { bookingService } from '../../services/bookingService'
+import { contractService } from '../../services/contractService'
 import { supportTicketService, SupportTicketRecord } from '../../services/supportTicketService'
 import { useLanguage } from '../../context/LanguageContext'
 import { useAuth } from '../../context/AuthContext'
@@ -18,6 +19,7 @@ import { AssetSealingModal } from './modals/AssetSealingModal'
 import { CreateStorageUnitModal } from './modals/CreateStorageUnitModal'
 import { FacilityPolicyViewModal } from './modals/FacilityPolicyViewModal'
 import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
+import { EarlyCheckInConfirmModal, isBookingBeforeCheckInTime, EarlyCheckInActionType } from '../../components/modals/EarlyCheckInConfirmModal'
 import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
 import { HandoverCheckInWorkbench } from '../staff/components/HandoverCheckInWorkbench'
 
@@ -119,6 +121,7 @@ export const ManagerDashboard: React.FC = () => {
   const [activeRentals, setActiveRentals] = useState<Booking[]>([])
   const [showAllRentals, setShowAllRentals] = useState(false)
   const [tickets, setTickets] = useState<SupportTicketRecord[]>([])
+  const [renewalsCount, setRenewalsCount] = useState<number>(0)
 
   // Check-in Filter & Claim States
   const [checkinTimeframe, setCheckinTimeframe] = useState<'current' | 'today' | 'past' | 'future' | 'all'>('all')
@@ -128,6 +131,11 @@ export const ManagerDashboard: React.FC = () => {
   const [activeBookingId, setActiveBookingId] = useState<string>(
     searchParams.get('bookingId') || searchParams.get('checkinBookingId') || ''
   )
+  const [earlyConfirmState, setEarlyConfirmState] = useState<{
+    booking: Booking
+    actionType: EarlyCheckInActionType
+    onConfirm: () => void
+  } | null>(null)
 
   useEffect(() => {
     const bId = searchParams.get('bookingId') || searchParams.get('checkinBookingId')
@@ -229,7 +237,7 @@ export const ManagerDashboard: React.FC = () => {
         ? facId
         : (selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : facilities[0]?.id)
 
-      const [unitsRes, debtRes, polRes, arrivalsRes, rentalsRes, ticketsRes] = await Promise.allSettled([
+      const [unitsRes, debtRes, polRes, arrivalsRes, rentalsRes, ticketsRes, renewalsRes] = await Promise.allSettled([
         storageUnitService.getUnits(targetId ? { facilityId: targetId } : undefined),
         reportService.getOverdueDebtReport(targetId ? { facilityId: targetId } : undefined),
         targetId ? facilityPolicyService.getByFacilityId(targetId) : Promise.resolve(null),
@@ -240,6 +248,7 @@ export const ManagerDashboard: React.FC = () => {
         }),
         bookingService.getAll({ status: 'ACTIVE', size: 100, facilityId: targetId }),
         supportTicketService.getQueue(targetId ? { facilityId: targetId } : undefined),
+        contractService.getRenewals({ facilityId: targetId, size: 100 }),
       ])
 
       // 1. Process Storage Units
@@ -361,6 +370,14 @@ export const ManagerDashboard: React.FC = () => {
         setTickets([])
       }
 
+      // 7. Renewals Count
+      if (renewalsRes.status === 'fulfilled' && renewalsRes.value) {
+        const count = renewalsRes.value.totalElements ?? (renewalsRes.value.content ? renewalsRes.value.content.length : 0)
+        setRenewalsCount(count)
+      } else {
+        setRenewalsCount(0)
+      }
+
     } catch {
       setUnits([])
       setOverdueItems([])
@@ -370,6 +387,7 @@ export const ManagerDashboard: React.FC = () => {
       setUpcomingHandovers([])
       setActiveRentals([])
       setTickets([])
+      setRenewalsCount(0)
     } finally {
       setIsLoading(false)
     }
@@ -1058,6 +1076,13 @@ export const ManagerDashboard: React.FC = () => {
         >
           <span className="material-symbols-outlined text-[18px]">grid_view</span>
           <span>1. Sơ Đồ Kho &amp; Thiết Bị</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            activeTab === 'overview'
+              ? 'bg-white text-slate-900'
+              : 'bg-slate-200 text-slate-800'
+          }`}>
+            {totalUnitsCount} kho
+          </span>
         </button>
 
         <button
@@ -1071,6 +1096,13 @@ export const ManagerDashboard: React.FC = () => {
         >
           <span className="material-symbols-outlined text-[18px]">autorenew</span>
           <span>2. Xử Lý Gia Hạn Hợp Đồng</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            activeTab === 'renewals'
+              ? 'bg-white text-slate-900'
+              : 'bg-emerald-100 text-emerald-800'
+          }`}>
+            {renewalsCount} đơn
+          </span>
         </button>
 
         <button
@@ -1083,7 +1115,14 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">badge</span>
-          <span>3. Bàn Vận Hành Quầy &amp; Tiếp Đón ({upcomingHandovers.length})</span>
+          <span>3. Bàn Vận Hành Quầy &amp; Tiếp Đón</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            activeTab === 'handovers-returns'
+              ? 'bg-white text-slate-900'
+              : 'bg-blue-100 text-blue-800'
+          }`}>
+            {upcomingHandovers.length} đơn
+          </span>
         </button>
 
         <button
@@ -1096,7 +1135,14 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">build_circle</span>
-          <span>4. Sự Cố &amp; SLA ({tickets.filter(t => t.status !== 'RESOLVED').length})</span>
+          <span>4. Sự Cố &amp; SLA</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            activeTab === 'tickets'
+              ? 'bg-white text-slate-900'
+              : 'bg-rose-100 text-rose-800'
+          }`}>
+            {tickets.filter(t => t.status !== 'RESOLVED').length} ca
+          </span>
         </button>
 
         {role !== 'STAFF' && (
@@ -1662,7 +1708,18 @@ export const ManagerDashboard: React.FC = () => {
                               <button
                                 type="button"
                                 disabled={claimingBookingId === b.id}
-                                onClick={() => handleManagerClaimReception(b)}
+                                onClick={() => {
+                                  const { isPremature } = isBookingBeforeCheckInTime(b)
+                                  if (isPremature) {
+                                    setEarlyConfirmState({
+                                      booking: b,
+                                      actionType: 'CLAIM_RECEPTION',
+                                      onConfirm: () => handleManagerClaimReception(b),
+                                    })
+                                  } else {
+                                    handleManagerClaimReception(b)
+                                  }
+                                }}
                                 className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
                               >
                                 <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
@@ -2438,6 +2495,19 @@ export const ManagerDashboard: React.FC = () => {
           role={role || 'FACILITY_MANAGER'}
         />
       )}
+
+      {/* 12. Early Check-In Confirmation Modal */}
+      <EarlyCheckInConfirmModal
+        isOpen={Boolean(earlyConfirmState)}
+        booking={earlyConfirmState?.booking || null}
+        actionType={earlyConfirmState?.actionType || 'CLAIM_RECEPTION'}
+        onConfirm={() => {
+          const action = earlyConfirmState?.onConfirm
+          setEarlyConfirmState(null)
+          if (action) action()
+        }}
+        onClose={() => setEarlyConfirmState(null)}
+      />
 
     </div>
   )

@@ -64,6 +64,28 @@ public class BookingController {
         return ResponseEntity.ok(ApiResponse.success("Gán ô kho và bàn giao mã truy cập thành công", response));
     }
 
+    @PostMapping("/{id}/confirm")
+    @Operation(summary = "Nhân viên xác nhận đơn đặt giữ chỗ (chuyển trạng thái sang CONFIRMED)")
+    public ResponseEntity<ApiResponse<BookingResponse>> confirmBooking(
+            @PathVariable UUID id,
+            @RequestBody(required = false) com.boxora.dto.request.AssignUnitRequest request
+    ) {
+        String notes = request != null ? request.getNotes() : null;
+        BookingResponse response = bookingService.confirmBooking(id, notes);
+        return ResponseEntity.ok(ApiResponse.success("Xác nhận đơn đặt giữ chỗ thành công", response));
+    }
+
+    @PostMapping("/code/{bookingCode}/confirm")
+    @Operation(summary = "Nhân viên xác nhận đơn đặt giữ chỗ theo mã đặt chỗ (bookingCode)")
+    public ResponseEntity<ApiResponse<BookingResponse>> confirmBookingByCode(
+            @PathVariable String bookingCode,
+            @RequestBody(required = false) com.boxora.dto.request.AssignUnitRequest request
+    ) {
+        String notes = request != null ? request.getNotes() : null;
+        BookingResponse response = bookingService.confirmBookingByCode(bookingCode, notes);
+        return ResponseEntity.ok(ApiResponse.success("Xác nhận đơn đặt giữ chỗ thành công", response));
+    }
+
     @GetMapping("/code/{bookingCode}")
     @Operation(summary = "Lấy chi tiết lượt đặt kho theo mã đặt chỗ (bookingCode)")
     public ResponseEntity<ApiResponse<BookingResponse>> getByBookingCode(@PathVariable String bookingCode) {

@@ -411,6 +411,18 @@ export const DashboardLayout: React.FC = () => {
                 </Link>
 
                 <Link
+                  to="/portal/shifts"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/shifts') || isCurrentPath('/portal/staff/shifts')
+                      ? 'bg-slate-100 text-slate-900'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">schedule</span>
+                  <span>{t('TRỰC CA')}</span>
+                </Link>
+
+                <Link
                   to="/portal/cashier"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/cashier')

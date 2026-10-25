@@ -289,7 +289,9 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         bookingRepository.save(booking);
 
         // Ghi Audit Trail ActivityLog
-        UUID facilityId = (unit != null && unit.getFacility() != null) ? unit.getFacility().getId() : null;
+        UUID facilityId = (unit != null && unit.getFacility() != null)
+                ? unit.getFacility().getId()
+                : (booking.getFacility() != null ? booking.getFacility().getId() : null);
 
         activityLogService.record(
                 facilityId,
@@ -353,6 +355,17 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                 .cancellationReason(reason)
                 .message("Đã hủy đơn đặt kho thành công. " + preview.getPolicyDescription())
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public BookingCancelResponse cancelBookingByCode(String bookingCode, BookingCancelRequest request) {
+        if (bookingCode == null || bookingCode.isBlank()) {
+            throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
+        }
+        Booking booking = bookingRepository.findByBookingCodeForUpdate(bookingCode.trim())
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        return cancelBooking(booking.getId(), request);
     }
 
     /**
@@ -481,9 +494,18 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
             throw new AppException(ErrorCode.BOOKING_CANNOT_BE_CANCELLED,
                     "Đơn kho đã nhận bàn giao kho (ACTIVE / CHECK_IN). Vui lòng thực hiện thủ tục trả kho thay vì hủy đơn.");
         }
-        if (booking.getStatus() != BookingStatus.CONFIRMED
-                && booking.getStatus() != BookingStatus.PENDING_PAYMENT
-                && booking.getStatus() != BookingStatus.PENDING_APPROVAL) {
+        List<BookingStatus> cancellableStatuses = List.of(
+                BookingStatus.CONFIRMED,
+                BookingStatus.PENDING_PAYMENT,
+                BookingStatus.PENDING_APPROVAL,
+                BookingStatus.PENDING_CONTACT,
+                BookingStatus.PENDING_SIGNATURE,
+                BookingStatus.SIGNED_PENDING_PAYMENT,
+                BookingStatus.PAID_PENDING_ASSIGNMENT,
+                BookingStatus.PAID_AND_SIGNED,
+                BookingStatus.READY_FOR_CHECKIN
+        );
+        if (!cancellableStatuses.contains(booking.getStatus())) {
             throw new AppException(ErrorCode.BOOKING_CANNOT_BE_CANCELLED);
         }
     }
@@ -491,6 +513,10 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
     private FacilityPolicy getFacilityPolicy(Booking booking) {
         if (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null) {
             return facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(booking.getStorageUnit().getFacility().getId())
+                    .orElse(null);
+        }
+        if (booking.getFacility() != null) {
+            return facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(booking.getFacility().getId())
                     .orElse(null);
         }
         return null;

@@ -49,6 +49,8 @@ export const DICTIONARY: Record<string, string> = {
   'Công nghệ': 'Technology',
   'Hỗ trợ': 'Support',
   'HỖ TRỢ': 'SUPPORT',
+  'TRỰC CA': 'Shift Roster',
+  'Trực Ca': 'Shift Roster',
   'Đăng nhập': 'Sign In',
   'Đăng Nhập': 'Sign In',
   'ĐĂNG NHẬP': 'SIGN IN',

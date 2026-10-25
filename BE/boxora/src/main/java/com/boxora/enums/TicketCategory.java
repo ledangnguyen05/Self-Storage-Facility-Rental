@@ -8,5 +8,7 @@ public enum TicketCategory {
     ACCESS_ISSUE,
     CLEANLINESS_PEST,
     CLIMATE_TEMP,
+    RETURN_REFUND,
+    RETURN_EXPIRED,
     OTHER
 }

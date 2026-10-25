@@ -210,11 +210,28 @@ export const bookingService = {
     return response.data?.data as BookingCancellationPreview
   },
 
-  async cancelBooking(id: string, cancellationReason?: string) {
-    const response = await api.post(`/api/v1/bookings/${id}/cancel`, {
+  async cancelBooking(idOrCode: string, cancellationReason?: string) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idOrCode)
+    const url = isUuid
+      ? `/api/v1/bookings/${idOrCode}/cancel`
+      : `/api/v1/bookings/code/${encodeURIComponent(idOrCode)}/cancel`
+    const response = await api.post(url, {
       cancellationReason: cancellationReason?.trim() || undefined,
     })
+    window.dispatchEvent(new Event('boxora:notifications-refresh'))
     return response.data?.data as BookingCancelResponse
+  },
+
+  async confirmBooking(idOrCode: string, notes?: string) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idOrCode)
+    const url = isUuid
+      ? `/api/v1/bookings/${idOrCode}/confirm`
+      : `/api/v1/bookings/code/${encodeURIComponent(idOrCode)}/confirm`
+    const response = await api.post(url, {
+      notes: notes?.trim() || undefined,
+    })
+    window.dispatchEvent(new Event('boxora:notifications-refresh'))
+    return response.data?.data as Booking
   },
 
     async assignUnitAndProvision(idOrCode: string, unitId: string, notes?: string) {

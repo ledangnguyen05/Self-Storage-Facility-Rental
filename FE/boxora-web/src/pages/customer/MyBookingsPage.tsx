@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import QRCode from 'qrcode'
 import {
   Calendar,
@@ -23,6 +23,7 @@ import {
   MapPin,
   Check,
   AlertCircle,
+  QrCode,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { bookingService } from '../../services/bookingService'
@@ -40,6 +41,54 @@ import { BookingRescheduleModal } from '../../components/modals/BookingReschedul
 import { CustomerPolicyModal, PolicyTab } from '../../components/modals/CustomerPolicyModal'
 import { useLanguage } from '../../context/LanguageContext'
 import { checkCustomerPortalAccess, syncCustomerPortalAccess } from '../../utils/rentalAccess'
+
+export const formatUnitTypeName = (b: Partial<Booking> | any): string => {
+  if (!b) return 'Kho Tiêu chuẩn'
+
+  // If specific sizeName exists (e.g. from local reservation: "Kho 3 m³", "Kho 1 m³")
+  if (b.sizeName && b.sizeName !== 'Kho Boxora' && b.sizeName !== 'Theo kích thước đăng ký') {
+    return b.sizeName
+  }
+
+  // If explicit unitTypeName exists
+  const rawTypeName = (b.unitTypeName || '').trim()
+  if (rawTypeName && rawTypeName !== 'Kho Boxora' && rawTypeName !== 'Theo kích thước đăng ký') {
+    if (rawTypeName.startsWith('Kho ')) {
+      return rawTypeName
+    }
+    return `Kho ${rawTypeName}`
+  }
+
+  // Check unitTypeId
+  const typeId = b.unitTypeId
+  if (typeId === '10000000-0000-0000-0000-000000000001') {
+    return 'Kho Mini (1 m³ - Tủ cá nhân)'
+  }
+  if (typeId === '10000000-0000-0000-0000-000000000002') {
+    return 'Kho Vừa (3 m³ - Studio)'
+  }
+  if (typeId === '10000000-0000-0000-0000-000000000003') {
+    return 'Kho Tiêu chuẩn (6 m³)'
+  }
+  if (typeId === '10000000-0000-0000-0000-000000000004') {
+    return 'Kho Rất lớn (12 m³ - Thương mại)'
+  }
+  if (typeId === '10000000-0000-0000-0000-000000000005') {
+    return 'Kho Lạnh chuyên dụng (5 m³)'
+  }
+  if (typeId === 'dd168b92-ebdd-4e84-a6e1-7715b4745a26') {
+    return 'Kho Compact Studio (3 m³)'
+  }
+
+  if (b.size?.volumeText) {
+    return `Kho ${b.size.volumeText}`
+  }
+  if (b.sizeId) {
+    return `Kho ${String(b.sizeId).toUpperCase()}`
+  }
+
+  return 'Kho Tiêu chuẩn (Boxora)'
+}
 
 const safeFormatDateTime = (dateVal?: string | null, fallback = ''): string => {
   if (!dateVal) return fallback
@@ -104,7 +153,7 @@ export function getBookingStage(b: Booking): BookingStageInfo {
       label: 'Đang thuê hoạt động',
       badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-300 dark:border-emerald-800',
       dotClass: 'bg-emerald-500',
-      description: 'Hợp đồng đang có hiệu lực. Quý khách có thể sử dụng Portal điều khiển khóa thông minh IoT 24/7.',
+      description: 'Hợp đồng đang có hiệu lực 24/7. Quý khách có thể sử dụng Portal điều khiển khóa thông minh IoT.',
       step: 4,
       stepLabel: 'Đã cấp khóa IoT',
       priorityTag: '✓ Đã mở Portal IoT',
@@ -112,19 +161,18 @@ export function getBookingStage(b: Booking): BookingStageInfo {
     }
   }
 
-  // If unit is assigned by staff (CONFIRMED or READY_FOR_CHECKIN or has storageUnitId/unitCode)
+  // Unit assigned by staff at counter or confirmed
   const isAssigned =
-    status === 'CONFIRMED' ||
-    status === 'READY_FOR_CHECKIN' ||
-    (Boolean(b.storageUnitId) && !b.storageUnitId?.startsWith('UNIT-'))
+    (status === 'CONFIRMED' || status === 'READY_FOR_CHECKIN') &&
+    Boolean(b.unitCode && b.unitCode !== 'N/A')
 
   if (isAssigned) {
     return {
       stage: 'CONFIRMED',
-      label: 'Sẵn sàng nhận kho',
+      label: 'Đã xếp buồng kho',
       badgeClass: 'bg-cyan-100 text-cyan-800 border-cyan-300 dark:bg-cyan-950/80 dark:text-cyan-300 dark:border-cyan-800',
       dotClass: 'bg-cyan-500 animate-pulse',
-      description: `Nhân viên đã xếp buồng kho ${b.unitCode ? '#' + b.unitCode : ''} tại ${b.facilityName}. Quý khách vui lòng đến theo lịch hẹn mang CCCD. Mã khóa IoT đã gửi qua email.`,
+      description: `Nhân viên đã xếp buồng kho #${b.unitCode} tại ${b.facilityName}. Quý khách vui lòng đến theo lịch hẹn mang CCCD để hoàn tất nhận kho.`,
       step: 3,
       stepLabel: 'Đã xếp buồng kho',
       priorityTag: '✓ Đã xếp buồng kho',
@@ -132,38 +180,53 @@ export function getBookingStage(b: Booking): BookingStageInfo {
     }
   }
 
-  // Pay Now order that signed contract and paid, awaiting staff unit assignment
-  const isPaid =
+  // Pay Now order that signed contract and paid online, awaiting check-in / unit selection
+  const isPaidOnline =
     b.paymentStatus === 'PAID' ||
     Number(b.depositPaid || 0) > 0 ||
     status === 'PAID_CONFIRMED' ||
     status === 'PAID_AND_SIGNED' ||
     status === 'PAID_PENDING_ASSIGNMENT'
 
-  if (isPaid || status === 'PAID_AND_SIGNED' || status === 'PAID_PENDING_ASSIGNMENT') {
+  if (isPaidOnline || status === 'PAID_AND_SIGNED' || status === 'PAID_PENDING_ASSIGNMENT') {
     return {
       stage: 'PENDING_ASSIGNMENT',
       label: 'Chờ xếp buồng kho',
       badgeClass: 'bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/80 dark:text-indigo-300 dark:border-indigo-800',
       dotClass: 'bg-indigo-500 animate-pulse',
-      description: 'Hợp đồng điện tử DocuSeal đã ký & thanh toán thành công. Nhân viên cơ sở đang kiểm tra kho thực tế để hoàn tất bàn giao.',
+      description: 'Hợp đồng điện tử DocuSeal đã ký & thanh toán thành công. Vào ngày check-in, nhân viên sẽ hỗ trợ quý khách chọn buồng kho mong muốn tại quầy.',
       step: 2,
       stepLabel: 'Đã ký & thanh toán',
-      priorityTag: '⚡ Ưu tiên xếp kho',
+      priorityTag: '⚡ Chờ xếp kho tại quầy',
       priorityTagClass: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800',
     }
   }
 
-  // Pay Later / pending contact
+  // Pay Later / In person signing & payment at facility on check-in day
+  if (status === 'PENDING_CONTACT' || b.signingMethod === 'IN_PERSON') {
+    return {
+      stage: 'PENDING_CONTACT',
+      label: 'Chờ check-in tại quầy',
+      badgeClass: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800',
+      dotClass: 'bg-amber-500 animate-pulse',
+      description: 'Đơn đặt giữ chỗ thành công theo loại kho. Quý khách vui lòng đến cơ sở theo lịch hẹn để chọn vị trí buồng kho mong muốn, ký hợp đồng và thanh toán tại quầy.',
+      step: 1,
+      stepLabel: 'Đã đặt chỗ thành công',
+      priorityTag: '🏢 Ký & TT tại kho',
+      priorityTagClass: 'text-amber-700 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800',
+    }
+  }
+
+  // Default pending payment
   return {
     stage: 'PENDING_CONTACT',
-    label: 'Chờ liên hệ tư vấn',
+    label: 'Chờ ký HĐ & thanh toán',
     badgeClass: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800',
     dotClass: 'bg-amber-500 animate-pulse',
-    description: 'Chuyên viên CSKH sẽ liên hệ qua điện thoại trong 15-30 phút để xác nhận nhu cầu và hỗ trợ hoàn tất đơn.',
+    description: 'Vui lòng hoàn tất ký hợp đồng điện tử và thanh toán trực tuyến để xác nhận giữ buồng kho.',
     step: 1,
-    stepLabel: 'Chờ CSKH gọi',
-    priorityTag: '📞 CSKH gọi 15-30p',
+    stepLabel: 'Chờ ký & thanh toán',
+    priorityTag: '💳 Chờ thanh toán online',
     priorityTagClass: 'text-amber-700 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800',
   }
 }
@@ -174,6 +237,9 @@ export interface MyBookingsPageProps {
 
 export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false }) => {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const targetBookingCodeParam = searchParams.get('bookingCode') || searchParams.get('code')
+  const [highlightedBookingCode, setHighlightedBookingCode] = useState<string | null>(null)
   const { user, isAuthenticated, logout } = useAuth()
   const { t } = useLanguage()
 
@@ -263,6 +329,22 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
 
             localItems.forEach((r: any, idx: number) => {
               const code = r.bookingCode || `BX-LOCAL-${idx}`
+
+              // Chỉ merge đơn lưu tạm trong máy NẾU đơn này trùng khớp email hoặc số điện thoại của tài khoản đang đăng nhập
+              const resEmail = (r.customer?.email || r.customerEmail || '').trim().toLowerCase()
+              const resPhone = (r.customer?.phone || r.customerPhone || '').trim()
+              const currentUserEmail = (user?.email || '').trim().toLowerCase()
+              const currentUserPhone = (user?.phone || '').trim()
+
+              const isMatch = Boolean(
+                (currentUserEmail && resEmail && resEmail === currentUserEmail) ||
+                (currentUserPhone && resPhone && resPhone === currentUserPhone)
+              )
+
+              if (!isMatch) {
+                return
+              }
+
               if (!existingCodes.has(code)) {
                 localAsBookings.push({
                   id: `LOCAL-RES-${idx}-${code}`,
@@ -274,7 +356,8 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                   identityCardNumber: r.identityCardNumber || r.customer?.idCard || '',
                   storageUnitId: null,
                   unitCode: r.unitCode || null,
-                  unitTypeName: r.size?.volumeText || r.unitTypeName || 'Kho Boxora',
+                  unitTypeName: r.unitTypeName || r.sizeName || (r.size?.volumeText ? `Kho ${r.size.volumeText}` : '') || (r.sizeId ? `Kho ${String(r.sizeId).toUpperCase()}` : 'Kho Tiêu chuẩn'),
+                  sizeName: r.sizeName || (r.size?.volumeText ? `Kho ${r.size.volumeText}` : undefined),
                   facilityId: r.facility?.id || r.facilityId || 'FAC-LOCAL-1',
                   facilityName: r.facility?.name || r.facilityName || 'Boxora Smart Storage',
                   startDate: r.startDate || new Date().toISOString().split('T')[0],
@@ -391,6 +474,35 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
       window.removeEventListener('boxora_staff_reservation_created', handleCreated)
     }
   }, [fetchBookings])
+
+  // Handle bookingCode from URL searchParams to navigate, highlight card, and view details
+  useEffect(() => {
+    if (!targetBookingCodeParam || bookings.length === 0) return
+
+    const cleanTarget = targetBookingCodeParam.trim().toLowerCase()
+    const match = bookings.find(
+      (b) =>
+        b.bookingCode?.toLowerCase() === cleanTarget ||
+        b.id?.toLowerCase() === cleanTarget
+    )
+
+    if (match) {
+      setHighlightedBookingCode(match.bookingCode)
+      setStatusFilter('ALL') // ensure it's not hidden by status filter tabs
+      setSearchTerm('')     // ensure it's not hidden by search text
+
+      // Automatically open detail modal so customer gets instant access to their QR check-in & booking voucher
+      setSelectedBookingForDetail(match)
+
+      // Smooth scroll to the booking card
+      setTimeout(() => {
+        const el = document.getElementById(`booking-card-${match.bookingCode}`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 400)
+    }
+  }, [targetBookingCodeParam, bookings])
 
   // Generate QR code for detail modal
   useEffect(() => {
@@ -793,29 +905,53 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
               const isPaid =
                 b.paymentStatus === 'PAID' ||
                 Number(b.depositPaid || 0) > 0 ||
-                stageInfo.stage === 'PENDING_ASSIGNMENT' ||
-                stageInfo.stage === 'CONFIRMED' ||
-                stageInfo.stage === 'ACTIVE'
+                (b.status || '').toUpperCase() === 'PAID_CONFIRMED' ||
+                (b.status || '').toUpperCase() === 'PAID_AND_SIGNED' ||
+                (b.status || '').toUpperCase() === 'PAID_PENDING_ASSIGNMENT'
+
+              const isHighlighted = highlightedBookingCode === b.bookingCode
 
               return (
                 <div
                   key={b.id}
-                  className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 shadow-xs hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-md transition-all flex flex-col justify-between gap-4"
+                  id={`booking-card-${b.bookingCode}`}
+                  className={`rounded-2xl bg-white dark:bg-slate-900 border p-5 shadow-xs transition-all flex flex-col justify-between gap-4 ${
+                    isHighlighted
+                      ? 'border-blue-500 ring-4 ring-blue-500/20 shadow-xl bg-blue-50/20 dark:bg-blue-950/20 relative'
+                      : 'border-slate-200/80 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-md'
+                  }`}
                 >
                   <div className="space-y-4">
                     {/* Header: Storage Room Title & Status Badge */}
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black text-sm shrink-0">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 border ${
+                          isHighlighted
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/30'
+                            : 'bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-900/40 text-blue-600 dark:text-blue-400'
+                        }`}>
                           {b.unitCode ? b.unitCode.substring(0, 3) : <Layers size={22} />}
                         </div>
                         <div>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <h3 className="font-extrabold text-base text-slate-900 dark:text-white tracking-tight">
-                              {b.unitCode ? `Kho #${b.unitCode}` : (b.unitTypeName || 'Kho Boxora')}
+                              {b.unitCode && (stageInfo.stage === 'CONFIRMED' || stageInfo.stage === 'ACTIVE')
+                                ? `Kho #${b.unitCode}`
+                                : formatUnitTypeName(b)}
                             </h3>
+                            {isHighlighted && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-600 text-white shadow-2xs animate-pulse">
+                                <Sparkles size={11} className="text-amber-300" />
+                                <span>Đơn vừa đặt</span>
+                              </span>
+                            )}
+                            {(!b.unitCode || (stageInfo.stage !== 'CONFIRMED' && stageInfo.stage !== 'ACTIVE')) && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900">
+                                Chọn vị trí kho khi check-in
+                              </span>
+                            )}
                           </div>
-                          <span className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[190px] flex items-center gap-1 mt-0.5">
+                          <span className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[210px] flex items-center gap-1 mt-0.5">
                             <MapPin size={12} className="text-slate-400 shrink-0" />
                             <span className="truncate">{b.facilityName}</span>
                           </span>
@@ -902,13 +1038,15 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                     {/* Key Specifications Grid (2x2) */}
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                        <span className="text-slate-400 block text-[10px]">LOẠI BUỒNG KHO</span>
-                        <div className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5 truncate">
-                          {b.unitTypeName || (b.unitCode ? `Mã kho #${b.unitCode}` : 'Theo kích thước đăng ký')}
+                        <span className="text-slate-400 block text-[10px] font-bold uppercase">LOẠI BUỒNG KHO</span>
+                        <div className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5 truncate" title={formatUnitTypeName(b)}>
+                          {formatUnitTypeName(b)}
                         </div>
-                        {b.floorLevel && (
-                          <span className="text-[10px] text-slate-400 block mt-0.5">{b.floorLevel}</span>
-                        )}
+                        <span className="text-[10px] text-slate-400 block mt-0.5">
+                          {b.unitCode && (stageInfo.stage === 'CONFIRMED' || stageInfo.stage === 'ACTIVE')
+                            ? `Vị trí: ${b.floorLevel || 'Tầng 1'}`
+                            : 'Vị trí kho sẽ chọn khi đến check-in'}
+                        </span>
                       </div>
 
                       <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
@@ -941,7 +1079,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                           {Number(b.totalRentalFee || 0).toLocaleString('vi-VN')} ₫
                         </div>
                         <span className={`text-[10px] font-semibold block mt-0.5 ${isPaid ? 'text-emerald-600' : 'text-amber-600'}`}>
-                          {isPaid ? '✓ Đã thanh toán cọc' : '• Thanh toán sau'}
+                          {isPaid ? '✓ Đã thanh toán' : '• Ký & Thanh toán tại kho'}
                         </span>
                       </div>
                     </div>
@@ -967,10 +1105,10 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                         {stageInfo.stage === 'PENDING_CONTACT' && <PhoneCall size={14} className="text-amber-600 shrink-0" />}
                         {stageInfo.stage === 'CANCELLED' && <AlertCircle size={14} className="text-rose-600 shrink-0" />}
                         <span>
-                          {stageInfo.stage === 'PENDING_ASSIGNMENT' && 'Hợp đồng điện tử đã ký — Chờ gán buồng kho'}
+                          {stageInfo.stage === 'PENDING_ASSIGNMENT' && 'Hợp đồng điện tử đã ký — Chờ chọn kho khi check-in'}
                           {stageInfo.stage === 'CONFIRMED' && `Đã xếp ô kho #${b.unitCode || 'thực tế'} sẵn sàng đón`}
                           {stageInfo.stage === 'ACTIVE' && 'Hợp đồng kho đang hoạt động 24/7'}
-                          {stageInfo.stage === 'PENDING_CONTACT' && 'Chờ chuyên viên liên hệ xác nhận'}
+                          {stageInfo.stage === 'PENDING_CONTACT' && 'Ký HĐ & Thanh toán tại kho khi check-in'}
                           {stageInfo.stage === 'CANCELLED' && 'Đơn đặt giữ chỗ đã hủy'}
                         </span>
                       </div>
@@ -992,7 +1130,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                         <span className="material-symbols-outlined text-[17px]">dashboard</span>
                         <span>Vào Portal Quản Lý Kho (Khóa IoT)</span>
                       </button>
-                    ) : stageInfo.stage === 'PENDING_ASSIGNMENT' || stageInfo.stage === 'CONFIRMED' ? (
+                    ) : (stageInfo.stage === 'PENDING_ASSIGNMENT' || (stageInfo.stage === 'CONFIRMED' && (b.contractSigned || isPaid))) ? (
                       <button
                         type="button"
                         onClick={() => navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}`)}
@@ -1002,25 +1140,37 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                         <span>Xem hợp đồng điện tử đã ký</span>
                       </button>
                     ) : stageInfo.stage === 'PENDING_CONTACT' ? (
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}&autoSign=true`)}
-                        className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                      >
-                        <span>Ký HĐ &amp; Thanh toán ngay</span>
-                        <ArrowRight size={14} />
-                      </button>
+                      <div className="space-y-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedBookingForDetail(b)}
+                          className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                        >
+                          <QrCode size={15} />
+                          <span>Xem phiếu hẹn &amp; Mã QR</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}&autoSign=true`)}
+                          className="w-full py-1.5 px-2 rounded-lg bg-slate-50 dark:bg-slate-800 hover:bg-blue-50 text-blue-600 dark:text-blue-400 text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer border border-blue-100 dark:border-blue-900/50"
+                        >
+                          <span>Chuyển sang Ký HĐ &amp; Thanh toán online</span>
+                          <ArrowRight size={12} />
+                        </button>
+                      </div>
                     ) : null}
 
                     {/* Secondary Utility Actions */}
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedBookingForDetail(b)}
-                        className="flex-1 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors cursor-pointer text-center"
-                      >
-                        Xem phiếu hẹn &amp; QR
-                      </button>
+                      {stageInfo.stage !== 'PENDING_CONTACT' && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedBookingForDetail(b)}
+                          className="flex-1 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors cursor-pointer text-center"
+                        >
+                          Xem phiếu hẹn &amp; QR
+                        </button>
+                      )}
 
                       {stageInfo.stage !== 'CANCELLED' && stageInfo.stage !== 'ACTIVE' && (
                         <>
@@ -1065,7 +1215,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                 </div>
                 <div>
                   <h3 className="font-extrabold text-slate-900 dark:text-white text-base">
-                    Phiếu Giữ Chỗ Kho Boxora
+                    Phiếu Giữ Chỗ · {formatUnitTypeName(selectedBookingForDetail)}
                   </h3>
                   <span className="text-xs text-slate-400">Mã đơn: #{selectedBookingForDetail.bookingCode}</span>
                 </div>
@@ -1108,16 +1258,32 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
             {/* Customer & Rental Info */}
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                <span className="text-slate-400 block text-[10px]">KHÁCH HÀNG:</span>
+                <span className="text-slate-400 block text-[10px] font-bold uppercase">KHÁCH HÀNG:</span>
                 <strong className="text-slate-900 dark:text-white block mt-0.5">{selectedBookingForDetail.customerName}</strong>
                 <span className="text-slate-500">{selectedBookingForDetail.customerPhone}</span>
               </div>
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                <span className="text-slate-400 block text-[10px]">LỊCH HẸN TIẾP ĐÓN:</span>
+                <span className="text-slate-400 block text-[10px] font-bold uppercase">LỊCH HẸN TIẾP ĐÓN:</span>
                 <strong className="text-slate-900 dark:text-white block mt-0.5">
                   {(selectedBookingForDetail as any).checkInDate || safeFormatDate(selectedBookingForDetail.expectedCheckInAt)}
                 </strong>
                 <span className="text-blue-600 font-semibold">{selectedBookingForDetail.checkInTime || 'Giờ hành chính'}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400 block text-[10px] font-bold uppercase">LOẠI BUỒNG KHO:</span>
+                <strong className="text-slate-900 dark:text-white block mt-0.5 truncate" title={formatUnitTypeName(selectedBookingForDetail)}>
+                  {formatUnitTypeName(selectedBookingForDetail)}
+                </strong>
+                <span className="text-slate-500">
+                  {selectedBookingForDetail.unitCode ? `Mã ô kho: #${selectedBookingForDetail.unitCode}` : 'Vị trí gán trực tiếp khi check-in'}
+                </span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400 block text-[10px] font-bold uppercase">TIỀN CỌC &amp; THỜI HẠN:</span>
+                <strong className="text-blue-600 dark:text-blue-400 block mt-0.5 font-bold">
+                  {Number(selectedBookingForDetail.depositPaid || selectedBookingForDetail.depositAmount || 0).toLocaleString('vi-VN')} ₫
+                </strong>
+                <span className="text-slate-500">Thời hạn: {selectedBookingForDetail.rentalMonths || 1} tháng</span>
               </div>
             </div>
 
@@ -1154,6 +1320,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
         onSuccess={() => {
           setSelectedBookingForCancel(null)
           fetchBookings()
+          window.dispatchEvent(new Event('boxora:storage-units-refresh'))
         }}
       />
 

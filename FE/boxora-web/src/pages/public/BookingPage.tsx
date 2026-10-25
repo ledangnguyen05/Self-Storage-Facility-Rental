@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -301,7 +301,6 @@ export const STORAGE_SIZES_CATALOG: StorageSizeUnitDef[] = [
   },
 ]
 
-
 import {
   CHECK_IN_PERIOD_GROUPS,
   CHECK_IN_HOURS_24,
@@ -309,6 +308,22 @@ import {
 } from '../../utils/checkInTimeSlots'
 
 export { CHECK_IN_PERIOD_GROUPS, CHECK_IN_HOURS_24 }
+
+export const resolveUnitTypeIdForSelectedSize = (size: StorageSizeUnitDef): string => {
+  if (size.id.includes('cold')) {
+    return '10000000-0000-0000-0000-000000000005' // Kho lạnh (kiểm soát nhiệt độ 18-22°C)
+  }
+  if (size.volumeNumber <= 2 || size.areaM2 <= 1.0) {
+    return '10000000-0000-0000-0000-000000000001' // Mini (tủ cá nhân) - 1m²
+  }
+  if (size.volumeNumber <= 5 || size.areaM2 <= 2.0) {
+    return '10000000-0000-0000-0000-000000000002' // Vừa (phòng studio nhỏ) - 3m²
+  }
+  if (size.volumeNumber <= 10 || size.areaM2 <= 4.0) {
+    return '10000000-0000-0000-0000-000000000003' // Tiêu chuẩn (căn một phòng ngủ) - 6m²
+  }
+  return '10000000-0000-0000-0000-000000000004' // Rất lớn (văn phòng thương mại) - 12m²
+}
 
 export const BookingPage: React.FC = () => {
   const navigate = useNavigate()
@@ -609,10 +624,61 @@ export const BookingPage: React.FC = () => {
   // Real available units for selected facility
   const availableFacilityUnits = useMemo(() => {
     if (!selectedFacility) return []
+
+    // Đọc các đơn đặt giữ chỗ đang chiếm giữ buồng kho
+    const localReservedUnitIds = new Set<string>()
+    try {
+      const raw = localStorage.getItem('boxora_guest_reservations')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) {
+          parsed.forEach((r: any) => {
+            const isHolding = r.status !== 'CANCELLED' && r.status !== 'COMPLETED'
+            if (isHolding && r.storageUnitId) {
+              localReservedUnitIds.add(r.storageUnitId)
+            }
+          })
+        }
+      }
+    } catch {}
+
     return storageUnits.filter(
-      (u) => u.facilityId === selectedFacility.id && (u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
+      (u) =>
+        u.facilityId === selectedFacility.id &&
+        (u.status === 'AVAILABLE' || (u.status as string) === 'Trống') &&
+        !localReservedUnitIds.has(u.id)
     )
   }, [storageUnits, selectedFacility])
+
+  // Lắng nghe sự kiện toàn hệ thống để tự động đồng bộ số lượng kho khả dụng thời gian thực
+  const refreshAvailableUnits = useCallback(async () => {
+    try {
+      const unitRes = await storageUnitService.getUnits({ status: 'AVAILABLE' })
+      const list = Array.isArray(unitRes) ? unitRes : ((unitRes as any)?.content || [])
+      if (Array.isArray(list)) {
+        setStorageUnits(list)
+      }
+    } catch (e) {
+      console.warn('Refresh available units error:', e)
+    }
+  }, [])
+
+  useEffect(() => {
+    window.addEventListener('boxora:storage-units-refresh', refreshAvailableUnits)
+    window.addEventListener('boxora_reservation_updated', refreshAvailableUnits)
+    window.addEventListener('boxora_new_reservation', refreshAvailableUnits)
+    return () => {
+      window.removeEventListener('boxora:storage-units-refresh', refreshAvailableUnits)
+      window.removeEventListener('boxora_reservation_updated', refreshAvailableUnits)
+      window.removeEventListener('boxora_new_reservation', refreshAvailableUnits)
+    }
+  }, [refreshAvailableUnits])
+
+  useEffect(() => {
+    if (currentStep === 2) {
+      refreshAvailableUnits()
+    }
+  }, [currentStep, refreshAvailableUnits])
 
   // Real sizes that exist and are available in the selected facility
   const availableSizesInFacility = useMemo(() => {
@@ -780,12 +846,16 @@ export const BookingPage: React.FC = () => {
     code: string,
     method: 'ONLINE' | 'PAY_LATER' = 'PAY_LATER',
     isPaid = false,
-    backendBookingId = ''
+    backendBookingId = '',
+    storageUnitId?: string,
+    unitCode?: string
   ) => {
     const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ngày ' + new Date().toLocaleDateString('vi-VN')
     const reservationData = {
       id: backendBookingId || 'res_' + Date.now(),
       bookingCode: code,
+      storageUnitId: storageUnitId || '',
+      unitCode: unitCode || '',
       customerName: customerName.trim(),
       customerPhone: customerPhone.trim(),
       customerIdCard: customerIdCard.trim(),
@@ -795,6 +865,7 @@ export const BookingPage: React.FC = () => {
       facilityAddress: selectedFacility?.address,
       sizeId: currentSelectedSize.id,
       sizeName: `Kho ${currentSelectedSize.volumeText}`,
+      unitTypeName: `Kho ${currentSelectedSize.volumeText} (${isAcActive ? 'A/C Máy lạnh' : 'Thường'})`,
       dimensions: currentSelectedSize.dimensions,
       isAc: isAcActive,
       rentalDuration: rentalDurationText,
@@ -951,52 +1022,49 @@ export const BookingPage: React.FC = () => {
       let backendBookingId = ''
       let createdBooking: any = null
 
-      if (isAuthenticated) {
-        try {
-          const cleanTime = selectedPeriod.id === 'morning' ? '09:00' : (selectedPeriod.hours[0]?.value || '09:00')
-          let expectedCheckInStr = `${checkInDate}T${cleanTime}:00`
-          const parsedCheckIn = new Date(expectedCheckInStr)
-          const minAllowedMs = Date.now() + 5.25 * 3600 * 1000
-          if (!Number.isNaN(parsedCheckIn.getTime()) && parsedCheckIn.getTime() < minAllowedMs) {
-            const safeDate = new Date(minAllowedMs)
-            const pad = (n: number) => String(n).padStart(2, '0')
-            expectedCheckInStr = `${safeDate.getFullYear()}-${pad(safeDate.getMonth() + 1)}-${pad(safeDate.getDate())}T${pad(safeDate.getHours())}:${pad(safeDate.getMinutes())}:00`
-          }
+      try {
+        const cleanTime = selectedPeriod.id === 'morning' ? '09:00' : (selectedPeriod.hours[0]?.value || '09:00')
+        let expectedCheckInStr = `${checkInDate}T${cleanTime}:00`
+        const parsedCheckIn = new Date(expectedCheckInStr)
+        const minAllowedMs = Date.now() + 5.25 * 3600 * 1000
+        if (!Number.isNaN(parsedCheckIn.getTime()) && parsedCheckIn.getTime() < minAllowedMs) {
+          const safeDate = new Date(minAllowedMs)
+          const pad = (n: number) => String(n).padStart(2, '0')
+          expectedCheckInStr = `${safeDate.getFullYear()}-${pad(safeDate.getMonth() + 1)}-${pad(safeDate.getDate())}T${pad(safeDate.getHours())}:${pad(safeDate.getMinutes())}:00`
+        }
 
-          // Quy tắc quan trọng: KHÔNG gửi storageUnitId khi đặt kho trực tuyến!
-          // Chỉ gửi loại kho (unitTypeId) và cơ sở (facilityId). Ô kho vật lý cụ thể (A-105) sẽ do Nhân viên quầy gán sau.
-          const resolvedUnitTypeId = matchedUnit?.unitTypeId || '10000000-0000-0000-0000-000000000001'
+        const resolvedUnitTypeId = resolveUnitTypeIdForSelectedSize(currentSelectedSize)
 
-          const res = await bookingService.createBooking({
-            facilityId: selectedFacility?.id || matchedUnit?.facilityId,
-            unitTypeId: resolvedUnitTypeId,
-            customerName: customerName.trim(),
-            customerPhone: customerPhone.trim(),
-            customerEmail: customerEmail.trim(),
-            startDate: startDate,
-            rentalMonths: isCustomDuration ? Math.max(1, Math.round(customDays / 30)) : rentalMonths,
-            totalRentalFee: quoteCalculation.totalRent,
-            depositPaid: 0,
-            depositAmount: quoteCalculation.depositAmount,
-            signingMethod: selectedMethod === 'ONLINE' ? 'ONLINE' : 'IN_PERSON',
-            initialStatus: selectedMethod === 'ONLINE' ? 'PENDING_SIGNATURE' : 'PENDING_CONTACT',
-            expectedCheckInAt: expectedCheckInStr,
-            checkInTime: cleanTime,
-            identityCardNumber: customerIdCard.trim(),
-            identityCardType: 'CCCD',
-          })
+        const res = await bookingService.createBooking({
+          facilityId: selectedFacility?.id,
+          unitTypeId: resolvedUnitTypeId,
+          customerName: customerName.trim(),
+          customerPhone: customerPhone.trim(),
+          customerEmail: customerEmail.trim(),
+          startDate: startDate,
+          rentalMonths: isCustomDuration ? Math.max(1, Math.round(customDays / 30)) : rentalMonths,
+          totalRentalFee: quoteCalculation.totalRent,
+          depositPaid: 0,
+          depositAmount: quoteCalculation.depositAmount,
+          signingMethod: selectedMethod === 'ONLINE' ? 'ONLINE' : 'IN_PERSON',
+          initialStatus: selectedMethod === 'ONLINE' ? 'PENDING_SIGNATURE' : 'PENDING_CONTACT',
+          expectedCheckInAt: expectedCheckInStr,
+          checkInTime: cleanTime,
+          identityCardNumber: customerIdCard.trim(),
+          identityCardType: 'CCCD',
+        })
 
-          if (res?.bookingCode || res?.id) {
-            effectiveBookingCode = res.bookingCode || `BX-${res.id.slice(0, 8).toUpperCase()}`
-            backendBookingId = res.id
-            createdBooking = res
-          }
-        } catch (apiErr: any) {
-          console.warn('Backend booking API error:', apiErr)
-          const msg = apiErr?.response?.data?.message || apiErr?.message
-          if (selectedMethod === 'ONLINE') {
-            throw new Error(msg || 'Không thể tạo phiên giữ chỗ trên hệ thống để kết nối cổng thanh toán. Quý khách vui lòng thử lại hoặc chọn Thanh toán sau khi nhận kho.')
-          }
+        if (res?.bookingCode || res?.id) {
+          effectiveBookingCode = res.bookingCode || `BX-${res.id.slice(0, 8).toUpperCase()}`
+          backendBookingId = res.id
+          createdBooking = res
+          window.dispatchEvent(new Event('boxora:storage-units-refresh'))
+        }
+      } catch (apiErr: any) {
+        console.warn('Backend booking API error:', apiErr)
+        const msg = apiErr?.response?.data?.message || apiErr?.message
+        if (selectedMethod === 'ONLINE') {
+          throw new Error(msg || 'Không thể tạo phiên giữ chỗ trên hệ thống để kết nối cổng thanh toán. Quý khách vui lòng thử lại hoặc chọn Thanh toán sau khi nhận kho.')
         }
       }
 
@@ -1025,10 +1093,17 @@ export const BookingPage: React.FC = () => {
         setShowDocuSealModal(true)
         setIsSubmitting(false)
         return
-      } else {
-        // Thanh toán sau khi nhận kho: Lưu đơn PENDING_CONTACT, chưa khóa ô kho nào
+        // Thanh toán sau khi nhận kho: Lưu đơn PENDING_CONTACT (chọn kho khi check-in tại quầy)
         setIsOnlinePaid(false)
-        sendReservationToStaff(effectiveBookingCode, 'PAY_LATER', false, backendBookingId)
+        sendReservationToStaff(
+          effectiveBookingCode,
+          'PAY_LATER',
+          false,
+          backendBookingId,
+          undefined,
+          undefined
+        )
+        window.dispatchEvent(new Event('boxora:storage-units-refresh'))
         setCurrentStep(6)
         window.scrollTo({ top: 0, behavior: 'smooth' })
       }
@@ -2760,7 +2835,7 @@ export const BookingPage: React.FC = () => {
                   {isAuthenticated ? (
                     <button
                       type="button"
-                      onClick={() => navigate('/portal/customer?tab=bookings')}
+                      onClick={() => navigate(`/portal/customer?tab=bookings&bookingCode=${encodeURIComponent(bookingCode)}`)}
                       className="flex-1 py-2.5 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-600/20 text-center transition-all cursor-pointer"
                     >
                       Xem đơn đặt của tôi
@@ -2768,7 +2843,7 @@ export const BookingPage: React.FC = () => {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => navigate('/login')}
+                      onClick={() => navigate(`/login?redirect=${encodeURIComponent(`/portal/customer?tab=bookings&bookingCode=${bookingCode}`)}`)}
                       className="flex-1 py-2.5 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-600/20 text-center transition-all cursor-pointer"
                     >
                       Đăng nhập để theo dõi hợp đồng

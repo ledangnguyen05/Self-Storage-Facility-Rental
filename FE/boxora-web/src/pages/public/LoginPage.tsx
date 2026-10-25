@@ -625,13 +625,7 @@ export const LoginPage: React.FC = () => {
                   <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </span>
-              <Link
-                to="/"
-                className="text-slate-500 hover:text-teal-700 hover:underline inline-flex items-center gap-1 font-medium"
-              >
-                <Home className="w-3.5 h-3.5 text-teal-600" />
-                <span>Về trang chủ</span>
-              </Link>
+
             </div>
 
           </div>
