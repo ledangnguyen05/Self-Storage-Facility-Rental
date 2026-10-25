@@ -178,7 +178,7 @@ public class SupportTicketController {
     }
 
     @PostMapping("/{id}/admin-confirm-payout")
-    @PreAuthorize("hasRole('ADMIN') or hasAuthority('REFUND_APPROVE')")
+    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Admin xác nhận đã chuyển khoản thành công và đính kèm biên lai ảnh cloud")
     public ResponseEntity<ApiResponse<SupportTicketResponse>> adminConfirmPayout(
             @PathVariable UUID id,

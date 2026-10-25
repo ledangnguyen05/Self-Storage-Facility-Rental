@@ -1995,6 +1995,18 @@ public class BookingServiceImpl implements BookingService {
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
         BookingStatus oldStatus = booking.getStatus();
+        if (oldStatus == BookingStatus.CANCELLED || oldStatus == BookingStatus.COMPLETED || oldStatus == BookingStatus.ACTIVE) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Không thể xác nhận đơn đặt kho ở trạng thái " + oldStatus);
+        }
+
+        UUID facilityId = booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null
+                ? booking.getStorageUnit().getFacility().getId()
+                : (booking.getFacility() != null ? booking.getFacility().getId() : null);
+
+        if (facilityId != null && facilityAccessGuard != null && facilityAccessGuard.isFacilityScoped()) {
+            facilityAccessGuard.checkFacilityAccess(facilityId);
+        }
+
         booking.setStatus(BookingStatus.CONFIRMED);
         if (requestContext != null && requestContext.currentUserId() != null) {
             booking.setHandedOverByStaffId(requestContext.currentUserId());
@@ -2005,10 +2017,6 @@ public class BookingServiceImpl implements BookingService {
         booking.setPaymentExpiresAt(null);
 
         booking = bookingRepository.save(booking);
-
-        UUID facilityId = booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null
-                ? booking.getStorageUnit().getFacility().getId()
-                : (booking.getFacility() != null ? booking.getFacility().getId() : null);
 
         activityLogService.record(
                 facilityId,

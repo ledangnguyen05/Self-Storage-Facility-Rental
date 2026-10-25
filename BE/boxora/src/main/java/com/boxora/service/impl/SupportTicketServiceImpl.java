@@ -821,12 +821,28 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
         String currentUserRole = requestContext != null ? requestContext.currentUserRole() : null;
 
-        if (!"ADMIN".equalsIgnoreCase(currentUserRole) && !"BUSINESS_MANAGER".equalsIgnoreCase(currentUserRole)) {
-            throw new AppException(ErrorCode.FORBIDDEN, "Chỉ Quản trị viên (Admin) mới có quyền thực hiện và xác nhận chuyển khoản hoàn tiền");
+        if ("ADMIN".equalsIgnoreCase(currentUserRole) || "SYSTEM_ADMIN".equalsIgnoreCase(currentUserRole)) {
+            throw new AppException(ErrorCode.FORBIDDEN, "System Admin không có thẩm quyền giải ngân tài chính. Thao tác này yêu cầu quyền REFUND_APPROVE (Quản lý nghiệp vụ/Kế toán).");
+        }
+
+        if (!"BUSINESS_MANAGER".equalsIgnoreCase(currentUserRole) && !"FINANCE_MANAGER".equalsIgnoreCase(currentUserRole)) {
+            throw new AppException(ErrorCode.FORBIDDEN, "Chỉ Quản lý vận hành kinh doanh (Business Manager) có quyền thực hiện và xác nhận chuyển khoản hoàn tiền");
         }
 
         SupportTicket ticket = supportTicketRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        if ("COMPLETED".equalsIgnoreCase(ticket.getRefundStatus())) {
+            throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED, "Yêu cầu hoàn tiền này đã được giải ngân hoàn tất trước đó");
+        }
+
+        if (ticket.getRefundAmount() == null || ticket.getRefundAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Ticket không có số tiền hoàn trả hợp lệ để giải ngân");
+        }
+
+        if (request.getTransferTransactionRef() == null || request.getTransferTransactionRef().trim().isBlank()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Mã tham chiếu giao dịch chuyển khoản không được để trống");
+        }
 
         User adminUser = currentUserId != null ? userRepository.findById(currentUserId).orElse(null) : null;
 
@@ -1259,7 +1275,7 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .createdAt(t.getCreatedAt())
                 .updatedAt(t.getUpdatedAt())
                 .bankName(t.getBankName())
-                .bankAccountNumber(t.getBankAccountNumber())
+                .bankAccountNumber(getMaskedBankAccount(t.getBankAccountNumber(), t.getCustomer() != null ? t.getCustomer().getId() : null))
                 .bankAccountName(t.getBankAccountName())
                 .refundAmount(t.getRefundAmount())
                 .transferProofUrl(t.getTransferProofUrl())
@@ -1310,4 +1326,21 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .createdAt(log.getCreatedAt())
                 .build();
     }
+
+    private String getMaskedBankAccount(String rawAccount, UUID ownerCustomerId) {
+        if (rawAccount == null || rawAccount.isBlank()) return rawAccount;
+        UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
+        String currentUserRole = requestContext != null ? requestContext.currentUserRole() : null;
+
+        boolean canViewFull = "BUSINESS_MANAGER".equalsIgnoreCase(currentUserRole)
+                || "ADMIN".equalsIgnoreCase(currentUserRole)
+                || "FACILITY_MANAGER".equalsIgnoreCase(currentUserRole)
+                || (ownerCustomerId != null && ownerCustomerId.equals(currentUserId));
+
+        if (!canViewFull && rawAccount.length() > 4) {
+            return "*".repeat(rawAccount.length() - 4) + rawAccount.substring(rawAccount.length() - 4);
+        }
+        return rawAccount;
+    }
+
 }

@@ -74,6 +74,9 @@ class BookingCancellationServiceTest {
     @Mock
     private StorageUnitLockService storageUnitLockService;
 
+    @Mock
+    private com.boxora.security.FacilityAccessGuard facilityAccessGuard;
+
     @InjectMocks
     private BookingCancellationServiceImpl cancellationService;
 

@@ -48,6 +48,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
     private final ActivityLogService activityLogService;
     private final RequestContext requestContext;
     private final StorageUnitLockService storageUnitLockService;
+    private final com.boxora.security.FacilityAccessGuard facilityAccessGuard;
 
     @Value("${app.scheduling.pending-payment-timeout-minutes:15}")
     private int defaultPendingPaymentTimeoutMinutes;
@@ -204,6 +205,16 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         if ("CUSTOMER".equalsIgnoreCase(currentRole) && booking.getCustomer() != null
                 && currentUserId != null && !booking.getCustomer().getId().equals(currentUserId)) {
             throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        // Kiểm tra phạm vi cơ sở nếu người thao tác là nhân sự nội bộ (STAFF / FACILITY_MANAGER)
+        if (!"CUSTOMER".equalsIgnoreCase(currentRole) && facilityAccessGuard != null && facilityAccessGuard.isFacilityScoped()) {
+            UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                    ? booking.getStorageUnit().getFacility().getId()
+                    : (booking.getFacility() != null ? booking.getFacility().getId() : null);
+            if (facilityId != null) {
+                facilityAccessGuard.checkFacilityAccess(facilityId);
+            }
         }
 
         User cancelledByUser = currentUserId != null
