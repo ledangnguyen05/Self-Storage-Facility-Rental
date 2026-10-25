@@ -88,8 +88,11 @@ echo.
 echo [3/4] Chuan bi moi truong Frontend Local...
 
 :: Dam bao file .env trong FE tro ve localhost:8080 khi chay local
-echo VITE_API_BASE_URL=http://localhost:8080> "%~dp0FE\boxora-web\.env"
-echo [OK] Da cau hinh VITE_API_BASE_URL=http://localhost:8080 cho Frontend.
+(
+    echo VITE_API_BASE_URL=http://localhost:8080
+    echo VITE_GOOGLE_CLIENT_ID=564968487479-aooibm2esqg9bic2iuu1a729ci4qfo3q.apps.googleusercontent.com
+) > "%~dp0FE\boxora-web\.env"
+echo [OK] Da cau hinh VITE_API_BASE_URL va VITE_GOOGLE_CLIENT_ID cho Frontend.
 
 echo.
 echo [4/4] Khoi dong Frontend Vite Dev Server...

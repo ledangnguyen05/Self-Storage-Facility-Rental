@@ -22,6 +22,7 @@ import { getFacilityImage } from '../public/BookingPage'
 import { extractFloor } from '../../utils/floorUtils'
 import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import NotificationCenter from '../../components/layout/NotificationCenter'
+import { MyBookingsPage } from './MyBookingsPage'
 
 
 const BookingRequestCountdown: React.FC<{ request: Booking }> = ({ request }) => {
@@ -2178,6 +2179,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
       {/* 4. TAB: LỊCH SỬ ĐẶT GIỮ CHỖ (BOOKING RESERVATIONS HISTORY) */}
       {activeTab === 'bookings' && (
+        <MyBookingsPage embedded={true} />
+      )}
+
+      {false && activeTab === 'bookings' && (
         <div className="flex flex-col gap-6">
           {/* Quy trình tiếp đón & Kích hoạt IoT banner */}
           <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-50 via-cyan-50/60 to-emerald-50/40 border border-blue-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs shadow-xs">

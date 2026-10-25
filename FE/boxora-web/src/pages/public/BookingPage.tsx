@@ -45,6 +45,7 @@ import { bookingService } from '../../services/bookingService'
 import { paymentService } from '../../services/paymentService'
 import { contractService } from '../../services/contractService'
 import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
+import { FacilityNoUnitsModal } from '../../components/modals/FacilityNoUnitsModal'
 import { BrandLogo } from '../../components/common/BrandLogo'
 import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
 import { AccountProfileModal } from '../../components/common/AccountProfileModal'
@@ -318,6 +319,7 @@ export const BookingPage: React.FC = () => {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
+  const [isNoUnitsModalOpen, setIsNoUnitsModalOpen] = useState(false)
 
   // Customer rental access state
   const isCustomer = user?.role?.name === 'CUSTOMER'
@@ -341,7 +343,7 @@ export const BookingPage: React.FC = () => {
   // Step 2: Chọn kho / loại kho
   // Step 3: Thời hạn thuê & Báo giá
   // Step 4: Lịch hẹn & Chi tiết
-  // Step 5: Phương thức thanh toán
+  // Step 5: Hợp đồng & Thanh toán
   // Step 6: Hoàn tất giữ chỗ
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1)
   const [paymentMethod, setPaymentMethod] = useState<'ONLINE' | 'PAY_LATER'>('ONLINE')
@@ -429,10 +431,18 @@ export const BookingPage: React.FC = () => {
   // Automatically pre-fill customer info when user is loaded
   useEffect(() => {
     if (user) {
-      setCustomerName((prev) => (prev ? prev : user.fullName || user.username || ''))
-      setCustomerPhone((prev) => (prev ? prev : user.phone || (user as any).phoneNumber || ''))
-      setCustomerEmail((prev) => (prev ? prev : user.email || ''))
-      const savedCccd = (user as any).identityCardNumber || ''
+      const pName = user.fullName || user.username || ''
+      if (pName) {
+        setCustomerName((prev) => (prev && prev !== 'Khách hàng' ? prev : pName))
+      }
+      const pPhone = user.phone || (user as any).phoneNumber || ''
+      if (pPhone) {
+        setCustomerPhone((prev) => (prev ? prev : pPhone))
+      }
+      if (user.email) {
+        setCustomerEmail((prev) => (prev ? prev : user.email))
+      }
+      const savedCccd = (user as any).identityCardNumber || localStorage.getItem('boxora_user_cccd_' + user.email) || localStorage.getItem('boxora_user_cccd') || ''
       if (savedCccd) {
         setCustomerIdCard((prev) => (prev ? prev : savedCccd))
       }
@@ -472,9 +482,9 @@ export const BookingPage: React.FC = () => {
           setStorageUnits(unitRes.value)
         }
 
-        // Restore draft from sessionStorage if exists (Task 2: Guest Flow Persistence)
+        // Restore draft from sessionStorage or localStorage if exists (Task 2: Guest Flow Persistence)
         try {
-          const draftStr = sessionStorage.getItem('boxora_booking_draft')
+          const draftStr = sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft')
           if (draftStr) {
             const draft = JSON.parse(draftStr)
             if (draft.facilityId && activeList.length > 0) {
@@ -498,16 +508,15 @@ export const BookingPage: React.FC = () => {
             if (draft.specialNotes) setSpecialNotes(draft.specialNotes)
             if (draft.idCardType) setIdCardType(draft.idCardType)
 
-            // If user has now logged in, restore and transition to step 4 or 5
+            // If user has now logged in, restore and transition directly to step 4
             if (isAuthenticated) {
               sessionStorage.removeItem('boxora_booking_draft')
-              const userCccd = (user as any)?.identityCardNumber
+              localStorage.removeItem('boxora_booking_draft')
+              const userCccd = (user as any)?.identityCardNumber || localStorage.getItem('boxora_user_cccd_' + user?.email) || localStorage.getItem('boxora_user_cccd') || ''
               if (userCccd && !customerIdCard) {
                 setCustomerIdCard(userCccd)
-                setCurrentStep(5)
-              } else {
-                setCurrentStep(4)
               }
+              setCurrentStep(4)
             }
             return
           }
@@ -538,6 +547,49 @@ export const BookingPage: React.FC = () => {
       isMounted = false
     }
   }, [isAuthenticated, user])
+
+  // Dedicated listener to advance to step 4 whenever user is authenticated and has a pending booking draft
+  useEffect(() => {
+    if (isAuthenticated) {
+      try {
+        const draftStr = sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft')
+        if (draftStr) {
+          const draft = JSON.parse(draftStr)
+          if (draft.selectedSizeId) setSelectedSizeId(draft.selectedSizeId)
+          if (draft.acMode && draft.selectedSizeId) {
+            setAcSelectionMap((prev) => ({ ...prev, [draft.selectedSizeId]: draft.acMode }))
+          }
+          if (draft.durationMode) setDurationMode(draft.durationMode)
+          if (draft.rentalMonths) setRentalMonths(draft.rentalMonths)
+          if (draft.customDays) setCustomDays(draft.customDays)
+          if (draft.checkInDate) setCheckInDate(draft.checkInDate)
+          if (draft.selectedPeriodId) setSelectedPeriodId(draft.selectedPeriodId)
+          if (draft.specialNotes) setSpecialNotes(draft.specialNotes)
+          if (draft.idCardType) setIdCardType(draft.idCardType)
+
+          if (draft.facilityId && facilities.length > 0) {
+            const matched = facilities.find((f) => f.id === draft.facilityId)
+            if (matched) setSelectedFacility(matched)
+          }
+
+          // Pre-fill profile info
+          const pName = user?.fullName || user?.username || draft.customerName || ''
+          if (pName) setCustomerName(pName)
+          const pPhone = user?.phone || (user as any)?.phoneNumber || draft.customerPhone || ''
+          if (pPhone) setCustomerPhone(pPhone)
+          if (user?.email || draft.customerEmail) setCustomerEmail(user?.email || draft.customerEmail)
+          const userCccd = (user as any)?.identityCardNumber || localStorage.getItem('boxora_user_cccd_' + user?.email) || localStorage.getItem('boxora_user_cccd') || ''
+          if (userCccd) setCustomerIdCard(userCccd)
+
+          sessionStorage.removeItem('boxora_booking_draft')
+          localStorage.removeItem('boxora_booking_draft')
+          setCurrentStep(4)
+        }
+      } catch (err) {
+        console.warn('Draft auto advance error:', err)
+      }
+    }
+  }, [isAuthenticated, user, facilities])
 
   // Facilities with real available unit counts (Task 1: No fake fallback)
   const sortedFacilities = useMemo(() => {
@@ -787,16 +839,14 @@ export const BookingPage: React.FC = () => {
   const validateContactDetails = (): boolean => {
     const errors: Record<string, string> = {}
 
-    // 1. Họ và tên: 2-100 ký tự, chữ cái/khoảng trắng, tối thiểu 2 từ
+    // 1. Họ và tên: chỉ cần có chữ cái, không space rỗng hoặc ký tự đặc biệt
     const nameTrim = customerName.trim()
     if (!nameTrim) {
       errors.customerName = 'Vui lòng nhập họ và tên của bạn'
-    } else if (nameTrim.length < 2 || nameTrim.length > 100) {
-      errors.customerName = 'Họ và tên phải từ 2 đến 100 ký tự'
-    } else if (!/^[\p{L}\s'.-]+$/u.test(nameTrim)) {
-      errors.customerName = 'Họ và tên chỉ được chứa chữ cái tiếng Việt/Latin và khoảng trắng'
-    } else if (nameTrim.split(/\s+/).filter(Boolean).length < 2) {
-      errors.customerName = 'Vui lòng nhập đầy đủ cả họ và tên (tối thiểu 2 từ, ví dụ: Nguyễn Văn A)'
+    } else if (!/^[\p{L}\s]+$/u.test(nameTrim)) {
+      errors.customerName = 'Họ và tên chỉ được chứa chữ cái, không chứa số hoặc ký tự đặc biệt'
+    } else if (nameTrim.length > 100) {
+      errors.customerName = 'Họ và tên không được vượt quá 100 ký tự'
     }
 
     // 2. Số điện thoại di động VN
@@ -821,9 +871,11 @@ export const BookingPage: React.FC = () => {
       }
     }
 
-    // 4. Email (nếu có phải đúng RFC)
+    // 4. Email: Bắt buộc và đúng định dạng RFC
     const emailTrim = customerEmail.trim()
-    if (emailTrim && !/^[A-Za-z0-9+_.-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})$/.test(emailTrim)) {
+    if (!emailTrim) {
+      errors.customerEmail = 'Vui lòng nhập địa chỉ email nhận thông tin hợp đồng và phiếu hẹn'
+    } else if (!/^[A-Za-z0-9+_.-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})$/.test(emailTrim)) {
       errors.customerEmail = 'Địa chỉ email không đúng định dạng (ví dụ: name@domain.com)'
     }
 
@@ -1042,11 +1094,17 @@ export const BookingPage: React.FC = () => {
 
   const handleNextStep = () => {
     if (currentStep === 1) {
-      if (!selectedFacility && sortedFacilities.length > 0) {
-        setSelectedFacility(sortedFacilities[0])
+      const activeFac = selectedFacility || (sortedFacilities.length > 0 ? sortedFacilities[0] : null)
+      if (!selectedFacility && activeFac) {
+        setSelectedFacility(activeFac)
       }
-      if (selectedFacility && availableFacilityUnits.length === 0) {
-        alert('Cơ sở này hiện chưa có kho khả dụng. Vui lòng chọn cơ sở khác.')
+      const unitsInFac = activeFac
+        ? storageUnits.filter(
+            (u) => u.facilityId === activeFac.id && (u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
+          )
+        : []
+      if (!activeFac || unitsInFac.length === 0 || (activeFac as any).availableCount === 0) {
+        setIsNoUnitsModalOpen(true)
         return
       }
       setCurrentStep(2)
@@ -1055,7 +1113,7 @@ export const BookingPage: React.FC = () => {
     }
     if (currentStep === 2) {
       if (availableFacilityUnits.length === 0) {
-        alert('Cơ sở này hiện chưa có kho khả dụng. Vui lòng chọn cơ sở khác.')
+        setIsNoUnitsModalOpen(true)
         return
       }
       if (!selectedSizeId && availableSizesInFacility.length > 0) {
@@ -1070,18 +1128,9 @@ export const BookingPage: React.FC = () => {
         alert('Thời gian thuê ngắn hạn tối thiểu là 7 ngày. Vui lòng kiểm tra lại.')
         return
       }
-      setCurrentStep(4)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-      return
-    }
-    if (currentStep === 4) {
-      const isValid = validateContactDetails()
-      if (!isValid) {
-        return
-      }
 
-      // Guest Flow: Save draft (no CCCD/tokens in storage!) and prompt login
-      if (!isAuthenticated) {
+      // Customer MUST be logged in or registered before proceeding to Step 4
+      if (!isAuthenticated || !user) {
         const draft = {
           facilityId: selectedFacility?.id,
           selectedSizeId,
@@ -1096,8 +1145,44 @@ export const BookingPage: React.FC = () => {
           customerEmail: customerEmail.trim(),
           specialNotes: specialNotes.trim(),
           idCardType,
+          targetStep: 4,
         }
         sessionStorage.setItem('boxora_booking_draft', JSON.stringify(draft))
+        setShowAuthModal(true)
+        return
+      }
+
+      // Auto pre-fill info from user profile when authenticated
+      if (user) {
+        const pName = user.fullName || user.username || ''
+        if (pName && (!customerName.trim() || customerName === 'Khách hàng')) {
+          setCustomerName(pName)
+        }
+        const pPhone = user.phone || (user as any).phoneNumber || ''
+        if (pPhone && !customerPhone.trim()) {
+          setCustomerPhone(pPhone)
+        }
+        if (user.email && !customerEmail.trim()) {
+          setCustomerEmail(user.email)
+        }
+        const savedCccd = (user as any).identityCardNumber || localStorage.getItem('boxora_user_cccd_' + user.email) || localStorage.getItem('boxora_user_cccd') || ''
+        if (savedCccd && !customerIdCard.trim()) {
+          setCustomerIdCard(savedCccd)
+        }
+      }
+
+      setCurrentStep(4)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+    if (currentStep === 4) {
+      const isValid = validateContactDetails()
+      if (!isValid) {
+        return
+      }
+
+      // Safety check: ensure user is authenticated
+      if (!isAuthenticated || !user) {
         setShowAuthModal(true)
         return
       }
@@ -1150,7 +1235,7 @@ export const BookingPage: React.FC = () => {
       
       {/* 1. TOP UNIFIED NAVIGATION BAR */}
       <header className="sticky top-0 z-[100] border-b border-slate-200/70 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl transition-colors">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-13 sm:h-14 flex items-center justify-between gap-4">
           
           <div className="flex items-center gap-6 sm:gap-8">
             <BrandLogo size="md" />
@@ -1191,7 +1276,7 @@ export const BookingPage: React.FC = () => {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => navigate('/my-bookings')}
+                        onClick={() => navigate('/portal/customer?tab=bookings')}
                         className="w-full py-2.5 px-3.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-semibold text-xs flex items-center justify-between hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-all shadow-xs cursor-pointer"
                       >
                         <span className="flex items-center gap-2">
@@ -1228,14 +1313,14 @@ export const BookingPage: React.FC = () => {
 
       {/* 2. DEDICATED 6-STEP INTERACTIVE PROGRESS BAR (Task 2 Standardized Names) */}
       <div className="bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-5">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 sm:py-2.5">
           
           {/* Desktop & Tablet Stepper */}
           <div className="hidden sm:block">
             <div className="relative grid grid-cols-6 items-start">
               
               {/* Background Connecting Track */}
-              <div className="absolute left-[8.333%] right-[8.333%] top-5 -translate-y-1/2 h-[3px] bg-slate-200 dark:bg-slate-800 rounded-full">
+              <div className="absolute left-[8.333%] right-[8.333%] top-3.5 sm:top-4 -translate-y-1/2 h-[2.5px] bg-slate-200 dark:bg-slate-800 rounded-full">
                 <div
                   className="h-full bg-blue-600 rounded-full transition-all duration-500 ease-out"
                   style={{ width: `${((currentStep - 1) / 5) * 100}%` }}
@@ -1245,11 +1330,11 @@ export const BookingPage: React.FC = () => {
               {/* 6 Step Nodes */}
               {[
                 { step: 1, title: 'Chọn cơ sở', subtitle: selectedFacility?.name || 'Chọn chi nhánh' },
-                { step: 2, title: 'Chọn kho / loại kho', subtitle: currentSelectedSize ? `Kho ${currentSelectedSize.volumeText} (${isAcActive ? 'A/C' : 'Non-A/C'})` : 'Chọn quy cách' },
-                { step: 3, title: 'Thời hạn thuê & Báo giá', subtitle: `${rentalDurationText} • ${quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫` },
+                { step: 2, title: 'Chọn kho', subtitle: currentSelectedSize ? `Kho ${currentSelectedSize.volumeText}` : 'Chọn quy cách' },
+                { step: 3, title: 'Thời hạn & Báo giá', subtitle: `${rentalDurationText} • ${quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫` },
                 { step: 4, title: 'Lịch hẹn & Chi tiết', subtitle: `${checkInDate} • ${customerName || 'Chi tiết'}` },
-                { step: 5, title: 'Phương thức thanh toán', subtitle: paymentMethod === 'ONLINE' ? 'VNPay trực tuyến' : 'Thanh toán sau' },
-                { step: 6, title: 'Hoàn tất giữ chỗ', subtitle: 'Hoàn tất giữ chỗ' },
+                { step: 5, title: 'Hợp đồng & Thanh toán', subtitle: paymentMethod === 'ONLINE' ? 'Ký HĐ & Trực tuyến' : 'Tại cơ sở' },
+                { step: 6, title: 'Hoàn tất', subtitle: 'Hoàn tất giữ chỗ' },
               ].map((item) => {
                 const isPassed = currentStep > item.step
                 const isCurrent = currentStep === item.step
@@ -1266,29 +1351,29 @@ export const BookingPage: React.FC = () => {
                         window.scrollTo({ top: 0, behavior: 'smooth' })
                       }
                     }}
-                    className={`relative z-10 flex flex-col items-center text-center px-2 select-none group focus:outline-none ${
+                    className={`relative z-10 flex flex-col items-center text-center px-1 select-none group focus:outline-none ${
                       canJumpBack ? 'cursor-pointer' : 'cursor-default'
                     }`}
                   >
                     <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs transition-all duration-300 ${
+                      className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-bold text-[11px] sm:text-xs transition-all duration-300 ${
                         isPassed
-                          ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/25 ring-4 ring-white dark:ring-slate-900 group-hover:bg-emerald-700'
+                          ? 'bg-emerald-600 text-white shadow-xs ring-3 ring-white dark:ring-slate-900 group-hover:bg-emerald-700'
                           : isCurrent
-                          ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 ring-4 ring-blue-100 dark:ring-blue-950'
-                          : 'bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 ring-4 ring-white dark:ring-slate-900'
+                          ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30 ring-3 ring-blue-100 dark:ring-blue-950'
+                          : 'bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-400 dark:text-slate-500 ring-3 ring-white dark:ring-slate-900'
                       }`}
                     >
                       {isPassed ? (
-                        <Check size={17} strokeWidth={2.75} />
+                        <Check size={14} strokeWidth={2.75} />
                       ) : (
                         <span>0{item.step}</span>
                       )}
                     </div>
 
-                    <div className="mt-2.5 space-y-0.5 max-w-[150px]">
+                    <div className="mt-1 space-y-0 max-w-[130px]">
                       <span
-                        className={`text-xs font-bold block transition-colors leading-snug ${
+                        className={`text-[11px] sm:text-xs font-bold block transition-colors leading-tight truncate ${
                           isCurrent
                             ? 'text-blue-600 dark:text-blue-400'
                             : isPassed
@@ -1299,7 +1384,7 @@ export const BookingPage: React.FC = () => {
                         {item.title}
                       </span>
                       <span
-                        className={`text-[11px] block truncate transition-colors ${
+                        className={`text-[10px] block truncate transition-colors leading-tight ${
                           isCurrent
                             ? 'text-slate-600 dark:text-slate-300 font-medium'
                             : isPassed
@@ -1317,18 +1402,18 @@ export const BookingPage: React.FC = () => {
           </div>
 
           {/* Mobile Compact Progress Bar */}
-          <div className="sm:hidden space-y-2.5 select-none">
+          <div className="sm:hidden space-y-1.5 select-none py-1">
             <div className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
-                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-[11px] font-bold flex items-center justify-center">
+              <div className="flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">
                   {currentStep}
                 </span>
-                <span className="font-bold text-slate-900 dark:text-white">
+                <span className="font-bold text-xs text-slate-900 dark:text-white">
                   {currentStep === 1 && 'Bước 1: Chọn cơ sở'}
-                  {currentStep === 2 && `Bước 2: Chọn kho / loại kho (${currentSelectedSize?.volumeText || ''})`}
+                  {currentStep === 2 && `Bước 2: Chọn kho (${currentSelectedSize?.volumeText || ''})`}
                   {currentStep === 3 && 'Bước 3: Thời hạn thuê & Báo giá'}
                   {currentStep === 4 && 'Bước 4: Lịch hẹn & Chi tiết'}
-                  {currentStep === 5 && 'Bước 5: Phương thức thanh toán'}
+                  {currentStep === 5 && 'Bước 5: Hợp đồng & Thanh toán'}
                   {currentStep === 6 && 'Bước 6: Hoàn tất giữ chỗ'}
                 </span>
               </div>
@@ -1346,35 +1431,35 @@ export const BookingPage: React.FC = () => {
       </div>
 
       {/* MAIN STEP CONTENT AREA */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 pb-32">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4 pb-36 sm:pb-44">
         
         {/* ============================================================== */}
         {/* BƯỚC 1: CHỌN CƠ SỞ KHO                                          */}
         {/* ============================================================== */}
         {currentStep === 1 && (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-2 border-b border-slate-200/80 dark:border-slate-800">
-              <div className="space-y-1.5">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200/60 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-xs font-semibold">
-                  <Building2 size={13} />
+          <div id="facility-selection-section" className="space-y-4 animate-in fade-in duration-300">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 pb-2 border-b border-slate-200/80 dark:border-slate-800">
+              <div className="space-y-0.5">
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200/60 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-[11px] font-semibold">
+                  <Building2 size={12} />
                   <span>Bước 1 / 6 • Chọn cơ sở</span>
                 </div>
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
                   Chọn cơ sở kho lưu trữ
                 </h1>
-                <p className="text-sm text-slate-600 dark:text-slate-400 max-w-2xl">
-                  Tất cả chi nhánh Boxora đều vận hành tự động 24/7 với khóa thông minh IoT độc lập và hệ thống kiểm soát nhiệt ẩm tiêu chuẩn.
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Tất cả chi nhánh Boxora đều vận hành tự động 24/7 với khóa thông minh IoT độc lập.
                 </p>
               </div>
 
               <div className="flex items-center gap-2.5 shrink-0">
-                <div className="px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-2 shadow-2xs">
+                <div className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-2 shadow-2xs">
                   <span className="w-2 h-2 rounded-full bg-emerald-500" />
                   <span><strong>{sortedFacilities.length}</strong> cơ sở đang hoạt động</span>
                 </div>
                 {selectedFacility && (
-                  <div className="hidden sm:flex px-3.5 py-2 rounded-xl bg-blue-50/80 dark:bg-blue-950/50 border border-blue-200/80 dark:border-blue-800 text-xs font-semibold text-blue-700 dark:text-blue-300 items-center gap-1.5">
-                    <CheckCircle2 size={14} className="text-blue-600 dark:text-blue-400" />
+                  <div className="hidden sm:flex px-3 py-1.5 rounded-xl bg-blue-50/80 dark:bg-blue-950/50 border border-blue-200/80 dark:border-blue-800 text-xs font-semibold text-blue-700 dark:text-blue-300 items-center gap-1.5">
+                    <CheckCircle2 size={13} className="text-blue-600 dark:text-blue-400" />
                     <span>Đang chọn: {selectedFacility.name}</span>
                   </div>
                 )}
@@ -1382,16 +1467,16 @@ export const BookingPage: React.FC = () => {
             </div>
 
             {loadingData ? (
-              <div className="p-16 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm space-y-2">
-                <div className="w-8 h-8 border-3 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mx-auto" />
-                <p className="font-medium">Đang tải danh sách cơ sở kho Boxora...</p>
+              <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm space-y-2">
+                <div className="w-7 h-7 border-3 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mx-auto" />
+                <p className="font-medium text-xs">Đang tải danh sách cơ sở kho Boxora...</p>
               </div>
             ) : sortedFacilities.length === 0 ? (
-              <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm">
+              <div className="p-10 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm">
                 Không tìm thấy cơ sở nào phù hợp. Vui lòng tải lại trang.
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                 {sortedFacilities.map((fac, idx) => {
                   const isSelected = selectedFacility?.id === fac.id
                   const facImg = getFacilityImage(fac, idx)
@@ -1401,11 +1486,11 @@ export const BookingPage: React.FC = () => {
                       onClick={() => handleSelectFacility(fac)}
                       className={`rounded-2xl border transition-all duration-200 cursor-pointer relative text-left flex flex-col justify-between overflow-hidden group ${
                         isSelected
-                          ? 'bg-white dark:bg-slate-900 border-blue-600 dark:border-blue-500 ring-3 ring-blue-500/15 shadow-lg'
+                          ? 'bg-white dark:bg-slate-900 border-blue-600 dark:border-blue-500 ring-3 ring-blue-500/15 shadow-md'
                           : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-xs hover:shadow-md'
                       }`}
                     >
-                      <div className="relative w-full h-44 overflow-hidden bg-slate-100 dark:bg-slate-800">
+                      <div className="relative w-full h-34 sm:h-36 overflow-hidden bg-slate-100 dark:bg-slate-800">
                         <img
                           src={facImg}
                           alt={fac.name}
@@ -1477,35 +1562,35 @@ export const BookingPage: React.FC = () => {
         {/* BƯỚC 2: CHỌN KHO / LOẠI KHO (Task 1: Real availability strictly) */}
         {/* ============================================================== */}
         {currentStep === 2 && (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pb-2 border-b border-slate-200/80 dark:border-slate-800">
-              <div className="space-y-1.5">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200/60 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-xs font-semibold">
-                  <Box size={13} />
+          <div className="space-y-3.5 animate-in fade-in duration-300">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 pb-2 border-b border-slate-200/80 dark:border-slate-800">
+              <div className="space-y-0.5">
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200/60 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-[11px] font-semibold">
+                  <Box size={12} />
                   <span>Bước 2 / 6 • Chọn kho / loại kho</span>
                 </div>
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
                   Chọn kho hoặc loại kho lưu trữ
                 </h1>
-                <p className="text-sm text-slate-600 dark:text-slate-400 max-w-2xl">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   Lựa chọn thể tích phù hợp và tùy chỉnh chế độ điều hòa nhiệt ẩm (A/C) hoặc thông gió tự nhiên (Non-A/C).
                 </p>
               </div>
 
-              <div className="flex items-center justify-between sm:justify-start gap-3 px-4 py-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs text-xs shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                    <Building2 size={16} />
+              <div className="flex items-center justify-between sm:justify-start gap-2.5 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs text-xs shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                    <Building2 size={14} />
                   </div>
                   <div>
-                    <span className="text-slate-400 dark:text-slate-500 block text-[11px]">Cơ sở lưu trữ</span>
-                    <strong className="text-slate-900 dark:text-white font-bold">{selectedFacility?.name}</strong>
+                    <span className="text-slate-400 dark:text-slate-500 block text-[10px]">Cơ sở lưu trữ</span>
+                    <strong className="text-slate-900 dark:text-white font-bold text-xs">{selectedFacility?.name}</strong>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setCurrentStep(1)}
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-blue-600 dark:text-blue-400 font-semibold transition-colors cursor-pointer"
+                  className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-blue-600 dark:text-blue-400 text-xs font-semibold cursor-pointer"
                 >
                   Đổi cơ sở
                 </button>
@@ -1528,7 +1613,7 @@ export const BookingPage: React.FC = () => {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setCurrentStep(1)}
+                  onClick={() => setIsNoUnitsModalOpen(true)}
                   className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 active:scale-98 text-white font-bold text-xs sm:text-sm shrink-0 transition-all shadow-xs cursor-pointer"
                 >
                   Chọn cơ sở khác
@@ -1598,7 +1683,7 @@ export const BookingPage: React.FC = () => {
                 </div>
 
                 {/* Available Sizes Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-4">
                   {filteredSizesCatalog.map((sizeUnit) => {
                     const isSelected = selectedSizeId === sizeUnit.id
                     const unitAcMode = acSelectionMap[sizeUnit.id] || 'NON_AC'
@@ -1616,17 +1701,17 @@ export const BookingPage: React.FC = () => {
                             : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-xs hover:shadow-md'
                         }`}
                       >
-                        <div className="p-4 pb-2 flex items-start justify-between gap-2">
+                        <div className="p-3.5 pb-1.5 flex items-start justify-between gap-2">
                           <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-extrabold text-xl text-slate-900 dark:text-white tracking-tight">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-extrabold text-lg sm:text-xl text-slate-900 dark:text-white tracking-tight">
                                 {sizeUnit.volumeText}
                               </span>
-                              <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-semibold">
+                              <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-semibold">
                                 {sizeUnit.areaM2} m²
                               </span>
                             </div>
-                            <span className="text-xs text-slate-500 dark:text-slate-400 font-medium block mt-0.5">
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium block mt-0.5">
                               Sức chứa: {sizeUnit.capacityText}
                             </span>
                           </div>
@@ -1653,7 +1738,7 @@ export const BookingPage: React.FC = () => {
                         </div>
 
                         {/* Visual Container */}
-                        <div className="mx-4 my-1 rounded-xl bg-gradient-to-b from-slate-50 to-blue-50/40 dark:from-slate-800/60 dark:to-slate-800/30 border border-slate-100 dark:border-slate-800/80 flex items-center justify-center h-44 overflow-hidden relative">
+                        <div className="mx-3.5 my-1 rounded-xl bg-gradient-to-b from-slate-50 to-blue-50/40 dark:from-slate-800/60 dark:to-slate-800/30 border border-slate-100 dark:border-slate-800/80 flex items-center justify-center h-36 sm:h-38 overflow-hidden relative">
                           {sizeVisualMode === '3D' ? (
                             <div className="w-full h-full px-2 py-1 flex items-center justify-center group-hover:scale-[1.04] transition-transform duration-300">
                               <StorageSizeIsometric3D
@@ -1671,7 +1756,7 @@ export const BookingPage: React.FC = () => {
                                 alt={`Ảnh thực tế kho ${sizeUnit.volumeText}`}
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                               />
-                              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/75 via-slate-950/30 to-transparent px-3 py-2 flex items-center justify-between text-[10px] text-white">
+                              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/75 via-slate-950/30 to-transparent px-3 py-1.5 flex items-center justify-between text-[10px] text-white">
                                 <span className="font-semibold truncate">{sizeUnit.dimensions.replace('Cao ', '')}</span>
                                 <span className="px-1.5 py-0.5 rounded bg-blue-600/90 font-bold shrink-0">
                                   {unitAcMode === 'AC' ? 'Kho A/C' : 'Tiêu chuẩn'}
@@ -1682,7 +1767,7 @@ export const BookingPage: React.FC = () => {
                         </div>
 
                         {/* Bottom Controls */}
-                        <div className="p-4 pt-2.5 space-y-3">
+                        <div className="p-3.5 pt-2 space-y-2">
                           <div className="flex items-center justify-between text-[11px]">
                             <span className="text-slate-500 dark:text-slate-400 font-medium">Khả dụng:</span>
                             <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold">
@@ -1691,39 +1776,39 @@ export const BookingPage: React.FC = () => {
                           </div>
 
                           {/* Segmented A/C Toggle */}
-                          <div className="p-1 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center text-xs font-semibold">
+                          <div className="p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center text-xs font-semibold">
                             <button
                               type="button"
                               onClick={(e) => handleToggleAc(sizeUnit.id, 'NON_AC', e)}
-                              className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer flex items-center justify-center gap-1 text-[11px] ${
+                              className={`flex-1 py-1 rounded-md text-center transition-all cursor-pointer flex items-center justify-center gap-1 text-[11px] ${
                                 unitAcMode === 'NON_AC'
-                                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-bold'
-                                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-bold'
+                                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
                               }`}
                             >
-                              <Wind size={12} />
+                              <Wind size={11} />
                               <span>Tiêu chuẩn</span>
                             </button>
                             <button
                               type="button"
                               onClick={(e) => handleToggleAc(sizeUnit.id, 'AC', e)}
-                              className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer flex items-center justify-center gap-1 text-[11px] ${
+                              className={`flex-1 py-1 rounded-md text-center transition-all cursor-pointer flex items-center justify-center gap-1 text-[11px] ${
                                 unitAcMode === 'AC'
                                   ? 'bg-blue-600 text-white shadow-2xs font-bold'
                                   : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
                               }`}
                             >
-                              <ThermometerSnowflake size={12} />
+                              <ThermometerSnowflake size={11} />
                               <span>Máy lạnh A/C</span>
                             </button>
                           </div>
 
-                          <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
+                          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
                             <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                               Đơn giá thuê
                             </span>
                             <div className="text-right">
-                              <span className="font-extrabold text-base text-blue-600 dark:text-blue-400">
+                              <span className="font-extrabold text-sm sm:text-base text-blue-600 dark:text-blue-400">
                                 {displayPrice.toLocaleString('vi-VN')} ₫
                               </span>
                               <span className="text-[11px] text-slate-400 font-medium"> /tháng</span>
@@ -1743,34 +1828,34 @@ export const BookingPage: React.FC = () => {
         {/* BƯỚC 3: THỜI HẠN THUÊ & BÁO GIÁ (Task 2 Standardized)           */}
         {/* ============================================================== */}
         {currentStep === 3 && (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-2 border-b border-slate-200/80 dark:border-slate-800">
-              <div className="space-y-1.5">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200/60 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-xs font-semibold">
-                  <Clock size={13} />
+          <div className="space-y-3.5 animate-in fade-in duration-300">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 pb-2 border-b border-slate-200/80 dark:border-slate-800">
+              <div className="space-y-0.5">
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200/60 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-[11px] font-semibold">
+                  <Clock size={12} />
                   <span>Bước 3 / 6 • Thời hạn thuê &amp; Báo giá</span>
                 </div>
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
                   Thời hạn thuê &amp; Bảng kê báo giá
                 </h1>
-                <p className="text-sm text-slate-600 dark:text-slate-400 max-w-2xl">
-                  Lựa chọn kỳ hạn thuê linh hoạt để nhận ưu đãi lên đến 15% và xem bảng phân rã chi phí chi tiết, minh bạch trước khi đặt lịch.
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Lựa chọn kỳ hạn thuê linh hoạt để nhận ưu đãi lên đến 15% và xem bảng phân rã chi phí minh bạch.
                 </p>
               </div>
 
               <div className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200/70 dark:border-emerald-800/70 text-emerald-700 dark:text-emerald-300">
-                <ShieldCheck size={15} />
+                <ShieldCheck size={14} />
                 <span>Minh bạch 100% • Không phí ẩn</span>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
               
               {/* LEFT COLUMN: DURATION PACKAGES & VALUE ASSURANCES */}
-              <div className="lg:col-span-7 space-y-5">
+              <div className="lg:col-span-7 space-y-3.5">
                 
                 {/* 1. DURATION OPTIONS */}
-                <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs space-y-5">
+                <div className="p-4 sm:p-4.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs space-y-3.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3">
                       <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
@@ -1904,7 +1989,7 @@ export const BookingPage: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="p-5 space-y-3.5 text-xs sm:text-sm">
+                  <div className="p-3.5 sm:p-4 space-y-2.5 text-xs">
                     <div className="flex justify-between text-slate-600 dark:text-slate-400">
                       <span>Đơn giá buồng kho niêm yết:</span>
                       <strong className="text-slate-900 dark:text-white font-semibold">
@@ -1935,7 +2020,7 @@ export const BookingPage: React.FC = () => {
                       </div>
                     )}
 
-                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-between text-slate-800 dark:text-slate-200 font-semibold">
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-between text-slate-800 dark:text-slate-200 font-semibold">
                       <span>Tổng tiền thuê ({rentalDurationText}):</span>
                       <span>{quoteCalculation.totalRent.toLocaleString('vi-VN')} ₫</span>
                     </div>
@@ -1943,35 +2028,27 @@ export const BookingPage: React.FC = () => {
                     <div className="flex justify-between items-start text-slate-600 dark:text-slate-400">
                       <div>
                         <span className="block">Tiền đặt cọc bảo đảm:</span>
-                        <span className="text-[11px] text-slate-400 block">Hoàn trả 100% khi thanh lý hợp đồng</span>
+                        <span className="text-[10px] text-slate-400 block">Hoàn trả 100% khi thanh lý hợp đồng</span>
                       </div>
                       <strong className="text-slate-900 dark:text-white font-semibold">
                         {quoteCalculation.depositAmount.toLocaleString('vi-VN')} ₫
                       </strong>
                     </div>
 
-                    <div className="p-4 rounded-xl bg-blue-50/80 dark:bg-blue-950/50 border border-blue-200/80 dark:border-blue-900/60 space-y-1">
+                    <div className="p-3 rounded-lg bg-blue-50/80 dark:bg-blue-950/50 border border-blue-200/80 dark:border-blue-900/60 space-y-0.5">
                       <div className="flex items-baseline justify-between">
-                        <span className="font-bold text-slate-900 dark:text-white text-sm">
+                        <span className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
                           Tổng chi phí dự kiến
                         </span>
-                        <span className="font-extrabold text-xl text-blue-600 dark:text-blue-400">
+                        <span className="font-extrabold text-lg text-blue-600 dark:text-blue-400">
                           {quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫
                         </span>
                       </div>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400">
                         Bao gồm tiền thuê {rentalDurationText} và tiền cọc hoàn lại 1 tháng.
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={handleNextStep}
-                      className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
-                    >
-                      <span>Tiếp tục: Lịch hẹn &amp; Chi tiết</span>
-                      <ArrowRight size={16} />
-                    </button>
                   </div>
                 </div>
               </div>
@@ -1984,73 +2061,73 @@ export const BookingPage: React.FC = () => {
         {/* BƯỚC 4: LỊCH HẸN & CHI TIẾT (Task 2 & 3 Standardized)           */}
         {/* ============================================================== */}
         {currentStep === 4 && (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-2 border-b border-slate-200/80 dark:border-slate-800">
-              <div className="space-y-1.5">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200/60 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-xs font-semibold">
-                  <Calendar size={13} />
+          <div className="space-y-3.5 animate-in fade-in duration-300">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 pb-2 border-b border-slate-200/80 dark:border-slate-800">
+              <div className="space-y-0.5">
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200/60 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-[11px] font-semibold">
+                  <Calendar size={12} />
                   <span>Bước 4 / 6 • Lịch hẹn &amp; Chi tiết</span>
                 </div>
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
                   Lịch hẹn đón tiếp &amp; Chi tiết đặt kho
                 </h1>
-                <p className="text-sm text-slate-600 dark:text-slate-400 max-w-2xl">
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-2xl">
                   Chọn khung giờ bàn giao buồng kho 24/7 và điền thông tin người đại diện nhận kho để chuẩn bị hồ sơ hợp đồng.
                 </p>
               </div>
 
               {isAuthenticated && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200/70 dark:border-emerald-800/70 text-emerald-700 dark:text-emerald-300 text-xs font-semibold w-fit shrink-0">
-                  <ShieldCheck size={15} />
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200/70 dark:border-emerald-800/70 text-emerald-700 dark:text-emerald-300 text-xs font-semibold w-fit shrink-0">
+                  <ShieldCheck size={14} />
                   <span>Đã đồng bộ thông tin tài khoản</span>
                 </span>
               )}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 items-start">
               
               {/* LEFT COLUMN: APPOINTMENT + VALIDATED CONTACT DETAILS */}
-              <div className="lg:col-span-8 space-y-5">
+              <div className="lg:col-span-8 space-y-3 sm:space-y-3.5">
                 
                 {/* 1. CHECK-IN APPOINTMENT SCHEDULE */}
-                <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs space-y-5">
+                <div className="p-3.5 sm:p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="flex items-start gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
-                        <Calendar size={18} />
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-amber-50 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                        <Calendar size={15} />
                       </div>
                       <div>
-                        <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                        <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
                           1. Lịch hẹn đón tiếp &amp; Nhận bàn giao kho
                         </h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                           Chọn ngày và buổi thuận tiện để nhân viên chuẩn bị buồng kho &amp; hỗ trợ bàn giao
                         </p>
                       </div>
                     </div>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-[11px] font-semibold w-fit">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold w-fit">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                       Hỗ trợ nhận kho 24/7
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                         Ngày nhận bàn giao kho (Ngày bắt đầu thuê)
                       </label>
                       <input
                         type="date"
                         value={checkInDate}
                         onChange={(e) => setCheckInDate(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none"
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 text-xs sm:text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                         Thời hạn hợp đồng dự kiến
                       </label>
-                      <div className="px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 text-sm flex items-center justify-between">
+                      <div className="px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 text-xs sm:text-sm flex items-center justify-between">
                         <span className="text-slate-500 dark:text-slate-400 text-xs">Từ {startDate} đến:</span>
                         <strong className="text-slate-900 dark:text-white font-bold text-xs sm:text-sm">
                           {rentalEndDate}
@@ -2060,11 +2137,11 @@ export const BookingPage: React.FC = () => {
                   </div>
 
                   {/* Time Slot Selector */}
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
                       Khung giờ hẹn đến cơ sở
                     </label>
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                       {CHECK_IN_PERIOD_GROUPS.map((group) => {
                         const isSelected = selectedPeriodId === group.id
                         return (
@@ -2072,25 +2149,25 @@ export const BookingPage: React.FC = () => {
                             key={group.id}
                             type="button"
                             onClick={() => setSelectedPeriodId(group.id)}
-                            className={`p-3 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                            className={`p-2 sm:p-2.5 rounded-lg text-left border transition-all cursor-pointer flex flex-col justify-between gap-1 ${
                               isSelected
                                 ? 'bg-blue-50/90 dark:bg-blue-950/60 border-blue-600 text-blue-950 dark:text-blue-100 ring-2 ring-blue-500/15'
                                 : 'bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                             }`}
                           >
                             <div className="flex items-center justify-between w-full">
-                              <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                              <span className="font-bold text-xs text-slate-900 dark:text-white">
                                 {group.name}
                               </span>
                               {isSelected ? (
-                                <span className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center">
-                                  <Check size={10} strokeWidth={3} />
+                                <span className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white flex items-center justify-center">
+                                  <Check size={9} strokeWidth={3} />
                                 </span>
                               ) : (
-                                <Clock size={13} className="text-slate-400" />
+                                <Clock size={12} className="text-slate-400" />
                               )}
                             </div>
-                            <span className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
                               {group.rangeText.replace('Khoảng từ ', 'Từ ')}
                             </span>
                           </button>
@@ -2101,29 +2178,50 @@ export const BookingPage: React.FC = () => {
                 </div>
 
                 {/* 2. VALIDATED CUSTOMER DETAILS (Task 3) */}
-                <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs space-y-5">
-                  <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <User size={18} />
+                <div className="p-3.5 sm:p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                      <User size={15} />
                     </div>
                     <div>
-                      <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                      <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
                         2. Thông tin người đặt &amp; Nhận bàn giao
                       </h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                         Dùng để lập hợp đồng thuê kho điện tử, cấp mã PIN khóa thông minh IoT và đối chiếu khi nhận kho
                       </p>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Informational banner when profile is missing phone or cccd (e.g. Google Login) */}
+                  {user && (!user.phone && !(user as any).phoneNumber) && (
+                    <div className="p-2.5 px-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 flex items-start gap-2 text-xs text-amber-800 dark:text-amber-300">
+                      <AlertCircle size={15} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        <p className="font-bold">Bổ sung thông tin người nhận bàn giao</p>
+                        <p className="text-[11px] text-amber-700/90 dark:text-amber-400/90 leading-relaxed">
+                          Tài khoản của bạn chưa có số điện thoại trong hồ sơ. Vui lòng nhập số điện thoại và số CCCD/Hộ chiếu bên dưới để Boxora lập hợp đồng và cấp mã PIN mở kho.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Verified sync badge when profile info was auto loaded */}
+                  {user && (user.fullName || user.username) && (user.phone || (user as any).phoneNumber) && user.email && (
+                    <div className="p-2 px-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/60 flex items-center gap-2 text-xs text-emerald-800 dark:text-emerald-300">
+                      <CheckCircle2 size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span>Thông tin đã được đồng bộ tự động từ tài khoản <strong>{user.fullName || user.username}</strong></span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* Full Name */}
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                         Họ và tên người thuê <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
-                        <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                        <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
                           type="text"
                           value={customerName}
@@ -2134,14 +2232,14 @@ export const BookingPage: React.FC = () => {
                             }
                           }}
                           placeholder="Nguyễn Văn A"
-                          className={`w-full pl-9 pr-3.5 py-2.5 rounded-xl border bg-slate-50/70 dark:bg-slate-800/60 text-sm font-medium focus:ring-2 focus:bg-white dark:focus:bg-slate-900 focus:outline-none ${
+                          className={`w-full pl-8 pr-3 py-1.5 rounded-lg border bg-slate-50/70 dark:bg-slate-800/60 text-xs sm:text-sm font-medium focus:ring-2 focus:bg-white dark:focus:bg-slate-900 focus:outline-none ${
                             formErrors.customerName ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 dark:border-slate-700 focus:ring-blue-500'
                           }`}
                         />
                       </div>
                       {formErrors.customerName && (
                         <p className="mt-1 text-xs text-red-600 dark:text-red-400 flex items-center gap-1 font-medium">
-                          <AlertCircle size={13} className="shrink-0" />
+                          <AlertCircle size={12} className="shrink-0" />
                           <span>{formErrors.customerName}</span>
                         </p>
                       )}
@@ -2149,11 +2247,11 @@ export const BookingPage: React.FC = () => {
 
                     {/* Phone */}
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                         Số điện thoại liên hệ <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
-                        <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
                           type="tel"
                           value={customerPhone}
@@ -2164,14 +2262,14 @@ export const BookingPage: React.FC = () => {
                             }
                           }}
                           placeholder="0912 345 678"
-                          className={`w-full pl-9 pr-3.5 py-2.5 rounded-xl border bg-slate-50/70 dark:bg-slate-800/60 text-sm font-medium focus:ring-2 focus:bg-white dark:focus:bg-slate-900 focus:outline-none ${
+                          className={`w-full pl-8 pr-3 py-1.5 rounded-lg border bg-slate-50/70 dark:bg-slate-800/60 text-xs sm:text-sm font-medium focus:ring-2 focus:bg-white dark:focus:bg-slate-900 focus:outline-none ${
                             formErrors.customerPhone ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 dark:border-slate-700 focus:ring-blue-500'
                           }`}
                         />
                       </div>
                       {formErrors.customerPhone && (
                         <p className="mt-1 text-xs text-red-600 dark:text-red-400 flex items-center gap-1 font-medium">
-                          <AlertCircle size={13} className="shrink-0" />
+                          <AlertCircle size={12} className="shrink-0" />
                           <span>{formErrors.customerPhone}</span>
                         </p>
                       )}
@@ -2179,18 +2277,18 @@ export const BookingPage: React.FC = () => {
 
                     {/* Document Selector & Number */}
                     <div>
-                      <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center justify-between mb-1">
                         <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                           Loại giấy tờ &amp; Số định danh <span className="text-red-500">*</span>
                         </label>
-                        <div className="inline-flex rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5 text-[11px] font-bold">
+                        <div className="inline-flex rounded-md bg-slate-100 dark:bg-slate-800 p-0.5 text-[10px] font-bold">
                           <button
                             type="button"
                             onClick={() => {
                               setIdCardType('CCCD')
                               if (formErrors.customerIdCard) setFormErrors((prev) => ({ ...prev, customerIdCard: '' }))
                             }}
-                            className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                            className={`px-1.5 py-0.5 rounded transition-all cursor-pointer ${
                               idCardType === 'CCCD' ? 'bg-white dark:bg-slate-900 text-blue-600 shadow-2xs font-extrabold' : 'text-slate-500'
                             }`}
                           >
@@ -2202,7 +2300,7 @@ export const BookingPage: React.FC = () => {
                               setIdCardType('PASSPORT')
                               if (formErrors.customerIdCard) setFormErrors((prev) => ({ ...prev, customerIdCard: '' }))
                             }}
-                            className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                            className={`px-1.5 py-0.5 rounded transition-all cursor-pointer ${
                               idCardType === 'PASSPORT' ? 'bg-white dark:bg-slate-900 text-blue-600 shadow-2xs font-extrabold' : 'text-slate-500'
                             }`}
                           >
@@ -2211,7 +2309,7 @@ export const BookingPage: React.FC = () => {
                         </div>
                       </div>
                       <div className="relative">
-                        <CreditCard className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                        <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
                           type="text"
                           value={customerIdCard}
@@ -2221,15 +2319,15 @@ export const BookingPage: React.FC = () => {
                               setFormErrors((prev) => ({ ...prev, customerIdCard: '' }))
                             }
                           }}
-                          placeholder={idCardType === 'CCCD' ? '12 chữ số CCCD (VD: 079123456789)' : '1 chữ cái + 7-8 số (VD: B1234567)'}
-                          className={`w-full pl-9 pr-3.5 py-2.5 rounded-xl border bg-slate-50/70 dark:bg-slate-800/60 text-sm font-medium focus:ring-2 focus:bg-white dark:focus:bg-slate-900 focus:outline-none ${
+                          placeholder={idCardType === 'CCCD' ? '12 chữ số CCCD (VD: 079123456789)' : '1 chữ cái + 7-8 số'}
+                          className={`w-full pl-8 pr-3 py-1.5 rounded-lg border bg-slate-50/70 dark:bg-slate-800/60 text-xs sm:text-sm font-medium focus:ring-2 focus:bg-white dark:focus:bg-slate-900 focus:outline-none ${
                             formErrors.customerIdCard ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 dark:border-slate-700 focus:ring-blue-500'
                           }`}
                         />
                       </div>
                       {formErrors.customerIdCard && (
                         <p className="mt-1 text-xs text-red-600 dark:text-red-400 flex items-center gap-1 font-medium">
-                          <AlertCircle size={13} className="shrink-0" />
+                          <AlertCircle size={12} className="shrink-0" />
                           <span>{formErrors.customerIdCard}</span>
                         </p>
                       )}
@@ -2237,11 +2335,18 @@ export const BookingPage: React.FC = () => {
 
                     {/* Email */}
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                        Địa chỉ Email nhận phiếu hẹn
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          Địa chỉ Email nhận phiếu &amp; HĐ <span className="text-red-500">*</span>
+                        </label>
+                        {user?.email && customerEmail === user.email && (
+                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-200 dark:border-emerald-800">
+                            Từ tài khoản
+                          </span>
+                        )}
+                      </div>
                       <div className="relative">
-                        <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
                           type="email"
                           value={customerEmail}
@@ -2252,14 +2357,14 @@ export const BookingPage: React.FC = () => {
                             }
                           }}
                           placeholder="email@example.com"
-                          className={`w-full pl-9 pr-3.5 py-2.5 rounded-xl border bg-slate-50/70 dark:bg-slate-800/60 text-sm font-medium focus:ring-2 focus:bg-white dark:focus:bg-slate-900 focus:outline-none ${
+                          className={`w-full pl-8 pr-3 py-1.5 rounded-lg border bg-slate-50/70 dark:bg-slate-800/60 text-xs sm:text-sm font-medium focus:ring-2 focus:bg-white dark:focus:bg-slate-900 focus:outline-none ${
                             formErrors.customerEmail ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 dark:border-slate-700 focus:ring-blue-500'
                           }`}
                         />
                       </div>
                       {formErrors.customerEmail && (
                         <p className="mt-1 text-xs text-red-600 dark:text-red-400 flex items-center gap-1 font-medium">
-                          <AlertCircle size={13} className="shrink-0" />
+                          <AlertCircle size={12} className="shrink-0" />
                           <span>{formErrors.customerEmail}</span>
                         </p>
                       )}
@@ -2268,11 +2373,11 @@ export const BookingPage: React.FC = () => {
 
                   {/* Special Notes with 500 Char Counter */}
                   <div>
-                    <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center justify-between mb-1">
                       <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                         Ghi chú về tài sản lưu trữ hoặc yêu cầu hỗ trợ (tùy chọn)
                       </label>
-                      <span className={`text-[11px] ${specialNotes.length > 500 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
+                      <span className={`text-[10px] ${specialNotes.length > 500 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
                         {specialNotes.length}/500 ký tự
                       </span>
                     </div>
@@ -2285,7 +2390,7 @@ export const BookingPage: React.FC = () => {
                         if (formErrors.specialNotes) setFormErrors((prev) => ({ ...prev, specialNotes: '' }))
                       }}
                       placeholder="VD: Cần hỗ trợ xe đẩy hàng, chuyển đồ căn hộ, hàng dễ vỡ..."
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none"
+                      className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none"
                     />
                     {formErrors.specialNotes && (
                       <p className="mt-1 text-xs text-red-600 font-medium">{formErrors.specialNotes}</p>
@@ -2294,8 +2399,8 @@ export const BookingPage: React.FC = () => {
                 </div>
 
                 {/* 3. POLICY ACCEPTANCE */}
-                <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs space-y-3">
-                  <label className="flex items-start gap-3 text-xs sm:text-sm text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                <div className="p-3 sm:p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs space-y-2">
+                  <label className="flex items-start gap-2.5 text-xs sm:text-sm text-slate-700 dark:text-slate-300 cursor-pointer select-none">
                     <input
                       type="checkbox"
                       checked={policyAccepted}
@@ -2315,7 +2420,7 @@ export const BookingPage: React.FC = () => {
                   </label>
                   {formErrors.policyAccepted && (
                     <p className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1 font-medium">
-                      <AlertCircle size={13} className="shrink-0" />
+                      <AlertCircle size={12} className="shrink-0" />
                       <span>{formErrors.policyAccepted}</span>
                     </p>
                   )}
@@ -2324,13 +2429,13 @@ export const BookingPage: React.FC = () => {
               </div>
 
               {/* RIGHT COLUMN: STICKY LIVE BOOKING SUMMARY */}
-              <div className="lg:col-span-4 lg:sticky lg:top-24 space-y-4">
-                <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm overflow-hidden">
+              <div className="lg:col-span-4 lg:sticky lg:top-20 space-y-3">
+                <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm overflow-hidden">
                   
                   {/* Summary Header */}
-                  <div className="p-4 sm:p-5 bg-gradient-to-r from-blue-50/90 via-white to-cyan-50/70 dark:from-slate-900 dark:via-slate-850 dark:to-slate-900 border-b border-blue-100 dark:border-slate-800 text-slate-900 dark:text-white flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-14 h-14 rounded-2xl bg-white border border-blue-200/80 shadow-2xs p-1.5 flex items-center justify-center shrink-0 overflow-hidden">
+                  <div className="p-3 sm:p-3.5 bg-gradient-to-r from-blue-50/90 via-white to-cyan-50/70 dark:from-slate-900 dark:via-slate-850 dark:to-slate-900 border-b border-blue-100 dark:border-slate-800 text-slate-900 dark:text-white flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-white border border-blue-200/80 shadow-2xs p-1 flex items-center justify-center shrink-0 overflow-hidden">
                         <StorageSizeIsometric3D
                           sizeId={currentSelectedSize.id}
                           volumeM3={currentSelectedSize.volumeNumber}
@@ -2340,10 +2445,10 @@ export const BookingPage: React.FC = () => {
                         />
                       </div>
                       <div>
-                        <span className="text-[11px] text-blue-600 font-bold uppercase tracking-wider block">
+                        <span className="text-[10px] text-blue-600 font-bold uppercase tracking-wider block">
                           Tóm tắt buồng kho
                         </span>
-                        <h4 className="font-extrabold text-base text-slate-900 dark:text-white">
+                        <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
                           Kho {currentSelectedSize.volumeText} ({isAcActive ? 'Máy lạnh A/C' : 'Tiêu chuẩn'})
                         </h4>
                         <span className="text-xs text-slate-500 font-medium block">
@@ -2354,10 +2459,10 @@ export const BookingPage: React.FC = () => {
                   </div>
 
                   {/* Key Booking Specs */}
-                  <div className="p-5 space-y-3.5 text-xs">
+                  <div className="p-3.5 space-y-2.5 text-xs">
                     <div className="flex justify-between items-start text-slate-600 dark:text-slate-400">
                       <span className="flex items-center gap-1.5">
-                        <Building2 size={14} className="text-blue-600 dark:text-blue-400" />
+                        <Building2 size={13} className="text-blue-600 dark:text-blue-400" />
                         Cơ sở:
                       </span>
                       <strong className="text-slate-900 dark:text-white font-semibold text-right max-w-[170px] truncate">
@@ -2367,7 +2472,7 @@ export const BookingPage: React.FC = () => {
 
                     <div className="flex justify-between items-start text-slate-600 dark:text-slate-400">
                       <span className="flex items-center gap-1.5">
-                        <Clock size={14} className="text-blue-600 dark:text-blue-400" />
+                        <Clock size={13} className="text-blue-600 dark:text-blue-400" />
                         Thời hạn thuê:
                       </span>
                       <strong className="text-slate-900 dark:text-white font-semibold">
@@ -2377,7 +2482,7 @@ export const BookingPage: React.FC = () => {
 
                     <div className="flex justify-between items-start text-slate-600 dark:text-slate-400">
                       <span className="flex items-center gap-1.5">
-                        <Calendar size={14} className="text-blue-600 dark:text-blue-400" />
+                        <Calendar size={13} className="text-blue-600 dark:text-blue-400" />
                         Lịch hẹn nhận kho:
                       </span>
                       <strong className="text-blue-600 dark:text-blue-400 font-semibold text-right">
@@ -2386,7 +2491,7 @@ export const BookingPage: React.FC = () => {
                     </div>
 
                     {/* Price Breakdown */}
-                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
                       <div className="flex justify-between text-slate-600 dark:text-slate-400">
                         <span>Tiền thuê kho ({rentalDurationText}):</span>
                         <strong className="text-slate-900 dark:text-white">{quoteCalculation.totalRent.toLocaleString('vi-VN')} ₫</strong>
@@ -2395,9 +2500,9 @@ export const BookingPage: React.FC = () => {
                         <span>Cọc bảo đảm (hoàn lại):</span>
                         <strong className="text-slate-900 dark:text-white">{quoteCalculation.depositAmount.toLocaleString('vi-VN')} ₫</strong>
                       </div>
-                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-between items-baseline">
-                        <span className="font-bold text-slate-900 dark:text-white text-sm">Tổng cộng:</span>
-                        <strong className="text-lg font-extrabold text-blue-600 dark:text-blue-400">
+                      <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 flex justify-between items-baseline">
+                        <span className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">Tổng cộng:</span>
+                        <strong className="text-base sm:text-lg font-extrabold text-blue-600 dark:text-blue-400">
                           {quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫
                         </strong>
                       </div>
@@ -2406,10 +2511,10 @@ export const BookingPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleNextStep}
-                      className="w-full mt-2 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      className="w-full mt-1.5 py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
                     >
-                      <span>Tiếp tục sang thanh toán</span>
-                      <ArrowRight size={16} />
+                      <span>Tiếp tục: Hợp đồng &amp; Thanh toán</span>
+                      <ArrowRight size={15} />
                     </button>
                   </div>
                 </div>
@@ -2420,21 +2525,21 @@ export const BookingPage: React.FC = () => {
         )}
 
         {/* ============================================================== */}
-        {/* BƯỚC 5: PHƯƠNG THỨC THANH TOÁN (Task 2 Standardized)           */}
+        {/* BƯỚC 5: HỢP ĐỒNG & THANH TOÁN                                  */}
         {/* ============================================================== */}
         {currentStep === 5 && (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-2 border-b border-slate-200/80 dark:border-slate-800">
-              <div className="space-y-1.5">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200/60 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-xs font-semibold">
-                  <CreditCard size={13} />
-                  <span>Bước 5 / 6 • Phương thức thanh toán</span>
+          <div className="space-y-3.5 animate-in fade-in duration-300">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 pb-2 border-b border-slate-200/80 dark:border-slate-800">
+              <div className="space-y-0.5">
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200/60 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-[11px] font-semibold">
+                  <FileCheck2 size={12} />
+                  <span>Bước 5 / 6 • Hợp đồng &amp; Thanh toán</span>
                 </div>
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                  Chọn phương thức thanh toán
+                <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                  Hợp đồng &amp; Thanh toán
                 </h1>
-                <p className="text-sm text-slate-600 dark:text-slate-400 max-w-2xl">
-                  Chọn thanh toán trực tuyến ngay qua cổng VNPay để hoàn tất thủ tục nhanh chóng, hoặc đặt giữ chỗ trước và thanh toán tại cơ sở.
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Vui lòng lựa chọn hình thức ký kết hợp đồng và phương thức thanh toán phù hợp với quý khách.
                 </p>
               </div>
             </div>
@@ -2446,81 +2551,81 @@ export const BookingPage: React.FC = () => {
               </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 items-start">
               
-              {/* LEFT COLUMN: 2 PAYMENT METHOD OPTIONS */}
-              <div className="lg:col-span-7 space-y-4">
+              {/* LEFT COLUMN: 2 CONTRACT & PAYMENT OPTIONS */}
+              <div className="lg:col-span-7 space-y-3">
                 
-                {/* Option 1: VNPay Online */}
+                {/* Option 1: Ký hợp đồng và thanh toán trực tuyến */}
                 <div
                   onClick={() => setPaymentMethod('ONLINE')}
-                  className={`p-5 sm:p-6 rounded-2xl border-2 transition-all cursor-pointer ${
+                  className={`p-3.5 sm:p-4 rounded-xl border-2 transition-all cursor-pointer ${
                     paymentMethod === 'ONLINE'
                       ? 'bg-blue-50/40 dark:bg-blue-950/30 border-blue-600 ring-3 ring-blue-500/15 shadow-sm'
                       : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-2xs'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-3.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
                       <div
-                        className={`w-5 h-5 rounded-full border-2 mt-1 flex items-center justify-center shrink-0 transition-colors ${
+                        className={`w-4.5 h-4.5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
                           paymentMethod === 'ONLINE'
                             ? 'border-blue-600 bg-blue-600 text-white'
                             : 'border-slate-300 dark:border-slate-600'
                         }`}
                       >
-                        {paymentMethod === 'ONLINE' && <Check size={12} strokeWidth={3} />}
+                        {paymentMethod === 'ONLINE' && <Check size={11} strokeWidth={3} />}
                       </div>
 
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2.5 flex-wrap">
-                          <h3 className="font-extrabold text-base sm:text-lg text-slate-900 dark:text-white">
-                            Thanh toán trực tuyến (Cổng VNPay)
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
+                            1. Ký hợp đồng và thanh toán trực tuyến
                           </h3>
-                          <span className="px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-[10px] font-bold uppercase tracking-wider">
+                          <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-[10px] font-bold uppercase tracking-wider">
                             Khuyên dùng • Kích hoạt ngay
                           </span>
                         </div>
-                        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                          Hỗ trợ mã VNPAY-QR, Thẻ ATM 40+ ngân hàng nội địa, Internet Banking và Thẻ quốc tế Visa, Mastercard, JCB.
+                        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                          Ký hợp đồng điện tử DocuSeal trực tiếp trên hệ thống và thanh toán toàn bộ chi phí (bao gồm tiền thuê kho và tiền cọc bảo đảm) qua cổng VNPay (VNPAY-QR, Thẻ ATM/Visa/Mastercard). Buồng kho và mã PIN khóa thông minh sẽ được cấp ngay sau khi hoàn tất.
                         </p>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Option 2: Pay Later */}
+                {/* Option 2: Ký hợp đồng và thanh toán tại cơ sở vào ngày tới nhận kho */}
                 <div
                   onClick={() => setPaymentMethod('PAY_LATER')}
-                  className={`p-5 sm:p-6 rounded-2xl border-2 transition-all cursor-pointer ${
+                  className={`p-3.5 sm:p-4 rounded-xl border-2 transition-all cursor-pointer ${
                     paymentMethod === 'PAY_LATER'
                       ? 'bg-blue-50/40 dark:bg-blue-950/30 border-blue-600 ring-3 ring-blue-500/15 shadow-sm'
                       : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-2xs'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-3.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
                       <div
-                        className={`w-5 h-5 rounded-full border-2 mt-1 flex items-center justify-center shrink-0 transition-colors ${
+                        className={`w-4.5 h-4.5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
                           paymentMethod === 'PAY_LATER'
                             ? 'border-blue-600 bg-blue-600 text-white'
                             : 'border-slate-300 dark:border-slate-600'
                         }`}
                       >
-                        {paymentMethod === 'PAY_LATER' && <Check size={12} strokeWidth={3} />}
+                        {paymentMethod === 'PAY_LATER' && <Check size={11} strokeWidth={3} />}
                       </div>
 
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2.5 flex-wrap">
-                          <h3 className="font-extrabold text-base sm:text-lg text-slate-900 dark:text-white">
-                            Thanh toán sau khi nhận kho tại cơ sở
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
+                            2. Ký hợp đồng và thanh toán tại cơ sở vào ngày tới nhận kho
                           </h3>
-                          <span className="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-semibold">
+                          <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-semibold">
                             0 ₫ hôm nay
                           </span>
                         </div>
-                        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                          Đặt giữ chỗ trước để nhân viên chuẩn bị buồng kho. Quý khách thanh toán qua chuyển khoản hoặc thẻ khi đến nhận kho.
+                        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                          Đặt giữ chỗ trước để Boxora chuẩn bị buồng kho. Quý khách sẽ ký kết hợp đồng và thanh toán (chuyển khoản/thẻ/tiền mặt) trực tiếp tại quầy lễ tân cơ sở vào ngày hẹn đến nhận kho.
                         </p>
                       </div>
                     </div>
@@ -2530,51 +2635,47 @@ export const BookingPage: React.FC = () => {
               </div>
 
               {/* RIGHT COLUMN: PAYMENT SUMMARY & ACTION */}
-              <div className="lg:col-span-5 lg:sticky lg:top-24 space-y-4">
-                <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm p-5 space-y-4">
-                  <h3 className="font-bold text-base text-slate-900 dark:text-white">
-                    Xác nhận thanh toán
+              <div className="lg:col-span-5 lg:sticky lg:top-20 space-y-3">
+                <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm p-4 space-y-3">
+                  <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
+                    Xác nhận Hợp đồng &amp; Thanh toán
                   </h3>
 
-                  <div className="space-y-2.5 text-xs sm:text-sm">
+                  <div className="space-y-2 text-xs">
                     <div className="flex justify-between text-slate-600 dark:text-slate-400">
                       <span>Hình thức đã chọn:</span>
-                      <strong className="text-blue-600 dark:text-blue-400 font-semibold">
-                        {paymentMethod === 'ONLINE' ? 'Thanh toán trực tuyến (VNPay)' : 'Thanh toán sau tại cơ sở'}
+                      <strong className="text-blue-600 dark:text-blue-400 font-semibold text-right max-w-[200px]">
+                        {paymentMethod === 'ONLINE' ? '1. Ký HĐ & Thanh toán trực tuyến' : '2. Ký HĐ & Thanh toán tại cơ sở'}
                       </strong>
                     </div>
 
-                    <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                      <span>Số tiền cần thanh toán ngay:</span>
-                      <strong className="text-slate-900 dark:text-white font-extrabold text-base">
-                        {paymentMethod === 'ONLINE' ? `${quoteCalculation.depositAmount.toLocaleString('vi-VN')} ₫` : '0 ₫'}
+                    <div className="flex justify-between text-slate-600 dark:text-slate-400 items-baseline">
+                      <span>Số tiền thanh toán hôm nay:</span>
+                      <strong className="text-slate-900 dark:text-white font-extrabold text-base sm:text-lg">
+                        {paymentMethod === 'ONLINE' ? `${quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫` : '0 ₫'}
                       </strong>
                     </div>
 
-                    {paymentMethod === 'ONLINE' && (
+                    {paymentMethod === 'ONLINE' ? (
+                      <div className="space-y-1 pt-1.5 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 leading-relaxed">
+                        <div className="flex justify-between">
+                          <span>Tiền thuê kho ({rentalDurationText}):</span>
+                          <strong className="text-slate-700 dark:text-slate-300 font-semibold">{quoteCalculation.totalRent.toLocaleString('vi-VN')} ₫</strong>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Tiền cọc bảo đảm (hoàn lại):</span>
+                          <strong className="text-slate-700 dark:text-slate-300 font-semibold">{quoteCalculation.depositAmount.toLocaleString('vi-VN')} ₫</strong>
+                        </div>
+                        <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium pt-1">
+                          ✓ Thanh toán toàn bộ hôm nay qua VNPay. Khi đến nhận kho quý khách không cần thanh toán thêm.
+                        </p>
+                      </div>
+                    ) : (
                       <p className="text-[11px] text-slate-500 leading-relaxed">
-                        Quý khách chỉ cần thanh toán tiền cọc 1 tháng ({quoteCalculation.depositAmount.toLocaleString('vi-VN')} ₫) để khóa giữ chỗ. Tiền thuê ({quoteCalculation.totalRent.toLocaleString('vi-VN')} ₫) thanh toán khi nhận bàn giao kho.
+                        Quý khách không cần thanh toán trước. Giữ chỗ sẽ được lưu trên hệ thống, quý khách ký hợp đồng và thanh toán tại cơ sở vào ngày {checkInDate}.
                       </p>
                     )}
                   </div>
-
-                  <button
-                    type="button"
-                    disabled={isSubmitting}
-                    onClick={() => handleProcessPaymentAndConfirm()}
-                    className="w-full py-3.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    {isSubmitting ? (
-                      <span className="flex items-center gap-2">
-                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        <span>Đang xử lý đặt giữ chỗ...</span>
-                      </span>
-                    ) : (
-                      <span>
-                        {paymentMethod === 'ONLINE' ? 'Thanh toán ngay qua VNPay' : 'Xác nhận đặt giữ chỗ (0 ₫ hôm nay)'}
-                      </span>
-                    )}
-                  </button>
                 </div>
               </div>
 
@@ -2586,26 +2687,26 @@ export const BookingPage: React.FC = () => {
         {/* BƯỚC 6: HOÀN TẤT GIỮ CHỖ (Task 2 Standardized)                  */}
         {/* ============================================================== */}
         {currentStep === 6 && (
-          <div className="space-y-6 animate-in zoom-in-95 duration-300 max-w-3xl mx-auto py-2">
-            <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm overflow-hidden">
-              <div className="p-6 sm:p-8 text-center space-y-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="space-y-3 animate-in zoom-in-95 duration-300 max-w-xl mx-auto py-1">
+            <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm overflow-hidden">
+              <div className="p-4 sm:p-5 text-center space-y-2.5 border-b border-slate-100 dark:border-slate-800">
                 <div
-                  className={`mx-auto w-16 h-16 rounded-2xl text-white flex items-center justify-center shadow-lg ${
+                  className={`mx-auto w-12 h-12 rounded-xl text-white flex items-center justify-center shadow-md ${
                     paymentMethod === 'ONLINE' && isOnlinePaid
                       ? 'bg-emerald-600 shadow-emerald-600/20'
                       : 'bg-blue-600 shadow-blue-600/20'
                   }`}
                 >
                   {paymentMethod === 'ONLINE' && isOnlinePaid ? (
-                    <CheckCircle2 size={32} />
+                    <CheckCircle2 size={24} />
                   ) : (
-                    <Clock size={32} />
+                    <Clock size={24} />
                   )}
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <span
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
                       paymentMethod === 'ONLINE' && isOnlinePaid
                         ? 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                         : 'bg-amber-50 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
@@ -2613,76 +2714,76 @@ export const BookingPage: React.FC = () => {
                   >
                     {paymentMethod === 'ONLINE' && isOnlinePaid ? (
                       <>
-                        <CheckCircle2 size={14} />
-                        <span>Đã thanh toán trực tuyến thành công</span>
+                        <CheckCircle2 size={13} />
+                        <span>Đã ký hợp đồng &amp; thanh toán trực tuyến thành công</span>
                       </>
                     ) : (
                       <>
-                        <Clock size={14} />
-                        <span>Đặt giữ chỗ thành công • Chờ đón tiếp</span>
+                        <Clock size={13} />
+                        <span>Đặt giữ chỗ thành công • Ký HĐ &amp; thanh toán tại cơ sở</span>
                       </>
                     )}
                   </span>
 
-                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                  <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
                     Cảm ơn quý khách {customerName || ''}!
                   </h2>
-                  <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-md mx-auto leading-relaxed">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 max-w-md mx-auto leading-relaxed">
                     Hệ thống Boxora đã ghi nhận yêu cầu giữ chỗ buồng kho. Nhân viên cơ sở sẽ liên hệ và chuẩn bị đón tiếp quý khách đúng khung giờ đã hẹn.
                   </p>
                 </div>
 
                 {/* Booking Code Card */}
-                <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/90 dark:border-slate-800 max-w-md mx-auto flex items-center justify-between gap-3">
+                <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/90 dark:border-slate-800 max-w-sm mx-auto flex items-center justify-between gap-3">
                   <div className="text-left">
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider block">
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider block">
                       Mã phiếu giữ chỗ
                     </span>
-                    <strong className="text-lg sm:text-xl font-mono font-extrabold text-blue-600 dark:text-blue-400 tracking-wider">
+                    <strong className="text-base sm:text-lg font-mono font-extrabold text-blue-600 dark:text-blue-400 tracking-wider">
                       {bookingCode}
                     </strong>
                   </div>
                   <button
                     type="button"
                     onClick={handleCopyCode}
-                    className="p-2.5 rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-200 hover:text-blue-600 transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
+                    className="p-2 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-200 hover:text-blue-600 transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
                   >
-                    <Copy size={14} />
+                    <Copy size={13} />
                     <span>{copiedCode ? 'Đã chép' : 'Sao chép'}</span>
                   </button>
                 </div>
               </div>
 
               {/* Summary Details */}
-              <div className="p-6 sm:p-8 space-y-4 bg-slate-50/50 dark:bg-slate-900/50 text-xs sm:text-sm">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-2">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Cơ sở bàn giao</span>
-                    <strong className="text-slate-900 dark:text-white block font-bold text-sm">{selectedFacility?.name}</strong>
-                    <span className="text-slate-500 block">{selectedFacility?.address}</span>
+              <div className="p-4 sm:p-5 space-y-3 bg-slate-50/50 dark:bg-slate-900/50 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-1">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Cơ sở bàn giao</span>
+                    <strong className="text-slate-900 dark:text-white block font-bold text-xs sm:text-sm">{selectedFacility?.name}</strong>
+                    <span className="text-slate-500 block text-[11px] truncate">{selectedFacility?.address}</span>
                   </div>
 
-                  <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-2">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Lịch hẹn đón tiếp</span>
-                    <strong className="text-blue-600 dark:text-blue-400 block font-bold text-sm">{checkInDate}</strong>
-                    <span className="text-slate-500 block">{checkInTime}</span>
+                  <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-1">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Lịch hẹn đón tiếp</span>
+                    <strong className="text-blue-600 dark:text-blue-400 block font-bold text-xs sm:text-sm">{checkInDate}</strong>
+                    <span className="text-slate-500 block text-[11px]">{checkInTime}</span>
                   </div>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
                   {isAuthenticated ? (
                     <button
                       type="button"
-                      onClick={() => navigate('/my-bookings')}
-                      className="flex-1 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-600/20 text-center transition-all cursor-pointer"
+                      onClick={() => navigate('/portal/customer?tab=bookings')}
+                      className="flex-1 py-2.5 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-600/20 text-center transition-all cursor-pointer"
                     >
-                      Xem danh sách đơn đặt của tôi
+                      Xem đơn đặt của tôi
                     </button>
                   ) : (
                     <button
                       type="button"
                       onClick={() => navigate('/login')}
-                      className="flex-1 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-600/20 text-center transition-all cursor-pointer"
+                      className="flex-1 py-2.5 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-600/20 text-center transition-all cursor-pointer"
                     >
                       Đăng nhập để theo dõi hợp đồng
                     </button>
@@ -2690,7 +2791,7 @@ export const BookingPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => navigate('/')}
-                    className="flex-1 py-3 px-4 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs sm:text-sm text-center transition-colors cursor-pointer"
+                    className="flex-1 py-2.5 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs sm:text-sm text-center transition-colors cursor-pointer"
                   >
                     Về trang chủ Boxora
                   </button>
@@ -2705,7 +2806,7 @@ export const BookingPage: React.FC = () => {
       {/* 3. FIXED BOTTOM NAVIGATION FOOTER */}
       {currentStep < 6 && (
         <div className="fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/90 dark:border-slate-800 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] transition-all">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 sm:py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             
             {/* Left: Back button + Step Context */}
             <div className="flex items-center gap-3 justify-between sm:justify-start">
@@ -2772,14 +2873,6 @@ export const BookingPage: React.FC = () => {
                     </span>
                   </span>
                 )}
-                {currentStep === 5 && (
-                  <span className="text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
-                    <CreditCard size={14} className="text-blue-600" />
-                    <span>
-                      Hình thức: <strong className="text-blue-600 dark:text-blue-400">{paymentMethod === 'ONLINE' ? 'VNPay trực tuyến' : 'Thanh toán sau khi nhận kho'}</strong>
-                    </span>
-                  </span>
-                )}
               </div>
             </div>
 
@@ -2834,7 +2927,7 @@ export const BookingPage: React.FC = () => {
                   onClick={handleNextStep}
                   className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
                 >
-                  <span>Tiếp tục sang thanh toán</span>
+                  <span>Tiếp tục: Hợp đồng &amp; Thanh toán</span>
                   <ArrowRight size={16} />
                 </button>
               )}
@@ -2853,7 +2946,9 @@ export const BookingPage: React.FC = () => {
                     </span>
                   ) : (
                     <span>
-                      {paymentMethod === 'ONLINE' ? 'Thanh toán ngay qua VNPay' : 'Xác nhận giữ chỗ (0 ₫ hôm nay)'}
+                      {paymentMethod === 'ONLINE'
+                        ? 'Tiến hành Ký HĐ & Thanh toán trực tuyến'
+                        : 'Xác nhận (Ký HĐ & Thanh toán tại cơ sở)'}
                     </span>
                   )}
                 </button>
@@ -3025,18 +3120,47 @@ export const BookingPage: React.FC = () => {
         userRole={user?.role?.name || 'CUSTOMER'}
       />
 
+      {/* Modal cảnh báo cơ sở chưa có kho khả dụng */}
+      <FacilityNoUnitsModal
+        isOpen={isNoUnitsModalOpen}
+        onClose={() => setIsNoUnitsModalOpen(false)}
+        currentFacility={selectedFacility}
+        alternativeFacilities={sortedFacilities}
+        onSelectAlternativeFacility={(fac) => {
+          handleSelectFacility(fac)
+          setCurrentStep(1)
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }}
+        onStayOnFacilityStep={() => {
+          setCurrentStep(1)
+          const facSection = document.getElementById('facility-selection-section')
+          if (facSection) {
+            facSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          } else {
+            window.scrollTo({ top: 350, behavior: 'smooth' })
+          }
+        }}
+      />
+
       {/* Modal Ký Hợp Đồng Điện Tử DocuSeal (Theo kích thước Size_ID) */}
       {showDocuSealModal && contractForSigning && (
         <DocuSealSimulationModal
           contract={contractForSigning}
           booking={createdBookingForSigning}
+          financialSummary={{
+            sizeName: `Kho ${currentSelectedSize.volumeText} (${isAcActive ? 'Máy lạnh A/C' : 'Tiêu chuẩn'})`,
+            rentalMonths: isCustomDuration ? Math.max(1, Math.round(customDays / 30)) : rentalMonths,
+            monthlyFee: quoteCalculation.monthlyAfterDiscount,
+            totalRent: quoteCalculation.totalRent,
+            depositAmount: quoteCalculation.depositAmount,
+            totalPayment: quoteCalculation.totalEstimate,
+          }}
           onClose={() => setShowDocuSealModal(false)}
           onSignedSuccess={handleDocuSealSignedSuccess}
         />
       )}
 
-      {/* Modal nhắc đăng nhập khi chọn Thanh toán Online */}
-
+      {/* Modal nhắc đăng nhập khi từ Bước 3 sang Bước 4 */}
       {showAuthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-w-md rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-7 shadow-2xl text-left animate-in zoom-in-95 duration-200 space-y-5">
@@ -3046,10 +3170,10 @@ export const BookingPage: React.FC = () => {
 
             <div className="space-y-2">
               <h3 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white">
-                Đăng nhập để giữ chỗ buồng kho
+                Đăng nhập để tiếp tục đặt kho
               </h3>
               <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                Để kết nối cổng thanh toán trực tuyến bảo mật và lưu hợp đồng buồng kho vào tài khoản cá nhân, quý khách vui lòng đăng nhập trước khi tiếp tục. Đơn đặt phòng của quý khách đã được lưu tạm an toàn!
+                Quý khách vui lòng đăng nhập hoặc đăng ký tài khoản Boxora để tiếp tục sang Bước 4 (Lịch hẹn &amp; Thông tin người đặt). Thông tin cá nhân của bạn sẽ được tự động đồng bộ từ tài khoản hồ sơ!
               </p>
             </div>
 
@@ -3057,6 +3181,10 @@ export const BookingPage: React.FC = () => {
               <div className="flex justify-between">
                 <span>Kho lưu trữ:</span>
                 <strong className="text-slate-900 dark:text-white">{currentSelectedSize.volumeText} • {selectedFacility?.name}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span>Thời hạn thuê:</span>
+                <strong className="text-slate-900 dark:text-white">{isCustomDuration ? `${customDays} ngày` : `${rentalMonths} tháng`}</strong>
               </div>
               <div className="flex justify-between">
                 <span>Số tiền tạm tính:</span>
@@ -3067,7 +3195,27 @@ export const BookingPage: React.FC = () => {
             <div className="flex flex-col gap-2.5 pt-1">
               <button
                 type="button"
-                onClick={() => navigate('/login?redirect=/booking')}
+                onClick={() => {
+                  const draft = {
+                    facilityId: selectedFacility?.id,
+                    selectedSizeId,
+                    acMode: isAcActive ? 'AC' : 'NON_AC',
+                    durationMode,
+                    rentalMonths,
+                    customDays,
+                    checkInDate,
+                    selectedPeriodId,
+                    customerName: customerName.trim(),
+                    customerPhone: customerPhone.trim(),
+                    customerEmail: customerEmail.trim(),
+                    specialNotes: specialNotes.trim(),
+                    idCardType,
+                    targetStep: 4,
+                  }
+                  sessionStorage.setItem('boxora_booking_draft', JSON.stringify(draft))
+                  localStorage.setItem('boxora_booking_draft', JSON.stringify(draft))
+                  navigate('/login?redirect=/booking')
+                }}
                 className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-lg shadow-blue-600/25 flex items-center justify-center gap-2 cursor-pointer transition-all"
               >
                 <LogIn size={16} />
@@ -3076,7 +3224,27 @@ export const BookingPage: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => navigate('/register?redirect=/booking')}
+                onClick={() => {
+                  const draft = {
+                    facilityId: selectedFacility?.id,
+                    selectedSizeId,
+                    acMode: isAcActive ? 'AC' : 'NON_AC',
+                    durationMode,
+                    rentalMonths,
+                    customDays,
+                    checkInDate,
+                    selectedPeriodId,
+                    customerName: customerName.trim(),
+                    customerPhone: customerPhone.trim(),
+                    customerEmail: customerEmail.trim(),
+                    specialNotes: specialNotes.trim(),
+                    idCardType,
+                    targetStep: 4,
+                  }
+                  sessionStorage.setItem('boxora_booking_draft', JSON.stringify(draft))
+                  localStorage.setItem('boxora_booking_draft', JSON.stringify(draft))
+                  navigate('/register?redirect=/booking')
+                }}
                 className="w-full py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors cursor-pointer text-center"
               >
                 Đăng ký tài khoản mới

@@ -24,6 +24,7 @@ import com.boxora.repository.StorageUnitRepository;
 import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
 import com.boxora.service.ContractRenewalService;
+import com.boxora.service.EmailService;
 import com.boxora.service.PaymentService;
 import com.boxora.service.VNPayService;
 import com.boxora.entity.StorageUnit;
@@ -785,8 +786,8 @@ public class PaymentServiceImpl implements PaymentService {
                     String customerEmail = null;
                     String customerName = "Quý khách";
                     if (payment.getBooking() != null) {
-                        customerEmail = payment.getBooking().getCustomer() != null ? payment.getBooking().getCustomer().getEmail() : payment.getBooking().getCustomerEmail();
-                        customerName = payment.getBooking().getCustomer() != null ? payment.getBooking().getCustomer().getFullName() : payment.getBooking().getCustomerName();
+                        customerEmail = payment.getBooking().getCustomer() != null ? payment.getBooking().getCustomer().getEmail() : null;
+                        customerName = payment.getBooking().getCustomer() != null ? payment.getBooking().getCustomer().getFullName() : "Quý khách";
                     } else if (payment.getContract() != null) {
                         customerEmail = payment.getContract().getCustomer() != null ? payment.getContract().getCustomer().getEmail() : null;
                         customerName = payment.getContract().getCustomer() != null ? payment.getContract().getCustomer().getFullName() : "Quý khách";
@@ -933,8 +934,8 @@ public class PaymentServiceImpl implements PaymentService {
                     String customerEmail = null;
                     String customerName = "Quý khách";
                     if (payment.getBooking() != null) {
-                        customerEmail = payment.getBooking().getCustomer() != null ? payment.getBooking().getCustomer().getEmail() : payment.getBooking().getCustomerEmail();
-                        customerName = payment.getBooking().getCustomer() != null ? payment.getBooking().getCustomer().getFullName() : payment.getBooking().getCustomerName();
+                        customerEmail = payment.getBooking().getCustomer() != null ? payment.getBooking().getCustomer().getEmail() : null;
+                        customerName = payment.getBooking().getCustomer() != null ? payment.getBooking().getCustomer().getFullName() : "Quý khách";
                     } else if (payment.getContract() != null) {
                         customerEmail = payment.getContract().getCustomer() != null ? payment.getContract().getCustomer().getEmail() : null;
                         customerName = payment.getContract().getCustomer() != null ? payment.getContract().getCustomer().getFullName() : "Quý khách";

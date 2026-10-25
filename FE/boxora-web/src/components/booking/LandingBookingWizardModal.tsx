@@ -419,15 +419,14 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   // Form Validation
   const validateStep3 = () => {
     const errors: Record<string, string> = {}
+    // Họ và tên: chỉ cần có chữ cái, không space rỗng hoặc ký tự đặc biệt
     const nameTrim = fullName.trim()
     if (!nameTrim) {
       errors.fullName = 'Vui lòng nhập họ và tên của bạn'
-    } else if (nameTrim.length < 2 || nameTrim.length > 100) {
-      errors.fullName = 'Họ và tên phải từ 2 đến 100 ký tự'
-    } else if (!/^[\p{L}\s'.-]+$/u.test(nameTrim)) {
-      errors.fullName = 'Họ và tên chỉ được chứa chữ cái tiếng Việt/Latin và khoảng trắng'
-    } else if (nameTrim.split(/\s+/).filter(Boolean).length < 2) {
-      errors.fullName = 'Vui lòng nhập đầy đủ cả họ và tên (tối thiểu 2 từ)'
+    } else if (!/^[\p{L}\s]+$/u.test(nameTrim)) {
+      errors.fullName = 'Họ và tên chỉ được chứa chữ cái, không chứa số hoặc ký tự đặc biệt'
+    } else if (nameTrim.length > 100) {
+      errors.fullName = 'Họ và tên không được vượt quá 100 ký tự'
     }
 
     const cleanPhone = phone.trim().replace(/[\s.-]/g, '')
@@ -1539,13 +1538,13 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
             <div className="space-y-6 py-2">
               <div className="text-center space-y-1">
                 <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-cyan-700 bg-cyan-50 px-3 py-1 rounded-full border border-cyan-200">
-                  Bước 5: Lựa chọn phương thức xác nhận &amp; hoàn tất
+                  Bước 5: Hợp đồng &amp; Thanh toán
                 </span>
                 <h4 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-                  Chọn hình thức thanh toán cho đơn đặt kho
+                  Phương thức Hợp đồng &amp; Thanh toán
                 </h4>
                 <p className="text-xs sm:text-sm text-slate-600 max-w-lg mx-auto">
-                  Quý khách vui lòng chọn 1 trong 2 phương thức thanh toán bên dưới:
+                  Quý khách vui lòng chọn 1 trong 2 phương thức hợp đồng &amp; thanh toán bên dưới:
                 </p>
               </div>
 
@@ -1576,7 +1575,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl mx-auto pt-2">
                 
-                {/* PHƯƠNG THỨC 1: THANH TOÁN NGAY & KÝ HỢP ĐỒNG ĐIỆN TỬ */}
+                {/* PHƯƠNG THỨC 1: KÝ HỢP ĐỒNG VÀ THANH TOÁN TRỰC TUYẾN */}
                 <div className="rounded-2xl border-2 border-emerald-500 bg-gradient-to-b from-emerald-50/40 via-white to-white p-5 flex flex-col justify-between shadow-md relative overflow-hidden">
                   <div className="absolute top-0 right-0 bg-emerald-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl uppercase tracking-wider">
                     Khuyên Dùng
@@ -1588,7 +1587,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                     </div>
                     <div>
                       <h5 className="font-bold text-slate-900 text-base">
-                        1. Thanh Toán Ngay (Pay Now)
+                        1. Ký hợp đồng và thanh toán trực tuyến
                       </h5>
                       <p className="text-xs text-slate-600 mt-1 leading-relaxed">
                         Ký hợp đồng thuê tự quản trực tuyến qua <strong>DocuSeal</strong>, sau đó thanh toán an toàn qua cổng <strong>VNPay Sandbox</strong>.
@@ -1640,7 +1639,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                   </div>
                 </div>
 
-                {/* PHƯƠNG THỨC 2: THANH TOÁN SAU (TƯ VẤN HOTLINE) */}
+                {/* PHƯƠNG THỨC 2: KÝ HỢP ĐỒNG VÀ THANH TOÁN TẠI CƠ SỞ VÀO NGÀY TỚI NHẬN KHO */}
                 <div className="rounded-2xl border border-slate-300 bg-white p-5 flex flex-col justify-between shadow-sm hover:border-slate-400 transition-all">
                   <div className="space-y-3">
                     <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center shadow-xs">
@@ -1648,7 +1647,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                     </div>
                     <div>
                       <h5 className="font-bold text-slate-900 text-base">
-                        2. Thanh Toán Sau (Pay Later)
+                        2. Ký hợp đồng và thanh toán tại cơ sở vào ngày tới nhận kho
                       </h5>
                       <p className="text-xs text-slate-600 mt-1 leading-relaxed">
                         Chuyên viên Boxora sẽ gọi điện qua số điện thoại để hỗ trợ tư vấn kích thước, chốt ngày giờ nhận kho và gửi link thanh toán sau.
@@ -1852,7 +1851,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                   onClick={() => setCurrentStep(5)}
                   className="px-7 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white text-xs font-bold shadow-md shadow-blue-600/30 flex items-center gap-2 transition-all cursor-pointer"
                 >
-                  <span>Tiếp tục sang Bước 5: Chọn thanh toán &amp; Ký HĐ</span>
+                  <span>Tiếp tục sang Bước 5: Hợp đồng &amp; Thanh toán</span>
                   <ArrowRight size={16} />
                 </button>
               )}
@@ -1868,6 +1867,14 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
           booking={createdBookingForSigning}
           onClose={() => setShowDocuSealModal(false)}
           onSignedSuccess={handleDocuSealSignedSuccess}
+          financialSummary={{
+            sizeName: SIZE_TIERS[selectedTierKey]?.name || 'Kho tiêu chuẩn',
+            rentalMonths: rentalMonths,
+            monthlyFee: quoteCalculation.monthlyAfterDiscount,
+            totalRent: quoteCalculation.totalRent,
+            depositAmount: quoteCalculation.depositAmount,
+            totalPayment: quoteCalculation.totalRent + quoteCalculation.depositAmount,
+          }}
         />
       )}
     </div>

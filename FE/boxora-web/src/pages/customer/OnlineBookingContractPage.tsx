@@ -163,7 +163,7 @@ export const OnlineBookingContractPage = () => {
           <p className="mt-3 text-sm text-rose-700">{error || 'Không tìm thấy đơn đặt thuê này.'}</p>
           <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
             <button onClick={() => void refresh(true)} className="rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-800 transition cursor-pointer">Thử tải lại</button>
-            <Link to="/my-bookings" className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-xs hover:bg-slate-50 transition">
+            <Link to="/portal/customer?tab=bookings" className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-xs hover:bg-slate-50 transition">
               <LayoutDashboard className="h-4 w-4 text-slate-500" />
               <span>Về đơn đặt chỗ của tôi</span>
             </Link>
@@ -185,7 +185,7 @@ export const OnlineBookingContractPage = () => {
           </div>
           <div className="flex items-center gap-2.5">
             <Link
-              to="/my-bookings"
+              to="/portal/customer?tab=bookings"
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
             >
               <LayoutDashboard className="h-3.5 w-3.5" />
@@ -466,13 +466,13 @@ export const OnlineBookingContractPage = () => {
                   </button>
                 )}
                 <Link
-                  to="/my-bookings"
+                  to="/portal/customer?tab=bookings"
                   className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 transition"
                 >
                   <LayoutDashboard className="h-4 w-4" />
                   <span>Về đơn đặt chỗ của tôi</span>
                 </Link>
-                {signed && checkCustomerPortalAccess(user).hasAccess && (
+                {signed && (
                   <Link
                     to="/portal/customer"
                     className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700 transition"

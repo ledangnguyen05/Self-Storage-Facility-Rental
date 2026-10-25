@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import {
   User,
   Mail,
@@ -35,7 +35,9 @@ import { markUserAsNewCustomer } from '../../utils/rentalAccess'
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { loginWithGoogle } = useAuth()
+  const [searchParams] = useSearchParams()
+  const redirect = searchParams.get('redirect')
+  const { login, loginWithGoogle } = useAuth()
 
   const googleRedirectState = location.state as {
     fromGoogleLogin?: boolean
@@ -87,6 +89,10 @@ export const RegisterPage: React.FC = () => {
       }
       if (userRole === 'ADMIN') {
         navigate('/portal/admin')
+      } else if (redirect) {
+        navigate(decodeURIComponent(redirect))
+      } else if (sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft')) {
+        navigate('/booking')
       } else {
         navigate('/booking', {
           state: { welcomeMessage: 'Tài khoản đã tạo thành công! Hãy chọn kho lưu trữ gần bạn nhất.' }
@@ -213,10 +219,29 @@ export const RegisterPage: React.FC = () => {
         localStorage.setItem('boxora_user_cccd', formData.identityCardNumber.trim())
       }
 
-      setSuccess(true)
-      navigate('/booking', {
-        state: { welcomeMessage: 'Tài khoản đã tạo thành công! Hãy chọn kho lưu trữ gần bạn nhất.' }
-      })
+      // Auto login immediately so user is authenticated without having to manually log in again
+      try {
+        await login(formData.email.trim(), formData.password)
+        setSuccess(true)
+        const targetRedirect = redirect
+          ? decodeURIComponent(redirect)
+          : (sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft') ? '/booking' : null)
+        if (targetRedirect) {
+          navigate(targetRedirect)
+        } else {
+          navigate('/booking', {
+            state: { welcomeMessage: 'Tài khoản đã tạo thành công! Hãy chọn kho lưu trữ gần bạn nhất.' }
+          })
+        }
+      } catch (loginErr) {
+        console.warn('Auto login after registration failed, redirecting to login:', loginErr)
+        setSuccess(true)
+        const target = redirect || (sessionStorage.getItem('boxora_booking_draft') ? '/booking' : null)
+        const loginUrl = target
+          ? `/login?redirect=${encodeURIComponent(target)}&email=${encodeURIComponent(formData.email.trim())}`
+          : `/login?email=${encodeURIComponent(formData.email.trim())}`
+        navigate(loginUrl)
+      }
     } catch (err: any) {
       console.error(err)
       setError(err?.response?.data?.message || 'Đăng ký không thành công. Vui lòng kiểm tra lại thông tin.')
@@ -767,7 +792,11 @@ export const RegisterPage: React.FC = () => {
               <span className="text-xs text-slate-600">
                 Đã có tài khoản lưu kho?{' '}
                 <Link
-                  to="/login"
+                  to={
+                    redirect
+                      ? `/login?redirect=${encodeURIComponent(redirect)}`
+                      : (sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft') ? `/login?redirect=${encodeURIComponent('/booking')}` : '/login')
+                  }
                   className="font-bold text-teal-700 hover:text-teal-800 hover:underline inline-flex items-center gap-1"
                 >
                   <span>Đăng nhập ngay</span>

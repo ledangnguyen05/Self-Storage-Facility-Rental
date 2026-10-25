@@ -60,8 +60,7 @@ function RootRedirect() {
       return <Navigate to="/portal/staff" replace />
     case 'CUSTOMER':
     default: {
-      const hasAccess = checkCustomerPortalAccess(user).hasAccess
-      return <Navigate to={hasAccess ? "/portal/customer" : "/my-bookings"} replace />
+      return <Navigate to="/portal/customer" replace />
     }
   }
 }
@@ -85,7 +84,7 @@ function MainContent() {
           <Route path="/explore-units" element={<Navigate to="/booking" replace />} />
           <Route path="/facilities" element={<FacilitiesPage />} />
           <Route path="/branches" element={<FacilitiesPage />} />
-          <Route path="/my-requests" element={<ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}><MyBookingsPage /></ProtectedRoute>} />
+          <Route path="/my-requests" element={<Navigate to="/portal/customer?tab=bookings" replace />} />
           <Route
             path="/reserve"
             element={
@@ -104,9 +103,9 @@ function MainContent() {
             }
           />
 
-          {/* My Bookings route keeps the customer in the Portal with the left sidebar */}
-          <Route path="/my-bookings" element={<ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}><MyBookingsPage /></ProtectedRoute>} />
-          <Route path="/customer/bookings" element={<ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}><MyBookingsPage /></ProtectedRoute>} />
+          {/* My Bookings route redirects to Customer Portal with full left sidebar */}
+          <Route path="/my-bookings" element={<Navigate to="/portal/customer?tab=bookings" replace />} />
+          <Route path="/customer/bookings" element={<Navigate to="/portal/customer?tab=bookings" replace />} />
 
           <Route path="/terms" element={<TermsAndStandardsPage />} />
           <Route path="/standards" element={<TermsAndStandardsPage />} />

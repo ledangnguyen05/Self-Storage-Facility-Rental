@@ -29,15 +29,6 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
     return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname)}`} replace />
   }
 
-  // Khách hàng chưa có kho đang thuê -> TUYỆT ĐỐI KHÔNG ĐƯỢC VÀO PORTAL
-  // Chuyển hướng ngay sang dashboard riêng (/my-bookings) để xem các trạng thái đơn yêu cầu
-  if (role === 'CUSTOMER' && location.pathname.startsWith('/portal')) {
-    const access = checkCustomerPortalAccess(user)
-    if (!access.hasAccess) {
-      return <Navigate to="/my-bookings" replace />
-    }
-  }
-
   // If allowedRoles is specified and current role is not permitted, automatically route them to their proper portal
   if (allowedRoles && allowedRoles.length > 0 && role && !allowedRoles.includes(role)) {
     const getTargetPortal = (r: RoleType) => {
@@ -52,7 +43,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
           return '/portal/staff'
         case 'CUSTOMER':
         default:
-          return checkCustomerPortalAccess(user).hasAccess ? '/portal/customer' : '/my-bookings'
+          return '/portal/customer'
       }
     }
     return <Navigate to={getTargetPortal(role)} replace />

@@ -120,7 +120,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
     if (onSignIn) {
       onSignIn()
     } else {
-      navigate(isAuthenticated ? (canAccessPortal ? '/portal' : '/my-bookings') : '/login')
+      navigate(isAuthenticated ? '/portal/customer' : '/login')
     }
   }
 

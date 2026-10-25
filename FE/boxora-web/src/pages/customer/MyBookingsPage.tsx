@@ -168,7 +168,11 @@ export function getBookingStage(b: Booking): BookingStageInfo {
   }
 }
 
-export const MyBookingsPage: React.FC = () => {
+export interface MyBookingsPageProps {
+  embedded?: boolean
+}
+
+export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false }) => {
   const navigate = useNavigate()
   const { user, isAuthenticated, logout } = useAuth()
   const { t } = useLanguage()
@@ -468,101 +472,12 @@ export const MyBookingsPage: React.FC = () => {
     { num: 4, label: 'Mã IoT 24/7' },
   ]
 
-  return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
-      {/* ================================================================ */}
-      {/* 1. TOP UNIFIED NAVIGATION BAR                                    */}
-      {/* ================================================================ */}
-      <header className="sticky top-0 z-[100] border-b border-slate-200/70 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl transition-colors">
-        <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between px-4 sm:px-6 lg:px-10">
-          {/* Brand Logo */}
-          <BrandLogo size="sm" subtitle="KHO TỰ QUẢN THÔNG MINH" />
-
-          {/* Nav Links (Desktop) */}
-          <nav className="hidden items-center gap-7 text-[13px] font-medium text-slate-600 dark:text-slate-300 lg:flex">
-            <a href="/#services" className="transition-colors hover:text-slate-950 dark:hover:text-white">
-              Dịch vụ
-            </a>
-            <a href="/#process" className="transition-colors hover:text-slate-950 dark:hover:text-white">
-              Cách hoạt động
-            </a>
-            <a href="/#iot-access" className="transition-colors hover:text-slate-950 dark:hover:text-white">
-              Công nghệ
-            </a>
-            <a href="/#faq" className="transition-colors hover:text-slate-950 dark:hover:text-white">
-              Hỗ trợ
-            </a>
-          </nav>
-
-          {/* Action CTAs */}
-          <div className="flex items-center gap-3">
-            <QuickThemeLanguageToggle />
-
-            {isAuthenticated ? (
-              <UserAvatarDropdown
-                user={user}
-                role={user?.role?.name || 'CUSTOMER'}
-                onOpenProfile={() => setIsProfileModalOpen(true)}
-                onOpenSettings={() => setIsSettingsModalOpen(true)}
-                onOpenLogoutConfirm={() => setIsLogoutConfirmOpen(true)}
-                extraActions={
-                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-2">
-                    {canAccessPortal ? (
-                      <button
-                        type="button"
-                        onClick={() => navigate(isCustomer ? '/portal/customer' : '/portal')}
-                        className="w-full py-2.5 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs flex items-center justify-between transition-all cursor-pointer"
-                      >
-                        <span className="flex items-center gap-2">
-                          <span className="material-symbols-outlined text-[18px] text-emerald-400">dashboard</span>
-                          <span>{isCustomer ? t('Vào Portal Quản Lý Kho (Khóa IoT)') : t('Vào Trang Điều Hành Portal')}</span>
-                        </span>
-                        <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => navigate('/my-bookings')}
-                        className="w-full py-2.5 px-3.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-semibold text-xs flex items-center justify-between hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-all shadow-xs cursor-pointer"
-                      >
-                        <span className="flex items-center gap-2">
-                          <span className="material-symbols-outlined text-[18px] text-blue-600 dark:text-blue-400">calendar_month</span>
-                          <span>{t('Đơn Đặt Giữ Chỗ Của Tôi')}</span>
-                        </span>
-                        <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                      </button>
-                    )}
-                  </div>
-                }
-              />
-            ) : (
-              <>
-                <Link
-                  to="/login"
-                  className="px-3 py-2 text-[13px] font-medium text-slate-700 dark:text-slate-300 transition-colors hover:text-slate-950 dark:hover:text-white"
-                >
-                  {t('Đăng Nhập')}
-                </Link>
-                <Link
-                  to="/booking"
-                  className="inline-flex items-center gap-1.5 rounded-full bg-blue-700 hover:bg-blue-800 px-4 py-2.5 text-[13px] font-semibold text-white transition-colors shadow-xs"
-                >
-                  <span>{t('Thuê Kho Ngay')}</span>
-                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
-
-      {/* ================================================================ */}
-      {/* 2. MAIN CONTENT BODY: DEDICATED RESERVATIONS DASHBOARD           */}
-      {/* ================================================================ */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {/* Page Title & Breadcrumbs */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
+  const reservationsContent = (
+    <>
+      {/* Page Title & Breadcrumbs */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          {!embedded && (
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mb-1">
               <Link to="/" className="hover:text-blue-600 transition-colors">
                 Trang chủ
@@ -570,35 +485,46 @@ export const MyBookingsPage: React.FC = () => {
               <span>/</span>
               <span className="text-slate-800 dark:text-slate-200 font-semibold">Đơn đặt giữ chỗ của tôi</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              Đơn Đặt Giữ Chỗ Của Tôi
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-              Theo dõi tiến trình xét duyệt đơn, ký hợp đồng điện tử DocuSeal, gán buồng kho và nhận mã khóa IoT 24/7.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                setPolicyModalTab('cancellation')
-                setIsPolicyModalOpen(true)
-              }}
-              className="px-3.5 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
-            >
-              <FileText size={15} className="text-blue-600" />
-              <span>Chính sách cọc &amp; hủy</span>
-            </button>
-
-            <Link
-              to="/booking"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-bold text-white shadow-md shadow-blue-600/20 transition-all cursor-pointer"
-            >
-              <span>+ Đặt thuê thêm kho</span>
-            </Link>
-          </div>
+          )}
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+            Đơn Đặt Giữ Chỗ Của Tôi
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Theo dõi tiến trình xét duyệt đơn, ký hợp đồng điện tử DocuSeal, gán buồng kho và nhận mã khóa IoT 24/7.
+          </p>
         </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={fetchBookings}
+            disabled={loading}
+            className="px-3.5 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            <span>{loading ? 'Đang tải...' : 'Làm mới'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setPolicyModalTab('cancellation')
+              setIsPolicyModalOpen(true)
+            }}
+            className="px-3.5 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+          >
+            <FileText size={15} className="text-blue-600" />
+            <span>Chính sách cọc &amp; hủy</span>
+          </button>
+
+          <Link
+            to="/booking"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-bold text-white shadow-md shadow-blue-600/20 transition-all cursor-pointer"
+          >
+            <span>+ Đặt thuê thêm kho</span>
+          </Link>
+        </div>
+      </div>
 
         {/* ============================================================== */}
         {/* 4-STEP PROCESS ROADMAP BANNER                                  */}
@@ -1123,12 +1049,11 @@ export const MyBookingsPage: React.FC = () => {
             })}
           </div>
         )}
-      </main>
+    </>
+  )
 
-      {/* ================================================================ */}
-      {/* 6. MODALS                                                        */}
-      {/* ================================================================ */}
-
+  const modalsContent = (
+    <>
       {/* Detail & QR Ticket Modal */}
       {selectedBookingForDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
@@ -1250,8 +1175,72 @@ export const MyBookingsPage: React.FC = () => {
         initialTab={policyModalTab}
         facilityName="Hệ thống Kho Thông Minh Boxora"
       />
+    </>
+  )
 
-      {/* Account / Settings / Logout Modals */}
+  if (embedded) {
+    return (
+      <div className="w-full space-y-6 text-left">
+        {reservationsContent}
+        {modalsContent}
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
+      <header className="sticky top-0 z-[100] border-b border-slate-200/70 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl transition-colors">
+        <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between px-4 sm:px-6 lg:px-10">
+          <BrandLogo size="sm" subtitle="KHO TỰ QUẢN THÔNG MINH" />
+          <nav className="hidden items-center gap-7 text-[13px] font-medium text-slate-600 dark:text-slate-300 lg:flex">
+            <a href="/#services" className="transition-colors hover:text-slate-950 dark:hover:text-white">Dịch vụ</a>
+            <a href="/#process" className="transition-colors hover:text-slate-950 dark:hover:text-white">Cách hoạt động</a>
+            <a href="/#iot-access" className="transition-colors hover:text-slate-950 dark:hover:text-white">Công nghệ</a>
+            <a href="/#faq" className="transition-colors hover:text-slate-950 dark:hover:text-white">Hỗ trợ</a>
+          </nav>
+          <div className="flex items-center gap-3">
+            <QuickThemeLanguageToggle />
+            {isAuthenticated ? (
+              <UserAvatarDropdown
+                user={user}
+                role={user?.role?.name || 'CUSTOMER'}
+                onOpenProfile={() => setIsProfileModalOpen(true)}
+                onOpenSettings={() => setIsSettingsModalOpen(true)}
+                onOpenLogoutConfirm={() => setIsLogoutConfirmOpen(true)}
+                extraActions={
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => navigate('/portal/customer')}
+                      className="w-full py-2.5 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs flex items-center justify-between transition-all cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[18px] text-emerald-400">dashboard</span>
+                        <span>{t('Vào Portal Quản Lý Kho (Khóa IoT)')}</span>
+                      </span>
+                      <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                    </button>
+                  </div>
+                }
+              />
+            ) : (
+              <>
+                <Link to="/login" className="px-3 py-2 text-[13px] font-medium text-slate-700 dark:text-slate-300 transition-colors hover:text-slate-950 dark:hover:text-white">
+                  {t('Đăng Nhập')}
+                </Link>
+                <Link to="/booking" className="inline-flex items-center gap-1.5 rounded-full bg-blue-700 hover:bg-blue-800 px-4 py-2.5 text-[13px] font-semibold text-white transition-colors shadow-xs">
+                  <span>{t('Thuê Kho Ngay')}</span>
+                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        {reservationsContent}
+      </main>
+      {modalsContent}
       <AccountProfileModal
         isOpen={isProfileModalOpen}
         onClose={() => setIsProfileModalOpen(false)}

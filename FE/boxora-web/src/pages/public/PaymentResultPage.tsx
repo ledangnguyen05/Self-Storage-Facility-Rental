@@ -536,19 +536,17 @@ export const PaymentResultPage = () => {
                     </button>
                   )}
                   <Link
-                    to="/my-bookings"
+                    to="/portal/customer?tab=bookings"
                     className="flex-1 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 px-4 py-3 text-center text-sm font-bold text-blue-800 transition cursor-pointer"
                   >
                     Đơn đặt chỗ của tôi
                   </Link>
-                  {checkCustomerPortalAccess(user).hasAccess ? (
-                    <Link
-                      to="/portal/customer"
-                      className="flex-1 rounded-xl bg-blue-700 hover:bg-blue-800 px-4 py-3 text-center text-sm font-bold text-white transition cursor-pointer"
-                    >
-                      Về trang tổng quan
-                    </Link>
-                  ) : null}
+                  <Link
+                    to="/portal/customer"
+                    className="flex-1 rounded-xl bg-blue-700 hover:bg-blue-800 px-4 py-3 text-center text-sm font-bold text-white transition cursor-pointer"
+                  >
+                    Vào Portal Quản Lý Kho
+                  </Link>
                 </div>
               )}
             </div>

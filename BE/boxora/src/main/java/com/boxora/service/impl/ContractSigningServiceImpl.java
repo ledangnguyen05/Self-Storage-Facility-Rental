@@ -873,10 +873,10 @@ public class ContractSigningServiceImpl implements ContractSigningService {
                 : (unit != null && unit.getEffectiveBasePrice() != null ? unit.getEffectiveBasePrice() : (booking.getUnitType() != null && booking.getUnitType().getBasePricePerMonth() != null ? booking.getUnitType().getBasePricePerMonth() : BigDecimal.valueOf(1500000)));
 
         BigDecimal depositHeld = BigDecimal.ZERO;
-        if (booking.getDepositPaid() != null) {
-            depositHeld = booking.getDepositPaid();
-        } else if (booking.getDepositAmount() != null && booking.getDepositAmount().compareTo(BigDecimal.ZERO) > 0) {
+        if (booking.getDepositAmount() != null && booking.getDepositAmount().compareTo(BigDecimal.ZERO) > 0) {
             depositHeld = booking.getDepositAmount();
+        } else if (booking.getDepositPaid() != null && booking.getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
+            depositHeld = booking.getDepositPaid();
         } else if (unit != null && unit.getUnitType() != null && unit.getUnitType().getDepositAmount() != null
                 && unit.getUnitType().getDepositAmount().compareTo(BigDecimal.ZERO) > 0) {
             depositHeld = unit.getUnitType().getDepositAmount();
@@ -912,11 +912,11 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         }
         Booking booking = contract.getBooking();
         if (booking != null) {
-            if (booking.getDepositPaid() != null) {
-                return booking.getDepositPaid();
-            }
             if (booking.getDepositAmount() != null && booking.getDepositAmount().compareTo(BigDecimal.ZERO) > 0) {
                 return booking.getDepositAmount();
+            }
+            if (booking.getDepositPaid() != null && booking.getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
+                return booking.getDepositPaid();
             }
         }
         StorageUnit unit = contract.getUnit();

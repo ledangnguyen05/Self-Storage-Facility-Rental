@@ -123,7 +123,7 @@ export const HomePage: React.FC = () => {
                       ) : (
                         <button
                           type="button"
-                          onClick={() => navigate('/my-bookings')}
+                          onClick={() => navigate('/portal/customer?tab=bookings')}
                           className="w-full py-2.5 px-3.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-semibold text-xs flex items-center justify-between hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-all shadow-xs cursor-pointer"
                         >
                           <span className="flex items-center gap-2">

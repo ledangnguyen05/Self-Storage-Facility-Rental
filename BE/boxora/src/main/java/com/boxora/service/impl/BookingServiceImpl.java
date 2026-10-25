@@ -367,14 +367,11 @@ public class BookingServiceImpl implements BookingService {
         String fullName = request.getFullName();
         if (fullName != null && !fullName.isBlank()) {
             fullName = fullName.trim();
-            if (fullName.length() < 2 || fullName.length() > 100) {
-                throw new AppException(ErrorCode.INVALID_REQUEST, "Họ và tên người đặt phải từ 2 đến 100 ký tự.");
+            if (fullName.length() > 100) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Họ và tên người đặt không được vượt quá 100 ký tự.");
             }
-            if (!fullName.matches("^[\\p{L}\\s'-\\.]+$")) {
+            if (!fullName.matches("^[\\p{L}\\s]+$")) {
                 throw new AppException(ErrorCode.INVALID_REQUEST, "Họ và tên chỉ được chứa chữ cái và khoảng trắng hợp lệ.");
-            }
-            if (fullName.split("\\s+").length < 2) {
-                throw new AppException(ErrorCode.INVALID_REQUEST, "Họ và tên người đặt phải có tối thiểu 2 từ (cả họ và tên).");
             }
         }
 
@@ -1871,8 +1868,8 @@ public class BookingServiceImpl implements BookingService {
             contract = rentalContractRepository.save(contract);
         }
 
-        String customerEmail = booking.getCustomer() != null ? booking.getCustomer().getEmail() : booking.getCustomerEmail();
-        String customerName = booking.getCustomer() != null ? booking.getCustomer().getFullName() : booking.getCustomerName();
+        String customerEmail = booking.getCustomer() != null ? booking.getCustomer().getEmail() : null;
+        String customerName = booking.getCustomer() != null ? booking.getCustomer().getFullName() : "Quý khách";
         String facilityName = unit.getFacility() != null ? unit.getFacility().getName() : (booking.getFacility() != null ? booking.getFacility().getName() : "Boxora Facility");
         if (customerEmail != null && !customerEmail.isBlank()) {
             try {
