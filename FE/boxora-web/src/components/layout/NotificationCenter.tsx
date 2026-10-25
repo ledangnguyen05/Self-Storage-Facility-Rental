@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 
 import { NotificationLog, notificationService } from '../../services/notificationService'
 import { reservationEmailService } from '../../services/reservationEmailService'
+import { bookingService } from '../../services/bookingService'
 import { useAuth } from '../../context/AuthContext'
 import { Check, X, Phone, Mail, Building2, Calendar, Clock, AlertCircle, FileText, Send, User, ChevronRight } from 'lucide-react'
 
@@ -141,6 +142,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
   const [rejectionReason, setRejectionReason] = useState<string>('')
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null)
   const [isProcessingAction, setIsProcessingAction] = useState<boolean>(false)
+  const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState<boolean>(false)
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
 
@@ -280,46 +282,63 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
     }
   }
 
-  // Xử lý xác nhận đơn: chuyển trạng thái sang Chờ check in & gửi email cho khách
-  const handleConfirmReservationAction = () => {
+  // Xử lý xác nhận đơn: gọi backend API và gửi email
+  const handleExecuteConfirmReservation = async () => {
     if (!reviewBooking) return
     setIsProcessingAction(true)
-    const res = reservationEmailService.confirmReservation(reviewBooking.bookingCode, {
-      id: user?.id,
-      fullName: user?.fullName || 'Nhân viên trực ca Boxora',
-    })
-    setIsProcessingAction(false)
-
-    if (res.success) {
-      setReviewBooking((prev: any) => ({ ...prev, status: 'CONFIRMED' }))
-      setActionSuccessMsg(res.message)
+    try {
+      const isBackendId = reviewBooking.id && !reviewBooking.id.startsWith('LOCAL-RES-')
+      const targetIdOrCode = isBackendId ? reviewBooking.id : reviewBooking.bookingCode
+      const updated = await bookingService.confirmBooking(targetIdOrCode)
+      reservationEmailService.confirmReservation(reviewBooking.bookingCode, {
+        id: user?.id,
+        fullName: user?.fullName || 'Nhân viên trực ca Boxora',
+      })
+      setReviewBooking((prev: any) => ({ ...prev, status: updated?.status || 'CONFIRMED' }))
+      setActionSuccessMsg('Đã xác nhận đơn đặt giữ chỗ thành công (Chờ check in).')
+      setIsConfirmDialogOpen(false)
       setTimeout(() => setActionSuccessMsg(null), 5000)
-    } else {
-      alert(res.message)
+      window.dispatchEvent(new Event('boxora:storage-units-refresh'))
+    } catch (err: any) {
+      console.error('Confirm booking error:', err)
+      alert(err.response?.data?.message || err.message || 'Không thể xác nhận đơn trên máy chủ')
+    } finally {
+      setIsProcessingAction(false)
     }
   }
 
   // Xử lý từ chối đơn: có điền lý do, chuyển trạng thái sang CANCELLED & gửi email cho khách
-  const handleRejectReservationAction = () => {
+  const handleRejectReservationAction = async () => {
     if (!reviewBooking) return
-    if (!rejectionReason.trim()) {
-      alert('Vui lòng điền lý do từ chối đơn đặt giữ chỗ.')
+    const trimmedReason = rejectionReason.trim()
+    if (!trimmedReason || trimmedReason.length < 5) {
+      alert('Vui lòng điền lý do từ chối đơn đặt giữ chỗ (tối thiểu 5 ký tự).')
       return
     }
     setIsProcessingAction(true)
-    const res = reservationEmailService.rejectReservation(reviewBooking.bookingCode, rejectionReason, {
-      id: user?.id,
-      fullName: user?.fullName || 'Nhân viên trực ca Boxora',
-    })
-    setIsProcessingAction(false)
-
-    if (res.success) {
-      setReviewBooking((prev: any) => ({ ...prev, status: 'CANCELLED', rejectionReason: rejectionReason.trim() }))
+    try {
+      const isBackendId = reviewBooking.id && !reviewBooking.id.startsWith('LOCAL-RES-')
+      const targetIdOrCode = isBackendId ? reviewBooking.id : reviewBooking.bookingCode
+      const cancelRes = await bookingService.cancelBooking(targetIdOrCode, trimmedReason)
+      reservationEmailService.rejectReservation(reviewBooking.bookingCode, trimmedReason, {
+        id: user?.id,
+        fullName: user?.fullName || 'Nhân viên trực ca Boxora',
+      })
+      setReviewBooking((prev: any) => ({
+        ...prev,
+        status: cancelRes?.status || 'CANCELLED',
+        rejectionReason: trimmedReason,
+        cancelledAt: new Date().toISOString()
+      }))
       setIsRejecting(false)
-      setActionSuccessMsg(res.message)
+      setActionSuccessMsg('Đã từ chối đơn đặt giữ chỗ thành công.')
       setTimeout(() => setActionSuccessMsg(null), 5000)
-    } else {
-      alert(res.message)
+      window.dispatchEvent(new Event('boxora:storage-units-refresh'))
+    } catch (err: any) {
+      console.error('Reject booking error:', err)
+      alert(err.response?.data?.message || err.message || 'Không thể từ chối đơn trên máy chủ')
+    } finally {
+      setIsProcessingAction(false)
     }
   }
 
@@ -522,6 +541,78 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
         </section>
         )}
       </div>
+      {/* CONFIRMATION DIALOG MODAL CHO XÁC NHẬN ĐƠN */}
+      {isConfirmDialogOpen && reviewBooking && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-lg rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col text-left animate-in zoom-in-95 duration-200">
+            <div className="bg-emerald-700 text-white p-5 flex items-center justify-between border-b border-emerald-800">
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-xl bg-white/20 text-white flex items-center justify-center font-bold">
+                  <Check size={20} />
+                </span>
+                <div>
+                  <h3 className="font-extrabold text-base">Xác Nhận Đơn Đặt Giữ Chỗ</h3>
+                  <span className="text-xs font-mono text-emerald-100">Mã đơn: {reviewBooking.bookingCode}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isProcessingAction}
+                onClick={() => setIsConfirmDialogOpen(false)}
+                className="w-8 h-8 rounded-full bg-emerald-800 hover:bg-emerald-900 text-white flex items-center justify-center transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs sm:text-sm">
+              <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/50 space-y-1.5 font-mono text-xs">
+                <div>Khách hàng: <strong className="text-slate-900 dark:text-white font-sans">{reviewBooking.customerName}</strong> ({reviewBooking.customerPhone || 'Không có SĐT'})</div>
+                <div>Cơ sở: <strong className="text-slate-900 dark:text-white">{reviewBooking.facilityName}</strong> · {reviewBooking.unitCode ? `Kho #${reviewBooking.unitCode}` : 'Chưa gán ô kho vật lý'}</div>
+                <div>Lịch hẹn nhận kho: <strong className="text-emerald-700 dark:text-emerald-400">{reviewBooking.checkInDate} ({reviewBooking.checkInTime || '09:00'})</strong></div>
+                <div>Thời hạn thuê: <strong>{reviewBooking.rentalDurationText || (reviewBooking.rentalMonths ? `${reviewBooking.rentalMonths} tháng` : '1 tháng')}</strong></div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 text-amber-800 dark:text-amber-300 text-xs flex items-start gap-2.5">
+                <AlertCircle size={20} className="text-amber-600 shrink-0 mt-0.5" />
+                <p className="leading-relaxed">
+                  Bạn có chắc chắn muốn xác nhận đơn đặt giữ chỗ này? Trạng thái đơn sẽ chuyển sang <strong className="font-bold underline">Chờ check in</strong> (CONFIRMED) và hệ thống sẽ gửi thông báo xác nhận lịch hẹn nhận kho cho khách hàng.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={isProcessingAction}
+                onClick={() => setIsConfirmDialogOpen(false)}
+                className="px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold cursor-pointer transition disabled:opacity-50"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                disabled={isProcessingAction}
+                onClick={handleExecuteConfirmReservation}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md cursor-pointer transition disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isProcessingAction ? (
+                  <>
+                    <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Đang xác nhận...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check size={16} />
+                    <span>Xác nhận đơn (Chờ check in)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL XEM CHI TIẾT ĐƠN GIỮ CHỖ & XÁC NHẬN / TỪ CHỐI (KHI BẤM TỪ THÔNG BÁO) */}
       {reviewBooking && (
         <div className="fixed inset-0 z-90 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
@@ -729,11 +820,11 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
                     <button
                       type="button"
                       disabled={isProcessingAction}
-                      onClick={handleConfirmReservationAction}
+                      onClick={() => setIsConfirmDialogOpen(true)}
                       className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/25 transition-all cursor-pointer"
                     >
                       <Check size={16} />
-                      <span>{isProcessingAction ? 'Đang xác nhận...' : 'Xác nhận đơn (Chờ check in)'}</span>
+                      <span>Xác nhận đơn...</span>
                     </button>
                   </>
                 )}

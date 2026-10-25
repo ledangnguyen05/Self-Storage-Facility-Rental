@@ -707,8 +707,8 @@ export const StaffDashboard: React.FC = () => {
 
   // Nhân viên từ chối đơn: có điền lý do, chuyển sang CANCELLED và gửi email đến khách hàng
   const handleStaffRejectBooking = async (booking: Booking, reason: string) => {
-    if (!reason.trim()) {
-      alert('Vui lòng điền hoặc chọn lý do từ chối đơn đặt giữ chỗ.')
+    if (!reason.trim() || reason.trim().length < 5) {
+      alert('Vui lòng điền hoặc chọn chi tiết lý do từ chối đơn đặt giữ chỗ (tối thiểu 5 ký tự).')
       return
     }
 

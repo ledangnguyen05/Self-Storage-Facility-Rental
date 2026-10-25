@@ -1224,5 +1224,49 @@ class BookingServiceTest {
             assertThat(res.getAssignedStaffId()).isEqualTo(staffId);
             assertThat(res.getAssignedStaffName()).isEqualTo("Tran Staff Night");
         }
+
+        @Test
+        @DisplayName("Tiếp nhận thành công khi khách đến sớm hơn lịch hẹn và nhân viên đã điểm danh ca trực hôm nay")
+        void claimCheckInReception_SuccessForEarlyArrival_WhenCheckedInTodayShift() {
+            UUID bookingId = UUID.randomUUID();
+            UUID staffId = UUID.randomUUID();
+            LocalDate today = LocalDate.now();
+            LocalDate tomorrow = today.plusDays(1);
+
+            User staffUser = User.builder().fullName("Le Early Staff").build();
+            staffUser.setId(staffId);
+
+            com.boxora.entity.Booking booking = com.boxora.entity.Booking.builder()
+                    .bookingCode("BK-EARLY-01")
+                    .customer(testCustomer)
+                    .storageUnit(testUnit)
+                    .startDate(tomorrow)
+                    .expectedCheckInAt(tomorrow.atTime(10, 0))
+                    .status(BookingStatus.CONFIRMED)
+                    .build();
+            booking.setId(bookingId);
+
+            com.boxora.entity.StaffAssignment todayAssignment = com.boxora.entity.StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(testFacility)
+                    .assignedDate(today)
+                    .shift(com.boxora.enums.StaffShift.MORNING)
+                    .status(com.boxora.enums.StaffAssignmentStatus.CHECKED_IN)
+                    .checkedInAt(today.atTime(6, 10))
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(staffAssignmentRepository.findByStaff_IdAndAssignedDate(staffId, today))
+                    .thenReturn(List.of(todayAssignment));
+            when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            var res = bookingService.claimCheckInReception(bookingId);
+
+            assertThat(res.getAssignedStaffId()).isEqualTo(staffId);
+            assertThat(res.getAssignedStaffName()).isEqualTo("Le Early Staff");
+        }
     }
 }

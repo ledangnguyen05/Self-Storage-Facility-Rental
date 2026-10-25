@@ -245,11 +245,18 @@ export const EarlyCheckInConfirmModal: React.FC<EarlyCheckInConfirmModalProps> =
             <span className="material-symbols-outlined text-amber-600 dark:text-amber-400 text-[24px] shrink-0 mt-0.5">
               warning
             </span>
-            <div className="space-y-1">
+            <div className="space-y-2">
               <p className="text-sm font-bold text-amber-950 dark:text-amber-200 leading-snug">
-                Chưa tới ngày và giờ hẹn nhận kho như lịch khách đã đặt, bạn có chắc thực hiện thao tác này?
+                Khách đang nhận kho sớm hơn lịch hẹn. Bạn có chắc chắn muốn tiếp tục?
               </p>
-              <p className="text-[11px] text-amber-800 dark:text-amber-300/90 leading-relaxed">
+              <div className="text-[11px] space-y-1 text-amber-900 dark:text-amber-300">
+                <p><strong>Lịch Hẹn Check-in Nhận Kho:</strong> {schedule.fullAppointmentText}</p>
+                <p>Chưa đến ngày check-in. Thời điểm đúng để thực hiện tiếp nhận kho từ: <strong>{schedule.timeFormatted} ngày {schedule.dateFormatted}</strong>.</p>
+                <p className="italic bg-amber-100/60 dark:bg-amber-900/30 p-2 rounded-lg border border-amber-200 dark:border-amber-800/60">
+                  <strong>Quy tắc xử lý:</strong> Nên theo quy trình tiếp nhận đúng lịch. Tuy nhiên, nếu cơ sở có đủ điều kiện phục vụ và khách cần nhận kho gấp thì nhân viên được phân quyền có thể xác nhận tiếp nhận sớm.
+                </p>
+              </div>
+              <p className="text-[11px] text-amber-800 dark:text-amber-400 leading-relaxed pt-1 border-t border-amber-200/60 dark:border-amber-800/40">
                 Thao tác: <strong className="underline underline-offset-2">{actionTitle}</strong> — {actionDescription}.
               </p>
             </div>

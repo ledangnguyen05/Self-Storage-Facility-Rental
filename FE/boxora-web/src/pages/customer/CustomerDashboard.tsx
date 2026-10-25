@@ -23,6 +23,7 @@ import { extractFloor } from '../../utils/floorUtils'
 import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import NotificationCenter from '../../components/layout/NotificationCenter'
 import { MyBookingsPage } from './MyBookingsPage'
+import { CustomerSupportPanel } from './components/CustomerSupportPanel'
 
 
 const BookingRequestCountdown: React.FC<{ request: Booking }> = ({ request }) => {
@@ -3391,114 +3392,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
       {/* 6. TAB 4: HỖ TRỢ & BÁO SỰ CỐ (SUPPORT) */}
       {activeTab === 'support' && (
-        <section className="bg-white rounded-2xl p-6 md:p-8 border border-slate-200 shadow-sm">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            <div className="lg:col-span-5 flex flex-col gap-4">
-              <div className="flex items-center gap-1.5 text-blue-600 font-unit-code text-xs font-bold">
-                <span>TRUNG TÂM PHẢN HỒI KHÁCH HÀNG 24/7</span>
-              </div>
-              <h3 className="font-headline text-xl font-bold text-slate-900">
-                Hỗ Trợ Kỹ Thuật &amp; Khóa Kho
-              </h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Đội ngũ kỹ thuật và bảo vệ trực ca tại trạm sẵn sàng xử lý yêu cầu của bạn nhanh chóng. Các sự cố kẹt cửa cuốn hoặc quên mã PIN được giải quyết trong vòng 3 phút.
-              </p>
-
-              <div className="mt-2 flex flex-col gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700">
-                <div>
-                  Hotline khẩn cấp: <strong className="text-slate-900 font-bold">1900 6828 (Ext. 1)</strong>
-                </div>
-                <div>
-                  Thời gian tiếp nhận: <strong>24/7 không ngày nghỉ</strong>
-                </div>
-                <div>
-                  Bảo vệ chốt cổng hỗ trợ người thân &amp; xe tải ra vào
-                </div>
-              </div>
-            </div>
-
-            <div className="lg:col-span-7 bg-slate-50 border border-slate-200 p-6 rounded-xl">
-              {ticketSubmitted ? (
-                <div className="py-12 text-center flex flex-col items-center justify-center gap-2">
-                  <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[28px]">check</span>
-                  </div>
-                  <h4 className="font-bold text-slate-900 text-sm">Yêu Cầu Đã Được Tiếp Nhận!</h4>
-                  <p className="text-xs text-slate-500 max-w-xs">
-                    Nhân viên phụ trách đang xử lý và sẽ phản hồi hoặc liên hệ lại với bạn ngay lập tức.
-                  </p>
-                </div>
-              ) : (
-                <form className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left" onSubmit={handleSupportSubmit}>
-                  {ticketError && <p role="alert" className="sm:col-span-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{ticketError}</p>}
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      Kho lưu trữ liên quan
-                    </label>
-                    <select
-                      value={ticketUnit}
-                      onChange={(e) => setTicketUnit(e.target.value)}
-                      className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
-                    >
-                      {activeContracts.length > 0 ? (
-                        activeContracts.map(c => (
-                          <option key={c.unitCode} value={c.unitCode}>
-                            Kho #{c.unitCode} ({c.facilityName})
-                          </option>
-                        ))
-                      ) : (
-                        <option value="general">Chưa có kho hoạt động</option>
-                      )}
-                      <option value="general">Khác / Thắc mắc chung</option>
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      Vấn đề cần hỗ trợ
-                    </label>
-                    <select
-                      value={ticketType}
-                      onChange={(e) => setTicketType(e.target.value)}
-                      className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
-                    >
-                      <option value="lock">Sự cố khóa thông minh / Kẹt cửa cuốn</option>
-                      <option value="pin">Yêu cầu cấp lại mã PIN mới</option>
-                      <option value="delegate">Ủy quyền mở kho cho tài xế/người thân</option>
-                      <option value="climate">Kiểm tra nhiệt độ / độ ẩm phòng</option>
-                      <option value="billing">Hỗ trợ thanh toán &amp; Hóa đơn VAT</option>
-                      <option value="return">Yêu cầu trả kho</option>
-                    </select>
-                  </div>
-
-                  <div className="sm:col-span-2 flex flex-col gap-1.5">
-                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      Mô tả chi tiết nội dung
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={ticketContent}
-                      onChange={(e) => setTicketContent(e.target.value)}
-                      required
-                      placeholder="Mô tả cụ thể sự cố cần xử lý..."
-                      className="p-3 bg-white border border-slate-200 text-slate-900 text-xs rounded-lg focus:outline-none focus:border-slate-400"
-                    ></textarea>
-                  </div>
-
-                  <div className="sm:col-span-2 flex items-center justify-between pt-2">
-                    <span className="text-[11px] text-slate-400">Thời gian phản hồi cam kết: &lt; 3 phút</span>
-                    <button
-                      type="submit"
-                      className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-colors shadow-sm cursor-pointer"
-                    >
-                      Gửi Yêu Cầu
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
-          </div>
-        </section>
+        <CustomerSupportPanel
+          user={user}
+          activeContracts={activeContracts}
+          contracts={contracts}
+        />
       )}
 
         </>

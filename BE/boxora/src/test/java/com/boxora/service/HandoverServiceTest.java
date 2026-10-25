@@ -126,9 +126,13 @@ class HandoverServiceTest {
                 .build();
         testStaff.setId(staffId);
 
+        UnitType testType = UnitType.builder().typeName("Standard").build();
+        testType.setId(UUID.randomUUID());
+
         testUnit = StorageUnit.builder()
                 .unitCode("A-112")
                 .facility(testFacility)
+                .unitType(testType)
                 .status(UnitStatus.RESERVED)
                 .build();
         testUnit.setId(UUID.randomUUID());
@@ -168,6 +172,8 @@ class HandoverServiceTest {
         lenient().when(encryptionService.encrypt(anyString())).thenReturn("739215");
         lenient().when(encryptionService.decrypt(anyString())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(refundRequestRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(storageUnitRepository.findWithDetailsByFacilityAndUnitCodeForUpdate(any(UUID.class), anyString()))
+                .thenReturn(Optional.of(testUnit));
 
         Payment rentPayment = Payment.builder()
                 .paymentType(PaymentType.RENTAL_FEE)
@@ -1632,6 +1638,119 @@ class HandoverServiceTest {
                     handoverService.sendHandoverWebNotification(bookingId));
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.BOOKING_NOT_CHECKED_IN);
             verify(notificationLogRepository, never()).save(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("Task 3: Early Check-in With Confirmation (Kiểm tra nhận kho sớm có xác nhận)")
+    class EarlyCheckInTests {
+
+        @Test
+        @DisplayName("getCheckInPrerequisites: Trước ngày check-in không thêm vào missingPrerequisites")
+        void getCheckInPrerequisites_BeforeDate_DoesNotPolluteMissingPrerequisites() {
+            LocalDateTime tomorrowCheckIn = LocalDateTime.now().plusDays(2).withHour(9).withMinute(0);
+            testBooking.setExpectedCheckInAt(tomorrowCheckIn);
+
+            Payment rentPayment = Payment.builder()
+                    .paymentType(PaymentType.RENTAL_FEE)
+                    .status(PaymentStatus.PAID)
+                    .amount(new BigDecimal("1500000.00"))
+                    .build();
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of(rentPayment));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
+
+            HandoverPrerequisitesResponse response = handoverService.getCheckInPrerequisites(bookingId);
+
+            assertThat(response).isNotNull();
+            assertThat(response.isCheckInTimeMet()).isFalse();
+            assertThat(response.getCheckInTimeStatus()).isEqualTo("BEFORE_DATE");
+            assertThat(response.getCheckInTimeMessage()).contains("Chưa đến ngày check-in. Thời điểm đúng để thực hiện tiếp nhận kho từ:");
+            assertThat(response.getMissingPrerequisites()).isEmpty();
+            assertThat(response.isEligibleForInspection()).isTrue();
+        }
+
+        @Test
+        @DisplayName("checkIn: Trước ngày check-in và KHÔNG có xác nhận tiếp nhận sớm -> Ném lỗi HANDOVER_BEFORE_CHECKIN_DATE")
+        void checkIn_BeforeDate_WithoutEarlyConfirmation_ThrowsException() {
+            LocalDateTime futureCheckIn = LocalDateTime.now().plusDays(2).withHour(9).withMinute(0);
+            testBooking.setExpectedCheckInAt(futureCheckIn);
+
+            when(bookingRepository.findByIdForUpdate(bookingId)).thenReturn(Optional.of(testBooking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
+
+            HandoverRecord inspection = HandoverRecord.builder()
+                    .recordType("CHECK_IN_INSPECTION")
+                    .recordedAt(LocalDateTime.now())
+                    .doorConditionPassed(true)
+                    .cleanlinessPassed(true)
+                    .smartLockPassed(true)
+                    .sensorPassed(true)
+                    .wallStructurePassed(true)
+                    .evidencePhotos("https://photo1.jpg;https://photo2.jpg")
+                    .build();
+            when(handoverRecordRepository.findByBooking_Id(bookingId)).thenReturn(List.of(inspection));
+
+            HandoverRequest req = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .earlyCheckInConfirmed(false)
+                    .build();
+
+            AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(req));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.HANDOVER_BEFORE_CHECKIN_DATE);
+            assertThat(ex.getMessage()).contains("Chưa đến ngày check-in");
+        }
+
+        @Test
+        @DisplayName("checkIn: Trước ngày check-in và CÓ xác nhận tiếp nhận sớm -> Thành công, ghi nhận audit và giữ nguyên expectedCheckInAt")
+        void checkIn_BeforeDate_WithEarlyConfirmation_SucceedsAndAudits() {
+            LocalDateTime futureCheckIn = LocalDateTime.now().plusDays(2).withHour(9).withMinute(0);
+            testBooking.setExpectedCheckInAt(futureCheckIn);
+
+            Payment rentPayment = Payment.builder()
+                    .paymentType(PaymentType.RENTAL_FEE)
+                    .status(PaymentStatus.PAID)
+                    .amount(new BigDecimal("1500000.00"))
+                    .build();
+
+            when(bookingRepository.findByIdForUpdate(bookingId)).thenReturn(Optional.of(testBooking));
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(testStaff));
+            when(encryptionService.encrypt(anyString())).thenReturn("enc-pin");
+            when(handoverRecordRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(storageUnitRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(List.of(rentPayment));
+            when(rentalContractRepository.findByBookingId(bookingId)).thenReturn(Optional.of(testContract));
+
+            HandoverRecord inspection = HandoverRecord.builder()
+                    .recordType("CHECK_IN_INSPECTION")
+                    .recordedAt(LocalDateTime.now())
+                    .doorConditionPassed(true)
+                    .cleanlinessPassed(true)
+                    .smartLockPassed(true)
+                    .sensorPassed(true)
+                    .wallStructurePassed(true)
+                    .evidencePhotos("https://photo1.jpg;https://photo2.jpg")
+                    .build();
+            when(handoverRecordRepository.findByBooking_Id(bookingId)).thenReturn(List.of(inspection));
+
+            HandoverRequest req = HandoverRequest.builder()
+                    .bookingId(bookingId)
+                    .earlyCheckInConfirmed(true)
+                    .earlyCheckInReason("Khách có nhu cầu chuyển đồ gấp")
+                    .build();
+
+            HandoverResponse res = handoverService.checkIn(req);
+
+            assertThat(res).isNotNull();
+            assertThat(testBooking.getStatus()).isEqualTo(BookingStatus.ACTIVE);
+            assertThat(testBooking.getExpectedCheckInAt()).isEqualTo(futureCheckIn); // Preserved!
+            assertThat(testBooking.getStepTransitionHistory()).contains("[EARLY_CHECKIN]");
+            assertThat(testBooking.getStepTransitionHistory()).contains("Khách có nhu cầu chuyển đồ gấp");
         }
     }
 }

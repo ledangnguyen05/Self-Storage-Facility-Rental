@@ -65,8 +65,10 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.Random;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -856,8 +858,9 @@ public class BookingServiceImpl implements BookingService {
             throw new AppException(ErrorCode.INVALID_REQUEST, "Lượt check-in này đã được " + currentAssignee + " tiếp nhận.");
         }
 
-        // Phân quyền: chỉ khi staff hoặc facility manager có ca làm trong ngày có lịch checkin của khách và đã checkin vào ca rồi thì mới có thể tiếp nhận
-        if (!"ADMIN".equalsIgnoreCase(role) && !"SYSTEM_ADMIN".equalsIgnoreCase(role)) {
+        // Phân quyền: nhân viên/quản lý có ca trực đã điểm danh hôm nay hoặc vào ngày hẹn tại cơ sở (hỗ trợ tiếp nhận sớm và đúng hẹn)
+        if (!"ADMIN".equalsIgnoreCase(role) && !"SYSTEM_ADMIN".equalsIgnoreCase(role) && !"BUSINESS_MANAGER".equalsIgnoreCase(role)) {
+            LocalDate today = LocalDate.now(BUSINESS_ZONE);
             LocalDate checkInDate = booking.getExpectedCheckInAt() != null
                     ? booking.getExpectedCheckInAt().toLocalDate()
                     : booking.getStartDate();
@@ -866,16 +869,22 @@ public class BookingServiceImpl implements BookingService {
                     ? booking.getStorageUnit().getFacility().getId()
                     : null;
 
-            List<StaffAssignment> myAssignments = new ArrayList<>(
-                    staffAssignmentRepository.findByStaff_IdAndAssignedDate(currentUserId, checkInDate));
-            List<StaffAssignment> prevDayAssignments = staffAssignmentRepository.findByStaff_IdAndAssignedDate(
-                    currentUserId, checkInDate.minusDays(1));
-            for (StaffAssignment prev : prevDayAssignments) {
-                boolean isOvernight = prev.getShift() == StaffShift.NIGHT
-                        || (prev.getStartTime() != null && prev.getEndTime() != null
-                            && !prev.getEndTime().isAfter(prev.getStartTime()));
-                if (isOvernight) {
-                    myAssignments.add(prev);
+            Set<LocalDate> targetDates = new LinkedHashSet<>();
+            if (today != null) targetDates.add(today);
+            if (checkInDate != null) targetDates.add(checkInDate);
+
+            List<StaffAssignment> myAssignments = new ArrayList<>();
+            for (LocalDate tDate : targetDates) {
+                myAssignments.addAll(staffAssignmentRepository.findByStaff_IdAndAssignedDate(currentUserId, tDate));
+                List<StaffAssignment> prevDayAssignments = staffAssignmentRepository.findByStaff_IdAndAssignedDate(
+                        currentUserId, tDate.minusDays(1));
+                for (StaffAssignment prev : prevDayAssignments) {
+                    boolean isOvernight = prev.getShift() == StaffShift.NIGHT
+                            || (prev.getStartTime() != null && prev.getEndTime() != null
+                                && !prev.getEndTime().isAfter(prev.getStartTime()));
+                    if (isOvernight) {
+                        myAssignments.add(prev);
+                    }
                 }
             }
 
@@ -888,8 +897,7 @@ public class BookingServiceImpl implements BookingService {
 
             if (!hasCheckedInShift) {
                 throw new AppException(ErrorCode.FORBIDDEN,
-                        "Bạn chỉ có thể tiếp nhận khách khi có ca làm việc vào ngày hẹn check-in ("
-                                + checkInDate + ") tại cơ sở và đã điểm danh vào ca trực.");
+                        "Bạn chỉ có thể tiếp nhận khách khi có ca làm việc và đã điểm danh vào ca trực tại cơ sở.");
             }
         }
 
