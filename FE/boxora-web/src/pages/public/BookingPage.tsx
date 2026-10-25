@@ -2339,11 +2339,6 @@ export const BookingPage: React.FC = () => {
                         <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                           Địa chỉ Email nhận phiếu &amp; HĐ <span className="text-red-500">*</span>
                         </label>
-                        {user?.email && customerEmail === user.email && (
-                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-200 dark:border-emerald-800">
-                            Từ tài khoản
-                          </span>
-                        )}
                       </div>
                       <div className="relative">
                         <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
@@ -2507,19 +2502,10 @@ export const BookingPage: React.FC = () => {
                         </strong>
                       </div>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={handleNextStep}
-                      className="w-full mt-1.5 py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
-                    >
-                      <span>Tiếp tục: Hợp đồng &amp; Thanh toán</span>
-                      <ArrowRight size={15} />
-                    </button>
+              
                   </div>
                 </div>
               </div>
-
             </div>
           </div>
         )}

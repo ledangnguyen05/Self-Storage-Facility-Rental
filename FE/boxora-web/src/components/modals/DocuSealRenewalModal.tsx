@@ -144,8 +144,9 @@ export function DocuSealRenewalModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+    <div className="fixed inset-0 z-[9999] bg-slate-900/75 backdrop-blur-md overflow-y-auto p-3 sm:p-4 animate-in fade-in duration-150">
+      <div className="min-h-full flex items-center justify-center py-6">
+        <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 bg-gradient-to-r from-blue-50 via-white to-cyan-50 dark:from-slate-900 dark:via-slate-850 dark:to-slate-900 text-slate-900 dark:text-white flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-3">
@@ -411,5 +412,6 @@ export function DocuSealRenewalModal({
         )}
       </div>
     </div>
+  </div>
   )
 }
