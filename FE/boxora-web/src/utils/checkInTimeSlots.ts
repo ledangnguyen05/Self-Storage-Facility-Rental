@@ -3,8 +3,10 @@ export interface CheckInHourOption {
   label: string
 }
 
+export type CheckInPeriodId = 'morning' | 'noon' | 'afternoon' | 'evening' | 'night'
+
 export interface CheckInPeriodGroup {
-  id: 'morning' | 'noon' | 'afternoon' | 'evening' | 'night'
+  id: CheckInPeriodId
   name: string
   rangeText: string
   icon: string
@@ -80,7 +82,7 @@ export const CHECK_IN_PERIOD_GROUPS: CheckInPeriodGroup[] = [
 
 export const CHECK_IN_HOURS_24 = CHECK_IN_PERIOD_GROUPS.flatMap((g) => g.hours)
 
-export const getPeriodForHour = (hour: string): 'morning' | 'noon' | 'afternoon' | 'evening' | 'night' => {
+export const getPeriodForHour = (hour: string): CheckInPeriodId => {
   const h = parseInt(hour.split(':')[0], 10)
   if (h >= 1 && h <= 10) return 'morning'
   if (h >= 11 && h <= 12) return 'noon'
@@ -89,3 +91,78 @@ export const getPeriodForHour = (hour: string): 'morning' | 'noon' | 'afternoon'
   return 'night'
 }
 
+/**
+ * Format local Date object to YYYY-MM-DD string
+ */
+export const formatLocalDate = (date: Date = new Date()): string => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Giờ kết thúc của từng ca đón tiếp (hệ 24h).
+ * Sáng kết thúc lúc 10:00
+ * Trưa kết thúc lúc 12:00
+ * Chiều kết thúc lúc 18:00
+ * Tối kết thúc lúc 21:00
+ * Đêm kết thúc lúc 24:00 (nửa đêm)
+ */
+export const PERIOD_END_HOURS: Record<CheckInPeriodId, number> = {
+  morning: 10,
+  noon: 12,
+  afternoon: 18,
+  evening: 21,
+  night: 24,
+}
+
+/**
+ * Kiểm tra xem một ca tiếp đón đã qua thời gian tiếp nhận đối với ngày nhận kho đã chọn hay chưa.
+ * - Ngày nhận kho trước ngày hôm nay: đã qua (true)
+ * - Ngày nhận kho sau ngày hôm nay: chưa qua (false)
+ * - Ngày nhận kho là hôm nay: so sánh giờ hiện tại với giờ kết thúc của ca
+ */
+export const isPeriodInPast = (
+  checkInDateStr: string,
+  periodId: string,
+  refDate: Date = new Date()
+): boolean => {
+  if (!checkInDateStr) return false
+  const todayStr = formatLocalDate(refDate)
+  const cleanDate = checkInDateStr.includes('T') ? checkInDateStr.split('T')[0] : checkInDateStr
+
+  if (cleanDate < todayStr) return true
+  if (cleanDate > todayStr) return false
+
+  const endHour = PERIOD_END_HOURS[periodId as CheckInPeriodId] ?? 24
+  const endMinutes = endHour * 60
+  const currentMinutes = refDate.getHours() * 60 + refDate.getMinutes()
+
+  return currentMinutes >= endMinutes
+}
+
+/**
+ * Tìm ca tiếp đón hợp lệ đầu tiên (chưa qua giờ) đối với ngày nhận kho đã chọn.
+ */
+export const getFirstAvailablePeriod = (
+  checkInDateStr: string,
+  refDate: Date = new Date()
+): CheckInPeriodId => {
+  for (const group of CHECK_IN_PERIOD_GROUPS) {
+    if (!isPeriodInPast(checkInDateStr, group.id, refDate)) {
+      return group.id
+    }
+  }
+  return 'morning'
+}
+
+/**
+ * Kiểm tra xem ngày đã chọn còn ít nhất một ca tiếp đón khả dụng hay không.
+ */
+export const hasAvailablePeriods = (
+  checkInDateStr: string,
+  refDate: Date = new Date()
+): boolean => {
+  return CHECK_IN_PERIOD_GROUPS.some((g) => !isPeriodInPast(checkInDateStr, g.id, refDate))
+}
