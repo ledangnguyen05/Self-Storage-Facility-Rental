@@ -692,6 +692,35 @@ public class BookingServiceImpl implements BookingService {
                 null,
                 booking.getStatus()
         );
+
+        if (!approved) {
+            try {
+                if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null && !booking.getCustomer().getEmail().isBlank()) {
+                    String custEmail = booking.getCustomer().getEmail().trim();
+                    String custName = booking.getCustomer().getFullName() != null && !booking.getCustomer().getFullName().isBlank()
+                            ? booking.getCustomer().getFullName() : booking.getCustomer().getUsername();
+                    String facName = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                            ? booking.getStorageUnit().getFacility().getName()
+                            : (booking.getFacility() != null ? booking.getFacility().getName() : "Hệ thống Boxora");
+                    String uCode = booking.getStorageUnit() != null
+                            ? booking.getStorageUnit().getUnitCode()
+                            : (booking.getUnitType() != null ? booking.getUnitType().getTypeName() : "Kho tự quản");
+                    emailService.sendBookingCancellationEmail(
+                            custEmail,
+                            custName,
+                            booking.getBookingCode(),
+                            facName,
+                            uCode,
+                            notes != null && !notes.isBlank() ? notes.trim() : "Quản trị viên từ chối yêu cầu thuê kho",
+                            true,
+                            BigDecimal.ZERO
+                    );
+                }
+            } catch (Exception ex) {
+                log.error("[EMAIL_DISPATCH_FAILED] Không thể gửi email từ chối đơn {}: {}", booking.getBookingCode(), ex.getMessage(), ex);
+            }
+        }
+
         return mapToResponse(booking);
     }
 

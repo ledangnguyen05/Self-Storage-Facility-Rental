@@ -1076,6 +1076,117 @@ public class EmailServiceImpl implements EmailService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // 14. Booking Cancellation / Rejection Email
+    // ─────────────────────────────────────────────────────────────────────────
+    @Override
+    @Async
+    public void sendBookingCancellationEmail(
+            String toEmail,
+            String fullName,
+            String bookingCode,
+            String facilityName,
+            String unitCode,
+            String reason,
+            boolean isRejectedByStaff,
+            BigDecimal refundAmount
+    ) {
+        String safeName = escape(fullName != null && !fullName.isBlank() ? fullName : "Quý khách");
+        String safeCode = escape(bookingCode != null ? bookingCode : "N/A");
+        String safeFacility = escape(facilityName != null ? facilityName : "Hệ thống Boxora");
+        String safeUnit = escape(unitCode != null ? unitCode : "Kho tự quản Boxora");
+        String safeReason = escape(reason != null && !reason.isBlank() ? reason : "Không có lý do chi tiết");
+
+        String subject = isRejectedByStaff
+                ? String.format("[Boxora] Thông báo từ chối đơn đặt giữ chỗ %s", safeCode)
+                : String.format("[Boxora] Xác nhận hủy đơn đặt kho %s", safeCode);
+
+        String badge = isRejectedByStaff
+                ? renderBadge("ĐƠN ĐÃ TỪ CHỐI", "#fef2f2", "#b91c1c")
+                : renderBadge("ĐÃ HỦY ĐƠN", "#f8fafc", "#475569");
+
+        String title = isRejectedByStaff
+                ? "Thông Báo Từ Chối Đơn Đặt Giữ Chỗ"
+                : "Xác Nhận Hủy Đơn Đặt Kho Theo Yêu Cầu";
+
+        String intro = isRejectedByStaff
+                ? String.format("Boxora rất tiếc phải thông báo: Đơn đặt giữ chỗ mã số <strong>%s</strong> tại cơ sở <strong>%s</strong> của Quý khách hiện chưa thể tiếp nhận.", safeCode, safeFacility)
+                : String.format("Hệ thống Boxora xác nhận đơn đặt kho mã số <strong>%s</strong> tại cơ sở <strong>%s</strong> đã được hủy thành công theo yêu cầu của Quý khách.", safeCode, safeFacility);
+
+        String statusDisplay = isRejectedByStaff
+                ? "<span style=\"color: #b91c1c; font-weight: 700;\">ĐÃ TỪ CHỐI (CANCELLED)</span>"
+                : "<span style=\"color: #475569; font-weight: 700;\">ĐÃ HỦY THEO YÊU CẦU</span>";
+
+        StringBuilder detailsBuilder = new StringBuilder("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin: 16px 0; border: 1px solid #f1f5f9; border-radius: 8px; overflow: hidden;\">");
+        detailsBuilder.append(renderDetailRow("Mã đơn đặt kho", "<strong>" + safeCode + "</strong>"));
+        detailsBuilder.append(renderDetailRow("Cơ sở tiếp đón", safeFacility));
+        detailsBuilder.append(renderDetailRow("Quy cách / Kho", safeUnit));
+        detailsBuilder.append(renderDetailRow("Trạng thái", statusDisplay));
+        detailsBuilder.append(renderDetailRow(isRejectedByStaff ? "Lý do từ chối" : "Lý do hủy đơn", "<span style=\"color: #b91c1c; font-weight: 600;\">" + safeReason + "</span>"));
+
+        if (refundAmount != null && refundAmount.compareTo(BigDecimal.ZERO) > 0) {
+            detailsBuilder.append(renderDetailRow("Số tiền hoàn cọc", "<strong style=\"color: #047857;\">" + formatVnd(refundAmount) + "</strong> (Đang xử lý hoàn cọc)"));
+        }
+        detailsBuilder.append("</table>");
+
+        String alertBox = renderAlertBox(
+                isRejectedByStaff ? "Hỗ trợ đặt lại buồng kho" : "Lưu ý sau khi hủy đơn",
+                isRejectedByStaff
+                        ? "Nếu Quý khách cần hỗ trợ thêm, muốn thay đổi lịch hẹn hoặc chọn quy cách kho khác, vui lòng liên hệ Hotline <strong>1900-BOXORA</strong> hoặc truy cập website Boxora để thực hiện đặt buồng kho mới."
+                        : "Toàn bộ mã PIN và quyền truy cập buồng kho (nếu có) đã được thu hồi an toàn. Quý khách có thể xem lại lịch sử đặt kho bất cứ lúc nào trên ứng dụng Boxora.",
+                isRejectedByStaff ? "#fffbeb" : "#f8fafc",
+                isRejectedByStaff ? "#b45309" : "#475569",
+                isRejectedByStaff ? "#f59e0b" : "#cbd5e1"
+        );
+
+        String button = renderButton("Xem Thêm Các Kho Khác", resolveUrl("/"), "#0284c7");
+        String note = renderSecurityNote("Bộ phận Quản lý Khách hàng Boxora • Thông báo tự động từ hệ thống quản lý đặt kho.");
+
+        String html = buildMasterTemplate(
+                title,
+                badge,
+                title,
+                "Kính gửi <strong>" + safeName + "</strong>,",
+                intro,
+                detailsBuilder.toString(),
+                alertBox,
+                button,
+                note
+        );
+
+        String plainText = String.format("""
+                BOXORA - HỆ THỐNG KHO TỰ QUẢN THÔNG MINH
+                ========================================
+                %s
+
+                Kính gửi %s,
+
+                %s
+                - Mã đơn: %s
+                - Cơ sở: %s
+                - Vị trí/Quy cách: %s
+                - Lý do: %s
+                %s
+
+                Mọi thắc mắc xin vui lòng liên hệ Hotline 1900-BOXORA hoặc truy cập %s.
+
+                Trân trọng,
+                Đội ngũ Quản lý Vận hành Boxora Smart Storage
+                """,
+                title.toUpperCase(),
+                fullName != null ? fullName : "Quý khách",
+                isRejectedByStaff ? "Đơn đặt kho của Quý khách chưa thể tiếp nhận:" : "Đơn đặt kho đã được hủy thành công:",
+                bookingCode != null ? bookingCode : "N/A",
+                facilityName != null ? facilityName : "Boxora",
+                unitCode != null ? unitCode : "Kho tự quản",
+                reason != null ? reason : "Không có lý do chi tiết",
+                (refundAmount != null && refundAmount.compareTo(BigDecimal.ZERO) > 0) ? "- Số tiền hoàn cọc: " + formatVnd(refundAmount) : "",
+                frontendUrl != null ? frontendUrl : "https://boxora.vn"
+        );
+
+        sendHtmlEmail(toEmail, subject, html, plainText);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Internal Helper Methods & Master Layout Generator
     // ─────────────────────────────────────────────────────────────────────────
 

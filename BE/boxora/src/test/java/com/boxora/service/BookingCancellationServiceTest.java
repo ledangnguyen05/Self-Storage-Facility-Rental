@@ -77,6 +77,9 @@ class BookingCancellationServiceTest {
     @Mock
     private com.boxora.security.FacilityAccessGuard facilityAccessGuard;
 
+    @Mock
+    private EmailService emailService;
+
     @InjectMocks
     private BookingCancellationServiceImpl cancellationService;
 
@@ -471,6 +474,18 @@ class BookingCancellationServiceTest {
                     anyString(),
                     isNull(),
                     eq(UnitStatus.AVAILABLE)
+            );
+
+            // Verify email dispatch to customer
+            verify(emailService, times(1)).sendBookingCancellationEmail(
+                    eq("customer@example.com"),
+                    eq("Nguyen Van Khach"),
+                    eq("BK-20261011-0001"),
+                    eq("Boxora Ho Chi Minh Central"),
+                    eq("U-101"),
+                    eq("Thay đổi kế hoạch kinh doanh"),
+                    eq(false),
+                    argThat(amt -> amt.compareTo(new BigDecimal("1000000.00")) == 0)
             );
         }
 

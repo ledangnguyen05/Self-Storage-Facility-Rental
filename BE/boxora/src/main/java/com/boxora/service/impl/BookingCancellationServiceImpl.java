@@ -13,6 +13,7 @@ import com.boxora.repository.*;
 import com.boxora.security.RequestContext;
 import com.boxora.service.ActivityLogService;
 import com.boxora.service.BookingCancellationService;
+import com.boxora.service.EmailService;
 import com.boxora.service.StorageUnitLockService;
 import com.boxora.util.VNPayUtil;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +50,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
     private final RequestContext requestContext;
     private final StorageUnitLockService storageUnitLockService;
     private final com.boxora.security.FacilityAccessGuard facilityAccessGuard;
+    private final EmailService emailService;
 
     @Value("${app.scheduling.pending-payment-timeout-minutes:15}")
     private int defaultPendingPaymentTimeoutMinutes;
@@ -349,6 +351,34 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     null,
                     RefundStatus.PENDING_REVIEW.name()
             );
+        }
+
+        // Gửi email thông báo hủy / từ chối đặt kho tới khách hàng
+        try {
+            if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null && !booking.getCustomer().getEmail().isBlank()) {
+                String custEmail = booking.getCustomer().getEmail().trim();
+                String custName = booking.getCustomer().getFullName() != null && !booking.getCustomer().getFullName().isBlank()
+                        ? booking.getCustomer().getFullName() : booking.getCustomer().getUsername();
+                String facName = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                        ? booking.getStorageUnit().getFacility().getName()
+                        : (booking.getFacility() != null ? booking.getFacility().getName() : "Hệ thống Boxora");
+                String uCode = booking.getStorageUnit() != null
+                        ? booking.getStorageUnit().getUnitCode()
+                        : (booking.getUnitType() != null ? booking.getUnitType().getTypeName() : "Kho tự quản");
+                boolean isRejectedByStaff = !"CUSTOMER".equalsIgnoreCase(currentRole);
+                emailService.sendBookingCancellationEmail(
+                        custEmail,
+                        custName,
+                        booking.getBookingCode(),
+                        facName,
+                        uCode,
+                        reason,
+                        isRejectedByStaff,
+                        preview != null ? preview.getRefundAmount() : BigDecimal.ZERO
+                );
+            }
+        } catch (Exception ex) {
+            log.error("[EMAIL_DISPATCH_FAILED] Không thể gửi email thông báo hủy/từ chối đơn {}: {}", booking.getBookingCode(), ex.getMessage(), ex);
         }
 
         return BookingCancelResponse.builder()

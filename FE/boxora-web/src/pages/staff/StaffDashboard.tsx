@@ -4,7 +4,7 @@ import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { bookingService } from '../../services/bookingService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
-import { handoverService } from '../../services/handoverService'
+import { handoverService, HandoverPrerequisites } from '../../services/handoverService'
 import { reportService } from '../../services/reportService'
 import { masterKeyService } from '../../services/masterKeyService'
 import { supportTicketService } from '../../services/supportTicketService'
@@ -183,6 +183,142 @@ export const StaffDashboard: React.FC = () => {
   const [confirmingNotes, setConfirmingNotes] = useState<string>('')
   const [isConfirmingSubmitting, setIsConfirmingSubmitting] = useState<boolean>(false)
   const [reviewDetailBooking, setReviewDetailBooking] = useState<Booking | null>(null)
+  const [detailPrereq, setDetailPrereq] = useState<HandoverPrerequisites | null>(null)
+  const [loadingDetailPrereq, setLoadingDetailPrereq] = useState(false)
+  const [detailContract, setDetailContract] = useState<RentalContract | null>(null)
+
+  // Modal hiển thị ảnh chứng từ thanh toán & ảnh hợp đồng đã ký
+  const [photoViewerModal, setPhotoViewerModal] = useState<{
+    isOpen: boolean
+    title: string
+    subtitle?: string
+    fileUrl?: string | null
+    isPdf?: boolean
+    notes?: string
+  } | null>(null)
+
+  useEffect(() => {
+    if (!reviewDetailBooking?.id || reviewDetailBooking.id.startsWith('LOCAL-RES-')) {
+      setDetailPrereq(null)
+      setDetailContract(null)
+      return
+    }
+    let active = true
+    setLoadingDetailPrereq(true)
+    Promise.allSettled([
+      handoverService.getCheckInPrerequisites(reviewDetailBooking.id),
+      contractService.getContractByBookingId(reviewDetailBooking.id),
+    ]).then(([prereqRes, contractRes]) => {
+      if (!active) return
+      if (prereqRes.status === 'fulfilled') {
+        setDetailPrereq(prereqRes.value)
+      } else {
+        setDetailPrereq(null)
+      }
+      if (contractRes.status === 'fulfilled') {
+        setDetailContract(contractRes.value)
+      } else {
+        setDetailContract(null)
+      }
+      setLoadingDetailPrereq(false)
+    })
+    return () => { active = false }
+  }, [reviewDetailBooking?.id])
+
+  const handleViewPaymentProof = async (booking: Booking, prereq?: HandoverPrerequisites | null) => {
+    const paymentWithProof = prereq?.paymentHistory?.find(p => p.proofDocumentUrl && p.proofDocumentUrl.trim().length > 0)
+    const proofUrl = paymentWithProof?.proofDocumentUrl
+
+    if (proofUrl) {
+      if (proofUrl.startsWith('http://') || proofUrl.startsWith('https://') || proofUrl.startsWith('data:') || proofUrl.startsWith('blob:')) {
+        setPhotoViewerModal({
+          isOpen: true,
+          title: `Ảnh Thanh Toán / Biên Lai Thu Tiền`,
+          subtitle: `Mã đơn: ${booking.bookingCode} • Số tiền: ${(paymentWithProof.amount || 0).toLocaleString('vi-VN')}đ (${paymentWithProof.paymentMethod || 'Chuyển khoản'})`,
+          fileUrl: proofUrl,
+          isPdf: proofUrl.toLowerCase().includes('.pdf'),
+          notes: paymentWithProof.paymentNotes || 'Biên lai chuyển khoản / chứng từ nộp tiền tại quầy cơ sở Boxora.'
+        })
+        return
+      }
+      try {
+        const blobUrl = await handoverService.viewAuthorizedDocument(booking.id, proofUrl)
+        setPhotoViewerModal({
+          isOpen: true,
+          title: `Ảnh Thanh Toán / Biên Lai Thu Tiền`,
+          subtitle: `Mã đơn: ${booking.bookingCode} • Số tiền: ${(paymentWithProof.amount || 0).toLocaleString('vi-VN')}đ (${paymentWithProof.paymentMethod || 'Chuyển khoản'})`,
+          fileUrl: blobUrl,
+          isPdf: proofUrl.toLowerCase().includes('.pdf'),
+          notes: paymentWithProof.paymentNotes || 'Biên lai chuyển khoản / chứng từ nộp tiền tại quầy cơ sở Boxora.'
+        })
+      } catch {
+        alert('Không thể tải ảnh chứng từ thanh toán lúc này. Vui lòng thử lại.')
+      }
+      return
+    }
+
+    const vnpayPayment = prereq?.paymentHistory?.find(p => p.paymentMethod === 'VNPAY' || (p.status === 'PAID' && !p.proofDocumentUrl))
+    if (vnpayPayment || booking.paymentStatus === 'PAID') {
+      setPhotoViewerModal({
+        isOpen: true,
+        title: `Chứng Từ Thanh Toán - Đơn ${booking.bookingCode}`,
+        subtitle: 'Thanh toán trực tuyến VNPay Gateway',
+        fileUrl: null,
+        notes: `Đơn đã được thanh toán trực tuyến thành công qua cổng thanh toán VNPay. Mã đơn: ${booking.bookingCode} • Số tiền: ${(booking.depositPaid || booking.depositAmount || 0).toLocaleString('vi-VN')}đ. Giao dịch điện tử tự động không có ảnh chụp chứng từ giấy.`
+      })
+      return
+    }
+
+    alert('Đơn đặt kho này chưa có ảnh chứng từ thanh toán nào được tải lên.')
+  }
+
+  const handleViewSignedContractPhoto = async (booking: Booking, prereq?: HandoverPrerequisites | null, contract?: RentalContract | null) => {
+    const paperUrl = contract?.paperContractUrl || prereq?.paperContractUrl || (booking as any).paperContractUrl
+
+    if (paperUrl) {
+      if (paperUrl.startsWith('http://') || paperUrl.startsWith('https://') || paperUrl.startsWith('data:') || paperUrl.startsWith('blob:')) {
+        setPhotoViewerModal({
+          isOpen: true,
+          title: `Ảnh Hợp Đồng Đã Ký Tại Quầy`,
+          subtitle: `Mã HĐ: ${contract?.contractCode || booking.contractCode || 'HĐ Giấy Tại Quầy'} • Đơn: ${booking.bookingCode}`,
+          fileUrl: paperUrl,
+          isPdf: paperUrl.toLowerCase().includes('.pdf'),
+          notes: contract?.paperNotes || 'Bản scan / ảnh chụp văn bản Hợp đồng đã ký trực tiếp tại quầy cơ sở Boxora.'
+        })
+        return
+      }
+      try {
+        const blobUrl = await handoverService.viewAuthorizedDocument(booking.id, paperUrl)
+        setPhotoViewerModal({
+          isOpen: true,
+          title: `Ảnh Hợp Đồng Đã Ký Tại Quầy`,
+          subtitle: `Mã HĐ: ${contract?.contractCode || booking.contractCode || 'HĐ Giấy Tại Quầy'} • Đơn: ${booking.bookingCode}`,
+          fileUrl: blobUrl,
+          isPdf: paperUrl.toLowerCase().includes('.pdf'),
+          notes: contract?.paperNotes || 'Bản scan / ảnh chụp văn bản Hợp đồng đã ký trực tiếp tại quầy cơ sở Boxora.'
+        })
+      } catch {
+        alert('Không thể tải ảnh hợp đồng đã ký lúc này. Vui lòng thử lại.')
+      }
+      return
+    }
+
+    const docUrl = contract?.signedDocumentUrl || prereq?.signedDocumentUrl
+    if (docUrl) {
+      setPhotoViewerModal({
+        isOpen: true,
+        title: `Văn Bản Hợp Đồng Điện Tử Đã Ký`,
+        subtitle: `Mã HĐ: ${contract?.contractCode || booking.contractCode}`,
+        fileUrl: docUrl,
+        isPdf: true,
+        notes: 'Hợp đồng điện tử ký số qua nền tảng DocuSeal, có giá trị pháp lý đầy đủ.'
+      })
+      return
+    }
+
+    handleOpenContractModal(booking)
+  }
+
   const [earlyConfirmState, setEarlyConfirmState] = useState<{
     booking: Booking
     actionType: EarlyCheckInActionType
@@ -1328,6 +1464,7 @@ export const StaffDashboard: React.FC = () => {
                       const isHighlighted = highlightedBookingCode === b.bookingCode
                       const isContractSigned = Boolean(b.contractSigned) || b.contractStatus === 'PENDING_ACTIVATION' || b.contractStatus === 'ACTIVE'
                       const hasContract = Boolean(b.contractCode || b.contractId || b.paymentStatus === 'PAID' || isConfirmed || isActiveOrCompleted)
+                      const isInPerson = b.signingMethod === 'IN_PERSON'
 
                       return (
                         <tr
@@ -1490,120 +1627,178 @@ export const StaffDashboard: React.FC = () => {
 
                           <td className="py-3.5 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                              <button
-                                type="button"
-                                onClick={() => setReviewDetailBooking(b)}
-                                className="px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                                title="Xem chi tiết đơn & hợp đồng"
-                              >
-                                <span className="material-symbols-outlined text-[15px]">visibility</span>
-                                <span>Xem chi tiết</span>
-                              </button>
-
-                              {isPaidPending ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const { isPremature } = isBookingBeforeCheckInTime(b)
-                                    if (isPremature) {
-                                      setEarlyConfirmState({
-                                        booking: b,
-                                        actionType: 'ASSIGN_PHYSICAL_UNIT',
-                                        onConfirm: () => setAssignModalBooking(b),
-                                      })
-                                    } else {
-                                      setAssignModalBooking(b)
-                                    }
-                                  }}
-                                  className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm ring-2 ring-emerald-400/40"
-                                  title="Thực hiện Check-in cho khách hàng"
-                                >
-                                  <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
-                                  <span>Check-in</span>
-                                </button>
-                              ) : (s === 'PENDING_CONTACT' || (s as string) === 'PENDING_SIGNATURE') ? (
+                              {/* TH1: Đối với đơn ký giấy & thanh toán tại quầy chưa hoàn thành: chỉ hiển thị 2 button [Xác nhận] và [Từ chối] */}
+                              {isInPerson && !isActiveOrCompleted ? (
+                                isPending ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStaffConfirmBooking(b)}
+                                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                      title="Xác nhận đơn"
+                                    >
+                                      <span className="material-symbols-outlined text-[15px]">check_circle</span>
+                                      <span>Xác nhận</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => openRejectModal(b)}
+                                      className="px-2.5 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                                      title="Từ chối đơn và điền lý do"
+                                    >
+                                      <span className="material-symbols-outlined text-[15px]">cancel</span>
+                                      <span>Từ chối</span>
+                                    </button>
+                                  </>
+                                ) : isConfirmed ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const proceed = () => {
+                                        setActiveBookingId(b.id)
+                                        setStaffActiveTab('reception')
+                                        setSearchParams({ tab: 'reception' })
+                                        setTimeout(() => {
+                                          document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                                        }, 100)
+                                      }
+                                      const { isPremature } = isBookingBeforeCheckInTime(b)
+                                      if (isPremature) {
+                                        setEarlyConfirmState({
+                                          booking: b,
+                                          actionType: 'ENTER_RECEPTION',
+                                          onConfirm: proceed,
+                                        })
+                                      } else {
+                                        proceed()
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                    title="Chuyển sang Bàn Tiếp Đón để đón khách làm thủ tục ký giấy & thanh toán tại quầy"
+                                  >
+                                    <span className="material-symbols-outlined text-[15px]">desk</span>
+                                    <span>Check-in</span>
+                                  </button>
+                                ) : null
+                              ) : (
+                                /* TH2: Đơn ký online hoặc đơn đã hoàn thành (ACTIVE / COMPLETED) */
                                 <>
                                   <button
                                     type="button"
-                                    onClick={() => handleCreatePaymentLinkForCustomer(b)}
-                                    className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                                    title="Tạo link thanh toán VNPay gửi cho khách hàng"
+                                    onClick={() => setReviewDetailBooking(b)}
+                                    className="px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                                    title="Xem chi tiết đơn & hợp đồng"
                                   >
-                                    <span className="material-symbols-outlined text-[14px]">link</span>
-                                    <span>Gửi link TT</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleStaffConfirmBooking(b)}
-                                    className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
-                                    title="Xác nhận đơn"
-                                  >
-                                    <span className="material-symbols-outlined text-[14px]">check_circle</span>
-                                    <span>Xác nhận</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => openRejectModal(b)}
-                                    className="px-2 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                                    title="Từ chối đơn và điền lý do"
-                                  >
-                                    <span className="material-symbols-outlined text-[14px]">cancel</span>
-                                    <span>Từ chối</span>
-                                  </button>
-                                </>
-                              ) : isPending ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleStaffConfirmBooking(b)}
-                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
-                                    title="Xác nhận đơn và chuyển sang Chờ check in"
-                                  >
-                                    <span className="material-symbols-outlined text-[15px]">check_circle</span>
-                                    <span>Xác nhận</span>
+                                    <span className="material-symbols-outlined text-[15px]">visibility</span>
+                                    <span>Xem chi tiết</span>
                                   </button>
 
-                                  <button
-                                    type="button"
-                                    onClick={() => openRejectModal(b)}
-                                    className="px-2.5 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                                    title="Từ chối đơn và điền lý do"
-                                  >
-                                    <span className="material-symbols-outlined text-[15px]">cancel</span>
-                                    <span>Từ chối</span>
-                                  </button>
-                                </>
-                              ) : null}
+                                  {isPaidPending ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const { isPremature } = isBookingBeforeCheckInTime(b)
+                                        if (isPremature) {
+                                          setEarlyConfirmState({
+                                            booking: b,
+                                            actionType: 'ASSIGN_PHYSICAL_UNIT',
+                                            onConfirm: () => setAssignModalBooking(b),
+                                          })
+                                        } else {
+                                          setAssignModalBooking(b)
+                                        }
+                                      }}
+                                      className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm ring-2 ring-emerald-400/40"
+                                      title="Thực hiện Check-in cho khách hàng"
+                                    >
+                                      <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
+                                      <span>Check-in</span>
+                                    </button>
+                                  ) : (s === 'PENDING_CONTACT' || (s as string) === 'PENDING_SIGNATURE') ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCreatePaymentLinkForCustomer(b)}
+                                        className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                                        title="Tạo link thanh toán VNPay gửi cho khách hàng"
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">link</span>
+                                        <span>Gửi link TT</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStaffConfirmBooking(b)}
+                                        className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                        title="Xác nhận đơn"
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                                        <span>Xác nhận</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => openRejectModal(b)}
+                                        className="px-2 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                                        title="Từ chối đơn và điền lý do"
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">cancel</span>
+                                        <span>Từ chối</span>
+                                      </button>
+                                    </>
+                                  ) : isPending ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStaffConfirmBooking(b)}
+                                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                        title="Xác nhận đơn và chuyển sang Chờ check in"
+                                      >
+                                        <span className="material-symbols-outlined text-[15px]">check_circle</span>
+                                        <span>Xác nhận</span>
+                                      </button>
 
-                              {(isConfirmed || isActiveOrCompleted) && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const proceed = () => {
-                                      setActiveBookingId(b.id)
-                                      setStaffActiveTab('reception')
-                                      setSearchParams({ tab: 'reception' })
-                                      setTimeout(() => {
-                                        document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-                                      }, 100)
-                                    }
-                                    const { isPremature } = isBookingBeforeCheckInTime(b)
-                                    if (isPremature && !isActiveOrCompleted) {
-                                      setEarlyConfirmState({
-                                        booking: b,
-                                        actionType: 'ENTER_RECEPTION',
-                                        onConfirm: proceed,
-                                      })
-                                    } else {
-                                      proceed()
-                                    }
-                                  }}
-                                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
-                                  title="Chuyển sang Bàn Tiếp Đón &amp; Nghiệm Thu Bàn Giao Kho"
-                                >
-                                  <span className="material-symbols-outlined text-[15px]">desk</span>
-                                  <span>{isActiveOrCompleted ? 'Hồ Sơ Bàn Giao' : 'Check-in'}</span>
-                                </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => openRejectModal(b)}
+                                        className="px-2.5 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                                        title="Từ chối đơn và điền lý do"
+                                      >
+                                        <span className="material-symbols-outlined text-[15px]">cancel</span>
+                                        <span>Từ chối</span>
+                                      </button>
+                                    </>
+                                  ) : null}
+
+                                  {(isConfirmed || isActiveOrCompleted) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const proceed = () => {
+                                          setActiveBookingId(b.id)
+                                          setStaffActiveTab('reception')
+                                          setSearchParams({ tab: 'reception' })
+                                          setTimeout(() => {
+                                            document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                                          }, 100)
+                                        }
+                                        const { isPremature } = isBookingBeforeCheckInTime(b)
+                                        if (isPremature && !isActiveOrCompleted) {
+                                          setEarlyConfirmState({
+                                            booking: b,
+                                            actionType: 'ENTER_RECEPTION',
+                                            onConfirm: proceed,
+                                          })
+                                        } else {
+                                          proceed()
+                                        }
+                                      }}
+                                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                      title="Chuyển sang Bàn Tiếp Đón &amp; Nghiệm Thu Bàn Giao Kho"
+                                    >
+                                      <span className="material-symbols-outlined text-[15px]">desk</span>
+                                      <span>{isActiveOrCompleted ? 'Hồ Sơ Bàn Giao' : 'Check-in'}</span>
+                                    </button>
+                                  )}
+                                </>
                               )}
                             </div>
                           </td>
@@ -2917,6 +3112,74 @@ export const StaffDashboard: React.FC = () => {
                     </div>
                   )}
                 </div>
+
+                {/* MỤC CHỨNG TỪ HOÀN TẤT ĐÃ KÝ & THANH TOÁN (2 BUTTONS: ẢNH THANH TOÁN & ẢNH HỢP ĐỒNG ĐÃ KÝ) */}
+                {(s === 'ACTIVE' || s === 'COMPLETED' || isModalContractSigned || reviewDetailBooking.paymentStatus === 'PAID') && (
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-50/90 to-indigo-50/90 dark:from-slate-800/90 dark:to-slate-800/60 border border-blue-200 dark:border-blue-900/50 shadow-xs space-y-3 sm:col-span-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0">
+                          <span className="material-symbols-outlined text-[18px]">verified</span>
+                        </span>
+                        <div>
+                          <h4 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">Chứng Từ Nghiệm Thu &amp; Bàn Giao Hoàn Tất</h4>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">Xem nhanh ảnh biên lai thanh toán và bản scan hợp đồng đã ký</p>
+                        </div>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800 shrink-0">
+                        {s === 'ACTIVE' || s === 'COMPLETED' ? '✓ ĐÃ HOÀN TẤT' : '✓ ĐÃ CÓ CHỨNG TỪ'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                      {/* Nút 1: Ảnh thanh toán */}
+                      <button
+                        type="button"
+                        onClick={() => handleViewPaymentProof(reviewDetailBooking, detailPrereq)}
+                        disabled={loadingDetailPrereq}
+                        className="px-4 py-3 rounded-xl bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-slate-800 border border-emerald-300 dark:border-emerald-700/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs flex items-center justify-between gap-2 shadow-xs transition hover:border-emerald-400 cursor-pointer group disabled:opacity-50"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0 group-hover:scale-105 transition">
+                            <span className="material-symbols-outlined text-[18px]">receipt_long</span>
+                          </span>
+                          <div className="text-left">
+                            <span className="block font-bold text-xs text-slate-900 dark:text-white">Ảnh thanh toán</span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
+                              {loadingDetailPrereq ? 'Đang kiểm tra...' : detailPrereq?.paymentHistory?.some(p => p.proofDocumentUrl) ? 'Xem biên lai chuyển khoản' : 'Thanh toán trực tuyến VNPay / Quầy'}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="material-symbols-outlined text-[18px] text-slate-400 group-hover:text-emerald-600 transition">
+                          visibility
+                        </span>
+                      </button>
+
+                      {/* Nút 2: Ảnh hợp đồng đã ký */}
+                      <button
+                        type="button"
+                        onClick={() => handleViewSignedContractPhoto(reviewDetailBooking, detailPrereq, detailContract)}
+                        disabled={loadingDetailPrereq}
+                        className="px-4 py-3 rounded-xl bg-white dark:bg-slate-900 hover:bg-blue-50 dark:hover:bg-slate-800 border border-blue-300 dark:border-blue-700/60 text-blue-800 dark:text-blue-200 font-bold text-xs flex items-center justify-between gap-2 shadow-xs transition hover:border-blue-400 cursor-pointer group disabled:opacity-50"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 flex items-center justify-center shrink-0 group-hover:scale-105 transition">
+                            <span className="material-symbols-outlined text-[18px]">description</span>
+                          </span>
+                          <div className="text-left">
+                            <span className="block font-bold text-xs text-slate-900 dark:text-white">Ảnh hợp đồng đã ký</span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
+                              {loadingDetailPrereq ? 'Đang kiểm tra...' : (detailContract?.paperContractUrl || detailPrereq?.paperContractUrl) ? 'Bản scan HĐ giấy tại quầy' : 'Hợp đồng điện tử đã ký'}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="material-symbols-outlined text-[18px] text-slate-400 group-hover:text-blue-600 transition">
+                          visibility
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
             <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
@@ -3013,6 +3276,95 @@ export const StaffDashboard: React.FC = () => {
           </div>
         )
       })()}
+
+      {/* MODAL XEM ẢNH THANH TOÁN & ẢNH HỢP ĐỒNG ĐÃ KÝ */}
+      {photoViewerModal && (
+        <div className="fixed inset-0 z-[110] bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-3xl rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
+            <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[22px]">
+                    {photoViewerModal.fileUrl ? (photoViewerModal.isPdf ? 'picture_as_pdf' : 'photo_library') : 'info'}
+                  </span>
+                </span>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-sm sm:text-base truncate">{photoViewerModal.title}</h3>
+                  {photoViewerModal.subtitle && (
+                    <p className="text-xs text-slate-300 font-mono truncate">{photoViewerModal.subtitle}</p>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPhotoViewerModal(null)}
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0 ml-2"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50 dark:bg-slate-950/60 flex flex-col items-center justify-center min-h-[300px]">
+              {photoViewerModal.fileUrl ? (
+                photoViewerModal.isPdf ? (
+                  <iframe
+                    src={photoViewerModal.fileUrl}
+                    title={photoViewerModal.title}
+                    className="w-full h-[60vh] rounded-2xl border border-slate-200 bg-white shadow-xs"
+                  />
+                ) : (
+                  <div className="relative group max-w-full">
+                    <img
+                      src={photoViewerModal.fileUrl}
+                      alt={photoViewerModal.title}
+                      className="max-h-[62vh] max-w-full object-contain rounded-2xl shadow-md border border-slate-200 bg-white"
+                    />
+                  </div>
+                )
+              ) : (
+                <div className="p-8 text-center max-w-md">
+                  <div className="w-16 h-16 rounded-full bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center mx-auto mb-3">
+                    <span className="material-symbols-outlined text-[32px]">payments</span>
+                  </div>
+                  <h4 className="font-bold text-slate-800 dark:text-white text-sm mb-1">
+                    Thanh Toán Trực Tuyến Đã Xác Nhận
+                  </h4>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    {photoViewerModal.notes || 'Đơn hàng này được xác nhận thanh toán trực tuyến qua hệ thống hoặc chưa có tệp ảnh chứng từ tải lên.'}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {photoViewerModal.notes && photoViewerModal.fileUrl && (
+              <div className="px-5 py-2.5 bg-blue-50/70 dark:bg-slate-800/60 border-t border-blue-100 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-300 flex items-center gap-2 shrink-0">
+                <span className="material-symbols-outlined text-[15px] text-blue-600 shrink-0">info</span>
+                <span className="truncate">{photoViewerModal.notes}</span>
+              </div>
+            )}
+
+            <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
+              {photoViewerModal.fileUrl ? (
+                <button
+                  type="button"
+                  onClick={() => window.open(photoViewerModal.fileUrl!, '_blank')}
+                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                  <span>Mở tab mới / Tải xuống</span>
+                </button>
+              ) : <div />}
+              <button
+                type="button"
+                onClick={() => setPhotoViewerModal(null)}
+                className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ContractDocumentModal
         contract={viewingContract}
