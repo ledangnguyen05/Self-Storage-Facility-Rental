@@ -89,4 +89,17 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
         LocalDate todayThreshold = LocalDate.now();
         return findExpiredHoldCandidates(statuses, now, checkInThreshold, todayThreshold);
     }
+
+    @Query("SELECT b FROM Booking b WHERE b.signingMethod = 'IN_PERSON' "
+            + "AND b.status NOT IN ('ACTIVE', 'COMPLETED', 'CANCELLED') "
+            + "AND b.handoverTime IS NULL "
+            + "AND b.checkinOverdueReminderSentAt IS NULL "
+            + "AND ("
+            + "  (b.expectedCheckInAt IS NOT NULL AND b.expectedCheckInAt <= :threshold) "
+            + "  OR (b.expectedCheckInAt IS NULL AND b.startDate <= :todayThreshold)"
+            + ")")
+    List<Booking> findOverdueInPersonCheckinReminders(
+            @Param("threshold") LocalDateTime threshold,
+            @Param("todayThreshold") LocalDate todayThreshold
+    );
 }

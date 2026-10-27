@@ -144,4 +144,7 @@ public class Booking extends BaseEntity {
 
     @Column(name = "cancelled_at")
     private LocalDateTime cancelledAt;
+
+    @Column(name = "checkin_overdue_reminder_sent_at")
+    private LocalDateTime checkinOverdueReminderSentAt;
 }

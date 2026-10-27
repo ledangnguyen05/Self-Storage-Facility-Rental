@@ -645,6 +645,8 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
         totalRentalFee: quoteCalculation.totalRent,
         depositAmount: quoteCalculation.depositAmount,
         status: 'PENDING_CONTACT',
+        paymentMethod: 'AT_FACILITY',
+        signingMethod: 'IN_PERSON',
         sentToStaff: true,
         sentToStaffAt: nowIso,
       }

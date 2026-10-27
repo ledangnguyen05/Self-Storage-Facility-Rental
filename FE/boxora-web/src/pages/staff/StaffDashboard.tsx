@@ -270,7 +270,7 @@ export const StaffDashboard: React.FC = () => {
           subtitle: `Mã HĐ: ${contract?.contractCode || booking.contractCode || 'HĐ Giấy Tại Quầy'} • Đơn: ${booking.bookingCode}`,
           fileUrl: paperUrl,
           isPdf: paperUrl.toLowerCase().includes('.pdf'),
-          notes: contract?.paperNotes || 'Bản scan / ảnh chụp văn bản Hợp đồng đã ký trực tiếp tại quầy cơ sở Boxora.'
+          notes: (contract as any)?.paperNotes || 'Bản scan / ảnh chụp văn bản Hợp đồng đã ký trực tiếp tại quầy cơ sở Boxora.'
         })
         return
       }
@@ -282,7 +282,7 @@ export const StaffDashboard: React.FC = () => {
           subtitle: `Mã HĐ: ${contract?.contractCode || booking.contractCode || 'HĐ Giấy Tại Quầy'} • Đơn: ${booking.bookingCode}`,
           fileUrl: blobUrl,
           isPdf: paperUrl.toLowerCase().includes('.pdf'),
-          notes: contract?.paperNotes || 'Bản scan / ảnh chụp văn bản Hợp đồng đã ký trực tiếp tại quầy cơ sở Boxora.'
+          notes: (contract as any)?.paperNotes || 'Bản scan / ảnh chụp văn bản Hợp đồng đã ký trực tiếp tại quầy cơ sở Boxora.'
         })
       } catch {
         alert('Không thể tải ảnh hợp đồng đã ký lúc này. Vui lòng thử lại.')
@@ -375,6 +375,15 @@ export const StaffDashboard: React.FC = () => {
     loadRadarUnits(targetFacility)
     loadShiftPayments(targetFacility)
   }, [selectedFacility])
+
+  // Tự động kiểm tra và quét gửi email thông báo cho đơn quá hạn 24h chưa tiếp nhận
+  useEffect(() => {
+    reservationEmailService.checkAndSendOverdueReminders()
+    const timer = setInterval(() => {
+      reservationEmailService.checkAndSendOverdueReminders()
+    }, 30000)
+    return () => clearInterval(timer)
+  }, [])
 
   // Đồng bộ URL params và sự kiện click từ Chuông thông báo
   useEffect(() => {
@@ -485,6 +494,13 @@ export const StaffDashboard: React.FC = () => {
                 depositAmount: r.depositAmount || 0,
                 depositPaid: r.depositPaid ?? (r.paymentStatus === 'PAID' ? (r.depositAmount || 0) : 0),
                 paymentStatus: r.paymentStatus === 'PAID' ? 'PAID' : 'UNPAID',
+                signingMethod: r.signingMethod || (r.paymentMethod === 'AT_FACILITY' || r.paymentMethod === 'IN_PERSON' ? 'IN_PERSON' : 'ONLINE'),
+                assignedStaffName: r.assignedStaffName,
+                contractCode: r.contractCode,
+                contractSigned: r.contractSigned,
+                paperContractUrl: r.paperContractUrl,
+                paymentProofUrl: r.paymentProofUrl,
+                checkinOverdueReminderSentAt: r.checkinOverdueReminderSentAt,
                 createdAt: r.createdAt,
               }))
 
@@ -532,6 +548,13 @@ export const StaffDashboard: React.FC = () => {
                 depositAmount: r.depositAmount || 0,
                 depositPaid: r.depositPaid ?? (r.paymentStatus === 'PAID' ? (r.depositAmount || 0) : 0),
                 paymentStatus: r.paymentStatus === 'PAID' ? 'PAID' : 'UNPAID',
+                signingMethod: r.signingMethod || (r.paymentMethod === 'AT_FACILITY' || r.paymentMethod === 'IN_PERSON' ? 'IN_PERSON' : 'ONLINE'),
+                assignedStaffName: r.assignedStaffName,
+                contractCode: r.contractCode,
+                contractSigned: r.contractSigned,
+                paperContractUrl: r.paperContractUrl,
+                paymentProofUrl: r.paymentProofUrl,
+                checkinOverdueReminderSentAt: r.checkinOverdueReminderSentAt,
                 createdAt: r.createdAt,
               }))
             setArrivals(localArrivals)
@@ -955,6 +978,77 @@ export const StaffDashboard: React.FC = () => {
     fetchArrivals(selectedFacility !== 'ALL' ? selectedFacility : undefined)
     fetchOccupancy(selectedFacility !== 'ALL' ? selectedFacility : undefined)
     loadRadarUnits(selectedFacility !== 'ALL' ? selectedFacility : undefined)
+  }
+
+  const openRejectModal = (booking: Booking) => {
+    setRejectingBooking(booking)
+    setRejectionReasonText('')
+  }
+
+  // Hủy đơn quá hạn 48h cho đơn đặt ký + thanh toán tại quầy
+  const handleCancelOverdueBooking = async (booking: Booking) => {
+    const unitText = booking.unitCode ? `Kho #${booking.unitCode}` : (booking.unitTypeName || 'buồng kho')
+    const confirmed = window.confirm(
+      `XÁC NHẬN HỦY ĐƠN QUÁ HẠN 48 GIỜ:\n\n` +
+      `Đơn đặt giữ chỗ ${booking.bookingCode} (khách hàng: ${booking.customerName || 'N/A'}) đã quá 48 giờ sau lịch hẹn check-in nhưng chưa được tiếp nhận.\n\n` +
+      `Khi xác nhận hủy đơn:\n` +
+      `1. Trạng thái đơn sẽ chuyển sang ĐÃ HỦY (CANCELLED).\n` +
+      `2. Buồng ${unitText} tại ${booking.facilityName || 'cơ sở'} sẽ được GIẢI PHÓNG về trạng thái TRỐNG (AVAILABLE) và hoàn lại số lượng khả dụng ở Bước 2 quy trình đặt kho.\n` +
+      `3. Email thông báo hủy đơn sẽ được gửi đến email khách hàng (${booking.customerEmail || 'đã đăng ký'}).\n\n` +
+      `Bạn có chắc chắn muốn hủy đơn này không?`
+    )
+    if (!confirmed) return
+
+    const reason = 'Hủy đơn do quá hạn 48 giờ sau lịch hẹn check-in nhưng khách hàng chưa đến làm thủ tục tiếp nhận tại quầy'
+    try {
+      const isBackendId = Boolean(booking.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(booking.id.trim()))
+      const targetIdOrCode = isBackendId ? booking.id : booking.bookingCode
+      try {
+        await bookingService.cancelBooking(targetIdOrCode, reason)
+      } catch (err: any) {
+        console.warn('Backend cancel booking overdue error (fallback to local):', err)
+      }
+
+      reservationEmailService.cancelOverdueReservation(booking.bookingCode, reason, {
+        id: user?.id,
+        fullName: user?.fullName || 'Nhân viên quầy Boxora',
+      })
+
+      // Giải phóng ô kho local nếu có
+      if (booking.storageUnitId) {
+        try {
+          const rawUnits = localStorage.getItem('boxora_storage_units')
+          if (rawUnits) {
+            const parsedUnits = JSON.parse(rawUnits)
+            if (Array.isArray(parsedUnits)) {
+              const uIdx = parsedUnits.findIndex((u: any) => u.id === booking.storageUnitId)
+              if (uIdx !== -1) {
+                parsedUnits[uIdx].status = 'AVAILABLE'
+                localStorage.setItem('boxora_storage_units', JSON.stringify(parsedUnits))
+              }
+            }
+          }
+        } catch {}
+      }
+
+      window.dispatchEvent(new CustomEvent('boxora:storage-units-refresh'))
+      window.dispatchEvent(new CustomEvent('boxora_reservation_updated', {
+        detail: { bookingCode: booking.bookingCode, status: 'CANCELLED' }
+      }))
+      window.dispatchEvent(new Event('boxora:notifications-refresh'))
+
+      setArrivals(prev => prev.map(b =>
+        (b.id === booking.id || b.bookingCode === booking.bookingCode)
+          ? { ...b, status: 'CANCELLED' as any, cancellationReason: reason }
+          : b
+      ))
+      setAttendanceSuccessMsg(`Đã hủy đơn quá hạn ${booking.bookingCode} thành công. Buồng ${unitText} đã được hoàn lại số lượng khả dụng trên hệ thống.`)
+      setTimeout(() => setAttendanceSuccessMsg(null), 6000)
+      fetchArrivals(selectedFacility !== 'ALL' ? selectedFacility : undefined)
+    } catch (err: any) {
+      console.error('Lỗi hủy đơn quá hạn:', err)
+      alert(err.message || 'Có lỗi xảy ra khi hủy đơn.')
+    }
   }
 
   const handleClaimReception = async (booking: Booking) => {
@@ -1579,7 +1673,17 @@ export const StaffDashboard: React.FC = () => {
                       const isPending = s === 'PENDING_CONTACT' || s === 'PENDING_PAYMENT' || s === 'PENDING_APPROVAL'
                       const isConfirmed = s === 'CONFIRMED' || (s as string) === 'CHECKIN_STEP1_COMPLETED' || isPaidPending
                       const isActiveOrCompleted = s === 'ACTIVE' || s === 'COMPLETED'
-                      const isInPerson = b.signingMethod === 'IN_PERSON' || (b as any).paymentMethod === 'AT_FACILITY' || (b as any).paymentMethod === 'IN_PERSON'
+                      const isInPerson = b.signingMethod === 'IN_PERSON' 
+                        || (b as any).signingMethod === 'in_person' 
+                        || (b as any).paymentMethod === 'AT_FACILITY' 
+                        || (b as any).paymentMethod === 'IN_PERSON'
+                        || (b as any).isDirectPayment
+
+                      const checkInTimeMs = b.expectedCheckInAt 
+                        ? new Date(b.expectedCheckInAt).getTime() 
+                        : (b.startDate ? new Date(b.startDate + 'T' + ((b as any).checkInTime?.split(' - ')[0] || '09:00') + ':00').getTime() : 0)
+                      const hoursOverdue = checkInTimeMs > 0 ? (Date.now() - checkInTimeMs) / (1000 * 60 * 60) : 0
+                      const isOverdue48h = hoursOverdue >= 48
 
                       return (
                         <tr
@@ -1702,12 +1806,37 @@ export const StaffDashboard: React.FC = () => {
                                   </span>
                                 ) : null
                               )}
+                              {b.assignedStaffName ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200" title={`Nhân viên tiếp nhận: ${b.assignedStaffName}`}>
+                                  <span className="material-symbols-outlined text-[12px]">person</span>
+                                  <span>Tiếp nhận: <strong>{b.assignedStaffName}</strong></span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200" title="Đơn chưa có nhân viên tiếp nhận">
+                                  <span className="material-symbols-outlined text-[12px]">person_off</span>
+                                  <span>Chưa tiếp nhận</span>
+                                </span>
+                              )}
+
+                              {isInPerson && !isActiveOrCompleted && !isCancelled && (
+                                isOverdue48h ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse" title="Đã quá 48 giờ sau lịch hẹn check-in: Nhân viên có quyền hủy đơn">
+                                    <span className="material-symbols-outlined text-[12px]">warning</span>
+                                    <span>Quá hạn 48h</span>
+                                  </span>
+                                ) : hoursOverdue >= 24 ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300" title="Đã quá 24h sau lịch hẹn check-in: Hệ thống đã gửi email cảnh báo">
+                                    <span className="material-symbols-outlined text-[12px]">mail</span>
+                                    <span>Đã gửi mail nhắc 24h</span>
+                                  </span>
+                                ) : null
+                              )}
                             </div>
                           </td>
 
                           <td className="py-3.5 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                              {/* TH1: Đối với đơn ký giấy & thanh toán tại quầy chưa hoàn thành: chỉ hiển thị 2 button [Xác nhận] và [Từ chối] */}
+                              {/* TH1: Đối với đơn ký giấy & thanh toán tại quầy chưa hoàn thành: chỉ hiển thị 2 button [Xác nhận] và [Từ chối] (thêm [Hủy đơn] nếu quá 48h) */}
                               {isInPerson && !isActiveOrCompleted ? (
                                 isPending ? (
                                   <>
@@ -1729,35 +1858,69 @@ export const StaffDashboard: React.FC = () => {
                                       <span className="material-symbols-outlined text-[15px]">cancel</span>
                                       <span>Từ chối</span>
                                     </button>
+                                    {isOverdue48h && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCancelOverdueBooking(b)}
+                                        className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                        title="Đã quá 48h sau lịch hẹn check-in khách chưa đến tiếp nhận: Hủy đơn và giải phóng kho"
+                                      >
+                                        <span className="material-symbols-outlined text-[15px]">event_busy</span>
+                                        <span>Hủy đơn</span>
+                                      </button>
+                                    )}
                                   </>
                                 ) : isConfirmed ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const proceed = () => {
+                                          setActiveBookingId(b.id)
+                                          setStaffActiveTab('reception')
+                                          setSearchParams({ tab: 'reception' })
+                                          setTimeout(() => {
+                                            document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                                          }, 100)
+                                        }
+                                        const { isPremature } = isBookingBeforeCheckInTime(b)
+                                        if (isPremature) {
+                                          setEarlyConfirmState({
+                                            booking: b,
+                                            actionType: 'ENTER_RECEPTION',
+                                            onConfirm: proceed,
+                                          })
+                                        } else {
+                                          proceed()
+                                        }
+                                      }}
+                                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                      title="Chuyển sang Bàn Tiếp Đón để đón khách làm thủ tục ký giấy & thanh toán tại quầy"
+                                    >
+                                      <span className="material-symbols-outlined text-[15px]">desk</span>
+                                      <span>Check-in</span>
+                                    </button>
+                                    {isOverdue48h && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCancelOverdueBooking(b)}
+                                        className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                        title="Đã quá 48h sau lịch hẹn check-in khách chưa đến tiếp nhận: Hủy đơn và giải phóng kho"
+                                      >
+                                        <span className="material-symbols-outlined text-[15px]">event_busy</span>
+                                        <span>Hủy đơn</span>
+                                      </button>
+                                    )}
+                                  </>
+                                ) : isOverdue48h ? (
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      const proceed = () => {
-                                        setActiveBookingId(b.id)
-                                        setStaffActiveTab('reception')
-                                        setSearchParams({ tab: 'reception' })
-                                        setTimeout(() => {
-                                          document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-                                        }, 100)
-                                      }
-                                      const { isPremature } = isBookingBeforeCheckInTime(b)
-                                      if (isPremature) {
-                                        setEarlyConfirmState({
-                                          booking: b,
-                                          actionType: 'ENTER_RECEPTION',
-                                          onConfirm: proceed,
-                                        })
-                                      } else {
-                                        proceed()
-                                      }
-                                    }}
-                                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
-                                    title="Chuyển sang Bàn Tiếp Đón để đón khách làm thủ tục ký giấy & thanh toán tại quầy"
+                                    onClick={() => handleCancelOverdueBooking(b)}
+                                    className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                    title="Đã quá 48h sau lịch hẹn check-in khách chưa đến tiếp nhận: Hủy đơn và giải phóng kho"
                                   >
-                                    <span className="material-symbols-outlined text-[15px]">desk</span>
-                                    <span>Check-in</span>
+                                    <span className="material-symbols-outlined text-[15px]">event_busy</span>
+                                    <span>Hủy đơn</span>
                                   </button>
                                 ) : null
                               ) : (
@@ -3030,6 +3193,16 @@ export const StaffDashboard: React.FC = () => {
         const isModalContractSigned = Boolean(reviewDetailBooking.contractSigned) || reviewDetailBooking.contractStatus === 'PENDING_ACTIVATION' || reviewDetailBooking.contractStatus === 'ACTIVE'
         const hasModalContract = Boolean(reviewDetailBooking.contractCode || reviewDetailBooking.contractId || reviewDetailBooking.paymentStatus === 'PAID' || isModalConfirmed || s === 'ACTIVE' || s === 'COMPLETED')
         const sched = getBookingScheduleInfo(reviewDetailBooking)
+        const modalIsInPerson = reviewDetailBooking.signingMethod === 'IN_PERSON'
+          || (reviewDetailBooking as any).signingMethod === 'in_person'
+          || (reviewDetailBooking as any).paymentMethod === 'AT_FACILITY'
+          || (reviewDetailBooking as any).paymentMethod === 'IN_PERSON'
+        const modalCheckInMs = reviewDetailBooking.expectedCheckInAt 
+          ? new Date(reviewDetailBooking.expectedCheckInAt).getTime() 
+          : (reviewDetailBooking.startDate ? new Date(reviewDetailBooking.startDate + 'T' + ((reviewDetailBooking as any).checkInTime?.split(' - ')[0] || '09:00') + ':00').getTime() : 0)
+        const modalHoursOverdue = modalCheckInMs > 0 ? (Date.now() - modalCheckInMs) / (1000 * 60 * 60) : 0
+        const modalIsOverdue48h = modalHoursOverdue >= 48
+        const modalIsActiveOrCompleted = s === 'ACTIVE' || s === 'COMPLETED'
 
         return (
           <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
@@ -3236,19 +3409,37 @@ export const StaffDashboard: React.FC = () => {
                 )}
               </div>
 
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const target = reviewDetailBooking;
-                    setReviewDetailBooking(null);
-                    setRejectingBooking(target);
-                    setRejectionReasonText('');
-                  }}
-                  className="px-4 py-2.5 rounded-xl border border-rose-300 hover:bg-rose-50 text-rose-700 text-xs font-bold cursor-pointer"
-                >
-                  Từ chối đơn...
-                </button>
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = reviewDetailBooking;
+                      setReviewDetailBooking(null);
+                      setRejectingBooking(target);
+                      setRejectionReasonText('');
+                    }}
+                    className="px-4 py-2.5 rounded-xl border border-rose-300 hover:bg-rose-50 text-rose-700 text-xs font-bold cursor-pointer"
+                  >
+                    Từ chối đơn...
+                  </button>
+
+                  {modalIsOverdue48h && modalIsInPerson && !modalIsActiveOrCompleted && s !== 'CANCELLED' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = reviewDetailBooking;
+                        setReviewDetailBooking(null);
+                        handleCancelOverdueBooking(target);
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md cursor-pointer flex items-center gap-1.5"
+                      title="Quá hạn 48 giờ sau lịch hẹn check-in: Hủy đơn và giải phóng kho"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">event_busy</span>
+                      <span>Hủy đơn quá hạn</span>
+                    </button>
+                  )}
+              </div>
 
                 <div className="flex items-center gap-2">
                   <button

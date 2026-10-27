@@ -30,4 +30,5 @@ public interface EmailService {
     void sendHandoverWithContractEmail(String toEmail, String fullName, String unitCode, String bookingCode, String accessPin, String facilityName, String contractCode, String startDate, String endDate, String rentalFee, String contractUrl);
 
     void sendBookingCancellationEmail(String toEmail, String fullName, String bookingCode, String facilityName, String unitCode, String reason, boolean isRejectedByStaff, java.math.BigDecimal refundAmount);
+    void sendCheckinOverdueReminderEmail(String toEmail, String fullName, String bookingCode, String facilityName, String facilityAddress, String facilityPhone, String unitCode, java.time.LocalDateTime checkInDateTime);
 }

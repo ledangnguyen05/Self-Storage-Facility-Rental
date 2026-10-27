@@ -22,6 +22,7 @@ import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShift
 import { EarlyCheckInConfirmModal, isBookingBeforeCheckInTime, EarlyCheckInActionType } from '../../components/modals/EarlyCheckInConfirmModal'
 import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
 import { HandoverCheckInWorkbench } from '../staff/components/HandoverCheckInWorkbench'
+import { reservationEmailService } from '../../services/reservationEmailService'
 
 interface InspectedUnit {
   id: string
@@ -48,6 +49,61 @@ interface InspectedUnit {
 }
 
 type ManagerDashboardTab = 'overview' | 'renewals' | 'handovers-returns' | 'tickets' | 'performance' | 'policy'
+
+const mergeGuestArrivals = (apiArrivals: Booking[], targetId?: string): Booking[] => {
+  let list = [...apiArrivals]
+  try {
+    const rawLocal = localStorage.getItem('boxora_guest_reservations')
+    if (rawLocal) {
+      const parsed = JSON.parse(rawLocal)
+      if (Array.isArray(parsed)) {
+        const localArrivals: Booking[] = parsed
+          .filter((r: any) => !targetId || r.facility?.id === targetId || r.facilityId === targetId)
+          .map((r: any) => ({
+            id: r.id || `LOCAL-RES-${r.bookingCode}`,
+            bookingCode: r.bookingCode,
+            customerName: r.customer?.fullName || r.customerName || 'Khách đặt giữ chỗ',
+            customerPhone: r.customer?.phone || r.customerPhone || 'N/A',
+            identityCardNumber: r.customer?.idCard || r.customerIdCard || r.identityCardNumber,
+            customerEmail: r.customer?.email || r.customerEmail,
+            facilityId: r.facility?.id || r.facilityId || targetId || '',
+            facilityName: r.facility?.name || r.facilityName || 'Cơ sở Boxora',
+            unitTypeId: r.unitTypeId,
+            unitTypeName: r.unitTypeName || r.sizeName || r.size?.volumeText,
+            unitCode: r.unitCode || r.sizeName || r.size?.volumeText || 'Kho tự quản',
+            storageUnitId: r.storageUnitId || '',
+            startDate: r.startDate || new Date().toISOString().slice(0, 10),
+            endDate: r.rentalEndDate || '',
+            expectedCheckInAt: r.expectedCheckInAt || (r.checkInDate ? `${r.checkInDate}T${r.checkInTime ? r.checkInTime.split(' - ')[0] || '09:00' : '09:00'}:00` : undefined),
+            checkInTime: r.checkInTime,
+            status: (r.status || 'PENDING_CONTACT') as any,
+            customerId: r.customerId || 'guest',
+            accessCode: r.accessCode || r.bookingCode || '',
+            rentalMonths: r.rentalMonths || 1,
+            totalRentalFee: r.totalRentalFee || r.totalRent || 0,
+            depositAmount: r.depositAmount || 0,
+            depositPaid: r.depositPaid ?? (r.paymentStatus === 'PAID' ? (r.depositAmount || 0) : 0),
+            paymentStatus: r.paymentStatus === 'PAID' ? 'PAID' : 'UNPAID',
+            signingMethod: r.signingMethod || (r.paymentMethod === 'AT_FACILITY' || r.paymentMethod === 'IN_PERSON' ? 'IN_PERSON' : 'ONLINE'),
+            assignedStaffName: r.assignedStaffName,
+            contractCode: r.contractCode,
+            contractSigned: r.contractSigned,
+            paperContractUrl: r.paperContractUrl,
+            paymentProofUrl: r.paymentProofUrl,
+            checkinOverdueReminderSentAt: r.checkinOverdueReminderSentAt,
+            createdAt: r.createdAt,
+          }))
+
+        const existingCodes = new Set(list.map(b => b.bookingCode))
+        const newLocal = localArrivals.filter(b => !existingCodes.has(b.bookingCode))
+        list = [...list, ...newLocal]
+      }
+    }
+  } catch (err) {
+    console.warn('Lỗi đọc đơn giữ chỗ từ localStorage:', err)
+  }
+  return list
+}
 
 export const ManagerDashboard: React.FC = () => {
   const { t } = useLanguage()
@@ -204,6 +260,30 @@ export const ManagerDashboard: React.FC = () => {
     totalDebt: string
   } | null>(null)
 
+  // Quét tự động gửi email nhắc nhở quá hạn 24h đối với đơn ký + thanh toán tại quầy
+  useEffect(() => {
+    reservationEmailService.checkAndSendOverdueReminders()
+    const interval = setInterval(() => {
+      reservationEmailService.checkAndSendOverdueReminders()
+    }, 60000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Tự động làm mới danh sách khi có thay đổi đơn đặt hoặc kho
+  useEffect(() => {
+    const handleSync = () => {
+      const targetId = selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : undefined
+      void fetchUpcomingHandovers(targetId)
+      void fetchUnits(targetId)
+    }
+    window.addEventListener('boxora:storage-units-refresh', handleSync)
+    window.addEventListener('boxora_reservation_updated', handleSync)
+    return () => {
+      window.removeEventListener('boxora:storage-units-refresh', handleSync)
+      window.removeEventListener('boxora_reservation_updated', handleSync)
+    }
+  }, [selectedFacilityId])
+
   useEffect(() => {
     if (contextFacilities && contextFacilities.length > 0) {
       setFacilities(contextFacilities)
@@ -357,10 +437,12 @@ export const ManagerDashboard: React.FC = () => {
         if (targetId) {
           filteredArrivals = filteredArrivals.filter(b => b.facilityId === targetId)
         }
+        filteredArrivals = mergeGuestArrivals(filteredArrivals, targetId)
         setUpcomingHandovers(filteredArrivals)
         setHandoverPage(1)
       } else {
-        setUpcomingHandovers([])
+        const localArrivals = mergeGuestArrivals([], targetId)
+        setUpcomingHandovers(localArrivals)
         setHandoverPage(1)
       }
 
@@ -430,10 +512,12 @@ export const ManagerDashboard: React.FC = () => {
         if (targetId) {
           filteredArrivals = filteredArrivals.filter(b => b.facilityId === targetId)
         }
+        filteredArrivals = mergeGuestArrivals(filteredArrivals, targetId)
         setUpcomingHandovers(filteredArrivals)
         setHandoverPage(1)
       } else {
-        setUpcomingHandovers([])
+        const localArrivals = mergeGuestArrivals([], targetId)
+        setUpcomingHandovers(localArrivals)
         setHandoverPage(1)
       }
     } catch {
@@ -487,6 +571,73 @@ export const ManagerDashboard: React.FC = () => {
       })
     } finally {
       setClaimingBookingId(null)
+    }
+  }
+
+  // Quản lý cơ sở hủy đơn quá hạn 48h cho đơn đặt ký + thanh toán tại quầy
+  const handleManagerCancelOverdueBooking = async (booking: Booking) => {
+    const unitText = booking.unitCode ? `Kho #${booking.unitCode}` : (booking.unitTypeName || 'buồng kho')
+    const confirmed = window.confirm(
+      `XÁC NHẬN HỦY ĐƠN QUÁ HẠN 48 GIỜ:\n\n` +
+      `Đơn đặt giữ chỗ ${booking.bookingCode} (khách hàng: ${booking.customerName || 'N/A'}) đã quá 48 giờ sau lịch hẹn check-in nhưng chưa được tiếp nhận.\n\n` +
+      `Khi Quản lý cơ sở xác nhận hủy đơn:\n` +
+      `1. Trạng thái đơn sẽ chuyển sang ĐÃ HỦY (CANCELLED).\n` +
+      `2. Buồng ${unitText} tại ${booking.facilityName || 'cơ sở'} sẽ được GIẢI PHÓNG về trạng thái TRỐNG (AVAILABLE) và cập nhật lại số lượng khả dụng ở Bước 2 quy trình đặt kho.\n` +
+      `3. Email thông báo hủy đơn sẽ được gửi đến email khách hàng (${booking.customerEmail || 'đã đăng ký'}).\n\n` +
+      `Bạn có chắc chắn muốn hủy đơn này không?`
+    )
+    if (!confirmed) return
+
+    const reason = 'Quản lý cơ sở hủy đơn do quá hạn 48 giờ sau lịch hẹn check-in nhưng khách hàng chưa đến làm thủ tục tiếp nhận tại quầy'
+    try {
+      const isBackendId = Boolean(booking.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(booking.id.trim()))
+      const targetIdOrCode = isBackendId ? booking.id : booking.bookingCode
+      try {
+        await bookingService.cancelBooking(targetIdOrCode, reason)
+      } catch (err: any) {
+        console.warn('Backend cancel booking error (fallback to local):', err)
+      }
+
+      reservationEmailService.cancelOverdueReservation(booking.bookingCode, reason, {
+        id: user?.id,
+        fullName: user?.fullName || 'Quản lý cơ sở Boxora',
+      })
+
+      // Giải phóng ô kho local nếu có
+      if (booking.storageUnitId) {
+        try {
+          const rawUnits = localStorage.getItem('boxora_storage_units')
+          if (rawUnits) {
+            const parsedUnits = JSON.parse(rawUnits)
+            if (Array.isArray(parsedUnits)) {
+              const uIdx = parsedUnits.findIndex((u: any) => u.id === booking.storageUnitId)
+              if (uIdx !== -1) {
+                parsedUnits[uIdx].status = 'AVAILABLE'
+                localStorage.setItem('boxora_storage_units', JSON.stringify(parsedUnits))
+              }
+            }
+          }
+        } catch {}
+      }
+
+      window.dispatchEvent(new CustomEvent('boxora:storage-units-refresh'))
+      window.dispatchEvent(new CustomEvent('boxora_reservation_updated', {
+        detail: { bookingCode: booking.bookingCode, status: 'CANCELLED' }
+      }))
+      window.dispatchEvent(new Event('boxora:notifications-refresh'))
+
+      setUpcomingHandovers(prev => prev.map(b =>
+        (b.id === booking.id || b.bookingCode === booking.bookingCode)
+          ? { ...b, status: 'CANCELLED' as any, cancellationReason: reason }
+          : b
+      ))
+
+      triggerAction(`Đã hủy đơn ${booking.bookingCode} quá hạn 48h thành công. Buồng ${unitText} đã được mở lại cho khách khác đặt chỗ!`)
+      if (selectedFacilityId) {
+        void fetchUnits(selectedFacilityId)
+      }
+    } catch (err: any) {
+      alert('Không thể hủy đơn: ' + (err.message || 'Lỗi không xác định'))
     }
   }
 
@@ -1934,7 +2085,20 @@ export const ManagerDashboard: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {paginatedUpcomingHandovers.map(b => (
+                    {paginatedUpcomingHandovers.map(b => {
+                      const isInPerson = b.signingMethod === 'IN_PERSON' || (b as any).paymentMethod === 'AT_FACILITY' || (b as any).paymentMethod === 'IN_PERSON'
+                      const checkInTimeMs = b.expectedCheckInAt
+                        ? new Date(b.expectedCheckInAt).getTime()
+                        : (b.startDate ? new Date(b.startDate + 'T09:00:00').getTime() : 0)
+                      const nowMs = Date.now()
+                      const hoursOverdue = checkInTimeMs > 0 && nowMs > checkInTimeMs
+                        ? (nowMs - checkInTimeMs) / (1000 * 60 * 60)
+                        : 0
+                      const isNotFinished = b.status !== 'ACTIVE' && b.status !== 'COMPLETED' && b.status !== 'CANCELLED' && b.status !== 'REJECTED'
+                      const isOverdue48h = isInPerson && !b.assignedStaffName && isNotFinished && hoursOverdue >= 48
+                      const isOverdue24h = isInPerson && !b.assignedStaffName && isNotFinished && hoursOverdue >= 24
+
+                      return (
                       <tr key={b.id} className="hover:bg-slate-50/80">
                         <td className="py-3 px-3">
                           <span className="font-bold text-slate-900 block">{b.customerName || 'N/A'}</span>
@@ -1957,20 +2121,39 @@ export const ManagerDashboard: React.FC = () => {
                           </div>
                         </td>
                         <td className="py-3 px-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            b.status === 'CONFIRMED'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-amber-50 text-amber-700 border border-amber-200'
-                          }`}>
-                            {b.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Chờ hoàn tất cọc'}
-                          </span>
+                          <div className="flex flex-col gap-1 items-start">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              b.status === 'CONFIRMED'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : b.status === 'CANCELLED'
+                                ? 'bg-red-50 text-red-700 border border-red-200'
+                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                            }`}>
+                              {b.status === 'CONFIRMED' ? 'Đã xác nhận' : b.status === 'CANCELLED' ? 'Đã hủy' : 'Chờ hoàn tất cọc'}
+                            </span>
+                            {isOverdue48h ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-0.5 animate-pulse">
+                                <span className="material-symbols-outlined text-[11px]">warning</span>
+                                Quá hạn &gt; 48h
+                              </span>
+                            ) : isOverdue24h ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-0.5">
+                                <span className="material-symbols-outlined text-[11px]">schedule</span>
+                                {b.checkinOverdueReminderSentAt ? 'Đã gửi mail nhắc 24h' : 'Quá hạn > 24h'}
+                              </span>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="py-3 px-3 font-mono font-bold text-slate-900">
                           {(b.depositPaid || b.depositAmount || 0).toLocaleString('vi-VN')} đ
                         </td>
                         <td className="py-3 px-3 text-right">
                           <div className="flex items-center justify-end gap-2 flex-wrap">
-                            {b.assignedStaffName ? (
+                            {b.status === 'CANCELLED' ? (
+                              <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-500 text-[11px] font-semibold">
+                                Đơn đã hủy
+                              </span>
+                            ) : b.assignedStaffName ? (
                               <div
                                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold"
                                 title={b.staffAssignmentNotes || undefined}
@@ -1979,31 +2162,57 @@ export const ManagerDashboard: React.FC = () => {
                                 <span>{b.assignedStaffName}</span>
                               </div>
                             ) : (role === 'FACILITY_MANAGER' || role === 'STAFF') && !isAdmin ? (
-                              <button
-                                type="button"
-                                disabled={claimingBookingId === b.id}
-                                onClick={() => {
-                                  const { isPremature } = isBookingBeforeCheckInTime(b)
-                                  if (isPremature) {
-                                    setEarlyConfirmState({
-                                      booking: b,
-                                      actionType: 'CLAIM_RECEPTION',
-                                      onConfirm: () => handleManagerClaimReception(b),
-                                    })
-                                  } else {
-                                    handleManagerClaimReception(b)
-                                  }
-                                }}
-                                className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
-                              >
-                                <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
-                                <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận & Mở bàn'}</span>
-                              </button>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={claimingBookingId === b.id}
+                                  onClick={() => {
+                                    const { isPremature } = isBookingBeforeCheckInTime(b)
+                                    if (isPremature) {
+                                      setEarlyConfirmState({
+                                        booking: b,
+                                        actionType: 'CLAIM_RECEPTION',
+                                        onConfirm: () => handleManagerClaimReception(b),
+                                      })
+                                    } else {
+                                      handleManagerClaimReception(b)
+                                    }
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
+                                  <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận & Mở bàn'}</span>
+                                </button>
+                                {isOverdue48h && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleManagerCancelOverdueBooking(b)}
+                                    className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                    title="Đơn quá 48h sau lịch hẹn check-in chưa tiếp nhận: Hủy đơn và trả ô kho về trạng thái trống"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">event_busy</span>
+                                    <span>Hủy đơn</span>
+                                  </button>
+                                )}
+                              </div>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-semibold">
-                                <span className="material-symbols-outlined text-[14px] text-amber-600">hourglass_empty</span>
-                                <span>Chờ tiếp nhận</span>
-                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-semibold">
+                                  <span className="material-symbols-outlined text-[14px] text-amber-600">hourglass_empty</span>
+                                  <span>Chờ tiếp nhận</span>
+                                </span>
+                                {isOverdue48h && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleManagerCancelOverdueBooking(b)}
+                                    className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                    title="Đơn quá 48h sau lịch hẹn check-in chưa tiếp nhận: Hủy đơn và trả ô kho về trạng thái trống"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">event_busy</span>
+                                    <span>Hủy đơn</span>
+                                  </button>
+                                )}
+                              </div>
                             )}
 
                             <button
@@ -2019,7 +2228,8 @@ export const ManagerDashboard: React.FC = () => {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
 

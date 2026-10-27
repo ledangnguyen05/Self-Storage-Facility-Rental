@@ -1614,7 +1614,9 @@ public class BookingServiceImpl implements BookingService {
                 isCheckInExpired = holdDeadline.isBefore(now);
             } else if (booking.getExpectedCheckInAt() != null) {
                 int graceHours = 24;
-                if (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null) {
+                if ("IN_PERSON".equalsIgnoreCase(booking.getSigningMethod())) {
+                    graceHours = 48; // Đơn ký tại quầy: sau 24h nhắc nhở khách, sau 48h mở quyền hủy đơn
+                } else if (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null) {
                     graceHours = facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(booking.getStorageUnit().getFacility().getId())
                             .map(FacilityPolicy::getHoldGraceHours)
                             .filter(h -> h != null && h > 0)
@@ -1706,6 +1708,82 @@ public class BookingServiceImpl implements BookingService {
                         resultingStatus
                 );
             }
+        }
+    }
+
+    /**
+     * Tự động quét và gửi email nhắc nhở khách hàng khi đơn đặt ký + thanh toán tại quầy
+     * đã quá 24h sau lịch hẹn check-in mà vẫn chưa được tiếp nhận.
+     */
+    @Scheduled(fixedDelay = 60_000L)
+    @Transactional
+    public void sendCheckinOverdueReminders() {
+        LocalDateTime threshold = LocalDateTime.now(BUSINESS_ZONE).minusHours(24);
+        LocalDate todayThreshold = LocalDate.now(BUSINESS_ZONE).minusDays(1);
+        List<Booking> overdueCandidates = bookingRepository.findOverdueInPersonCheckinReminders(threshold, todayThreshold);
+
+        for (Booking candidate : overdueCandidates) {
+            Booking booking = bookingRepository.findByIdForUpdate(candidate.getId()).orElse(null);
+            if (booking == null || booking.getCheckinOverdueReminderSentAt() != null) {
+                continue;
+            }
+            if (booking.getStatus() == BookingStatus.CANCELLED || booking.getStatus() == BookingStatus.ACTIVE
+                    || booking.getStatus() == BookingStatus.COMPLETED || booking.getHandoverTime() != null) {
+                continue;
+            }
+
+            try {
+                if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null && !booking.getCustomer().getEmail().isBlank()) {
+                    String custEmail = booking.getCustomer().getEmail().trim();
+                    String custName = booking.getCustomer().getFullName() != null && !booking.getCustomer().getFullName().isBlank()
+                            ? booking.getCustomer().getFullName() : booking.getCustomer().getUsername();
+                    String facName = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                            ? booking.getStorageUnit().getFacility().getName()
+                            : (booking.getFacility() != null ? booking.getFacility().getName() : "Hệ thống Boxora");
+                    String facAddress = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                            ? booking.getStorageUnit().getFacility().getAddress()
+                            : (booking.getFacility() != null ? booking.getFacility().getAddress() : "Tại cơ sở Boxora");
+                    String facPhone = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                            ? booking.getStorageUnit().getFacility().getContactPhone()
+                            : (booking.getFacility() != null ? booking.getFacility().getContactPhone() : "1900-BOXORA");
+                    String uCode = booking.getStorageUnit() != null
+                            ? booking.getStorageUnit().getUnitCode()
+                            : (booking.getUnitType() != null ? booking.getUnitType().getTypeName() : "Kho tự quản");
+                    LocalDateTime checkInTime = booking.getExpectedCheckInAt() != null
+                            ? booking.getExpectedCheckInAt()
+                            : (booking.getStartDate() != null ? booking.getStartDate().atTime(9, 0) : LocalDateTime.now(BUSINESS_ZONE));
+
+                    emailService.sendCheckinOverdueReminderEmail(
+                            custEmail,
+                            custName,
+                            booking.getBookingCode(),
+                            facName,
+                            facAddress,
+                            facPhone,
+                            uCode,
+                            checkInTime
+                    );
+                    log.info("[CHECKIN_OVERDUE_EMAIL] Đã gửi email nhắc nhở quá hạn 24h check-in cho khách hàng đơn {}", booking.getBookingCode());
+                }
+            } catch (Exception ex) {
+                log.error("[CHECKIN_OVERDUE_EMAIL_FAILED] Lỗi gửi email nhắc nhở quá hạn check-in đơn {}: {}", booking.getBookingCode(), ex.getMessage(), ex);
+            }
+
+            booking.setCheckinOverdueReminderSentAt(LocalDateTime.now(BUSINESS_ZONE));
+            bookingRepository.save(booking);
+
+            UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                    ? booking.getStorageUnit().getFacility().getId()
+                    : (booking.getFacility() != null ? booking.getFacility().getId() : null);
+            activityLogService.record(
+                    facilityId,
+                    ActivityAction.OVERDUE_REMINDER_SENT,
+                    "Booking",
+                    booking.getId(),
+                    String.format("Đã gửi email nhắc nhở khách hàng đơn %s đến cơ sở nhận kho sau 24 giờ quá hạn lịch hẹn check-in.", booking.getBookingCode()),
+                    null,
+                    booking.getStatus()
+            );
         }
     }
 
@@ -1937,6 +2015,7 @@ public class BookingServiceImpl implements BookingService {
                 .contractCode(contractCode)
                 .contractStatus(contractStatus)
                 .contractSigned(contractSigned)
+                .checkinOverdueReminderSentAt(b.getCheckinOverdueReminderSentAt())
                 .build();
     }
 

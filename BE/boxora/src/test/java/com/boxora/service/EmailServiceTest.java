@@ -638,6 +638,39 @@ class EmailServiceTest {
         assertThat(plainText).contains("BX-2026-9999");
     }
 
+    @Test
+    @DisplayName("Gửi email nhắc nhở quá hạn 24h check-in thành công")
+    void sendCheckinOverdueReminderEmail_Success() throws Exception {
+        java.time.LocalDateTime checkInTime = java.time.LocalDateTime.of(2026, 10, 26, 9, 0);
+        emailService.sendCheckinOverdueReminderEmail(
+                "customer@boxora.vn",
+                "Nguyễn Văn C",
+                "BX-2025-3080",
+                "Boxora Thủ Đức",
+                "123 Võ Văn Ngân, TP. Thủ Đức",
+                "028-1234-5678",
+                "TD-B102",
+                checkInTime
+        );
+
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender, times(1)).send(captor.capture());
+
+        MimeMessage message = captor.getValue();
+        assertThat(message.getSubject()).contains("Quá hạn 24 giờ tiếp nhận buồng kho TD-B102 - Đơn BX-2025-3080");
+
+        String html = extractHtml(message);
+        assertThat(html).contains("Nguyễn Văn C");
+        assertThat(html).contains("BX-2025-3080");
+        assertThat(html).contains("Boxora Thủ Đức");
+        assertThat(html).contains("TD-B102");
+        assertThat(html).contains("QUÁ HẠN 24H TIẾP NHẬN");
+
+        String plainText = extractPlainText(message);
+        assertThat(plainText).contains("QUÁ 24 GIỜ");
+        assertThat(plainText).contains("BX-2025-3080");
+    }
+
     private MimeMessage msgOrCaptor(MimeMessage msg) {
         return msg;
     }

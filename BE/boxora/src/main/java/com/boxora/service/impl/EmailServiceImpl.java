@@ -1187,6 +1187,95 @@ public class EmailServiceImpl implements EmailService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // 15. Check-in Overdue Reminder Email (sau 24h chưa tiếp nhận)
+    // ─────────────────────────────────────────────────────────────────────────
+    @Override
+    @Async
+    public void sendCheckinOverdueReminderEmail(
+            String toEmail,
+            String fullName,
+            String bookingCode,
+            String facilityName,
+            String facilityAddress,
+            String facilityPhone,
+            String unitCode,
+            LocalDateTime checkInDateTime
+    ) {
+        String safeName = escape(fullName != null && !fullName.isBlank() ? fullName : "Quý khách");
+        String safeCode = escape(bookingCode != null ? bookingCode : "N/A");
+        String safeFacility = escape(facilityName != null ? facilityName : "Cơ sở Boxora");
+        String safeAddress = escape(facilityAddress != null ? facilityAddress : "Theo thông tin cơ sở Boxora đã đăng ký");
+        String safePhone = escape(facilityPhone != null ? facilityPhone : "1900-BOXORA");
+        String safeUnit = escape(unitCode != null ? unitCode : "Kho tự quản");
+        String checkInStr = checkInDateTime != null
+                ? checkInDateTime.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm - dd/MM/yyyy"))
+                : "Giờ tiếp đón đã đăng ký";
+
+        String subject = String.format("[Boxora - KHẨN CẤP] Nhắc nhở: Quá hạn 24 giờ tiếp nhận buồng kho %s - Đơn %s", safeUnit, safeCode);
+
+        String badge = renderBadge("QUÁ HẠN 24H TIẾP NHẬN", "#fef3c7", "#d97706");
+        String title = "Thông Báo Cần Đến Tiếp Nhận Kho Ngay";
+        String intro = String.format(
+                "Đơn đặt giữ chỗ buồng kho mã số <strong>%s</strong> tại cơ sở <strong>%s</strong> của Quý khách theo hình thức <strong>Ký giấy &amp; thanh toán tại quầy</strong> đã <strong>quá 24 giờ</strong> kể từ thời gian hẹn check-in (<strong>%s</strong>) nhưng hiện tại vẫn chưa hoàn tất thủ tục tiếp nhận.",
+                safeCode, safeFacility, checkInStr
+        );
+
+        String details = "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin: 16px 0; border: 1px solid #f1f5f9; border-radius: 8px; overflow: hidden;\">"
+                + renderDetailRow("Mã đơn đặt kho", "<strong>" + safeCode + "</strong>")
+                + renderDetailRow("Cơ sở tiếp đón", "<strong>" + safeFacility + "</strong>")
+                + renderDetailRow("Địa chỉ cơ sở", safeAddress)
+                + renderDetailRow("Buồng kho đăng ký", "<span style=\"color: #0284c7; font-weight: 700;\">" + safeUnit + "</span>")
+                + renderDetailRow("Lịch hẹn check-in ban đầu", "<span style=\"color: #d97706; font-weight: 700;\">" + checkInStr + "</span>")
+                + renderDetailRow("Trạng thái", "<span style=\"color: #b45309; font-weight: 700;\">CHƯA TIẾP NHẬN - QUÁ HẠN 24 GIỜ</span>")
+                + "</table>";
+
+        String alert = renderAlertBox(
+                "YÊU CẦU ĐẾN CƠ SỞ HOÀN TẤT THỦ TỤC &amp; CẢNH BÁO HỦY ĐƠN",
+                "Quý khách vui lòng nhanh chóng mang theo <strong>CCCD / Hộ chiếu bản gốc</strong> đến cơ sở <strong>" + safeFacility + "</strong> để nhân viên quầy hướng dẫn làm thủ tục ký hợp đồng và nhận kho.<br/><br/>"
+                + "<strong style=\"color: #b91c1c;\">LƯU Ý ĐẶC BIỆT:</strong> Sau thêm <strong>24 giờ tiếp theo</strong> (tổng cộng 48 giờ kể từ lịch hẹn check-in ban đầu), nếu Quý khách vẫn chưa đến cơ sở tiếp nhận, hệ thống sẽ mở quyền <strong>HỦY ĐƠN</strong> cho nhân viên và quản lý cơ sở, buồng kho sẽ được <strong>giải phóng lại trên hệ thống</strong> để phục vụ khách hàng khác có nhu cầu.",
+                "#fffbeb",
+                "#b45309",
+                "#f59e0b"
+        );
+
+        String note = renderSecurityNote(
+                "Mọi thắc mắc hoặc cần hỗ trợ dời lịch hẹn, Quý khách vui lòng liên hệ Hotline: " + safePhone + " • Đội ngũ CSKH Boxora."
+        );
+
+        String html = buildMasterTemplate(
+                "Cần Đến Nhận Kho Ngay",
+                badge,
+                title,
+                "Kính gửi <strong>" + safeName + "</strong>,",
+                intro,
+                details,
+                alert,
+                renderButton("Xem Chi Tiết Đơn Đặt Kho", resolveUrl("/my-bookings"), "#0284c7"),
+                note
+        );
+
+        String plainText = String.format("""
+                BOXORA - THÔNG BÁO CẦN ĐẾN TIẾP NHẬN KHO NGAY
+                =============================================
+                Kính gửi %s,
+
+                Đơn đặt giữ chỗ %s tại %s đã QUÁ 24 GIỜ kể từ lịch hẹn check-in (%s) nhưng chưa được tiếp nhận.
+                - Mã đơn: %s
+                - Cơ sở: %s (%s)
+                - Buồng kho: %s
+                - Hotline cơ sở: %s
+
+                Quý khách vui lòng mang theo CCCD bản gốc đến cơ sở để hoàn tất nhận buồng kho.
+                LƯU Ý: Sau thêm 24 giờ nữa (tổng 48 giờ), nếu Quý khách vẫn chưa đến nhận, đơn sẽ bị HỦY và buồng kho sẽ được giải phóng cho khách hàng khác.
+
+                Trân trọng,
+                Đội ngũ Boxora Self-Storage
+                """, safeName, safeCode, safeFacility, checkInStr, safeCode, safeFacility, safeAddress, safeUnit, safePhone);
+
+        sendHtmlEmail(toEmail, subject, html, plainText);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Internal Helper Methods & Master Layout Generator
     // ─────────────────────────────────────────────────────────────────────────
 

@@ -637,15 +637,17 @@ export const BookingPage: React.FC = () => {
 
     // Đọc các đơn đặt giữ chỗ đang chiếm giữ buồng kho
     const localReservedUnitIds = new Set<string>()
+    const localReservedUnitCodes = new Set<string>()
     try {
       const raw = localStorage.getItem('boxora_guest_reservations')
       if (raw) {
         const parsed = JSON.parse(raw)
         if (Array.isArray(parsed)) {
           parsed.forEach((r: any) => {
-            const isHolding = r.status !== 'CANCELLED' && r.status !== 'COMPLETED'
-            if (isHolding && r.storageUnitId) {
-              localReservedUnitIds.add(r.storageUnitId)
+            const isHolding = r.status !== 'CANCELLED' && r.status !== 'COMPLETED' && r.status !== 'REJECTED'
+            if (isHolding) {
+              if (r.storageUnitId) localReservedUnitIds.add(r.storageUnitId)
+              if (r.unitCode) localReservedUnitCodes.add(r.unitCode)
             }
           })
         }
@@ -656,7 +658,8 @@ export const BookingPage: React.FC = () => {
       (u) =>
         u.facilityId === selectedFacility.id &&
         (u.status === 'AVAILABLE' || (u.status as string) === 'Trống') &&
-        !localReservedUnitIds.has(u.id)
+        !localReservedUnitIds.has(u.id) &&
+        !localReservedUnitCodes.has(u.unitCode)
     )
   }, [storageUnits, selectedFacility])
 
@@ -886,6 +889,7 @@ export const BookingPage: React.FC = () => {
       totalEstimate: quoteCalculation.totalEstimate,
       paymentMethod: method,
       paymentStatus: isPaid ? 'PAID' : 'PENDING',
+      signingMethod: method === 'PAY_LATER' ? 'IN_PERSON' : 'ONLINE',
       createdAt: new Date().toISOString(),
       createdTimeFormatted: timeStr,
       specialNotes: specialNotes.trim(),
