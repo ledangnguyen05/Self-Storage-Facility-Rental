@@ -88,7 +88,12 @@ export const loadPersistedSessions = (): Record<string, BookingWorkbenchSession>
     const parsed = JSON.parse(raw)
     if (typeof parsed !== 'object' || parsed === null) return {}
     Object.values(parsed).forEach((session: any) => {
-      if (session && typeof session === 'object') delete session.idCardNumber
+      if (session && typeof session === 'object') {
+        delete session.idCardNumber
+        if (!session.isCompleted) {
+          delete session.assignedUnitCode
+        }
+      }
     })
     return parsed
   } catch (err) {
@@ -112,7 +117,7 @@ export const createInitialSession = (
   initialUnitCode = ''
 ): BookingWorkbenchSession => ({
   bookingId,
-  assignedUnitCode: initialUnitCode || undefined,
+  assignedUnitCode: isAlreadyActive ? (initialUnitCode || undefined) : undefined,
   activeStepTab: 'verify',
   checklist: { ...defaultChecklist },
   photoDoor: '',
@@ -416,15 +421,18 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const isIdMet = currentPrerequisites ? Boolean(currentPrerequisites.identityVerified) : currentSession.identityVerified
   const isCheckInTimeMet = currentPrerequisites ? (currentPrerequisites.checkInTimeMet ?? true) : false
 
+  const isAlreadyActive =
+    currentBooking?.status === 'ACTIVE' ||
+    currentBooking?.status === 'COMPLETED'
+
   const unitDisplayCode =
     currentSession?.assignedUnitCode ||
-    currentBooking?.unitCode ||
-    currentPrerequisites?.unitCode ||
-    'N/A'
+    (isAlreadyActive ? (currentBooking?.unitCode || currentPrerequisites?.unitCode) : undefined) ||
+    ''
 
   const isUnitAssigned = Boolean(
-    (unitDisplayCode && unitDisplayCode !== 'N/A' && unitDisplayCode !== 'Chưa gán ô kho vật lý' && !unitDisplayCode.includes('Chưa gán')) ||
-    currentSession.assignedUnitCode
+    currentSession?.assignedUnitCode ||
+    (isAlreadyActive && currentBooking?.unitCode)
   )
 
   const isContractAndPaymentSatisfied = Boolean(
@@ -507,10 +515,17 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
   // Fetch available units for assignment (Step 2)
   const targetFacilityId = useMemo(() => {
-    if (currentBooking?.facilityId && UUID_REGEX.test(currentBooking.facilityId)) return currentBooking.facilityId
-    if (facilityId && facilityId !== 'ALL' && UUID_REGEX.test(facilityId)) return facilityId
-    return currentBooking?.facilityId || (facilityId !== 'ALL' ? facilityId : undefined)
-  }, [currentBooking?.facilityId, facilityId])
+    const rawId =
+      currentBooking?.facilityId ||
+      (currentBooking as any)?.facility?.id ||
+      (currentBooking as any)?.storageUnit?.facility?.id ||
+      (currentBooking as any)?.storageUnit?.facilityId ||
+      (currentPrerequisites as any)?.facilityId ||
+      (facilityId !== 'ALL' ? facilityId : undefined)
+
+    if (rawId && UUID_REGEX.test(rawId)) return rawId
+    return rawId
+  }, [currentBooking, currentPrerequisites, facilityId])
 
   useEffect(() => {
     if (!selectedBookingId) {
@@ -1378,12 +1393,13 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             </div>
           </div>
 
-          {isUnitAssigned && !isChangingAssignedUnit ? (
-            <div className="p-6 rounded-2xl bg-emerald-50/70 border border-emerald-300 shadow-xs space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-emerald-200 pb-4">
+          {/* Trạng thái gán ô kho */}
+          {isUnitAssigned ? (
+            <div className="p-5 rounded-2xl bg-emerald-50/80 border border-emerald-300 shadow-xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0 font-bold font-mono text-lg">
-                    <Key size={22} />
+                  <div className="w-11 h-11 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0 font-bold font-mono text-lg">
+                    <Key size={20} />
                   </div>
                   <div>
                     <span className="text-[10px] font-bold uppercase text-emerald-800 tracking-wider block">
@@ -1395,17 +1411,14 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setIsChangingAssignedUnit(true)}
-                  className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer self-start sm:self-auto"
-                >
-                  <RefreshCw size={13} />
-                  <span>Đổi ô kho khác</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    Đủ điều kiện chuyển sang Bước 3
+                  </span>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2 border-t border-emerald-200/60">
                 <div>
                   <span className="text-[10px] uppercase font-bold text-emerald-800 block">Cơ Sở</span>
                   <span className="font-bold text-emerald-950 block mt-0.5">{facilityDisplayName}</span>
@@ -1425,179 +1438,211 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </div>
             </div>
           ) : (
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
-                    <Filter size={16} className="text-blue-600" />
-                    <span>Chọn Ô Kho Vật Lý Khả Dụng ({bookedUnitTypeName || 'Đã đặt'})</span>
-                  </h3>
-                  <span className="text-xs text-slate-500 mt-0.5 block">
-                    Đang tìm kho trống tại <strong>{facilityDisplayName}</strong> • Khách đặt gói <strong>{bookedUnitTypeName} ({unitArea}m²)</strong>
-                  </span>
+            <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                <AlertCircle size={18} />
+              </div>
+              <div className="flex-1">
+                <span className="font-bold block">Chưa gán ô kho vật lý</span>
+                <span>
+                  Vui lòng chọn một ô kho còn trống (AVAILABLE) đúng loại <strong>{bookedUnitTypeName} ({unitArea}m²)</strong> từ danh sách bên dưới và bấm nút <strong>"Gán kho"</strong>.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Danh sách các ô kho available và đúng loại kho */}
+          <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                  <Filter size={16} className="text-blue-600" />
+                  <span>Danh Sách Ô Kho Khả Dụng ({bookedUnitTypeName || 'Gói đã đặt'})</span>
+                </h3>
+                <span className="text-xs text-slate-500 mt-0.5 block">
+                  Đang tìm kho trống tại <strong>{facilityDisplayName}</strong> • Gói đặt: <strong>{bookedUnitTypeName} ({unitArea}m²)</strong>
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <div className="flex flex-wrap items-center gap-2.5 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-slate-600 text-[11px]">Tầng:</span>
+                  <select
+                    value={assignFloorFilter}
+                    onChange={(e) => setAssignFloorFilter(e.target.value)}
+                    className="p-1.5 rounded-lg border border-slate-200 bg-white font-medium text-xs focus:outline-none"
+                  >
+                    <option value="ALL">Tất cả tầng</option>
+                    <option value="Floor 1">Tầng 1</option>
+                    <option value="Floor 2">Tầng 2</option>
+                    <option value="Floor 3">Tầng 3</option>
+                    <option value="Basement">Tầng hầm</option>
+                  </select>
                 </div>
 
-                {isChangingAssignedUnit && (
+                <input
+                  type="text"
+                  value={assignSearchTerm}
+                  onChange={(e) => setAssignSearchTerm(e.target.value)}
+                  placeholder="Tìm mã kho (vd: A-101)..."
+                  className="p-1.5 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-mono focus:outline-none"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setAssignShowAllSizes((prev) => !prev)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer ${
+                  assignShowAllSizes
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <Layers size={13} />
+                <span>{assignShowAllSizes ? 'Đang xem tất cả ô trống' : 'Chỉ xem đúng loại đã đặt'}</span>
+              </button>
+            </div>
+
+            {loadingAvailableUnits ? (
+              <div className="p-8 text-center text-xs text-slate-500 bg-slate-50 rounded-xl border border-slate-200">
+                <span className="inline-block animate-spin mr-2">⟳</span>
+                Đang tải danh sách ô kho trống tại cơ sở...
+              </div>
+            ) : filteredAvailableUnits.length === 0 ? (
+              <div className="p-6 text-center text-xs bg-amber-50 rounded-xl border border-amber-200 space-y-2">
+                <div className="flex items-center justify-center gap-1.5 text-amber-800 font-bold">
+                  <AlertCircle size={16} />
+                  <span>Hiện không tìm thấy ô kho nào phù hợp với bộ lọc tại cơ sở này.</span>
+                </div>
+                <p className="text-amber-700">
+                  Thử chuyển sang chế độ "Xem tất cả ô trống" hoặc liên hệ quản lý cơ sở để bố trí buồng kho.
+                </p>
+                {!assignShowAllSizes && (
                   <button
                     type="button"
-                    onClick={() => setIsChangingAssignedUnit(false)}
-                    className="text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer self-start sm:self-auto"
+                    onClick={() => setAssignShowAllSizes(true)}
+                    className="mt-2 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs cursor-pointer inline-flex items-center gap-1"
                   >
-                    Hủy đổi kho
+                    <Layers size={13} />
+                    <span>Xem tất cả ({availableUnits.length} ô kho trống)</span>
                   </button>
                 )}
               </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-96 overflow-y-auto p-1">
+                  {filteredAvailableUnits.map((u) => {
+                    const isSelected = selectedAssignUnitId === u.id
+                    const isThisUnitAssigned = unitDisplayCode === u.unitCode
+                    const isMatchBooked = isUnitMatchingBookedSize(u, bookedUnitTypeId, bookedUnitTypeName)
 
-              <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                <div className="flex flex-wrap items-center gap-2.5 text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-slate-600 text-[11px]">Tầng:</span>
-                    <select
-                      value={assignFloorFilter}
-                      onChange={(e) => setAssignFloorFilter(e.target.value)}
-                      className="p-1.5 rounded-lg border border-slate-200 bg-white font-medium text-xs focus:outline-none"
-                    >
-                      <option value="ALL">Tất cả tầng</option>
-                      <option value="Floor 1">Tầng 1</option>
-                      <option value="Floor 2">Tầng 2</option>
-                      <option value="Floor 3">Tầng 3</option>
-                      <option value="Basement">Tầng hầm</option>
-                    </select>
-                  </div>
-
-                  <input
-                    type="text"
-                    value={assignSearchTerm}
-                    onChange={(e) => setAssignSearchTerm(e.target.value)}
-                    placeholder="Tìm mã kho (vd: A-101)..."
-                    className="p-1.5 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-mono focus:outline-none"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setAssignShowAllSizes((prev) => !prev)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer ${
-                    assignShowAllSizes
-                      ? 'bg-blue-600 text-white shadow-2xs'
-                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  <Layers size={13} />
-                  <span>{assignShowAllSizes ? 'Đang xem tất cả ô trống' : 'Chỉ xem đúng loại đã đặt'}</span>
-                </button>
-              </div>
-
-              {loadingAvailableUnits ? (
-                <div className="p-8 text-center text-xs text-slate-500 bg-slate-50 rounded-xl border border-slate-200">
-                  <span className="inline-block animate-spin mr-2">⟳</span>
-                  Đang tải danh sách ô kho trống tại cơ sở...
-                </div>
-              ) : filteredAvailableUnits.length === 0 ? (
-                <div className="p-6 text-center text-xs bg-amber-50 rounded-xl border border-amber-200 space-y-2">
-                  <div className="flex items-center justify-center gap-1.5 text-amber-800 font-bold">
-                    <AlertCircle size={16} />
-                    <span>Hiện không tìm thấy ô kho nào phù hợp với bộ lọc tại cơ sở này.</span>
-                  </div>
-                  <p className="text-amber-700">
-                    Thử chuyển sang chế độ "Xem tất cả ô trống" hoặc liên hệ quản lý cơ sở để bố trí buồng kho.
-                  </p>
-                  {!assignShowAllSizes && (
-                    <button
-                      type="button"
-                      onClick={() => setAssignShowAllSizes(true)}
-                      className="mt-2 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs cursor-pointer inline-flex items-center gap-1"
-                    >
-                      <Layers size={13} />
-                      <span>Xem tất cả ({availableUnits.length} ô kho trống)</span>
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 max-h-72 overflow-y-auto p-1">
-                    {filteredAvailableUnits.map((u) => {
-                      const isSelected = selectedAssignUnitId === u.id
-                      const isMatchBooked = isUnitMatchingBookedSize(u, bookedUnitTypeId, bookedUnitTypeName)
-
-                      return (
-                        <div
-                          key={u.id}
-                          onClick={() => setSelectedAssignUnitId(u.id)}
-                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                            isSelected
-                              ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400/40'
-                              : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between gap-1 mb-1">
-                              <span className="font-mono font-extrabold text-sm tracking-wide">
-                                {u.unitCode}
+                    return (
+                      <div
+                        key={u.id}
+                        onClick={() => setSelectedAssignUnitId(u.id)}
+                        className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                          isThisUnitAssigned
+                            ? 'bg-emerald-50/80 border-emerald-500 shadow-md ring-2 ring-emerald-400/40 text-slate-900'
+                            : isSelected
+                            ? 'bg-blue-50/90 border-blue-600 shadow-sm ring-2 ring-blue-400/40 text-slate-900'
+                            : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-1 mb-1.5">
+                            <span className="font-mono font-extrabold text-sm tracking-wide text-slate-900">
+                              {u.unitCode}
+                            </span>
+                            {isThisUnitAssigned ? (
+                              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white flex items-center gap-1">
+                                <Check size={10} /> Đã Gán
                               </span>
-                              {isMatchBooked && (
-                                <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
-                                  isSelected ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
-                                }`}>
-                                  Đúng Chuẩn
-                                </span>
-                              )}
-                            </div>
-                            <span className={`text-[11px] block truncate font-medium ${
-                              isSelected ? 'text-blue-100' : 'text-slate-500'
-                            }`}>
-                              {u.floorLevel || 'Tầng 1'} • {u.unitTypeName || 'Tiêu chuẩn'}
-                            </span>
-                            <span className={`text-[11px] block font-mono mt-0.5 ${
-                              isSelected ? 'text-white' : 'text-slate-700'
-                            }`}>
-                              {u.areaSqMeters || '---'}m²
-                            </span>
+                            ) : isMatchBooked ? (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800">
+                                Đúng Chuẩn
+                              </span>
+                            ) : null}
                           </div>
 
-                          <div className="mt-2.5 pt-2 border-t border-current/10 flex items-center justify-between text-[11px]">
-                            <span className="font-bold">
-                              {u.pricePerMonth ? `${u.pricePerMonth.toLocaleString('vi-VN')}đ` : 'N/A'}
+                          <span className="text-[11px] block truncate font-medium text-slate-500">
+                            {u.floorLevel || 'Tầng 1'} • {u.unitTypeName || 'Tiêu chuẩn'}
+                          </span>
+                          <span className="text-[11px] block font-mono mt-0.5 text-slate-700 font-bold">
+                            {u.areaSqMeters || '---'}m²
+                          </span>
+                        </div>
+
+                        <div className="mt-3 pt-2.5 border-t border-slate-200/70">
+                          <div className="flex items-center justify-between text-[11px] mb-2">
+                            <span className="font-bold text-slate-900">
+                              {u.pricePerMonth ? `${u.pricePerMonth.toLocaleString('vi-VN')}đ/tháng` : 'N/A'}
                             </span>
-                            <span className={`text-[10px] uppercase font-bold ${
-                              isSelected ? 'text-blue-100' : 'text-emerald-700'
-                            }`}>
+                            <span className="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
                               Trống
                             </span>
                           </div>
+
+                          {isThisUnitAssigned ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="w-full py-1.5 px-2.5 rounded-lg bg-emerald-600 text-white font-bold text-xs flex items-center justify-center gap-1 opacity-90 cursor-default"
+                            >
+                              <Check size={13} />
+                              <span>Đang Gán Kho Này</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setSelectedAssignUnitId(u.id)
+                                handleConfirmUnitAssignment(u)
+                              }}
+                              disabled={isAssigningPhysicalUnit}
+                              className="w-full py-1.5 px-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-[0.98] disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-2xs transition cursor-pointer"
+                            >
+                              <Key size={13} />
+                              <span>{isAssigningPhysicalUnit && selectedAssignUnitId === u.id ? 'Đang gán...' : 'Gán Kho'}</span>
+                            </button>
+                          )}
                         </div>
-                      )
-                    })}
-                  </div>
+                      </div>
+                    )
+                  })}
+                </div>
 
-                  <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-100">
-                    <span className="text-xs text-slate-500">
-                      {selectedAssignUnitId ? (
-                        <>
-                          Đã chọn ô:{' '}
-                          <strong className="text-slate-900 font-mono">
-                            {availableUnits.find((u) => u.id === selectedAssignUnitId)?.unitCode}
-                          </strong>
-                        </>
-                      ) : (
-                        'Vui lòng nhấp chọn 1 ô kho ở danh sách trên để gán.'
-                      )}
-                    </span>
+                <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-100">
+                  <span className="text-xs text-slate-500">
+                    {selectedAssignUnitId ? (
+                      <>
+                        Đang chọn ô:{' '}
+                        <strong className="text-slate-900 font-mono">
+                          {availableUnits.find((u) => u.id === selectedAssignUnitId)?.unitCode}
+                        </strong>
+                      </>
+                    ) : (
+                      'Chọn một ô kho ở danh sách trên và bấm nút "Gán kho".'
+                    )}
+                  </span>
 
+                  {selectedAssignUnitId && unitDisplayCode !== availableUnits.find((u) => u.id === selectedAssignUnitId)?.unitCode && (
                     <button
                       type="button"
                       onClick={() => handleConfirmUnitAssignment()}
-                      disabled={!selectedAssignUnitId || isAssigningPhysicalUnit}
+                      disabled={isAssigningPhysicalUnit}
                       className="py-2 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition cursor-pointer self-start sm:self-auto"
                     >
-                      <Check size={16} />
-                      <span>{isAssigningPhysicalUnit ? 'Đang gán ô kho...' : 'Xác Nhận Gán Kho Này'}</span>
+                      <Key size={15} />
+                      <span>{isAssigningPhysicalUnit ? 'Đang gán...' : `Xác Nhận Gán Kho #${availableUnits.find((u) => u.id === selectedAssignUnitId)?.unitCode}`}</span>
                     </button>
-                  </div>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
 
           <div className="pt-2 flex items-center justify-between">
             <button
