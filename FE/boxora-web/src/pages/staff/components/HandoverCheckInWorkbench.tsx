@@ -244,10 +244,53 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   }, [arrivalsList, selectedBookingId, extraBookingDetails])
 
   // Permission evaluation for currently selected customer
+  // Facility Manager and Staff can view handover status of any order, but cannot execute if order is not theirs
   const isAssignedToOther = Boolean(
     currentBooking?.assignedStaffId && currentBooking.assignedStaffId !== user?.id && !isAdmin
   )
   const isUnassigned = Boolean(currentBooking && !currentBooking.assignedStaffId && !isAdmin)
+  const isReadOnlyHandover = isAssignedToOther || isUnassigned
+
+  const [isClaimingBooking, setIsClaimingBooking] = useState<boolean>(false)
+
+  const handleClaimBooking = async () => {
+    if (!currentBooking) return
+    setIsClaimingBooking(true)
+    try {
+      const updated = await bookingService.claimCheckInReception(currentBooking.id)
+      const assignedId = updated.assignedStaffId || user?.id || null
+      const assignedName = updated.assignedStaffName || user?.fullName || 'Nhân viên quầy'
+      setInternalArrivals((prev) =>
+        prev.map((b) =>
+          b.id === currentBooking.id || b.bookingCode === currentBooking.bookingCode
+            ? {
+                ...b,
+                assignedStaffId: assignedId,
+                assignedStaffName: assignedName,
+              }
+            : b
+        )
+      )
+      if (extraBookingDetails[currentBooking.id]) {
+        setExtraBookingDetails((prev) => ({
+          ...prev,
+          [currentBooking.id]: {
+            ...prev[currentBooking.id],
+            assignedStaffId: assignedId,
+            assignedStaffName: assignedName,
+          },
+        }))
+      }
+      if (onRefreshArrivals) onRefreshArrivals()
+      setDispatchFeedback({
+        text: `Đã tiếp nhận đơn ${currentBooking.bookingCode} thành công! Bây giờ bạn có thể thực hiện đối soát và bàn giao kho.`,
+      })
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Không thể tiếp nhận đơn này.')
+    } finally {
+      setIsClaimingBooking(false)
+    }
+  }
 
   // If selectedBookingId is not found in arrivalsList, fetch it directly from backend
   useEffect(() => {
@@ -570,6 +613,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
   // Step Tab Navigation Guards (Protect business conditions)
   const handleSelectTab = (tab: 'audit' | 'checklist' | 'pin') => {
+    // In read-only mode, allow staff and managers to inspect any tab of the dossier without mutation blocks
+    if (isReadOnlyHandover) {
+      setCheckInError(null)
+      updateCurrentSession({ activeStepTab: tab })
+      return
+    }
     if (tab === 'checklist' && !isReadyForCheckIn) {
       if (!isPhysicalPrereqsMet) {
         setCheckInError('Cần thỏa mãn cả 3 điều kiện đối soát (Hợp đồng, bằng chứng chuyển khoản cọc & tiền thuê, CCCD gốc) trước khi chuyển sang nghiệm thu!')
@@ -1201,129 +1250,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     )
   }
 
-  if (isAssignedToOther) {
-    return (
-      <>
-        {renderSuccessModal()}
-        {renderContractModal()}
-        <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
-          {/* 1. Process Header Card */}
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5 mb-5">
-            <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
-              <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
-            </div>
-            <div>
-              <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
-                Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                Chuẩn hóa 3 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
-              </p>
-            </div>
-          </div>
-
-          <div className="p-6 rounded-2xl bg-amber-50 border border-amber-200 text-center flex flex-col items-center">
-            <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mb-3">
-              <span className="material-symbols-outlined text-[30px]">lock_person</span>
-            </div>
-            <h3 className="font-headline text-base font-bold text-amber-900">
-              Lượt Khách Đang Thuộc Về Nhân Viên Khác
-            </h3>
-            <p className="text-xs text-amber-800 mt-1.5 max-w-md leading-relaxed">
-              Đơn <strong>{currentBooking.bookingCode}</strong> (Khách hàng <strong>{currentBooking.customerName}</strong>) hiện đang do nhân viên <strong>{currentBooking.assignedStaffName || 'khác'}</strong> phụ trách tiếp đón.
-            </p>
-            <p className="text-[11px] text-amber-700 mt-1">
-              Theo quy định phân quyền, bạn chỉ được thao tác trên các đơn do bạn chủ động tiếp nhận hoặc được phân công.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedBookingId('')
-                if (onSelectBooking) onSelectBooking('')
-              }}
-              className="mt-4 px-4 py-2 bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold rounded-xl inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[16px]">close</span>
-              <span>Đóng Chi Tiết &amp; Quay Lại</span>
-            </button>
-          </div>
-        </div>
-      </>
-    )
-  }
-
-  if (isUnassigned) {
-    return (
-      <>
-        {renderSuccessModal()}
-        {renderContractModal()}
-        <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
-          {/* 1. Process Header Card */}
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5 mb-5">
-            <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
-              <span className="material-symbols-outlined text-[24px] text-cyan-400">verified_user</span>
-            </div>
-            <div>
-              <h2 className="font-headline text-base sm:text-lg font-bold text-slate-900">
-                Quy Trình Check-in &amp; Nghiệm Thu Bàn Giao Kho
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                Chuẩn hóa 3 điều kiện tiên quyết BR-RULE-005, nghiệm thu 5 điểm, lưu trữ ảnh hiện trường và cấp mã PIN bảo mật.
-              </p>
-            </div>
-          </div>
-
-          <div className="p-6 rounded-2xl bg-blue-50 border border-blue-200 text-center flex flex-col items-center">
-            <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center mb-3">
-              <span className="material-symbols-outlined text-[30px]">how_to_reg</span>
-            </div>
-            <h3 className="font-headline text-base font-bold text-blue-900">
-              Chưa Tiếp Nhận Khách Hàng Này
-            </h3>
-            <p className="text-xs text-blue-800 mt-1.5 max-w-md leading-relaxed">
-              Đơn <strong>{currentBooking.bookingCode}</strong> (Khách hàng <strong>{currentBooking.customerName}</strong>) chưa có nhân sự tiếp đón tại quầy.
-            </p>
-            <p className="text-[11px] text-blue-700 mt-1">
-              Vui lòng bấm nút tiếp nhận bên dưới để đăng ký phụ trách khách hàng này trước khi thực hiện đối soát và bàn giao kho.
-            </p>
-            <div className="mt-4 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const updated = await bookingService.claimCheckInReception(currentBooking.id)
-                    setInternalArrivals(prev => prev.map(b => b.id === currentBooking.id ? {
-                      ...b,
-                      assignedStaffId: updated.assignedStaffId || user?.id,
-                      assignedStaffName: updated.assignedStaffName || user?.fullName || 'Nhân viên quầy'
-                    } : b))
-                    if (onRefreshArrivals) onRefreshArrivals()
-                  } catch (err: any) {
-                    alert(err?.response?.data?.message || 'Không thể tiếp nhận đơn này.')
-                  }
-                }}
-                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl inline-flex items-center gap-2 shadow-xs cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
-                <span>Tiếp Nhận Đơn Này Ngay</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedBookingId('')
-                  if (onSelectBooking) onSelectBooking('')
-                }}
-                className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
-              >
-                Quay Lại
-              </button>
-            </div>
-          </div>
-        </div>
-      </>
-    )
-  }
-
   return (
     <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
       
@@ -1341,6 +1267,82 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           </p>
         </div>
       </div>
+
+      {/* Informative Read-Only Notice when order is assigned to another staff */}
+      {isAssignedToOther && (
+        <div className="mt-4 p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-[22px]">lock_person</span>
+            </div>
+            <div>
+              <div className="font-bold text-xs sm:text-sm flex items-center gap-1.5">
+                <span>Chế Độ Xem Hồ Sơ Bàn Giao (Chỉ Xem)</span>
+                <span className="px-2 py-0.2 rounded-full text-[10px] font-extrabold bg-amber-200 text-amber-950">
+                  Chỉ đọc
+                </span>
+              </div>
+              <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">
+                Đơn <strong>{currentBooking.bookingCode}</strong> hiện đang do nhân viên <strong>{currentBooking.assignedStaffName || 'khác'}</strong> phụ trách tiếp đón. Bạn có quyền theo dõi tình trạng hồ sơ đối soát, nghiệm thu và thông tin bàn giao nhưng <strong>không được phép thực thi tiếp quá trình bàn giao</strong> trên đơn này.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedBookingId('')
+              if (onSelectBooking) onSelectBooking('')
+            }}
+            className="px-3.5 py-1.5 bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold rounded-lg inline-flex items-center gap-1 shadow-xs cursor-pointer shrink-0 self-start sm:self-center"
+          >
+            <span className="material-symbols-outlined text-[15px]">close</span>
+            <span>Đóng Chi Tiết</span>
+          </button>
+        </div>
+      )}
+
+      {/* Informative Notice when order is unassigned */}
+      {isUnassigned && (
+        <div className="mt-4 p-4 rounded-xl bg-blue-50 border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-blue-900 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-[22px]">how_to_reg</span>
+            </div>
+            <div>
+              <div className="font-bold text-xs sm:text-sm flex items-center gap-1.5">
+                <span>Đơn Chưa Có Nhân Viên Tiếp Nhận</span>
+                <span className="px-2 py-0.2 rounded-full text-[10px] font-extrabold bg-blue-200 text-blue-950">
+                  Chưa tiếp nhận
+                </span>
+              </div>
+              <p className="text-xs text-blue-800 mt-0.5 leading-relaxed">
+                Đơn <strong>{currentBooking.bookingCode}</strong> (Khách hàng <strong>{currentBooking.customerName}</strong>) chưa có nhân sự phụ trách tiếp đón. Bạn đang ở chế độ xem hồ sơ. Bấm <strong>[Tiếp Nhận Đơn Này Ngay]</strong> để phụ trách và thực hiện bàn giao kho.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+            <button
+              type="button"
+              onClick={handleClaimBooking}
+              disabled={isClaimingBooking}
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl inline-flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
+              <span>{isClaimingBooking ? 'Đang tiếp nhận...' : 'Tiếp Nhận Đơn Này Ngay'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedBookingId('')
+                if (onSelectBooking) onSelectBooking('')
+              }}
+              className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 2. Customer Spotlight Profile Card */}
       <div className="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
@@ -1372,6 +1374,17 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 >
                   Trạng thái: {currentBooking?.status === 'ACTIVE' ? 'Đã nhận kho (ACTIVE)' : currentBooking?.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Chờ cọc'}
                 </span>
+                {currentBooking?.assignedStaffName ? (
+                  <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-mono text-[10px] font-bold flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[13px]">person</span>
+                    Tiếp nhận: {currentBooking.assignedStaffName}
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 font-mono text-[10px] font-bold flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[13px]">person_off</span>
+                    Chưa tiếp nhận
+                  </span>
+                )}
                 {currentSession.isCompleted && (
                   <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-mono text-[10px] font-bold flex items-center gap-1">
                     <span className="material-symbols-outlined text-[13px]">check_circle</span>
@@ -1718,7 +1731,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                           <button
                             type="button"
                             onClick={handleOpenPaperContractModal}
-                            className="text-[11px] text-slate-500 hover:text-slate-700 underline font-medium cursor-pointer"
+                            disabled={isReadOnlyHandover}
+                            className={`text-[11px] font-medium ${isReadOnlyHandover ? 'text-slate-400 cursor-not-allowed opacity-50' : 'text-slate-500 hover:text-slate-700 underline cursor-pointer'}`}
                             title="Nếu chi nhánh muốn lưu thêm bản giấy photo/scan dự phòng"
                           >
                             {currentPrerequisites?.paperContractUrl ? 'Cập nhật bản scan dự phòng' : '+ Tải bản scan dự phòng (tùy chọn)'}
@@ -1731,7 +1745,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                         <button
                           type="button"
                           onClick={handleOpenPaperContractModal}
-                          className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                          disabled={isReadOnlyHandover}
+                          className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 transition-colors ${isReadOnlyHandover ? 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-50' : 'bg-slate-100 hover:bg-slate-200 text-slate-800 cursor-pointer'}`}
                         >
                           <span className="material-symbols-outlined text-[15px]">upload_file</span>
                           <span>{currentPrerequisites?.paperContractUrl ? 'Cập Nhật Bản Scan' : 'Tạo / Tải HĐ Giấy'}</span>
@@ -1741,8 +1756,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                           <button
                             type="button"
                             onClick={handleVerifyPaperContract}
-                            disabled={isVerifyingPaperContract}
-                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                            disabled={isVerifyingPaperContract || isReadOnlyHandover}
+                            className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 transition-colors ${isReadOnlyHandover ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-50' : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer disabled:opacity-50'}`}
                           >
                             <span className="material-symbols-outlined text-[15px]">verified</span>
                             <span>{isVerifyingPaperContract ? 'Đang xác minh...' : 'Xác Minh Hợp Đồng'}</span>
@@ -1758,7 +1773,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                         <button
                           type="button"
                           onClick={handleOpenPaperContractModal}
-                          className="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer border border-amber-300 shrink-0"
+                          disabled={isReadOnlyHandover}
+                          className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 transition-colors border shrink-0 ${isReadOnlyHandover ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50' : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300 cursor-pointer'}`}
                         >
                           <span className="material-symbols-outlined text-[15px]">edit_document</span>
                           <span>Chuyển Sang Ký Giấy Tại Quầy</span>
@@ -1937,13 +1953,23 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     <button
                       type="button"
                       onClick={() => paymentProofInputRef.current?.click()}
-                      disabled={isUploadingPaymentProof}
-                      className="w-full py-2 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                      disabled={isUploadingPaymentProof || isReadOnlyHandover}
+                      className={`w-full py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-xs ${
+                        isReadOnlyHandover
+                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                          : 'bg-cyan-600 hover:bg-cyan-700 text-white cursor-pointer disabled:opacity-50'
+                      }`}
                     >
                       <span className="material-symbols-outlined text-[16px] shrink-0">
-                        {isUploadingPaymentProof ? 'hourglass_top' : 'upload_file'}
+                        {isUploadingPaymentProof ? 'hourglass_top' : isReadOnlyHandover ? 'lock' : 'upload_file'}
                       </span>
-                      <span className="truncate">{isUploadingPaymentProof ? 'Đang Tải Ảnh...' : 'Tải Lên / Upload Ảnh Chuyển Khoản'}</span>
+                      <span className="truncate">
+                        {isUploadingPaymentProof
+                          ? 'Đang Tải Ảnh...'
+                          : isReadOnlyHandover
+                          ? 'Chỉ Xem (Không Thể Tải Thêm Ảnh)'
+                          : 'Tải Lên / Upload Ảnh Chuyển Khoản'}
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -2021,7 +2047,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                           <select
                             value={idCardType}
                             onChange={(e) => setIdCardType(e.target.value)}
-                            className="p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 font-bold text-xs focus:outline-none focus:border-cyan-600 shrink-0"
+                            disabled={isReadOnlyHandover}
+                            className="p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 font-bold text-xs focus:outline-none focus:border-cyan-600 shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
                           >
                             <option value="CCCD">Căn Cước</option>
                             <option value="PASSPORT">Hộ Chiếu</option>
@@ -2029,20 +2056,22 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                           <input
                             type="text"
                             value={idCardInputNumber}
+                            disabled={isReadOnlyHandover}
                             onChange={(e) => {
                               setIdCardInputNumber(e.target.value)
                               if (checkInError) setCheckInError(null)
                             }}
                             placeholder="Nhập 9-12 chữ số..."
-                            className="min-w-0 flex-1 w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 font-mono text-xs focus:outline-none focus:border-cyan-600"
+                            className="min-w-0 flex-1 w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 font-mono text-xs focus:outline-none focus:border-cyan-600 disabled:opacity-60 disabled:cursor-not-allowed"
                           />
                         </div>
-                        <label className="flex items-start gap-2 cursor-pointer text-[11px] text-slate-700 p-2 bg-slate-50 rounded-lg border border-slate-100 leading-snug">
+                        <label className={`flex items-start gap-2 text-[11px] text-slate-700 p-2 bg-slate-50 rounded-lg border border-slate-100 leading-snug ${isReadOnlyHandover ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
                           <input
                             type="checkbox"
                             checked={idOriginalSeen}
+                            disabled={isReadOnlyHandover}
                             onChange={(e) => setIdOriginalSeen(e.target.checked)}
-                            className="mt-0.5 rounded text-cyan-600 shrink-0"
+                            className="mt-0.5 rounded text-cyan-600 shrink-0 cursor-pointer disabled:cursor-not-allowed"
                           />
                           <span>Tôi xác nhận đã xem và đối chiếu thẻ căn cước / hộ chiếu gốc của khách hàng tại quầy.</span>
                         </label>
@@ -2056,17 +2085,34 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       <button
                         type="button"
                         onClick={handleVerifyIdentity}
-                        disabled={isVerifyingIdentity}
-                        className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                        disabled={isVerifyingIdentity || isReadOnlyHandover}
+                        className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1 transition-colors ${
+                          isReadOnlyHandover
+                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                            : 'bg-cyan-600 hover:bg-cyan-700 text-white cursor-pointer disabled:opacity-50'
+                        }`}
                       >
-                        <span className="material-symbols-outlined text-[15px] shrink-0">verified_user</span>
-                        <span>{isVerifyingIdentity ? 'Đang lưu đối soát...' : 'Xác Nhận Đối Chiếu Gốc'}</span>
+                        <span className="material-symbols-outlined text-[15px] shrink-0">
+                          {isReadOnlyHandover ? 'lock' : 'verified_user'}
+                        </span>
+                        <span>
+                          {isVerifyingIdentity
+                            ? 'Đang lưu đối soát...'
+                            : isReadOnlyHandover
+                            ? 'Chỉ xem hồ sơ'
+                            : 'Xác Nhận Đối Chiếu Gốc'}
+                        </span>
                       </button>
                     ) : (
                       <button
                         type="button"
                         onClick={() => updateCurrentSession({ identityVerified: false })}
-                        className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-bold cursor-pointer"
+                        disabled={isReadOnlyHandover}
+                        className={`px-2.5 py-1 rounded text-[11px] font-bold ${
+                          isReadOnlyHandover
+                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer'
+                        }`}
                       >
                         Đối soát lại
                       </button>
@@ -2112,33 +2158,44 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       : 'Hệ thống yêu cầu đáp ứng đầy đủ các điều kiện đối soát trước khi chuyển sang nghiệm thu hiện trường.'}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!isCheckInTimeMet && !isEarlyCheckInConfirmed) {
-                      setShowEarlyCheckInModal(true)
-                    } else {
-                      handleCompleteStep1()
-                    }
-                  }}
-                  disabled={(!isPhysicalPrereqsMet && !isReadyForCheckIn) || isCompletingStep1}
-                  className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 shadow-xs ${
-                    (isReadyForCheckIn || (isPhysicalPrereqsMet && !isCheckInTimeMet)) && !isCompletingStep1
-                      ? !isCheckInTimeMet && !isEarlyCheckInConfirmed
-                        ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                        : 'bg-cyan-600 hover:bg-cyan-700 text-white'
-                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                  }`}
-                >
-                  <span>
-                    {isCompletingStep1 
-                      ? 'Đang Chuyển Bước...' 
-                      : !isCheckInTimeMet && !isEarlyCheckInConfirmed
-                      ? 'Xác Nhận Tiếp Nhận Sớm & Đi Tiếp'
-                      : 'Hoàn Tất Đối Soát & Đi Tiếp'}
-                  </span>
-                  <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
-                </button>
+                {isReadOnlyHandover ? (
+                  <button
+                    type="button"
+                    onClick={() => handleSelectTab('checklist')}
+                    className="px-4 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 shadow-xs bg-slate-800 hover:bg-slate-900 text-white"
+                  >
+                    <span>Xem Bước 2: Nghiệm Thu Hiện Trường</span>
+                    <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isCheckInTimeMet && !isEarlyCheckInConfirmed) {
+                        setShowEarlyCheckInModal(true)
+                      } else {
+                        handleCompleteStep1()
+                      }
+                    }}
+                    disabled={(!isPhysicalPrereqsMet && !isReadyForCheckIn) || isCompletingStep1}
+                    className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 shadow-xs ${
+                      (isReadyForCheckIn || (isPhysicalPrereqsMet && !isCheckInTimeMet)) && !isCompletingStep1
+                        ? !isCheckInTimeMet && !isEarlyCheckInConfirmed
+                          ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                          : 'bg-cyan-600 hover:bg-cyan-700 text-white'
+                        : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    }`}
+                  >
+                    <span>
+                      {isCompletingStep1 
+                        ? 'Đang Chuyển Bước...' 
+                        : !isCheckInTimeMet && !isEarlyCheckInConfirmed
+                        ? 'Xác Nhận Tiếp Nhận Sớm & Đi Tiếp'
+                        : 'Hoàn Tất Đối Soát & Đi Tiếp'}
+                    </span>
+                    <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -2155,29 +2212,32 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <span className="font-headline text-xs font-bold text-slate-900 uppercase tracking-wider">
                 Checklist Nghiệm Thu Hiện Trường (5 Điểm Tiêu Chuẩn)
               </span>
-              <button
-                onClick={handleSelectAllChecklist}
-                className="text-xs text-cyan-600 hover:text-cyan-700 font-bold flex items-center gap-1 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px]">done_all</span>
-                <span>Chọn tất cả 5/5 đạt chuẩn</span>
-              </button>
+              {!isReadOnlyHandover && (
+                <button
+                  onClick={handleSelectAllChecklist}
+                  className="text-xs text-cyan-600 hover:text-cyan-700 font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">done_all</span>
+                  <span>Chọn tất cả 5/5 đạt chuẩn</span>
+                </button>
+              )}
             </div>
 
             <div className="grid grid-cols-1 gap-2.5">
               
               {/* Item 1 */}
               <label
-                className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
+                className={`p-3 rounded-xl border transition-all flex items-center justify-between ${isReadOnlyHandover ? 'cursor-default' : 'cursor-pointer'} ${
                   currentSession.checklist.doorRoll ? 'bg-cyan-50/50 border-cyan-200' : 'bg-slate-50 border-slate-200'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <input
                     type="checkbox"
+                    disabled={isReadOnlyHandover}
                     checked={currentSession.checklist.doorRoll}
-                    onChange={() => handleToggleChecklist('doorRoll')}
-                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer"
+                    onChange={() => !isReadOnlyHandover && handleToggleChecklist('doorRoll')}
+                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <div className="text-xs">
                     <span className="font-bold text-slate-900">1. Cửa cuốn &amp; then chốt cơ khí</span>
@@ -2195,16 +2255,17 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
               {/* Item 2 */}
               <label
-                className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
+                className={`p-3 rounded-xl border transition-all flex items-center justify-between ${isReadOnlyHandover ? 'cursor-default' : 'cursor-pointer'} ${
                   currentSession.checklist.cleanliness ? 'bg-cyan-50/50 border-cyan-200' : 'bg-slate-50 border-slate-200'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <input
                     type="checkbox"
+                    disabled={isReadOnlyHandover}
                     checked={currentSession.checklist.cleanliness}
-                    onChange={() => handleToggleChecklist('cleanliness')}
-                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer"
+                    onChange={() => !isReadOnlyHandover && handleToggleChecklist('cleanliness')}
+                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <div className="text-xs">
                     <span className="font-bold text-slate-900">2. Không gian vệ sinh &amp; độ ẩm</span>
@@ -2222,16 +2283,17 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
               {/* Item 3 */}
               <label
-                className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
+                className={`p-3 rounded-xl border transition-all flex items-center justify-between ${isReadOnlyHandover ? 'cursor-default' : 'cursor-pointer'} ${
                   currentSession.checklist.lighting ? 'bg-cyan-50/50 border-cyan-200' : 'bg-slate-50 border-slate-200'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <input
                     type="checkbox"
+                    disabled={isReadOnlyHandover}
                     checked={currentSession.checklist.lighting}
-                    onChange={() => handleToggleChecklist('lighting')}
-                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer"
+                    onChange={() => !isReadOnlyHandover && handleToggleChecklist('lighting')}
+                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <div className="text-xs">
                     <span className="font-bold text-slate-900">3. Ổ khóa điện tử SmartLock &amp; đèn báo</span>
@@ -2249,16 +2311,17 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
               {/* Item 4 */}
               <label
-                className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
+                className={`p-3 rounded-xl border transition-all flex items-center justify-between ${isReadOnlyHandover ? 'cursor-default' : 'cursor-pointer'} ${
                   currentSession.checklist.fireSafety ? 'bg-cyan-50/50 border-cyan-200' : 'bg-slate-50 border-slate-200'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <input
                     type="checkbox"
+                    disabled={isReadOnlyHandover}
                     checked={currentSession.checklist.fireSafety}
-                    onChange={() => handleToggleChecklist('fireSafety')}
-                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer"
+                    onChange={() => !isReadOnlyHandover && handleToggleChecklist('fireSafety')}
+                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <div className="text-xs">
                     <span className="font-bold text-slate-900">4. Đầu báo khói &amp; cảm biến nhiệt ẩm</span>
@@ -2276,16 +2339,17 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
               {/* Item 5 */}
               <label
-                className={`p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
+                className={`p-3 rounded-xl border transition-all flex items-center justify-between ${isReadOnlyHandover ? 'cursor-default' : 'cursor-pointer'} ${
                   currentSession.checklist.sealPlate ? 'bg-cyan-50/50 border-cyan-200' : 'bg-slate-50 border-slate-200'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <input
                     type="checkbox"
+                    disabled={isReadOnlyHandover}
                     checked={currentSession.checklist.sealPlate}
-                    onChange={() => handleToggleChecklist('sealPlate')}
-                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer"
+                    onChange={() => !isReadOnlyHandover && handleToggleChecklist('sealPlate')}
+                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <div className="text-xs">
                     <span className="font-bold text-slate-900">5. Tường vách &amp; tem niêm phong</span>
@@ -2350,6 +2414,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                         <span>Bấm để phóng to kiểm tra ảnh</span>
                       </button>
                     </>
+                  ) : isReadOnlyHandover ? (
+                    <div className="text-slate-400 flex flex-col items-center gap-1.5 p-4 text-xs">
+                      <span className="material-symbols-outlined text-[28px]">image_not_supported</span>
+                      <span>Chưa có ảnh cửa ngoài kho #{unitDisplayCode}</span>
+                    </div>
                   ) : (
                     <button
                       type="button"
@@ -2386,25 +2455,29 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                           <span className="material-symbols-outlined text-[14px]">visibility</span>
                           <span>Xem to</span>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDoorPreviewUrl('')
-                            updateCurrentSession({ photoDoor: '' })
-                          }}
-                          className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] transition-colors cursor-pointer"
-                        >
-                          Xóa
-                        </button>
+                        {!isReadOnlyHandover && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDoorPreviewUrl('')
+                              updateCurrentSession({ photoDoor: '' })
+                            }}
+                            className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] transition-colors cursor-pointer"
+                          >
+                            Xóa
+                          </button>
+                        )}
                       </>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => doorInputRef.current?.click()}
-                      className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
-                    >
-                      {effectiveDoorPhoto ? 'Chụp lại' : 'Tải ảnh lên'}
-                    </button>
+                    {!isReadOnlyHandover && (
+                      <button
+                        type="button"
+                        onClick={() => doorInputRef.current?.click()}
+                        className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
+                      >
+                        {effectiveDoorPhoto ? 'Chụp lại' : 'Tải ảnh lên'}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2430,6 +2503,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                         <span>Bấm để phóng to kiểm tra ảnh</span>
                       </button>
                     </>
+                  ) : isReadOnlyHandover ? (
+                    <div className="text-slate-400 flex flex-col items-center gap-1.5 p-4 text-xs">
+                      <span className="material-symbols-outlined text-[28px]">image_not_supported</span>
+                      <span>Chưa có ảnh nền sàn &amp; vách trong kho</span>
+                    </div>
                   ) : (
                     <button
                       type="button"
@@ -2466,25 +2544,29 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                           <span className="material-symbols-outlined text-[14px]">visibility</span>
                           <span>Xem to</span>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setInteriorPreviewUrl('')
-                            updateCurrentSession({ photoInterior: '' })
-                          }}
-                          className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] transition-colors cursor-pointer"
-                        >
-                          Xóa
-                        </button>
+                        {!isReadOnlyHandover && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setInteriorPreviewUrl('')
+                              updateCurrentSession({ photoInterior: '' })
+                            }}
+                            className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] transition-colors cursor-pointer"
+                          >
+                            Xóa
+                          </button>
+                        )}
                       </>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => interiorInputRef.current?.click()}
-                      className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
-                    >
-                      {effectiveInteriorPhoto ? 'Chụp lại' : 'Tải ảnh lên'}
-                    </button>
+                    {!isReadOnlyHandover && (
+                      <button
+                        type="button"
+                        onClick={() => interiorInputRef.current?.click()}
+                        className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
+                      >
+                        {effectiveInteriorPhoto ? 'Chụp lại' : 'Tải ảnh lên'}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2500,19 +2582,30 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               Quay lại Bước 1
             </button>
 
-            <button
-              type="button"
-              onClick={handleCompleteInspection}
-              disabled={!isAllChecklistPassed || !currentSession.photoDoor || !currentSession.photoInterior || isRecordingInspection}
-              className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                isAllChecklistPassed && currentSession.photoDoor && currentSession.photoInterior && !isRecordingInspection
-                  ? 'bg-cyan-600 hover:bg-cyan-700 text-white shadow-xs'
-                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-              }`}
-            >
-              <span>{isRecordingInspection ? 'Đang Lưu Nghiệm Thu...' : 'Hoàn Tất Nghiệm Thu & Cấp PIN'}</span>
-              <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-            </button>
+            {isReadOnlyHandover ? (
+              <button
+                type="button"
+                onClick={() => handleSelectTab('pin')}
+                className="px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer bg-slate-800 hover:bg-slate-700 text-white shadow-xs"
+              >
+                <span>Xem Bước 3: Cấp PIN &amp; Bàn Giao</span>
+                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleCompleteInspection}
+                disabled={!isAllChecklistPassed || !currentSession.photoDoor || !currentSession.photoInterior || isRecordingInspection}
+                className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                  isAllChecklistPassed && currentSession.photoDoor && currentSession.photoInterior && !isRecordingInspection
+                    ? 'bg-cyan-600 hover:bg-cyan-700 text-white shadow-xs'
+                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                }`}
+              >
+                <span>{isRecordingInspection ? 'Đang Lưu Nghiệm Thu...' : 'Hoàn Tất Nghiệm Thu & Cấp PIN'}</span>
+                <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+              </button>
+            )}
           </div>
 
         </div>
@@ -2600,10 +2693,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 </span>
                 <input
                   type="text"
+                  disabled={isReadOnlyHandover}
+                  readOnly={isReadOnlyHandover}
                   value={currentSession.rfidCard}
                   placeholder="Mã thẻ..."
-                  onChange={(e) => updateCurrentSession({ rfidCard: e.target.value })}
-                  className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-white rounded font-mono text-xs w-28 text-center focus:outline-none focus:border-cyan-500"
+                  onChange={(e) => !isReadOnlyHandover && updateCurrentSession({ rfidCard: e.target.value })}
+                  className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-white rounded font-mono text-xs w-28 text-center focus:outline-none focus:border-cyan-500 disabled:opacity-60 disabled:cursor-not-allowed"
                 />
               </div>
             </div>
@@ -2618,13 +2713,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 <button
                   type="button"
                   onClick={handleSendEmail}
-                  disabled={isSendingEmail || !currentSession.isCompleted}
+                  disabled={isSendingEmail || !currentSession.isCompleted || isReadOnlyHandover}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
                     currentSession.emailSent
                       ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40'
+                      : isReadOnlyHandover
+                      ? 'bg-slate-800/50 text-slate-400 border border-slate-800 cursor-not-allowed'
                       : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
                   }`}
-                  title={`Gửi mã PIN & thông tin bàn giao tới ${customerDisplayEmail}`}
+                  title={isReadOnlyHandover ? 'Chế độ chỉ xem - không thể gửi email' : `Gửi mã PIN & thông tin bàn giao tới ${customerDisplayEmail}`}
                 >
                   <span className="material-symbols-outlined text-[16px]">
                     {currentSession.emailSent ? 'mark_email_read' : 'mail'}
@@ -2640,13 +2737,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 <button
                   type="button"
                   onClick={handleSendWebPush}
-                  disabled={isSendingWebPush || !currentSession.isCompleted}
+                  disabled={isSendingWebPush || !currentSession.isCompleted || isReadOnlyHandover}
                   className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
                     currentSession.webPushSent
                       ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/40'
+                      : isReadOnlyHandover
+                      ? 'bg-slate-800/50 text-slate-400 border border-slate-800 cursor-not-allowed'
                       : 'bg-cyan-950 hover:bg-cyan-900 text-cyan-200 border-cyan-800'
                   }`}
-                  title="Gửi thông báo xuất hiện trực tiếp trên nút chuông thông báo gần profile ở web"
+                  title={isReadOnlyHandover ? 'Chế độ chỉ xem - không thể bắn thông báo' : 'Gửi thông báo xuất hiện trực tiếp trên nút chuông thông báo gần profile ở web'}
                 >
                   <span className="material-symbols-outlined text-[16px]">
                     {currentSession.webPushSent ? 'notifications_active' : 'notifications'}
@@ -2690,10 +2789,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </label>
               <textarea
                 rows={2}
+                disabled={isReadOnlyHandover}
+                readOnly={isReadOnlyHandover}
                 value={currentSession.handoverNotes}
-                onChange={(e) => updateCurrentSession({ handoverNotes: e.target.value })}
+                onChange={(e) => !isReadOnlyHandover && updateCurrentSession({ handoverNotes: e.target.value })}
                 placeholder="Nhập ghi chú bàn giao nếu có (vd: Khách mượn xe đẩy, hẹn dọn đồ sau 17h)..."
-                className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-cyan-600"
+                className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-cyan-600 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
               />
             </div>
 
@@ -2715,35 +2816,51 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   <span>Xem Trước Biên Bản (PDF)</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={handleCompleteHandover}
-                  disabled={isSubmitting || currentSession.isCompleted || !isReadyForCheckIn || !isAllChecklistPassed}
-                  className={`btn-tactile px-5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer ${
-                    currentSession.isCompleted
-                      ? 'bg-emerald-600 text-white'
-                      : isSubmitting
-                      ? 'bg-slate-400 text-white cursor-wait'
-                      : !isReadyForCheckIn || !isAllChecklistPassed
-                      ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                      : 'bg-cyan-600 hover:bg-cyan-700 text-white'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[16px]">
-                    {currentSession.isCompleted
-                      ? 'verified'
-                      : isSubmitting
-                      ? 'hourglass_top'
-                      : 'assignment_turned_in'}
-                  </span>
-                  <span>
-                    {currentSession.isCompleted
-                      ? 'ĐÃ HOÀN TẤT BÀN GIAO'
-                      : isSubmitting
-                      ? 'Đang Xử Lý API...'
-                      : 'Xác Nhận Ký & Bàn Giao'}
-                  </span>
-                </button>
+                {isReadOnlyHandover ? (
+                  <button
+                    type="button"
+                    disabled={true}
+                    className="px-5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 bg-slate-200 text-slate-500 border border-slate-300 cursor-not-allowed shadow-none"
+                    title={isAssignedToOther ? 'Đơn đang do nhân viên khác tiếp nhận' : 'Đơn chưa có nhân viên tiếp nhận'}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">lock</span>
+                    <span>
+                      {isAssignedToOther
+                        ? 'CHỈ XEM (ĐƠN DO NV KHÁC TIẾP NHẬN)'
+                        : 'CHỈ XEM (CHƯA TIẾP NHẬN ĐƠN)'}
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleCompleteHandover}
+                    disabled={isSubmitting || currentSession.isCompleted || !isReadyForCheckIn || !isAllChecklistPassed}
+                    className={`btn-tactile px-5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer ${
+                      currentSession.isCompleted
+                        ? 'bg-emerald-600 text-white'
+                        : isSubmitting
+                        ? 'bg-slate-400 text-white cursor-wait'
+                        : !isReadyForCheckIn || !isAllChecklistPassed
+                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                        : 'bg-cyan-600 hover:bg-cyan-700 text-white'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">
+                      {currentSession.isCompleted
+                        ? 'verified'
+                        : isSubmitting
+                        ? 'hourglass_top'
+                        : 'assignment_turned_in'}
+                    </span>
+                    <span>
+                      {currentSession.isCompleted
+                        ? 'ĐÃ HOÀN TẤT BÀN GIAO'
+                        : isSubmitting
+                        ? 'Đang Xử Lý API...'
+                        : 'Xác Nhận Ký & Bàn Giao'}
+                    </span>
+                  </button>
+                )}
               </div>
             </div>
           </div>

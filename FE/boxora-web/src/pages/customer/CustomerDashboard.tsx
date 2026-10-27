@@ -1789,12 +1789,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleTabChange('explore')}
-              className="stitch-btn-primary text-xs"
-            >
-              <span>Thuê thêm kho</span>
-            </button>
+            
             <button
               onClick={() => handleTabChange('support')}
               className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"

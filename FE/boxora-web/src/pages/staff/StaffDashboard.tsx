@@ -164,7 +164,21 @@ export const StaffDashboard: React.FC = () => {
   const [claimingBookingId, setClaimingBookingId] = useState<string | null>(null)
   const [rejectingBooking, setRejectingBooking] = useState<Booking | null>(null)
   const [rejectionReasonText, setRejectionReasonText] = useState<string>('')
+  const [rejectionError, setRejectionError] = useState<string | null>(null)
   const [isRejectingSubmitting, setIsRejectingSubmitting] = useState<boolean>(false)
+
+  const openRejectModal = (b: Booking) => {
+    setRejectingBooking(b)
+    setRejectionReasonText('')
+    setRejectionError(null)
+  }
+
+  const closeRejectModal = () => {
+    setRejectingBooking(null)
+    setRejectionReasonText('')
+    setRejectionError(null)
+  }
+
   const [confirmingBooking, setConfirmingBooking] = useState<Booking | null>(null)
   const [confirmingNotes, setConfirmingNotes] = useState<string>('')
   const [isConfirmingSubmitting, setIsConfirmingSubmitting] = useState<boolean>(false)
@@ -739,28 +753,30 @@ export const StaffDashboard: React.FC = () => {
 
   // Nhân viên từ chối đơn: có điền lý do, chuyển sang CANCELLED và gửi email đến khách hàng
   const handleStaffRejectBooking = async (booking: Booking, reason: string) => {
-    if (!reason.trim() || reason.trim().length < 5) {
-      alert('Vui lòng điền hoặc chọn chi tiết lý do từ chối đơn đặt giữ chỗ (tối thiểu 5 ký tự).')
+    const trimmedReason = reason.trim()
+    if (!trimmedReason || trimmedReason.length < 5) {
+      setRejectionError('Vui lòng điền hoặc chọn chi tiết lý do từ chối đơn đặt giữ chỗ (tối thiểu 5 ký tự).')
       return
     }
 
+    setRejectionError(null)
     setIsRejectingSubmitting(true)
     try {
       const isBackendId = Boolean(booking.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(booking.id.trim()))
       const targetIdOrCode = isBackendId ? booking.id : booking.bookingCode
-      await bookingService.cancelBooking(targetIdOrCode, reason.trim())
+      await bookingService.cancelBooking(targetIdOrCode, trimmedReason)
     } catch (err: any) {
       console.error('Backend cancel booking error on reject:', err)
       const errMsg = err.response?.data?.message || err.message || 'Lỗi xử lý hủy đơn trên máy chủ'
       const isLocalOnly = !booking.id || booking.id.startsWith('LOCAL-RES-') || booking.id.startsWith('res_') || err?.response?.status === 404 || err?.response?.data?.errorCode === 'BOOKING_NOT_FOUND'
       if (!isLocalOnly) {
-        alert(`Không thể từ chối đơn trên máy chủ: ${errMsg}`)
+        setRejectionError(`Không thể từ chối đơn trên máy chủ: ${errMsg}`)
         setIsRejectingSubmitting(false)
         return
       }
     }
 
-    const res = reservationEmailService.rejectReservation(booking.bookingCode, reason, {
+    const res = reservationEmailService.rejectReservation(booking.bookingCode, trimmedReason, {
       id: user?.id,
       fullName: user?.fullName || 'Nhân viên trực ca Boxora',
     })
@@ -770,14 +786,15 @@ export const StaffDashboard: React.FC = () => {
         ? {
             ...b,
             status: 'CANCELLED' as any,
-            rejectionReason: reason.trim() as any,
+            rejectionReason: trimmedReason as any,
           }
         : b
     ))
-    setAttendanceSuccessMsg(res.message || 'Đã từ chối đơn đặt giữ chỗ.')
+    setAttendanceSuccessMsg(res.message || `Đã từ chối đơn đặt giữ chỗ #${booking.bookingCode}.`)
     setTimeout(() => setAttendanceSuccessMsg(null), 5000)
     setRejectingBooking(null)
     setRejectionReasonText('')
+    setRejectionError(null)
     setReviewDetailBooking(null)
     setIsRejectingSubmitting(false)
 
@@ -1456,6 +1473,18 @@ export const StaffDashboard: React.FC = () => {
                                   </span>
                                 ) : null
                               )}
+
+                              {b.assignedStaffName ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200" title={`Nhân viên tiếp nhận: ${b.assignedStaffName}`}>
+                                  <span className="material-symbols-outlined text-[12px]">person</span>
+                                  <span>Tiếp nhận: <strong>{b.assignedStaffName}</strong></span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200" title="Đơn chưa có nhân viên tiếp nhận">
+                                  <span className="material-symbols-outlined text-[12px]">person_off</span>
+                                  <span>Chưa tiếp nhận</span>
+                                </span>
+                              )}
                             </div>
                           </td>
 
@@ -1514,10 +1543,7 @@ export const StaffDashboard: React.FC = () => {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      setRejectingBooking(b)
-                                      setRejectionReasonText('')
-                                    }}
+                                    onClick={() => openRejectModal(b)}
                                     className="px-2 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
                                     title="Từ chối đơn và điền lý do"
                                   >
@@ -1539,10 +1565,7 @@ export const StaffDashboard: React.FC = () => {
 
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      setRejectingBooking(b)
-                                      setRejectionReasonText('')
-                                    }}
+                                    onClick={() => openRejectModal(b)}
                                     className="px-2.5 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
                                     title="Từ chối đơn và điền lý do"
                                   >
@@ -1856,6 +1879,17 @@ export const StaffDashboard: React.FC = () => {
                               {b.status !== 'CANCELLED' && isContractSigned && (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                   ✓ Đã ký HĐ điện tử
+                                </span>
+                              )}
+                              {b.assignedStaffName ? (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 text-blue-700 border border-blue-200" title={`Nhân viên tiếp nhận: ${b.assignedStaffName}`}>
+                                  <span className="material-symbols-outlined text-[11px]">person</span>
+                                  <span>Tiếp nhận: <strong>{b.assignedStaffName}</strong></span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-500 border border-slate-200" title="Đơn chưa có nhân viên tiếp nhận">
+                                  <span className="material-symbols-outlined text-[11px]">person_off</span>
+                                  <span>Chưa tiếp nhận</span>
                                 </span>
                               )}
                             </div>
@@ -2520,7 +2554,7 @@ export const StaffDashboard: React.FC = () => {
               <button
                 type="button"
                 disabled={isRejectingSubmitting}
-                onClick={() => setRejectingBooking(null)}
+                onClick={closeRejectModal}
                 className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
               >
                 ✕
@@ -2534,16 +2568,61 @@ export const StaffDashboard: React.FC = () => {
                 <div>Lịch hẹn: <strong>{(rejectingBooking as any).checkInDate || rejectingBooking.startDate}</strong> ({(rejectingBooking as any).checkInTime || 'Giờ tiếp đón'})</div>
               </div>
 
+              {/* Thông báo lỗi rõ ràng bên trong modal */}
+              {rejectionError && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800/80 text-rose-900 dark:text-rose-200 text-xs flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200 shadow-xs">
+                  <div className="w-7 h-7 rounded-lg bg-rose-200/80 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300 flex items-center justify-center shrink-0 mt-0.5">
+                    <span className="material-symbols-outlined text-[18px]">error</span>
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <span className="font-bold block text-[12px] leading-snug text-rose-950 dark:text-rose-100">
+                      {rejectionError}
+                    </span>
+                    {rejectionReasonText.trim().length > 0 && rejectionReasonText.trim().length < 5 && (
+                      <p className="text-[11px] text-rose-700 dark:text-rose-300 leading-relaxed">
+                        Bạn hiện mới nhập <strong>{rejectionReasonText.trim().length}</strong>/5 ký tự tối thiểu. Vui lòng bổ sung thêm thông tin chi tiết hoặc bấm chọn một trong các lý do mẫu bên dưới.
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRejectionError(null)}
+                    className="text-rose-400 hover:text-rose-700 dark:hover:text-rose-200 p-1 text-xs font-bold cursor-pointer"
+                    title="Đóng thông báo"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
               <div className="space-y-2">
-                <label className="font-bold text-slate-900 dark:text-white block text-xs">
-                  Điền lý do từ chối (Nội dung này sẽ được gửi email tới khách hàng): <span className="text-rose-600">*</span>
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-slate-900 dark:text-white block text-xs">
+                    Điền lý do từ chối (Nội dung này sẽ được gửi email tới khách hàng): <span className="text-rose-600">*</span>
+                  </label>
+                  <span className={`text-[11px] font-mono font-semibold ${
+                    rejectionReasonText.trim().length >= 5
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : rejectionReasonText.trim().length > 0
+                      ? 'text-rose-600 dark:text-rose-400'
+                      : 'text-slate-400'
+                  }`}>
+                    {rejectionReasonText.trim().length >= 5 ? '✓ ' : ''}{rejectionReasonText.trim().length} / tối thiểu 5 ký tự
+                  </span>
+                </div>
                 <textarea
                   rows={3}
                   value={rejectionReasonText}
-                  onChange={(e) => setRejectionReasonText(e.target.value)}
-                  placeholder="Nhập chi tiết lý do từ chối đơn đặt kho..."
-                  className="w-full p-3 rounded-xl border border-rose-300 dark:border-rose-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs outline-none focus:ring-2 focus:ring-rose-500 resize-none"
+                  onChange={(e) => {
+                    setRejectionReasonText(e.target.value)
+                    if (rejectionError) setRejectionError(null)
+                  }}
+                  placeholder="Nhập chi tiết lý do từ chối đơn đặt kho (tối thiểu 5 ký tự)..."
+                  className={`w-full p-3 rounded-xl border bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs outline-none transition-all resize-none ${
+                    rejectionError
+                      ? 'border-rose-500 ring-2 ring-rose-500/20'
+                      : 'border-slate-300 dark:border-slate-700 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20'
+                  }`}
                 />
               </div>
 
@@ -2560,8 +2639,15 @@ export const StaffDashboard: React.FC = () => {
                     <button
                       key={preset}
                       type="button"
-                      onClick={() => setRejectionReasonText(preset)}
-                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10.5px] cursor-pointer"
+                      onClick={() => {
+                        setRejectionReasonText(preset)
+                        if (rejectionError) setRejectionError(null)
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[10.5px] cursor-pointer transition-colors border ${
+                        rejectionReasonText === preset
+                          ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 font-bold'
+                          : 'bg-slate-100 hover:bg-slate-200 border-transparent dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                      }`}
                     >
                       + {preset}
                     </button>
@@ -2574,14 +2660,14 @@ export const StaffDashboard: React.FC = () => {
               <button
                 type="button"
                 disabled={isRejectingSubmitting}
-                onClick={() => setRejectingBooking(null)}
+                onClick={closeRejectModal}
                 className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold cursor-pointer transition disabled:opacity-50"
               >
                 Hủy bỏ
               </button>
               <button
                 type="button"
-                disabled={isRejectingSubmitting || !rejectionReasonText.trim()}
+                disabled={isRejectingSubmitting}
                 onClick={() => handleStaffRejectBooking(rejectingBooking, rejectionReasonText)}
                 className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md cursor-pointer disabled:opacity-50 transition flex items-center gap-1.5"
               >
@@ -2816,23 +2902,38 @@ export const StaffDashboard: React.FC = () => {
                     <span className="text-[10px] text-slate-400 font-sans mt-0.5 block">Thời hạn thuê: {(reviewDetailBooking as any).rentalDurationText || (reviewDetailBooking.rentalMonths ? `${reviewDetailBooking.rentalMonths} tháng` : '1 tháng')}</span>
                   </div>
                 </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 sm:col-span-2">
+                  <span className="text-[10px] text-slate-400 block uppercase">Nhân viên tiếp nhận / Phụ trách:</span>
+                  {reviewDetailBooking.assignedStaffName ? (
+                    <div className="flex items-center gap-1.5 mt-0.5 text-blue-700 font-bold text-xs">
+                      <span className="material-symbols-outlined text-[16px]">person</span>
+                      <span>{reviewDetailBooking.assignedStaffName}</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 mt-0.5 text-slate-500 font-medium text-xs">
+                      <span className="material-symbols-outlined text-[16px]">person_off</span>
+                      <span>Chưa tiếp nhận</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const target = reviewDetailBooking;
-                    setReviewDetailBooking(null);
-                    setRejectingBooking(target);
-                    setRejectionReasonText('');
-                  }}
-                  className="px-4 py-2.5 rounded-xl border border-rose-300 hover:bg-rose-50 text-rose-700 text-xs font-bold cursor-pointer"
-                >
-                  Từ chối đơn...
-                </button>
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const target = reviewDetailBooking;
+                  setReviewDetailBooking(null);
+                  setRejectingBooking(target);
+                  setRejectionReasonText('');
+                }}
+                className="px-4 py-2.5 rounded-xl border border-rose-300 hover:bg-rose-50 text-rose-700 text-xs font-bold cursor-pointer"
+              >
+                Từ chối đơn...
+              </button>
 
-                <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setReviewDetailBooking(null)}
