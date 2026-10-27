@@ -188,17 +188,17 @@ export const EarlyCheckInConfirmModal: React.FC<EarlyCheckInConfirmModalProps> =
   const schedule = getBookingScheduleInfo(booking)
 
   const actionTitle =
-    actionType === 'ASSIGN_UNIT'
-      ? 'Gán kho & Bàn giao'
+    actionType === 'ASSIGN_UNIT' || actionType === 'ASSIGN_PHYSICAL_UNIT'
+      ? 'Check-in'
       : actionType === 'ENTER_RECEPTION'
-      ? 'Vào Tiếp Đón'
+      ? 'Check-in'
       : 'Tiếp nhận đón khách'
 
   const actionDescription =
-    actionType === 'ASSIGN_UNIT'
-      ? 'Chọn và gán ô kho vật lý đang trống cho khách hàng trước ngày hẹn'
+    actionType === 'ASSIGN_UNIT' || actionType === 'ASSIGN_PHYSICAL_UNIT'
+      ? 'Check-in và gán ô kho vật lý đang trống cho khách hàng trước ngày hẹn'
       : actionType === 'ENTER_RECEPTION'
-      ? 'Mở bàn tiếp đón để đối soát CCCD, nghiệm thu 5 hạng mục và cấp mã PIN cho khách'
+      ? 'Mở bàn tiếp đón để đối soát CCCD, nghiệm thu và Check-in cho khách'
       : 'Tiếp nhận ca đón khách và phân công nhân sự phụ trách'
 
   return (

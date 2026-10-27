@@ -1378,7 +1378,7 @@ export const StaffDashboard: React.FC = () => {
                     <th className="py-3 px-4 font-semibold">Mã đơn &amp; Hợp đồng</th>
                     <th className="py-3 px-4 font-semibold">Khách hàng</th>
                     <th className="py-3 px-4 font-semibold">Cơ sở &amp; Kho</th>
-                    <th className="py-3 px-4 font-semibold">Lịch hẹn check-in</th>
+                    <th className="py-3 px-4 font-semibold">Thời gian sẽ tiếp đón khách hàng</th>
                     <th className="py-3 px-4 font-semibold">Trạng thái &amp; Chữ ký</th>
                     <th className="py-3 px-4 font-semibold text-right">Hành Động</th>
                   </tr>
@@ -1555,30 +1555,11 @@ export const StaffDashboard: React.FC = () => {
 
                           <td className="py-3.5 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                              {hasContract && !b.id.startsWith('LOCAL-RES-') && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenContractModal(b)}
-                                  disabled={loadingContractBookingId === b.id}
-                                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer border ${
-                                    isContractSigned
-                                      ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
-                                      : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200'
-                                  }`}
-                                  title="Mở xem văn bản Hợp đồng điện tử & chữ ký của khách hàng"
-                                >
-                                  <span className="material-symbols-outlined text-[15px]">
-                                    {loadingContractBookingId === b.id ? 'hourglass_top' : 'description'}
-                                  </span>
-                                  <span>{loadingContractBookingId === b.id ? 'Đang tải...' : 'Xem Hợp Đồng'}</span>
-                                </button>
-                              )}
-
                               <button
                                 type="button"
                                 onClick={() => setReviewDetailBooking(b)}
                                 className="px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                                title="Xem chi tiết đơn"
+                                title="Xem chi tiết đơn & hợp đồng"
                               >
                                 <span className="material-symbols-outlined text-[15px]">visibility</span>
                                 <span>Xem chi tiết</span>
@@ -1600,10 +1581,10 @@ export const StaffDashboard: React.FC = () => {
                                     }
                                   }}
                                   className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm ring-2 ring-emerald-400/40"
-                                  title="Chọn ô kho vật lý đang trống để gán vào đơn và kích hoạt gửi mã PIN IoT qua email"
+                                  title="Thực hiện Check-in cho khách hàng"
                                 >
-                                  <span className="material-symbols-outlined text-[16px]">key</span>
-                                  <span>Gán kho &amp; Bàn giao</span>
+                                  <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
+                                  <span>Check-in</span>
                                 </button>
                               ) : (s === 'PENDING_CONTACT' || (s as string) === 'PENDING_SIGNATURE') ? (
                                 <>
@@ -1692,7 +1673,7 @@ export const StaffDashboard: React.FC = () => {
                                   title="Chuyển sang Bàn Tiếp Đón &amp; Nghiệm Thu Bàn Giao Kho"
                                 >
                                   <span className="material-symbols-outlined text-[15px]">desk</span>
-                                  <span>{isActiveOrCompleted ? 'Hồ Sơ Bàn Giao' : 'Vào Tiếp Đón'}</span>
+                                  <span>{isActiveOrCompleted ? 'Hồ Sơ Bàn Giao' : 'Check-in'}</span>
                                 </button>
                               )}
                             </div>
@@ -2790,158 +2771,230 @@ export const StaffDashboard: React.FC = () => {
       )}
 
       {/* MODAL XEM CHI TIẾT ĐƠN ĐẶT GIỮ CHỖ CỦA STAFF */}
-      {reviewDetailBooking && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-xl max-h-[92vh] rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col text-left animate-in zoom-in-95 duration-200">
-            <div className="bg-slate-900 text-white p-5 flex items-center justify-between border-b border-slate-800">
-              <div className="flex items-center gap-2.5">
-                <span className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold">
-                  <span className="material-symbols-outlined text-[20px]">feed</span>
-                </span>
-                <div>
-                  <h3 className="font-extrabold text-base">Chi Tiết Đơn Đặt Giữ Chỗ</h3>
-                  <span className="text-xs font-mono text-cyan-300">Mã đơn: {reviewDetailBooking.bookingCode}</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setReviewDetailBooking(null)}
-                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
+      {reviewDetailBooking && (() => {
+        const s = String(reviewDetailBooking.status || '')
+        const isModalPaidPending = s === 'PAID_PENDING_ASSIGNMENT' || s === 'PAID_AND_SIGNED' || (s === 'CONFIRMED' && !reviewDetailBooking.storageUnitId)
+        const isModalConfirmed = (s === 'CONFIRMED' && Boolean(reviewDetailBooking.storageUnitId)) || s === 'AWAITING_CHECKIN'
+        const isModalContractSigned = Boolean(reviewDetailBooking.contractSigned) || reviewDetailBooking.contractStatus === 'PENDING_ACTIVATION' || reviewDetailBooking.contractStatus === 'ACTIVE'
+        const hasModalContract = Boolean(reviewDetailBooking.contractCode || reviewDetailBooking.contractId || reviewDetailBooking.paymentStatus === 'PAID' || isModalConfirmed || s === 'ACTIVE' || s === 'COMPLETED')
+        const sched = getBookingScheduleInfo(reviewDetailBooking)
 
-            <div className="p-5 space-y-4 overflow-y-auto max-h-[70vh] text-xs sm:text-sm">
-              <div className={`p-3.5 rounded-2xl border text-xs flex items-center justify-between gap-3 ${
-                reviewDetailBooking.status === 'CONFIRMED'
-                  ? 'bg-cyan-50 dark:bg-cyan-950/40 border-cyan-200 text-cyan-900 dark:text-cyan-200'
-                  : reviewDetailBooking.status === 'ACTIVE'
-                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 text-emerald-900 dark:text-emerald-200'
-                  : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 text-amber-900 dark:text-amber-200'
-              }`}>
-                <div>
-                  <strong>
-                    Trạng thái:{' '}
-                    {reviewDetailBooking.status === 'CONFIRMED'
-                      ? 'Đã ký HĐ điện tử · Chờ khách đến kho Check-in'
-                      : reviewDetailBooking.status === 'ACTIVE'
-                      ? 'Đang thuê (Hợp đồng ACTIVE)'
-                      : 'Chờ xác nhận'}
-                  </strong>
-                  <div className="mt-0.5 text-[11px] opacity-90">
-                    Mã hợp đồng: <span className="font-mono font-bold">{reviewDetailBooking.contractCode || `CTR-${reviewDetailBooking.bookingCode}`}</span>
-                    {(reviewDetailBooking.contractSigned || reviewDetailBooking.status === 'CONFIRMED' || reviewDetailBooking.status === 'ACTIVE') && (
-                      <span> · ✓ Đã ký điện tử hợp lệ</span>
-                    )}
+        return (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="w-full max-w-xl max-h-[92vh] rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col text-left animate-in zoom-in-95 duration-200">
+              <div className="bg-slate-900 text-white p-5 flex items-center justify-between border-b border-slate-800">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold">
+                    <span className="material-symbols-outlined text-[20px]">feed</span>
+                  </span>
+                  <div>
+                    <h3 className="font-extrabold text-base">Chi Tiết Đơn Đặt Giữ Chỗ</h3>
+                    <span className="text-xs font-mono text-cyan-300">Mã đơn: {reviewDetailBooking.bookingCode}</span>
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => handleOpenContractModal(reviewDetailBooking)}
-                  className="shrink-0 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  onClick={() => setReviewDetailBooking(null)}
+                  className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
                 >
-                  <span className="material-symbols-outlined text-[15px]">description</span>
-                  <span>Xem Hợp Đồng Điện Tử</span>
+                  ✕
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono">
-                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800">
-                  <span className="text-[10px] text-slate-400 block uppercase">Khách hàng:</span>
-                  <strong className="text-slate-900 dark:text-white font-sans text-xs">{reviewDetailBooking.customerName}</strong>
-                  <div className="text-blue-600 font-bold text-xs mt-0.5">{reviewDetailBooking.customerPhone}</div>
+              <div className="p-5 space-y-4 overflow-y-auto max-h-[70vh] text-xs sm:text-sm">
+                {/* Thông tin Hợp đồng & Trạng thái đơn */}
+                <div className={`p-4 rounded-2xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                  isModalPaidPending
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 text-emerald-950 dark:text-emerald-100'
+                    : isModalConfirmed
+                    ? 'bg-cyan-50 dark:bg-cyan-950/40 border-cyan-200 text-cyan-900 dark:text-cyan-200'
+                    : s === 'ACTIVE'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 text-emerald-900 dark:text-emerald-200'
+                    : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 text-amber-900 dark:text-amber-200'
+                }`}>
+                  <div className="space-y-1">
+                    <div className="font-bold flex items-center gap-1.5 text-[13px]">
+                      <span className="material-symbols-outlined text-[17px]">
+                        {isModalContractSigned ? 'verified' : 'description'}
+                      </span>
+                      <span>
+                        {isModalPaidPending
+                          ? 'Đã thanh toán · Sẵn sàng Check-in gán kho'
+                          : isModalConfirmed
+                          ? 'Đã ký HĐ điện tử · Chờ khách đến kho Check-in'
+                          : s === 'ACTIVE'
+                          ? 'Đang thuê (Hợp đồng ACTIVE)'
+                          : s === 'PENDING_CONTACT'
+                          ? 'Chờ liên hệ tư vấn'
+                          : 'Chờ xác nhận'}
+                      </span>
+                    </div>
+                    <div className="text-[11px] opacity-90 flex items-center gap-2 flex-wrap font-mono">
+                      <span>Mã HĐ: <strong className="text-blue-700 dark:text-blue-400 font-bold">{reviewDetailBooking.contractCode || `CTR-${reviewDetailBooking.bookingCode}`}</strong></span>
+                      {isModalContractSigned ? (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-sans font-semibold">
+                          ✓ Đã ký điện tử
+                        </span>
+                      ) : reviewDetailBooking.signingMethod === 'IN_PERSON' ? (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-sans font-semibold">
+                          🏢 Ký giấy tại quầy
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-sans font-semibold">
+                          ⏳ Chờ ký
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {hasModalContract && !reviewDetailBooking.id.startsWith('LOCAL-RES-') && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenContractModal(reviewDetailBooking)}
+                      disabled={loadingContractBookingId === reviewDetailBooking.id}
+                      className="shrink-0 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm cursor-pointer transition active:scale-95"
+                      title="Mở xem văn bản Hợp đồng điện tử & chữ ký khách hàng"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">
+                        {loadingContractBookingId === reviewDetailBooking.id ? 'hourglass_top' : 'description'}
+                      </span>
+                      <span>{loadingContractBookingId === reviewDetailBooking.id ? 'Đang tải...' : 'Xem Hợp Đồng'}</span>
+                    </button>
+                  )}
                 </div>
 
-                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800">
-                  <span className="text-[10px] text-slate-400 block uppercase">CCCD &amp; Email:</span>
-                  <strong className="text-slate-900 dark:text-white text-xs block">{reviewDetailBooking.identityCardNumber || 'Chưa cung cấp'}</strong>
-                  <span className="text-[11px] text-slate-500 font-sans truncate block">{reviewDetailBooking.customerEmail || 'Chưa có'}</span>
-                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono">
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Khách hàng:</span>
+                    <strong className="text-slate-900 dark:text-white font-sans text-xs">{reviewDetailBooking.customerName}</strong>
+                    <div className="text-blue-600 font-bold text-xs mt-0.5">{reviewDetailBooking.customerPhone}</div>
+                  </div>
 
-                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800">
-                  <span className="text-[10px] text-slate-400 block uppercase">Cơ sở kho:</span>
-                  <strong className="text-slate-900 dark:text-white font-sans text-xs">{reviewDetailBooking.facilityName}</strong>
-                  <span className="text-[11px] text-slate-500 block">Quy cách: {reviewDetailBooking.unitCode}</span>
-                </div>
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">CCCD &amp; Email:</span>
+                    <strong className="text-slate-900 dark:text-white text-xs block">{reviewDetailBooking.identityCardNumber || 'Chưa cung cấp'}</strong>
+                    <span className="text-[11px] text-slate-500 font-sans truncate block">{reviewDetailBooking.customerEmail || 'Chưa có'}</span>
+                  </div>
 
-                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800">
-                  <span className="text-[10px] text-slate-400 block uppercase">Lịch hẹn đón tiếp:</span>
-                  <strong className="text-emerald-600 text-xs block">{(reviewDetailBooking as any).checkInDate || reviewDetailBooking.startDate} ({(reviewDetailBooking as any).checkInTime || 'Giờ tiếp đón'})</strong>
-                  <span className="text-[10px] text-slate-400 font-sans">Thời hạn thuê: {(reviewDetailBooking as any).rentalDurationText || (reviewDetailBooking.rentalMonths ? `${reviewDetailBooking.rentalMonths} tháng` : '1 tháng')}</span>
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Cơ sở kho:</span>
+                    <strong className="text-slate-900 dark:text-white font-sans text-xs">{reviewDetailBooking.facilityName}</strong>
+                    <span className="text-[11px] text-slate-500 block">Quy cách: {reviewDetailBooking.unitCode}</span>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Thời gian sẽ tiếp đón khách hàng:</span>
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      <strong className="text-emerald-600 dark:text-emerald-400 text-xs">
+                        {reviewDetailBooking.expectedCheckInAt
+                          ? `${new Date(reviewDetailBooking.expectedCheckInAt).toLocaleDateString('vi-VN')} ${new Date(reviewDetailBooking.expectedCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
+                          : `${(reviewDetailBooking as any).checkInDate || reviewDetailBooking.startDate} (${(reviewDetailBooking as any).checkInTime || 'Giờ tiếp đón'})`}
+                      </strong>
+                      {sched.relativeText && (
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${sched.badgeClass}`}>
+                          {sched.relativeText}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-sans mt-0.5 block">Thời hạn thuê: {(reviewDetailBooking as any).rentalDurationText || (reviewDetailBooking.rentalMonths ? `${reviewDetailBooking.rentalMonths} tháng` : '1 tháng')}</span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const target = reviewDetailBooking;
-                  setReviewDetailBooking(null);
-                  setRejectingBooking(target);
-                  setRejectionReasonText('');
-                }}
-                className="px-4 py-2.5 rounded-xl border border-rose-300 hover:bg-rose-50 text-rose-700 text-xs font-bold cursor-pointer"
-              >
-                Từ chối đơn...
-              </button>
-
-              <div className="flex items-center gap-2">
+              <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
                 <button
                   type="button"
-                  onClick={() => setReviewDetailBooking(null)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold cursor-pointer"
+                  onClick={() => {
+                    const target = reviewDetailBooking;
+                    setReviewDetailBooking(null);
+                    setRejectingBooking(target);
+                    setRejectionReasonText('');
+                  }}
+                  className="px-4 py-2.5 rounded-xl border border-rose-300 hover:bg-rose-50 text-rose-700 text-xs font-bold cursor-pointer"
                 >
-                  Đóng
+                  Từ chối đơn...
                 </button>
-                {((reviewDetailBooking.status as string) === 'PENDING_CONTACT' || (reviewDetailBooking.status as string) === 'PENDING_CONFIRMATION' || (reviewDetailBooking.status as string) === 'PENDING_SIGNATURE') ? (
+
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      const target = reviewDetailBooking
-                      setReviewDetailBooking(null)
-                      handleStaffConfirmBooking(target)
-                    }}
-                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md cursor-pointer"
+                    onClick={() => setReviewDetailBooking(null)}
+                    className="px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold cursor-pointer"
                   >
-                    Xác nhận đơn (Chờ check in)
+                    Đóng
                   </button>
-                ) : reviewDetailBooking.status === 'CONFIRMED' ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const target = reviewDetailBooking
-                      const proceed = () => {
+
+                  {((reviewDetailBooking.status as string) === 'PENDING_CONTACT' || (reviewDetailBooking.status as string) === 'PENDING_CONFIRMATION' || (reviewDetailBooking.status as string) === 'PENDING_SIGNATURE') ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = reviewDetailBooking
                         setReviewDetailBooking(null)
-                        setStaffActiveTab('reception')
-                        setSearchParams({ tab: 'reception' })
-                        setActiveBookingId(target.id)
-                        setTimeout(() => {
-                          document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-                        }, 100)
-                      }
-                      const { isPremature } = isBookingBeforeCheckInTime(target)
-                      if (isPremature) {
-                        setEarlyConfirmState({
-                          booking: target,
-                          actionType: 'ENTER_RECEPTION',
-                          onConfirm: proceed,
-                        })
-                      } else {
-                        proceed()
-                      }
-                    }}
-                    className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md cursor-pointer"
-                  >
-                    Chuyển sang Tiếp Đón &amp; Nghiệm Thu Check-in
-                  </button>
-                ) : null}
+                        handleStaffConfirmBooking(target)
+                      }}
+                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md cursor-pointer"
+                    >
+                      Xác nhận đơn
+                    </button>
+                  ) : isModalPaidPending ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = reviewDetailBooking
+                        setReviewDetailBooking(null)
+                        const { isPremature } = isBookingBeforeCheckInTime(target)
+                        if (isPremature) {
+                          setEarlyConfirmState({
+                            booking: target,
+                            actionType: 'ASSIGN_PHYSICAL_UNIT',
+                            onConfirm: () => setAssignModalBooking(target),
+                          })
+                        } else {
+                          setAssignModalBooking(target)
+                        }
+                      }}
+                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md cursor-pointer flex items-center gap-1.5"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
+                      <span>Check-in</span>
+                    </button>
+                  ) : isModalConfirmed ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = reviewDetailBooking
+                        const proceed = () => {
+                          setReviewDetailBooking(null)
+                          setStaffActiveTab('reception')
+                          setSearchParams({ tab: 'reception' })
+                          setActiveBookingId(target.id)
+                          setTimeout(() => {
+                            document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                          }, 100)
+                        }
+                        const { isPremature } = isBookingBeforeCheckInTime(target)
+                        if (isPremature) {
+                          setEarlyConfirmState({
+                            booking: target,
+                            actionType: 'ENTER_RECEPTION',
+                            onConfirm: proceed,
+                          })
+                        } else {
+                          proceed()
+                        }
+                      }}
+                      className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md cursor-pointer flex items-center gap-1.5"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
+                      <span>Check-in</span>
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       <ContractDocumentModal
         contract={viewingContract}
