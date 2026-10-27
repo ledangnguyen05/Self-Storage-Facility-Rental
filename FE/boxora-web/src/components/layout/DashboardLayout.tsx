@@ -473,14 +473,14 @@ export const DashboardLayout: React.FC = () => {
 
                 <Link
                   to="/portal/staff"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/staff')
                       ? 'bg-slate-100 text-slate-900 font-semibold'
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">badge</span>
-                  <span>{t('Bàn vận hành quầy & tiếp đón')}</span>
+                  <span>{t('VẬN HÀNH QUẦY BÀN GIAO')}</span>
                 </Link>
 
                 <Link
@@ -505,18 +505,6 @@ export const DashboardLayout: React.FC = () => {
                 >
                   <span className="material-symbols-outlined text-[18px]">schedule</span>
                   <span>{t('XỬ LÝ TRỰC CA')}</span>
-                </Link>
-
-                <Link
-                  to="/portal/staff"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
-                    isCurrentPath('/portal/staff')
-                      ? 'bg-slate-100 text-slate-900'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">badge</span>
-                  <span>{t('VẬN HÀNH QUẦY BÀN GIAO')}</span>
                 </Link>
 
                 <Link
