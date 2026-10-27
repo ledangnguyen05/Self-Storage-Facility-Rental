@@ -1439,6 +1439,10 @@ export const StaffDashboard: React.FC = () => {
                       const isHighlighted = highlightedBookingCode === b.bookingCode
                       const isContractSigned = Boolean(b.contractSigned) || b.contractStatus === 'PENDING_ACTIVATION' || b.contractStatus === 'ACTIVE'
                       const hasContract = Boolean(b.contractCode || b.contractId || b.paymentStatus === 'PAID')
+                      const isPaidPending = s === 'PENDING_PAYMENT' && b.paymentStatus === 'PAID'
+                      const isPending = s === 'PENDING_CONTACT' || s === 'PENDING_PAYMENT' || s === 'PENDING_APPROVAL'
+                      const isConfirmed = s === 'CONFIRMED' || (s as string) === 'CHECKIN_STEP1_COMPLETED' || isPaidPending
+                      const isActiveOrCompleted = s === 'ACTIVE' || s === 'COMPLETED'
 
                       return (
                         <tr
