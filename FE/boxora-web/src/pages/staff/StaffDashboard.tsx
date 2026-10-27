@@ -25,7 +25,7 @@ import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
 import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
 import { EarlyCheckInConfirmModal, isBookingBeforeCheckInTime, EarlyCheckInActionType, getBookingScheduleInfo } from '../../components/modals/EarlyCheckInConfirmModal'
 import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
-import { getAssignmentWindow } from '../../constants/shiftConstants'
+import { getAssignmentWindow, formatShiftLabel, formatShiftTimeRange } from '../../constants/shiftConstants'
 import { toast } from '../../utils/toast'
 
 const localDateString = (date: Date) => {
@@ -179,6 +179,8 @@ export const StaffDashboard: React.FC = () => {
   const [detailPrereq, setDetailPrereq] = useState<HandoverPrerequisites | null>(null)
   const [loadingDetailPrereq, setLoadingDetailPrereq] = useState(false)
   const [detailContract, setDetailContract] = useState<RentalContract | null>(null)
+  const [tab1Page, setTab1Page] = useState<number>(1)
+  const TAB1_PAGE_SIZE = 10
 
   // Modal hiển thị ảnh chứng từ thanh toán & ảnh hợp đồng đã ký
   const [photoViewerModal, setPhotoViewerModal] = useState<{
@@ -198,6 +200,17 @@ export const StaffDashboard: React.FC = () => {
     }
     let active = true
     setLoadingDetailPrereq(true)
+
+    // Đồng bộ trạng thái đơn thực tế từ Backend khi mở modal chi tiết
+    bookingService.getById(reviewDetailBooking.id)
+      .then((authoritativeBooking: Booking) => {
+        if (!active || !authoritativeBooking) return
+        setReviewDetailBooking(prev => (prev && prev.id === authoritativeBooking.id ? { ...prev, ...authoritativeBooking } : prev))
+        setArrivals(prev => prev.map(item => item.id === authoritativeBooking.id ? { ...item, ...authoritativeBooking } : item))
+      })
+      .catch((err: any) => {
+        console.warn('Không thể tải trạng thái đơn mới nhất từ máy chủ:', err)
+      })
     Promise.allSettled([
       handoverService.getCheckInPrerequisites(reviewDetailBooking.id),
       contractService.getContractByBookingId(reviewDetailBooking.id),
@@ -728,7 +741,7 @@ export const StaffDashboard: React.FC = () => {
   // Mục 1: Đơn chưa thanh toán chờ liên hệ tư vấn & xác nhận
   const isPendingContact = (b: Booking): boolean => {
     const s = String(b.status || '').toUpperCase()
-    if (s === 'CANCELLED' || s === 'COMPLETED' || s === 'ACTIVE') return false
+    if (s === 'CANCELLED' || s === 'REJECTED' || s === 'COMPLETED' || s === 'ACTIVE') return false
     if (isBookingPaid(b)) return false
     return (
       s === 'PENDING_CONTACT' ||
@@ -744,7 +757,7 @@ export const StaffDashboard: React.FC = () => {
   // Mục 2: Đơn đã thanh toán chờ check-in tại quầy tiếp đón
   const isPaidCheckIn = (b: Booking): boolean => {
     const s = String(b.status || '').toUpperCase()
-    if (s === 'CANCELLED' || s === 'COMPLETED' || s === 'ACTIVE') return false
+    if (s === 'CANCELLED' || s === 'REJECTED' || s === 'COMPLETED' || s === 'ACTIVE') return false
     return isBookingPaid(b)
   }
 
@@ -757,7 +770,7 @@ export const StaffDashboard: React.FC = () => {
     let cancelled = 0
     arrivals.forEach((b) => {
       const s = String(b.status || '').toUpperCase()
-      if (s === 'CANCELLED') cancelled++
+      if (s === 'CANCELLED' || s === 'REJECTED') cancelled++
       else if (s === 'COMPLETED') completed++
       else if (s === 'ACTIVE') active++
       else if (isPaidCheckIn(b)) confirmedCheckIn++
@@ -779,7 +792,7 @@ export const StaffDashboard: React.FC = () => {
   const filteredPendingOrders = useMemo(() => {
     return arrivals.filter((b) => {
       const s = String(b.status || '').toUpperCase()
-      const isCancelled = s === 'CANCELLED'
+      const isCancelled = s === 'CANCELLED' || s === 'REJECTED'
       const isContact = isPendingContact(b)
 
       if (tab1Filter === 'PENDING_CONTACT' && !isContact) return false
@@ -812,6 +825,20 @@ export const StaffDashboard: React.FC = () => {
       return timeB - timeA
     })
   }, [arrivals, tab1Filter, pendingSearchTerm, highlightedBookingCode])
+
+  // Phân trang danh sách Tab 1 (10 đơn / trang)
+  const totalTab1Pages = useMemo(() => {
+    return Math.max(1, Math.ceil(filteredPendingOrders.length / TAB1_PAGE_SIZE))
+  }, [filteredPendingOrders.length])
+
+  const safeTab1Page = useMemo(() => {
+    return Math.min(Math.max(1, tab1Page), totalTab1Pages)
+  }, [tab1Page, totalTab1Pages])
+
+  const pagedPendingOrders = useMemo(() => {
+    const start = (safeTab1Page - 1) * TAB1_PAGE_SIZE
+    return filteredPendingOrders.slice(start, start + TAB1_PAGE_SIZE)
+  }, [filteredPendingOrders, safeTab1Page])
 
   // Lọc danh sách đơn đã thanh toán chờ check-in cho Tab 2 "Bàn Tiếp Đón & Trả Kho"
   const checkInArrivals = useMemo(() => {
@@ -892,6 +919,11 @@ export const StaffDashboard: React.FC = () => {
 
   // Thực thi xác nhận đơn: gọi backend API chuyển trạng thái sang CONFIRMED và đồng bộ email
   const executeStaffConfirmBooking = async (booking: Booking, notes?: string) => {
+    const s = String(booking?.status || '').toUpperCase()
+    if (s === 'CANCELLED' || s === 'REJECTED' || s === 'COMPLETED' || s === 'ACTIVE') {
+      setConfirmingError(`Đơn đặt kho ở trạng thái ${s} không thể xác nhận.`)
+      return
+    }
     setIsConfirmingSubmitting(true)
     setConfirmingError('')
     try {
@@ -939,6 +971,11 @@ export const StaffDashboard: React.FC = () => {
 
   // Nhân viên từ chối đơn: có điền lý do, chuyển sang CANCELLED và gửi email đến khách hàng
   const handleStaffRejectBooking = async (booking: Booking, reason: string) => {
+    const s = String(booking?.status || '').toUpperCase()
+    if (s === 'CANCELLED' || s === 'REJECTED' || s === 'COMPLETED') {
+      setRejectionError('Đơn đặt giữ chỗ đã bị hủy/từ chối trước đó, không thể từ chối lần nữa.')
+      return
+    }
     const trimmed = (reason || '').trim()
     if (!trimmed) {
       setRejectionError('Vui lòng điền hoặc chọn lý do từ chối đơn đặt giữ chỗ.')
@@ -1380,7 +1417,9 @@ export const StaffDashboard: React.FC = () => {
                   Bàn Vận Hành Quầy &amp; Tiếp Đón Thực Địa
                 </h1>
                 <span className="px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-mono font-bold uppercase tracking-wider">
-                  Ca sáng: 08:00 - 16:30
+                  {myTodayAssignment
+                    ? `${formatShiftLabel(myTodayAssignment.shift)}: ${formatShiftTimeRange(myTodayAssignment)}`
+                    : 'Ca Sáng: 06:00 - 14:00'}
                 </span>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -1527,7 +1566,10 @@ export const StaffDashboard: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {/* Thẻ 1: Chờ liên hệ */}
             <div
-              onClick={() => setTab1Filter(prev => prev === 'PENDING_CONTACT' ? 'ALL' : 'PENDING_CONTACT')}
+              onClick={() => {
+                setTab1Filter(prev => prev === 'PENDING_CONTACT' ? 'ALL' : 'PENDING_CONTACT')
+                setTab1Page(1)
+              }}
               className={`p-4 rounded-2xl border transition-all cursor-pointer ${
                 tab1Filter === 'PENDING_CONTACT'
                   ? 'bg-amber-50/80 border-amber-400 ring-2 ring-amber-400/50 shadow-sm'
@@ -1546,7 +1588,7 @@ export const StaffDashboard: React.FC = () => {
                 <span className="font-headline text-2xl font-extrabold text-amber-900 tabular-nums">
                   {arrivalStatusCounts.pendingContact}
                 </span>
-                <span className="text-xs text-amber-700">đơn cần tư vấn</span>
+                <span className="text-xs text-amber-700">đơn cần tư vấn (tổng cơ sở)</span>
               </div>
               <span className="text-[11px] text-amber-600 font-medium block mt-1">
                 ⚡ Cần nhân viên liên hệ xác nhận
@@ -1555,7 +1597,10 @@ export const StaffDashboard: React.FC = () => {
 
             {/* Thẻ 2: Đơn đã hủy */}
             <div
-              onClick={() => setTab1Filter(prev => prev === 'CANCELLED' ? 'PENDING_CONTACT' : 'CANCELLED')}
+              onClick={() => {
+                setTab1Filter(prev => prev === 'CANCELLED' ? 'PENDING_CONTACT' : 'CANCELLED')
+                setTab1Page(1)
+              }}
               className={`p-4 rounded-2xl border transition-all cursor-pointer ${
                 tab1Filter === 'CANCELLED'
                   ? 'bg-rose-50/80 border-rose-400 ring-2 ring-rose-400/50 shadow-sm'
@@ -1564,7 +1609,7 @@ export const StaffDashboard: React.FC = () => {
             >
               <div className="flex items-center justify-between">
                 <span className="text-[11px] uppercase tracking-wider font-bold text-rose-800 font-mono">
-                  Đơn Đã Hủy
+                  Đơn Đã Hủy / Từ Chối
                 </span>
                 <span className="w-8 h-8 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center">
                   <span className="material-symbols-outlined text-[18px]">cancel</span>
@@ -1574,7 +1619,7 @@ export const StaffDashboard: React.FC = () => {
                 <span className="font-headline text-2xl font-extrabold text-rose-900 tabular-nums">
                   {arrivalStatusCounts.cancelled}
                 </span>
-                <span className="text-xs text-rose-700">đơn đã hủy / từ chối</span>
+                <span className="text-xs text-rose-700">đơn đã hủy / từ chối (tổng cơ sở)</span>
               </div>
               <span className="text-[11px] text-rose-600 font-medium block mt-1">
                 Đã giải phóng hoặc từ chối tiếp nhận
@@ -1583,7 +1628,10 @@ export const StaffDashboard: React.FC = () => {
 
             {/* Thẻ 3: Tổng đơn */}
             <div
-              onClick={() => setTab1Filter(prev => prev === 'ALL' ? 'PENDING_CONTACT' : 'ALL')}
+              onClick={() => {
+                setTab1Filter(prev => prev === 'ALL' ? 'PENDING_CONTACT' : 'ALL')
+                setTab1Page(1)
+              }}
               className={`p-4 rounded-2xl border transition-all cursor-pointer ${
                 tab1Filter === 'ALL'
                   ? 'bg-slate-100 border-slate-400 ring-2 ring-slate-400/50 shadow-sm'
@@ -1602,7 +1650,7 @@ export const StaffDashboard: React.FC = () => {
                 <span className="font-headline text-2xl font-extrabold text-slate-900 tabular-nums">
                   {arrivals.length}
                 </span>
-                <span className="text-xs text-slate-500">tất cả đơn</span>
+                <span className="text-xs text-slate-500">tất cả hồ sơ tại cơ sở</span>
               </div>
               <span className="text-[11px] text-slate-500 font-medium block mt-1">
                 Toàn bộ hồ sơ đặt chỗ tại cơ sở
@@ -1619,7 +1667,10 @@ export const StaffDashboard: React.FC = () => {
               <input
                 type="text"
                 value={pendingSearchTerm}
-                onChange={(e) => setPendingSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setPendingSearchTerm(e.target.value)
+                  setTab1Page(1)
+                }}
                 placeholder="Tìm mã đơn, tên khách, SĐT, CCCD, kho..."
                 className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-amber-400 transition"
               />
@@ -1629,6 +1680,7 @@ export const StaffDashboard: React.FC = () => {
                   onClick={() => {
                     setPendingSearchTerm('')
                     setHighlightedBookingCode(null)
+                    setTab1Page(1)
                   }}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
@@ -1638,12 +1690,19 @@ export const StaffDashboard: React.FC = () => {
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-slate-500 font-medium">
-                Đang hiển thị <strong className="text-amber-700">{filteredPendingOrders.length}</strong> đơn {tab1Filter === 'CANCELLED' ? 'đã hủy' : tab1Filter === 'ALL' ? 'toàn bộ' : 'chờ liên hệ'}
+                Đang hiển thị <strong className="text-amber-800">{filteredPendingOrders.length > 0 ? (safeTab1Page - 1) * TAB1_PAGE_SIZE + 1 : 0}–{Math.min(safeTab1Page * TAB1_PAGE_SIZE, filteredPendingOrders.length)}</strong> / <strong className="text-slate-900">{filteredPendingOrders.length}</strong> đơn sau lọc (Trang <strong>{safeTab1Page}</strong>/{totalTab1Pages})
+              </span>
+              <span className="text-[11px] text-slate-400">|</span>
+              <span className="text-xs text-amber-700 font-semibold" title="Tổng số đơn chờ liên hệ thực tế của cơ sở">
+                Cơ sở có: {arrivalStatusCounts.pendingContact} đơn chờ liên hệ
               </span>
               {tab1Filter !== 'PENDING_CONTACT' && (
                 <button
                   type="button"
-                  onClick={() => setTab1Filter('PENDING_CONTACT')}
+                  onClick={() => {
+                    setTab1Filter('PENDING_CONTACT')
+                    setTab1Page(1)
+                  }}
                   className="text-xs text-amber-700 hover:underline font-bold ml-1 cursor-pointer"
                 >
                   (Về danh sách chờ liên hệ)
@@ -1678,16 +1737,16 @@ export const StaffDashboard: React.FC = () => {
                       </td>
                     </tr>
                   ) : (
-                    filteredPendingOrders.map((b) => {
-                      const s = String(b.status || '')
-                      const isCancelled = s === 'CANCELLED'
+                    pagedPendingOrders.map((b) => {
+                      const s = String(b.status || '').toUpperCase()
+                      const isCancelled = s === 'CANCELLED' || s === 'REJECTED'
                       const isHighlighted = highlightedBookingCode === b.bookingCode
                       const isContractSigned = Boolean(b.contractSigned) || b.contractStatus === 'PENDING_ACTIVATION' || b.contractStatus === 'ACTIVE'
                       const hasContract = Boolean(b.contractCode || b.contractId || b.paymentStatus === 'PAID')
-                      const isPaidPending = s === 'PENDING_PAYMENT' && b.paymentStatus === 'PAID'
-                      const isConfirmed = s === 'CONFIRMED' || (s as string) === 'CHECKIN_STEP1_COMPLETED' || isPaidPending
+                      const isPaidPending = !isCancelled && s === 'PENDING_PAYMENT' && b.paymentStatus === 'PAID'
+                      const isConfirmed = !isCancelled && (s === 'CONFIRMED' || (s as string) === 'CHECKIN_STEP1_COMPLETED' || isPaidPending)
                       const isActiveOrCompleted = s === 'ACTIVE' || s === 'COMPLETED'
-                      const isPending = s === 'PENDING_CONTACT' || s === 'PENDING_PAYMENT' || s === 'PENDING_APPROVAL' || (s as string) === 'PENDING_SIGNATURE' || (!isConfirmed && !isActiveOrCompleted && !isCancelled)
+                      const isPending = !isCancelled && !isConfirmed && !isActiveOrCompleted && (s === 'PENDING_CONTACT' || s === 'PENDING_PAYMENT' || s === 'PENDING_APPROVAL' || (s as string) === 'PENDING_SIGNATURE' || s === 'PENDING' || !s)
                       const isInPerson = b.signingMethod === 'IN_PERSON' 
                         || (b as any).signingMethod === 'in_person' 
                         || (b as any).paymentMethod === 'AT_FACILITY' 
@@ -1981,6 +2040,52 @@ export const StaffDashboard: React.FC = () => {
                 </tbody>
               </table>
             </div>
+            {totalTab1Pages > 1 && (
+              <div className="flex items-center justify-between p-3.5 border-t border-slate-200 bg-slate-50/50 rounded-b-2xl flex-wrap gap-2">
+                <div className="text-xs text-slate-500 font-medium">
+                  Trang <strong className="text-slate-800">{safeTab1Page}</strong> / <strong>{totalTab1Pages}</strong> (Tổng <strong>{filteredPendingOrders.length}</strong> đơn phù hợp)
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setTab1Page(p => Math.max(1, p - 1))}
+                    disabled={safeTab1Page <= 1}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Trang trước
+                  </button>
+                  {Array.from({ length: totalTab1Pages }, (_, i) => i + 1)
+                    .filter(p => p === 1 || p === totalTab1Pages || Math.abs(p - safeTab1Page) <= 1)
+                    .map((p, idx, arr) => {
+                      const prev = arr[idx - 1]
+                      return (
+                        <React.Fragment key={p}>
+                          {prev && p - prev > 1 && <span className="text-xs text-slate-400 px-1">...</span>}
+                          <button
+                            type="button"
+                            onClick={() => setTab1Page(p)}
+                            className={`w-7 h-7 text-xs font-bold rounded-lg transition cursor-pointer ${
+                              safeTab1Page === p
+                                ? 'bg-amber-600 text-white shadow-xs'
+                                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        </React.Fragment>
+                      )
+                    })}
+                  <button
+                    type="button"
+                    onClick={() => setTab1Page(p => Math.min(totalTab1Pages, p + 1))}
+                    disabled={safeTab1Page >= totalTab1Pages}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Trang sau
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </section>
       ) : staffActiveTab === 'renewals' ? (
@@ -3455,7 +3560,7 @@ export const StaffDashboard: React.FC = () => {
                     Đóng
                   </button>
 
-                  {((reviewDetailBooking.status as string) === 'PENDING_CONTACT' || (reviewDetailBooking.status as string) === 'PENDING_CONFIRMATION' || (reviewDetailBooking.status as string) === 'PENDING_SIGNATURE') ? (
+                  {!isCancelled && ((reviewDetailBooking.status as string) === 'PENDING_CONTACT' || (reviewDetailBooking.status as string) === 'PENDING_CONFIRMATION' || (reviewDetailBooking.status as string) === 'PENDING_SIGNATURE' || (reviewDetailBooking.status as string) === 'PENDING_APPROVAL' || (reviewDetailBooking.status as string) === 'PENDING') ? (
                     <button
                       type="button"
                       onClick={() => {
