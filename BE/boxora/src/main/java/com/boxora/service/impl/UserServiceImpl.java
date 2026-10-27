@@ -65,14 +65,12 @@ public class UserServiceImpl implements UserService {
         }
 
         Facility facility = null;
-        if (request.getFacilityId() != null) {
+        boolean isFacilityScopedRole = "STAFF".equalsIgnoreCase(role.getName())
+                || "FACILITY_MANAGER".equalsIgnoreCase(role.getName());
+
+        if (isFacilityScopedRole && request.getFacilityId() != null) {
             facility = facilityRepository.findById(request.getFacilityId())
                     .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
-
-            // System-wide roles (ADMIN, BUSINESS_MANAGER) do not belong to a specific facility
-            if ("ADMIN".equalsIgnoreCase(role.getName()) || "BUSINESS_MANAGER".equalsIgnoreCase(role.getName())) {
-                facility = null;
-            }
         }
 
         User user = User.builder()
@@ -123,20 +121,19 @@ public class UserServiceImpl implements UserService {
             Role role = roleRepository.findById(request.getRoleId())
                     .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
             user.setRole(role);
-            if ("ADMIN".equalsIgnoreCase(role.getName()) || "BUSINESS_MANAGER".equalsIgnoreCase(role.getName())) {
-                user.setFacility(null);
-            }
         }
 
-        // Update facility if provided
-        if (request.getFacilityId() != null) {
+        String currentRoleName = user.getRole() != null ? user.getRole().getName() : "";
+        boolean isRoleScoped = "STAFF".equalsIgnoreCase(currentRoleName)
+                || "FACILITY_MANAGER".equalsIgnoreCase(currentRoleName);
+
+        if (!isRoleScoped) {
+            // Customer, Admin, Business Manager are not scoped to any facility
+            user.setFacility(null);
+        } else if (request.getFacilityId() != null) {
             Facility facility = facilityRepository.findById(request.getFacilityId())
                     .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
-
-            String currentRoleName = user.getRole() != null ? user.getRole().getName() : "";
-            if (!"ADMIN".equalsIgnoreCase(currentRoleName) && !"BUSINESS_MANAGER".equalsIgnoreCase(currentRoleName)) {
-                user.setFacility(facility);
-            }
+            user.setFacility(facility);
         }
 
         userMapper.updateEntityFromRequest(request, user);

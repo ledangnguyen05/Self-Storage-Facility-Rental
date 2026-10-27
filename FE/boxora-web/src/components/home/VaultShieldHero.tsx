@@ -31,6 +31,9 @@ import {
   Layers
 } from 'lucide-react'
 import { BoxoraKineticVault3D } from './BoxoraKineticVault3D'
+import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
+import { useAuth } from '../../context/AuthContext'
+import { FileText } from 'lucide-react'
 
 export interface BoxoraHeroProps {
   onStartForFree?: () => void
@@ -52,6 +55,22 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
   hideHeader = false
 }) => {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const isCustomer = (userRole || user?.role?.name) === 'CUSTOMER'
+  const [customerAccess, setCustomerAccess] = useState(() => checkCustomerPortalAccess(user))
+  const canAccessPortal = !isCustomer || customerAccess.hasAccess
+
+  useEffect(() => {
+    const handleRentalChange = () => {
+      setCustomerAccess(checkCustomerPortalAccess(user))
+    }
+    window.addEventListener('boxora_rental_updated', handleRentalChange)
+    return () => window.removeEventListener('boxora_rental_updated', handleRentalChange)
+  }, [user])
+
+  useEffect(() => {
+    setCustomerAccess(checkCustomerPortalAccess(user))
+  }, [user])
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [heroMode, setHeroMode] = useState<'smartlock' | 'kinetic3d'>('smartlock')
   
@@ -82,7 +101,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
 
   // Boxora Navigation Links (used when standalone header is rendered)
   const navLinks = [
-    { name: 'Phòng Kho & Bảng Giá', href: '/units', isRoute: true },
+    { name: 'Đặt Thuê Kho', href: '/booking', isRoute: true },
     { name: 'Quy Trình 3 Bước', href: '#process', isRoute: false },
     { name: 'Khóa IoT 24/7', href: '#iot-access', isRoute: false },
     { name: 'Dịch Vụ & Tiện Ích', href: '#services', isRoute: false },
@@ -93,7 +112,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
     if (onStartForFree) {
       onStartForFree()
     } else {
-      navigate('/units')
+      navigate('/booking')
     }
   }
 
@@ -101,7 +120,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
     if (onSignIn) {
       onSignIn()
     } else {
-      navigate(isAuthenticated ? '/portal' : '/login')
+      navigate(isAuthenticated ? '/portal/customer' : '/login')
     }
   }
 
@@ -109,7 +128,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
     if (onGetItFree) {
       onGetItFree()
     } else {
-      navigate('/units')
+      navigate('/booking')
     }
   }
 
@@ -184,7 +203,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
     <div
       className={`relative w-full ${hideHeader ? 'min-h-[calc(100vh-4.5rem)] lg:min-h-[92vh]' : 'min-h-screen'} overflow-hidden flex flex-col justify-between select-none bg-slate-950`}
       style={{
-        fontFamily: 'var(--font-body, "Inter", sans-serif)',
+        fontFamily: 'var(--font-body, "Be Vietnam Pro", sans-serif)',
         color: 'var(--color-text, #0f172a)'
       }}
     >
@@ -296,7 +315,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
               <div className="hidden sm:flex flex-col text-left">
                 <span
                   className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 leading-none"
-                  style={{ fontFamily: 'var(--font-heading, "Helvetica Now Display Bold", sans-serif)' }}
+                  style={{ fontFamily: 'var(--font-heading, "Be Vietnam Pro", sans-serif)' }}
                 >
                   BOXORA
                 </span>
@@ -413,7 +432,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
               variants={fadeUp}
               className="font-bold mb-5 text-slate-900 tracking-tight"
               style={{
-                fontFamily: 'var(--font-heading, "Helvetica Now Display Bold", sans-serif)',
+                fontFamily: 'var(--font-heading, "Be Vietnam Pro", sans-serif)',
                 fontSize: 'clamp(1.85rem, 5.2vw, 3.25rem)',
                 lineHeight: 1.12
               }}
@@ -445,7 +464,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
               variants={fadeUp}
               className="mb-8 font-normal text-slate-700 leading-relaxed text-base sm:text-lg"
               style={{
-                fontFamily: 'var(--font-body, "Inter", sans-serif)',
+                fontFamily: 'var(--font-body, "Be Vietnam Pro", sans-serif)',
                 maxWidth: '560px'
               }}
             >
@@ -470,7 +489,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
                   backgroundColor: 'var(--color-accent, #0891b2)',
                   borderRadius: '50px',
                   padding: '17px 28px',
-                  fontFamily: 'var(--font-body, "Inter", sans-serif)',
+                  fontFamily: 'var(--font-body, "Be Vietnam Pro", sans-serif)',
                   fontSize: 'clamp(0.95rem, 2vw, 1.05rem)',
                   boxShadow: '0 6px 24px rgba(8, 145, 178, 0.38)',
                   minWidth: '230px',
@@ -708,7 +727,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
 
               {/* Action Link to Units */}
               <Link
-                to="/units"
+                to="/booking"
                 className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md"
               >
                 <span>Xem Bản Đồ &amp; Đặt Thuê Buồng Này</span>
@@ -761,7 +780,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
                 style={{
                   width: 'min(88vw, 360px)',
                   color: 'var(--color-text, #0f172a)',
-                  fontFamily: 'var(--font-body, "Inter", sans-serif)'
+                  fontFamily: 'var(--font-body, "Be Vietnam Pro", sans-serif)'
                 }}
               >
                 <div>
@@ -775,7 +794,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
                       <div className="flex flex-col text-left">
                         <span
                           className="text-lg font-black tracking-tight text-slate-900"
-                          style={{ fontFamily: 'var(--font-heading, "Helvetica Now Display Bold", sans-serif)' }}
+                          style={{ fontFamily: 'var(--font-heading, "Be Vietnam Pro", sans-serif)' }}
                         >
                           BOXORA
                         </span>
@@ -859,7 +878,7 @@ export const BoxoraHero: React.FC<BoxoraHeroProps> = ({
                     className="w-full py-3 px-5 rounded-full text-sm font-semibold transition-all hover:bg-slate-200/80 active:scale-95 cursor-pointer border border-slate-200 text-slate-800"
                     style={{ backgroundColor: 'var(--color-login-bg, #f1f5f9)' }}
                   >
-                    {isAuthenticated ? 'Vào Portal' : 'Đăng Nhập'}
+                    {isAuthenticated ? (canAccessPortal ? 'Vào Portal' : 'Đơn Yêu Cầu Của Tôi') : 'Đăng Nhập'}
                   </button>
                 </div>
               </motion.div>

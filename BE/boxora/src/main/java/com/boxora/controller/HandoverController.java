@@ -113,7 +113,7 @@ public class HandoverController {
     // =========================================================================
 
     @PostMapping(value = "/booking/{bookingId}/upload-document", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE') and !hasRole('ADMIN')")
     @Operation(summary = "Tải lên tệp hợp đồng giấy scan hoặc chứng từ chuyển khoản (PDF, JPG, JPEG, PNG, WEBP, tối đa 10MB)")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.FileUploadResponse>> uploadHandoverDocument(
             @PathVariable UUID bookingId,
@@ -198,7 +198,7 @@ public class HandoverController {
     }
 
     @PostMapping("/booking/{bookingId}/verify-identity")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE') and !hasRole('ADMIN')")
     @Operation(summary = "Điều kiện 4: Nhân viên tại quầy xác nhận đã đối chiếu giấy tờ tùy thân CCCD/Passport gốc")
     public ResponseEntity<ApiResponse<HandoverPrerequisitesResponse>> verifyIdentity(
             @PathVariable UUID bookingId,
@@ -219,7 +219,7 @@ public class HandoverController {
     }
 
     @PostMapping("/booking/{bookingId}/complete-step-1")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE') and !hasRole('ADMIN')")
     @Operation(summary = "Hoàn tất Bước 1: Kiểm tra đủ 4 điều kiện đối soát và chuyển sang Bước 2 Nghiệm thu hiện trường")
     public ResponseEntity<ApiResponse<Void>> completeCheckInStep1(@PathVariable UUID bookingId) {
         handoverService.completeCheckInStep1(bookingId);
@@ -227,7 +227,7 @@ public class HandoverController {
     }
 
     @PostMapping("/check-in-inspection")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE') and !hasRole('ADMIN')")
     @Operation(summary = "Bước 2: Lưu biên bản nghiệm thu 5 tiêu chuẩn hiện trường và ảnh kiểm định")
     public ResponseEntity<ApiResponse<HandoverResponse>> recordCheckInInspection(
             @Valid @RequestBody com.boxora.dto.request.CheckInInspectionRequest request) {

@@ -26,7 +26,7 @@ import boxoraLogo from '../../assets/boxora-logo.png'
 import { TermsAndStandardsModal } from '../../components/common/TermsAndStandardsModal'
 import { GoogleAuthButton } from '../../components/auth/GoogleAuthButton'
 import { AuthAnimatedBackground } from '../../components/auth/AuthAnimatedBackground'
-import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
+import { syncCustomerPortalAccess } from '../../utils/rentalAccess'
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate()
@@ -35,7 +35,7 @@ export const LoginPage: React.FC = () => {
   const { login, loginWithGoogle, isLoading } = useAuth()
 
   // Form states
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(() => searchParams.get('email') || '')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberDevice, setRememberDevice] = useState(true)
@@ -89,6 +89,7 @@ export const LoginPage: React.FC = () => {
       const user = await loginWithGoogle(idToken, 'LOGIN')
       setSocialNotice(null)
       const userRole = user?.role?.name || 'CUSTOMER'
+      const customerPortalAccess = user ? await syncCustomerPortalAccess(user) : true
 
       const getPortalForRole = (r: string) => {
         switch (r) {
@@ -110,16 +111,22 @@ export const LoginPage: React.FC = () => {
         const decoded = decodeURIComponent(redirect)
         const isAllowed =
           (decoded.startsWith('/portal/customer') && (userRole === 'CUSTOMER' || userRole === 'ADMIN')) ||
-          (decoded.startsWith('/portal/staff') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER' || userRole === 'ADMIN')) ||
+          (decoded.startsWith('/portal/staff') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER')) ||
           (decoded.startsWith('/portal/facility-manager') && (userRole === 'FACILITY_MANAGER' || userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/business-manager') && (userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
-          (decoded.startsWith('/portal/admin') && userRole === 'ADMIN') ||
+          (decoded.startsWith('/portal/admin') && (userRole === 'ADMIN' || userRole === 'BUSINESS_MANAGER')) ||
           (!decoded.startsWith('/portal/'))
 
         if (isAllowed) {
           navigate(decoded)
           return
         }
+      }
+
+      // Check if user has an active booking draft in progress
+      if ((sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft')) && (userRole === 'CUSTOMER' || !userRole)) {
+        navigate('/booking')
+        return
       }
 
       navigate(getPortalForRole(userRole))
@@ -141,15 +148,20 @@ export const LoginPage: React.FC = () => {
           // ignore parsing error
         }
 
-        navigate('/register', {
-          state: {
-            fromGoogleLogin: true,
-            email: googleEmail,
-            fullName: googleName,
-            googleIdToken: idToken,
-            message: `Tài khoản Google (${googleEmail || 'này'}) chưa được đăng ký trong hệ thống Boxora. Vui lòng đăng ký tài khoản dưới đây để tiếp tục.`
+        navigate(
+          redirect
+            ? `/register?redirect=${encodeURIComponent(redirect)}`
+            : (sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft') ? `/register?redirect=${encodeURIComponent('/booking')}` : '/register'),
+          {
+            state: {
+              fromGoogleLogin: true,
+              email: googleEmail,
+              fullName: googleName,
+              googleIdToken: idToken,
+              message: `Tài khoản Google (${googleEmail || 'này'}) chưa được đăng ký trong hệ thống Boxora. Vui lòng đăng ký tài khoản dưới đây để tiếp tục.`
+            }
           }
-        })
+        )
         return
       }
 
@@ -185,6 +197,7 @@ export const LoginPage: React.FC = () => {
     try {
       const user = await login(email.trim(), password)
       const userRole = user?.role?.name || 'CUSTOMER'
+      const customerPortalAccess = user ? await syncCustomerPortalAccess(user) : true
 
       const getPortalForRole = (r: string) => {
         switch (r) {
@@ -206,16 +219,22 @@ export const LoginPage: React.FC = () => {
         const decoded = decodeURIComponent(redirect)
         const isAllowed =
           (decoded.startsWith('/portal/customer') && (userRole === 'CUSTOMER' || userRole === 'ADMIN')) ||
-          (decoded.startsWith('/portal/staff') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER' || userRole === 'ADMIN')) ||
+          (decoded.startsWith('/portal/staff') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER')) ||
           (decoded.startsWith('/portal/facility-manager') && (userRole === 'FACILITY_MANAGER' || userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/business-manager') && (userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
-          (decoded.startsWith('/portal/admin') && userRole === 'ADMIN') ||
+          (decoded.startsWith('/portal/admin') && (userRole === 'ADMIN' || userRole === 'BUSINESS_MANAGER')) ||
           (!decoded.startsWith('/portal/'))
 
         if (isAllowed) {
           navigate(decoded)
           return
         }
+      }
+
+      // Check if user has an active booking draft in progress
+      if ((sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft')) && (userRole === 'CUSTOMER' || !userRole)) {
+        navigate('/booking')
+        return
       }
 
       navigate(getPortalForRole(userRole))
@@ -229,7 +248,7 @@ export const LoginPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen w-full relative flex flex-col justify-between overflow-x-hidden font-sans text-slate-800 dark:text-slate-100 bg-[#f8fafc] dark:bg-slate-950">
+    <div className="min-h-screen w-full relative flex flex-col justify-between overflow-x-hidden font-sans text-slate-800 dark:text-slate-200 bg-[#f4f8ff] dark:bg-slate-950">
       
       {/* ============================================================ */}
       {/* 1. BACKGROUND                                                */}
@@ -242,7 +261,7 @@ export const LoginPage: React.FC = () => {
       <header className="relative z-20 w-full px-6 sm:px-10 lg:px-14 py-4 sm:py-6 flex items-center justify-between">
         
         {/* Brand Logo & Slogan Glass Pill */}
-        <div className="inline-flex items-center px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-2xl bg-white/90 dark:bg-slate-900/90 hover:bg-white dark:hover:bg-slate-900 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 shadow-xs transition-all">
+        <div className="inline-flex items-center px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-2xl bg-white/90 hover:bg-white/95 backdrop-blur-md border border-white/80 shadow-xs transition-all">
           <Link to="/" className="flex items-center group cursor-pointer" title="Về trang chủ Boxora">
             <img
               src={boxoraLogo}
@@ -252,18 +271,16 @@ export const LoginPage: React.FC = () => {
           </Link>
 
           {/* Vertical divider */}
-          <div className="hidden sm:block h-7 w-[1.5px] bg-slate-200 dark:bg-slate-800 mx-3" />
+          <div className="hidden sm:block h-7 w-[1.5px] bg-slate-200 mx-3" />
 
           {/* Slogan */}
           <div className="hidden sm:flex flex-col text-left justify-center">
-            <span className="font-extrabold text-xs sm:text-[13px] text-slate-900 dark:text-white tracking-wider uppercase font-mono leading-tight">
+            <span className="font-extrabold text-xs sm:text-[13px] text-slate-900 tracking-wider uppercase font-mono leading-tight">
               KHO TỰ QUẢN THÔNG MINH
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <QuickThemeLanguageToggle />
         {/* Back to Home Button */}
         <Link
           to="/"
@@ -274,7 +291,6 @@ export const LoginPage: React.FC = () => {
           <span>Về trang chủ</span>
         </Link>
 
-        </div>
       </header>
 
       {/* ============================================================ */}
@@ -291,23 +307,32 @@ export const LoginPage: React.FC = () => {
           <div className="max-w-xl space-y-4 text-left">
             
             {/* Tagline label */}
-            <div className="flex items-center gap-2.5 text-blue-600 dark:text-blue-400 font-black text-xs sm:text-sm tracking-[0.2em] uppercase font-mono ">
+            <div className="flex items-center gap-2.5 text-teal-700 font-black text-xs sm:text-sm tracking-[0.2em] uppercase font-mono ">
               <span>BOXORA</span>
-              <span className="w-10 h-0.5 bg-blue-600 dark:bg-blue-400 rounded-full shadow-[0_0_8px_rgba(8,102,245,0.25)]" />
+              <span className="w-10 h-0.5 bg-teal-600 rounded-full shadow-[0_0_8px_rgba(13,148,136,0.25)]" />
             </div>
 
             {/* Clean & Punchy Headings directly on background */}
             <div className="space-y-2">
-              <h1 className="text-3xl sm:text-4xl lg:text-[42px] font-black text-slate-950 dark:text-white tracking-tight leading-[1.12]">
+              <h1
+                className="text-3xl sm:text-4xl lg:text-[42px] font-black text-slate-950 tracking-tight leading-[1.12]"
+               
+              >
                 KHÔNG GIAN LƯU TRỮ THÔNG MINH
               </h1>
-              <h2 className="text-xl sm:text-2xl lg:text-[28px] font-black tracking-tight leading-snug text-blue-600 dark:text-blue-400">
+              <h2
+                className="text-xl sm:text-2xl lg:text-[28px] font-black tracking-tight leading-snug text-teal-700"
+               
+              >
                 AN TOÀN • TIỆN NGHI • HIỆN ĐẠI
               </h2>
             </div>
 
             {/* Description */}
-            <p className="text-sm sm:text-[15px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium max-w-lg">
+            <p
+              className="text-sm sm:text-[15px] text-slate-700 leading-relaxed font-medium max-w-lg"
+             
+            >
               Công nghệ IoT hiện đại, bảo mật đa lớp và hệ thống quản lý thông minh mang đến trải nghiệm lưu trữ an toàn, tiện lợi và linh hoạt cho bạn.
             </p>
 
@@ -315,45 +340,63 @@ export const LoginPage: React.FC = () => {
             <div className="flex flex-wrap items-center gap-y-3 pt-3">
               
               {/* Badge 1: Bảo mật đa lớp */}
-              <div className="flex items-center gap-3 pr-4 sm:pr-6 border-r border-slate-200 dark:border-slate-800">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0 shadow-xs">
+              <div className="flex items-center gap-3 pr-4 sm:pr-6 border-r border-teal-200/80">
+                <div className="w-8 h-8 rounded-xl bg-teal-50/80 border border-teal-200 flex items-center justify-center text-teal-700 shrink-0 shadow-[0_2px_8px_rgba(13,148,136,0.12)]">
                   <ShieldCheck className="w-5 h-5 stroke-[2.2]" />
                 </div>
                 <div className="text-left leading-tight">
-                  <span className="block text-xs sm:text-[13px] font-black text-slate-950 dark:text-white">
+                  <span
+                    className="block text-xs sm:text-[13px] font-black text-slate-950"
+                   
+                  >
                     Bảo mật
                   </span>
-                  <span className="block text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  <span
+                    className="block text-[10px] sm:text-[11px] font-semibold text-slate-600"
+                   
+                  >
                     đa lớp
                   </span>
                 </div>
               </div>
 
               {/* Badge 2: Quản lý thông minh */}
-              <div className="flex items-center gap-3 px-4 sm:px-6 border-r border-slate-200 dark:border-slate-800">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0 shadow-xs">
+              <div className="flex items-center gap-3 px-4 sm:px-6 border-r border-teal-200/80">
+                <div className="w-8 h-8 rounded-xl bg-teal-50/80 border border-teal-200 flex items-center justify-center text-teal-700 shrink-0 shadow-[0_2px_8px_rgba(13,148,136,0.12)]">
                   <Sliders className="w-5 h-5 stroke-[2.2]" />
                 </div>
                 <div className="text-left leading-tight">
-                  <span className="block text-xs sm:text-[13px] font-black text-slate-950 dark:text-white">
+                  <span
+                    className="block text-xs sm:text-[13px] font-black text-slate-950"
+                   
+                  >
                     Quản lý
                   </span>
-                  <span className="block text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  <span
+                    className="block text-[10px] sm:text-[11px] font-semibold text-slate-600"
+                   
+                  >
                     thông minh
                   </span>
                 </div>
               </div>
 
               {/* Badge 3: Tiết kiệm thời gian */}
-              <div className="flex items-center gap-3 px-4 sm:px-6 border-r border-slate-200 dark:border-slate-800">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0 shadow-xs">
+              <div className="flex items-center gap-3 px-4 sm:px-6 border-r border-teal-200/80">
+                <div className="w-8 h-8 rounded-xl bg-teal-50/80 border border-teal-200 flex items-center justify-center text-teal-700 shrink-0 shadow-[0_2px_8px_rgba(13,148,136,0.12)]">
                   <Clock className="w-5 h-5 stroke-[2.2]" />
                 </div>
                 <div className="text-left leading-tight">
-                  <span className="block text-xs sm:text-[13px] font-black text-slate-950 dark:text-white">
+                  <span
+                    className="block text-xs sm:text-[13px] font-black text-slate-950"
+                   
+                  >
                     Tiết kiệm
                   </span>
-                  <span className="block text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  <span
+                    className="block text-[10px] sm:text-[11px] font-semibold text-slate-600"
+                   
+                  >
                     thời gian
                   </span>
                 </div>
@@ -361,14 +404,20 @@ export const LoginPage: React.FC = () => {
 
               {/* Badge 4: Tối ưu không gian */}
               <div className="flex items-center gap-3 pl-4 sm:pl-6">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0 shadow-xs">
+                <div className="w-8 h-8 rounded-xl bg-teal-50/80 border border-teal-200 flex items-center justify-center text-teal-700 shrink-0 shadow-[0_2px_8px_rgba(13,148,136,0.12)]">
                   <Box className="w-5 h-5 stroke-[2.2]" />
                 </div>
                 <div className="text-left leading-tight">
-                  <span className="block text-xs sm:text-[13px] font-black text-slate-950 dark:text-white">
+                  <span
+                    className="block text-xs sm:text-[13px] font-black text-slate-950"
+                   
+                  >
                     Tối ưu
                   </span>
-                  <span className="block text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  <span
+                    className="block text-[10px] sm:text-[11px] font-semibold text-slate-600"
+                   
+                  >
                     không gian
                   </span>
                 </div>
@@ -385,7 +434,7 @@ export const LoginPage: React.FC = () => {
         {/* ========================================================== */}
         <div className="w-full max-w-[540px] lg:w-[500px] xl:w-[540px] shrink-0 my-auto">
           
-          <div className="w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-7 sm:p-9 lg:p-10 relative z-30 transition-all text-left space-y-5">
+          <div className="w-full bg-white/98 backdrop-blur-md rounded-[32px] sm:rounded-[36px] border-2 border-teal-100 shadow-[0_25px_60px_rgba(15,23,42,0.12),0_0_40px_rgba(13,148,136,0.08)] p-7 sm:p-9 lg:p-10 relative z-30 transition-all text-left space-y-5">
             
             {/* Top Logo inside the Card */}
             <div className="flex items-center justify-start">
@@ -398,17 +447,17 @@ export const LoginPage: React.FC = () => {
 
             {/* Header Title */}
             <div className="space-y-1.5">
-              <h2 className="text-2xl sm:text-[30px] font-black text-slate-950 dark:text-white tracking-tight">
+              <h2 className="text-2xl sm:text-[30px] font-black text-slate-950 tracking-tight">
                 Đăng nhập tài khoản
               </h2>
-              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">
+              <p className="text-xs sm:text-sm text-slate-600 font-medium">
                 Kết nối không gian lưu trữ thông minh &amp; quản lý ô kho của bạn
               </p>
             </div>
 
             {/* Error banner */}
             {error && (
-              <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-400 text-xs sm:text-sm flex items-center gap-2.5 shadow-xs">
+              <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs sm:text-sm flex items-center gap-2.5 shadow-xs">
                 <AlertCircle className="w-4.5 h-4.5 shrink-0 text-red-500" />
                 <span className="font-medium">{error}</span>
               </div>
@@ -419,7 +468,7 @@ export const LoginPage: React.FC = () => {
               
               {/* Field 1: Email đăng nhập */}
               <div className="space-y-1.5">
-                <label className="block text-xs sm:text-[13px] font-bold text-slate-800 dark:text-slate-200">
+                <label className="block text-xs sm:text-[13px] font-bold text-slate-800">
                   Email đăng nhập
                 </label>
                 <div className="relative flex items-center">
@@ -433,7 +482,7 @@ export const LoginPage: React.FC = () => {
                     placeholder="Nhập email của bạn"
                     required
                     autoFocus
-                    className="w-full h-12 pl-11 pr-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all font-medium"
+                    className="w-full h-12 pl-11 pr-4 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
                   />
                 </div>
               </div>
@@ -441,13 +490,13 @@ export const LoginPage: React.FC = () => {
               {/* Field 2: Mật khẩu */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs sm:text-[13px]">
-                  <label className="font-bold text-slate-800 dark:text-slate-200">
+                  <label className="font-bold text-slate-800">
                     Mật khẩu
                   </label>
                   <button
                     type="button"
                     onClick={handleOpenForgotModal}
-                    className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline font-semibold text-xs cursor-pointer"
+                    className="text-teal-700 hover:text-teal-800 hover:underline font-semibold text-xs cursor-pointer"
                   >
                     Quên mật khẩu?
                   </button>
@@ -462,12 +511,12 @@ export const LoginPage: React.FC = () => {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Nhập mật khẩu truy cập"
                     required
-                    className="w-full h-12 pl-11 pr-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all font-medium"
+                    className="w-full h-12 pl-11 pr-11 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                    className="absolute right-3.5 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
                   </button>
@@ -477,10 +526,10 @@ export const LoginPage: React.FC = () => {
               {/* Circular Selection 1: Ghi nhớ thiết bị an toàn */}
               <div
                 onClick={() => setRememberDevice(!rememberDevice)}
-                className="flex items-center gap-2.5 cursor-pointer text-xs sm:text-sm text-slate-700 dark:text-slate-300 font-medium select-none group pt-1"
+                className="flex items-center gap-2.5 cursor-pointer text-xs sm:text-sm text-slate-700 font-medium select-none group pt-1"
               >
                 <div className={`w-4.5 h-4.5 rounded-full flex items-center justify-center transition-all shrink-0 ${
-                  rememberDevice ? 'bg-blue-600 text-white shadow-xs' : 'border-2 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 group-hover:border-slate-400'
+                  rememberDevice ? 'bg-teal-700 text-white shadow-xs' : 'border-2 border-slate-300 bg-white group-hover:border-slate-400'
                 }`}>
                   {rememberDevice && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
@@ -490,10 +539,10 @@ export const LoginPage: React.FC = () => {
               {/* Circular Selection 2: Điều khoản & Quy chuẩn */}
               <div
                 onClick={() => setAgreeTerms(!agreeTerms)}
-                className="flex items-start gap-2.5 cursor-pointer text-xs sm:text-sm text-slate-700 dark:text-slate-300 font-medium select-none group"
+                className="flex items-start gap-2.5 cursor-pointer text-xs sm:text-sm text-slate-700 font-medium select-none group"
               >
                 <div className={`w-4.5 h-4.5 mt-0.5 rounded-full flex items-center justify-center transition-all shrink-0 ${
-                  agreeTerms ? 'bg-blue-600 text-white shadow-xs' : 'border-2 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 group-hover:border-slate-400'
+                  agreeTerms ? 'bg-teal-700 text-white shadow-xs' : 'border-2 border-slate-300 bg-white group-hover:border-slate-400'
                 }`}>
                   {agreeTerms && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
@@ -505,10 +554,10 @@ export const LoginPage: React.FC = () => {
                       e.stopPropagation()
                       setShowTermsModal(true)
                     }}
-                    className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline font-bold inline-flex items-center gap-1 cursor-pointer"
+                    className="text-teal-700 hover:text-teal-800 hover:underline font-bold inline-flex items-center gap-1 cursor-pointer"
                   >
                     <span>Điều khoản &amp; Quy chuẩn an toàn kho Boxora</span>
-                    <ExternalLink className="w-3 h-3 text-blue-600 dark:text-blue-400 inline" />
+                    <ExternalLink className="w-3 h-3 text-teal-600 inline" />
                   </button>
                 </span>
               </div>
@@ -517,7 +566,7 @@ export const LoginPage: React.FC = () => {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm tracking-wide uppercase shadow-md shadow-blue-600/20 hover:shadow-blue-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed mt-2"
+                className="w-full h-12 sm:h-12.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md shadow-blue-600/20 text-xs sm:text-sm tracking-wider uppercase shadow-lg shadow-slate-900/15 hover:shadow-slate-900/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed mt-2"
               >
                 {isLoading ? (
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -534,9 +583,9 @@ export const LoginPage: React.FC = () => {
             {/* Divider */}
             <div className="relative py-1 text-center my-1">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-slate-200 dark:border-slate-800" />
+                <div className="w-full border-t border-slate-200" />
               </div>
-              <div className="relative inline-block px-3 bg-white dark:bg-slate-900 text-[10px] font-mono tracking-widest text-slate-400 uppercase font-bold">
+              <div className="relative inline-block px-3 bg-white text-[10px] font-mono tracking-widest text-slate-400 uppercase font-bold">
                 HOẶC TIẾP TỤC VỚI
               </div>
             </div>
@@ -552,9 +601,9 @@ export const LoginPage: React.FC = () => {
 
             {/* Feedback notification */}
             {socialNotice && (
-              <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 text-[11px] font-mono text-center flex items-center justify-between">
+              <div className="p-2 rounded-xl bg-teal-50 border border-teal-200 text-teal-800 text-[11px] font-mono text-center flex items-center justify-between">
                 <span>{socialNotice}</span>
-                <button onClick={() => setSocialNotice(null)} className="text-blue-600 hover:text-slate-800 dark:hover:text-white">
+                <button onClick={() => setSocialNotice(null)} className="text-teal-700 hover:text-slate-800">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -565,20 +614,18 @@ export const LoginPage: React.FC = () => {
               <span className="text-slate-600">
                 Chưa có tài khoản?{' '}
                 <Link
-                  to="/register"
-                  className="font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline inline-flex items-center gap-1"
+                  to={
+                    redirect
+                      ? `/register?redirect=${encodeURIComponent(redirect)}`
+                      : (sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft') ? `/register?redirect=${encodeURIComponent('/booking')}` : '/register')
+                  }
+                  className="font-bold text-teal-700 hover:text-teal-800 hover:underline inline-flex items-center gap-1"
                 >
                   <span>Đăng ký ngay</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </span>
-              <Link
-                to="/"
-                className="text-slate-500 hover:text-teal-700 hover:underline inline-flex items-center gap-1 font-medium"
-              >
-                <Home className="w-3.5 h-3.5 text-teal-600" />
-                <span>Về trang chủ</span>
-              </Link>
+
             </div>
 
           </div>
@@ -588,14 +635,14 @@ export const LoginPage: React.FC = () => {
       </main>
 
       {/* ============================================================ */}
-      {/* 4. FOOTER (CLEAN & PROFESSIONAL)                            */}
+      {/* 4. FOOTER (CLEAN & PROFESSIONAL - NO TEST ACCOUNTS)         */}
       {/* ============================================================ */}
-      <footer className="relative z-20 w-full px-6 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-500 font-mono">
-        <span className="font-medium">
+      <footer className="relative z-20 w-full px-6 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-600 font-mono">
+        <span className="text-slate-500 font-medium">
           &copy; {new Date().getFullYear()} BOXORA Smart Storage. Bản quyền thuộc về Boxora.
         </span>
-        <span className="font-medium bg-white/75 dark:bg-slate-900/75 backdrop-blur-md px-3.5 py-1 rounded-full border border-slate-200/60 dark:border-slate-800 shadow-2xs">
-          Hotline hỗ trợ 24/7: <strong className="text-blue-600 dark:text-blue-400 font-bold">1900-6868</strong>
+        <span className="text-slate-600 font-medium bg-white/75 backdrop-blur-md px-3.5 py-1 rounded-full border border-slate-200/60 shadow-2xs">
+          Hotline hỗ trợ 24/7: <strong className="text-teal-700 font-bold">1900-6868</strong>
         </span>
       </footer>
 
@@ -605,7 +652,7 @@ export const LoginPage: React.FC = () => {
       {/* ============================================================ */}
       {showForgotModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="w-full max-w-md rounded-3xl bg-white border border-slate-200 p-6 sm:p-7 space-y-4 shadow-2xl text-left animate-scaleUp">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 sm:p-7 space-y-4 shadow-2xl text-left animate-scaleUp">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2 text-teal-700 font-mono text-xs font-bold">
                 <HelpCircle className="w-4 h-4 text-teal-700" />
@@ -640,14 +687,14 @@ export const LoginPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setForgotSuccess(false)}
-                    className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-colors cursor-pointer"
+                    className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
                   >
                     Gửi lại email
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowForgotModal(false)}
-                    className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-all shadow-md shadow-blue-600/20 cursor-pointer"
+                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-teal-800 to-teal-700 hover:from-teal-700 hover:to-teal-600 text-white font-bold text-xs transition-all shadow-md shadow-teal-700/15 cursor-pointer"
                   >
                     Đóng
                   </button>
@@ -655,19 +702,19 @@ export const LoginPage: React.FC = () => {
               </div>
             ) : (
               <form onSubmit={handleForgotSubmit} className="space-y-4">
-                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                <p className="text-xs text-slate-600 leading-relaxed">
                   Nhập địa chỉ email đăng ký tài khoản của bạn. Hệ thống Boxora sẽ gửi liên kết bảo mật để bạn thiết lập lại mật khẩu mới.
                 </p>
 
                 {forgotError && (
-                  <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-400 text-xs flex items-start gap-2">
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                     <span>{forgotError}</span>
                   </div>
                 )}
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <label className="block text-xs font-bold text-slate-800">
                     Email tài khoản Boxora
                   </label>
                   <div className="relative flex items-center">
@@ -680,7 +727,7 @@ export const LoginPage: React.FC = () => {
                       onChange={(e) => setForgotEmail(e.target.value)}
                       placeholder="vidu@boxora.vn"
                       required
-                      className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all"
+                      className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all"
                     />
                   </div>
                 </div>
@@ -689,14 +736,14 @@ export const LoginPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShowForgotModal(false)}
-                    className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-colors cursor-pointer"
+                    className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
                   >
                     Hủy bỏ
                   </button>
                   <button
                     type="submit"
                     disabled={isForgotLoading}
-                    className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs uppercase tracking-wider transition-all cursor-pointer shadow-md shadow-blue-600/20 disabled:opacity-60 flex items-center justify-center gap-1.5"
+                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-teal-800 to-teal-700 hover:from-teal-700 hover:to-teal-600 text-white font-bold text-xs uppercase tracking-wider transition-all cursor-pointer shadow-md shadow-teal-700/15 disabled:opacity-60 flex items-center justify-center gap-1.5"
                   >
                     {isForgotLoading ? (
                       <>

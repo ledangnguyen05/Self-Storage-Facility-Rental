@@ -26,4 +26,6 @@ public interface EmailService {
     void sendRenewalReminderEmail(String toEmail, String fullName, String contractCode, String unitCode, java.time.LocalDate endDate, long daysRemaining, java.math.BigDecimal monthlyFee);
 
     void sendHandoverPinEmail(String toEmail, String fullName, String unitCode, String bookingCode, String accessPin, String facilityName);
+
+    void sendHandoverWithContractEmail(String toEmail, String fullName, String unitCode, String bookingCode, String accessPin, String facilityName, String contractCode, String startDate, String endDate, String rentalFee, String contractUrl);
 }

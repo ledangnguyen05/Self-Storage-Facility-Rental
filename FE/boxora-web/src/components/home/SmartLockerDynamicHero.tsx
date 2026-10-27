@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react'
+import { useLanguage } from '../../context/LanguageContext'
 import { ArrowDown, ArrowRight } from 'lucide-react'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
@@ -10,6 +11,7 @@ interface SmartLockerDynamicHeroProps {
 }
 
 export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ onBookNow }) => {
+  const { t } = useLanguage();
   const sectionRef = useRef<HTMLElement | null>(null)
   const cursorGlowRef = useRef<HTMLDivElement | null>(null)
 
@@ -147,10 +149,10 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
     <section
       ref={sectionRef}
       aria-labelledby="boxora-hero-title"
-      className="relative isolate min-h-[calc(100svh_-_64px)] overflow-hidden bg-[#f7faff] text-[#101827]"
+      className="relative isolate min-h-[calc(100svh_-_64px)] overflow-hidden bg-[#f7faff] dark:bg-slate-950 text-[#101827] dark:text-slate-100"
     >
       {/* A custom, image-free IoT light field: soft color, orbital geometry and contour lines. */}
-      <div data-scroll-ambience aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 overflow-hidden bg-[linear-gradient(180deg,#f7faff_0%,#f2f8ff_38%,#f1fff8_100%)]">
+      <div data-scroll-ambience aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 overflow-hidden bg-[linear-gradient(180deg,#f7faff_0%,#f2f8ff_38%,#f1fff8_100%)] dark:bg-[linear-gradient(180deg,#090d16_0%,#0c1527_40%,#09121a_100%)]">
         <div data-bg-cloud="a" className="absolute -left-[19%] top-[12%] h-[430px] w-[660px] rounded-full bg-[radial-gradient(ellipse,rgba(8,102,245,.28)_0%,rgba(0,191,216,.2)_42%,transparent_73%)] blur-[42px] sm:h-[620px] sm:w-[900px]" />
         <div data-bg-cloud="b" className="absolute -right-[21%] top-[22%] h-[460px] w-[700px] rounded-full bg-[radial-gradient(ellipse,rgba(0,191,216,.3)_0%,rgba(123,227,63,.16)_43%,transparent_73%)] blur-[48px] sm:h-[650px] sm:w-[980px]" />
         <div data-bg-ribbon className="absolute left-[8%] top-[54%] h-[270px] w-[84%] rounded-[50%] bg-[linear-gradient(90deg,transparent,rgba(0,191,216,.25),rgba(8,102,245,.22),rgba(123,227,63,.14),transparent)] blur-[54px] sm:top-[50%] sm:h-[360px]" />
@@ -166,7 +168,7 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
           <path d="M-40 331C189 225 301 411 544 310s329-106 522-14 299 78 434-6" stroke="#32B995" strokeOpacity=".3" />
           <path d="M-30 352C185 267 342 429 558 342s337-98 522-17 273 66 410-4" stroke="#7BE33F" strokeOpacity=".25" />
         </svg>
-        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-[#f1fff8]" />
+        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-[#f1fff8] dark:to-[#090d16]" />
       </div>
 
       <div
@@ -178,8 +180,8 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
 
       <div data-scroll-copy className="relative z-10 mx-auto flex min-h-[calc(100svh_-_64px)] max-w-[1440px] flex-col items-center px-5 pb-3 pt-[clamp(1.25rem,5svh,4rem)] text-center sm:px-8 sm:pb-4 sm:pt-[clamp(1.75rem,6svh,4.5rem)] lg:px-12 lg:pt-[clamp(1.5rem,5svh,3.75rem)]">
 
-        <h1 data-hero-copy id="boxora-hero-title" className="max-w-6xl text-[clamp(2.2rem,min(7.4vw,10svh),6.4rem)] font-semibold leading-[0.96] tracking-[-0.045em] text-slate-950">
-          Không gian lưu trữ linh hoạt
+        <h1 data-hero-copy id="boxora-hero-title" className="max-w-6xl text-[clamp(2.2rem,min(7.4vw,10svh),6.4rem)] font-semibold leading-[0.96] tracking-[-0.045em] text-slate-950 dark:text-white">
+          {t('Không gian lưu trữ linh hoạt')}
           <img
             src="/logo.png"
             alt="Boxora"
@@ -187,8 +189,8 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
           />
         </h1>
 
-        <p data-hero-copy className="mx-auto mt-4 max-w-2xl text-sm font-medium leading-6 text-slate-700 sm:mt-5 sm:text-base sm:leading-7 lg:text-lg">
-          Chọn diện tích phù hợp <span className="mx-1 text-cyan-600">•</span> Vào kho 24/7 bằng mã PIN
+        <p data-hero-copy className="mx-auto mt-4 max-w-2xl text-sm font-medium leading-6 text-slate-700 dark:text-slate-300 sm:mt-5 sm:text-base sm:leading-7 lg:text-lg">
+          {t('Chọn diện tích phù hợp')} <span className="mx-1 text-cyan-600">•</span> {t('Nhận mã PIN sau khi hoàn tất bàn giao')}
         </p>
 
         <div data-hero-copy className="mt-5 flex flex-wrap items-center justify-center gap-3 sm:mt-6">
@@ -197,14 +199,14 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
             onClick={onBookNow}
             className="group inline-flex min-h-12 items-center justify-center gap-2.5 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-95 px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/25 transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
           >
-            <span>Đặt kho ngay</span>
+            <span>{t('Đặt kho ngay')}</span>
             <ArrowRight size={16} className="transition-transform duration-200 group-hover:translate-x-1" />
           </button>
           <a
-            href="#services"
-            className="inline-flex min-h-12 items-center rounded-full border border-blue-200 bg-white/75 px-6 py-3 text-sm font-semibold text-blue-900 transition-colors hover:border-cyan-500 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700"
+            href="#process"
+            className="inline-flex min-h-12 items-center rounded-full border border-blue-200 dark:border-blue-800 bg-white/75 dark:bg-slate-900/80 px-6 py-3 text-sm font-semibold text-blue-900 dark:text-blue-300 transition-colors hover:border-cyan-500 hover:bg-white dark:hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700"
           >
-            Khám phá dịch vụ
+            {t('Cách thuê kho')}
           </a>
         </div>
 
@@ -263,8 +265,8 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
             block: 'start',
           })
         }}
-        aria-label="Cuộn xuống xem nội dung Boxora"
-        className="group absolute bottom-4 left-1/2 z-20 inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/80 bg-white/75 py-1.5 pl-2 pr-4 text-xs font-semibold text-blue-900 shadow-[0_8px_24px_rgba(15,23,42,.08)] backdrop-blur-lg transition duration-200 hover:-translate-y-0.5 hover:border-cyan-400 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 sm:bottom-5 sm:py-2 sm:pl-2.5 sm:pr-5 lg:left-12 lg:translate-x-0"
+        aria-label={t('Cuộn xuống xem nội dung Boxora')}
+        className="group absolute bottom-4 left-1/2 z-20 inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/80 dark:border-slate-800 bg-white/75 dark:bg-slate-900/80 py-1.5 pl-2 pr-4 text-xs font-semibold text-blue-900 dark:text-blue-300 shadow-[0_8px_24px_rgba(15,23,42,.08)] backdrop-blur-lg transition duration-200 hover:-translate-y-0.5 hover:border-cyan-400 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 sm:bottom-5 sm:py-2 sm:pl-2.5 sm:pr-5 lg:left-12 lg:translate-x-0"
       >
         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-800 transition-colors group-hover:bg-blue-100">
           <ArrowDown size={15} className="animate-bounce motion-reduce:animate-none" />

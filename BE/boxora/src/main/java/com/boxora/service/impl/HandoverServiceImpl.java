@@ -232,15 +232,13 @@ public class HandoverServiceImpl implements HandoverService {
             if (today.isBefore(apptDate)) {
                 checkInTimeMet = false;
                 checkInTimeStatus = "BEFORE_DATE";
-                checkInTimeMessage = String.format("Chưa đến ngày check-in. Thời điểm được phép nhận kho từ: %s",
+                checkInTimeMessage = String.format("Chưa đến ngày check-in. Thời điểm đúng để thực hiện tiếp nhận kho từ: %s.",
                         expectedCheckIn.format(CHECKIN_DT_FMT));
-                missing.add(checkInTimeMessage);
             } else if (today.isEqual(apptDate) && now.isBefore(expectedCheckIn)) {
                 checkInTimeMet = false;
                 checkInTimeStatus = "BEFORE_TIME";
-                checkInTimeMessage = String.format("Đúng ngày nhưng chưa đến giờ check-in (Lịch hẹn lúc %s). Vui lòng chờ đến giờ hợp lệ.",
+                checkInTimeMessage = String.format("Chưa đến ngày check-in. Thời điểm đúng để thực hiện tiếp nhận kho từ: %s.",
                         expectedCheckIn.format(CHECKIN_DT_FMT));
-                missing.add(checkInTimeMessage);
             } else if (today.isEqual(apptDate)) {
                 checkInTimeMet = true;
                 checkInTimeStatus = "ON_TIME";
@@ -253,7 +251,9 @@ public class HandoverServiceImpl implements HandoverService {
             }
         }
 
-        boolean eligible = missing.isEmpty();
+        boolean physicalPrereqsMet = missing.isEmpty();
+        boolean eligibleForInspection = physicalPrereqsMet;
+        boolean eligibleForCheckIn = physicalPrereqsMet && checkInTimeMet;
 
         List<PaymentResponse> paymentHistory = paymentRepository.findAllByBooking_Id(booking.getId()).stream()
                 .sorted((a, b) -> {
@@ -304,8 +304,8 @@ public class HandoverServiceImpl implements HandoverService {
                 .checkInTimeStatus(checkInTimeStatus)
                 .checkInTimeMessage(checkInTimeMessage)
                 .expectedCheckInAt(expectedCheckIn)
-                .eligibleForInspection(eligible)
-                .eligibleForCheckIn(eligible)
+                .eligibleForInspection(eligibleForInspection)
+                .eligibleForCheckIn(eligibleForCheckIn)
                 .missingPrerequisites(missing)
                 .paymentHistory(paymentHistory)
                 .build();
@@ -467,18 +467,35 @@ public class HandoverServiceImpl implements HandoverService {
             LocalDate today = now.toLocalDate();
             LocalDate apptDate = expectedCheckIn.toLocalDate();
 
-            if (today.isBefore(apptDate)) {
-                log.warn("[CHECKIN-DATE] Handover check-in rejected for booking {}. Today {} is before expected check-in date {}",
-                        booking.getBookingCode(), today, apptDate);
-                throw new AppException(ErrorCode.HANDOVER_BEFORE_CHECKIN_DATE,
-                        String.format("Chưa đến ngày check-in. Thời điểm được phép nhận kho từ: %s",
-                                expectedCheckIn.format(CHECKIN_DT_FMT)));
-            } else if (today.isEqual(apptDate) && now.isBefore(expectedCheckIn)) {
-                log.warn("[CHECKIN-TIME] Handover check-in rejected for booking {}. Current time {} is before expected check-in time {}",
-                        booking.getBookingCode(), now, expectedCheckIn);
-                throw new AppException(ErrorCode.HANDOVER_BEFORE_CHECKIN_TIME,
-                        String.format("Đúng ngày nhưng chưa đến giờ check-in (Lịch hẹn lúc %s). Vui lòng chờ đến giờ hợp lệ.",
-                                expectedCheckIn.format(CHECKIN_DT_FMT)));
+            if (today.isBefore(apptDate) || (today.isEqual(apptDate) && now.isBefore(expectedCheckIn))) {
+                if (Boolean.TRUE.equals(request.getEarlyCheckInConfirmed())) {
+                    log.info("[EARLY-CHECKIN] Authorized early check-in by {} for booking {}. Original expectedCheckInAt: {}",
+                            staff.getFullName(), booking.getBookingCode(), expectedCheckIn);
+                    String earlyReason = (request.getEarlyCheckInReason() != null && !request.getEarlyCheckInReason().isBlank())
+                            ? request.getEarlyCheckInReason().trim()
+                            : "Khách cần nhận kho gấp, cơ sở đủ điều kiện phục vụ";
+                    String roleName = (staff.getRole() != null && staff.getRole().getName() != null)
+                            ? staff.getRole().getName()
+                            : "STAFF";
+                    String earlyNote = String.format("[EARLY_CHECKIN][%s] Tiếp nhận sớm bởi %s (%s). Lý do: %s. Lịch hẹn gốc giữ nguyên: %s.\n",
+                            LocalDateTime.now(), staff.getFullName(), roleName, earlyReason,
+                            expectedCheckIn.format(CHECKIN_DT_FMT));
+                    booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + earlyNote);
+                } else {
+                    if (today.isBefore(apptDate)) {
+                        log.warn("[CHECKIN-DATE] Handover check-in rejected for booking {}. Today {} is before expected check-in date {}",
+                                booking.getBookingCode(), today, apptDate);
+                        throw new AppException(ErrorCode.HANDOVER_BEFORE_CHECKIN_DATE,
+                                String.format("Chưa đến ngày check-in. Thời điểm đúng để thực hiện tiếp nhận kho từ: %s.",
+                                        expectedCheckIn.format(CHECKIN_DT_FMT)));
+                    } else {
+                        log.warn("[CHECKIN-TIME] Handover check-in rejected for booking {}. Current time {} is before expected check-in time {}",
+                                booking.getBookingCode(), now, expectedCheckIn);
+                        throw new AppException(ErrorCode.HANDOVER_BEFORE_CHECKIN_TIME,
+                                String.format("Chưa đến ngày check-in. Thời điểm đúng để thực hiện tiếp nhận kho từ: %s.",
+                                        expectedCheckIn.format(CHECKIN_DT_FMT)));
+                    }
+                }
             }
         }
 

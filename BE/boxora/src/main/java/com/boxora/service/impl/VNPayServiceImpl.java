@@ -29,6 +29,11 @@ public class VNPayServiceImpl implements VNPayService {
 
     @Override
     public String createPaymentUrl(String txnRef, BigDecimal amount, String orderInfo, String ipAddress) {
+        return createPaymentUrl(txnRef, amount, orderInfo, ipAddress, null);
+    }
+
+    @Override
+    public String createPaymentUrl(String txnRef, BigDecimal amount, String orderInfo, String ipAddress, String customReturnUrl) {
         if (vnPayConfig.getTmnCode() == null || vnPayConfig.getTmnCode().isBlank()
                 || vnPayConfig.getHashSecret() == null || vnPayConfig.getHashSecret().isBlank()) {
             log.error("VNPay configuration missing: tmnCode or hashSecret is not set.");
@@ -50,7 +55,10 @@ public class VNPayServiceImpl implements VNPayService {
         params.put("vnp_OrderInfo", safeOrderInfo);
         params.put("vnp_OrderType", vnPayConfig.getOrderType());
         params.put("vnp_Locale", vnPayConfig.getLocale());
-        params.put("vnp_ReturnUrl", vnPayConfig.getReturnUrl());
+        String effectiveReturnUrl = (customReturnUrl != null && !customReturnUrl.isBlank())
+                ? customReturnUrl.trim()
+                : vnPayConfig.getReturnUrl();
+        params.put("vnp_ReturnUrl", effectiveReturnUrl);
         params.put("vnp_IpAddr", VNPayUtil.normalizeIp(ipAddress));
         params.put("vnp_CreateDate", LocalDateTime.now().format(VNP_DATE_FORMAT));
         // Give the customer 15 minutes on VNPay's payment page before the request itself expires -

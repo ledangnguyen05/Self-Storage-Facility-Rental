@@ -57,6 +57,15 @@ export const getCustomerRentals = (user: User | null): CustomerRentalRecord[] =>
   return []
 }
 
+export const lockCustomerPortal = (user: User) => {
+  getCustomerIdentityKeys(user).forEach(key => {
+    localStorage.removeItem(`${CUSTOMER_PORTAL_ACCESS_KEY_PREFIX}${key}`)
+    localStorage.removeItem(`${STORAGE_KEY_PREFIX}${key}`)
+    localStorage.setItem(`${NEW_CUSTOMER_KEY_PREFIX}${key}`, 'true')
+  })
+  window.dispatchEvent(new Event('boxora_rental_updated'))
+}
+
 export const checkCustomerPortalAccess = (user: User | null): {
   hasAccess: boolean
   rentals: CustomerRentalRecord[]
@@ -72,11 +81,29 @@ export const checkCustomerPortalAccess = (user: User | null): {
     return { hasAccess: true, rentals: [] }
   }
 
-  // Any logged-in customer can access their portal
+  // Nếu là tài khoản mới chưa từng có kho thuê được xác nhận
+  if (isMarkedAsNewCustomer(user)) {
+    return {
+      hasAccess: false,
+      rentals: [],
+      reason: 'Quý khách chưa có kho đang thuê trên hệ thống.'
+    }
+  }
+
   const rentals = getCustomerRentals(user)
+  const hasConfirmedRental =
+    Array.isArray(rentals) &&
+    rentals.length > 0 &&
+    rentals.some((r) => r.isAppConfirmed && r.contractCode && r.unitCode)
+
+  const hasAccess = Boolean(hasConfirmedRental && hasCustomerPortalActivity(user))
+
   return {
-    hasAccess: true,
+    hasAccess,
     rentals,
+    reason: hasAccess
+      ? undefined
+      : 'Quý khách chưa có kho đang thuê trên hệ thống.',
   }
 }
 
@@ -118,7 +145,8 @@ export const activateCustomerRental = (
   const newRental: CustomerRentalRecord = {
     unitCode,
     unitName,
-    contractCode: `CTR-${unitCode.replace(/[^a-zA-Z0-9]/g, '')}`,
+    contractCode: contractCode || `CTR-${unitCode.replace(/[^a-zA-Z0-9]/g, '')}`,
+
     startDate: new Date().toLocaleDateString('vi-VN'),
     isAppConfirmed: true
   }
@@ -152,30 +180,49 @@ export const markUserAsNewCustomer = (userId: string, username?: string, email?:
   if (username) localStorage.removeItem(`${CUSTOMER_PORTAL_ACCESS_KEY_PREFIX}${username}`)
 }
 
-export const syncCustomerPortalAccess = async (user: User) => {
+export const syncCustomerPortalAccess = async (user: User): Promise<boolean> => {
   if (getUserRole(user) !== 'CUSTOMER') return true
 
-  const [bookingsResult, requestsResult, contractsResult] = await Promise.allSettled([
-    bookingService.getMyBookings(),
-    bookingService.getMyRequests(),
-    contractService.getMyContracts({ size: 1 })
-  ])
+  try {
+    const [bookingsResult, contractsResult] = await Promise.allSettled([
+      bookingService.getMyBookings(),
+      contractService.getMyContracts({ size: 20 })
+    ])
 
-  const bookings = bookingsResult.status === 'fulfilled' ? bookingsResult.value : null
-  const requests = requestsResult.status === 'fulfilled' ? requestsResult.value : null
-  const contracts = contractsResult.status === 'fulfilled' ? contractsResult.value.content : null
-  const hasBookingOrRental = Boolean(bookings?.length || requests?.length || contracts?.length)
+    const bookings = bookingsResult.status === 'fulfilled' && Array.isArray(bookingsResult.value)
+      ? bookingsResult.value
+      : []
+    const contracts = contractsResult.status === 'fulfilled' && Array.isArray(contractsResult.value?.content)
+      ? contractsResult.value.content
+      : []
 
-  if (hasBookingOrRental) {
-    unlockCustomerPortal(user)
-    return true
+    // Đã có kho đang thuê: Khi có ít nhất 1 hợp đồng ACTIVE đã gán unit, HOẶC 1 booking đã gán unit (storageUnitId/unitCode) và trạng thái CONFIRMED, READY_FOR_CHECKIN hoặc ACTIVE
+    const activeContract = contracts.find(c =>
+      (c.status === 'ACTIVE' || c.status === 'PENDING_ACTIVATION') && Boolean(c.unitCode || (c as any).unitId)
+    )
+
+    const activeBooking = bookings.find(b => {
+      const s = String(b.status || '')
+      const hasUnit = Boolean(b.storageUnitId || b.unitCode)
+      return hasUnit && ['ACTIVE', 'CONFIRMED', 'READY_FOR_CHECKIN'].includes(s)
+    })
+
+    const hasRental = Boolean(activeContract || activeBooking)
+
+    if (hasRental) {
+      const unitCode = activeContract?.unitCode || activeBooking?.unitCode || 'UNIT'
+      const contractCode = activeContract?.contractCode || activeBooking?.bookingCode
+      activateCustomerRental(user, unitCode, 'Kho Boxora', contractCode)
+      unlockCustomerPortal(user)
+      return true
+    } else {
+      lockCustomerPortal(user)
+      return false
+    }
+  } catch (err) {
+    console.warn('Failed to sync customer portal access with backend:', err)
+    return checkCustomerPortalAccess(user).hasAccess
   }
-
-  // Only accounts marked during registration start in search. Existing
-  // accounts without rental activity can still open the portal's empty state.
-  // An existing local access marker also protects the portal route if the API
-  // is temporarily unavailable.
-  return hasCustomerPortalActivity(user) || !isMarkedAsNewCustomer(user)
 }
 
 export interface CheckInCountdownInfo {

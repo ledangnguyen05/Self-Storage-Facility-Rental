@@ -374,7 +374,7 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition cursor-pointer"
+            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"
           >
             Đã hiểu &amp; Đóng
           </button>

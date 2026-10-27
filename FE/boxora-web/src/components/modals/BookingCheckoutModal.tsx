@@ -300,7 +300,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
       <section role="dialog" aria-modal="true" aria-labelledby="booking-checkout-title" className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-        <header className="flex items-center justify-between bg-slate-900 px-6 py-5 text-white">
+        <header className="flex items-center justify-between bg-gradient-to-r from-blue-50 via-white to-cyan-50 dark:from-slate-900 dark:via-slate-850 dark:to-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-5 text-slate-900">
           <div>
             <p className="text-[11px] font-semibold text-blue-400">Đặt giữ chỗ kho</p>
             <h2 id="booking-checkout-title" className="mt-1 text-lg font-bold">

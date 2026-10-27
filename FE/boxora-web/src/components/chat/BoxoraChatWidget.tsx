@@ -124,7 +124,7 @@ export const BoxoraChatWidget: React.FC = () => {
             {
               role: 'assistant',
               content:
-                'Xin lỗi bạn, kết nối đến hệ thống hỗ trợ tạm thời gián đoạn. Bạn có thể kiểm tra trực tiếp tại [Khám phá kho](/units) hoặc thử lại sau giây lát.',
+                'Xin lỗi bạn, kết nối đến hệ thống hỗ trợ tạm thời gián đoạn. Bạn có thể kiểm tra trực tiếp tại [Đặt thuê kho](/booking) hoặc thử lại sau giây lát.',
               timestamp: Date.now()
             }
           ])
@@ -257,7 +257,7 @@ export const BoxoraChatWidget: React.FC = () => {
           aria-label={isOpen ? 'Đóng trợ lý Boxora AI' : 'Mở trợ lý Boxora AI'}
           className={`relative flex items-center justify-center w-12 h-12 sm:w-13 sm:h-13 rounded-full shadow-lg transition-all duration-200 cursor-pointer ${
             isOpen
-              ? 'bg-slate-800 hover:bg-slate-900 text-white rotate-90'
+              ? 'bg-blue-600 hover:bg-blue-700 text-white rotate-90'
               : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/25 hover:scale-105 active:scale-95'
           }`}
         >

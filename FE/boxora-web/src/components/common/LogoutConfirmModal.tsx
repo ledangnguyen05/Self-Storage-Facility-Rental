@@ -57,7 +57,7 @@ export const LogoutConfirmModal: React.FC<LogoutConfirmModalProps> = ({
         {(userName || userEmail) && (
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs shrink-0">
+              <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
                 {userName ? userName.slice(0, 2).toUpperCase() : 'US'}
               </div>
               <div className="min-w-0">

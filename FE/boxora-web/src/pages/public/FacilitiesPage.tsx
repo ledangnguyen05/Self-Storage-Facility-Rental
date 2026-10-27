@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Building2, MapPin, Phone, Filter, Loader2 } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
@@ -7,20 +7,29 @@ import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { Facility, StorageUnit } from '../../types'
 import { BrandLogo } from '../../components/common/BrandLogo'
+import { StorageUnitDetailModal } from '../../components/modals/StorageUnitDetailModal'
+
+import facilityD1Img from '../../assets/facilities/facility-d1.jpg'
+import facilityD7Img from '../../assets/facilities/facility-d7.jpg'
+import facilityThuDucImg from '../../assets/facilities/facility-thuduc.jpg'
+import facilityTanBinhImg from '../../assets/facilities/facility-tanbinh.jpg'
 
 const FACILITY_IMAGES = [
-  '/images/units/facility-hallway.jpg',
-  '/images/units/unit-capacity-a108.jpg',
-  '/images/units/unit-large.jpg',
-  '/images/units/unit-chilled.jpg'
+  facilityD1Img,
+  facilityD7Img,
+  facilityThuDucImg,
+  facilityTanBinhImg
 ]
 
 export const FacilitiesPage: React.FC = () => {
+  const navigate = useNavigate()
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [units, setUnits] = useState<StorageUnit[]>([])
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>('')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
   const [isLoading, setIsLoading] = useState<boolean>(true)
+  const [selectedDetailUnit, setSelectedDetailUnit] = useState<StorageUnit | null>(null)
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -55,15 +64,15 @@ export const FacilitiesPage: React.FC = () => {
   })
 
   return (
-    <div className="bg-slate-50 min-h-screen pb-16 text-slate-900 font-sans antialiased text-left">
+    <div className="bg-slate-50 dark:bg-slate-950 min-h-screen pb-16 text-slate-900 dark:text-slate-100 font-sans antialiased text-left">
       {/* Top Brand Header */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 mb-8">
+      <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/90 dark:border-slate-800 mb-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between">
           <BrandLogo subtitle="HỆ THỐNG CƠ SỞ" />
           <div className="flex items-center gap-3">
             <Link
-              to="/units"
-              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+              to="/booking"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all shadow-xs flex items-center gap-1.5"
             >
               <span>Tìm &amp; Thuê Kho</span>
             </Link>
@@ -178,11 +187,15 @@ export const FacilitiesPage: React.FC = () => {
             {facilityUnits.map(unit => (
               <div 
                 key={unit.id}
-                className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-slate-50 transition-colors flex flex-col justify-between"
+                onClick={() => {
+                  setSelectedDetailUnit(unit)
+                  setIsDetailModalOpen(true)
+                }}
+                className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-white hover:border-blue-400 hover:shadow-sm transition-all flex flex-col justify-between cursor-pointer group"
               >
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-unit-code font-bold text-base text-slate-900">{unit.unitCode}</span>
+                    <span className="font-unit-code font-bold text-base text-slate-900 group-hover:text-blue-600 transition-colors">#{unit.unitCode}</span>
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                       unit.status === 'AVAILABLE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                       unit.status === 'OCCUPIED' ? 'bg-slate-100 text-slate-600 border-slate-200' : 
@@ -192,7 +205,11 @@ export const FacilitiesPage: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-xs font-semibold text-slate-700 mb-0.5">{unit.unitTypeName}</p>
-                  <p className="text-[11px] text-slate-500 mb-3">{unit.floorLevel}</p>
+                  <p className="text-[11px] text-slate-500 mb-2">{unit.floorLevel}</p>
+                  <span className="text-[11px] text-blue-600 font-semibold inline-flex items-center gap-1 group-hover:underline mb-2">
+                    <span className="material-symbols-outlined text-[14px]">visibility</span>
+                    Xem chi tiết &amp; ảnh minh họa
+                  </span>
                 </div>
 
                 <div className="border-t border-slate-200/80 pt-3 flex items-center justify-between">
@@ -200,11 +217,17 @@ export const FacilitiesPage: React.FC = () => {
                     {Number(unit.pricePerMonth || 0).toLocaleString('vi-VN')} ₫<span className="text-[10px] font-normal text-slate-500">/tháng</span>
                   </span>
                   {unit.status === 'AVAILABLE' ? (
-                    <Link to="/portal/customer?tab=explore">
-                      <Button size="sm" variant="primary" className="bg-slate-900 hover:bg-slate-800 text-white text-[11px] py-1 px-2.5">
-                        Giữ chỗ
-                      </Button>
-                    </Link>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        navigate('/booking')
+                      }}
+                      className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] py-1 px-2.5 shadow-2xs cursor-pointer"
+                    >
+                      Giữ chỗ
+                    </Button>
                   ) : (
                     <span className="text-[11px] text-slate-400 font-medium">Hết kho</span>
                   )}
@@ -221,6 +244,30 @@ export const FacilitiesPage: React.FC = () => {
         </div>
 
       </div>
+
+      <StorageUnitDetailModal
+        isOpen={isDetailModalOpen}
+        unit={selectedDetailUnit ? {
+          id: selectedDetailUnit.id,
+          backendId: selectedDetailUnit.id,
+          unitCode: selectedDetailUnit.unitCode,
+          unitTypeName: selectedDetailUnit.unitTypeName,
+          facilityId: selectedDetailUnit.facilityId,
+          facilityName: selectedFacility?.name || selectedDetailUnit.facilityName,
+          facilityAddress: selectedFacility?.address,
+          floorLevel: selectedDetailUnit.floorLevel,
+          pricePerMonth: selectedDetailUnit.pricePerMonth,
+          depositAmount: selectedDetailUnit.depositAmount,
+          areaSqMeters: selectedDetailUnit.areaSqMeters,
+          status: selectedDetailUnit.status,
+          images: selectedDetailUnit.images
+        } : null}
+        onClose={() => setIsDetailModalOpen(false)}
+        onReserve={(unitData) => {
+          setIsDetailModalOpen(false)
+          navigate('/booking')
+        }}
+      />
     </div>
   )
 }

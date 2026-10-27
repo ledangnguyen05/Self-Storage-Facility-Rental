@@ -27,8 +27,16 @@ public class Booking extends BaseEntity {
     private User customer;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "storage_unit_id", nullable = false)
+    @JoinColumn(name = "storage_unit_id")
     private StorageUnit storageUnit;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "facility_id")
+    private Facility facility;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "unit_type_id")
+    private UnitType unitType;
 
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
@@ -92,6 +100,10 @@ public class Booking extends BaseEntity {
 
     @Column(name = "return_time")
     private LocalDateTime returnTime;
+
+    @Column(name = "contract_signed")
+    @Builder.Default
+    private Boolean contractSigned = false;
 
     @Column(name = "signing_method", length = 30)
     @Builder.Default

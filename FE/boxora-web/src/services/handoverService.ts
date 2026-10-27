@@ -10,6 +10,8 @@ export interface HandoverPayload {
   identityVerified?: boolean
   firstMonthRentConfirmed?: boolean
   contractConfirmed?: boolean
+  earlyCheckInConfirmed?: boolean
+  earlyCheckInReason?: string
   rfidCardNumber?: string
   accessPin?: string
   depositSettled?: number

@@ -3,6 +3,9 @@ import { Booking, StorageUnit } from '../../../types'
 import { storageUnitService } from '../../../services/storageUnitService'
 import { handoverService, HandoverPrerequisites } from '../../../services/handoverService'
 import { bookingService } from '../../../services/bookingService'
+import { contractService } from '../../../services/contractService'
+import { ContractDocumentModal } from '../../../components/modals/ContractDocumentModal'
+import { EarlyCheckInConfirmModal } from '../../../components/modals/EarlyCheckInConfirmModal'
 import { useAuth } from '../../../context/AuthContext'
 
 export interface BookingChecklist {
@@ -627,12 +630,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
   }
   // Overall check-in readiness (P0-02 & BR-RULE-005: Backend là nguồn chân lý duy nhất)
+  const [isEarlyCheckInConfirmed, setIsEarlyCheckInConfirmed] = useState<boolean>(false)
+  const [showEarlyCheckInModal, setShowEarlyCheckInModal] = useState<boolean>(false)
   const isDepositMet = currentPrerequisites ? currentPrerequisites.depositSatisfied : false
   const isRentMet = currentPrerequisites ? currentPrerequisites.firstMonthRentSatisfied : false
   const isContractMet = currentPrerequisites ? currentPrerequisites.contractSigned : false
   const isIdMet = currentPrerequisites ? currentPrerequisites.identityVerified : false
   const isCheckInTimeMet = currentPrerequisites ? (currentPrerequisites.checkInTimeMet ?? true) : false
-  const isReadyForCheckIn = isDepositMet && isRentMet && isContractMet && isIdMet && isCheckInTimeMet && (currentPrerequisites?.eligibleForInspection ?? false)
+  const isPhysicalPrereqsMet = (isDepositMet && isRentMet) && isContractMet && isIdMet
+  const isReadyForCheckIn = isPhysicalPrereqsMet && (isCheckInTimeMet || isEarlyCheckInConfirmed) && (currentPrerequisites?.eligibleForInspection ?? false)
 
   // Sync identity input with loaded prerequisites
   useEffect(() => {
@@ -649,11 +655,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   // Step Tab Navigation Guards (Protect business conditions)
   const handleSelectTab = (tab: 'audit' | 'checklist' | 'pin') => {
     if (tab === 'checklist' && !isReadyForCheckIn) {
-      if (!isCheckInTimeMet) {
-        setCheckInError(currentPrerequisites?.checkInTimeMessage || 'Chưa đến thời điểm check-in hợp lệ theo lịch hẹn!')
+      if (!isPhysicalPrereqsMet) {
+        setCheckInError('Cần thỏa mãn cả 3 điều kiện đối soát (Hợp đồng, bằng chứng chuyển khoản cọc & tiền thuê, CCCD gốc) trước khi chuyển sang nghiệm thu!')
         return
       }
-      setCheckInError('Cần thỏa mãn cả 4 điều kiện đối soát (Hợp đồng, tiền cọc, tiền thuê tháng đầu, CCCD gốc) và đến thời điểm check-in hợp lệ trước khi chuyển sang nghiệm thu!')
+      if (!isCheckInTimeMet && !isEarlyCheckInConfirmed) {
+        setShowEarlyCheckInModal(true)
+        return
+      }
+      setCheckInError('Cần thỏa mãn các điều kiện đối soát và đến thời điểm check-in hợp lệ trước khi chuyển sang nghiệm thu!')
       return
     }
     if (tab === 'pin' && (!isReadyForCheckIn || !isAllChecklistPassed || !currentSession.photoDoor || !currentSession.photoInterior)) {
@@ -810,10 +820,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   }
 
   // --- STEP TRANSITION HANDLERS ---
-  const handleCompleteStep1 = async () => {
+  const handleCompleteStep1 = async (skipTimeCheck = false) => {
     if (!selectedBookingId) return
-    if (!isCheckInTimeMet) {
-      setCheckInError(currentPrerequisites?.checkInTimeMessage || 'Chưa đến thời điểm check-in hợp lệ theo lịch hẹn!')
+    if (!isCheckInTimeMet && !isEarlyCheckInConfirmed && !skipTimeCheck) {
+      setShowEarlyCheckInModal(true)
       return
     }
     setIsCompletingStep1(true)
@@ -822,9 +832,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       await handoverService.completeStep1(selectedBookingId)
       await fetchPrerequisitesForBooking(selectedBookingId)
       updateCurrentSession({ activeStepTab: 'checklist' })
-      setDispatchFeedback({ text: 'Đã hoàn tất đối soát 4 điều kiện! Chuyển sang bước Nghiệm thu hiện trường.' })
+      setDispatchFeedback({ text: 'Đã hoàn tất đối soát điều kiện! Chuyển sang bước Nghiệm thu hiện trường.' })
     } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Không thể chuyển bước: Chưa đáp ứng đủ 4 điều kiện đối soát.'
+      const msg = err?.response?.data?.message || err?.message || 'Không thể chuyển bước: Chưa đáp ứng đủ điều kiện đối soát.'
       setCheckInError(msg)
     } finally {
       setIsCompletingStep1(false)
@@ -887,6 +897,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         requestedUnitCode: currentSession?.assignedUnitCode || (unitDisplayCode !== 'N/A' ? unitDisplayCode : undefined),
         recordType: 'CHECK_IN',
         rfidCardNumber: currentSession.rfidCard.trim() || undefined,
+        earlyCheckInConfirmed: isEarlyCheckInConfirmed || !isCheckInTimeMet,
+        earlyCheckInReason: !isCheckInTimeMet ? 'Khách nhận kho sớm có xác nhận của nhân viên' : undefined,
         notes: currentSession.handoverNotes
       })
 
@@ -1326,17 +1338,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 let iconName = 'verified'
                 let iconColor = 'text-emerald-600'
 
-                if (checkInStatus === 'BEFORE_DATE') {
-                  statusBadgeLabel = 'Chưa đến ngày check-in'
-                  actionAdvice = 'Hiển thị thời điểm được phép nhận kho • Không cho phép bàn giao'
-                  cardClass = 'bg-rose-50 border-rose-300 text-rose-950'
-                  iconName = 'event_busy'
-                  iconColor = 'text-rose-600'
-                } else if (checkInStatus === 'BEFORE_TIME') {
-                  statusBadgeLabel = 'Đúng ngày nhưng chưa đến giờ'
-                  actionAdvice = 'Chờ đến giờ hợp lệ • Không cho phép bàn giao'
+                if (checkInStatus === 'BEFORE_DATE' || checkInStatus === 'BEFORE_TIME') {
+                  statusBadgeLabel = checkInStatus === 'BEFORE_DATE' ? 'Chưa đến ngày check-in' : 'Chưa đến giờ check-in'
+                  actionAdvice = 'Nên theo quy trình tiếp nhận đúng lịch. Tuy nhiên, nếu cơ sở có đủ điều kiện phục vụ và khách cần nhận kho gấp thì nhân viên được phân quyền có thể xác nhận tiếp nhận sớm.'
                   cardClass = 'bg-amber-50 border-amber-300 text-amber-950'
-                  iconName = 'hourglass_top'
+                  iconName = checkInStatus === 'BEFORE_DATE' ? 'event_upcoming' : 'hourglass_top'
                   iconColor = 'text-amber-600'
                 } else if (checkInStatus === 'LATE') {
                   statusBadgeLabel = 'Khách đến muộn'
@@ -1882,23 +1888,37 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   </span>
                   <span className="font-medium text-slate-800">
                     {isReadyForCheckIn
-                      ? 'Tất cả điều kiện đối soát và thời điểm check-in đã hoàn tất hợp lệ. Bạn có thể chuyển sang bước Nghiệm thu hiện trường.'
-                      : !isCheckInTimeMet
-                      ? (currentPrerequisites?.checkInTimeMessage || 'Chưa đến thời điểm check-in hợp lệ. Hệ thống không cho phép bàn giao trước thời hạn.')
-                      : 'Hệ thống chặn chuyển bước và chặn cấp mã PIN cho đến khi cả 4 điều kiện trên được đáp ứng đầy đủ.'}
+                      ? 'Tất cả điều kiện đối soát đã hoàn tất hợp lệ. Bạn có thể chuyển sang bước Nghiệm thu hiện trường.'
+                      : !isCheckInTimeMet && isPhysicalPrereqsMet
+                      ? (currentPrerequisites?.checkInTimeMessage || 'Chưa đến ngày check-in. Nhân viên có thể xác nhận tiếp nhận sớm nếu cơ sở đủ điều kiện.')
+                      : 'Hệ thống yêu cầu đáp ứng đầy đủ các điều kiện đối soát trước khi chuyển sang nghiệm thu hiện trường.'}
                   </span>
                 </div>
                 <button
                   type="button"
-                  onClick={handleCompleteStep1}
-                  disabled={!isReadyForCheckIn || isCompletingStep1}
+                  onClick={() => {
+                    if (!isCheckInTimeMet && !isEarlyCheckInConfirmed) {
+                      setShowEarlyCheckInModal(true)
+                    } else {
+                      handleCompleteStep1()
+                    }
+                  }}
+                  disabled={(!isPhysicalPrereqsMet && !isReadyForCheckIn) || isCompletingStep1}
                   className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 shadow-xs ${
-                    isReadyForCheckIn && !isCompletingStep1
-                      ? 'bg-cyan-600 hover:bg-cyan-700 text-white'
+                    (isReadyForCheckIn || (isPhysicalPrereqsMet && !isCheckInTimeMet)) && !isCompletingStep1
+                      ? !isCheckInTimeMet && !isEarlyCheckInConfirmed
+                        ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                        : 'bg-cyan-600 hover:bg-cyan-700 text-white'
                       : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                   }`}
                 >
-                  <span>{isCompletingStep1 ? 'Đang Chuyển Bước...' : 'Hoàn Tất Đối Soát & Đi Tiếp'}</span>
+                  <span>
+                    {isCompletingStep1 
+                      ? 'Đang Chuyển Bước...' 
+                      : !isCheckInTimeMet && !isEarlyCheckInConfirmed
+                      ? 'Xác Nhận Tiếp Nhận Sớm & Đi Tiếp'
+                      : 'Hoàn Tất Đối Soát & Đi Tiếp'}
+                  </span>
                   <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
                 </button>
               </div>
@@ -2904,6 +2924,19 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           </div>
         </div>
       )}
+
+      {/* Modal: Xác Nhận Tiếp Nhận Sớm Hơn Lịch Hẹn */}
+      <EarlyCheckInConfirmModal
+        isOpen={showEarlyCheckInModal}
+        booking={currentBooking}
+        actionType="ENTER_RECEPTION"
+        onConfirm={() => {
+          setIsEarlyCheckInConfirmed(true)
+          setShowEarlyCheckInModal(false)
+          handleCompleteStep1(true)
+        }}
+        onClose={() => setShowEarlyCheckInModal(false)}
+      />
 
       {/* Modal: Xác Nhận Bàn Giao Thành Công & Cấp Mã PIN Giữa Màn Hình */}
       {handoverSuccessModalData && (

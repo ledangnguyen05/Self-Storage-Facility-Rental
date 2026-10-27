@@ -9,13 +9,12 @@ import { LoginPage } from './pages/public/LoginPage'
 import { RegisterPage } from './pages/public/RegisterPage'
 import { HomePage } from './pages/public/HomePage'
 import { BookingPage } from './pages/public/BookingPage'
-import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
 import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
 import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
 import { PaymentResultPage } from './pages/public/PaymentResultPage'
+import { FacilitiesPage } from './pages/public/FacilitiesPage'
 import { OnlineBookingContractPage } from './pages/customer/OnlineBookingContractPage'
 import { MyBookingsPage } from './pages/customer/MyBookingsPage'
-import { FacilitiesPage } from './pages/public/FacilitiesPage'
 
 // StorageOps Pro Portals (Matching Prototype Stitch Files)
 
@@ -28,10 +27,20 @@ import { CashierJournalPage } from './pages/staff/CashierJournalPage'
 import { IncidentTicketsPage } from './pages/staff/IncidentTicketsPage'
 import { OverdueManagementPage } from './pages/manager/OverdueManagementPage'
 import { ShiftRosterPage } from './pages/manager/ShiftRosterPage'
-import { StaffMyShiftsPage } from './pages/staff/StaffMyShiftsPage'
-import { checkCustomerPortalAccess } from './utils/rentalAccess'
 import { BoxoraChatWidget } from './components/chat/BoxoraChatWidget'
+import { StaffShiftRosterPage } from './pages/staff/StaffShiftRosterPage'
+import { checkCustomerPortalAccess } from './utils/rentalAccess'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
+
+// Dynamic shift roster routing based on role (Staff gets peer swap & personal roster, Manager gets full workforce control)
+const ShiftRosterRoute: React.FC = () => {
+  const { user } = useAuth()
+  const role = (typeof user?.role === 'string' ? user?.role : user?.role?.name || user?.roleName || '').toUpperCase()
+  if (role === 'STAFF') {
+    return <StaffShiftRosterPage />
+  }
+  return <ShiftRosterPage />
+}
 
 // Root redirect handler based on user role
 function RootRedirect() {
@@ -39,9 +48,9 @@ function RootRedirect() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-3 text-white">
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-3 text-slate-900">
         <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
-        <span className="text-xs text-slate-400 font-medium">Đang kết nối hệ thống Boxora...</span>
+        <span className="text-xs text-slate-500 font-medium">Đang kết nối hệ thống Boxora...</span>
       </div>
     )
   }
@@ -61,11 +70,6 @@ function RootRedirect() {
       return <Navigate to="/portal/staff" replace />
     case 'CUSTOMER':
     default: {
-      const access = checkCustomerPortalAccess(user)
-      if (!access.hasAccess) {
-        return <Navigate to="/my-bookings" replace />
-      }
-
       return <Navigate to="/portal/customer" replace />
     }
   }
@@ -86,11 +90,11 @@ function MainContent() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           {/* Dedicated Storage Units Explorer & Booking Dashboard */}
-          <Route path="/units" element={<UnitsExplorerPage />} />
-          <Route path="/explore-units" element={<UnitsExplorerPage />} />
+          <Route path="/units" element={<Navigate to="/booking" replace />} />
+          <Route path="/explore-units" element={<Navigate to="/booking" replace />} />
           <Route path="/facilities" element={<FacilitiesPage />} />
           <Route path="/branches" element={<FacilitiesPage />} />
-          <Route path="/my-requests" element={<Navigate to="/portal/customer?tab=requests" replace />} />
+          <Route path="/my-requests" element={<Navigate to="/portal/customer?tab=bookings" replace />} />
           <Route
             path="/reserve"
             element={
@@ -109,20 +113,13 @@ function MainContent() {
             }
           />
 
-          {/* Boxora Terms & Standards Dashboard */}
+          {/* My Bookings route redirects to Customer Portal with full left sidebar */}
+          <Route path="/my-bookings" element={<Navigate to="/portal/customer?tab=bookings" replace />} />
+          <Route path="/customer/bookings" element={<Navigate to="/portal/customer?tab=bookings" replace />} />
+
           <Route path="/terms" element={<TermsAndStandardsPage />} />
           <Route path="/standards" element={<TermsAndStandardsPage />} />
           <Route path="/policies" element={<TermsAndStandardsPage />} />
-
-          <Route
-            path="/my-bookings"
-            element={
-              <ProtectedRoute allowedRoles={['CUSTOMER']}>
-                <MyBookingsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/customer/bookings" element={<Navigate to="/my-bookings" replace />} />
 
           {/* Core StorageOps Pro Portal with RBAC Route Protection */}
           <Route
@@ -145,11 +142,11 @@ function MainContent() {
               }
             />
 
-            {/* 2. Staff Portal: operational access is reserved for Staff */}
+            {/* 2. Staff Portal: Staff, Facility Manager */}
             <Route
               path="staff"
               element={
-                <ProtectedRoute allowedRoles={['STAFF']}>
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER']}>
                   <StaffDashboard />
                 </ProtectedRoute>
               }
@@ -159,7 +156,7 @@ function MainContent() {
               path="staff/shifts"
               element={
                 <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER']}>
-                  <StaffMyShiftsPage />
+                  <StaffShiftRosterPage />
                 </ProtectedRoute>
               }
             />
@@ -168,7 +165,7 @@ function MainContent() {
             <Route
               path="facility-manager"
               element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'STAFF', 'BUSINESS_MANAGER', 'ADMIN']}>
+                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
                   <ManagerDashboard />
                 </ProtectedRoute>
               }
@@ -184,7 +181,7 @@ function MainContent() {
               }
             />
 
-            {/* 5. System Admin Portal: Admin and Business Manager (branch configuration) */}
+            {/* 5. System Admin Portal: Admin and Business Manager (Policies & Pricing) */}
             <Route
               path="admin"
               element={
@@ -213,22 +210,22 @@ function MainContent() {
               }
             />
 
-            {/* 8. Overdue actions are operational facility work */}
+            {/* 8. Overdue Delinquency Management: Facility Manager, Business Manager, Admin */}
             <Route
               path="overdue"
               element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER']}>
+                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
                   <OverdueManagementPage />
                 </ProtectedRoute>
               }
             />
 
-            {/* 9. Facility managers administer schedules; Business managers oversee chain-wide; Staff see their own shifts in their portal */}
+            {/* 9. Shift Roster & Workforce: Staff, Facility Manager, Business Manager, Admin */}
             <Route
               path="shifts"
               element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER']}>
-                  <ShiftRosterPage />
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
+                  <ShiftRosterRoute />
                 </ProtectedRoute>
               }
             />
@@ -264,9 +261,9 @@ export function App() {
   return (
     <BrowserRouter>
       <ErrorBoundary>
-        <AuthProvider>
-          <MainContent />
-        </AuthProvider>
+      <AuthProvider>
+        <MainContent />
+      </AuthProvider>
       </ErrorBoundary>
     </BrowserRouter>
   )

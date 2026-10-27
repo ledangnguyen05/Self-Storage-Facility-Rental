@@ -8,6 +8,8 @@ export type SupportTicketCategory =
   | 'ACCESS_ISSUE'
   | 'CLEANLINESS_PEST'
   | 'CLIMATE_TEMP'
+  | 'RETURN_REFUND'
+  | 'RETURN_EXPIRED'
   | 'OTHER'
   | string
 
@@ -49,6 +51,20 @@ export interface SupportTicketRecord {
   isStaffRecorded?: boolean
   createdAt?: string
   updatedAt?: string
+
+  // Refund and Bank Transfer fields
+  bankName?: string
+  bankAccountNumber?: string
+  bankAccountName?: string
+  refundAmount?: number
+  transferProofUrl?: string
+  transferTransactionRef?: string
+  transferConfirmedAt?: string
+  transferConfirmedByName?: string
+  fmApprovedAt?: string
+  fmApprovedByName?: string
+  fmApprovalNote?: string
+  refundStatus?: 'NONE' | 'PENDING_FM_APPROVAL' | 'AWAITING_CUSTOMER_BANK_INFO' | 'PENDING_ADMIN_PAYOUT' | 'COMPLETED' | 'REJECTED' | string
 }
 
 export type SupportTicketResponse = SupportTicketRecord
@@ -201,6 +217,21 @@ export const supportTicketService = {
 
   async reopenTicket(id: string, reason: string) {
     const response = await api.post(`/api/v1/support-tickets/${id}/reopen`, { reason })
+    return response.data?.data as SupportTicketRecord
+  },
+
+  async approveRefund(id: string, data: { refundAmount: number; note?: string }) {
+    const response = await api.post(`/api/v1/support-tickets/${id}/approve-refund`, data)
+    return response.data?.data as SupportTicketRecord
+  },
+
+  async submitBankInfo(id: string, data: { bankName: string; bankAccountNumber: string; bankAccountName: string; note?: string }) {
+    const response = await api.post(`/api/v1/support-tickets/${id}/submit-bank-info`, data)
+    return response.data?.data as SupportTicketRecord
+  },
+
+  async adminConfirmPayout(id: string, data: { transferTransactionRef: string; transferProofUrl: string; adminNotes?: string }) {
+    const response = await api.post(`/api/v1/support-tickets/${id}/admin-confirm-payout`, data)
     return response.data?.data as SupportTicketRecord
   },
 

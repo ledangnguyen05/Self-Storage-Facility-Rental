@@ -32,6 +32,10 @@ public interface SupportTicketService {
     SupportTicketResponse closeTicket(UUID id, String closingNote);
     SupportTicketResponse reopenTicket(UUID id, String reopenReason);
 
+    SupportTicketResponse approveRefund(UUID id, com.boxora.dto.request.TicketApproveRefundRequest request);
+    SupportTicketResponse submitBankInfo(UUID id, com.boxora.dto.request.TicketBankInfoRequest request);
+    SupportTicketResponse adminConfirmPayout(UUID id, com.boxora.dto.request.TicketAdminPayoutRequest request);
+
     SupportTicketContactLogResponse recordContactLog(UUID ticketId, SupportTicketContactLogRequest request);
     List<SupportTicketContactLogResponse> getContactLogs(UUID ticketId);
     List<EscalationContactResponse> getEscalationContacts();

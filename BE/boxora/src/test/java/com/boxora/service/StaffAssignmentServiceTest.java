@@ -848,6 +848,27 @@ class StaffAssignmentServiceTest {
         }
 
         @Test
+        @DisplayName("Admin không được phép tạo phân công ca trực (chỉ có quyền xem/giám sát)")
+        void shouldRejectAssignmentCreationByAdmin() {
+            when(requestContext.currentUserRole()).thenReturn("ADMIN");
+            LocalDate tomorrow = LocalDate.now().plusDays(1);
+
+            StaffAssignmentCreateRequest request = StaffAssignmentCreateRequest.builder()
+                    .staffId(staffId)
+                    .facilityId(facilityId)
+                    .assignedDate(tomorrow)
+                    .shift(StaffShift.MORNING)
+                    .build();
+
+            when(facilityRepository.findById(facilityId)).thenReturn(Optional.of(facility));
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+
+            AppException ex = assertThrows(AppException.class, () -> staffAssignmentService.createAssignment(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+            assertThat(ex.getMessage()).contains("Admin chỉ có quyền xem, giám sát ca trực");
+        }
+
+        @Test
         @DisplayName("Từ chối cập nhật thành ca FULL_DAY")
         void shouldRejectUpdatingToFullDayShift() {
             UUID assignmentId = UUID.randomUUID();

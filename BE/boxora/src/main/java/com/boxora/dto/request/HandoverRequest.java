@@ -36,6 +36,12 @@ public class HandoverRequest {
     /** Xác nhận hợp đồng điện tử đã được ký hoàn tất */
     private Boolean contractConfirmed;
 
+    /** Xác nhận cho phép tiếp nhận kho sớm hơn lịch hẹn đối với trường hợp ngoại lệ hợp lệ */
+    private Boolean earlyCheckInConfirmed;
+
+    /** Lý do tiếp nhận kho sớm (lưu audit trail) */
+    private String earlyCheckInReason;
+
     private String rfidCardNumber;
 
     private String accessPin;

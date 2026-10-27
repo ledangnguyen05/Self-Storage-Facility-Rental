@@ -22,7 +22,6 @@ export const DashboardLayout: React.FC = () => {
   const assignedFacilityId = user?.facilityId
 
   const [facilities, setFacilities] = useState<Facility[]>([])
-  const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking')
   const [selectedFacility, setSelectedFacility] = useState<string>(
     isFacilityScopedRole && assignedFacilityId ? assignedFacilityId : 'ALL'
   )
@@ -35,11 +34,8 @@ export const DashboardLayout: React.FC = () => {
   const isFacilityManagerPage = location.pathname.includes('/facility-manager')
 
   useEffect(() => {
-    let isActive = true
-    const checkBackend = async () => {
-      try {
-        const res = await facilityService.getFacilities()
-        if (!isActive) return
+    facilityService.getFacilities()
+      .then(res => {
         let list = res?.content || []
         if (isFacilityScopedRole && assignedFacilityId) {
           const matched = list.filter(f => f.id === assignedFacilityId)
@@ -59,7 +55,6 @@ export const DashboardLayout: React.FC = () => {
           }
         }
         setFacilities(list)
-        setBackendStatus('online')
 
         if (isFacilityScopedRole && assignedFacilityId) {
           setSelectedFacility(assignedFacilityId)
@@ -73,21 +68,10 @@ export const DashboardLayout: React.FC = () => {
             return 'ALL'
           })
         }
-      } catch (err) {
-        if (!isActive) return
-        setFacilities([])
-        setBackendStatus('offline')
+      })
+      .catch(err => {
         console.warn('Failed to load facilities in DashboardLayout:', err)
-      }
-    }
-
-    setBackendStatus('checking')
-    void checkBackend()
-    const intervalId = window.setInterval(() => void checkBackend(), 60_000)
-    return () => {
-      isActive = false
-      window.clearInterval(intervalId)
-    }
+      })
   }, [location.pathname, isFacilityScopedRole, assignedFacilityId, user?.facilityName, user?.facilityCode])
 
   useEffect(() => {
@@ -143,8 +127,8 @@ export const DashboardLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--on-surface)] flex flex-col antialiased">
-      {/* Fixed Top Header (64px) */}
-      <header className="fixed top-0 left-0 right-0 h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md z-50 border-b border-slate-200/80 dark:border-slate-800 shadow-2xs transition-colors">
+      {/* Fixed Top Header (80px) */}
+      <header className="fixed top-0 left-0 right-0 h-20 bg-white dark:bg-slate-900 z-50 shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-slate-200 dark:border-slate-800">
         <div className="w-full h-full px-4 sm:px-6 flex items-center justify-between gap-3">
           
           {/* Logo & Mobile Menu Toggle */}
@@ -152,7 +136,7 @@ export const DashboardLayout: React.FC = () => {
             {/* Mobile Hamburger Button */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="lg:hidden p-2 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer flex items-center justify-center"
+              className="lg:hidden p-2 rounded-xl text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer flex items-center justify-center"
               aria-label="Mở menu điều hướng"
             >
               <span className="material-symbols-outlined text-[24px]">
@@ -169,18 +153,21 @@ export const DashboardLayout: React.FC = () => {
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
                 <span className="material-symbols-outlined text-blue-600 text-[18px]">location_on</span>
                 <div className="flex flex-col text-left">
-                  <span className="text-[10px] font-semibold text-slate-400">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">
                     {t('Cơ sở trực thuộc', 'Assigned Facility')}
                   </span>
                   {isFacilityScopedRole ? (
-                    <div className="text-xs text-slate-900 font-semibold pr-1">
+                    <div className="font-mono text-xs text-slate-900 font-bold pr-1 flex items-center gap-1.5">
                       <span>{assignedFacilityDisplayName}</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+                        {t('Cố định', 'Fixed')}
+                      </span>
                     </div>
                   ) : (
                     <select
                       value={selectedFacility}
                       onChange={(e) => handleSetSelectedFacility(e.target.value)}
-                      className="bg-transparent text-xs text-slate-900 font-semibold focus:outline-none cursor-pointer pr-1"
+                      className="bg-transparent font-mono text-xs text-slate-900 font-bold focus:outline-none cursor-pointer pr-1"
                     >
                       {!isFacilityManagerPage && (
                         <option value="ALL">{t('Toàn hệ thống (Tất cả cơ sở)', 'All Facilities System')}</option>
@@ -252,38 +239,41 @@ export const DashboardLayout: React.FC = () => {
       )}
 
       {/* Sidebar (Responsive drawer on mobile, fixed column on lg) */}
-      <aside className={`fixed left-0 top-16 bottom-0 w-64 bg-white dark:bg-slate-900 z-40 border-r border-slate-200 dark:border-slate-800 flex flex-col py-4 shadow-2xs transition-transform duration-200 ease-in-out ${
+      <aside className={`fixed left-0 top-20 bottom-0 w-64 bg-white dark:bg-slate-900 z-40 border-r border-slate-200 dark:border-slate-800 flex flex-col py-4 shadow-[0_1px_8px_rgba(0,0,0,0.02)] transition-transform duration-200 ease-in-out ${
         isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       }`}>
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4">
           
           {/* Active Account Summary Card */}
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/90 dark:border-slate-700/80 text-left">
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-left">
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">
-                Phiên đăng nhập
+              <span className="font-mono text-[9px] uppercase font-bold text-slate-400">
+                Phiên Đăng Nhập
               </span>
-              <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${roleBadge.bg}`}>
+              <span className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-bold border ${roleBadge.bg}`}>
                 {role || 'ANONYMOUS'}
               </span>
             </div>
-            <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
+            <div className="text-xs font-bold text-slate-900 truncate">
               {user?.fullName || 'Khách vãng lai'}
             </div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+            <div className="text-[11px] font-mono text-slate-500 truncate">
               {user?.email || 'Chưa đăng nhập'}
             </div>
           </div>
 
           {/* Mobile Facility Selector */}
           {role && role !== 'CUSTOMER' && (
-            <div className="sm:hidden p-3 rounded-xl bg-slate-50 border border-slate-200 text-left">
-              <span className="text-[10px] font-semibold text-slate-400 block mb-1">
-                Cơ sở trực thuộc
+            <div className="sm:hidden p-3 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-left">
+              <span className="font-mono text-[9px] uppercase font-bold text-slate-400 block mb-1 tracking-wider">
+                CƠ SỞ TRỰC THUỘC
               </span>
               {isFacilityScopedRole ? (
-                <div className="text-xs text-slate-900 font-semibold p-2 bg-white rounded-lg border border-slate-200">
+                <div className="font-mono text-xs text-slate-900 font-bold p-2 bg-white rounded-lg border border-slate-200 flex items-center justify-between">
                   <span>{assignedFacilityDisplayName}</span>
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-100 text-blue-800">
+                    {t('Cố định', 'Fixed')}
+                  </span>
                 </div>
               ) : (
                 <select
@@ -317,8 +307,8 @@ export const DashboardLayout: React.FC = () => {
                   to="/portal/customer?tab=my-units"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
                     isCurrentPath('/portal/customer') && (!new URLSearchParams(location.search).get('tab') || new URLSearchParams(location.search).get('tab') === 'my-units')
-                      ? 'bg-slate-100 text-slate-900 font-bold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">inventory_2</span>
@@ -326,25 +316,24 @@ export const DashboardLayout: React.FC = () => {
                 </Link>
 
                 <Link
-                  to="/my-bookings"
+                  to="/portal/customer?tab=bookings"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    (isCurrentPath('/portal/customer') && (new URLSearchParams(location.search).get('tab') === 'bookings' || new URLSearchParams(location.search).get('tab') === 'requests')) ||
                     isCurrentPath('/my-bookings')
-
-                      ? 'bg-slate-100 text-slate-900 font-bold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">pending_actions</span>
                   <span>Đơn đặt giữ chỗ</span>
                 </Link>
 
-
                 <Link
                   to="/portal/customer?tab=explore"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
                     isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'explore'
-                      ? 'bg-slate-100 text-slate-900 font-bold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">travel_explore</span>
@@ -355,8 +344,8 @@ export const DashboardLayout: React.FC = () => {
                   to="/portal/customer?tab=contracts"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
                     isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'contracts'
-                      ? 'bg-slate-100 text-slate-900 font-bold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">receipt_long</span>
@@ -367,18 +356,18 @@ export const DashboardLayout: React.FC = () => {
                   to="/portal/customer?tab=support"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
                     isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'support'
-                      ? 'bg-slate-100 text-slate-900 font-bold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">support_agent</span>
                   <span>Trung tâm hỗ trợ</span>
                 </Link>
 
-                <div className="pt-2 mt-2 border-t border-slate-100">
+                <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-800">
                   <Link
                     to="/"
-                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition-all"
+                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-800 dark:hover:text-slate-100 transition-all"
                   >
                     <span className="material-symbols-outlined text-[18px]">home</span>
                     <span>Về trang chủ</span>
@@ -392,8 +381,8 @@ export const DashboardLayout: React.FC = () => {
           {role === 'STAFF' && (
             <div>
               <div className="px-3 pb-2">
-                <span className="text-[11px] font-semibold tracking-wide text-slate-400">
-                  Nghiệp vụ quầy
+                <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                  Nghiệp Vụ Quầy
                 </span>
               </div>
               <nav className="flex flex-col gap-1 text-left">
@@ -411,7 +400,7 @@ export const DashboardLayout: React.FC = () => {
 
                 <Link
                   to="/portal/staff"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/staff')
                       ? 'bg-slate-100 text-slate-900'
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
@@ -419,6 +408,18 @@ export const DashboardLayout: React.FC = () => {
                 >
                   <span className="material-symbols-outlined text-[18px]">badge</span>
                   <span>{t('VẬN HÀNH QUẦY BÀN GIAO')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/shifts"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/shifts') || isCurrentPath('/portal/staff/shifts')
+                      ? 'bg-slate-100 text-slate-900'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">schedule</span>
+                  <span>{t('TRỰC CA')}</span>
                 </Link>
 
                 <Link
@@ -483,123 +484,63 @@ export const DashboardLayout: React.FC = () => {
                 </Link>
 
                 <Link
-                  to="/portal/staff/shifts"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/staff/shifts')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">calendar_month</span>
-                  <span>{t('Ca làm')}</span>
-                </Link>
-
-                <Link
-                  to="/portal/facility-manager"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/facility-manager')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">apartment</span>
-                  <span>{t('Sơ đồ cơ sở kho')}</span>
-                </Link>
-
-                <Link
-                  to="/portal/cashier"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/cashier')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
-                  <span>{t('Báo cáo thu ngân')}</span>
-                </Link>
-
-                <Link
-                  to="/portal/tickets"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/tickets')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">build_circle</span>
-                  <span>{t('Xử lý sự cố tại chỗ')}</span>
-                </Link>
-              </nav>
-            </div>
-          )}
-
-          {/* FACILITY_MANAGER NAVIGATION (QUẢN LÝ CƠ SỞ ĐỒNG BỘ) */}
-          {role === 'FACILITY_MANAGER' && (
-            <div>
-              <div className="px-3 pb-2">
-                <span className="text-[11px] font-semibold tracking-wide text-slate-400">
-                  Quản lý cơ sở
-                </span>
-              </div>
-              <nav className="flex flex-col gap-1 text-left">
-                <Link
-                  to="/portal/facility-manager"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/facility-manager')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">analytics</span>
-                  <span>{t('Tổng quan quản lý cơ sở')}</span>
-                </Link>
-
-                <Link
                   to="/portal/overdue"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/overdue')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
+                      ? 'bg-slate-100 text-slate-900'
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">money_off</span>
-                  <span>{t('Xử lý nợ cước quá hạn')}</span>
+                  <span>{t('XỬ LÝ NỢ CƯỚC QUÁ HẠN')}</span>
                 </Link>
 
                 <Link
                   to="/portal/shifts"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/shifts')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
+                      ? 'bg-slate-100 text-slate-900'
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">schedule</span>
-                  <span>{t('Xử lý trực ca')}</span>
+                  <span>{t('XỬ LÝ TRỰC CA')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/staff"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/staff')
+                      ? 'bg-slate-100 text-slate-900'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">badge</span>
+                  <span>{t('VẬN HÀNH QUẦY BÀN GIAO')}</span>
                 </Link>
 
                 <Link
                   to="/portal/cashier"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/cashier')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
+                      ? 'bg-slate-100 text-slate-900'
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
-                  <span>{t('Báo cáo thu ngân')}</span>
+                  <span>{t('BÁO CÁO THU NGÂN')}</span>
                 </Link>
 
                 <Link
                   to="/portal/tickets"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/tickets')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
+                      ? 'bg-slate-100 text-slate-900'
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">build_circle</span>
-                  <span>{t('Xử lý sự cố tại chỗ')}</span>
+                  <span>{t('XỬ LÝ SỰ CỐ TẠI CHỖ')}</span>
                 </Link>
               </nav>
             </div>
@@ -609,160 +550,207 @@ export const DashboardLayout: React.FC = () => {
           {role === 'BUSINESS_MANAGER' && (
             <div>
               <div className="px-3 pb-2">
-                <span className="text-[11px] font-semibold tracking-wide text-slate-400">
-                  Điều hành &amp; kinh doanh
+                <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                  Điều Hành &amp; Kinh Doanh
                 </span>
               </div>
               <nav className="flex flex-col gap-1 text-left">
                 <Link
                   to="/portal/business-manager"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/business-manager')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">query_stats</span>
-                  <span>{t('Báo cáo doanh thu')}</span>
-                </Link>
-
-                <Link
-                  to="/portal/shifts"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/shifts')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">event_note</span>
-                  <span>{t('Giám sát ca toàn chuỗi')}</span>
-                </Link>
-
-                <Link
-                  to="/portal/admin?tab=facilities"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                    isCurrentPath('/portal/admin') && new URLSearchParams(location.search).get('tab') === 'facilities'
-                      ? 'bg-blue-50 text-blue-800 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">domain</span>
-                  <span>{t('Cấu hình chi nhánh', 'Branch configuration')}</span>
+                  <span>{t('BÁO CÁO DOANH THU')}</span>
                 </Link>
 
                 <Link
                   to="/portal/facility-manager"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/facility-manager')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">apartment</span>
-                  <span>{t('Sơ đồ cơ sở kho')}</span>
+                  <span>{t('SƠ ĐỒ CƠ SỞ KHO')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/admin?tab=facilities"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/admin')
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">domain</span>
+                  <span>{t('CHÍNH SÁCH GIÁ & CHI NHÁNH')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/overdue"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/overdue')
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">money_off</span>
+                  <span>{t('XỬ LÝ NỢ CƯỚC QUÁ HẠN')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/shifts"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/shifts')
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">schedule</span>
+                  <span>{t('XỬ LÝ TRỰC CA')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/cashier"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/cashier')
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
+                  <span>{t('BÁO CÁO THU NGÂN')}</span>
                 </Link>
 
                 <Link
                   to="/portal/tickets"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/tickets')
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
-                  <span className="material-symbols-outlined text-[18px]">troubleshoot</span>
-                  <span>{t('Giám sát sự cố & SLA')}</span>
+                  <span className="material-symbols-outlined text-[18px]">build_circle</span>
+                  <span>{t('XỬ LÝ SỰ CỐ TẠI CHỖ')}</span>
                 </Link>
               </nav>
             </div>
           )}
 
           {/* ADMIN NAVIGATION */}
-          {/* ADMIN NAVIGATION */}
           {role === 'ADMIN' && (
             <>
               <div>
                 <div className="px-3 pb-2">
-                  <span className="text-[11px] font-semibold tracking-wide text-slate-400">
-                    {t('Quản trị hệ thống', 'System administration')}
+                  <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                    Quản Trị Hệ Thống
                   </span>
                 </div>
                 <nav className="flex flex-col gap-1 text-left">
                   <Link
                     to="/portal/admin?tab=facilities"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                       isCurrentPath('/portal/admin') && new URLSearchParams(location.search).get('tab') === 'facilities'
-                        ? 'bg-blue-50 text-blue-800 font-semibold'
+                        ? 'bg-cyan-50 text-cyan-800'
                         : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">domain</span>
-                    <span>{t('Chi nhánh', 'Branches')}</span>
+                    <span>{t('CẤU HÌNH CHI NHÁNH', 'BRANCH CONFIGURATION')}</span>
                   </Link>
                   <Link
-                    to="/portal/admin?tab=users"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/admin') && (new URLSearchParams(location.search).get('tab') === 'users' || !new URLSearchParams(location.search).get('tab'))
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
+                    to="/portal/admin"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                      isCurrentPath('/portal/admin') && new URLSearchParams(location.search).get('tab') !== 'facilities'
+                        ? 'bg-slate-100 text-slate-900'
                         : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">admin_panel_settings</span>
-                    <span>{t('Người dùng, vai trò & phân quyền', 'Users, roles and permissions')}</span>
-                  </Link>
-                  <Link
-                    to="/portal/admin?tab=logs"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      isCurrentPath('/portal/admin') && new URLSearchParams(location.search).get('tab') === 'logs'
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">history</span>
-                    <span>{t('Nhật ký kiểm toán hệ thống')}</span>
+                    <span>PHÂN QUYỀN RBAC &amp; USERS</span>
                   </Link>
                 </nav>
               </div>
 
               <div>
                 <div className="px-3 pb-2 pt-2 border-t border-slate-100">
-                  <span className="text-[11px] font-semibold tracking-wide text-slate-400">
-                    {t('Giám sát nghiệp vụ', 'Authorized oversight')}
+                  <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                    Vận Hành Toàn Chuỗi
                   </span>
                 </div>
                 <nav className="flex flex-col gap-1 text-left">
                   <Link
                     to="/portal/business-manager"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                       isCurrentPath('/portal/business-manager')
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
+                        ? 'bg-slate-100 text-slate-900'
                         : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">query_stats</span>
-                    <span>{t('Báo cáo kinh doanh', 'Business reports')}</span>
+                    <span>{t('BÁO CÁO DOANH THU')}</span>
+                  </Link>
+                  <Link
+                    to="/portal/facility-manager"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                      isCurrentPath('/portal/facility-manager')
+                        ? 'bg-slate-100 text-slate-900'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">grid_view</span>
+                    <span>{t('SƠ ĐỒ CƠ SỞ KHO')}</span>
+                  </Link>
+
+                  <Link
+                    to="/portal/overdue"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                      isCurrentPath('/portal/overdue')
+                        ? 'bg-slate-100 text-slate-900'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">money_off</span>
+                    <span>{t('XỬ LÝ NỢ CƯỚC QUÁ HẠN')}</span>
+                  </Link>
+
+                  <Link
+                    to="/portal/shifts"
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                      isCurrentPath('/portal/shifts')
+                        ? 'bg-slate-100 text-slate-900'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">schedule</span>
+                    <span>{t('XỬ LÝ TRỰC CA')}</span>
                   </Link>
                   <Link
                     to="/portal/cashier"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                       isCurrentPath('/portal/cashier')
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
+                        ? 'bg-slate-100 text-slate-900'
                         : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
-                    <span className="material-symbols-outlined text-[18px]">receipt_long</span>
-                    <span>{t('Nhật ký giao dịch', 'Transaction journal')}</span>
+                    <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
+                    <span>{t('BÁO CÁO THU NGÂN')}</span>
                   </Link>
                   <Link
                     to="/portal/tickets"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                       isCurrentPath('/portal/tickets')
-                        ? 'bg-slate-100 text-slate-900 font-semibold'
+                        ? 'bg-slate-100 text-slate-900'
                         : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
-                    <span className="material-symbols-outlined text-[18px]">troubleshoot</span>
-                    <span>{t('Giám sát sự cố', 'Ticket oversight')}</span>
+                    <span className="material-symbols-outlined text-[18px]">build_circle</span>
+                    <span>{t('XỬ LÝ SỰ CỐ TẠI CHỖ')}</span>
                   </Link>
                 </nav>
               </div>
@@ -776,34 +764,29 @@ export const DashboardLayout: React.FC = () => {
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-1 text-left">
             <div className="flex items-center justify-between">
               <span className="font-mono text-[10px] text-slate-500 font-bold uppercase">
-                {role === 'CUSTOMER' ? t('Phiên tài khoản', 'Account session') : t('Trạng Thái Hệ Thống', 'System status')}
+                {role === 'CUSTOMER' ? t('An Ninh Kho') : t('Trạng Thái Hệ Thống')}
               </span>
-              <span className={`h-2 w-2 rounded-full ${role === 'CUSTOMER' || backendStatus === 'online' ? 'bg-emerald-500' : backendStatus === 'checking' ? 'bg-amber-400 animate-pulse' : 'bg-rose-500'}`}></span>
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
             </div>
             <span className="font-unit-code text-xs text-slate-900 font-bold">
-              {role === 'CUSTOMER'
-                ? t('Phiên đăng nhập đang hoạt động', 'Signed-in session active')
-                : backendStatus === 'online'
-                  ? t('API và dữ liệu cơ sở sẵn sàng', 'Facility API and data available')
-                  : backendStatus === 'checking'
-                    ? t('Đang kiểm tra kết nối', 'Checking connection')
-                    : t('Không kết nối được API', 'Facility API unavailable')}
+              {role === 'CUSTOMER' ? t('Khóa bảo mật: Hoạt động') : t('Hệ thống trực tuyến')}
             </span>
             <span className="text-[11px] text-slate-500">
-              {role === 'CUSTOMER' ? t('Hỗ trợ khách: 1900 6828') : t('Kiểm tra từ API cơ sở mỗi 60 giây', 'Checked through the facility API every 60 seconds')}
+              {role === 'CUSTOMER' ? t('Hỗ trợ khách: 1900 6828') : t('Kết nối máy chủ ổn định')}
             </span>
           </div>
         </div>
       </aside>
 
       {/* Main Canvas Area */}
-      <div className="lg:pl-64 pt-16 flex-1 min-w-0">
-        <main className="min-h-[calc(100vh-4rem)] w-full bg-slate-50/70 dark:bg-slate-950 p-4 sm:p-6 lg:p-8 transition-colors">
-          <div className="mx-auto w-full max-w-[1600px]">
+      <div className="lg:pl-64 pt-20 flex-1 min-w-0">
+        <main className="min-h-[calc(100vh-5rem)] w-full bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 lg:p-8">
+          <div className="dashboard-typography mx-auto w-full max-w-[1600px]">
             <Outlet context={{
               selectedFacility: isFacilityScopedRole && assignedFacilityId ? assignedFacilityId : selectedFacility,
               setSelectedFacility: handleSetSelectedFacility,
-              facilities
+              facilities,
+              openProfile: () => setIsProfileModalOpen(true)
             }} />
           </div>
         </main>

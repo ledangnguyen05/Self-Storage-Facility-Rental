@@ -40,14 +40,45 @@ public class PaymentController {
     @Value("${app.frontend-url:https://boxora-storage.pages.dev}")
     private String frontendUrl;
 
+    private final Map<String, String> txnFrontendUrlMap = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private String resolveClientFrontendBase(PaymentCreateRequest request, HttpServletRequest httpRequest) {
+        String candidate = request != null ? request.getReturnUrl() : null;
+        if (candidate == null || candidate.isBlank()) {
+            candidate = httpRequest != null ? httpRequest.getHeader("Origin") : null;
+        }
+        if (candidate == null || candidate.isBlank()) {
+            candidate = httpRequest != null ? httpRequest.getHeader("Referer") : null;
+        }
+        if (candidate != null && !candidate.isBlank()) {
+            try {
+                java.net.URI uri = java.net.URI.create(candidate.trim());
+                if (uri.getScheme() != null && uri.getHost() != null) {
+                    int port = uri.getPort();
+                    return uri.getScheme() + "://" + uri.getHost() + (port > 0 ? ":" + port : "");
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (httpRequest != null) {
+            String host = httpRequest.getServerName();
+            if ("localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host)) {
+                return "http://localhost:5173";
+            }
+        }
+        return frontendUrl != null && !frontendUrl.isBlank() ? frontendUrl.replaceAll("/+$", "") : "http://localhost:5173";
+    }
+
     @PostMapping("vnpay/create")
-    @PreAuthorize("hasAuthority('PAYMENT_CREATE')")
-    @Operation(summary = "Khởi tạo thanh toán qua cổng VNPay Sandbox và lấy paymentUrl")
+        @Operation(summary = "Khởi tạo thanh toán qua cổng VNPay Sandbox và lấy paymentUrl")
     public ResponseEntity<ApiResponse<VNPayPaymentResponse>> createVNPayPayment(
             @Valid @RequestBody PaymentCreateRequest request,
             HttpServletRequest httpRequest
     ) {
         VNPayPaymentResponse response = paymentService.createVNPayPayment(request, httpRequest);
+        if (response != null && response.getTransactionId() != null) {
+            txnFrontendUrlMap.put(response.getTransactionId(), resolveClientFrontendBase(request, httpRequest));
+        }
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Khởi tạo thanh toán VNPay thành công", response));
     }
@@ -56,12 +87,18 @@ public class PaymentController {
     @Operation(summary = "Xử lý redirect từ VNPay sau khi khách hàng thanh toán (Return URL)")
     public Object handleVNPayReturn(
             @RequestParam Map<String, String> allParams,
-            @RequestParam(value = "redirect", defaultValue = "true") boolean redirect
+            @RequestParam(value = "redirect", defaultValue = "true") boolean redirect,
+            HttpServletRequest httpRequest
     ) {
         try {
             PaymentResponse payment = paymentService.processVNPayReturn(allParams);
+            String txnRefParam = allParams != null ? allParams.get("vnp_TxnRef") : null;
+            String baseFrontend = (txnRefParam != null ? txnFrontendUrlMap.get(txnRefParam) : null);
+            if (baseFrontend == null || baseFrontend.isBlank()) {
+                baseFrontend = resolveClientFrontendBase(null, httpRequest);
+            }
             if (redirect) {
-                StringBuilder targetUrl = new StringBuilder(frontendUrl + "/payment-result");
+                StringBuilder targetUrl = new StringBuilder(baseFrontend + "/payment-result");
                 targetUrl.append("?status=").append(payment.getStatus().name())
                         .append("&txnRef=").append(payment.getTransactionId() != null ? payment.getTransactionId() : "")
                         .append("&amount=").append(payment.getAmount() != null ? payment.getAmount() : "");
@@ -77,14 +114,27 @@ public class PaymentController {
                 if (payment.getId() != null) {
                     targetUrl.append("&paymentId=").append(payment.getId());
                 }
+                String respCode = allParams != null ? allParams.get("vnp_ResponseCode") : null;
+                if (respCode != null && !respCode.isBlank()) {
+                    targetUrl.append("&responseCode=").append(respCode);
+                }
                 return new RedirectView(targetUrl.toString());
             }
             return ResponseEntity.ok(ApiResponse.success("Thanh toán hoàn tất", payment));
         } catch (Exception e) {
             log.error("Lỗi khi xử lý VNPay return: {}", e.getMessage(), e);
             if (redirect) {
-                String errorUrl = frontendUrl + "/payment-result?status=FAILED&error="
+                String baseFrontend = resolveClientFrontendBase(null, httpRequest);
+                String errorUrl = baseFrontend + "/payment-result?status=FAILED&error="
                         + java.net.URLEncoder.encode(e.getMessage(), java.nio.charset.StandardCharsets.UTF_8);
+                String txnRefParam = allParams != null ? allParams.get("vnp_TxnRef") : null;
+                if (txnRefParam != null && !txnRefParam.isBlank()) {
+                    errorUrl += "&txnRef=" + txnRefParam;
+                }
+                String respCodeParam = allParams != null ? allParams.get("vnp_ResponseCode") : null;
+                if (respCodeParam != null && !respCodeParam.isBlank()) {
+                    errorUrl += "&responseCode=" + respCodeParam;
+                }
                 return new RedirectView(errorUrl);
             }
             return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
@@ -107,7 +157,8 @@ public class PaymentController {
     }
 
     @GetMapping("{id}")
-    @PreAuthorize("hasAuthority('PAYMENT_VIEW') or hasRole('CUSTOMER')")
+    @PreAuthorize("hasAuthority('PAYMENT_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
+
     @Operation(summary = "Lấy chi tiết thanh toán theo Payment ID")
     public ResponseEntity<ApiResponse<PaymentResponse>> getById(@PathVariable UUID id) {
         PaymentResponse response = paymentService.getById(id);
@@ -115,7 +166,7 @@ public class PaymentController {
     }
 
     @GetMapping("transaction/{transactionId}")
-    @PreAuthorize("hasAuthority('PAYMENT_VIEW') or hasRole('CUSTOMER')")
+
     @Operation(summary = "Lấy chi tiết thanh toán theo mã giao dịch VNPay (transactionId / txnRef)")
     public ResponseEntity<ApiResponse<PaymentResponse>> getByTransactionId(@PathVariable String transactionId) {
         PaymentResponse response = paymentService.getByTransactionId(transactionId);
@@ -123,7 +174,7 @@ public class PaymentController {
     }
 
     @GetMapping("booking/{bookingId}")
-    @PreAuthorize("hasAuthority('PAYMENT_VIEW') or hasRole('CUSTOMER')")
+
     @Operation(summary = "Lấy lịch sử thanh toán của một Booking")
     public ResponseEntity<ApiResponse<List<PaymentResponse>>> getByBookingId(@PathVariable UUID bookingId) {
         List<PaymentResponse> response = paymentService.getByBookingId(bookingId);

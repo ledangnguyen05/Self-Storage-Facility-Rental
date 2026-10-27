@@ -3,9 +3,17 @@ import { Booking, RentalContract } from '../../types'
 import { contractService } from '../../services/contractService'
 import { useAuth } from '../../context/AuthContext'
 
-interface DocuSealSimulationModalProps {
+export interface DocuSealSimulationModalProps {
   contract: RentalContract
   booking?: Booking | null
+  financialSummary?: {
+    sizeName?: string
+    rentalMonths?: number
+    monthlyFee?: number
+    totalRent?: number
+    depositAmount?: number
+    totalPayment?: number
+  }
   onClose: () => void
   onSignedSuccess: (updated: RentalContract) => void
 }
@@ -28,6 +36,7 @@ function formatVnd(val?: number) {
 export function DocuSealSimulationModal({
   contract,
   booking,
+  financialSummary,
   onClose,
   onSignedSuccess,
 }: DocuSealSimulationModalProps) {
@@ -36,6 +45,18 @@ export function DocuSealSimulationModal({
   const customerDisplayPhone = contract.customerPhone || user?.phone || 'Theo hồ sơ'
   const customerIdentityNumber = contract.identityCardNumber || booking?.identityCardNumber || ''
   const customerIdentityType = contract.identityCardType || booking?.identityCardType || 'CCCD'
+
+  const displayUnitSize = financialSummary?.sizeName || contract.unitCode || (booking?.unitTypeName ? `Kích thước: ${booking.unitTypeName} (Mã định danh ô kho chi tiết sẽ được xác nhận qua email bàn giao)` : 'Theo kích thước đăng ký (Chờ gán kho)')
+  const displayMonthlyFee = financialSummary?.monthlyFee != null ? financialSummary.monthlyFee : (contract.monthlyFee || 0)
+  const displayDeposit = financialSummary?.depositAmount != null
+    ? financialSummary.depositAmount
+    : (contract.depositHeld && Number(contract.depositHeld) > 0 ? Number(contract.depositHeld) : Number(booking?.depositAmount || 0))
+  const displayTotalRent = financialSummary?.totalRent != null
+    ? financialSummary.totalRent
+    : (Number(booking?.totalRentalFee || 0) > 0 ? Number(booking?.totalRentalFee) : (Number(displayMonthlyFee) * (financialSummary?.rentalMonths || booking?.rentalMonths || (contract as any).rentalMonths || 1)))
+  const displayTotalPayment = financialSummary?.totalPayment != null
+    ? financialSummary.totalPayment
+    : (Number(displayTotalRent) + Number(displayDeposit))
   const [agreed, setAgreed] = useState(false)
   const [signatureMode, setSignatureMode] = useState<'type' | 'draw'>('draw')
   const [signerName, setSignerName] = useState(customerDisplayName)
@@ -190,40 +211,41 @@ export function DocuSealSimulationModal({
   // Render Confirmation Modal View upon successful signing
   if (signedResult) {
     return (
-      <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-3 md:p-6 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-        <div className="w-full max-w-2xl my-auto space-y-4 rounded-2xl border border-emerald-500/30 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-          
-          {/* Header chúc mừng */}
-          <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 px-6 py-4 text-white flex items-center justify-between border-b border-emerald-800/40">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                <span className="material-symbols-outlined text-2xl">verified</span>
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[11px] font-bold tracking-widest text-emerald-400 uppercase">
-                    Chứng Nhận Điện Tử Hợp Pháp
-                  </span>
-                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 border border-emerald-500/30">
-                    Đã Ký Thành Công
-                  </span>
+      <div className="fixed inset-0 z-[9999] overflow-y-auto bg-slate-950/80 backdrop-blur-md p-3 sm:p-4 md:p-6 animate-in fade-in duration-200">
+        <div className="min-h-full flex items-center justify-center py-6 sm:py-8">
+          <div className="w-full max-w-2xl flex flex-col rounded-2xl border border-emerald-500/30 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            
+            {/* Header chúc mừng */}
+            <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 px-6 py-4.5 text-white flex items-center justify-between border-b border-emerald-800/40 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+                  <span className="material-symbols-outlined text-2xl">verified</span>
                 </div>
-                <h2 className="text-base font-bold text-white tracking-tight">
-                  Xác Nhận Ký Hợp Đồng #{signedResult.contractCode || contract.contractCode}
-                </h2>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[11px] font-bold tracking-widest text-emerald-400 uppercase">
+                      Chứng Nhận Điện Tử Hợp Pháp
+                    </span>
+                    <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 border border-emerald-500/30">
+                      Đã Ký Thành Công
+                    </span>
+                  </div>
+                  <h2 className="text-base sm:text-lg font-bold text-white tracking-tight mt-0.5">
+                    Xác Nhận Ký Hợp Đồng #{signedResult.contractCode || contract.contractCode}
+                  </h2>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => onSignedSuccess(signedResult)}
+                className="rounded-lg p-1.5 text-white/80 hover:bg-white/10 hover:text-white transition-colors cursor-pointer shrink-0"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => onSignedSuccess(signedResult)}
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
-            >
-              <span className="material-symbols-outlined">close</span>
-            </button>
-          </div>
 
-          {/* Nội dung xác nhận */}
-          <div className="px-6 py-4 space-y-4 max-h-[75vh] overflow-y-auto text-slate-700">
+            {/* Nội dung xác nhận */}
+            <div className="px-6 py-4 space-y-4 max-h-[75vh] overflow-y-auto text-slate-700 flex-1">
             
             {/* Banner chúc mừng */}
             <div className="text-center py-4 px-2 space-y-2">
@@ -258,8 +280,8 @@ export function DocuSealSimulationModal({
                   </p>
                 </div>
                 <div className="space-y-1">
-                  <span className="text-[11px] text-slate-500">Ngăn kho & Cơ sở:</span>
-                  <p className="font-bold text-slate-800">{signedResult.unitCode || contract.unitCode} · {signedResult.facilityName || contract.facilityName || 'Boxora Storage'}</p>
+                  <span className="text-[11px] text-slate-500">Ngăn kho &amp; Cơ sở:</span>
+                  <p className="font-bold text-slate-800">{displayUnitSize} · {signedResult.facilityName || contract.facilityName || 'Boxora Storage'}</p>
                 </div>
                 <div className="space-y-1">
                   <span className="text-[11px] text-slate-500">Kỳ hạn thuê dự kiến:</span>
@@ -299,7 +321,7 @@ export function DocuSealSimulationModal({
                         className="max-h-12 object-contain"
                       />
                     ) : (
-                      <span className="font-serif italic font-bold text-cyan-800 text-base">{signerName || customerDisplayName}</span>
+                      <span className="font-sans italic font-bold text-cyan-800 text-base">{signerName || customerDisplayName}</span>
                     )}
                   </div>
                 </div>
@@ -310,68 +332,70 @@ export function DocuSealSimulationModal({
             <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 space-y-1.5 text-xs text-blue-900">
               <div className="font-bold flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-blue-700 text-base">info</span>
-                <span>Bước tiếp theo cần thực hiện:</span>
+                <span>Bước tiếp theo:</span>
               </div>
               <ul className="list-disc pl-4 space-y-1 text-[11px] text-blue-800/90 leading-relaxed">
-                <li>Quý khách có thể tiến hành <strong>thanh toán trực tuyến</strong> hoặc kiểm tra chi tiết đơn hàng trên trang quản lý.</li>
-                <li>Theo quy định Boxora, thời hạn thuê chính thức sẽ được xác lập tại thời điểm quý khách đến cơ sở hoàn tất thủ tục nhận kho và nhân viên bàn giao mã PIN bảo mật.</li>
+                <li>Quý khách tiến hành <strong>thanh toán trực tuyến toàn bộ chi phí ({formatVnd(displayTotalPayment)} đ)</strong> qua cổng VNPay để hoàn tất kích hoạt.</li>
+                <li>Theo quy định Boxora, buồng kho và mã PIN khóa thông minh sẽ được cấp và kích hoạt sẵn sàng cho quý khách.</li>
               </ul>
             </div>
 
           </div>
 
           {/* Footer nút điều hướng */}
-          <div className="bg-slate-50 px-6 py-3.5 flex items-center justify-end gap-3 border-t border-slate-200">
+          <div className="bg-slate-50 px-6 py-3.5 flex items-center justify-end gap-3 border-t border-slate-200 shrink-0">
             <button
               type="button"
               onClick={() => onSignedSuccess(signedResult)}
               className="flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 text-xs font-bold shadow-md shadow-emerald-900/20 transition-all cursor-pointer"
             >
-              <span>Xác Nhận & Tiếp Tục</span>
+              <span>Xác Nhận &amp; Thanh Toán VNPay ({formatVnd(displayTotalPayment)} đ)</span>
               <span className="material-symbols-outlined text-base">arrow_forward</span>
             </button>
           </div>
 
         </div>
       </div>
+    </div>
     )
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-3 md:p-6 backdrop-blur-md overflow-y-auto">
-      <div className="w-full max-w-3xl my-auto space-y-4 rounded-2xl border border-slate-700 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        
-        {/* Header ký hợp đồng điện tử trực tuyến */}
-        <div className="bg-gradient-to-r from-slate-900 via-cyan-950 to-slate-900 px-6 py-4 text-white flex items-center justify-between border-b border-cyan-800/40">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
-              <span className="material-symbols-outlined text-2xl">verified</span>
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[11px] font-bold tracking-widest text-cyan-400 uppercase">
-                  Xác Thực Chữ Ký Điện Tử
-                </span>
-                <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[10px] font-semibold text-cyan-300 border border-cyan-500/30">
-                  Ký Hợp Đồng Trực Tuyến
-                </span>
+    <div className="fixed inset-0 z-[9999] overflow-y-auto bg-slate-950/80 backdrop-blur-md p-3 sm:p-4 md:p-6 animate-in fade-in duration-200">
+      <div className="min-h-full flex items-center justify-center py-6 sm:py-8">
+        <div className="w-full max-w-3xl flex flex-col rounded-2xl border border-slate-700 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          
+          {/* Header ký hợp đồng điện tử trực tuyến */}
+          <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 px-6 py-4.5 text-white flex items-center justify-between border-b border-cyan-800/40 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shrink-0">
+                <span className="material-symbols-outlined text-2xl">verified</span>
               </div>
-              <h2 className="text-base font-bold text-white tracking-tight">
-                Ký Hợp Đồng Thuê Kho Tự Quản: {contract.contractCode}
-              </h2>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[11px] font-bold tracking-widest text-cyan-300 uppercase">
+                    Xác Thực Chữ Ký Điện Tử
+                  </span>
+                  <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[10px] font-semibold text-cyan-200 border border-cyan-500/30">
+                    Ký Hợp Đồng Trực Tuyến
+                  </span>
+                </div>
+                <h2 className="text-base sm:text-lg font-bold text-white tracking-tight mt-0.5">
+                  Ký Hợp Đồng Thuê Kho Tự Quản: {contract.contractCode}
+                </h2>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-white/80 hover:bg-white/10 hover:text-white transition-colors shrink-0 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-xl">close</span>
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
-          >
-            <span className="material-symbols-outlined">close</span>
-          </button>
-        </div>
 
-        {/* Thân hợp đồng */}
-        <div className="px-6 py-3 space-y-4 max-h-[70vh] overflow-y-auto">
+          {/* Thân hợp đồng */}
+          <div className="px-6 py-3 space-y-4 max-h-[70vh] overflow-y-auto flex-1">
           {error && (
             <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 flex items-center gap-2">
               <span className="material-symbols-outlined text-base">error</span>
@@ -409,25 +433,38 @@ export function DocuSealSimulationModal({
               </div>
             </div>
 
-            <div className="rounded-lg bg-white p-3 border border-slate-200/80 space-y-1.5">
-              <span className="font-bold text-[11px] text-slate-800 uppercase block">CHI TIẾT THUÊ KHO & TÀI CHÍNH</span>
+            <div className="rounded-lg bg-white p-3 border border-slate-200/80 space-y-2">
+              <span className="font-bold text-[11px] text-slate-800 uppercase block">CHI TIẾT THUÊ KHO &amp; TÀI CHÍNH</span>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1 text-[11px]">
-                <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <span className="text-slate-500 block">Ngăn kho:</span>
-                  <strong className="text-cyan-800 font-mono">{contract.unitCode}</strong>
+                  <strong className="text-cyan-800 font-semibold">{displayUnitSize}</strong>
                 </div>
-                <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <span className="text-slate-500 block">Thời hạn thuê:</span>
-                  <strong>{formatDate(contract.startDate)} - {formatDate(contract.endDate)}</strong>
+                  <strong className="text-slate-800">{formatDate(contract.startDate)} - {formatDate(contract.endDate)} ({financialSummary?.rentalMonths || booking?.rentalMonths || 1} tháng)</strong>
                 </div>
-                <div className="bg-slate-50 p-2 rounded border border-slate-100">
-                  <span className="text-slate-500 block">Giá thuê tháng:</span>
-                  <strong className="text-emerald-700">{formatVnd(contract.monthlyFee)} đ</strong>
+                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                  <span className="text-slate-500 block">Tiền thuê ({financialSummary?.rentalMonths || booking?.rentalMonths || 1} tháng):</span>
+                  <strong className="text-emerald-700 font-bold">{formatVnd(displayTotalRent)} đ</strong>
+                  <span className="text-[10px] text-slate-400 block">({formatVnd(displayMonthlyFee)} đ/tháng)</span>
                 </div>
-                <div className="bg-slate-50 p-2 rounded border border-slate-100">
-                  <span className="text-slate-500 block">Tiền đặt cọc:</span>
-                  <strong className="text-cyan-700">{formatVnd(contract.depositHeld)} đ</strong>
+                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                  <span className="text-slate-500 block">Tiền đặt cọc (hoàn lại):</span>
+                  <strong className="text-cyan-700 font-bold">{formatVnd(displayDeposit)} đ</strong>
+                  <span className="text-[10px] text-slate-400 block">(Bảo đảm tài sản)</span>
                 </div>
+              </div>
+
+              {/* Hộp tổng thanh toán trực tuyến toàn bộ */}
+              <div className="p-2.5 rounded-lg bg-blue-50/80 border border-blue-200 flex items-center justify-between text-xs">
+                <div>
+                  <span className="text-[11px] font-bold text-blue-900 block">Tổng thanh toán trực tuyến hôm nay:</span>
+                  <span className="text-[10px] text-blue-700">Thanh toán toàn bộ tiền thuê kho và tiền cọc bảo đảm qua VNPay</span>
+                </div>
+                <strong className="text-sm sm:text-base font-extrabold text-blue-700 font-mono">
+                  {formatVnd(displayTotalPayment)} đ
+                </strong>
               </div>
             </div>
 
@@ -485,7 +522,7 @@ export function DocuSealSimulationModal({
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 font-medium"
                 />
                 <div className="flex h-20 items-center justify-center rounded-lg border border-cyan-200 bg-white shadow-inner">
-                  <span className="font-serif italic text-2xl text-cyan-900 font-bold tracking-wider select-none">
+                  <span className="font-sans italic text-2xl text-cyan-900 font-bold tracking-wider select-none">
                     {signerName || 'Chữ ký điện tử'}
                   </span>
                 </div>
@@ -549,12 +586,12 @@ export function DocuSealSimulationModal({
         </div>
 
         {/* Footer hành động */}
-        <div className="bg-slate-50 px-6 py-3.5 flex items-center justify-between border-t border-slate-200">
+        <div className="bg-slate-50 px-6 py-3.5 flex items-center justify-between border-t border-slate-200 shrink-0">
           <button
             type="button"
             onClick={onClose}
             disabled={isSigning}
-            className="rounded-lg px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors"
+            className="rounded-lg px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
           >
             Hủy / Ký sau
           </button>
@@ -563,7 +600,7 @@ export function DocuSealSimulationModal({
             type="button"
             onClick={handleConfirmSign}
             disabled={isSigning || !agreed}
-            className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold shadow-md transition-all ${
+            className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer ${
               isSigning || !agreed
                 ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
                 : 'bg-cyan-700 text-white hover:bg-cyan-800 shadow-cyan-900/20 hover:shadow-lg'
@@ -585,5 +622,6 @@ export function DocuSealSimulationModal({
 
       </div>
     </div>
+  </div>
   )
 }

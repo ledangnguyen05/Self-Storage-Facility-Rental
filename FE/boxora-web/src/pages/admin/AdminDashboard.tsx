@@ -264,7 +264,13 @@ export const AdminDashboard: React.FC = () => {
   const handleCreateUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      await userService.createUser(newUser)
+      const payload = {
+        ...newUser,
+        facilityId: (newUser.roleName === 'STAFF' || newUser.roleName === 'FACILITY_MANAGER')
+          ? (newUser.facilityId || null)
+          : null
+      }
+      await userService.createUser(payload)
       setCreateSuccess(true)
       setTimeout(() => {
         setCreateSuccess(false)
@@ -384,6 +390,11 @@ export const AdminDashboard: React.FC = () => {
       default:
         return 'bg-slate-100 text-slate-700 border-slate-200'
     }
+  }
+
+  const isFacilityScopedRole = (roleName?: string) => {
+    const norm = (roleName || '').toUpperCase()
+    return norm === 'STAFF' || norm === 'FACILITY_MANAGER'
   }
 
   return (
@@ -652,7 +663,7 @@ export const AdminDashboard: React.FC = () => {
                   <th className="py-3 px-4 font-semibold">Cơ sở trực thuộc</th>
                   <th className="py-3 px-4 font-semibold">Trạng thái</th>
                   <th className="py-3 px-4 font-semibold">Ngày tạo</th>
-                  <th className="py-3 px-4 font-semibold text-right">Thao tác</th>
+                  <th className="py-3 px-4 font-semibold text-right">Hành Động</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -676,24 +687,46 @@ export const AdminDashboard: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-3 px-4">
-                      {user.facilityName ? (
-                        <div className="flex flex-col">
-                          <span className="font-medium text-slate-800 text-xs flex items-center gap-1">
-                            <span className="material-symbols-outlined text-[14px] text-blue-600">location_on</span>
-                            {user.facilityName}
-                          </span>
-                          {user.facilityCode && (
-                            <span className="text-[10px] text-slate-500 font-mono ml-4">
-                              #{user.facilityCode}
+                      {(() => {
+                        const rName = (user.role?.name || user.roleName || '').toUpperCase()
+                        if (rName === 'CUSTOMER') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                              <span className="material-symbols-outlined text-[13px] text-slate-400">person</span>
+                              Không áp dụng
                             </span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-slate-100 text-slate-600">
-                          <span className="material-symbols-outlined text-[12px]">public</span>
-                          {user.role?.name === 'CUSTOMER' ? 'Khách hàng' : 'Toàn hệ thống'}
-                        </span>
-                      )}
+                          )
+                        }
+                        if (rName === 'ADMIN' || rName === 'SYSTEM_ADMIN' || rName === 'BUSINESS_MANAGER') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              <span className="material-symbols-outlined text-[13px] text-indigo-500">public</span>
+                              Toàn hệ thống
+                            </span>
+                          )
+                        }
+                        if (user.facilityName) {
+                          return (
+                            <div className="flex flex-col">
+                              <span className="font-medium text-slate-800 text-xs flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px] text-blue-600">location_on</span>
+                                {user.facilityName}
+                              </span>
+                              {user.facilityCode && (
+                                <span className="text-[10px] text-slate-500 font-mono ml-4">
+                                  #{user.facilityCode}
+                                </span>
+                              )}
+                            </div>
+                          )
+                        }
+                        return (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                            <span className="material-symbols-outlined text-[13px] text-amber-500">warning</span>
+                            Chưa phân cơ sở
+                          </span>
+                        )
+                      })()}
                     </td>
                     <td className="py-3 px-4">
                       <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${
@@ -706,18 +739,20 @@ export const AdminDashboard: React.FC = () => {
                     <td className="py-3 px-4 text-slate-500 text-xs">{user.createdAt ? new Date(user.createdAt).toLocaleDateString('vi-VN') : '—'}</td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setScopingUser(user)
-                            setIsScopingModalOpen(true)
-                          }}
-                          title="Gán cơ sở trực thuộc cho tài khoản"
-                          className="text-blue-700 hover:text-blue-900 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors flex items-center gap-1 cursor-pointer"
-                        >
-                          <span className="material-symbols-outlined text-[15px]">domain_verification</span>
-                          <span>Phân công</span>
-                        </button>
+                        {isFacilityScopedRole(user.role?.name || (user.roleName as string)) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setScopingUser(user)
+                              setIsScopingModalOpen(true)
+                            }}
+                            title="Gán cơ sở trực thuộc cho tài khoản"
+                            className="text-blue-700 hover:text-blue-900 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors flex items-center gap-1 cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">domain_verification</span>
+                            <span>Phân công</span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           disabled={userActionLoadingId === user.id}
@@ -725,7 +760,7 @@ export const AdminDashboard: React.FC = () => {
                             const nextIsActive = user.isActive === false
                             setUserActionLoadingId(user.id)
                             try {
-                              await userService.updateUser(user.id, { isActive: nextIsActive })
+                              await userService.toggleActive(user.id)
                               setUsers(current => current.map(u => u.id === user.id ? { ...u, isActive: nextIsActive } : u))
                             } catch {
                               setFeedbackMessage('Không cập nhật được trạng thái tài khoản. Trạng thái trên hệ thống chưa thay đổi.')

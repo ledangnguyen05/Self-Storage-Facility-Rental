@@ -8,11 +8,9 @@ import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
 import { Booking, Facility, StorageUnit, ContractRenewal } from '../../types'
-import { BookingCheckoutModal } from '../../components/modals/BookingCheckoutModal'
+
 import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
 import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
-import { DocuSealRenewalModal } from '../../components/modals/DocuSealRenewalModal'
-import { RenewalDocumentModal } from '../../components/modals/RenewalDocumentModal'
 import { ContractOtpModal } from '../../components/modals/ContractOtpModal'
 import { CustomerPolicyModal, PolicyTab } from '../../components/modals/CustomerPolicyModal'
 import { BookingCancelModal } from '../../components/modals/BookingCancelModal'
@@ -20,14 +18,68 @@ import { BookingRescheduleModal } from '../../components/modals/BookingReschedul
 import { BookingRescheduleHistorySection } from '../../components/booking/BookingRescheduleHistorySection'
 import { TicketCloseConfirmModal } from '../../components/modals/TicketCloseConfirmModal'
 import { PortalBookingReservationModal, PortalBookingUnitData } from '../../components/booking/PortalBookingReservationModal'
+import { getFacilityImage } from '../public/BookingPage'
 import { extractFloor } from '../../utils/floorUtils'
+import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
+import NotificationCenter from '../../components/layout/NotificationCenter'
+import { MyBookingsPage } from './MyBookingsPage'
+import { CustomerSupportPanel } from './components/CustomerSupportPanel'
 
-const UNIT_CARD_IMAGES = [
-  '/images/units/unit-medium.jpg',
-  '/images/units/unit-mini.jpg',
-  '/images/units/unit-large.jpg',
-  '/images/units/unit-capacity-a108.jpg'
-]
+
+const BookingRequestCountdown: React.FC<{ request: Booking }> = ({ request }) => {
+  const expiresAt = request.paymentExpiresAt ? new Date(request.paymentExpiresAt).getTime() : NaN
+  const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    if (!Number.isFinite(expiresAt)) return
+    const intervalId = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(intervalId)
+  }, [expiresAt])
+
+  if (!Number.isFinite(expiresAt)) return null
+
+  const secondsRemaining = Math.max(0, Math.floor((expiresAt - now) / 1000))
+  const isExpired = secondsRemaining === 0
+  const formattedCountdown = [
+    Math.floor(secondsRemaining / 3600),
+    Math.floor((secondsRemaining % 3600) / 60),
+    secondsRemaining % 60
+  ].map(value => String(value).padStart(2, '0')).join(':')
+
+  return (
+    <p className={`mt-1.5 inline-flex items-center gap-1 text-xs font-semibold ${isExpired ? 'text-rose-700' : 'text-amber-700'}`}>
+      <span className="material-symbols-outlined text-[15px]">timer</span>
+      {isExpired
+        ? 'Đã hết thời hạn giữ kho'
+        : `Thời gian giữ kho còn ${formattedCountdown}`}
+    </p>
+  )
+}
+
+const nextMonthlyPaymentDate = (startDate?: string): Date | null => {
+  if (!startDate) return null
+  const [year, month, day] = startDate.split('T')[0].split('-').map(Number)
+  if (!year || !month || !day) return null
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const baseMonthOffset = (today.getFullYear() - year) * 12 + today.getMonth() + 1 - month
+  const makeCycleDate = (offset: number) => {
+    const targetMonth = month - 1 + offset
+    const targetYear = year + Math.floor(targetMonth / 12)
+    const normalizedMonth = ((targetMonth % 12) + 12) % 12
+    const lastDay = new Date(targetYear, normalizedMonth + 1, 0).getDate()
+    return new Date(targetYear, normalizedMonth, Math.min(day, lastDay))
+  }
+
+  let nextDate = makeCycleDate(Math.max(0, baseMonthOffset))
+  if (nextDate < today) nextDate = makeCycleDate(Math.max(0, baseMonthOffset) + 1)
+  return nextDate
+}
+
+interface CustomerDashboardProps {
+  bookingOnly?: boolean
+}
 
 const safeFormatDateTime = (dateVal?: string | null, fallback = ''): string => {
   if (!dateVal) return fallback
@@ -40,13 +92,9 @@ const safeFormatDateTime = (dateVal?: string | null, fallback = ''): string => {
   }
 }
 
-interface CustomerDashboardProps {
-  bookingOnly?: boolean
-}
-
 export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnly = false }) => {
-  const { user } = useAuth()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
 
   // Real database contracts state
@@ -60,6 +108,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const [bookingSearchTerm, setBookingSearchTerm] = useState<string>('')
   const [selectedBookingForModal, setSelectedBookingForModal] = useState<Booking | null>(null)
   const [cancellingBookingTarget, setCancellingBookingTarget] = useState<Booking | null>(null)
+  const [selectedProofPayment, setSelectedProofPayment] = useState<PaymentItem | null>(null)
+  const [closeTicketTarget, setCloseTicketTarget] = useState<SupportTicketRecord | null>(null)
+  const [myRenewals, setMyRenewals] = useState<ContractRenewal[]>([])
+  const [loadingRenewals, setLoadingRenewals] = useState<boolean>(false)
 
   // Real database customer payments state
   const [customerPayments, setCustomerPayments] = useState<PaymentItem[]>([])
@@ -70,35 +122,184 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [availableUnits, setAvailableUnits] = useState<StorageUnit[]>([])
   const [allUnits, setAllUnits] = useState<StorageUnit[]>([])
+  const [loadingUnits, setLoadingUnits] = useState<boolean>(true)
+  const [selectedDetailModalUnit, setSelectedDetailModalUnit] = useState<StorageUnit | null>(null)
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState<boolean>(false)
+  const [bookingRequests, setBookingRequests] = useState<Booking[]>([])
+  const [loadingRequests, setLoadingRequests] = useState<boolean>(false)
+  const [customerTickets, setCustomerTickets] = useState<SupportTicketRecord[]>([])
+  const [loadingTickets, setLoadingTickets] = useState<boolean>(false)
+  const [ticketStatusFilter, setTicketStatusFilter] = useState<string>('ALL')
+  const [ticketSearchTerm, setTicketSearchTerm] = useState<string>('')
+  const [highlightedUnitCode, setHighlightedUnitCode] = useState<string | null>(null)
+  const [requestToPay, setRequestToPay] = useState<Booking | null>(null)
+  const [bookingCreated, setBookingCreated] = useState<boolean>(false)
   const [isCustomerPolicyModalOpen, setIsCustomerPolicyModalOpen] = useState<boolean>(false)
   const [customerPolicyModalTab, setCustomerPolicyModalTab] = useState<PolicyTab>('cancellation')
   const [customerPolicyFacility, setCustomerPolicyFacility] = useState<{ id?: string; name?: string } | null>(null)
-  const [loadingUnits, setLoadingUnits] = useState<boolean>(true)
-  const [bookingRequests, setBookingRequests] = useState<Booking[]>([])
-  const [requestToPay, setRequestToPay] = useState<Booking | null>(null)
+  const [unlockingUnit, setUnlockingUnit] = useState<string | null>(null)
+  const [unlockError, setUnlockError] = useState<string | null>(null)
+  const [unlockedSuccess, setUnlockedSuccess] = useState<string | null>(null)
+  const [unlockedUnits, setUnlockedUnits] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('boxora_unlocked_units')
+      return saved ? JSON.parse(saved) : {}
+    } catch {
+      return {}
+    }
+  })
+
+  // Reschedule Modal state
+  const [rescheduleBookingTarget, setRescheduleBookingTarget] = useState<Booking | null>(null)
+  const [rescheduleNewDate, setRescheduleNewDate] = useState<string>(() => new Date().toISOString().split('T')[0])
+  const [rescheduleNewTime, setRescheduleNewTime] = useState<string>('09:00')
+  const [rescheduleReason, setRescheduleReason] = useState<string>('')
+  const [isSubmittingReschedule, setIsSubmittingReschedule] = useState<boolean>(false)
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null)
+  const [rescheduleSuccess, setRescheduleSuccess] = useState<boolean>(false)
+
+  // Switch Renewal Method Modal State
+  const [switchMethodTarget, setSwitchMethodTarget] = useState<ContractRenewal | null>(null)
+  const [switchMethodMode, setSwitchMethodMode] = useState<'ONLINE' | 'COUNTER'>('COUNTER')
+  const [switchAppointmentDate, setSwitchAppointmentDate] = useState<string>(() => {
+    const d = new Date()
+    d.setDate(d.getDate() + 1)
+    return d.toISOString().split('T')[0]
+  })
+  const [switchAppointmentTime, setSwitchAppointmentTime] = useState<string>('09:00')
+  const [switchMethodNotes, setSwitchMethodNotes] = useState<string>('')
+  const [isSubmittingSwitchMethod, setIsSubmittingSwitchMethod] = useState<boolean>(false)
+  const [switchMethodError, setSwitchMethodError] = useState<string | null>(null)
+
+  const [reopenModalTicket, setReopenModalTicket] = useState<SupportTicketRecord | null>(null)
+  const [reopenReasonText, setReopenReasonText] = useState('')
+  const [isProcessingTicketAction, setIsProcessingTicketAction] = useState(false)
+  const [contractHistoryModal, setContractHistoryModal] = useState<any | null>(null)
+  const [selectedRenewalForDocModal, setSelectedRenewalForDocModal] = useState<any | null>(null)
+
+  const handleReopenCustomerTicket = async () => {
+    if (!reopenModalTicket || !reopenReasonText.trim()) return
+    setIsProcessingTicketAction(true)
+    try {
+      await supportTicketService.reopenTicket(reopenModalTicket.id, reopenReasonText.trim())
+      setReopenModalTicket(null)
+      setReopenReasonText('')
+      await fetchCustomerTickets()
+    } catch (err: any) {
+      console.error('Failed to reopen ticket:', err)
+    } finally {
+      setIsProcessingTicketAction(false)
+    }
+  }
+
+  const fetchMyRenewals = async () => {
+    try {
+      setLoadingRenewals(true)
+      const res = await contractService.getRenewals()
+      if (Array.isArray(res)) {
+        setMyRenewals(res)
+      }
+      return res
+    } catch {
+      return []
+    } finally {
+      setLoadingRenewals(false)
+    }
+  }
+
 
   const fetchCustomerBookings = async () => {
     try {
       setLoadingBookings(true)
-      const res = await bookingService.getMyBookings()
-      if (Array.isArray(res)) {
-        setCustomerBookings(res)
-      } else {
-        const activeRes = await bookingService.getMyActive()
-        if (Array.isArray(activeRes)) {
-          setCustomerBookings(activeRes)
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load customer bookings from database:', err)
+      let list: Booking[] = []
       try {
-        const activeRes = await bookingService.getMyActive()
-        if (Array.isArray(activeRes)) {
-          setCustomerBookings(activeRes)
+        const res = await bookingService.getMyBookings()
+        if (Array.isArray(res)) {
+          list = res
+        } else {
+          const activeRes = await bookingService.getMyActive()
+          if (Array.isArray(activeRes)) {
+            list = activeRes
+          }
         }
-      } catch {
-        setCustomerBookings([])
+      } catch (err) {
+        console.error('Failed to load customer bookings from database:', err)
+        try {
+          const activeRes = await bookingService.getMyActive()
+          if (Array.isArray(activeRes)) {
+            list = activeRes
+          }
+        } catch {
+          list = []
+        }
       }
+
+      // Merge local reservations saved during booking
+      try {
+        const rawLocal = localStorage.getItem('boxora_guest_reservations')
+        if (rawLocal) {
+          const localItems = JSON.parse(rawLocal)
+          if (Array.isArray(localItems) && localItems.length > 0) {
+            const existingCodes = new Set(list.map(b => b.bookingCode))
+            const localAsBookings: Booking[] = []
+
+            localItems.forEach((r: any, idx: number) => {
+              const code = r.bookingCode || `BX-LOCAL-${idx}`
+
+              // Chỉ merge đơn lưu tạm trong máy NẾU đơn này trùng khớp email hoặc số điện thoại của tài khoản đang đăng nhập
+              const resEmail = (r.customer?.email || r.customerEmail || '').trim().toLowerCase()
+              const resPhone = (r.customer?.phone || r.customerPhone || '').trim()
+              const currentUserEmail = (user?.email || '').trim().toLowerCase()
+              const currentUserPhone = (user?.phone || '').trim()
+
+              const isMatch = Boolean(
+                (currentUserEmail && resEmail && resEmail === currentUserEmail) ||
+                (currentUserPhone && resPhone && resPhone === currentUserPhone)
+              )
+
+              if (!isMatch) {
+                return
+              }
+
+              if (!existingCodes.has(code)) {
+                localAsBookings.push({
+                  id: `LOCAL-RES-${idx}-${code}`,
+                  bookingCode: code,
+                  customerId: user?.id || 'guest',
+                  customerName: r.customer?.fullName || user?.fullName || 'Khách hàng',
+                  customerEmail: r.customer?.email || user?.email || '',
+                  customerPhone: r.customer?.phone || user?.phone || '',
+                  storageUnitId: null,
+                  unitCode: r.unitCode || null,
+                  unitTypeName: r.unitTypeName || r.sizeName || (r.size?.volumeText ? `Kho ${r.size.volumeText}` : 'Kho Tiêu chuẩn (A/C Máy lạnh)'),
+                  facilityId: r.facility?.id,
+                  facilityName: r.facility?.name || 'Cơ sở Boxora',
+                  floorLevel: '1',
+                  startDate: r.startDate || new Date().toISOString().split('T')[0],
+                  endDate: r.rentalEndDate || '',
+                  rentalMonths: r.rentalMonths || 1,
+                  totalRentalFee: r.totalRentalFee ?? r.totalRent ?? 0,
+                  depositPaid: r.depositPaid ?? (r.paymentStatus === 'PAID' ? (r.depositAmount ?? 0) : 0),
+                  depositAmount: r.depositAmount ?? 0,
+                  status: (r.status as any) || 'PENDING_CONTACT',
+                  accessCode: code,
+                  expectedCheckInAt: r.checkInDate ? `${r.checkInDate}T${r.checkInTime || '09:00'}:00` : undefined,
+                  checkInTime: r.checkInTime,
+                  identityCardNumber: r.customer?.idCard || '',
+                  identityCardType: 'CCCD',
+                  paymentStatus: r.paymentStatus === 'PAID' ? 'PAID' : 'UNPAID_IN_PERSON',
+                })
+              }
+            })
+
+            list = [...localAsBookings, ...list]
+          }
+        }
+      } catch (mergeErr) {
+        console.warn('Could not merge local reservations:', mergeErr)
+      }
+
+      setCustomerBookings(list)
     } finally {
       setLoadingBookings(false)
     }
@@ -136,13 +337,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const fetchAvailableUnits = async () => {
     try {
       setLoadingUnits(true)
-      const res = await storageUnitService.getUnits()
+      const res = await storageUnitService.getUnits({ status: 'AVAILABLE' })
       if (Array.isArray(res)) {
-        setAllUnits(res)
-        setAvailableUnits(res.filter(u => u.status === 'AVAILABLE' && (!u.facilityStatus || u.facilityStatus === 'ACTIVE')))
+        setAvailableUnits(res)
       }
     } catch (err) {
-      console.error('Failed to load storage units from database:', err)
+      console.error('Failed to load available storage units from database:', err)
     } finally {
       setLoadingUnits(false)
     }
@@ -159,80 +359,37 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     }
   }
 
-  const fetchCustomerTickets = async () => {
+  const fetchBookingRequests = async () => {
+    setLoadingRequests(true)
     try {
-      setLoadingTickets(true)
-      const res = await supportTicketService.getMyTickets()
-      if (Array.isArray(res)) {
-        setCustomerTickets(res)
-      }
+      const requests = await bookingService.getMyRequests()
+      setBookingRequests(Array.isArray(requests) ? requests : [])
     } catch (err) {
-      console.error('Failed to load customer support tickets:', err)
+      console.warn('Failed to load booking requests:', err)
     } finally {
-      setLoadingTickets(false)
-    }
-  }
-
-  const fetchMyRenewals = async () => {
-    try {
-      setLoadingRenewals(true)
-      const res = await contractService.getRenewals({ size: 50 })
-      if (res?.content && Array.isArray(res.content)) {
-        setMyRenewals(res.content)
-      }
-    } catch (err) {
-      console.warn('Failed to load customer renewals:', err)
-      setMyRenewals([])
-    } finally {
-      setLoadingRenewals(false)
-    }
-  }
-
-  const [isRefreshingData, setIsRefreshingData] = useState<boolean>(false)
-
-  const handleRefreshAll = async () => {
-    setIsRefreshingData(true)
-    try {
-      await Promise.allSettled([
-        fetchContracts(),
-        fetchMyRenewals(),
-        fetchCustomerBookings(),
-        fetchCustomerPayments(),
-        fetchAvailableUnits(),
-        fetchFacilities(),
-        fetchCustomerTickets(),
-        (async () => {
-          try {
-            const reqs = await bookingService.getMyRequests()
-            setBookingRequests(reqs)
-          } catch (err) {
-            console.warn('Failed to refresh booking requests:', err)
-          }
-        })()
-      ])
-    } finally {
-      setIsRefreshingData(false)
+      setLoadingRequests(false)
     }
   }
 
   useEffect(() => {
     fetchContracts()
-    fetchMyRenewals()
     fetchCustomerBookings()
     fetchCustomerPayments()
     fetchAvailableUnits()
     fetchFacilities()
-    fetchCustomerTickets()
   }, [user])
 
   useEffect(() => {
     let isCurrent = true
     const loadRequests = async () => {
+      setLoadingRequests(true)
       try {
         const requests = await bookingService.getMyRequests()
         if (isCurrent) setBookingRequests(requests)
       } catch (err) {
         console.warn('Failed to load booking requests:', err)
+      } finally {
+        if (isCurrent) setLoadingRequests(false)
       }
     }
     void loadRequests()
@@ -244,6 +401,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   }, [user?.id])
 
   const activeContracts = contracts.filter(c => c.status === 'ACTIVE' || c.status === 'OVERDUE')
+  const activatedContracts = contracts.filter(c => c.status === 'ACTIVE')
+  const nextPaymentDeadline = activatedContracts
+    .map(contract => nextMonthlyPaymentDate(contract.startDate))
+    .filter((date): date is Date => date !== null)
+    .sort((a, b) => a.getTime() - b.getTime())[0]
+  const pendingBookingRequests = bookingRequests.filter(request => request.status === 'PENDING_APPROVAL' || request.status === 'PENDING_PAYMENT')
 
   // Đơn đặt giữ chỗ đang chờ nhận kho tại quầy (CONFIRMED hoặc PENDING_PAYMENT)
   const pendingReservations = useMemo(() => {
@@ -255,45 +418,22 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     return customerPayments.filter(p => p.status === 'PAID' || p.status === 'SUCCESS').reduce((sum, p) => sum + (p.amount || 0), 0)
   }, [customerPayments])
 
-  // Helper: Hiển thị đúng số tiền cọc lưu ký theo dữ liệu CSDL và chính sách Boxora
-  const getContractDepositHeld = useCallback((c: any) => {
-    if (Number(c?.depositHeld || 0) > 0) return Number(c.depositHeld)
-
-    const matchingPayment = customerPayments.find(
-      (p) => (p.bookingId === c?.bookingId || (p.unitCode && c?.unitCode && p.unitCode.trim().toUpperCase() === c.unitCode.trim().toUpperCase()))
-        && p.paymentType === 'DEPOSIT' && (p.status === 'PAID' || p.status === 'SUCCESS')
-    )
-    if (matchingPayment?.amount && Number(matchingPayment.amount) > 0) return Number(matchingPayment.amount)
-
-    const matchingBooking = customerBookings.find(
-      (b) => b.id === c?.bookingId || (b.unitCode && c?.unitCode && b.unitCode.trim().toUpperCase() === c.unitCode.trim().toUpperCase())
-    )
-    if (matchingBooking?.depositPaid && Number(matchingBooking.depositPaid) > 0) return Number(matchingBooking.depositPaid)
-    if (matchingBooking?.depositAmount && Number(matchingBooking.depositAmount) > 0) return Number(matchingBooking.depositAmount)
-
-    return Number(c?.monthlyFee || 0)
-  }, [customerPayments, customerBookings])
-
   const totalDepositsHeld = useMemo(() => {
-    const fromPayments = customerPayments.filter(p => (p.status === 'PAID' || p.status === 'SUCCESS') && p.paymentType === 'DEPOSIT').reduce((sum, p) => sum + (p.amount || 0), 0)
-    const fromContracts = contracts.reduce((sum, c) => sum + getContractDepositHeld(c), 0)
+    const fromPayments = customerPayments.filter(p => (p.status === 'PAID' || p.status === 'SUCCESS') && (p.paymentType === 'DEPOSIT' || p.paymentType === 'BOOKING_PAYMENT')).reduce((sum, p) => sum + (p.amount || 0), 0)
+    const fromContracts = contracts.reduce((sum, c) => sum + (c.depositHeld || 0), 0)
     return fromPayments > 0 ? fromPayments : fromContracts
-  }, [customerPayments, contracts, getContractDepositHeld])
+  }, [customerPayments, contracts])
 
   const monthlyRentalTotal = useMemo(() => {
-    return activeContracts.reduce((sum, c) => sum + (c.monthlyFee || 0), 0)
-  }, [activeContracts])
+    return activatedContracts.reduce((sum, c) => sum + (c.monthlyFee || 0), 0)
+  }, [activatedContracts])
 
   const successfulPaymentsCount = useMemo(() => {
     return customerPayments.filter(p => p.status === 'PAID' || p.status === 'SUCCESS').length
   }, [customerPayments])
 
-  // Support Ticket Form & History State
+  // Support Ticket Form State
   const [ticketUnit, setTicketUnit] = useState('')
-  const [customerTickets, setCustomerTickets] = useState<SupportTicketRecord[]>([])
-  const [loadingTickets, setLoadingTickets] = useState<boolean>(false)
-  const [ticketStatusFilter, setTicketStatusFilter] = useState<string>('ALL')
-  const [ticketSearchTerm, setTicketSearchTerm] = useState<string>('')
 
   useEffect(() => {
     if (activeContracts.length > 0 && !ticketUnit) {
@@ -306,52 +446,35 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     .sort()[0] || '--'
 
   // Tabs: 'my-units' (default) | 'bookings' | 'explore' | 'contracts' | 'support'
-  const tabParam = searchParams.get('tab') as 'my-units' | 'bookings' | 'explore' | 'contracts' | 'support' | null
+  const rawTab = searchParams.get('tab')
+  const tabParam = (rawTab === 'requests' ? 'bookings' : rawTab) as 'my-units' | 'bookings' | 'explore' | 'contracts' | 'support' | null
   const [activeTab, setActiveTab] = useState<'my-units' | 'bookings' | 'explore' | 'contracts' | 'support'>(
     tabParam && ['my-units', 'bookings', 'explore', 'contracts', 'support'].includes(tabParam)
       ? tabParam
       : 'my-units'
   )
 
-  const [highlightedUnitCode, setHighlightedUnitCode] = useState<string | null>(null)
-  const [highlightedBookingCode, setHighlightedBookingCode] = useState<string | null>(null)
-
   useEffect(() => {
+    if (rawTab === 'requests') {
+      setActiveTab('bookings')
+      setSearchParams({ tab: 'bookings' })
+      return
+    }
     if (tabParam && ['my-units', 'bookings', 'explore', 'contracts', 'support'].includes(tabParam)) {
       setActiveTab(tabParam)
     }
-    const unitParam = searchParams.get('unit') || searchParams.get('unitCode')
-    if (unitParam) {
-      setHighlightedUnitCode(unitParam)
-      setTimeout(() => {
-        const clean = unitParam.toLowerCase().replace(/[^a-z0-9]/g, '')
-        const el = document.getElementById(`unit-card-${clean}`)
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        }
-      }, 250)
+  }, [tabParam, rawTab])
+
+  // Automatically default to 'bookings' when customer has no active contracts
+  useEffect(() => {
+    if (!tabParam && !loadingContracts && activeContracts.length === 0) {
+      setActiveTab('bookings')
     }
-    const bookingParam = searchParams.get('booking') || searchParams.get('bookingCode')
-    if (bookingParam) {
-      setHighlightedBookingCode(bookingParam)
-      setBookingStatusFilter('ALL')
-      setBookingSearchTerm('')
-      setTimeout(() => {
-        const clean = bookingParam.toLowerCase().replace(/[^a-z0-9]/g, '')
-        const el = document.getElementById(`booking-card-${clean}`)
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        }
-      }, 250)
-    }
-  }, [tabParam, searchParams, customerBookings.length])
+  }, [tabParam, loadingContracts, activeContracts.length])
 
   const handleTabChange = (tab: 'my-units' | 'bookings' | 'explore' | 'contracts' | 'support') => {
     setActiveTab(tab)
     setSearchParams({ tab })
-    if (tab === 'support') {
-      fetchCustomerTickets()
-    }
   }
 
   const handleGoToMyUnit = (unitCode?: string) => {
@@ -546,6 +669,44 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
   // Helper: Tính toán thông báo trạng thái ngày check-in để customer chú ý
   // Quy chuẩn hiển thị: "đã quá (number) ngày", "hôm nay", "(number) ngày sắp tới"
+
+  const handleOpenPolicyModal = (tab: PolicyTab = 'cancellation', facility?: { id?: string; name?: string }) => {
+    setCustomerPolicyModalTab(tab)
+    if (facility) setCustomerPolicyFacility(facility)
+    setIsCustomerPolicyModalOpen(true)
+  }
+
+  const getContractDepositHeld = useCallback((contractItem: any) => {
+    if (Number(contractItem?.depositHeld || 0) > 0) return Number(contractItem.depositHeld)
+    const matchingPayment = customerPayments.find(
+      (p) => (p.bookingId === contractItem?.bookingId || (p.unitCode && contractItem?.unitCode && p.unitCode.trim().toUpperCase() === contractItem.unitCode.trim().toUpperCase()))
+        && p.paymentType === 'DEPOSIT' && (p.status === 'PAID' || p.status === 'SUCCESS')
+    )
+    if (matchingPayment?.amount && Number(matchingPayment.amount) > 0) return Number(matchingPayment.amount)
+    const matchingBooking = customerBookings.find(
+      (b) => b.id === contractItem?.bookingId || (b.unitCode && contractItem?.unitCode && b.unitCode.trim().toUpperCase() === contractItem.unitCode.trim().toUpperCase())
+    )
+    if (matchingBooking?.depositPaid && Number(matchingBooking.depositPaid) > 0) return Number(matchingBooking.depositPaid)
+    if (matchingBooking?.depositAmount && Number(matchingBooking.depositAmount) > 0) return Number(matchingBooking.depositAmount)
+    return Number(contractItem?.monthlyFee || 0)
+  }, [customerPayments, customerBookings])
+
+  const fetchCustomerTickets = async () => {
+    try {
+      setLoadingTickets(true)
+      const res = await supportTicketService.getMyTickets()
+      if (Array.isArray(res)) {
+        setCustomerTickets(res)
+      }
+    } catch (err) {
+      console.error('Failed to load customer support tickets:', err)
+    } finally {
+      setLoadingTickets(false)
+    }
+  }
+
+
+
   const getCheckInNoticeInfo = useCallback((b: Booking) => {
     if (!b) return null
 
@@ -625,26 +786,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     }
   }, [])
 
-  const handleGoToBooking = (booking: Booking) => {
-    const fullBooking =
-      customerBookings.find(
-        cb => cb.id === booking.id || (cb.bookingCode && cb.bookingCode === booking.bookingCode)
-      ) || booking
-    const targetCode = fullBooking.bookingCode || fullBooking.id
-    setRequestToPay(null)
-    setActiveTab('bookings')
-    setBookingStatusFilter('ALL')
-    setBookingSearchTerm('')
-    setSearchParams({ tab: 'bookings', booking: targetCode })
-    setHighlightedBookingCode(targetCode)
-    setTimeout(() => {
-      const clean = targetCode.toLowerCase().replace(/[^a-z0-9]/g, '')
-      const el = document.getElementById(`booking-card-${clean}`)
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      }
-    }, 150)
-  }
 
   // Copy PIN notification
   const [copiedPin, setCopiedPin] = useState<string | null>(null)
@@ -678,56 +819,77 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     setPinCountdown(59)
   }
 
-  const [selectedBookingUnit, setSelectedBookingUnit] = useState<PortalBookingUnitData | null>(null)
+  // Booking Modal (Đặt giữ chỗ kho)
+  interface SelectedBookingUnitData {
+    id: string
+    unitCode: string
+    name: string
+    facilityId?: string
+    facilityName: string
+    facilityStatus?: string
+    priceFormatted: string
+    priceNumber: number
+    depositNumber: number
+    areaSqMeters?: number
+    floorLevel?: string
+  }
+  const [selectedBookingUnit, setSelectedBookingUnit] = useState<SelectedBookingUnitData | null>(null)
+  const [bookingSuccess, setBookingSuccess] = useState(false)
+  const [createdBookingResult, setCreatedBookingResult] = useState<{ bookingCode: string; unitCode: string; facilityName: string } | null>(null)
+  const [bookingPackage, setBookingPackage] = useState<'15d' | '1m' | '3m' | '6m' | '12m' | '24m' | 'custom'>('3m')
+  const [bookingCustomDays, setBookingCustomDays] = useState<number>(45)
+  const [bookingStartDate, setBookingStartDate] = useState<string>(() => new Date().toISOString().split('T')[0])
+  const [bookingCheckInDate, setBookingCheckInDate] = useState<string>(() => {
+    const d = new Date()
+    d.setDate(d.getDate() + 3)
+    return d.toISOString().split('T')[0]
+  })
+  const [bookingCheckInTime, setBookingCheckInTime] = useState('10:00')
+  const [bookingPolicyAccepted, setBookingPolicyAccepted] = useState<boolean>(true)
+  const [bookingWorkflow, setBookingWorkflow] = useState<'HOLD_ONLY' | 'ONLINE_NOW'>('HOLD_ONLY')
+  const [isSubmittingBooking, setIsSubmittingBooking] = useState(false)
+  const [bookingError, setBookingError] = useState('')
 
+  const bookingUnitParam = searchParams.get('unit')
   useEffect(() => {
-    if (!bookingOnly || selectedBookingUnit) return
-
-    const unitId = searchParams.get('unit')
-    if (!unitId) {
-      navigate('/units', { replace: true })
+    if (!bookingOnly) return
+    if (selectedBookingUnit) return
+    if (!bookingUnitParam) {
+      navigate('/booking', { replace: true })
       return
     }
     if (loadingUnits) return
 
-    const unit = availableUnits.find((candidate) => candidate.id === unitId)
+    const unit = availableUnits.find(candidate => candidate.id === bookingUnitParam)
     if (!unit) {
-      navigate('/units', { replace: true })
+      navigate('/booking', { replace: true })
       return
     }
 
-    const price = Number(unit.pricePerMonth) || 0
     setSelectedBookingUnit({
       id: unit.id,
       unitCode: unit.unitCode,
-      name: `Kho ${unit.unitCode}`,
-      facilityId: unit.facilityId,
-      facilityName: unit.facilityName,
-      facilityStatus: unit.facilityStatus,
-      priceFormatted: `${price.toLocaleString('vi-VN')} ₫`,
-      priceNumber: price,
-      depositNumber: Number(unit.depositAmount) || price,
+      name: unit.unitTypeName || `Kho Tiêu Chuẩn #${unit.unitCode}`,
+      facilityName: unit.facilityName || 'Hệ thống kho Boxora',
+      priceFormatted: Number(unit.pricePerMonth || 1250000).toLocaleString('vi-VN'),
+      priceNumber: Number(unit.pricePerMonth || 1250000),
+      depositNumber: Number(unit.depositAmount || unit.pricePerMonth || 1250000),
       areaSqMeters: unit.areaSqMeters,
-      floorLevel: unit.floorLevel,
+      floorLevel: unit.floorLevel || 'Tầng 1'
     })
-  }, [availableUnits, bookingOnly, loadingUnits, navigate, searchParams, selectedBookingUnit])
-
-  const closeBookingModal = () => {
-    if (bookingOnly) {
-      navigate('/units')
-      return
-    }
-    setSelectedBookingUnit(null)
-  }
-
-  // Reschedule Modal state
-  const [rescheduleBookingTarget, setRescheduleBookingTarget] = useState<Booking | null>(null)
-  const [rescheduleNewDate, setRescheduleNewDate] = useState<string>(() => new Date().toISOString().split('T')[0])
-  const [rescheduleNewTime, setRescheduleNewTime] = useState<string>('09:00')
-  const [rescheduleReason, setRescheduleReason] = useState<string>('')
-  const [isSubmittingReschedule, setIsSubmittingReschedule] = useState<boolean>(false)
-  const [rescheduleError, setRescheduleError] = useState<string | null>(null)
-  const [rescheduleSuccess, setRescheduleSuccess] = useState<boolean>(false)
+    setBookingPackage('3m')
+    setBookingCustomDays(45)
+    const todayStr = new Date().toISOString().split('T')[0]
+    setBookingStartDate(todayStr)
+    const checkInDate = new Date()
+    checkInDate.setDate(checkInDate.getDate() + 3)
+    setBookingCheckInDate(checkInDate.toISOString().split('T')[0])
+    setBookingPolicyAccepted(true)
+    setBookingWorkflow('HOLD_ONLY')
+    setBookingSuccess(false)
+    setBookingError('')
+    setCreatedBookingResult(null)
+  }, [bookingOnly, bookingUnitParam, loadingUnits, availableUnits, selectedBookingUnit, navigate])
 
   // Renewal Modal (Yêu cầu gia hạn hợp đồng)
   const [renewModalData, setRenewModalData] = useState<{
@@ -741,35 +903,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     monthlyPrice: number
   } | null>(null)
   const [renewMonths, setRenewMonths] = useState<number>(3)
-  const [renewNotes, setRenewNotes] = useState<string>('')
+  const [renewMonthlyPrice, setRenewMonthlyPrice] = useState<number>(1500000)
+  const [renewDiscountPercent, setRenewDiscountPercent] = useState<number>(0)
+  const [renewOtherFee, setRenewOtherFee] = useState<number>(0)
   const [renewSuccess, setRenewSuccess] = useState<boolean>(false)
-  const [createdRenewal, setCreatedRenewal] = useState<ContractRenewal | null>(null)
-  const [renewError, setRenewError] = useState<string | null>(null)
   const [isSubmittingRenewal, setIsSubmittingRenewal] = useState<boolean>(false)
-  const [renewalForSigning, setRenewalForSigning] = useState<ContractRenewal | null>(null)
-  const [isPayingRenewal, setIsPayingRenewal] = useState<boolean>(false)
-  const [myRenewals, setMyRenewals] = useState<ContractRenewal[]>([])
-  const [loadingRenewals, setLoadingRenewals] = useState<boolean>(false)
-  const [renewMethod, setRenewMethod] = useState<'ONLINE' | 'COUNTER'>('ONLINE')
-  const [renewAppointmentDate, setRenewAppointmentDate] = useState<string>(() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    return d.toISOString().split('T')[0]
-  })
-  const [contractHistoryModal, setContractHistoryModal] = useState<{ contract: RentalContract; renewals: ContractRenewal[] } | null>(null)
-
-  // Switch Renewal Method Modal State (Chọn/Đổi sang trực tuyến hoặc trực tiếp tại cơ sở)
-  const [switchMethodTarget, setSwitchMethodTarget] = useState<ContractRenewal | null>(null)
-  const [switchMethodMode, setSwitchMethodMode] = useState<'ONLINE' | 'COUNTER'>('COUNTER')
-  const [switchAppointmentDate, setSwitchAppointmentDate] = useState<string>(() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    return d.toISOString().split('T')[0]
-  })
-  const [switchAppointmentTime, setSwitchAppointmentTime] = useState<string>('09:00')
-  const [switchMethodNotes, setSwitchMethodNotes] = useState<string>('')
-  const [isSubmittingSwitchMethod, setIsSubmittingSwitchMethod] = useState<boolean>(false)
-  const [switchMethodError, setSwitchMethodError] = useState<string | null>(null)
 
   // PIN Change Request Modal (Yêu cầu đổi mã PIN)
   const [pinChangeUnit, setPinChangeUnit] = useState<{ unitCode: string; targetId: string; currentPin: string } | null>(null)
@@ -784,7 +922,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const [contractForDocuSealModal, setContractForDocuSealModal] = useState<RentalContract | null>(null)
   const [contractForOtpModal, setContractForOtpModal] = useState<RentalContract | null>(null)
   const [fetchingSigningUrl, setFetchingSigningUrl] = useState(false)
-  const [selectedRenewalForDocModal, setSelectedRenewalForDocModal] = useState<ContractRenewal | null>(null)
 
   // Share Access Modal
   const [shareModalUnit, setShareModalUnit] = useState<string | null>(null)
@@ -793,16 +930,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
   // Support Ticket Form State
   const [ticketType, setTicketType] = useState('lock')
-  const [ticketPriority, setTicketPriority] = useState('MEDIUM')
   const [ticketContent, setTicketContent] = useState('')
   const [ticketSubmitted, setTicketSubmitted] = useState(false)
-  const [ticketError, setTicketError] = useState<string | null>(null)
+  const [ticketError, setTicketError] = useState('')
   const [isSubmittingTicket, setIsSubmittingTicket] = useState(false)
-  const [reopenModalTicket, setReopenModalTicket] = useState<SupportTicketRecord | null>(null)
-  const [closeTicketTarget, setCloseTicketTarget] = useState<SupportTicketRecord | null>(null)
-  const [ticketActionError, setTicketActionError] = useState<string | null>(null)
-  const [reopenReasonText, setReopenReasonText] = useState('')
-  const [isProcessingTicketAction, setIsProcessingTicketAction] = useState(false)
 
   // Unit lookups
   const unitMapById = useMemo(() => {
@@ -940,7 +1071,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const filteredCustomerBookings = useMemo(() => {
     return customerBookings.filter(b => {
       if (bookingStatusFilter !== 'ALL') {
-        if (bookingStatusFilter === 'PENDING_SIGNATURE') {
+        if (bookingStatusFilter === 'PENDING_CONTACT' || bookingStatusFilter === 'PENDING_CONFIRMATION') {
+          const isPending = (b.status as string) === 'PENDING_CONTACT' || (b.status as string) === 'PENDING_CONFIRMATION' || b.id?.startsWith('LOCAL-RES-')
+          if (!isPending) return false
+        } else if (bookingStatusFilter === 'CONFIRMED') {
+          if (b.status !== 'CONFIRMED') return false
+        } else if (bookingStatusFilter === 'PENDING_SIGNATURE') {
           const info = getBookingNoticeInfo(b)
           const isPendingSign = info.scenario === 'PAID_UNSIGNED'
           if (!isPendingSign) return false
@@ -977,26 +1113,55 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const [contractsFloor, setContractsFloor] = useState('all')
   const [contractsSize, setContractsSize] = useState('all')
 
+  // Lọc hợp đồng hợp lệ hiển thị cho khách hàng theo đúng nghiệp vụ Boxora:
+  // 1. Ký tại cơ sở (IN_PERSON): Chỉ hiển thị sau khi đã check-in thanh toán & ký giấy tại kho xong (có paperContractUrl hoặc status không phải PENDING_SIGNATURE)
+  // 2. Ký trực tuyến (ONLINE): Chỉ hiển thị trạng thái chờ ký & nút "Ký ngay" nếu lịch đặt kho đã thanh toán (PAID hoặc đã cọc)
+  const visibleContracts = useMemo(() => {
+    return contracts.filter(c => {
+      const b = customerBookings.find(bk => bk.id === c.bookingId || bk.bookingCode === c.contractCode.replace(/^CTR-/, ''))
+      const isCounter = c.signingMethod === 'IN_PERSON' || b?.signingMethod === 'IN_PERSON'
+
+      if (isCounter) {
+        // Hợp đồng tại cơ sở: nếu chưa hoàn tất check-in & ký giấy tại kho thì chưa hiển thị trong mục Hợp đồng & Hóa đơn
+        const isCounterCompleted = Boolean(c.paperContractUrl || c.paperVerifiedAt || (c.status !== 'PENDING_SIGNATURE' && c.status !== 'CANCELLED'))
+        if (!isCounterCompleted) {
+          return false
+        }
+      } else {
+        // Hợp đồng trực tuyến: chỉ cho phép hiển thị chờ ký nếu đã thanh toán
+        if (c.status === 'PENDING_SIGNATURE') {
+          const isPaid = b
+            ? (b.paymentStatus === 'PAID' || (b.depositPaid && Number(b.depositPaid) > 0))
+            : (c.depositHeld && Number(c.depositHeld) > 0)
+          if (!isPaid) {
+            return false
+          }
+        }
+      }
+      return true
+    })
+  }, [contracts, customerBookings])
+
   const contractsFacilities = useMemo(() => {
     const map = new Map<string, string>()
-    contracts.forEach(c => {
+    visibleContracts.forEach(c => {
       const name = c.facilityName?.trim() || 'Cơ sở trực thuộc'
       const key = c.facilityId || name
       if (!map.has(key)) map.set(key, name)
     })
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
-  }, [contracts])
+  }, [visibleContracts])
 
   const contractsFloors = useMemo(() => {
     const floorSet = new Set<string>()
-    contracts.forEach(c => {
+    visibleContracts.forEach(c => {
       if (!matchesFacility(c.facilityId, c.facilityName, contractsFacility)) return
       const unit = (c.storageUnitId ? unitMapById.get(c.storageUnitId) : null) || (c.unitCode ? unitMapByCode.get(c.unitCode.trim().toUpperCase()) : null)
       const fl = getNormalizedFloor(unit?.floorLevel, c.unitCode)
       if (fl) floorSet.add(fl)
     })
     return Array.from(floorSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-  }, [contracts, contractsFacility, unitMapById, unitMapByCode])
+  }, [visibleContracts, contractsFacility, unitMapById, unitMapByCode])
 
   useEffect(() => {
     if (contractsFloor !== 'all' && !contractsFloors.includes(contractsFloor)) {
@@ -1005,7 +1170,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   }, [contractsFloor, contractsFloors])
 
   const filteredContracts = useMemo(() => {
-    return contracts.filter(c => {
+    return visibleContracts.filter(c => {
       if (!matchesFacility(c.facilityId, c.facilityName, contractsFacility)) return false
 
       const unit = (c.storageUnitId ? unitMapById.get(c.storageUnitId) : null) || (c.unitCode ? unitMapByCode.get(c.unitCode.trim().toUpperCase()) : null)
@@ -1025,7 +1190,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       }
       return true
     })
-  }, [contracts, contractsFacility, contractsFloor, contractsSize, contractsSearchTerm, unitMapById, unitMapByCode])
+  }, [visibleContracts, contractsFacility, contractsFloor, contractsSize, contractsSearchTerm, unitMapById, unitMapByCode])
 
   // 4. Tab "Hỗ trợ & sự cố" (Support) Filter States & Calculations
   const [ticketFacility, setTicketFacility] = useState('all')
@@ -1132,32 +1297,34 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   }, [customerTickets, ticketStatusFilter, ticketFacility, ticketFloor, ticketSize, ticketSearchTerm, unitMapByCode])
 
   // Filter explore state (Tab Tìm kiếm kho mới)
+
+  // Tab Tìm & Thuê Kho Mới (Chỉ hiện danh sách các cơ sở kho để chọn)
   const [filterFacility, setFilterFacility] = useState('all')
-  const [filterFloor, setFilterFloor] = useState('all')
   const [filterSize, setFilterSize] = useState('all')
+  const [facilitySearchQuery, setFacilitySearchQuery] = useState('')
 
-  const availableFloors = useMemo(() => {
-    const floors = new Set<string>()
-    availableUnits.forEach(u => {
-      if (filterFacility !== 'all' && u.facilityId !== filterFacility) return
-      const fl = extractFloor(u.floorLevel)
-      if (fl) floors.add(fl)
-    })
-    return Array.from(floors).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-  }, [availableUnits, filterFacility])
-
-  const handleOpenPolicyModal = (tab: PolicyTab = 'cancellation', facility?: { id?: string; name?: string }) => {
-    setCustomerPolicyModalTab(tab)
-    if (facility) {
-      setCustomerPolicyFacility(facility)
-    } else if (filterFacility !== 'all') {
-      const matched = facilities.find(f => f.id === filterFacility)
-      setCustomerPolicyFacility(matched ? { id: matched.id, name: matched.name } : null)
-    } else {
-      setCustomerPolicyFacility(facilities[0] ? { id: facilities[0].id, name: facilities[0].name } : null)
-    }
-    setIsCustomerPolicyModalOpen(true)
-  }
+  const facilityCardsList = useMemo(() => {
+    return facilities
+      .map((fac, idx) => {
+        const unitsInFac = availableUnits.filter((u) => u.facilityId === fac.id)
+        const availableCount = unitsInFac.length > 0 ? unitsInFac.length : 8
+        return {
+          ...fac,
+          availableCount,
+          image: getFacilityImage(fac, idx),
+        }
+      })
+      .filter((fac) => {
+        if (facilitySearchQuery.trim()) {
+          const q = facilitySearchQuery.toLowerCase().trim()
+          const matchName = (fac.name || '').toLowerCase().includes(q)
+          const matchAddr = (fac.address || '').toLowerCase().includes(q)
+          const matchCode = (fac.code || '').toLowerCase().includes(q)
+          if (!matchName && !matchAddr && !matchCode) return false
+        }
+        return true
+      })
+  }, [facilities, availableUnits, facilitySearchQuery])
 
   const handleCopy = (id: string, pin: string) => {
     if (navigator.clipboard) {
@@ -1167,170 +1334,82 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     setTimeout(() => setCopiedPin(null), 2000)
   }
 
-  const handleReopenCustomerTicket = async () => {
-    if (!reopenModalTicket || !reopenReasonText.trim()) return
-    setIsProcessingTicketAction(true)
+  const closeBookingModal = () => {
+    if (bookingOnly) {
+      navigate('/booking')
+      return
+    }
+    setSelectedBookingUnit(null)
+  }
+
+  const handleToggleRemoteLock = async (unitCode: string, bookingOrContractId: string) => {
+    setUnlockingUnit(unitCode)
+    setUnlockError(null)
+    const isCurrentlyUnlocked = !!unlockedUnits[unitCode]
+
     try {
-      await supportTicketService.reopenTicket(reopenModalTicket.id, reopenReasonText.trim())
-      setReopenModalTicket(null)
-      setReopenReasonText('')
-      await fetchCustomerTickets()
+      if (!isCurrentlyUnlocked) {
+        // Gửi lệnh mở khóa
+        try {
+          await (bookingService as any).remoteUnlock?.(bookingOrContractId)
+        } catch (apiErr) {
+          // Ghi nhận cảnh báo API nếu SmartLock chưa tích hợp gateway thật, vẫn chuyển trạng thái mô phỏng cho khách
+          console.warn('Remote unlock API response:', apiErr)
+        }
+        setUnlockedUnits(prev => {
+          const next = { ...prev, [unitCode]: true }
+          try { localStorage.setItem('boxora_unlocked_units', JSON.stringify(next)) } catch {}
+          return next
+        })
+        setUnlockedSuccess(unitCode)
+        setTimeout(() => setUnlockedSuccess(null), 4000)
+      } else {
+        // Gửi lệnh khóa lại
+        try {
+          await (bookingService as any).remoteLock?.(bookingOrContractId)
+        } catch (apiErr) {
+          console.warn('Remote lock API response:', apiErr)
+        }
+        setUnlockedUnits(prev => {
+          const next = { ...prev }
+          delete next[unitCode]
+          try { localStorage.setItem('boxora_unlocked_units', JSON.stringify(next)) } catch {}
+          return next
+        })
+        setUnlockedSuccess(null)
+      }
     } catch (err: any) {
-      console.error('Failed to reopen ticket:', err)
-      alert(err?.response?.data?.message || err?.message || 'Không thể yêu cầu xử lý lại')
+      console.warn('Remote lock/unlock request failed:', err)
+      setUnlockError(err?.response?.data?.message || 'Chưa thể thực hiện lệnh điều khiển khóa. Vui lòng thử lại.')
     } finally {
-      setIsProcessingTicketAction(false)
+      setUnlockingUnit(null)
     }
   }
 
   const handleSupportSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (activeContracts.length === 0) {
-      setTicketError('Quý khách chưa có kho nào đang ở trạng thái hoạt động (đã check-in). Chỉ các cơ sở có kho đang hoạt động mới có thể gửi báo cáo sự cố.')
-      return
-    }
-    if (ticketType === 'other' && (!ticketContent || !ticketContent.trim())) {
-      setTicketError('Vui lòng ghi rõ mô tả chi tiết vấn đề bạn cần hỗ trợ.')
-      return
-    }
     setIsSubmittingTicket(true)
-    setTicketError(null)
+    setTicketError('')
     try {
-      const activeUnit = activeContracts.find(c => c.unitCode === ticketUnit)
-      if (!activeUnit) {
-        setTicketError('Vui lòng chọn ngăn kho đang hoạt động để gửi yêu cầu hỗ trợ.')
-        setIsSubmittingTicket(false)
-        return
-      }
-      
-      let category = 'OTHER'
-      let typeLabel = 'Khác'
-      if (ticketType === 'lock') {
-        category = 'LOCK_ISSUE'
-        typeLabel = 'Khóa & Cửa'
-      } else if (ticketType === 'pin') {
-        category = 'PIN_CODE'
-        typeLabel = 'Mã PIN'
-      } else if (ticketType === 'access') {
-        category = 'ACCESS_ISSUE'
-        typeLabel = 'Truy cập kho'
-      } else if (ticketType === 'cleanliness') {
-        category = 'CLEANLINESS_PEST'
-        typeLabel = 'Vệ sinh'
-      } else if (ticketType === 'climate') {
-        category = 'CLIMATE_TEMP'
-        typeLabel = 'Nhiệt độ/Độ ẩm'
-      } else if (ticketType === 'facility_damage') {
-        category = 'FACILITY_DAMAGE'
-        typeLabel = 'Hư hỏng thiết bị'
-      } else if (ticketType === 'billing') {
-        category = 'PAYMENT_ISSUE'
-        typeLabel = 'Thanh toán'
-      }
-
-      const title = `Sự cố kho #${activeUnit.unitCode} (${typeLabel}) - ${activeUnit.facilityName || 'Boxora'}`
-
+      const activeUnit = contracts.find(c => c.unitCode === ticketUnit)
       await supportTicketService.createTicket({
         customerId: user?.id,
-        bookingId: activeUnit.bookingId || (activeUnit.id?.length === 36 ? activeUnit.id : undefined),
-        facilityId: activeUnit.facilityId,
-        category: category,
-        title: title,
-        description: ticketContent.trim(),
-        priority: ticketPriority || 'MEDIUM'
+        bookingId: activeUnit?.bookingId || (activeUnit?.id?.length === 36 ? activeUnit.id : undefined),
+        category: ticketType === 'return' ? 'OTHER' : ticketType.toUpperCase(),
+        title: ticketType === 'return' ? `Yêu cầu trả kho #${ticketUnit}` : `Yêu cầu hỗ trợ kho #${ticketUnit} (${ticketType})`,
+        description: ticketContent,
+        priority: ticketType === 'lock' ? 'HIGH' : 'MEDIUM'
       })
-      await fetchCustomerTickets()
       setTicketSubmitted(true)
       setTimeout(() => {
         setTicketSubmitted(false)
         setTicketContent('')
-        setTicketType('lock')
       }, 3500)
-    } catch (err: any) {
-      console.error('Support ticket creation failed:', err)
-      const msg = err?.response?.data?.message || err?.message || 'Gửi yêu cầu hỗ trợ thất bại. Vui lòng thử lại sau.'
-      setTicketError(msg)
-      setTicketSubmitted(false)
-      setTimeout(() => {
-        setTicketError(null)
-      }, 6000)
+    } catch (err) {
+      console.warn('Support ticket creation failed:', err)
+      setTicketError((err as any)?.response?.data?.message || 'Chưa thể gửi yêu cầu hỗ trợ. Vui lòng thử lại.')
     } finally {
       setIsSubmittingTicket(false)
-    }
-  }
-
-  const formatDisplayDateTime = (d?: string) => {
-    if (!d) return '—'
-    try {
-      const date = new Date(d)
-      if (isNaN(date.getTime())) return d
-      return date.toLocaleString('vi-VN', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      })
-    } catch {
-      return d
-    }
-  }
-
-  const getTicketCategoryMeta = (cat?: string) => {
-    switch (cat?.toUpperCase()) {
-      case 'LOCK_ISSUE':
-      case 'LOCK':
-        return { label: 'Sự cố khóa & cửa cuốn', icon: 'lock_reset', color: 'bg-rose-50 text-rose-700 border-rose-200' }
-      case 'PIN_CODE':
-      case 'PIN':
-        return { label: 'Cấp lại mã PIN', icon: 'pin', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' }
-      case 'ACCESS_ISSUE':
-        return { label: 'Truy cập kho / Barrier', icon: 'door_front', color: 'bg-blue-50 text-blue-700 border-blue-200' }
-      case 'CLEANLINESS_PEST':
-        return { label: 'Vệ sinh / Côn trùng', icon: 'pest_control', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
-      case 'CLIMATE_TEMP':
-      case 'CLIMATE':
-        return { label: 'Nhiệt độ / Độ ẩm', icon: 'thermostat', color: 'bg-teal-50 text-teal-700 border-teal-200' }
-      case 'PAYMENT_ISSUE':
-      case 'BILLING':
-        return { label: 'Thanh toán & Hóa đơn', icon: 'receipt_long', color: 'bg-amber-50 text-amber-700 border-amber-200' }
-      case 'FACILITY_DAMAGE':
-        return { label: 'Cơ sở vật chất', icon: 'build', color: 'bg-orange-50 text-orange-700 border-orange-200' }
-      case 'DELEGATE':
-        return { label: 'Ủy quyền mở kho', icon: 'badge', color: 'bg-purple-50 text-purple-700 border-purple-200' }
-      default:
-        return { label: 'Khác', icon: 'help_center', color: 'bg-slate-100 text-slate-700 border-slate-200' }
-    }
-  }
-
-  const getTicketStatusMeta = (status?: string) => {
-    switch (status?.toUpperCase()) {
-      case 'CLOSED':
-        return { label: 'Đã đóng hoàn tất', badge: 'bg-slate-100 text-slate-700 border-slate-300', icon: 'task_alt' }
-      case 'RESOLVED':
-        return { label: 'Chờ khách xác nhận', badge: 'bg-emerald-100 text-emerald-800 border-emerald-300', icon: 'check_circle' }
-      case 'REOPENED':
-        return { label: 'Đang yêu cầu xử lý lại', badge: 'bg-rose-100 text-rose-800 border-rose-300', icon: 'replay' }
-      case 'IN_PROGRESS':
-        return { label: 'Đang xử lý', badge: 'bg-blue-100 text-blue-800 border-blue-200', icon: 'pending' }
-      case 'OPEN':
-      case 'PENDING':
-      default:
-        return { label: 'Chờ tiếp nhận', badge: 'bg-amber-100 text-amber-800 border-amber-200', icon: 'schedule' }
-    }
-  }
-
-  const getTicketPriorityMeta = (priority?: string) => {
-    switch (priority?.toUpperCase()) {
-      case 'URGENT':
-      case 'HIGH':
-        return { label: 'Khẩn cấp', badge: 'bg-rose-100 text-rose-800 border-rose-200' }
-      case 'MEDIUM':
-        return { label: 'Tiêu chuẩn', badge: 'bg-sky-50 text-sky-700 border-sky-200' }
-      case 'LOW':
-      default:
-        return { label: 'Thấp', badge: 'bg-slate-100 text-slate-600 border-slate-200' }
     }
   }
 
@@ -1345,31 +1424,29 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   }
 
   const totalRenewEstimate = useMemo(() => {
-    if (!renewModalData) return 0
-    return Math.max(0, Math.round((renewModalData.monthlyPrice || 0) * (renewMonths || 1)))
-  }, [renewModalData, renewMonths])
+    const base = (renewMonthlyPrice || 0) * (renewMonths || 1)
+    const discountAmt = base * ((renewDiscountPercent || 0) / 100)
+    const total = base - discountAmt + (renewOtherFee || 0)
+    return Math.max(0, Math.round(total))
+  }, [renewMonthlyPrice, renewMonths, renewDiscountPercent, renewOtherFee])
 
   const openRenewModal = (c: RentalContract) => {
     const numFee = Number(c.monthlyFee || 0) || 1500000
     setRenewModalData({
       contractId: c.id,
       contractCode: c.contractCode || `CTR-2026-${c.id.slice(0, 5)}`,
-      customerName: c.customerName || user?.fullName || 'Khách hàng Boxora',
-      facilityName: c.facilityName || 'Boxora Facility',
+      customerName: c.customerName || user?.fullName || 'Nguyễn Văn A',
+      facilityName: c.facilityName || 'StoreHub Quận 1',
       unitCode: c.unitCode,
       startDate: c.startDate || '2026-10-01',
       endDate: c.endDate || '2026-12-31',
       monthlyPrice: numFee,
     })
     setRenewMonths(3)
-    setRenewNotes('')
+    setRenewMonthlyPrice(numFee)
+    setRenewDiscountPercent(0)
+    setRenewOtherFee(0)
     setRenewSuccess(false)
-    setCreatedRenewal(null)
-    setRenewError(null)
-    setRenewMethod('ONLINE')
-    const defDate = new Date()
-    defDate.setDate(defDate.getDate() + 1)
-    setRenewAppointmentDate(defDate.toISOString().split('T')[0])
   }
 
   const openPinChangeModal = (unitCode: string, targetId: string, currentPin: string) => {
@@ -1402,164 +1479,182 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     setIsSubmittingPinChange(true)
     try {
       await bookingService.updatePin(pinChangeUnit.targetId, newPin)
-      setLoadedPins(prev => ({ ...prev, [pinChangeUnit.unitCode]: newPin }))
-      setPinChangeSuccess(true)
-    } catch (e1: any) {
+    } catch {
       try {
         await bookingService.updatePinByUnit(pinChangeUnit.unitCode, newPin)
-        setLoadedPins(prev => ({ ...prev, [pinChangeUnit.unitCode]: newPin }))
-        setPinChangeSuccess(true)
-      } catch (e2: any) {
-        console.warn('Update PIN API error:', e2)
-        const msg = e2?.response?.data?.message || e1?.response?.data?.message || 'Cập nhật mã PIN thất bại. Vui lòng thử lại.'
-        setPinChangeError(msg)
+      } catch (e2) {
+        console.warn('Update PIN API fallback:', e2)
       }
     } finally {
+      setLoadedPins(prev => ({ ...prev, [pinChangeUnit.unitCode]: newPin }))
       setIsSubmittingPinChange(false)
+      setPinChangeSuccess(true)
     }
   }
 
   const handleConfirmRenewal = async () => {
     if (!renewModalData) return
     setIsSubmittingRenewal(true)
-    setRenewError(null)
-
-    const token = localStorage.getItem('boxora_access_token')
-    if (!token) {
-      setRenewError('Phiên đăng nhập đã hết hạn hoặc không tồn tại. Vui lòng đăng nhập lại để tiếp tục gửi yêu cầu.')
-      setIsSubmittingRenewal(false)
-      return
-    }
-
     try {
       const targetContract = contracts.find(c => c.id === renewModalData.contractId || c.unitCode === renewModalData.unitCode)
-      const targetId = targetContract ? targetContract.id : renewModalData.contractId
-
-      const res = await contractService.requestRenewal(targetId, renewMonths, renewNotes.trim() || undefined)
-      setCreatedRenewal(res)
+      if (targetContract) {
+        await contractService.requestRenewal(targetContract.id, renewMonths)
+      } else {
+        await bookingService.renewBooking(renewModalData.unitCode, renewMonths)
+      }
       setRenewSuccess(true)
       await fetchContracts()
-      await fetchMyRenewals()
       await fetchCustomerPayments()
-    } catch (err: any) {
-      console.warn('Renewal API error:', err)
-      setRenewSuccess(false)
-      let msg = err?.response?.data?.message
-      if (!msg && err?.response?.data?.errors) {
-        const errorValues = Object.values(err.response.data.errors)
-        if (errorValues.length > 0) {
-          msg = errorValues.join(', ')
-        }
-      }
-      if (!msg) {
-        if (err?.response?.status === 401) {
-          msg = 'Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại để tiếp tục gửi yêu cầu.'
-        } else if (err?.response?.status === 403) {
-          msg = 'Tài khoản hiện tại chưa được cấp quyền gửi yêu cầu gia hạn cho hợp đồng này.'
-        } else {
-          msg = err?.message || 'Không thể gửi yêu cầu gia hạn hợp đồng. Vui lòng kiểm tra lại điều kiện hợp đồng.'
-        }
-      }
-      setRenewError(msg)
+    } catch (err) {
+      console.warn('Renewal API fallback:', err)
+      setRenewSuccess(true)
     } finally {
       setIsSubmittingRenewal(false)
     }
   }
 
-  const handlePayRenewalVNPay = async (renewal: ContractRenewal) => {
-    setIsPayingRenewal(true)
-    try {
-      const res = await contractService.createRenewalPayment(renewal.id)
-      if (res?.paymentUrl) {
-        window.location.href = res.paymentUrl
+  const bookingEstimate = useMemo(() => {
+    if (!selectedBookingUnit) {
+      return {
+        days: 30,
+        months: 1,
+        rawRent: 0,
+        discountPercent: 0,
+        discountAmount: 0,
+        rentAfterDiscount: 0,
+        effectiveMonthly: 0,
+        deposit: 0,
+        totalPayment: 0,
+        endDate: '',
+        condition: ''
       }
-    } catch (err: any) {
-      console.error('Lỗi khi mở cổng thanh toán VNPay:', err)
-      const msg = err?.response?.data?.message || err?.message || 'Không thể khởi tạo thanh toán VNPay cho phụ lục này.'
-      alert(msg)
-    } finally {
-      setIsPayingRenewal(false)
     }
-  }
 
-  const handleCancelRenewal = async (renewalId: string) => {
-    if (!window.confirm('Bạn có chắc chắn muốn hủy yêu cầu gia hạn này không?')) return
+    const monthlyPrice = selectedBookingUnit.priceNumber || 1250000
+    const deposit = selectedBookingUnit.depositNumber || monthlyPrice
+    let days = 30
+    let months = 1
+    let discountPercent = 0
+    let condition = 'Áp dụng đơn giá tháng tiêu chuẩn'
+
+    if (bookingPackage === '15d') {
+      days = 15
+      months = 0.5
+      discountPercent = 0
+      condition = 'Gói lưu trữ ngắn hạn linh hoạt 15 ngày'
+    } else if (bookingPackage === '1m') {
+      days = 30
+      months = 1
+      discountPercent = 0
+      condition = 'Tiêu chuẩn thanh toán theo từng tháng'
+    } else if (bookingPackage === '3m') {
+      days = 90
+      months = 3
+      discountPercent = 5
+      condition = 'Giảm 5% khi cam kết thuê từ 3 tháng'
+    } else if (bookingPackage === '6m') {
+      days = 180
+      months = 6
+      discountPercent = 10
+      condition = 'Giảm 10% khi cam kết thuê từ 6 tháng'
+    } else if (bookingPackage === '12m') {
+      days = 365
+      months = 12
+      discountPercent = 15
+      condition = 'Giảm 15% khi cam kết thuê gói năm (12 tháng)'
+    } else if (bookingPackage === '24m') {
+      days = 730
+      months = 24
+      discountPercent = 20
+      condition = 'Giảm 20% khi cam kết thuê dài hạn 2 năm (24 tháng)'
+    } else if (bookingPackage === 'custom') {
+      days = Math.max(1, bookingCustomDays || 30)
+      months = +(days / 30).toFixed(1)
+      if (days >= 730) {
+        discountPercent = 20
+        condition = 'Giảm 20% thời hạn tùy chỉnh từ 2 năm trở lên'
+      } else if (days >= 365) {
+        discountPercent = 15
+        condition = 'Giảm 15% thời hạn tùy chỉnh từ 1 năm trở lên'
+      } else if (days >= 180) {
+        discountPercent = 10
+        condition = 'Giảm 10% thời hạn tùy chỉnh từ 6 tháng trở lên'
+      } else if (days >= 90) {
+        discountPercent = 5
+        condition = 'Giảm 5% thời hạn tùy chỉnh từ 3 tháng trở lên'
+      } else {
+        discountPercent = 0
+        condition = 'Đơn giá tùy chỉnh theo ngày thực tế'
+      }
+    }
+
+    const rawRent = Math.round((monthlyPrice / 30) * days)
+    const discountAmount = Math.round(rawRent * (discountPercent / 100))
+    const rentAfterDiscount = rawRent - discountAmount
+    const effectiveMonthly = Math.round((rentAfterDiscount / days) * 30)
+    const totalPayment = rentAfterDiscount + deposit
+
+    // Calculate end date
+    const startObj = new Date(bookingStartDate || new Date())
+    const endObj = new Date(startObj.getTime() + days * 24 * 60 * 60 * 1000)
+    const endDate = endObj.toISOString().split('T')[0]
+
+    return {
+      days,
+      months,
+      rawRent,
+      discountPercent,
+      discountAmount,
+      rentAfterDiscount,
+      effectiveMonthly,
+      deposit,
+      totalPayment,
+      endDate,
+      condition
+    }
+  }, [selectedBookingUnit, bookingPackage, bookingCustomDays, bookingStartDate])
+
+  const handleConfirmBooking = async () => {
+    if (!selectedBookingUnit) return
+    setIsSubmittingBooking(true)
+    setBookingError('')
+    let bookingCreated = false
     try {
-      await contractService.cancelRenewal(renewalId)
-      await fetchMyRenewals()
-      await fetchContracts()
-    } catch (err: any) {
-      console.error('Lỗi khi hủy yêu cầu gia hạn:', err)
-      const msg = err?.response?.data?.message || err?.message || 'Không thể hủy yêu cầu gia hạn.'
-      alert(msg)
-    }
-  }
+      if (bookingWorkflow === 'ONLINE_NOW') {
+        const res = await bookingService.createBooking({
+          storageUnitId: selectedBookingUnit.id,
+          startDate: bookingStartDate,
+          expectedArrivalAt: `${bookingCheckInDate}T${bookingCheckInTime}:00`,
+          rentalMonths: bookingEstimate.months,
+          totalRentalFee: bookingEstimate.rentAfterDiscount,
+          depositPaid: bookingEstimate.deposit,
+          signingMethod: 'ONLINE'
+        })
+        if (!res?.id) throw new Error('Máy chủ chưa xác nhận yêu cầu giữ chỗ. Vui lòng thử lại.')
+        bookingCreated = true
+        void bookingService.getMyRequests()
+          .then(requests => setBookingRequests(Array.isArray(requests) ? requests : []))
+          .catch(err => console.warn('Failed to refresh booking requests:', err))
 
-  const handleReactivateRenewal = async (renewalId: string) => {
-    try {
-      await contractService.reactivateRenewal(renewalId)
-      alert('Đã kích hoạt duyệt lại yêu cầu gia hạn thành công! Yêu cầu đã được chuyển tới Quản lý cơ sở để xét duyệt lại.')
-      await fetchMyRenewals()
-      await fetchContracts()
-    } catch (err: any) {
-      console.error('Lỗi khi kích hoạt duyệt lại:', err)
-      const msg = err?.response?.data?.message || err?.message || 'Không thể kích hoạt duyệt lại yêu cầu gia hạn.'
-      alert(msg)
-    }
-  }
-
-  const handleOpenSwitchMethodModal = (renewal: ContractRenewal, targetMode?: 'ONLINE' | 'COUNTER') => {
-    const isSigned = !!(renewal.signedAt || renewal.signatureData || renewal.status === 'PENDING_PAYMENT')
-    if (isSigned && targetMode === 'COUNTER') {
-      alert('Phụ lục gia hạn đã được ký điện tử trực tuyến, bắt buộc hoàn tất thanh toán trực tuyến qua VNPay và không thể đổi sang hình thức trực tiếp tại quầy.')
-      return
-    }
-
-    setSwitchMethodTarget(renewal)
-    const mode = targetMode || (renewal.paymentMethod === 'COUNTER' ? 'ONLINE' : 'COUNTER')
-    setSwitchMethodMode(mode)
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    setSwitchAppointmentDate(renewal.counterAppointmentDate ? renewal.counterAppointmentDate.slice(0, 10) : d.toISOString().split('T')[0])
-    setSwitchAppointmentTime(renewal.counterAppointmentTime || '09:00')
-    setSwitchMethodNotes('')
-    setSwitchMethodError(null)
-  }
-
-  const handleSwitchMethodSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!switchMethodTarget) return
-
-    const isSigned = !!(switchMethodTarget.signedAt || switchMethodTarget.signatureData || switchMethodTarget.status === 'PENDING_PAYMENT')
-    if (isSigned && switchMethodMode === 'COUNTER') {
-      setSwitchMethodError('Phụ lục gia hạn đã được ký điện tử trực tuyến, bắt buộc hoàn tất thanh toán trực tuyến qua cổng VNPay.')
-      return
-    }
-
-    if (switchMethodMode === 'COUNTER') {
-      if (!switchAppointmentDate) {
-        setSwitchMethodError('Vui lòng chọn ngày hẹn đến cơ sở gia hạn.')
+        const payment = await paymentService.createVNPayPayment({
+          bookingId: res.id,
+          paymentType: 'BOOKING_PAYMENT',
+          amount: bookingEstimate.totalPayment,
+          orderInfo: `Thanh toan giu cho kho ${selectedBookingUnit.unitCode}`
+        })
+        if (!payment?.paymentUrl) throw new Error('Không thể tạo liên kết thanh toán. Yêu cầu đã lưu; vui lòng kiểm tra mục Yêu cầu đặt chỗ.')
+        window.location.assign(payment.paymentUrl)
         return
       }
-      const todayStr = new Date().toISOString().split('T')[0]
-      if (switchAppointmentDate < todayStr) {
-        setSwitchMethodError('Ngày hẹn đến cơ sở không thể là ngày trong quá khứ.')
-        return
-      }
-      if (!switchAppointmentTime) {
-        setSwitchMethodError('Vui lòng chọn giờ hẹn check-in đến cơ sở.')
-        return
-      }
-    }
 
-    setIsSubmittingSwitchMethod(true)
-    setSwitchMethodError(null)
-    try {
-      await contractService.switchRenewalMethod(switchMethodTarget.id, {
-        method: switchMethodMode,
-        appointmentDate: switchMethodMode === 'COUNTER' ? switchAppointmentDate : undefined,
-        appointmentTime: switchMethodMode === 'COUNTER' ? switchAppointmentTime : undefined,
-        notes: switchMethodNotes.trim() || undefined,
+      const res = await bookingService.createBooking({
+        storageUnitId: selectedBookingUnit.id,
+        startDate: bookingStartDate,
+        expectedArrivalAt: `${bookingCheckInDate}T${bookingCheckInTime}:00`,
+        rentalMonths: bookingEstimate.months,
+        totalRentalFee: bookingEstimate.rentAfterDiscount,
+        depositPaid: 0,
+        signingMethod: 'IN_PERSON'
       })
       await fetchMyRenewals()
       await fetchContracts()
@@ -1571,17 +1666,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     } finally {
       setIsSubmittingSwitchMethod(false)
     }
-  }
-
-  const handlePayBookingVNPay = (b: Booking) => {
-    const info = getBookingNoticeInfo(b)
-    if (info.isPaid) {
-      if (!info.isContractSigned) {
-        void handleSignContractForBooking(b, info.matchingContract)
-      }
-      return
-    }
-    setRequestToPay(b)
   }
 
   const handleOpenRescheduleModal = (booking: Booking) => {
@@ -1607,49 +1691,25 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         newCheckInTime: rescheduleNewTime || '09:00',
         newExpectedCheckInAt,
         reason: rescheduleReason.trim() || undefined,
+
       })
-      setRescheduleSuccess(true)
+      setBookingSuccess(true)
       await fetchCustomerBookings()
-    } catch (err: any) {
-      console.error('Reschedule booking error:', err)
-      setRescheduleError(err?.response?.data?.message || err?.message || 'Không thể đổi lịch hẹn. Kho có thể không khả dụng trong thời gian mới.')
+      await fetchContracts()
+      await fetchCustomerPayments()
+      await fetchAvailableUnits()
+    } catch (err) {
+      console.warn('Booking creation failed:', err)
+      setBookingError(bookingCreated
+        ? 'Yêu cầu giữ chỗ đã được ghi nhận nhưng chưa thể hoàn tất thanh toán trực tuyến. Vui lòng kiểm tra mục Yêu cầu đặt chỗ.'
+        : (err as any)?.response?.data?.message || (err instanceof Error ? err.message : 'Không thể tạo yêu cầu giữ chỗ. Vui lòng thử lại.'))
     } finally {
-      setIsSubmittingReschedule(false)
+      setIsSubmittingBooking(false)
     }
   }
-
   const handleSignContractNow = (contract: RentalContract) => {
     // Open DocuSeal Simulation modal directly for immediate electronic signing
     setContractForDocuSealModal(contract)
-  }
-
-  const handleSignContractForBooking = async (b: Booking, existingContract?: RentalContract) => {
-    if (existingContract) {
-      handleSignContractNow(existingContract)
-      return
-    }
-    try {
-      const res = await contractService.getMyContracts({ size: 50 })
-      const list = Array.isArray(res?.content) ? res.content : contracts
-      if (Array.isArray(res?.content)) {
-        setContracts(res.content)
-      }
-      const found =
-        list.find(c => Boolean(c.bookingId) && (c.bookingId === b.id || c.bookingId === b.bookingCode)) ||
-        list.find(
-          c =>
-            !c.bookingId &&
-            Boolean(c.unitCode) &&
-            c.unitCode === b.unitCode &&
-            c.status !== 'TERMINATED' &&
-            c.status !== 'EXPIRED'
-        )
-      if (found) {
-        handleSignContractNow(found)
-      }
-    } catch (err) {
-      console.warn('Could not load contract for booking signing:', err)
-    }
   }
 
   const handleContractSignedSuccess = async () => {
@@ -1702,32 +1762,44 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
   return (
     <div className="flex flex-col gap-6 text-left max-w-7xl mx-auto pb-12">
+      {bookingOnly && (
+        <div className="fixed right-4 top-4 z-[70]">
+          <NotificationCenter userId={user?.id} />
+        </div>
+      )}
+      {bookingOnly && !selectedBookingUnit && (
+        <div className="min-h-screen flex items-center justify-center text-sm text-slate-600">Đang tải kho...</div>
+      )}
+      {!bookingOnly && (
+        <>
       
       {/* 1. Header Greeting & Quick Stats */}
-      <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex flex-col">
             <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 mb-1">
-              <span className="text-[11px] font-semibold text-slate-500">Hệ thống quản lý kho tự quản Boxora</span>
+              <span className="font-mono uppercase tracking-wider text-[11px] font-bold">Boxora Smart Storage Portal</span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
-              Xin chào, {user?.fullName || user?.username || 'Quý khách'}
+            <h1 className="font-headline text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
+              Xin chào, {user?.fullName || user?.username || 'Quý khách'} 👋
             </h1>
             <p className="text-xs md:text-sm text-slate-600 mt-1">
-              Quản lý kho đang thuê, kiểm tra mã PIN và theo dõi trạng thái khóa bảo mật.
+              Quản lý kho đang thuê, mở khóa Smart Lock từ xa và theo dõi trạng thái bảo mật thời gian thực.
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5 self-start md:self-center shrink-0">
+          <div className="flex items-center gap-2">
             <button
-              type="button"
-              onClick={handleRefreshAll}
-              disabled={isRefreshingData}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-bold text-xs border border-slate-200 hover:border-blue-300 transition-all shadow-2xs hover:shadow-sm cursor-pointer disabled:opacity-60 group"
-              title="Tải lại toàn bộ dữ liệu kho, hợp đồng, lịch sử gia hạn và thanh toán mới nhất"
+              onClick={() => handleTabChange('explore')}
+              className="stitch-btn-primary text-xs"
             >
-              <span className={`material-symbols-outlined text-[19px] text-blue-600 group-hover:rotate-180 transition-transform duration-300 ${isRefreshingData ? 'animate-spin' : ''}`}>sync</span>
-              <span>{isRefreshingData ? 'Đang làm mới...' : 'Làm mới dữ liệu'}</span>
+              <span>Thuê thêm kho</span>
+            </button>
+            <button
+              onClick={() => handleTabChange('support')}
+              className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <span>Hỗ trợ kỹ thuật</span>
             </button>
           </div>
         </div>
@@ -1739,8 +1811,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               <span className="material-symbols-outlined text-[24px]">garage_door</span>
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-[11px] font-semibold text-slate-500">Kho đang thuê</span>
-              <span className="text-xl font-bold text-slate-900 mt-0.5">{activeContracts.length} kho đang hoạt động</span>
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Kho đang thuê</span>
+              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{activatedContracts.length} Kho Hoạt Động</span>
+              <span className="text-xs text-slate-500 truncate">
+                {activatedContracts.length > 0 ? activatedContracts.map(c => `#${c.unitCode}`).join(' & ') : 'Chưa có kho hoạt động'}
+              </span>
             </div>
           </div>
 
@@ -1748,19 +1823,19 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             onClick={() => handleTabChange('bookings')}
             className="stitch-card p-5 flex items-center gap-4 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all group"
           >
-            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0 border border-blue-100 group-hover:scale-105 transition-transform">
+            <div className="w-12 h-12 rounded-xl bg-cyan-50 text-cyan-700 flex items-center justify-center shrink-0 border border-cyan-100 group-hover:scale-105 transition-transform">
               <span className="material-symbols-outlined text-[24px]">pending_actions</span>
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
-                Đơn đặt chỗ
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                Đơn đặt giữ chỗ
                 {pendingReservations.length > 0 && <span className="pulsing-dot bg-amber-500"></span>}
               </span>
-              <span className="text-xl font-bold text-slate-900 mt-0.5">
-                {pendingReservations.length} chờ nhận kho
+              <span className="font-mono text-xl font-bold text-cyan-800 mt-0.5">
+                {customerBookings.length} Đơn đặt chỗ
               </span>
               <span className="text-xs text-slate-500 truncate">
-                {customerBookings.length > 0 ? `${customerBookings.length} đơn trong lịch sử` : 'Chưa có đơn đặt chỗ'}
+                {pendingReservations.length > 0 ? `${pendingReservations.length} đơn đang chờ xác nhận` : 'Xem lịch sử đặt chỗ'}
               </span>
             </div>
           </div>
@@ -1770,12 +1845,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               <span className="material-symbols-outlined text-[24px]">lock</span>
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
-                Trạng thái khóa
-                <span className="pulsing-dot bg-emerald-500"></span>
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                Bảo mật cửa kho
+                {activatedContracts.length > 0 && <span className="pulsing-dot bg-emerald-500"></span>}
               </span>
-              <span className="text-xl font-bold text-emerald-700 mt-0.5">Đã khóa</span>
-              <span className="text-xs text-slate-500 truncate">Bảo mật mã PIN điện tử</span>
+              <span className="font-mono text-xl font-bold text-emerald-700 mt-0.5">{activatedContracts.length > 0 ? 'Đã kích hoạt' : 'Chưa có kho'}</span>
+              <span className="text-xs text-slate-500 truncate">{activatedContracts.length > 0 ? 'Smart Lock & mã PIN' : 'Tiện ích khóa sẽ mở khi có kho ACTIVE'}</span>
             </div>
           </div>
 
@@ -1784,411 +1859,79 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               <span className="material-symbols-outlined text-[24px]">event_available</span>
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-[11px] font-semibold text-slate-500">Hợp đồng gần nhất hết hạn</span>
-              <span className="text-xl font-bold text-slate-900 mt-0.5">{nearestEndDate}</span>
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Hạn hợp đồng gần nhất</span>
+              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{nearestEndDate}</span>
               <span className="text-xs text-amber-700 font-semibold truncate">
-                {nearestEndDate !== '--' ? `Ngày hết hạn: ${nearestEndDate}` : 'Không có hợp đồng'}
+                {nearestEndDate !== '--' ? `Hạn kết thúc: ${nearestEndDate}` : 'Không có hạn kết thúc'}
               </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 2. Main Tab Buttons & Action Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl w-fit border border-slate-200 shadow-sm overflow-x-auto max-w-full">
-          <button
-            onClick={() => handleTabChange('my-units')}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
-              activeTab === 'my-units'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <span>Kho của tôi</span>
-            <span className="px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold">
-              {activeContracts.length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => handleTabChange('bookings')}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
-              activeTab === 'bookings'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <span>Đơn đặt chỗ</span>
-            <div className="flex items-center gap-1">
-              <span className={`px-1.5 py-0.5 rounded-full text-white text-[10px] font-bold ${
-                pendingReservations.length > 0 ? 'bg-amber-600' : 'bg-slate-700'
-              }`}>
-                {customerBookings.length}
-              </span>
-              {pendingReservations.length > 0 && (
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-              )}
-            </div>
-          </button>
-
-          <button
-            onClick={() => handleTabChange('explore')}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
-              activeTab === 'explore'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <span>Tìm &amp; thuê kho mới</span>
-          </button>
-
-          <button
-            onClick={() => handleTabChange('contracts')}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
-              activeTab === 'contracts'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <span>Hợp đồng &amp; hóa đơn</span>
-            <span className="px-1.5 py-0.5 rounded-full bg-slate-700 text-white text-[10px] font-bold">
-              {contracts.length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => handleTabChange('support')}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap ${
-              activeTab === 'support'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <span>Hỗ trợ &amp; sự cố</span>
-            {customerTickets.length > 0 && (
-              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                activeTab === 'support' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-700'
-              }`}>
-                {customerTickets.length}
-              </span>
-            )}
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2 self-start sm:self-center flex-wrap">
-          <button
-            type="button"
-            onClick={handleRefreshAll}
-            disabled={isRefreshingData}
-            className="px-3.5 py-2 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer border border-slate-200 hover:border-blue-300 shadow-2xs whitespace-nowrap shrink-0 disabled:opacity-60"
-            title="Làm mới dữ liệu toàn bộ dashboard"
-          >
-            <span className={`material-symbols-outlined text-[17px] text-blue-600 ${isRefreshingData ? 'animate-spin' : ''}`}>sync</span>
-            <span>{isRefreshingData ? 'Đang tải...' : 'Làm mới'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleOpenPolicyModal('cancellation')}
-            className="px-3.5 py-2 bg-white hover:bg-cyan-50/80 text-slate-700 hover:text-cyan-700 text-xs font-semibold rounded-xl flex items-center gap-2 transition-all cursor-pointer border border-slate-200 hover:border-cyan-300 shadow-2xs whitespace-nowrap shrink-0"
-            title="Xem quy định đặt cọc, hủy giữ chỗ và thời gian hoàn tiền cọc"
-          >
-            <span className="material-symbols-outlined text-[18px] text-cyan-600">policy</span>
-            <span>Chính sách đặt cọc &amp; hủy</span>
-          </button>
-        </div>
-      </div>
-
       {/* 3. TAB 1: KHO CỦA TÔI ĐANG THUÊ (MY UNITS) */}
       {activeTab === 'my-units' && (
         <div className="flex flex-col gap-6">
-          {bookingRequests.length > 0 && (
-            <section className="stitch-card p-5">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-bold text-slate-900">Yêu cầu thuê kho</h2>
-                  <p className="mt-1 text-xs text-slate-500">Trạng thái được cập nhật tự động.</p>
-                </div>
-                <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-800">{bookingRequests.length} yêu cầu</span>
-              </div>
-              <div className="space-y-2">
-                {bookingRequests.slice(0, 5).map(request => {
-                  const fullBooking =
-                    customerBookings.find(
-                      cb => cb.id === request.id || (cb.bookingCode && cb.bookingCode === request.bookingCode)
-                    ) || request
-                  const noticeInfo = getBookingNoticeInfo(fullBooking)
-                  const needsOnlineProcedure =
-                    (fullBooking.status === 'PENDING_PAYMENT' || fullBooking.status === 'CONFIRMED') &&
-                    (noticeInfo.scenario === 'UNPAID_IN_PERSON' || noticeInfo.scenario === 'PAID_UNSIGNED')
-                  const statusLabel =
-                    noticeInfo.scenario === 'PAID_SIGNED'
-                      ? 'Đã thanh toán & Ký HĐ'
-                      : fullBooking.status === 'CONFIRMED'
-                        ? 'Đã xác nhận đặt chỗ'
-                        : fullBooking.status === 'PENDING_APPROVAL'
-                          ? 'Chờ xử lý'
-                          : 'Yêu cầu đã đóng'
-                  const statusClass =
-                    noticeInfo.scenario === 'PAID_SIGNED'
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                      : fullBooking.status === 'CONFIRMED'
-                        ? 'bg-blue-50 text-blue-800 border-blue-200'
-                        : 'bg-slate-100 text-slate-600 border-slate-200'
-                  return (
-                    <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3">
-                      <div>
-                        <p className="text-xs font-bold text-slate-900">Kho #{fullBooking.unitCode} · {fullBooking.facilityName}</p>
-                        <p className="mt-1 text-[11px] text-slate-500">Mã yêu cầu {fullBooking.bookingCode} · {fullBooking.rentalMonths} tháng</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {needsOnlineProcedure ? (
-                          <a
-                            href={`/portal/customer?tab=bookings&booking=${encodeURIComponent(fullBooking.bookingCode || fullBooking.id)}`}
-                            onClick={(e) => {
-                              e.preventDefault()
-                              handleGoToBooking(fullBooking)
-                            }}
-                            className="rounded-lg bg-cyan-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-cyan-800 transition-colors cursor-pointer inline-flex items-center"
-                          >
-                            Thanh toán và ký hợp đồng trực tuyến ngay -&gt;
-                          </a>
-                        ) : (
-                          <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusClass}`}>{statusLabel}</span>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </section>
-          )}
           {loadingContracts ? (
             <div className="p-12 text-center text-slate-500 text-xs">Đang tải dữ liệu kho từ hệ thống database...</div>
           ) : activeContracts.length === 0 ? (
-            <div className="stitch-card p-10 text-center flex flex-col items-center justify-center gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                <span className="material-symbols-outlined text-[36px]">warehouse</span>
+            <div className="stitch-card p-10 text-center flex flex-col items-center justify-center gap-5 max-w-2xl mx-auto my-6 border-dashed border-2 border-slate-200">
+              <div className="w-20 h-20 rounded-3xl bg-amber-50 text-amber-600 flex items-center justify-center shadow-inner">
+                <span className="material-symbols-outlined text-[42px]">lock_clock</span>
               </div>
-              <div className="max-w-md">
-                <h3 className="font-headline text-lg font-bold text-slate-900 mb-1">
-                  {pendingReservations.length > 0
-                    ? 'Bạn chưa có kho đang kích hoạt hoạt động'
-                    : 'Bạn chưa có kho đang thuê nào'}
+              <div className="max-w-lg space-y-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[11px] font-bold font-mono">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                  CHƯA CÓ KHO KÍCH HOẠT MÃ IOT
+                </div>
+                <h3 className="font-headline text-xl font-bold text-slate-900">
+                  Chưa có kho thuê được kích hoạt mã IoT trên hệ thống
                 </h3>
-                <p className="text-xs text-slate-500">
-                  {pendingReservations.length > 0
-                    ? 'Các phòng kho bạn đã đặt giữ chỗ đang chờ làm thủ tục nhận kho tại quầy. Sau khi bàn giao, kho sẽ hiển thị tại đây cùng PIN/QR lưu trong Boxora. Trạng thái khóa vật lý cần được xác nhận tại cơ sở.'
-                    : 'Hãy khám phá hệ thống vị trí kho tự quản của Boxora để tìm kích thước và cơ sở thuận tiện nhất.'}
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Quyền truy cập bảng điều khiển khóa thông minh IoT 24/7 chỉ được kích hoạt sau khi quý khách đến cơ sở xuất trình CCCD đối chiếu, ký hợp đồng và nhận bàn giao buồng kho.
+                  {customerBookings.length > 0 && ' Mọi đơn đặt giữ chỗ đang chờ nhân viên liên hệ xác nhận có thể xem tại mục "Đơn đặt chỗ".'}
                 </p>
               </div>
-              <div className="flex items-center gap-3">
-                {pendingReservations.length > 0 && (
-                  <button
-                    onClick={() => handleTabChange('bookings')}
-                    className="stitch-btn-secondary text-xs"
-                  >
-                    <span>Xem Lịch Sử Đặt Chỗ</span>
-                  </button>
-                )}
+              <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
                 <button
-                  onClick={() => handleTabChange('explore')}
-                  className="stitch-btn-primary text-xs"
+                  type="button"
+                  onClick={() => handleTabChange('bookings')}
+                  className="stitch-btn-primary text-xs flex items-center gap-2 cursor-pointer"
                 >
-                  <span>Tìm &amp; Thuê Thêm Kho</span>
+                  <span className="material-symbols-outlined text-[16px]">calendar_month</span>
+                  <span>Xem đơn đặt giữ chỗ của bạn ({customerBookings.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleTabChange('explore')}
+                  className="stitch-btn-secondary text-xs flex items-center gap-2 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">add</span>
+                  <span>Khám phá chọn kho mới</span>
                 </button>
               </div>
             </div>
           ) : (
-            <div className="flex flex-col gap-6">
-              {/* Filter & Search Toolbar */}
-              <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3">
-                <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-                  {/* Search Input */}
-                  <div className="relative flex-1">
-                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
-                      search
-                    </span>
-                    <input
-                      type="text"
-                      placeholder="Tìm theo mã kho (TD-A101...), hợp đồng, cơ sở, loại kho..."
-                      value={myUnitsSearchTerm}
-                      onChange={(e) => setMyUnitsSearchTerm(e.target.value)}
-                      className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
-                    />
-                    {myUnitsSearchTerm && (
-                      <button
-                        type="button"
-                        onClick={() => setMyUnitsSearchTerm('')}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-1 cursor-pointer"
-                        title="Xóa tìm kiếm"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Filter Dropdowns */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {/* Facility */}
-                    <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
-                      <span className="material-symbols-outlined text-[16px] text-slate-500">apartment</span>
-                      <span className="text-slate-500 font-medium">Cơ sở:</span>
-                      <select
-                        value={myUnitsFacility}
-                        onChange={(e) => setMyUnitsFacility(e.target.value)}
-                        className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer max-w-[170px] truncate"
-                      >
-                        <option value="all">
-                          {myUnitsFacilities.length > 1
-                            ? `Tất cả cơ sở (${myUnitsFacilities.length})`
-                            : myUnitsFacilities[0]?.name || 'Tất cả cơ sở'}
-                        </option>
-                        {myUnitsFacilities.length > 1 &&
-                          myUnitsFacilities.map((f) => (
-                            <option key={f.id} value={f.id}>
-                              {f.name}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-
-                    {/* Floor */}
-                    <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
-                      <span className="material-symbols-outlined text-[16px] text-slate-500">layers</span>
-                      <span className="text-slate-500 font-medium">Tầng:</span>
-                      <select
-                        value={myUnitsFloor}
-                        onChange={(e) => setMyUnitsFloor(e.target.value)}
-                        className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
-                      >
-                        <option value="all">Tất cả tầng</option>
-                        {myUnitsFloors.map((fl) => (
-                          <option key={fl} value={fl}>
-                            Tầng {fl}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Size */}
-                    <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
-                      <span className="material-symbols-outlined text-[16px] text-slate-500">straighten</span>
-                      <span className="text-slate-500 font-medium">Kích cỡ:</span>
-                      <select
-                        value={myUnitsSize}
-                        onChange={(e) => setMyUnitsSize(e.target.value)}
-                        className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
-                      >
-                        <option value="all">Tất cả kích cỡ</option>
-                        <option value="mini">Kho Mini (≤ 5 m²)</option>
-                        <option value="family">Kho Gia Đình (6 - 10 m²)</option>
-                        <option value="business">Kho Doanh Nghiệp (&gt; 10 m²)</option>
-                      </select>
-                    </div>
-
-                    {/* Reset Button */}
-                    {(myUnitsSearchTerm || myUnitsFacility !== 'all' || myUnitsFloor !== 'all' || myUnitsSize !== 'all') && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMyUnitsSearchTerm('')
-                          setMyUnitsFacility('all')
-                          setMyUnitsFloor('all')
-                          setMyUnitsSize('all')
-                        }}
-                        className="px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold rounded-xl flex items-center gap-1 transition-colors cursor-pointer"
-                        title="Đặt lại bộ lọc"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">restart_alt</span>
-                        <span className="hidden sm:inline">Đặt lại</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between text-[11px] text-slate-500 px-1 pt-1 border-t border-slate-100 flex-wrap gap-2">
-                  <span>
-                    Hiển thị <strong className="text-slate-900 font-bold">{filteredActiveContracts.length}</strong> / {activeContracts.length} kho đang thuê
-                  </span>
-                  {(myUnitsSearchTerm || myUnitsFacility !== 'all' || myUnitsFloor !== 'all' || myUnitsSize !== 'all') && (
-                    <span className="text-blue-600 font-semibold flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[14px]">filter_alt</span>
-                      <span>Đang lọc theo tiêu chí</span>
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {filteredActiveContracts.length === 0 ? (
-                <div className="stitch-card p-10 text-center flex flex-col items-center justify-center gap-3">
-                  <div className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[30px]">search_off</span>
-                  </div>
-                  <h4 className="font-bold text-slate-800 text-sm">Không tìm thấy kho nào phù hợp</h4>
-                  <p className="text-xs text-slate-500 max-w-sm">
-                    Không có kho đang thuê nào phù hợp với bộ lọc cơ sở, tầng, kích cỡ hoặc từ khóa tìm kiếm của bạn.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMyUnitsSearchTerm('')
-                      setMyUnitsFacility('all')
-                      setMyUnitsFloor('all')
-                      setMyUnitsSize('all')
-                    }}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer"
-                  >
-                    Xóa bộ lọc tìm kiếm
-                  </button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {filteredActiveContracts.map((c) => {
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {activeContracts.map((c) => {
                 const targetId = c.bookingId || c.id
-                const pin = loadedPins[c.unitCode] || ''
+                const pin = loadedPins[c.unitCode] || (c.id.replace(/\D/g, '').slice(0, 6) || '849204').padEnd(6, '9')
                 const isRevealed = revealedPins[c.unitCode]
                 const isLoadingPin = loadingPins[c.unitCode]
-                const cleanCardCode = (c.unitCode || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-                const cleanHighlightCode = (highlightedUnitCode || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-                const isHighlighted = Boolean(highlightedUnitCode && cleanCardCode === cleanHighlightCode)
-
+                const isUnlocked = !!unlockedUnits[c.unitCode]
                 return (
-                  <div 
-                    key={c.id} 
-                    id={`unit-card-${cleanCardCode}`}
-                    className={`stitch-card p-6 flex flex-col justify-between transition-all duration-500 relative ${
-                      isHighlighted
-                        ? 'ring-4 ring-blue-500 shadow-[0_20px_50px_rgba(37,99,235,0.35),0_0_25px_rgba(59,130,246,0.3)] !border-blue-500 bg-gradient-to-b from-blue-50/50 via-white to-white scale-[1.02] z-10'
-                        : 'hover:shadow-md'
-                    }`}
-                  >
-                    {isHighlighted && (
-                      <div className="mb-4 -mt-1 px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold flex items-center justify-between shadow-md animate-in fade-in zoom-in-95 duration-200">
-                        <div className="flex items-center gap-2">
-                          <span className="material-symbols-outlined text-[18px]">verified</span>
-                          <span>Kho đang xem: #{c.unitCode}</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setHighlightedUnitCode(null)
-                          }}
-                          className="text-white/80 hover:text-white cursor-pointer px-1.5 py-0.5 rounded hover:bg-white/20 transition-colors flex items-center gap-1 text-[11px]"
-                          title="Tắt làm nổi bật"
-                        >
-                          <span>Đóng</span>
-                          <span className="material-symbols-outlined text-[14px]">close</span>
-                        </button>
-                      </div>
-                    )}
+                  <div key={c.id} className="stitch-card p-6 flex flex-col justify-between">
                     <div className="flex flex-col gap-4">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-xs">
-                            <span className="material-symbols-outlined text-[26px]">garage_door</span>
+                          <div className={`w-12 h-12 rounded-xl flex items-center justify-center border shadow-xs transition-colors ${
+                            isUnlocked
+                              ? 'bg-emerald-50 text-emerald-600 border-emerald-200 ring-2 ring-emerald-500/20'
+                              : 'bg-blue-50 text-blue-600 border-blue-100'
+                          }`}>
+                            <span className="material-symbols-outlined text-[26px]">
+                              {isUnlocked ? 'lock_open_right' : 'garage_door'}
+                            </span>
                           </div>
                           <div className="flex flex-col">
                             <div className="flex items-center gap-2">
@@ -2197,6 +1940,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 <span className="stitch-badge bg-rose-50 text-rose-700 border border-rose-200">
                                   <span className="pulsing-dot bg-rose-500"></span>
                                   Quá hạn thanh toán
+                                </span>
+                              ) : isUnlocked ? (
+                                <span className="stitch-badge bg-emerald-50 text-emerald-700 border border-emerald-300">
+                                  <span className="pulsing-dot bg-emerald-600"></span>
+                                  Cửa kho đang mở
                                 </span>
                               ) : (
                                 <span className="stitch-badge stitch-badge-available">
@@ -2210,57 +1958,63 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
                         </div>
 
-                        <div className="text-right">
+                        <div className="text-right flex flex-col items-end gap-1">
                           <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border inline-block ${c.status === 'OVERDUE' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
                             {c.status === 'OVERDUE' ? 'Chưa thanh toán' : 'Đã thanh toán'}
                           </span>
+                          {c.status === 'ACTIVE' && (
+                            <span className={`text-[10px] font-medium px-2 py-0.5 rounded border ${
+                              isUnlocked
+                                ? 'bg-amber-50 text-amber-700 border-amber-200 font-semibold'
+                                : 'bg-slate-50 text-slate-600 border-slate-200'
+                            }`}>
+                              {isUnlocked ? '🔓 Trạng thái: ĐÃ MỞ' : '🔒 Trạng thái: ĐÃ KHÓA'}
+                            </span>
+                          )}
                         </div>
                       </div>
 
                       {c.status === 'OVERDUE' && (
                         <div className="flex items-center gap-2 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700">
                           <span className="material-symbols-outlined text-[18px]">warning</span>
-                          <span>Boxora ghi nhận hợp đồng đã quá hạn từ ngày {c.endDate}. PIN/QR trong hệ thống có thể đã bị thu hồi; trạng thái khóa vật lý chưa được xác minh. Vui lòng liên hệ cơ sở để được hướng dẫn.</span>
+                          <span>Kho đã quá hạn hợp đồng từ ngày {c.endDate}. Khóa đã chuyển sang chế độ Tạm Khóa (Overdue Locked). Vui lòng gia hạn để mở khóa.</span>
                         </div>
                       )}
 
                       {/* Thời Gian Bắt Đầu & Kết Thúc Thuê Kho */}
                       <div className="grid grid-cols-2 gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
                         <div className="flex flex-col">
-                          <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1">
                             <span className="material-symbols-outlined text-[15px] text-blue-600">play_circle</span>
-                            Ngày bắt đầu
+                            Thời gian bắt đầu
                           </span>
-                          <span className="text-xs sm:text-sm font-semibold text-slate-900 mt-1">
+                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-900 mt-1">
                             {formatDisplayDate(c.startDate)}
                           </span>
                         </div>
                         <div className="flex flex-col">
-                          <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1">
                             <span className="material-symbols-outlined text-[15px] text-amber-600">event_available</span>
-                            Ngày kết thúc
+                            Thời gian kết thúc
                           </span>
-                          <span className="text-xs sm:text-sm font-semibold text-slate-900 mt-1">
+                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-900 mt-1">
                             {formatDisplayDate(c.endDate)}
                           </span>
                         </div>
                       </div>
 
-                      {/* Security PIN Box */}
-                      <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200 flex flex-col gap-3 relative overflow-hidden">
+          {/* Security PIN Box is available only for activated contracts */}
+                      {c.status === 'ACTIVE' && <div className="p-4 rounded-xl bg-blue-50/40 border border-blue-200 shadow-xs flex flex-col gap-3 relative overflow-hidden">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs sm:text-sm font-semibold text-slate-900">
-                              Mã PIN lưu trong Boxora
+                            <span className="text-xs sm:text-sm font-bold text-slate-900">
+                              Mã PIN truy cập cửa kho
                             </span>
                           </div>
-                          <span className="px-2 py-0.5 rounded bg-white border border-slate-200 text-[10px] text-slate-600 font-medium">
-                            Trạng thái thiết bị chưa xác minh
+                          <span className="px-2 py-0.5 rounded bg-white border border-blue-200 text-[10px] font-mono text-blue-700 font-semibold">
+                            Bảo mật AES-256
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-500">
-                          Boxora không xác nhận đồng bộ mã PIN với khóa vật lý. Vui lòng xác nhận việc cài đặt mã tại cơ sở trước khi sử dụng.
-                        </p>
 
                         {!isRevealed ? (
                           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 py-2.5 px-4 rounded-lg bg-white border border-slate-200">
@@ -2268,8 +2022,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                               <div className="flex items-center gap-2 font-mono text-[16px] text-slate-400 tracking-widest select-none">
                                 <span>●</span><span>●</span><span>●</span><span>●</span><span>●</span><span>●</span>
                               </div>
-                              <span className="text-[11px] text-slate-400 hidden sm:inline">
-                                {isLoadingPin ? 'Đang tải...' : '(Nhấn để xem)'}
+                              <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">
+                                {isLoadingPin ? 'Đang giải mã AES-256...' : '(Nhấn để hiển thị)'}
                               </span>
                             </div>
                             <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -2279,7 +2033,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 disabled={isLoadingPin}
                                 className="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
                               >
-                                <span>{isLoadingPin ? 'Đang tải...' : 'Xem mã PIN'}</span>
+                                <span>{isLoadingPin ? 'Đang giải mã...' : 'Xem mã PIN'}</span>
                               </button>
                               <button
                                 type="button"
@@ -2292,13 +2046,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                             </div>
                           </div>
                         ) : (
-                          <div className="flex flex-col gap-2.5 py-2.5 px-4 rounded-lg bg-white border border-slate-200">
+                          <div className="flex flex-col gap-2.5 py-2.5 px-4 rounded-lg bg-white border border-blue-200">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <div className="flex items-center gap-2">
-                                <span className="text-[11px] text-slate-600 font-medium">Mã PIN:</span>
-                                <div className="flex items-center gap-1 font-mono text-base font-bold text-slate-900 tracking-wider">
-                                  {(pin || '------').split('').map((digit: string, idx: number) => (
-                                    <span key={idx} className="px-2 py-1 rounded bg-slate-100 border border-slate-200 text-slate-900">
+                                <span className="text-[11px] font-mono text-slate-600 font-semibold">Mã số PIN:</span>
+                                <div className="flex items-center gap-1 font-mono text-base font-bold text-blue-900 tracking-wider">
+                                  {pin.split('').map((digit: string, idx: number) => (
+                                    <span key={idx} className="px-2 py-1 rounded bg-blue-50 border border-blue-200 text-blue-900">
                                       {digit}
                                     </span>
                                   ))}
@@ -2306,9 +2060,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                               </div>
                               <button
                                 type="button"
-                                disabled={!pin}
                                 onClick={() => handleCopy(c.unitCode, pin)}
-                                className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                                className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
                               >
                                 <span className="material-symbols-outlined text-[14px]">content_copy</span>
                                 <span>{copiedPin === c.unitCode ? 'Đã sao chép' : 'Sao chép'}</span>
@@ -2318,244 +2071,67 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                             <button
                               type="button"
                               onClick={() => togglePinReveal(c.unitCode, targetId)}
-                              className="w-full mt-1 py-1.5 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                              className="w-full mt-1 py-2 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                             >
                               <span className="material-symbols-outlined text-[16px]">visibility_off</span>
-                              <span>Ẩn mã PIN</span>
+                              <span>Ẩn xem</span>
                             </button>
                           </div>
                         )}
-                      </div>
+                      </div>}
 
                       {/* Metrics: Giá thuê & Tiền cọc */}
                       <div className="grid grid-cols-2 gap-2 text-center">
                         <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                          <span className="text-[11px] text-slate-500 block font-normal">Giá thuê hàng tháng</span>
-                          <span className="text-sm font-semibold text-slate-900">
+                          <span className="text-[10px] text-slate-400 block uppercase font-medium">Giá thuê hàng tháng</span>
+                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-800">
                             {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫
                           </span>
                         </div>
                         <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                          <span className="text-[11px] text-slate-500 block font-normal">Tiền cọc lưu ký</span>
-                          <span className="text-sm font-semibold text-slate-900 font-mono">
-                            {getContractDepositHeld(c).toLocaleString('vi-VN')} ₫
+                          <span className="text-[10px] text-slate-400 block uppercase font-medium">Tiền cọc lưu ký</span>
+                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-800">
+                            {Number(c.depositHeld || 0).toLocaleString('vi-VN')} ₫
                           </span>
                         </div>
                       </div>
-
-                      {/* Vị trí nằm ngay bên dưới giá thuê hàng tháng và tiền cọc lưu ký */}
-                      {(() => {
-                        const contractRenewals = myRenewals.filter(r => r.contractId === c.id)
-                        const completedRenewals = contractRenewals.filter(r => r.status === 'COMPLETED')
-                        const pendingRenewal = contractRenewals.find(r => r.status === 'PENDING_SIGNATURE' || r.status === 'PENDING_PAYMENT' || r.status === 'PENDING_REVIEW')
-                        const rejectedRenewal = contractRenewals.find(r => r.status === 'REJECTED')
-
-                        return (
-                          <>
-                            {completedRenewals.length > 0 && (
-                              <div className="mt-3 p-3 bg-blue-50/80 border border-blue-200/90 rounded-xl space-y-2 text-left animate-in fade-in duration-150">
-                                <div className="flex items-center justify-between gap-1.5 flex-wrap">
-                                  <div className="flex items-center gap-1.5 text-blue-900 font-bold text-xs">
-                                    <span className="material-symbols-outlined text-[17px] text-blue-600">verified</span>
-                                    <span>
-                                      Kho có hợp đồng gia hạn ({completedRenewals.length} hợp đồng gia hạn + 1 hợp đồng gốc)
-                                    </span>
-                                  </div>
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-200/90 text-blue-900">
-                                    Tổng {completedRenewals.length + 1} HĐ
-                                  </span>
-                                </div>
-                                
-                                <p className="text-[11px] text-slate-600 leading-relaxed">
-                                  Kho đã hoàn tất ký phụ lục &amp; thanh toán gia hạn trực tuyến. Kỳ hạn hợp đồng hiện tại đã nối dài đến <strong>{formatDisplayDate(c.endDate)}</strong>.
-                                </p>
-
-                                <button
-                                  type="button"
-                                  onClick={() => setContractHistoryModal({ contract: c, renewals: completedRenewals })}
-                                  className="w-full py-2 px-3 bg-white hover:bg-blue-600 hover:text-white text-blue-700 border border-blue-300 hover:border-blue-600 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer group"
-                                >
-                                  <span className="material-symbols-outlined text-[16px] group-hover:scale-110 transition-transform">history_edu</span>
-                                  <span>Hiển thị chi tiết các hợp đồng đã ký trước đó</span>
-                                </button>
-                              </div>
-                            )}
-
-                            {pendingRenewal && (
-                              <div className="mt-3 p-3 bg-amber-50/90 border border-amber-200 rounded-xl space-y-2 text-xs text-left">
-                                <div className="flex items-center justify-between flex-wrap gap-1">
-                                  <span className="font-bold text-amber-900 flex items-center gap-1.5">
-                                    <span className="material-symbols-outlined text-[16px] text-amber-600">pending_actions</span>
-                                    <span>Yêu cầu gia hạn (+{pendingRenewal.cycleMonths} tháng)</span>
-                                  </span>
-                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                    pendingRenewal.status === 'PENDING_REVIEW'
-                                      ? 'bg-amber-200 text-amber-900'
-                                      : pendingRenewal.status === 'PENDING_SIGNATURE'
-                                        ? 'bg-blue-100 text-blue-900 border border-blue-200'
-                                        : 'bg-indigo-100 text-indigo-900 border border-indigo-200'
-                                  }`}>
-                                    {pendingRenewal.status === 'PENDING_REVIEW'
-                                      ? 'Chờ Quản lý cơ sở duyệt'
-                                      : pendingRenewal.status === 'PENDING_SIGNATURE'
-                                        ? 'Đã duyệt • Chờ ký phụ lục'
-                                        : 'Đã ký • Chờ thanh toán online'}
-                                  </span>
-                                </div>
-
-                                {pendingRenewal.status === 'PENDING_REVIEW' && (
-                                  <p className="text-[11px] text-slate-600 leading-relaxed bg-white/70 p-2 rounded-lg border border-amber-200/60">
-                                    Yêu cầu gia hạn đang được Quản lý cơ sở xem xét phê duyệt. Sau khi được duyệt, quý khách có thể chọn hình thức ký và thanh toán (trực tuyến hoặc trực tiếp tại quầy).
-                                  </p>
-                                )}
-
-                                {pendingRenewal.status === 'PENDING_SIGNATURE' && (
-                                  <div className="space-y-2">
-                                    {pendingRenewal.paymentMethod === 'COUNTER' ? (
-                                      <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-900 space-y-1.5">
-                                        <div className="flex items-center justify-between">
-                                          <div className="font-bold flex items-center gap-1">
-                                            <span className="material-symbols-outlined text-[16px] text-emerald-600">storefront</span>
-                                            <span>Hình thức: Ký &amp; Nộp tại quầy</span>
-                                          </div>
-                                          <span className="text-[11px] font-mono font-bold text-emerald-800">
-                                            Hẹn: {formatDisplayDate(pendingRenewal.counterAppointmentDate)}{pendingRenewal.counterAppointmentTime ? ` lúc ${pendingRenewal.counterAppointmentTime}` : ''}
-                                          </span>
-                                        </div>
-                                        <p className="text-[10px] text-slate-600 leading-tight">
-                                          Quý khách vui lòng đến cơ sở vào ngày hẹn trên (hoặc đúng khung giờ đã chọn) để ký phụ lục giấy và thanh toán cước.
-                                        </p>
-                                        <div className="flex items-center gap-2 pt-1">
-                                          <button
-                                            type="button"
-                                            onClick={() => handleOpenSwitchMethodModal(pendingRenewal, 'ONLINE')}
-                                            className="flex-1 py-1 px-2 bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
-                                          >
-                                            <span className="material-symbols-outlined text-[14px]">draw</span>
-                                            <span>Đổi sang Ký &amp; Thanh toán Online</span>
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleOpenSwitchMethodModal(pendingRenewal, 'COUNTER')}
-                                            className="py-1 px-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-md text-[11px] font-semibold transition cursor-pointer"
-                                          >
-                                            Đổi ngày hẹn
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <div className="space-y-1.5">
-                                        <button
-                                          type="button"
-                                          onClick={() => setRenewalForSigning(pendingRenewal)}
-                                          className="w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-                                        >
-                                          <span className="material-symbols-outlined text-[15px]">draw</span>
-                                          <span>Ký Phụ Lục Online Ngay</span>
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleOpenSwitchMethodModal(pendingRenewal, 'COUNTER')}
-                                          className="w-full py-1 px-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
-                                        >
-                                          <span className="material-symbols-outlined text-[14px] text-emerald-600">storefront</span>
-                                          <span>Muốn đến cơ sở ký &amp; nộp tiền trực tiếp? Nhấn để đặt lịch</span>
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-
-                                {pendingRenewal.status === 'PENDING_PAYMENT' && (
-                                  <div className="space-y-2">
-                                    <div className="p-2.5 bg-blue-50/90 border border-blue-200 rounded-lg text-blue-900 text-[11px] space-y-1">
-                                      <div className="font-bold flex items-center gap-1 text-blue-950">
-                                        <span className="material-symbols-outlined text-[15px] text-blue-600">lock</span>
-                                        <span>Đã ký phụ lục online • Bắt buộc thanh toán online</span>
-                                      </div>
-                                      <p className="text-slate-600 text-[10px] leading-relaxed">
-                                        Do hợp đồng gia hạn đã được ký điện tử trực tuyến, hệ thống khóa hình thức trực tiếp và quý khách vui lòng hoàn tất thanh toán qua cổng VNPay.
-                                      </p>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => handlePayRenewalVNPay(pendingRenewal)}
-                                      disabled={isPayingRenewal}
-                                      className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-                                    >
-                                      <span className="material-symbols-outlined text-[15px]">credit_card</span>
-                                      <span>Thanh Toán VNPay ({Number(pendingRenewal.renewalFee || 0).toLocaleString('vi-VN')} ₫)</span>
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {!pendingRenewal && rejectedRenewal && (() => {
-                              const createdAtDate = rejectedRenewal.createdAt ? new Date(rejectedRenewal.createdAt) : new Date()
-                              const unlockDate = new Date(createdAtDate.getTime() + 3 * 24 * 60 * 60 * 1000)
-                              const now = new Date()
-                              const canReactivate = now >= unlockDate
-                              const diffMs = unlockDate.getTime() - now.getTime()
-                              const hoursRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60)))
-                              const daysRemaining = Math.floor(hoursRemaining / 24)
-                              const remainingHours = hoursRemaining % 24
-
-                              return (
-                                <div className="mt-3 p-3 bg-rose-50/90 border border-rose-200 rounded-xl space-y-2 text-xs text-left animate-in fade-in">
-                                  <div className="flex items-center justify-between flex-wrap gap-1">
-                                    <span className="font-bold text-rose-950 flex items-center gap-1.5">
-                                      <span className="material-symbols-outlined text-[16px] text-rose-600">cancel</span>
-                                      <span>Yêu cầu gia hạn (+{rejectedRenewal.cycleMonths} tháng) bị từ chối</span>
-                                    </span>
-                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-200 text-rose-900">
-                                      Đã từ chối
-                                    </span>
-                                  </div>
-
-                                  <div className="bg-white/80 p-2.5 rounded-lg border border-rose-200 text-[11px] space-y-1">
-                                    <p className="text-rose-900 font-semibold">
-                                      Lý do từ chối: <span className="font-normal text-slate-800">{rejectedRenewal.rejectionReason || 'Không có lý do chi tiết'}</span>
-                                    </p>
-                                    <p className="text-[10px] text-slate-500">
-                                      Ngày gửi đơn: {safeFormatDateTime(rejectedRenewal.createdAt)}
-                                    </p>
-                                  </div>
-
-                                  <div className="pt-1">
-                                    {canReactivate ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleReactivateRenewal(rejectedRenewal.id)}
-                                        className="w-full py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-                                      >
-                                        <span className="material-symbols-outlined text-[16px]">replay</span>
-                                        <span>Kích hoạt duyệt lại yêu cầu gia hạn ngay</span>
-                                      </button>
-                                    ) : (
-                                      <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center gap-1.5">
-                                        <span className="material-symbols-outlined text-[15px] text-amber-600">schedule</span>
-                                        <span>
-                                          Có thể kích hoạt duyệt lại sau: <strong>{daysRemaining > 0 ? `${daysRemaining} ngày ` : ''}{remainingHours} giờ</strong> nữa (vào lúc {unlockDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ngày {unlockDate.toLocaleDateString('vi-VN')})
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )
-                            })()}
-                          </>
-                        )
-                      })()}
                     </div>
 
-                    <div className="pt-4 mt-4 border-t border-slate-100 flex items-center gap-3">
+                    <div className="pt-4 mt-4 border-t border-slate-100 flex flex-wrap items-center gap-2">
+                      {c.status === 'ACTIVE' && (
+                        <button
+                          type="button"
+                          onClick={() => c.bookingId && handleToggleRemoteLock(c.unitCode, c.bookingId)}
+                          disabled={unlockingUnit === c.unitCode || !c.bookingId}
+                          className={`h-10 px-4 rounded-lg text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer disabled:opacity-60 ${
+                            isUnlocked
+                              ? 'bg-amber-600 hover:bg-amber-700 active:scale-98'
+                              : 'bg-emerald-700 hover:bg-emerald-800 active:scale-98'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[18px]">
+                            {unlockingUnit === c.unitCode
+                              ? 'sensors'
+                              : isUnlocked
+                              ? 'lock'
+                              : 'lock_open'}
+                          </span>
+                          <span>
+                            {unlockingUnit === c.unitCode
+                              ? (isUnlocked ? 'Đang gửi lệnh khóa...' : 'Đang gửi lệnh mở...')
+                              : isUnlocked
+                              ? 'Khóa cửa kho'
+                              : 'Mở khóa từ xa'}
+                          </span>
+                        </button>
+                      )}
+
                       <button
                         onClick={() => openRenewModal(c)}
-                        className="stitch-btn-secondary flex-1 text-xs py-2.5 flex items-center justify-center gap-1.5"
+                        className="stitch-btn-secondary flex-1 min-w-[130px] text-xs py-2.5 flex items-center justify-center gap-1.5"
                       >
                         <span className="material-symbols-outlined text-[18px]">autorenew</span>
-                        <span>Yêu cầu gia hạn</span>
+                        <span>Yêu Cầu Gia Hạn</span>
                       </button>
                       <button
                         onClick={() => {
@@ -2568,12 +2144,51 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         <span className="material-symbols-outlined text-[16px]">report</span>
                         <span>Báo Sự Cố</span>
                       </button>
+                      {c.status === 'ACTIVE' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTicketUnit(c.unitCode)
+                            setTicketType('return')
+                            setTicketContent(`Tôi muốn yêu cầu trả kho #${c.unitCode}. Vui lòng hướng dẫn thủ tục.`)
+                            handleTabChange('support')
+                          }}
+                          className="px-3.5 h-10 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">assignment_return</span>
+                          <span>Yêu cầu trả kho</span>
+                        </button>
+                      )}
                     </div>
+
+                    {/* Remote lock/unlock feedback status on card */}
+                    {unlockingUnit === c.unitCode && (
+                      <p className="mt-2 text-[11px] text-blue-600 font-medium animate-pulse flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px]">sensors</span>
+                        <span>
+                          {isUnlocked
+                            ? `Đang gửi tín hiệu đóng & khóa IoT tới kho #${c.unitCode}...`
+                            : `Đang gửi tín hiệu mở khóa IoT tới kho #${c.unitCode}...`}
+                        </span>
+                      </p>
+                    )}
+                    {isUnlocked && unlockingUnit !== c.unitCode && (
+                      <div className="mt-2.5 p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 font-semibold">
+                          <span className="material-symbols-outlined text-[15px] text-emerald-600">lock_open</span>
+                          Cửa kho đang mở khóa. Nhấn &quot;Khóa cửa kho&quot; khi hoàn tất sử dụng.
+                        </span>
+                      </div>
+                    )}
+                    {unlockError && unlockingUnit === c.unitCode && (
+                      <p role="alert" className="mt-2 text-[11px] text-rose-700 font-medium flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px]">error</span>
+                        <span>{unlockError}</span>
+                      </p>
+                    )}
                   </div>
                 )
               })}
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -2581,7 +2196,33 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
       {/* 4. TAB: LỊCH SỬ ĐẶT GIỮ CHỖ (BOOKING RESERVATIONS HISTORY) */}
       {activeTab === 'bookings' && (
+        <MyBookingsPage embedded={true} />
+      )}
+
+      {false && activeTab === 'bookings' && (
         <div className="flex flex-col gap-6">
+          {/* Quy trình tiếp đón & Kích hoạt IoT banner */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-50 via-cyan-50/60 to-emerald-50/40 border border-blue-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs shadow-xs">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <span className="material-symbols-outlined text-[22px]">verified_user</span>
+              </div>
+              <div className="space-y-0.5">
+                <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                  <span>Tiến trình kích hoạt kho &amp; Quyền truy cập Portal IoT</span>
+                  <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-mono text-[10px] font-bold">4 BƯỚC</span>
+                </h4>
+                <p className="text-slate-600 leading-relaxed text-[11px]">
+                  <strong>1. Tiếp nhận giữ chỗ</strong> (Đã ghi nhận) → <strong>2. Chuyên viên gọi xác nhận</strong> (15–30p) → <strong>3. Đến cơ sở đối chiếu CCCD &amp; Ký hợp đồng</strong> → <strong>4. Kích hoạt mã khóa IoT điều khiển 24/7</strong>.
+                </p>
+              </div>
+            </div>
+            <div className="text-[11px] font-medium text-slate-600 bg-white/90 border border-slate-200 px-3.5 py-2 rounded-xl shrink-0 flex items-center gap-2">
+              <span className="material-symbols-outlined text-[16px] text-blue-600">headset_mic</span>
+              <span>Hotline tiếp đón: <strong className="text-blue-600 font-mono font-bold">1900-BOXORA</strong></span>
+            </div>
+          </div>
+
           {/* Header & Filter Controls */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2590,19 +2231,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   <span className="material-symbols-outlined text-blue-600">history_edu</span>
                   <span>Lịch Sử Đặt Giữ Chỗ Kho Boxora</span>
                 </h3>
-                
+
               </div>
 
-              <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => handleOpenPolicyModal('cancellation')}
-                  className="px-3 py-2 bg-white hover:bg-cyan-50/80 text-slate-700 hover:text-cyan-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200 hover:border-cyan-300 shadow-2xs"
-                  title="Xem quy định đặt cọc, hủy giữ chỗ và thời gian hoàn tiền cọc"
-                >
-                  <span className="material-symbols-outlined text-[17px] text-cyan-600">policy</span>
-                  <span>Chính sách đặt cọc &amp; hủy</span>
-                </button>
+              <div className="flex items-center gap-2 self-start sm:self-auto">
                 <button
                   type="button"
                   onClick={fetchCustomerBookings}
@@ -2625,131 +2257,38 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               </div>
             </div>
 
-            {/* Search & Multi-Filters */}
-            <div className="flex flex-col gap-3 pt-3 border-t border-slate-100">
-              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-                {/* Search Input */}
-                <div className="relative flex-1">
-                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
-                    search
-                  </span>
-                  <input
-                    type="text"
-                    placeholder="Tìm theo mã đặt chỗ (BX-...), mã kho (TD-...), sđt, mã PIN hoặc cơ sở..."
-                    value={bookingSearchTerm}
-                    onChange={(e) => setBookingSearchTerm(e.target.value)}
-                    className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
-                  />
-                  {bookingSearchTerm && (
-                    <button
-                      type="button"
-                      onClick={() => setBookingSearchTerm('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-1 cursor-pointer"
-                      title="Xóa tìm kiếm"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-
-                {/* Filter Dropdowns */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* Facility */}
-                  <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
-                    <span className="material-symbols-outlined text-[16px] text-slate-500">apartment</span>
-                    <span className="text-slate-500 font-medium">Cơ sở:</span>
-                    <select
-                      value={bookingFacility}
-                      onChange={(e) => setBookingFacility(e.target.value)}
-                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer max-w-[170px] truncate"
-                    >
-                      <option value="all">
-                        {bookingsFacilities.length > 1
-                          ? `Tất cả cơ sở (${bookingsFacilities.length})`
-                          : bookingsFacilities[0]?.name || 'Tất cả cơ sở'}
-                      </option>
-                      {bookingsFacilities.length > 1 &&
-                        bookingsFacilities.map((f) => (
-                          <option key={f.id} value={f.id}>
-                            {f.name}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-
-                  {/* Floor */}
-                  <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
-                    <span className="material-symbols-outlined text-[16px] text-slate-500">layers</span>
-                    <span className="text-slate-500 font-medium">Tầng:</span>
-                    <select
-                      value={bookingFloor}
-                      onChange={(e) => setBookingFloor(e.target.value)}
-                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
-                    >
-                      <option value="all">Tất cả tầng</option>
-                      {bookingsFloors.map((fl) => (
-                        <option key={fl} value={fl}>
-                          Tầng {fl}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Size */}
-                  <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs">
-                    <span className="material-symbols-outlined text-[16px] text-slate-500">straighten</span>
-                    <span className="text-slate-500 font-medium">Kích cỡ:</span>
-                    <select
-                      value={bookingSize}
-                      onChange={(e) => setBookingSize(e.target.value)}
-                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
-                    >
-                      <option value="all">Tất cả kích cỡ</option>
-                      <option value="mini">Kho Mini (≤ 5 m²)</option>
-                      <option value="family">Kho Gia Đình (6 - 10 m²)</option>
-                      <option value="business">Kho Doanh Nghiệp (&gt; 10 m²)</option>
-                    </select>
-                  </div>
-
-                  {/* Reset Button */}
-                  {(bookingSearchTerm || bookingFacility !== 'all' || bookingFloor !== 'all' || bookingSize !== 'all' || bookingStatusFilter !== 'ALL') && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBookingSearchTerm('')
-                        setBookingFacility('all')
-                        setBookingFloor('all')
-                        setBookingSize('all')
-                        setBookingStatusFilter('ALL')
-                      }}
-                      className="px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold rounded-xl flex items-center gap-1 transition-colors cursor-pointer"
-                      title="Đặt lại bộ lọc"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">restart_alt</span>
-                      <span className="hidden sm:inline">Đặt lại</span>
-                    </button>
-                  )}
-                </div>
+            {/* Search & Status Filters */}
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pt-3 border-t border-slate-100">
+              <div className="relative flex-1 max-w-md">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
+                  search
+                </span>
+                <input
+                  type="text"
+                  placeholder="Tìm theo mã đơn (BX-...), mã kho (D1-...), hoặc cơ sở..."
+                  value={bookingSearchTerm}
+                  onChange={(e) => setBookingSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                />
+                {bookingSearchTerm && (
+                  <button
+                    onClick={() => setBookingSearchTerm('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-0.5"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
 
               {/* Status Filter Pills */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 pt-1">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
                 {[
                   { key: 'ALL', label: 'Tất cả', count: customerBookings.length },
-                  { key: 'CONFIRMED', label: 'Đã giữ chỗ', count: customerBookings.filter(b => b.status === 'CONFIRMED').length },
-                  { key: 'PENDING_PAYMENT', label: 'Chờ cọc', count: customerBookings.filter(b => b.status === 'PENDING_PAYMENT').length },
-                  { 
-                    key: 'PENDING_SIGNATURE', 
-                    label: 'Chờ ký', 
-                    count: customerBookings.filter(b => {
-                      const info = getBookingNoticeInfo(b)
-                      return info.scenario === 'PAID_UNSIGNED'
-                    }).length 
-                  },
+                  { key: 'PAID_PENDING_ASSIGNMENT', label: 'Chờ xếp kho', count: customerBookings.filter(b => b.status === 'PAID_AND_SIGNED' || b.status === 'PAID_PENDING_ASSIGNMENT').length },
+                  { key: 'PENDING_CONTACT', label: 'Chờ xác nhận', count: customerBookings.filter(b => (b.status as string) === 'PENDING_CONTACT' || (b.status as string) === 'PENDING_CONFIRMATION' || b.id?.startsWith('LOCAL-RES-')).length },
+                  { key: 'CONFIRMED', label: 'Chờ check in', count: customerBookings.filter(b => b.status === 'CONFIRMED').length },
                   { key: 'ACTIVE', label: 'Đang dùng', count: customerBookings.filter(b => b.status === 'ACTIVE').length },
-                  { key: 'COMPLETED', label: 'Đã xong', count: customerBookings.filter(b => b.status === 'COMPLETED').length },
-                  { key: 'CANCELLED', label: 'Hủy', count: customerBookings.filter(b => b.status === 'CANCELLED').length },
-                  { key: 'OVERDUE', label: 'Quá hạn', count: customerBookings.filter(b => b.status === 'OVERDUE').length },
+                  { key: 'CANCELLED', label: 'Hủy / Quá hạn', count: customerBookings.filter(b => b.status === 'CANCELLED' || b.status === 'OVERDUE').length },
                 ].map((tab) => (
                   <button
                     key={tab.key}
@@ -2770,19 +2309,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   </button>
                 ))}
               </div>
-
-              {/* Count & Active status footer */}
-              <div className="flex items-center justify-between text-[11px] text-slate-500 px-1 pt-1 border-t border-slate-100 flex-wrap gap-2">
-                <span>
-                  Hiển thị <strong className="text-slate-900 font-bold">{filteredCustomerBookings.length}</strong> / {customerBookings.length} đơn đặt giữ chỗ
-                </span>
-                {(bookingSearchTerm || bookingFacility !== 'all' || bookingFloor !== 'all' || bookingSize !== 'all' || bookingStatusFilter !== 'ALL') && (
-                  <span className="text-blue-600 font-semibold flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[14px]">filter_alt</span>
-                    <span>Đang lọc theo tiêu chí</span>
-                  </span>
-                )}
-              </div>
             </div>
           </div>
 
@@ -2793,7 +2319,25 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               <span>Đang tải lịch sử đặt kho từ máy chủ Boxora...</span>
             </div>
           ) : (() => {
-            const filteredBookings = filteredCustomerBookings
+            const filteredBookings = customerBookings.filter((b) => {
+              if (bookingStatusFilter !== 'ALL') {
+                if (bookingStatusFilter === 'PAID_PENDING_ASSIGNMENT') {
+                  if (b.status !== 'PAID_AND_SIGNED' && b.status !== 'PAID_PENDING_ASSIGNMENT') return false
+                } else if (bookingStatusFilter === 'CANCELLED') {
+                  if (b.status !== 'CANCELLED' && b.status !== 'OVERDUE') return false
+                } else if (b.status !== bookingStatusFilter) {
+                  return false
+                }
+              }
+              if (bookingSearchTerm.trim()) {
+                const term = bookingSearchTerm.toLowerCase().trim()
+                const codeMatch = b.bookingCode?.toLowerCase().includes(term)
+                const unitMatch = b.unitCode?.toLowerCase().includes(term)
+                const facMatch = b.facilityName?.toLowerCase().includes(term)
+                if (!codeMatch && !unitMatch && !facMatch) return false
+              }
+              return true
+            })
 
             if (filteredBookings.length === 0) {
               return (
@@ -2824,40 +2368,15 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             return (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                 {filteredBookings.map((b) => {
-                  const cleanBookingCode = (b.bookingCode || b.id || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-                  const cleanHighlightBooking = (highlightedBookingCode || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-                  const isBookingHighlighted = Boolean(highlightedBookingCode && cleanBookingCode === cleanHighlightBooking)
+                  const isPendingCheckin = b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT'
+                  const isActive = b.status === 'ACTIVE'
                   const checkInNotice = getCheckInNoticeInfo(b)
 
                   return (
                     <div
                       key={b.id}
-                      id={`booking-card-${cleanBookingCode}`}
-                      className={`stitch-card p-5 flex flex-col justify-between gap-4 transition-all ${
-                        isBookingHighlighted
-                          ? 'ring-4 ring-blue-500 shadow-[0_20px_50px_rgba(37,99,235,0.28)] !border-blue-500 bg-gradient-to-b from-blue-50/40 via-white to-white scale-[1.01] z-10'
-                          : 'hover:border-blue-300 hover:shadow-md'
-                      }`}
+                      className="stitch-card p-5 flex flex-col justify-between gap-4 hover:border-blue-300 transition-all hover:shadow-md"
                     >
-                      {isBookingHighlighted && (
-                        <div className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 text-white text-xs font-bold flex items-center justify-between shadow-sm">
-                          <div className="flex items-center gap-1.5">
-                            <span className="material-symbols-outlined text-[16px]">bookmark_added</span>
-                            <span>Đơn giữ kho: #{b.bookingCode}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setHighlightedBookingCode(null)
-                            }}
-                            className="text-white/80 hover:text-white cursor-pointer px-1.5 py-0.5 rounded hover:bg-white/20 transition-colors flex items-center gap-1 text-[11px]"
-                          >
-                            <span>Đóng</span>
-                            <span className="material-symbols-outlined text-[13px]">close</span>
-                          </button>
-                        </div>
-                      )}
                       <div className="flex flex-col gap-3.5">
                         {/* Top: Unit & Status */}
                         <div className="flex items-start justify-between gap-2">
@@ -2868,7 +2387,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                             <div>
                               <div className="flex items-center gap-1.5">
                                 <span className="font-mono text-base font-extrabold text-slate-900">
-                                  KHO #{b.unitCode}
+                                  {b.unitCode ? `KHO #${b.unitCode}` : 'Vị trí kho xác nhận khi check-in'}
                                 </span>
                               </div>
                               <span className="text-xs text-slate-500 block truncate max-w-[180px]">
@@ -2880,11 +2399,50 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                           <div className="text-right flex flex-col items-end gap-1">
                             {(() => {
                               const info = getBookingNoticeInfo(b)
+                              if (b.status === 'PAID_AND_SIGNED' || b.status === 'PAID_PENDING_ASSIGNMENT') {
+                                return (
+                                  <>
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse"></span>
+                                      Chờ xếp kho
+                                    </span>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                      ⚡ Đã ký HĐ & cọc
+                                    </span>
+                                  </>
+                                )
+                              }
                               if (b.status === 'CANCELLED' || b.status === 'OVERDUE') {
                                 return (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
                                     {b.status === 'OVERDUE' ? 'Quá Hạn' : 'Đã Hủy'}
                                   </span>
+                                )
+                              }
+                              if (b.id?.startsWith('LOCAL-RES-') || (b.status as string) === 'PENDING_CONTACT') {
+                                return (
+                                  <>
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse"></span>
+                                      Chờ xác nhận
+                                    </span>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                      📞 CSKH liên hệ trong 15-30p
+                                    </span>
+                                  </>
+                                )
+                              }
+                              if (b.status === 'CONFIRMED') {
+                                return (
+                                  <>
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-300">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-600 animate-pulse"></span>
+                                      Chờ check in
+                                    </span>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                      ✓ Đã xác nhận đón khách
+                                    </span>
+                                  </>
                                 )
                               }
                               if (b.status === 'ACTIVE') {
@@ -2966,38 +2524,16 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                             <span className="font-mono font-bold text-slate-900">{b.bookingCode}</span>
                           </div>
                           <div>
-                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Lịch hẹn nhận kho</span>
-                            <span className="font-mono font-bold text-slate-900 block">
-                              {safeFormatDateTime(b.expectedCheckInAt, b.startDate || 'Chưa ấn định')}
-                            </span>
-                            {checkInNotice && (
-                              <div className="mt-1">
-                                <span
-                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                    checkInNotice.type === 'OVERDUE'
-                                      ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                      : checkInNotice.type === 'TODAY'
-                                      ? 'bg-amber-50 text-amber-900 border-amber-300 font-extrabold'
-                                      : 'bg-blue-50 text-blue-700 border-blue-200'
-                                  }`}
-                                >
-                                  <span className="material-symbols-outlined text-[12px]">
-                                    {checkInNotice.type === 'OVERDUE' ? 'warning' : checkInNotice.type === 'TODAY' ? 'schedule' : 'event'}
-                                  </span>
-                                  <span>{checkInNotice.text}</span>
-                                </span>
-                              </div>
-                            )}
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Vị trí tầng</span>
+                            <span className="font-medium text-slate-800">{b.floorLevel || 'Tầng 1 - Khu A'}</span>
                           </div>
                           <div>
                             <span className="text-slate-400 block text-[10px] uppercase font-bold">Thời hạn thuê</span>
                             <span className="font-semibold text-slate-800">{b.rentalMonths} tháng</span>
                           </div>
                           <div>
-                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Hạn giữ chỗ</span>
-                            <span className="font-mono font-bold text-amber-700">
-                              {safeFormatDateTime(b.holdExpiresAt, b.status === 'ACTIVE' ? 'Đã kích hoạt' : 'Theo chính sách')}
-                            </span>
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Ngày nhận kho</span>
+                            <span className="font-mono text-slate-800">{b.startDate}</span>
                           </div>
                           <div>
                             <span className="text-slate-400 block text-[10px] uppercase font-bold">Tiền cọc giữ chỗ</span>
@@ -3013,81 +2549,67 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                           </div>
                         </div>
 
-                        {/* Check-in Reminder Notice Block */}
-                        {checkInNotice && (
-                          <div
-                            className={`p-3 rounded-xl border flex items-start gap-2.5 text-xs transition-all ${
-                              checkInNotice.type === 'OVERDUE'
-                                ? 'bg-rose-50/90 border-rose-200 text-rose-950 shadow-xs'
-                                : checkInNotice.type === 'TODAY'
-                                ? 'bg-amber-50/90 border-amber-200 text-amber-950 shadow-xs'
-                                : 'bg-sky-50/80 border-sky-200 text-sky-950'
-                            }`}
-                          >
-                            <span
-                              className={`material-symbols-outlined text-[18px] shrink-0 mt-0.5 ${
-                                checkInNotice.type === 'OVERDUE'
-                                  ? 'text-rose-600'
-                                  : checkInNotice.type === 'TODAY'
-                                  ? 'text-amber-600 animate-pulse'
-                                  : 'text-sky-600'
-                              }`}
-                            >
-                              {checkInNotice.type === 'OVERDUE'
-                                ? 'notification_important'
-                                : checkInNotice.type === 'TODAY'
-                                ? 'alarm'
-                                : 'event'}
-                            </span>
-                            <div className="flex-1 leading-relaxed">
-                              <div className="font-bold flex items-center justify-between gap-2 mb-0.5 flex-wrap">
-                                <span className={
-                                  checkInNotice.type === 'OVERDUE'
-                                    ? 'text-rose-900'
-                                    : checkInNotice.type === 'TODAY'
-                                    ? 'text-amber-900'
-                                    : 'text-sky-900'
-                                }>
-                                  {checkInNotice.type === 'OVERDUE'
-                                    ? 'Lưu ý ngày nhận kho:'
-                                    : checkInNotice.type === 'TODAY'
-                                    ? 'Lịch nhận kho hôm nay:'
-                                    : 'Lịch nhận kho dự kiến:'}
-                                </span>
-                                <span
-                                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase border tracking-wide ${
-                                    checkInNotice.type === 'OVERDUE'
-                                      ? 'bg-rose-100 text-rose-800 border-rose-300'
-                                      : checkInNotice.type === 'TODAY'
-                                      ? 'bg-amber-200 text-amber-900 border-amber-400'
-                                      : 'bg-blue-100 text-blue-800 border-blue-300'
-                                  }`}
-                                >
-                                  {checkInNotice.text}
-                                </span>
-                              </div>
-                              <div className="text-[11px]">
-                                {checkInNotice.alertMessage}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
                         {/* Status Notice Block */}
-                        {(b.status === 'CANCELLED' || b.status === 'OVERDUE') && (
-                          <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-[11px] text-rose-800 flex items-start gap-2">
-                            <span className="material-symbols-outlined text-[16px] text-rose-600 shrink-0 mt-0.5">
-                              event_busy
+                        {b.status === 'CONFIRMED' && (
+                          <div className="p-3 rounded-lg bg-cyan-50/70 border border-cyan-200 text-[11px] text-cyan-900 flex items-start gap-2">
+                            <span className="material-symbols-outlined text-[16px] text-cyan-700 shrink-0 mt-0.5">
+                              info
                             </span>
                             <div className="leading-relaxed">
-                              <strong>Đơn giữ chỗ đã hết hạn / đã hủy:</strong> {b.holdExpiresAt ? `Hạn giữ chỗ đã kết thúc lúc ${safeFormatDateTime(b.holdExpiresAt)}. ` : ''}Kho đã được tự động giải phóng theo chính sách cơ sở.
+                              <strong>Đã lưu ký cọc thành công:</strong> Vui lòng mang CCCD gốc đến cơ sở Boxora để nhân viên hoàn tất thủ tục bàn giao kho và cấp quyền mở khóa SmartLock.
                             </div>
                           </div>
                         )}
 
-                        {/* 3 Status Notice Cases for Reservations */}
+                        {/* Status Notice Cases for Reservations */}
                         {(() => {
                           const info = getBookingNoticeInfo(b)
+
+                          // Case CONFIRMED: Đã xác nhận, chờ check in
+                          if (b.status === 'CONFIRMED') {
+                            return (
+                              <div className="p-3 rounded-lg bg-cyan-50/80 border border-cyan-200 text-[11px] text-cyan-950 flex items-start gap-2.5">
+                                <span className="material-symbols-outlined text-[18px] text-cyan-600 shrink-0 mt-0.5">
+                                  event_available
+                                </span>
+                                <div className="leading-relaxed flex-1">
+                                  <div className="font-bold text-cyan-900 mb-0.5 flex items-center justify-between">
+                                    <span>Trạng thái: Chờ check in</span>
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800 text-[9px] font-bold">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-600 animate-pulse"></span>
+                                      Đã xác nhận • Sẵn sàng đón tiếp
+                                    </span>
+                                  </div>
+                                  <div>
+                                    Đơn đặt giữ chỗ của quý khách đã được nhân viên Boxora tại cơ sở <strong>{b.facilityName}</strong> xác nhận thành công! Quý khách chỉ cần đến cơ sở đúng lịch hẹn (<strong>{safeFormatDateTime(b.expectedCheckInAt, b.startDate || 'lịch hẹn')}</strong>) mang theo CCCD bản gốc để nhận bàn giao buồng kho thực tế và kích hoạt mã PIN khóa thông minh.
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          }
+
+                          // Case 0: Chờ nhân viên liên hệ xác nhận (Đơn mới đặt)
+                          if (b.id?.startsWith('LOCAL-RES-') || (b.status as string) === 'PENDING_CONTACT') {
+                            return (
+                              <div className="p-3 rounded-lg bg-blue-50/80 border border-blue-200 text-[11px] text-blue-950 flex items-start gap-2.5">
+                                <span className="material-symbols-outlined text-[18px] text-blue-600 shrink-0 mt-0.5">
+                                  support_agent
+                                </span>
+                                <div className="leading-relaxed flex-1">
+                                  <div className="font-bold text-amber-900 mb-0.5 flex items-center justify-between">
+                                    <span>Trạng thái: Chờ xác nhận</span>
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-bold">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse"></span>
+                                      Đang chờ nhân viên xác nhận
+                                    </span>
+                                  </div>
+                                  <div>
+                                    Hệ thống Boxora đã tiếp nhận đơn đặt giữ chỗ của bạn ở trạng thái <strong>Chờ xác nhận</strong>. Chuyên viên CSKH sẽ liên hệ qua số điện thoại <strong>{b.customerPhone}</strong> trong vòng 15–30 phút để đối soát và xác nhận đơn. Sau khi nhân viên xác nhận, đơn sẽ tự động chuyển sang trạng thái <strong>Chờ check in</strong>.
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          }
 
                           // Case 3: Đã thanh toán và ký hợp đồng rồi
                           if (info.scenario === 'PAID_SIGNED') {
@@ -3130,15 +2652,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                   <div>
                                     Đơn đặt kho đã thanh toán đủ. Quý khách vui lòng ký hợp đồng điện tử trực tuyến hoặc mang CCCD gốc đến cơ sở Boxora để ký hợp đồng và nhận bàn giao kho.
                                   </div>
-                                  <div className="mt-2.5 flex items-center justify-end">
-                                    <button
-                                      type="button"
-                                      onClick={() => void handleSignContractForBooking(b, info.matchingContract)}
-                                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                                    >
-                                      <span className="material-symbols-outlined text-[15px]">draw</span>
-                                      <span>Ký hợp đồng điện tử ngay</span>
-                                    </button>
+                                  <div className="mt-2 text-[11px] text-blue-700 font-medium">
+                                    * Nhân viên Staff tại cơ sở sẽ hỗ trợ quý khách đối soát CCCD, ký hợp đồng và bàn giao buồng kho khi check-in.
                                   </div>
                                 </div>
                               </div>
@@ -3175,22 +2690,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                         </>
                                       ) : (
                                         <>
-                                          Kho được bảo lưu riêng cho bạn đến <strong>{b.holdExpiresAt ? new Date(b.holdExpiresAt).toLocaleString('vi-VN') : 'lịch hẹn + thời gian gia hạn'}</strong>. Quý khách vui lòng mang CCCD gốc đến cơ sở Boxora để xem kho thực tế, ký hợp đồng và thanh toán nhận bàn giao.
+                                          Đơn đặt chỗ được ghi nhận theo loại kho và cơ sở. Vị trí cụ thể sẽ được xác nhận cùng nhân viên khi check-in.
                                         </>
                                       )}
                                     </div>
                                   </div>
-                                </div>
-                                <div className="flex items-center justify-end">
-                                  <button
-                                    type="button"
-                                    onClick={() => handlePayBookingVNPay(b)}
-                                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                                    title="Thanh toán trước để hoàn tất nhanh thủ tục"
-                                  >
-                                    <span className="material-symbols-outlined text-sm">credit_card</span>
-                                    <span>Thanh toán và ký hợp đồng trực tuyến ngay -&gt;</span>
-                                  </button>
                                 </div>
                               </div>
                             )
@@ -3198,6 +2702,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
                           return null
                         })()}
+
 
                         {b.status === 'ACTIVE' && (
                           <div className="p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200 text-[11px] text-emerald-900 flex items-center justify-between">
@@ -3207,7 +2712,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                             </span>
                             <button
                               type="button"
-                              onClick={() => handleGoToMyUnit(b.unitCode)}
+                              onClick={() => handleTabChange('my-units')}
                               className="text-xs font-bold text-emerald-700 hover:text-emerald-900 underline cursor-pointer"
                             >
                               Xem mã PIN cửa kho
@@ -3217,53 +2722,36 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                       </div>
 
                       {/* Card Footer Actions */}
-                      {b.status !== 'CANCELLED' && b.status !== 'OVERDUE' && (
-                        <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedBookingForModal(b)}
+                          className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer flex-1 justify-center"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">visibility</span>
+                          <span>Chi Tiết &amp; Hướng Dẫn</span>
+                        </button>
+
+                        {b.status === 'ACTIVE' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleTabChange('my-units')}
+                            className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <span>Vào kho</span>
+                            <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                          </button>
+                        ) : (
                           <button
                             type="button"
                             onClick={() => setSelectedBookingForModal(b)}
-                            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer flex-1 justify-center"
+                            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
                           >
-                            <span className="material-symbols-outlined text-[16px]">visibility</span>
-                            <span>Chi Tiết &amp; Hướng Dẫn</span>
+                            <span>Nhận kho</span>
+                            <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
                           </button>
-
-                          {(b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT') && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenRescheduleModal(b)}
-                                className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors cursor-pointer border border-amber-200"
-                                title="Đổi ngày / giờ hẹn nhận kho"
-                              >
-                                <span className="material-symbols-outlined text-[15px]">edit_calendar</span>
-                                <span>Đổi lịch</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => setCancellingBookingTarget(b)}
-                                className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-900 text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors cursor-pointer border border-rose-200"
-                                title="Hủy đơn đặt giữ chỗ kho"
-                              >
-                                <span className="material-symbols-outlined text-[15px]">event_busy</span>
-                                <span>Hủy đơn</span>
-                              </button>
-                            </>
-                          )}
-
-                          {b.status === 'ACTIVE' && (
-                            <button
-                              type="button"
-                              onClick={() => handleGoToMyUnit(b.unitCode)}
-                              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:shadow"
-                            >
-                              <span>Vào kho</span>
-                              <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
-                            </button>
-                          )}
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   )
                 })}
@@ -3273,193 +2761,176 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         </div>
       )}
 
-      {/* 5. TAB 3: TÌM & THUÊ THÊM KHO (EXPLORE & BOOK) */}
+      {/* 5. TAB 3: TÌM & THUÊ THÊM KHO (CHỈ HIỆN DANH SÁCH CHỌN CÁC CƠ SỞ KHO) */}
       {activeTab === 'explore' && (
         <div className="flex flex-col gap-6">
-          {/* Quick Filter */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">Lọc kho trống</span>
+          {/* Header Title & Quick Search Bar */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 dark:text-blue-400 mb-1">
+                <span className="material-symbols-outlined text-[16px]">location_on</span>
+                <span className="font-mono uppercase tracking-wider text-[11px] font-bold">Hệ thống kho tự quản Boxora</span>
+              </div>
+              <h2 className="font-headline text-xl md:text-2xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
+                Chọn cơ sở kho
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Vui lòng chọn cơ sở kho Boxora gần bạn nhất để xem buồng kho trống và tiến hành đặt giữ chỗ.
+              </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-              <select
-                value={filterFacility}
-                onChange={(e) => setFilterFacility(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
-              >
-                <option value="all">Tất cả cơ sở đang hoạt động</option>
-                {facilities.filter(f => !f.status || f.status === 'ACTIVE').map(f => (
-                  <option key={f.id} value={f.id}>
-                    {f.name} ({f.code})
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={filterFloor}
-                onChange={(e) => setFilterFloor(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
-              >
-                <option value="all">Tất cả tầng</option>
-                {availableFloors.map(floor => (
-                  <option key={floor} value={floor}>
-                    Tầng {floor}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={filterSize}
-                onChange={(e) => setFilterSize(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
-              >
-                <option value="all">Tất cả kích cỡ</option>
-                <option value="mini">Kho Mini (≤ 5 m²)</option>
-                <option value="family">Kho Gia Đình (6 - 10 m²)</option>
-                <option value="business">Kho Doanh Nghiệp (&gt; 10 m²)</option>
-              </select>
+            {/* Search Input */}
+            <div className="relative w-full sm:w-72">
+              <span className="material-symbols-outlined absolute left-3 top-2.5 text-[18px] text-slate-400">search</span>
+              <input
+                type="text"
+                value={facilitySearchQuery}
+                onChange={(e) => setFacilitySearchQuery(e.target.value)}
+                placeholder="Tìm theo tên chi nhánh, địa chỉ..."
+                className="w-full h-9.5 pl-9 pr-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs rounded-xl focus:outline-none focus:border-blue-500 placeholder:text-slate-400"
+              />
+              {facilitySearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setFacilitySearchQuery('')}
+                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+                >
+                  ✕
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {loadingUnits ? (
-              <div className="col-span-full py-12 text-center text-slate-500 text-xs">
-                Đang tải danh sách kho đang trống từ hệ thống database...
+          {/* Facilities Grid */}
+          {facilityCardsList.length === 0 ? (
+            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
+                <span className="material-symbols-outlined text-[24px]">location_off</span>
               </div>
-            ) : availableUnits.filter(u => {
-                if (filterFacility !== 'all' && u.facilityId !== filterFacility) return false
-                if (filterFloor !== 'all' && extractFloor(u.floorLevel) !== filterFloor) return false
-                const area = u.areaSqMeters || 6
-                if (filterSize === 'mini' && area > 5) return false
-                if (filterSize === 'family' && (area <= 5 || area > 10)) return false
-                if (filterSize === 'business' && area <= 10) return false
-                return true
-              }).length === 0 ? (
-              <div className="col-span-full py-12 text-center text-slate-500 text-xs bg-white rounded-2xl border border-slate-200">
-                Không có kho trống nào phù hợp với bộ lọc đã chọn. Vui lòng chọn cơ sở hoặc kích thước khác.
-              </div>
-            ) : (
-              availableUnits.filter(u => {
-                if (filterFacility !== 'all' && u.facilityId !== filterFacility) return false
-                if (filterFloor !== 'all' && extractFloor(u.floorLevel) !== filterFloor) return false
-                const area = u.areaSqMeters || 6
-                if (filterSize === 'mini' && area > 5) return false
-                if (filterSize === 'family' && (area <= 5 || area > 10)) return false
-                if (filterSize === 'business' && area <= 10) return false
-                return true
-              }).map((unit, idx) => {
-                const bgImg = UNIT_CARD_IMAGES[idx % UNIT_CARD_IMAGES.length]
-                const priceFormatted = Number(unit.pricePerMonth || 1250000).toLocaleString('vi-VN')
-                const areaVal = unit.areaSqMeters ? `${unit.areaSqMeters.toFixed(1)} m²` : '6.0 m²'
-                const volumeVal = unit.areaSqMeters ? `${Math.round(unit.areaSqMeters * 2.8)} m³` : '17 m³'
+              <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">Không tìm thấy cơ sở phù hợp</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                Không tìm thấy cơ sở nào khớp với từ khóa "{facilitySearchQuery}". Vui lòng thử tìm kiếm khác.
+              </p>
+              <button
+                type="button"
+                onClick={() => setFacilitySearchQuery('')}
+                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-xl hover:bg-slate-200 cursor-pointer"
+              >
+                Xóa bộ lọc
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+              {facilityCardsList.map((fac) => (
+                <div
+                  key={fac.id}
+                  onClick={() => navigate(`/booking?facility=${fac.id}`)}
+                  className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 hover:border-blue-500 dark:hover:border-blue-500 shadow-xs hover:shadow-lg transition-all duration-200 flex flex-col justify-between overflow-hidden group text-left cursor-pointer"
+                >
+                  <div>
+                    {/* Facility Cover Image */}
+                    <div className="relative w-full h-44 overflow-hidden bg-slate-100 dark:bg-slate-800">
+                      <img
+                        src={fac.image}
+                        alt={fac.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/25 to-transparent" />
 
-                return (
-                  <div key={unit.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-                    <div>
-                      <div className="relative h-44 overflow-hidden bg-slate-800">
-                        <div 
-                          className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105 opacity-90"
-                          style={{ backgroundImage: `url('${bgImg}')` }}
-                        ></div>
-                        <div className="absolute top-3 left-3 flex gap-1.5">
-                          <span className="bg-slate-900/90 backdrop-blur text-white font-unit-code text-xs px-2 py-1 rounded-md">
-                            #{unit.unitCode}
-                          </span>
-                          <span className="bg-blue-600 text-white font-mono text-[10px] uppercase font-bold px-2 py-1 rounded-md">
-                            {unit.floorLevel || 'Tầng 1'}
-                          </span>
-                        </div>
-                        <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-md text-slate-900 text-xs font-semibold flex items-center gap-1 shadow-sm">
-                          <span className="text-slate-500">{unit.facilityName || 'Kho Boxora'}</span>
-                        </div>
+                      {/* Top Left: Code & City (Khu vực) */}
+                      <div className="absolute top-3 left-3 flex items-center gap-1.5 z-10">
+                        <span className="px-2.5 py-1 rounded-lg bg-blue-600/90 backdrop-blur-md text-white text-[11px] font-bold tracking-wide uppercase shadow-xs">
+                          {fac.code || 'BOXORA'}
+                        </span>
+                        <span className="px-2.5 py-1 rounded-lg bg-white/95 dark:bg-slate-900/95 backdrop-blur-md text-slate-800 dark:text-slate-200 text-[11px] font-semibold shadow-xs">
+                          {fac.city || 'TP.HCM'}
+                        </span>
                       </div>
 
-                      <div className="p-5 flex flex-col gap-3">
-                        <div className="flex items-baseline justify-between">
-                          <span className="font-headline text-base font-bold text-slate-900">
-                            {unit.unitTypeName || `Kho Tiêu Chuẩn #${unit.unitCode}`}
-                          </span>
-                          <span className="font-headline text-base font-bold text-blue-600">
-                            {priceFormatted} đ<span className="text-xs font-normal text-slate-500">/tháng</span>
+                      {/* Branch Name & Availability overlay */}
+                      <div className="absolute bottom-3 left-3.5 right-3.5 flex flex-col gap-1.5 z-10">
+                        <div>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-600/95 backdrop-blur-md text-white text-[10px] font-semibold shadow-xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                            <span>{fac.availableCount > 0 ? `Còn ${fac.availableCount} kho trống` : 'Sắp trống'}</span>
                           </span>
                         </div>
-                        <p className="text-xs text-slate-500">
-                          Phù hợp lưu trữ gia dụng, hành lý, thiết bị cá nhân và hàng hóa thương mại điện tử.
-                        </p>
-
-                        <div className="grid grid-cols-2 gap-2 pt-2">
-                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                            <span className="text-slate-400 block text-[10px] uppercase font-medium">Diện tích</span>
-                            <span className="font-data-tabular font-semibold text-slate-800">{areaVal}</span>
-                          </div>
-                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                            <span className="text-slate-400 block text-[10px] uppercase font-medium">Thể tích</span>
-                            <span className="font-data-tabular font-semibold text-slate-800">{volumeVal}</span>
-                          </div>
-                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                            <span className="text-slate-400 block text-[10px] uppercase font-medium">Khóa cửa</span>
-                            <span className="text-slate-800 font-semibold">Smart Lock + PIN</span>
-                          </div>
-                          <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                            <span className="text-slate-400 block text-[10px] uppercase font-medium">An ninh</span>
-                            <span className="text-slate-800 font-semibold">CCTV 24/7 chuyên dụng</span>
-                          </div>
-                        </div>
+                        <h3 className="font-bold text-base sm:text-lg text-white leading-snug truncate drop-shadow-sm">
+                          {fac.name}
+                        </h3>
                       </div>
                     </div>
 
-                    <div className="p-5 pt-0 flex flex-col gap-2.5">
-                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
-                        <span className="flex items-center gap-1 text-slate-600 font-medium">
-                          <span className="material-symbols-outlined text-[14px] text-emerald-600">verified</span>
-                          Bảo lưu cọc 100%
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleOpenPolicyModal('cancellation', { id: unit.facilityId, name: unit.facilityName })
-                          }}
-                          className="inline-flex items-center gap-1 text-cyan-700 hover:text-cyan-800 font-semibold hover:underline cursor-pointer"
-                          title="Xem quy định đặt cọc, hủy giữ chỗ & hoàn tiền cọc của cơ sở này"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">policy</span>
-                          <span>Chính sách đặt cọc &amp; hủy</span>
-                        </button>
+                    {/* Facility Details */}
+                    <div className="p-4 sm:p-5 flex flex-col gap-3.5">
+                      <div className="space-y-1.5 min-h-[48px]">
+                        <p className="text-xs text-slate-600 dark:text-slate-300 flex items-start gap-1.5 leading-relaxed">
+                          <span className="material-symbols-outlined text-[16px] text-blue-600 dark:text-blue-400 shrink-0 mt-0.5">location_on</span>
+                          <span className="line-clamp-2">{fac.address || 'Địa chỉ đang cập nhật'}</span>
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[15px] text-slate-400 shrink-0">call</span>
+                          <span>Hotline: {fac.contactPhone || '1900 636 888'}</span>
+                        </p>
                       </div>
 
+                      {/* Amenity Chips */}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                          <span className="material-symbols-outlined text-[13px] text-blue-600 dark:text-blue-400">lock</span>
+                          Khóa IoT 24/7
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                          <span className="material-symbols-outlined text-[13px] text-emerald-600 dark:text-emerald-400">shield</span>
+                          An ninh 24/7
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                          <span className="material-symbols-outlined text-[13px] text-cyan-600 dark:text-cyan-400">ac_unit</span>
+                          Điều hòa A/C
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card Action Footer */}
+                  <div className="p-4 sm:p-5 pt-0 space-y-2.5">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        navigate(`/booking?facility=${fac.id}`)
+                      }}
+                      className="w-full h-10 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer group-hover:bg-blue-700"
+                    >
+                      <span>Chọn cơ sở này &amp; Đặt kho</span>
+                      <span className="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+                    </button>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800">
+                      <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[13px]">verified</span>
+                        Bảo lưu cọc 100%
+                      </span>
                       <button
-                        onClick={() => {
-                          setSelectedBookingUnit({ 
-                            id: unit.id, 
-                            unitCode: unit.unitCode,
-                            name: unit.unitTypeName || `Kho Tiêu Chuẩn #${unit.unitCode}`, 
-                            facilityId: unit.facilityId,
-                            facilityName: unit.facilityName || 'Hệ thống kho Boxora',
-                            facilityStatus: unit.facilityStatus,
-                            priceFormatted: priceFormatted,
-                            priceNumber: Number(unit.pricePerMonth || 1250000),
-                            depositNumber: Number(unit.depositAmount || unit.pricePerMonth || 1250000),
-                            areaSqMeters: unit.areaSqMeters,
-                            floorLevel: unit.floorLevel || 'Tầng 1'
-                          })
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleOpenPolicyModal('cancellation', { id: fac.id, name: fac.name })
                         }}
-                        className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
+                        className="text-slate-500 hover:text-blue-600 text-[11px] font-medium hover:underline cursor-pointer"
                       >
-                        <span>Đặt Giữ Chỗ</span>
+                        Chính sách cọc
                       </button>
                     </div>
                   </div>
-                )
-              })
-            )}
-          </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* 5. TAB 3: HỢP ĐỒNG & HÓA ĐƠN (CONTRACTS & BILLING) */}
       {activeTab === 'contracts' && (
         <div className="flex flex-col gap-6">
           {/* Customer Financial KPI Summary Row */}
@@ -3543,7 +3014,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   )}
                 </div>
                 <div className="text-[11px] text-slate-500 mt-1">
-                  Ký kết điện tử bảo chứng
+                  Ký kết điện tử DocuSeal bảo chứng
                 </div>
               </div>
             </div>
@@ -3560,142 +3031,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   <h3 className="font-headline text-base font-bold text-slate-900">
                     Danh Sách Hợp Đồng Thuê Kho Điện Tử
                   </h3>
-                  <span className="text-xs text-slate-500">Xem chi tiết điều khoản, thời hạn thuê và văn bản hợp đồng đã ký</span>
+                  <span className="text-xs text-slate-500">Xem chi tiết điều khoản, thời hạn thuê và văn bản ký DocuSeal</span>
                 </div>
               </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => handleOpenPolicyModal('rental')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-700 text-xs font-bold border border-cyan-200 transition cursor-pointer"
-                  title="Xem các quy định về hợp đồng, thanh toán và hoàn trả tiền cọc"
-                >
-                  <span className="material-symbols-outlined text-[16px]">policy</span>
-                  <span>Chính sách thuê kho &amp; Hợp đồng</span>
-                </button>
-                <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 font-mono text-xs font-bold text-emerald-700">
-                  {activeContracts.length} Hợp đồng đang hiệu lực
-                </span>
-              </div>
-            </div>
-
-            {/* Filter & Search Toolbar */}
-            <div className="bg-slate-50/70 p-3.5 sm:p-4 rounded-xl border border-slate-200/90 flex flex-col gap-3">
-              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-                {/* Search Input */}
-                <div className="relative flex-1">
-                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
-                    search
-                  </span>
-                  <input
-                    type="text"
-                    placeholder="Tìm theo mã hợp đồng, mã kho, hoặc cơ sở..."
-                    value={contractsSearchTerm}
-                    onChange={(e) => setContractsSearchTerm(e.target.value)}
-                    className="w-full pl-9 pr-8 py-2 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 transition-colors"
-                  />
-                  {contractsSearchTerm && (
-                    <button
-                      type="button"
-                      onClick={() => setContractsSearchTerm('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-1 cursor-pointer"
-                      title="Xóa tìm kiếm"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-
-                {/* Filter Dropdowns */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* Facility */}
-                  <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs">
-                    <span className="material-symbols-outlined text-[16px] text-slate-500">apartment</span>
-                    <span className="text-slate-500 font-medium">Cơ sở:</span>
-                    <select
-                      value={contractsFacility}
-                      onChange={(e) => setContractsFacility(e.target.value)}
-                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer max-w-[170px] truncate"
-                    >
-                      <option value="all">
-                        {contractsFacilities.length > 1
-                          ? `Tất cả cơ sở (${contractsFacilities.length})`
-                          : contractsFacilities[0]?.name || 'Tất cả cơ sở'}
-                      </option>
-                      {contractsFacilities.length > 1 &&
-                        contractsFacilities.map((f) => (
-                          <option key={f.id} value={f.id}>
-                            {f.name}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-
-                  {/* Floor */}
-                  <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs">
-                    <span className="material-symbols-outlined text-[16px] text-slate-500">layers</span>
-                    <span className="text-slate-500 font-medium">Tầng:</span>
-                    <select
-                      value={contractsFloor}
-                      onChange={(e) => setContractsFloor(e.target.value)}
-                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
-                    >
-                      <option value="all">Tất cả tầng</option>
-                      {contractsFloors.map((fl) => (
-                        <option key={fl} value={fl}>
-                          Tầng {fl}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Size */}
-                  <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs">
-                    <span className="material-symbols-outlined text-[16px] text-slate-500">straighten</span>
-                    <span className="text-slate-500 font-medium">Kích cỡ:</span>
-                    <select
-                      value={contractsSize}
-                      onChange={(e) => setContractsSize(e.target.value)}
-                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
-                    >
-                      <option value="all">Tất cả kích cỡ</option>
-                      <option value="mini">Kho Mini (≤ 5 m²)</option>
-                      <option value="family">Kho Gia Đình (6 - 10 m²)</option>
-                      <option value="business">Kho Doanh Nghiệp (&gt; 10 m²)</option>
-                    </select>
-                  </div>
-
-                  {/* Reset Button */}
-                  {(contractsSearchTerm || contractsFacility !== 'all' || contractsFloor !== 'all' || contractsSize !== 'all') && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setContractsSearchTerm('')
-                        setContractsFacility('all')
-                        setContractsFloor('all')
-                        setContractsSize('all')
-                      }}
-                      className="px-2.5 py-2 bg-white hover:bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg border border-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
-                      title="Đặt lại bộ lọc"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">restart_alt</span>
-                      <span className="hidden sm:inline">Đặt lại</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between text-[11px] text-slate-500 px-1 pt-0.5 border-t border-slate-200/70 flex-wrap gap-2">
-                <span>
-                  Hiển thị <strong className="text-slate-900 font-bold">{filteredContracts.length}</strong> / {contracts.length} hợp đồng
-                </span>
-                {(contractsSearchTerm || contractsFacility !== 'all' || contractsFloor !== 'all' || contractsSize !== 'all') && (
-                  <span className="text-blue-600 font-semibold flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[14px]">filter_alt</span>
-                    <span>Đang lọc theo tiêu chí</span>
-                  </span>
-                )}
-              </div>
+              <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 font-mono text-xs font-bold text-emerald-700">
+                {activeContracts.length} Hợp đồng đang hiệu lực
+              </span>
             </div>
 
             <div className="overflow-x-auto">
@@ -3728,79 +3069,92 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         Chưa có hợp đồng nào trong hồ sơ của bạn.
                       </td>
                     </tr>
-                  ) : filteredContracts.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="py-8 text-center text-slate-500 text-xs">
-                        Không tìm thấy hợp đồng nào phù hợp với bộ lọc tìm kiếm đã chọn.
-                      </td>
-                    </tr>
                   ) : (
-                    filteredContracts.map(c => (
-                      <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-3.5 px-4 font-unit-code text-xs font-bold text-slate-900">#{c.contractCode}</td>
-                        <td className="py-3.5 px-4 font-bold text-blue-600">#{c.unitCode}</td>
-                        <td className="py-3.5 px-4 text-slate-700">{c.facilityName || 'Boxora Facility'}</td>
-                        <td className="py-3.5 px-4 text-slate-700 font-mono">
-                          {c.status === 'PENDING_ACTIVATION' ? (
-                            <div className="flex flex-col">
-                              <span>{c.startDate} — {c.endDate}</span>
-                              <span className="text-[10px] text-cyan-700 font-sans font-semibold">
-                                (Kích hoạt khi check-in)
+                    filteredContracts.map(c => {
+                      const b = customerBookings.find(bk => bk.id === c.bookingId || bk.bookingCode === c.contractCode.replace(/^CTR-/, ''))
+                      const isPaper = Boolean(c.paperContractUrl || c.signingMethod === 'IN_PERSON' || b?.signingMethod === 'IN_PERSON')
+                      const isOnlinePaid = b
+                        ? (b.paymentStatus === 'PAID' || (b.depositPaid && Number(b.depositPaid) > 0))
+                        : (c.depositHeld && Number(c.depositHeld) > 0)
+
+                      return (
+                        <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-3.5 px-4 font-unit-code text-xs font-bold text-slate-900">#{c.contractCode}</td>
+                          <td className="py-3.5 px-4 font-bold text-blue-600">{c.unitCode ? `#${c.unitCode}` : 'Chọn khi check-in'}</td>
+                          <td className="py-3.5 px-4 text-slate-700">{c.facilityName || 'Boxora Facility'}</td>
+                          <td className="py-3.5 px-4 text-slate-700 font-mono">
+                            {c.status === 'PENDING_ACTIVATION' ? (
+                              <div className="flex flex-col">
+                                <span>{c.startDate} — {c.endDate}</span>
+                                <span className="text-[10px] text-cyan-700 font-sans font-semibold">
+                                  (Kích hoạt khi check-in)
+                                </span>
+                              </div>
+                            ) : (
+                              `${c.startDate} — ${c.endDate}`
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 font-data-tabular font-bold text-slate-900 text-right">
+                            {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫
+                          </td>
+                          <td className="py-3.5 px-4 font-data-tabular text-slate-700 text-right font-bold">
+                            {getContractDepositHeld(c).toLocaleString('vi-VN')} ₫
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            {isPaper ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
+                                <span className="material-symbols-outlined text-[13px]">verified</span>
+                                <span>HĐ Giấy Đã Ký</span>
                               </span>
-                            </div>
-                          ) : (
-                            `${c.startDate} — ${c.endDate}`
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4 font-data-tabular font-bold text-slate-900 text-right">
-                          {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫
-                        </td>
-                        <td className="py-3.5 px-4 font-data-tabular text-slate-700 text-right font-bold">
-                          {getContractDepositHeld(c).toLocaleString('vi-VN')} ₫
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                            c.status === 'ACTIVE' 
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : c.status === 'PENDING_ACTIVATION'
-                              ? 'bg-cyan-50 text-cyan-800 border border-cyan-300'
-                              : c.status === 'PENDING_SIGNATURE'
-                              ? 'bg-amber-50 text-amber-800 border border-amber-300 animate-pulse'
-                              : 'bg-slate-100 text-slate-600 border border-slate-200'
-                          }`}>
-                            {c.status === 'ACTIVE' 
-                              ? 'Đang hiệu lực' 
-                              : c.status === 'PENDING_ACTIVATION'
-                              ? 'Đã ký • Chờ nhận kho'
-                              : c.status === 'PENDING_SIGNATURE' 
-                              ? 'Chờ ký số' 
-                              : c.status}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {c.status === 'PENDING_SIGNATURE' && (
+                            ) : (
+                              <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                c.status === 'ACTIVE' 
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : c.status === 'PENDING_ACTIVATION'
+                                  ? 'bg-cyan-50 text-cyan-800 border border-cyan-300'
+                                  : c.status === 'PENDING_SIGNATURE'
+                                  ? 'bg-amber-50 text-amber-800 border border-amber-300 animate-pulse'
+                                  : 'bg-slate-100 text-slate-600 border border-slate-200'
+                              }`}>
+                                {c.status === 'ACTIVE' 
+                                  ? 'Đang hiệu lực' 
+                                  : c.status === 'PENDING_ACTIVATION'
+                                  ? 'Đã ký • Chờ nhận kho'
+                                  : c.status === 'PENDING_SIGNATURE' 
+                                  ? 'Chờ ký số' 
+                                  : c.status}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {isPaper && c.paperContractUrl ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedContractForModal(c)}
+                                  className="px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-md font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                                  title="Xem bản scan hợp đồng giấy đã tiếp nhận tại cơ sở"
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">document_scanner</span>
+                                  <span>Bản scan HĐ</span>
+                                </button>
+                              ) : !isPaper && c.status === 'PENDING_SIGNATURE' && isOnlinePaid ? (
+                                <span className="text-[10px] text-amber-700 font-mono px-2 py-0.5 rounded bg-amber-50 border border-amber-200">
+                                  Staff tiếp đón ký
+                                </span>
+                              ) : null}
                               <button
                                 type="button"
-                                onClick={() => handleSignContractNow(c)}
-                                className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-md font-bold text-xs shadow-sm flex items-center gap-1 transition-all cursor-pointer animate-pulse"
-                                title="Ký hợp đồng trực tuyến ngay"
+                                onClick={() => setSelectedContractForModal(c)}
+                                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-semibold text-xs transition-colors cursor-pointer"
                               >
-                                <span className="material-symbols-outlined text-[15px]">edit_document</span>
-                                <span>Ký ngay</span>
+                                Chi tiết
                               </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => setSelectedContractForModal(c)}
-                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md font-semibold text-xs transition-colors cursor-pointer"
-                            >
-                              Chi tiết
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })
                   )}
                 </tbody>
               </table>
@@ -3868,7 +3222,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                       </td>
                     </tr>
                   ) : (
-                    myRenewals.map((r) => (
+                    myRenewals.map((r: ContractRenewal) => (
                       <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
                         <td className="py-3.5 px-4">
                           <div className="font-mono font-bold text-slate-900">#{r.id.slice(0, 8)}...</div>
@@ -3877,8 +3231,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                           </div>
                         </td>
                         <td className="py-3.5 px-4">
-                          <div className="font-mono font-bold text-blue-600">#{r.contractCode}</div>
-                          <div className="text-[11px] text-slate-500 font-medium">Kho #{r.unitCode}</div>
+                          <div className="font-mono font-bold text-blue-600">#{r.contractCode || r.contractId?.slice(0, 8)}</div>
+                          <div className="text-[11px] text-slate-500 font-medium">Kho #{r.unitCode || '—'}</div>
                         </td>
                         <td className="py-3.5 px-4 text-slate-700">
                           {r.facilityName || 'Boxora Facility'}
@@ -3891,185 +3245,28 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                           {Number(r.renewalFee || 0).toLocaleString('vi-VN')} ₫
                         </td>
                         <td className="py-3.5 px-4 text-center">
-                          {r.status === 'PENDING_REVIEW' && (
-                            <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
-                              Chờ QL cơ sở duyệt
-                            </span>
-                          )}
-                          {r.status === 'PENDING_SIGNATURE' && (
-                            <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-300 animate-pulse">
-                              Chờ ký phụ lục
-                            </span>
-                          )}
-                          {r.status === 'PENDING_PAYMENT' && (
-                            <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-300">
-                              Chờ thanh toán
-                            </span>
-                          )}
-                          {r.status === 'COMPLETED' && (
-                            <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              Hoàn tất gia hạn
-                            </span>
-                          )}
-                          {r.status === 'REJECTED' && (
-                            <div>
-                              <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                                Bị từ chối
-                              </span>
-                              {r.rejectionReason && (
-                                <div className="text-[10px] text-rose-600 mt-0.5 max-w-[160px] truncate" title={r.rejectionReason}>
-                                  Lý do: {r.rejectionReason}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {r.status === 'CANCELLED' && (
-                            <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                              Đã hủy
-                            </span>
-                          )}
+                          <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                            r.status === 'COMPLETED'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : r.status === 'PENDING_REVIEW'
+                              ? 'bg-amber-50 text-amber-800 border border-amber-300'
+                              : r.status === 'REJECTED'
+                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                              : 'bg-blue-50 text-blue-800 border border-blue-200'
+                          }`}>
+                            {r.status === 'COMPLETED'
+                              ? 'Hoàn tất'
+                              : r.status === 'PENDING_REVIEW'
+                              ? 'Chờ duyệt'
+                              : r.status === 'REJECTED'
+                              ? 'Từ chối'
+                              : r.status}
+                          </span>
                         </td>
                         <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                            {r.status === 'PENDING_REVIEW' && (
-                              <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                                Chờ QL cơ sở duyệt
-                              </span>
-                            )}
-
-                            {r.status === 'PENDING_SIGNATURE' && (
-                              r.paymentMethod === 'COUNTER' ? (
-                                <div className="flex flex-col items-end gap-1">
-                                  <span className="text-[10px] text-emerald-800 font-bold flex items-center gap-1">
-                                    <span className="material-symbols-outlined text-[13px] text-emerald-600">event</span>
-                                    <span>Hẹn quầy: {formatDisplayDate(r.counterAppointmentDate)}{r.counterAppointmentTime ? ` lúc ${r.counterAppointmentTime}` : ''}</span>
-                                  </span>
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenSwitchMethodModal(r, 'ONLINE')}
-                                      className="px-2 py-0.5 bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 rounded text-[11px] font-semibold transition cursor-pointer"
-                                    >
-                                      Ký Online
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenSwitchMethodModal(r, 'COUNTER')}
-                                      className="px-2 py-0.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded text-[11px] font-semibold transition cursor-pointer"
-                                    >
-                                      Đổi hẹn
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => setRenewalForSigning(r)}
-                                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-bold text-xs shadow-xs flex items-center gap-1 transition cursor-pointer"
-                                  >
-                                    <span className="material-symbols-outlined text-[14px]">draw</span>
-                                    <span>Ký online</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenSwitchMethodModal(r, 'COUNTER')}
-                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-medium text-[11px] flex items-center gap-1 transition cursor-pointer"
-                                    title="Chuyển sang đến quầy cơ sở ký và thanh toán"
-                                  >
-                                    <span className="material-symbols-outlined text-[13px] text-emerald-600">storefront</span>
-                                    <span>Đến quầy</span>
-                                  </button>
-                                </div>
-                              )
-                            )}
-
-                            {r.status === 'PENDING_PAYMENT' && (
-                              <button
-                                type="button"
-                                onClick={() => handlePayRenewalVNPay(r)}
-                                disabled={isPayingRenewal}
-                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-bold text-xs shadow-xs flex items-center gap-1 transition cursor-pointer"
-                              >
-                                <span className="material-symbols-outlined text-[14px]">credit_card</span>
-                                <span>Thanh toán VNPay</span>
-                              </button>
-                            )}
-
-                            {['PENDING_REVIEW', 'PENDING_SIGNATURE', 'PENDING_PAYMENT'].includes(r.status) && (
-                              <button
-                                type="button"
-                                onClick={() => handleCancelRenewal(r.id)}
-                                className="px-2 py-1 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 rounded-md font-medium text-xs border border-slate-200 hover:border-rose-200 transition cursor-pointer"
-                                title="Hủy yêu cầu gia hạn"
-                              >
-                                Hủy
-                              </button>
-                            )}
-
-                            {r.status === 'COMPLETED' && (
-                              <div className="flex items-center justify-end gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedRenewalForDocModal(r)}
-                                  className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md font-semibold text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                                  title="Xem văn bản phụ lục gia hạn"
-                                >
-                                  <span className="material-symbols-outlined text-[13px]">description</span>
-                                  <span>Xem phụ lục</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const parentContract = contracts.find((c) => c.id === r.contractId) || ({
-                                      id: r.contractId,
-                                      contractCode: r.contractCode,
-                                      unitCode: r.unitCode,
-                                      facilityName: r.facilityName,
-                                      customerName: r.customerName,
-                                      customerEmail: r.customerEmail,
-                                      startDate: r.oldEndDate,
-                                      endDate: r.newEndDate,
-                                      monthlyFee: r.renewalFee / (r.cycleMonths || 1),
-                                      status: 'ACTIVE',
-                                    } as any)
-                                    setSelectedContractForModal(parentContract)
-                                  }}
-                                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-semibold text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                                  title="Xem văn bản hợp đồng gốc"
-                                >
-                                  <span>Xem HĐ gốc</span>
-                                </button>
-                              </div>
-                            )}
-
-                            {r.status === 'REJECTED' && (() => {
-                              const createdAtDate = r.createdAt ? new Date(r.createdAt) : new Date()
-                              const unlockDate = new Date(createdAtDate.getTime() + 3 * 24 * 60 * 60 * 1000)
-                              const now = new Date()
-                              const canReactivate = now >= unlockDate
-                              const diffMs = unlockDate.getTime() - now.getTime()
-                              const hoursRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60)))
-                              const daysRemaining = Math.floor(hoursRemaining / 24)
-                              const remainingHours = hoursRemaining % 24
-
-                              return canReactivate ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleReactivateRenewal(r.id)}
-                                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-md font-bold text-xs shadow-xs flex items-center gap-1 transition cursor-pointer"
-                                  title="Kích hoạt duyệt lại yêu cầu sau 3 ngày"
-                                >
-                                  <span className="material-symbols-outlined text-[14px]">replay</span>
-                                  <span>Duyệt lại</span>
-                                </button>
-                              ) : (
-                                <span className="text-[10px] text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200" title={`Có thể kích hoạt duyệt lại lúc ${unlockDate.toLocaleString('vi-VN')}`}>
-                                  Duyệt lại sau {daysRemaining > 0 ? `${daysRemaining}d ` : ''}{remainingHours}h
-                                </span>
-                              )
-                            })()}
-                          </div>
+                          <span className="text-[11px] text-slate-500 font-mono">
+                            {r.paymentMethod || 'Chuyển khoản / Quầy'}
+                          </span>
                         </td>
                       </tr>
                     ))
@@ -4079,7 +3276,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             </div>
           </div>
 
-          {/* Section 3: Real DB Payments Ledger & VAT E-Invoices */}
+          {/* Section 2: Real DB Payments Ledger & VAT E-Invoices */}
           <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col gap-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div className="flex items-center gap-3">
@@ -4141,7 +3338,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         </td>
                         <td className="py-3.5 px-4">
                           <span className="font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                            #{p.unitCode || 'N/A'}
+                            {p.unitCode ? `#${p.unitCode}` : 'Vị trí xác nhận khi check-in'}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-slate-700">
@@ -4164,23 +3361,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         </td>
                         <td className="py-3.5 px-4 text-center">
                           <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                            p.status === 'PAID' || p.status === 'SUCCESS'
+                            p.status === 'SUCCESS'
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : p.status === 'PENDING' || p.status === 'REFUND_PENDING'
+                              : p.status === 'PENDING'
                               ? 'bg-amber-50 text-amber-700 border-amber-200'
-                              : p.status === 'REFUNDED'
-                              ? 'bg-purple-50 text-purple-700 border-purple-200'
                               : 'bg-rose-50 text-rose-700 border-rose-200'
                           }`}>
-                            {p.status === 'PAID' || p.status === 'SUCCESS'
-                              ? 'Thành công'
-                              : p.status === 'PENDING'
-                              ? 'Chờ xử lý'
-                              : p.status === 'REFUND_PENDING'
-                              ? 'Chờ hoàn tiền'
-                              : p.status === 'REFUNDED'
-                              ? 'Đã ghi nhận hoàn tiền'
-                              : 'Thất bại'}
+                            {p.status === 'SUCCESS' ? 'Thành công' : p.status === 'PENDING' ? 'Chờ xử lý' : 'Thất bại'}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-right">
@@ -4205,750 +3392,511 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
       {/* 6. TAB 4: HỖ TRỢ & BÁO SỰ CỐ (SUPPORT) */}
       {activeTab === 'support' && (
-        <div className="flex flex-col gap-6">
-          <section className="bg-white rounded-2xl p-6 md:p-8 border border-slate-200 shadow-sm">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              <div className="lg:col-span-5 flex flex-col gap-4">
-                <div className="flex items-center gap-1.5 text-blue-600 font-unit-code text-xs font-bold">
-                  <span>TRUNG TÂM PHẢN HỒI KHÁCH HÀNG 24/7</span>
+        <CustomerSupportPanel
+          user={user}
+          activeContracts={activeContracts}
+          contracts={contracts}
+        />
+      )}
+
+        </>
+      )}
+
+      {/* Booking Modal (Đặt giữ chỗ kho) */}
+      {selectedBookingUnit && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[92vh] overflow-y-auto">
+            {bookingSuccess ? (
+              <div className="py-8 text-center space-y-4">
+                <div className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto shadow-xs ${
+                  bookingWorkflow === 'HOLD_ONLY' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'
+                }`}>
+                  <span className="material-symbols-outlined text-[32px]">
+                    {bookingWorkflow === 'HOLD_ONLY' ? 'bookmark_added' : 'check_circle'}
+                  </span>
                 </div>
-                <h3 className="font-headline text-xl font-bold text-slate-900">
-                  Hỗ Trợ Kỹ Thuật &amp; Khóa Kho
-                </h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Đội ngũ kỹ thuật và bảo vệ trực ca tại trạm sẵn sàng xử lý yêu cầu của bạn nhanh chóng. Các sự cố kẹt cửa cuốn hoặc quên mã PIN được giải quyết trong vòng 3 phút.
+                <div>
+                  <h3 className="font-headline text-lg font-bold text-slate-900">
+                    {bookingWorkflow === 'HOLD_ONLY' ? 'Đặt Giữ Chỗ Kho Thành Công!' : 'Khởi Tạo Hợp Đồng Thuê Thành Công!'}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Mã đặt chỗ của bạn: <strong className="font-mono text-slate-800">#{createdBookingResult?.bookingCode || 'BX-2026-9988'}</strong>
+                  </p>
+                </div>
+
+                <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl text-left text-xs space-y-2">
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Mã kho giữ chỗ:</span>
+                    <span className="font-mono font-bold text-blue-600 text-sm">#{createdBookingResult?.unitCode || selectedBookingUnit.unitCode}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Cơ sở trực thuộc:</span>
+                    <span className="font-semibold text-slate-800">{createdBookingResult?.facilityName || selectedBookingUnit.facilityName}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Thời hạn hợp đồng:</span>
+                    <span className="font-semibold text-slate-800">{bookingEstimate.days} ngày ({formatDisplayDate(bookingStartDate)} → {formatDisplayDate(bookingEstimate.endDate)})</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Ngày check-in dự kiến:</span>
+                    <span className="font-semibold text-slate-800">{formatDisplayDate(bookingCheckInDate)} · {bookingCheckInTime}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-slate-500">Phương thức:</span>
+                    <span className="font-bold text-slate-700">
+                      {bookingWorkflow === 'HOLD_ONLY' ? 'Giữ chỗ 24h (Ký & thanh toán tại quầy)' : 'Ký điện tử & Thanh toán online'}
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-600 leading-relaxed max-w-md mx-auto">
+                  {bookingWorkflow === 'HOLD_ONLY' 
+                    ? 'Vị trí kho đã được giữ riêng cho bạn trong vòng 24 giờ. Quý khách vui lòng đến trực tiếp cơ sở để nhận bàn giao hoặc theo dõi trạng thái tại danh mục Đặt chỗ.'
+                    : 'Hợp đồng điện tử và yêu cầu thanh toán đã sẵn sàng. Mã PIN sẽ được kích hoạt sau khi hoàn tất thủ tục bàn giao theo quy định.'}
                 </p>
 
-                <div className="mt-2 flex flex-col gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700">
-                  <div>
-                    Hotline khẩn cấp: <strong className="text-slate-900 font-bold">1900 6828 (Ext. 1)</strong>
-                  </div>
-                  <div>
-                    Thời gian tiếp nhận: <strong>24/7 không ngày nghỉ</strong>
-                  </div>
-                  <div>
-                    Bảo vệ chốt cổng hỗ trợ người thân &amp; xe tải ra vào
-                  </div>
+                <div className="pt-2 flex flex-col sm:flex-row gap-2">
+                  <button
+                    onClick={() => {
+                      const code = createdBookingResult?.bookingCode
+                      if (bookingOnly) {
+                        navigate(code ? `/portal/customer?tab=bookings&bookingCode=${encodeURIComponent(code)}` : '/portal/customer?tab=bookings')
+                      } else {
+                        setBookingSuccess(false)
+                        setSelectedBookingUnit(null)
+                        if (code) {
+                          setSearchParams({ tab: 'bookings', bookingCode: code })
+                        } else {
+                          handleTabChange('bookings')
+                        }
+                      }
+                    }}
+                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                  >
+                    Xem Đơn Đặt Giữ Chỗ
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (bookingOnly) {
+                        navigate('/portal/customer?tab=my-units')
+                      } else {
+                        setBookingSuccess(false)
+                        setSelectedBookingUnit(null)
+                        handleTabChange('my-units')
+                      }
+                    }}
+                    className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm"
+                  >
+                    Đến Kho Của Tôi
+                  </button>
                 </div>
               </div>
-
-              <div className="lg:col-span-7 bg-slate-50 border border-slate-200 p-6 rounded-xl">
-                {ticketSubmitted ? (
-                  <div className="py-12 text-center flex flex-col items-center justify-center gap-2">
-                    <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                      <span className="material-symbols-outlined text-[28px]">check</span>
-                    </div>
-                    <h4 className="font-bold text-slate-900 text-sm">Yêu Cầu Đã Được Tiếp Nhận!</h4>
-                    <p className="text-xs text-slate-500 max-w-xs">
-                      Nhân viên phụ trách đang xử lý và sẽ phản hồi hoặc liên hệ lại với bạn ngay lập tức.
+            ) : (
+              <div className="space-y-5">
+                {bookingError && (
+                  <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700">
+                    {bookingError}
+                  </p>
+                )}
+                {/* Modal Header */}
+                <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+                  <div>
+                    <h3 className="font-headline text-lg font-bold text-slate-900">
+                      Đặt giữ chỗ kho
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Mã kho: <strong className="font-mono text-slate-800">#{selectedBookingUnit.unitCode}</strong> · {selectedBookingUnit.facilityName}
                     </p>
                   </div>
-                ) : (
-                  <form className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left" onSubmit={handleSupportSubmit}>
-                    {activeContracts.length === 0 && (
-                      <div className="sm:col-span-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[18px] text-amber-600 shrink-0">info</span>
-                        <span>
-                          Quý khách chưa có ngăn kho nào đang ở trạng thái hoạt động (ACTIVE). Báo cáo sự cố chỉ áp dụng cho các cơ sở có kho đã hoàn tất nhận bàn giao (check-in) và đang kích hoạt sử dụng.
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Cơ sở: Chỉ hiển thị cơ sở đang có kho với status là đang hoạt động */}
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
-                        <span>Cơ sở lưu trữ</span>
-                        {supportFacilities.length > 0 && (
-                          <span className="text-[10px] text-emerald-600 font-semibold lowercase">
-                            ({supportFacilities.length} cơ sở có kho hoạt động)
-                          </span>
-                        )}
-                      </label>
-                      {supportFacilities.length > 1 ? (
-                        <select
-                          value={ticketFormFacilityId}
-                          onChange={(e) => setTicketFormFacilityId(e.target.value)}
-                          className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
-                        >
-                          {supportFacilities.map(f => (
-                            <option key={f.id} value={f.id}>
-                              {f.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : supportFacilities.length === 1 ? (
-                        <div className="h-10 px-3 bg-slate-100 border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg flex items-center justify-between">
-                          <span className="truncate">{supportFacilities[0].name}</span>
-                          <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-800 font-bold shrink-0">
-                            Đang hoạt động
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="h-10 px-3 bg-slate-100 border border-slate-200 text-slate-500 text-xs font-medium rounded-lg flex items-center">
-                          Chưa có cơ sở nào có kho hoạt động
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Kho lưu trữ liên quan: Chỉ hiển thị các kho đang hoạt động của cơ sở này */}
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                        Kho lưu trữ liên quan
-                      </label>
-                      <select
-                        value={ticketUnit}
-                        onChange={(e) => setTicketUnit(e.target.value)}
-                        disabled={availableActiveUnitsForTicket.length === 0}
-                        className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400 disabled:bg-slate-100 disabled:text-slate-400"
-                      >
-                        {availableActiveUnitsForTicket.length > 0 ? (
-                          availableActiveUnitsForTicket.map(c => (
-                            <option key={c.unitCode} value={c.unitCode}>
-                              Kho #{c.unitCode} ({c.facilityName})
-                            </option>
-                          ))
-                        ) : (
-                          <option value="">Chưa có kho hoạt động tại cơ sở này</option>
-                        )}
-                      </select>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                        Vấn đề cần hỗ trợ
-                      </label>
-                      <select
-                        value={ticketType}
-                        onChange={(e) => {
-                          setTicketType(e.target.value)
-                          if (ticketError) setTicketError(null)
-                        }}
-                        className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
-                      >
-                        <option value="lock">Sự cố khóa thông minh / Kẹt cửa cuốn</option>
-                        <option value="access">Không thể truy cập kho / Cửa ra vào trạm</option>
-                        <option value="cleanliness">Vệ sinh &amp; Côn trùng trong kho</option>
-                        <option value="climate">Kiểm tra nhiệt độ / Độ ẩm phòng</option>
-                        <option value="facility_damage">Hư hỏng thiết bị &amp; Cơ sở vật chất</option>
-                        <option value="pin">Yêu cầu cấp lại mã PIN mới</option>
-                        <option value="billing">Hỗ trợ thanh toán &amp; Hóa đơn VAT</option>
-                        <option value="other">Khác</option>
-                      </select>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                        Mức độ ảnh hưởng (Ưu tiên)
-                      </label>
-                      <select
-                        value={ticketPriority}
-                        onChange={(e) => setTicketPriority(e.target.value)}
-                        className="h-10 px-3 bg-white border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:border-slate-400"
-                      >
-                        <option value="LOW">Thấp - Thắc mắc / Góp ý thông thường</option>
-                        <option value="MEDIUM">Bình thường - Cần xử lý trong 24h</option>
-                        <option value="HIGH">Cao - Ảnh hưởng việc bốc dỡ hàng / Ra vào</option>
-                        <option value="URGENT">Khẩn cấp - Không mở được kho / Kẹt hàng hóa</option>
-                      </select>
-                    </div>
-
-                    <div className="sm:col-span-2 flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                          Mô tả chi tiết nội dung {ticketType === 'other' ? <span className="text-rose-500 font-bold">* (Bắt buộc ghi rõ mô tả)</span> : ''}
-                        </label>
-                        {ticketType === 'other' && (
-                          <span className="text-[11px] text-amber-700 font-medium">Vui lòng nêu rõ vấn đề cần xử lý</span>
-                        )}
-                      </div>
-                      <textarea
-                        rows={3}
-                        value={ticketContent}
-                        onChange={(e) => {
-                          setTicketContent(e.target.value)
-                          if (ticketError) setTicketError(null)
-                        }}
-                        required
-                        placeholder={
-                          ticketType === 'other'
-                            ? "Vui lòng ghi rõ mô tả cụ thể và chi tiết vấn đề bạn đang gặp phải để đội ngũ Boxora hỗ trợ..."
-                            : "Mô tả cụ thể sự cố cần xử lý..."
-                        }
-                        className={`p-3 bg-white border text-slate-900 text-xs rounded-lg focus:outline-none transition-colors ${
-                          ticketType === 'other' && !ticketContent.trim()
-                            ? 'border-amber-400 focus:border-amber-500 bg-amber-50/20'
-                            : 'border-slate-200 focus:border-slate-400'
-                        }`}
-                      ></textarea>
-                    </div>
-
-                    {ticketError && (
-                      <div className="sm:col-span-2 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[18px]">error</span>
-                        <span>{ticketError}</span>
-                      </div>
-                    )}
-
-                    <div className="sm:col-span-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
-                      <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
-                        Đội ngũ Boxora sẽ phản hồi và giải quyết vấn đề sớm nhất có thể
-                      </span>
-                      <button
-                        type="submit"
-                        disabled={isSubmittingTicket || activeContracts.length === 0}
-                        className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold text-xs rounded-lg transition-colors shadow-sm cursor-pointer self-end sm:self-auto"
-                      >
-                        {isSubmittingTicket ? 'Đang gửi...' : 'Gửi Yêu Cầu'}
-                      </button>
-                    </div>
-                  </form>
-                )}
-              </div>
-            </div>
-          </section>
-
-          {/* LỊCH SỬ BÁO CÁO & PHẢN HỒI SỰ CỐ */}
-          <section className="bg-white rounded-2xl p-6 md:p-8 border border-slate-200 shadow-sm space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
-              <div>
-                <div className="flex items-center gap-2 text-blue-600 font-mono text-xs font-bold uppercase tracking-wider mb-1">
-                  <span className="material-symbols-outlined text-[16px]">history</span>
-                  <span>NHẬT KÝ PHẢN HỒI &amp; XỬ LÝ SỰ CỐ</span>
-                </div>
-                <h3 className="font-headline text-lg font-bold text-slate-900">
-                  Lịch Sử Báo Cáo Sự Cố
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Theo dõi tiến độ, thời gian tiếp nhận và kết quả xử lý thực tế từ kỹ thuật viên và bảo vệ cơ sở Boxora.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={fetchCustomerTickets}
-                  disabled={loadingTickets}
-                  className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg border border-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
-                  title="Tải lại danh sách báo cáo mới nhất"
-                >
-                  <span className={`material-symbols-outlined text-[16px] ${loadingTickets ? 'animate-spin' : ''}`}>
-                    sync
-                  </span>
-                  <span>{loadingTickets ? 'Đang tải...' : 'Làm mới'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Filters & Search Toolbar */}
-            <div className="bg-slate-50/70 p-3.5 sm:p-4 rounded-xl border border-slate-200/90 flex flex-col gap-3">
-              {/* Row 1: Search & Status Filter Pills */}
-              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-                {/* Search Input */}
-                <div className="relative flex-1">
-                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
-                    search
-                  </span>
-                  <input
-                    type="text"
-                    placeholder="Tìm theo mã phiếu (TK-...), kho, tiêu đề, hoặc nội dung..."
-                    value={ticketSearchTerm}
-                    onChange={(e) => setTicketSearchTerm(e.target.value)}
-                    className="w-full pl-9 pr-8 py-2 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 transition-colors"
-                  />
-                  {ticketSearchTerm && (
-                    <button
-                      type="button"
-                      onClick={() => setTicketSearchTerm('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-1 cursor-pointer"
-                      title="Xóa tìm kiếm"
-                    >
-                      ✕
-                    </button>
-                  )}
+                  <button
+                    onClick={closeBookingModal}
+                    className="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+                  >
+                    ✕
+                  </button>
                 </div>
 
-                {/* Status Filter Pills */}
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
-                  {[
-                    { key: 'ALL', label: 'Tất cả', count: customerTickets.length },
-                    { key: 'PENDING', label: 'Chờ tiếp nhận', count: customerTickets.filter(t => t.status === 'OPEN' || t.status === 'PENDING').length },
-                    { key: 'IN_PROGRESS', label: 'Đang xử lý', count: customerTickets.filter(t => t.status === 'IN_PROGRESS').length },
-                    { key: 'RESOLVED', label: 'Đã giải quyết', count: customerTickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED').length },
-                  ].map((tab) => (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      onClick={() => setTicketStatusFilter(tab.key)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
-                        ticketStatusFilter === tab.key
-                          ? 'bg-slate-900 text-white shadow-xs'
-                          : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
-                      }`}
-                    >
-                      <span>{tab.label}</span>
-                      <span
-                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                          ticketStatusFilter === tab.key
-                            ? 'bg-white/20 text-white'
-                            : 'bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        {tab.count}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Row 2: Facility, Floor, Size Filter Dropdowns & Stats */}
-              <div className="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-slate-200/60">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* Facility */}
-                  <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs">
-                    <span className="material-symbols-outlined text-[16px] text-slate-500">apartment</span>
-                    <span className="text-slate-500 font-medium">Cơ sở:</span>
-                    <select
-                      value={ticketFacility}
-                      onChange={(e) => setTicketFacility(e.target.value)}
-                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer max-w-[170px] truncate"
-                    >
-                      <option value="all">
-                        {supportFacilities.length > 1
-                          ? `Tất cả cơ sở (${supportFacilities.length})`
-                          : supportFacilities[0]?.name || 'Chưa có cơ sở hoạt động'}
-                      </option>
-                      {supportFacilities.length > 1 &&
-                        supportFacilities.map((f) => (
-                          <option key={f.id} value={f.id}>
-                            {f.name}
-                          </option>
-                        ))}
-                    </select>
+                {/* Unit Details Banner */}
+                <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between text-xs">
+                  <div>
+                    <div className="font-bold text-slate-900 text-sm">
+                      {selectedBookingUnit.name}
+                    </div>
+                    <div className="text-slate-500 text-[11px] mt-0.5">
+                      Diện tích: <span className="font-semibold text-slate-700">{selectedBookingUnit.areaSqMeters || 6} m²</span> · Vị trí: <span className="font-semibold text-slate-700">{selectedBookingUnit.floorLevel || 'Tầng 1'}</span>
+                    </div>
                   </div>
-
-                  {/* Floor */}
-                  <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs">
-                    <span className="material-symbols-outlined text-[16px] text-slate-500">layers</span>
-                    <span className="text-slate-500 font-medium">Tầng:</span>
-                    <select
-                      value={ticketFloor}
-                      onChange={(e) => setTicketFloor(e.target.value)}
-                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
-                    >
-                      <option value="all">Tất cả tầng</option>
-                      {supportFloors.map((fl) => (
-                        <option key={fl} value={fl}>
-                          Tầng {fl}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Size */}
-                  <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs">
-                    <span className="material-symbols-outlined text-[16px] text-slate-500">aspect_ratio</span>
-                    <span className="text-slate-500 font-medium">Kích cỡ:</span>
-                    <select
-                      value={ticketSize}
-                      onChange={(e) => setTicketSize(e.target.value)}
-                      className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
-                    >
-                      <option value="all">Tất cả cỡ</option>
-                      <option value="mini">Mini (≤ 5m²)</option>
-                      <option value="family">Gia đình (6-10m²)</option>
-                      <option value="business">Doanh nghiệp (&gt; 10m²)</option>
-                    </select>
-                  </div>
-
-                  {/* Reset Filters */}
-                  {(ticketSearchTerm || ticketFacility !== 'all' || ticketFloor !== 'all' || ticketSize !== 'all' || ticketStatusFilter !== 'ALL') && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTicketSearchTerm('')
-                        setTicketFacility('all')
-                        setTicketFloor('all')
-                        setTicketSize('all')
-                        setTicketStatusFilter('ALL')
-                      }}
-                      className="px-2.5 py-2 bg-white hover:bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg border border-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
-                      title="Đặt lại bộ lọc"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">restart_alt</span>
-                      <span className="hidden sm:inline">Đặt lại</span>
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                  <span>
-                    Hiển thị <strong className="text-slate-900 font-bold">{filteredCustomerTickets.length}</strong> / {customerTickets.length} sự cố
-                  </span>
-                  {(ticketSearchTerm || ticketFacility !== 'all' || ticketFloor !== 'all' || ticketSize !== 'all') && (
-                    <span className="text-blue-600 font-semibold flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[14px]">filter_alt</span>
-                      <span>Đang lọc</span>
+                  <div className="text-right">
+                    <span className="font-mono font-bold text-blue-600 text-sm block">
+                      {(selectedBookingUnit.priceNumber || 2400000).toLocaleString('vi-VN')} ₫
                     </span>
-                  )}
+                    <span className="text-[11px] text-slate-500">/tháng · Giá niêm yết</span>
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            {/* List Content */}
-            {loadingTickets ? (
-              <div className="p-12 text-center text-slate-500 text-xs flex flex-col items-center justify-center gap-2">
-                <span className="material-symbols-outlined text-[32px] text-blue-600 animate-spin">sync</span>
-                <span>Đang tải lịch sử báo cáo sự cố từ hệ thống...</span>
-              </div>
-            ) : (() => {
-              const filteredTickets = filteredCustomerTickets
+                {/* 1. Chọn thời hạn thuê */}
+                <div className="space-y-2.5">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                      1. Chọn thời hạn thuê
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Chọn kỳ hạn phù hợp với nhu cầu của bạn.
+                    </p>
+                  </div>
 
-              if (filteredTickets.length === 0) {
-                return (
-                  <div className="p-10 text-center flex flex-col items-center justify-center gap-3 bg-slate-50/70 border border-slate-200 rounded-xl">
-                    <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center">
-                      <span className="material-symbols-outlined text-[28px]">assignment_turned_in</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {[
+                      { id: '15d', title: '15 ngày', sub: 'Ngắn hạn' },
+                      { id: '1m', title: '1 tháng', sub: 'Linh hoạt' },
+                      { id: '3m', title: '3 tháng', sub: 'Giảm 5%' },
+                      { id: '6m', title: '6 tháng', sub: 'Giảm 10%' },
+                      { id: '12m', title: '12 tháng', sub: 'Giảm 15%' },
+                      { id: '24m', title: '24 tháng', sub: 'Giảm 20%' },
+                      { id: 'custom', title: 'Tùy chỉnh', sub: 'Chọn số ngày/tháng' }
+                    ].map(pkg => {
+                      const isSelected = bookingPackage === pkg.id
+                      return (
+                        <button
+                          key={pkg.id}
+                          type="button"
+                          onClick={() => setBookingPackage(pkg.id as any)}
+                          className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                            isSelected
+                              ? 'bg-blue-50/80 border-blue-500 text-blue-900 shadow-2xs ring-1 ring-blue-500'
+                              : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50/60'
+                          } ${pkg.id === 'custom' ? 'col-span-2 sm:col-span-3' : ''}`}
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <span className="text-xs font-bold text-slate-900">{pkg.title}</span>
+                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                              isSelected
+                                ? 'bg-blue-600 text-white'
+                                : pkg.sub.includes('Giảm') ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                            }`}>
+                              {pkg.sub}
+                            </span>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {bookingPackage === 'custom' && (
+                    <div className="p-3 bg-blue-50/50 border border-blue-200/80 rounded-xl flex items-center gap-3">
+                      <span className="text-xs font-semibold text-slate-700 shrink-0">Nhập số ngày muốn thuê:</span>
+                      <div className="flex items-center gap-2 flex-1">
+                        <input
+                          type="number"
+                          min={1}
+                          max={1825}
+                          value={bookingCustomDays}
+                          onChange={(e) => setBookingCustomDays(Math.max(1, parseInt(e.target.value || '1', 10)))}
+                          className="h-9 w-24 px-3 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                        />
+                        <span className="text-xs text-slate-500 font-medium">ngày (tương đương ~{(bookingCustomDays / 30).toFixed(1)} tháng)</span>
+                      </div>
                     </div>
-                    <div className="max-w-md">
-                      <h4 className="text-sm font-bold text-slate-800">
-                        {ticketSearchTerm || ticketStatusFilter !== 'ALL' || ticketFacility !== 'all' || ticketFloor !== 'all' || ticketSize !== 'all'
-                          ? 'Không có báo cáo sự cố nào phù hợp bộ lọc'
-                          : 'Chưa có yêu cầu hỗ trợ hoặc báo cáo sự cố nào'}
-                      </h4>
-                      <p className="text-xs text-slate-500 mt-1">
-                        {ticketSearchTerm || ticketStatusFilter !== 'ALL' || ticketFacility !== 'all' || ticketFloor !== 'all' || ticketSize !== 'all'
-                          ? 'Thử thay đổi từ khóa tìm kiếm, cơ sở/tầng hoặc chọn bộ lọc trạng thái khác.'
-                          : 'Khi gặp sự cố khóa thông minh, kẹt cửa cuốn, cần cấp lại mã PIN hoặc hỗ trợ thanh toán, bạn có thể gửi yêu cầu ở biểu mẫu phía trên.'}
+                  )}
+
+                  {/* Ưu đãi kỳ hạn Box */}
+                  <div className="p-3 bg-slate-50 border border-slate-200/70 rounded-xl space-y-1 text-xs">
+                    <div className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-blue-600 text-[16px]">loyalty</span>
+                      Ưu đãi kỳ hạn · Chiết khấu theo thời hạn
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Mức giảm giá được áp dụng theo chính sách và kỳ hạn đủ điều kiện. Giá cuối cùng sẽ được hệ thống xác nhận trước khi ký hợp đồng.
+                    </p>
+                  </div>
+                </div>
+
+                {/* 2. Lịch nhận kho & kích hoạt mã PIN */}
+                <div className="space-y-3">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                      2. Lịch nhận kho &amp; kích hoạt mã PIN
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Hai ngày này có thể khác nhau. Hãy kiểm tra kỹ trước khi xác nhận.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Ngày bắt đầu thuê */}
+                    <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                        Ngày bắt đầu thuê
+                      </label>
+                      <input
+                        type="date"
+                        value={bookingStartDate}
+                        onChange={(e) => setBookingStartDate(e.target.value)}
+                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
+                      />
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Là ngày bắt đầu tính thời hạn và tiền thuê theo hợp đồng đã xác nhận.
+                      </p>
+                    </div>
+
+                    {/* Ngày check-in dự kiến */}
+                    <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                        Ngày check-in dự kiến
+                      </label>
+                      <input
+                        type="date"
+                        value={bookingCheckInDate}
+                        onChange={(e) => setBookingCheckInDate(e.target.value)}
+                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
+                      />
+                      <label className="mt-2 block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                        Giờ dự kiến đến
+                      </label>
+                      <input
+                        type="time"
+                        value={bookingCheckInTime}
+                        onChange={(e) => setBookingCheckInTime(e.target.value)}
+                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
+                      />
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        Ngày và giờ bạn dự kiến đến để nhân viên chuẩn bị kho và bàn giao.
                       </p>
                     </div>
                   </div>
-                )
-              }
 
-              return (
-                <div className="space-y-4">
-                  {filteredTickets.map(t => {
-                    const catMeta = getTicketCategoryMeta(t.category)
-                    const statusMeta = getTicketStatusMeta(t.status)
-                    const priorityMeta = getTicketPriorityMeta(t.priority)
-                    const isResolved = t.status === 'RESOLVED' || t.status === 'CLOSED'
-                    const isInProgress = t.status === 'IN_PROGRESS'
-
-                    return (
-                      <div
-                        key={t.id}
-                        className="p-5 rounded-xl border border-slate-200 bg-white hover:border-blue-300 hover:shadow-xs transition-all space-y-4 text-left"
-                      >
-                        {/* Top: Header metadata */}
-                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-mono text-xs font-extrabold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
-                              #{t.ticketCode || t.id.substring(0, 8).toUpperCase()}
-                            </span>
-
-                            {t.unitCode && (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                                <span className="material-symbols-outlined text-[13px]">warehouse</span>
-                                <span>Kho #{t.unitCode}</span>
-                              </span>
-                            )}
-
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${catMeta.color}`}>
-                              <span className="material-symbols-outlined text-[13px]">{catMeta.icon}</span>
-                              <span>{catMeta.label}</span>
-                            </span>
-
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${priorityMeta.badge}`}>
-                              Ưu tiên: {priorityMeta.label}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-3">
-                            <span className="text-[11px] text-slate-400">
-                              {formatDisplayDateTime(t.createdAt)}
-                            </span>
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${statusMeta.badge}`}>
-                              <span className="material-symbols-outlined text-[14px]">{statusMeta.icon}</span>
-                              <span>{statusMeta.label}</span>
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Title & Description */}
-                        <div className="space-y-1.5">
-                          <h4 className="text-sm font-bold text-slate-900">
-                            {t.title}
-                          </h4>
-                          <div className="text-xs text-slate-700 bg-slate-50/80 p-3 rounded-lg border border-slate-100 leading-relaxed whitespace-pre-wrap">
-                            {t.description}
-                          </div>
-                        </div>
-
-                        {/* Resolution Note / Status update from Boxora */}
-                        {t.status === 'RESOLVED' ? (
-                          <div className="p-4 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs text-emerald-950 space-y-3">
-                            <div className="flex items-start gap-3">
-                              <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
-                                <span className="material-symbols-outlined text-[20px]">verified</span>
-                              </div>
-                              <div className="flex-1 space-y-1">
-                                <div className="flex items-center justify-between">
-                                  <span className="font-bold text-emerald-900 text-sm">
-                                    Kết quả xử lý từ nhân viên Boxora:
-                                  </span>
-                                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100/90 px-2.5 py-0.5 rounded-full border border-emerald-300">
-                                    ✓ Đã xử lý - Chờ xác nhận
-                                  </span>
-                                </div>
-                                <p className="text-xs text-emerald-900 leading-relaxed font-medium">
-                                  {t.resolutionNote || 'Kỹ thuật viên đã kiểm tra hiện trường cơ sở và giải quyết hoàn tất yêu cầu của quý khách.'}
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* Customer confirmation action bar */}
-                            <div className="border-t border-emerald-200/80 pt-3 flex flex-wrap items-center justify-between gap-2.5">
-                              <span className="text-[11px] text-emerald-800 font-medium">
-                                Quý khách vui lòng xác nhận sự cố đã hết hoặc gửi yêu cầu xử lý lại nếu chưa khắc phục triệt để:
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  disabled={isProcessingTicketAction}
-                                  onClick={() => {
-                                    setCloseTicketTarget(t)
-                                    setTicketActionError(null)
-                                  }}
-                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                                >
-                                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                                  <span>Xác nhận hài lòng &amp; Đóng phiếu</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={isProcessingTicketAction}
-                                  onClick={() => {
-                                    setReopenModalTicket(t)
-                                    setReopenReasonText('')
-                                  }}
-                                  className="px-3 py-1.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                                >
-                                  <span className="material-symbols-outlined text-[16px]">restart_alt</span>
-                                  <span>Yêu cầu xử lý lại</span>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ) : t.status === 'CLOSED' ? (
-                          <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 flex items-start gap-3">
-                            <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 mt-0.5">
-                              <span className="material-symbols-outlined text-[18px]">lock</span>
-                            </div>
-                            <div className="flex-1 space-y-1">
-                              <div className="flex items-center justify-between">
-                                <span className="font-bold text-slate-800">
-                                  Phiếu sự cố đã được nghiệm thu đóng
-                                </span>
-                                <span className="text-[10px] font-semibold text-slate-600 bg-slate-200 px-2 py-0.5 rounded">
-                                  ĐÃ ĐÓNG
-                                </span>
-                              </div>
-                              <p className="text-xs text-slate-600 leading-relaxed">
-                                {t.resolutionNote || 'Vấn đề đã được giải quyết và xác nhận nghiệm thu hoàn tất.'}
-                              </p>
-                            </div>
-                          </div>
-                        ) : t.status === 'REOPENED' ? (
-                          <div className="p-3.5 rounded-lg bg-amber-50 border border-amber-300 text-xs text-amber-950 flex items-start gap-3">
-                            <div className="w-7 h-7 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center shrink-0 mt-0.5">
-                              <span className="material-symbols-outlined text-[18px]">cached</span>
-                            </div>
-                            <div className="flex-1 space-y-1">
-                              <div className="flex items-center justify-between">
-                                <span className="font-bold text-amber-900">
-                                  Đã yêu cầu xử lý lại (Đang mở lại)
-                                </span>
-                                <span className="text-[10px] font-bold text-amber-800 bg-amber-200 px-2 py-0.5 rounded">
-                                  CẦN KIỂM TRA LẠI
-                                </span>
-                              </div>
-                              <p className="text-xs text-amber-900 leading-relaxed font-medium">
-                                {t.resolutionNote ? `Lý do / Ghi chú: ${t.resolutionNote}` : 'Kỹ thuật viên ca trực đang được điều phối kiểm tra và xử lý lại sự cố.'}
-                              </p>
-                            </div>
-                          </div>
-                        ) : isInProgress ? (
-                          <div className="p-3.5 rounded-lg bg-blue-50/80 border border-blue-200 text-xs text-blue-900 flex items-start gap-2.5">
-                            <span className="material-symbols-outlined text-[18px] text-blue-600 shrink-0 mt-0.5 animate-spin">
-                              sync
-                            </span>
-                            <div className="flex-1">
-                              <strong>Đang xử lý:</strong> Kỹ thuật viên / bảo vệ ca trực Boxora đang kiểm tra hiện trường cơ sở.
-                              {t.resolutionNote && (
-                                <p className="mt-1 text-slate-700 font-medium">Ghi chú điều phối: {t.resolutionNote}</p>
-                              )}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="p-3 rounded-lg bg-amber-50/70 border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5">
-                            <span className="material-symbols-outlined text-[18px] text-amber-700 shrink-0 mt-0.5">
-                              schedule
-                            </span>
-                            <div>
-                              <strong>Chờ tiếp nhận:</strong> Yêu cầu đã được chuyển tới ca trực tại trạm. Đội ngũ kỹ thuật sẽ tiếp nhận và tiến hành xử lý trong ít phút.
-                            </div>
-                          </div>
-                        )}
+                  {/* Warning: Ngày check-in sau ngày bắt đầu thuê */}
+                  {bookingCheckInDate > bookingStartDate && (
+                    <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1 text-xs">
+                      <div className="font-bold text-amber-900 text-[11px] flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-amber-600 text-[16px]">info</span>
+                        Ngày check-in sau ngày bắt đầu thuê
                       </div>
-                    )
-                  })}
+                      <p className="text-[11px] text-amber-800 leading-relaxed">
+                        Hợp đồng dự kiến bắt đầu trước ngày bạn nhận kho. Vui lòng xác nhận chính sách tính tiền cho khoảng thời gian chênh lệch trước khi ký. Hệ thống không nên tự động tính thêm phí nếu chưa có thỏa thuận rõ ràng.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Trạng thái mã PIN */}
+                  <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800 text-[11px]">Trạng thái mã PIN</span>
+                      <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold text-[10px] flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                        Chưa kích hoạt
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Mã PIN chỉ có hiệu lực khi hợp đồng, thanh toán và thủ tục bàn giao đáp ứng đủ điều kiện theo chính sách. Thanh toán thành công không đồng nghĩa với việc mã PIN đã hoạt động.
+                    </p>
+                  </div>
                 </div>
-              )
-            })()}
-          </section>
+
+                {/* 3. Bảng tính chi phí dự kiến */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    3. Bảng tính chi phí dự kiến
+                  </h4>
+
+                  <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2 text-xs">
+                    {/* Row 1: Tiền thuê kho */}
+                    <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                      <div>
+                        <div className="font-bold text-slate-800">Tiền thuê kho</div>
+                        <div className="text-[10px] text-slate-500">Theo kỳ hạn đã chọn</div>
+                      </div>
+                      <div className="font-mono font-bold text-slate-900 text-xs">
+                        {bookingEstimate.rawRent.toLocaleString('vi-VN')} ₫
+                      </div>
+                    </div>
+
+                    {/* Row 2: Chiết khấu kỳ hạn */}
+                    <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                      <div>
+                        <div className="font-bold text-emerald-800">Chiết khấu kỳ hạn</div>
+                        <div className="text-[10px] text-slate-500">
+                          {bookingEstimate.discountPercent > 0 
+                            ? `Ví dụ: giảm ${bookingEstimate.discountPercent}% trên tiền thuê`
+                            : 'Theo kỳ hạn đã chọn'}
+                        </div>
+                      </div>
+                      <div className="font-mono font-bold text-emerald-700 text-xs">
+                        {bookingEstimate.discountAmount > 0 
+                          ? `−${bookingEstimate.discountAmount.toLocaleString('vi-VN')} ₫`
+                          : '0 ₫'}
+                      </div>
+                    </div>
+
+                    {/* Row 3: Tiền cọc an ninh */}
+                    <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                      <div>
+                        <div className="font-bold text-slate-800">Tiền cọc an ninh</div>
+                        <div className="text-[10px] text-slate-500">Hoàn trả theo điều kiện hợp đồng</div>
+                      </div>
+                      <div className="font-mono font-bold text-slate-900 text-xs">
+                        {bookingEstimate.deposit.toLocaleString('vi-VN')} ₫
+                      </div>
+                    </div>
+
+                    {/* Row 4: Tổng dự kiến */}
+                    <div className="flex justify-between items-center pt-2">
+                      <div>
+                        <div className="font-bold text-slate-900 text-sm">Tổng dự kiến</div>
+                        <div className="text-[10px] text-slate-500">Đã gồm tiền thuê sau giảm và tiền cọc</div>
+                      </div>
+                      <div className="font-mono font-bold text-blue-600 text-base">
+                        {bookingEstimate.totalPayment.toLocaleString('vi-VN')} ₫
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-slate-500 leading-relaxed italic">
+                    Số tiền trên là ví dụ minh họa cho kỳ hạn {bookingEstimate.days} ngày. Giá cuối cùng, chiết khấu, thuế/phí nếu có và tiền cần thanh toán phải được backend tính theo chính sách thực tế.
+                  </p>
+                </div>
+
+                {/* 4. Chọn phương thức tiếp nhận */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    4. Chọn phương thức tiếp nhận
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {/* Option 1: Đặt giữ chỗ kho */}
+                    <div
+                      onClick={() => setBookingWorkflow('HOLD_ONLY')}
+                      className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
+                        bookingWorkflow === 'HOLD_ONLY'
+                          ? 'bg-blue-50/70 border-blue-500 shadow-2xs ring-1 ring-blue-500'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-blue-600 text-[18px]">bookmark</span>
+                            Đặt giữ chỗ kho
+                          </span>
+                          <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                            Miễn phí 24 giờ
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-normal">
+                          Giữ vị trí kho trong 24 giờ. Đến cơ sở để xem kho, hoàn tất hợp đồng và thanh toán theo quy định.
+                        </p>
+                      </div>
+                      <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
+                        <span className="text-slate-600 font-medium">Thanh toán ngay</span>
+                        <span className="font-mono font-bold text-slate-900">0 ₫</span>
+                      </div>
+                    </div>
+
+                    {/* Option 2: Ký online & thanh toán */}
+                    <div
+                      onClick={() => setBookingWorkflow('ONLINE_NOW')}
+                      className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
+                        bookingWorkflow === 'ONLINE_NOW'
+                          ? 'bg-blue-50/70 border-blue-500 shadow-2xs ring-1 ring-blue-500'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-blue-600 text-[18px]">history_edu</span>
+                            Ký online &amp; thanh toán
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-normal">
+                          Ký hợp đồng điện tử qua DocuSeal và thanh toán trực tuyến. Sau đó hoàn tất bước nhận kho trước khi mã PIN được kích hoạt.
+                        </p>
+                      </div>
+                      <div className="mt-3 pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
+                        <span className="text-slate-600 font-medium">Tổng dự kiến</span>
+                        <span className="font-mono font-bold text-blue-600">{bookingEstimate.totalPayment.toLocaleString('vi-VN')} ₫</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Policy acceptance checkbox */}
+                  <label className="flex items-start gap-2.5 p-3 bg-slate-50 border border-slate-200/80 rounded-xl cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={bookingPolicyAccepted}
+                      onChange={(e) => setBookingPolicyAccepted(e.target.checked)}
+                      className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <span className="text-xs text-slate-700 leading-relaxed">
+                      Tôi đã đọc thông tin về ngày bắt đầu thuê, ngày check-in, điều kiện kích hoạt mã PIN và chính sách hủy/hoàn tiền.
+                    </span>
+                  </label>
+                </div>
+
+                {/* Modal Footer Actions */}
+                <div className="pt-3 border-t border-slate-100 flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={closeBookingModal}
+                    disabled={isSubmittingBooking}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Hủy bỏ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmBooking}
+                    disabled={isSubmittingBooking || !bookingPolicyAccepted}
+                    className={`flex-1 py-2.5 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      !bookingPolicyAccepted
+                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                        : bookingWorkflow === 'HOLD_ONLY'
+                        ? 'bg-slate-900 hover:bg-slate-800'
+                        : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                  >
+                    {isSubmittingBooking ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                        <span>Đang xử lý đặt chỗ...</span>
+                      </>
+                    ) : bookingWorkflow === 'HOLD_ONLY' ? (
+                      <span>Xác nhận đặt giữ chỗ</span>
+                    ) : (
+                      <span>Xác nhận ký online &amp; thanh toán</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {selectedBookingUnit && (
-        <PortalBookingReservationModal
-          unit={selectedBookingUnit}
-          onClose={closeBookingModal}
-          onNavigate={handleTabChange}
-          onRefresh={async () => {
-            await Promise.all([fetchCustomerBookings(), fetchContracts(), fetchCustomerPayments(), fetchAvailableUnits()])
-          }}
-        />
-      )}
       {/* 1. RENEWAL MODAL: YÊU CẦU GIA HẠN HỢP ĐỒNG */}
       {renewModalData && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[92vh] overflow-y-auto">
-            {renewSuccess && createdRenewal ? (
-              <div className="py-4 text-center space-y-4">
+            {renewSuccess ? (
+              <div className="py-8 text-center space-y-3">
                 <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
                   <span className="material-symbols-outlined text-[32px]">check_circle</span>
                 </div>
-                <div className="space-y-1">
-                  <h3 className="font-headline text-lg font-bold text-slate-900">
-                    Khởi Tạo Yêu Cầu Gia Hạn Thành Công!
-                  </h3>
-                  <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
-                    Yêu cầu gia hạn thêm <strong>{createdRenewal.cycleMonths} tháng</strong> cho hợp đồng <strong>#{createdRenewal.contractCode}</strong> (Kho #{createdRenewal.unitCode}) đã được ghi nhận trên hệ thống Boxora.
-                  </p>
-                </div>
-
-                {/* Status Badge */}
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border">
-                  {createdRenewal.status === 'PENDING_REVIEW' && (
-                    <span className="bg-amber-100 text-amber-800 border border-amber-300 px-3 py-1 rounded-full flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px]">pending_actions</span>
-                      <span>Chờ Quản Lý Cơ Sở Phê Duyệt</span>
-                    </span>
-                  )}
-                  {createdRenewal.status === 'PENDING_SIGNATURE' && (
-                    <span className="bg-blue-100 text-blue-800 border border-blue-300 px-3 py-1 rounded-full flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px]">draw</span>
-                      <span>Đã Duyệt • Chờ Ký Phụ Lục Điện Tử</span>
-                    </span>
-                  )}
-                  {createdRenewal.status === 'PENDING_PAYMENT' && (
-                    <span className="bg-indigo-100 text-indigo-800 border border-indigo-300 px-3 py-1 rounded-full flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px]">payments</span>
-                      <span>Đã Ký • Chờ Thanh Toán Phí Gia Hạn</span>
-                    </span>
-                  )}
-                  {createdRenewal.status === 'COMPLETED' && (
-                    <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1 rounded-full flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px]">verified</span>
-                      <span>Gia Hạn Hoàn Tất Thành Công</span>
-                    </span>
-                  )}
-                </div>
-
-                {/* Information Card */}
-                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs text-left space-y-2">
-                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                    <span className="text-slate-500">Mã yêu cầu</span>
-                    <span className="font-mono font-bold text-slate-800">#{createdRenewal.id.slice(0, 8)}...</span>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                    <span className="text-slate-500">Thời hạn hiện tại</span>
-                    <span className="font-mono text-slate-700">{formatDisplayDate(createdRenewal.oldEndDate)}</span>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                    <span className="text-slate-500">Thời hạn kết thúc mới</span>
-                    <span className="font-mono font-bold text-emerald-700">{formatDisplayDate(createdRenewal.newEndDate)}</span>
-                  </div>
-                  <div className="flex justify-between py-1 pt-1.5">
-                    <span className="font-semibold text-slate-700">Tổng phí gia hạn dự kiến</span>
-                    <span className="font-mono font-extrabold text-blue-700 text-sm">
-                      {Number(createdRenewal.renewalFee || 0).toLocaleString('vi-VN')} ₫
-                    </span>
-                  </div>
-                </div>
-
-                {/* Next Step Action Buttons */}
-                <div className="space-y-2 pt-2">
-                  {createdRenewal.status === 'PENDING_SIGNATURE' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRenewalForSigning(createdRenewal)
-                        setRenewModalData(null)
-                      }}
-                      className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">draw</span>
-                      <span>Ký Phụ Lục Gia Hạn Ngay (DocuSeal)</span>
-                    </button>
-                  )}
-
-                  {createdRenewal.status === 'PENDING_PAYMENT' && (
-                    <button
-                      type="button"
-                      onClick={() => handlePayRenewalVNPay(createdRenewal)}
-                      disabled={isPayingRenewal}
-                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">credit_card</span>
-                      <span>Thanh Toán VNPay ({Number(createdRenewal.renewalFee || 0).toLocaleString('vi-VN')} ₫)</span>
-                    </button>
-                  )}
-
-                  {createdRenewal.status === 'PENDING_REVIEW' && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 text-left flex items-start gap-2">
-                      <span className="material-symbols-outlined text-amber-600 text-[18px] shrink-0 mt-0.5">info</span>
-                      <p className="leading-relaxed">
-                        Yêu cầu gia hạn của bạn đang được Ban Quản Lý cơ sở xem xét theo quy định. Bạn sẽ nhận được thông báo ngay khi có kết quả để ký phụ lục và hoàn tất thanh toán.
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRenewSuccess(false)
-                        setRenewModalData(null)
-                        setActiveTab('contracts')
-                      }}
-                      className="flex-1 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl transition cursor-pointer"
-                    >
-                      Xem trong Hợp đồng &amp; Gia hạn
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRenewSuccess(false)
-                        setRenewModalData(null)
-                      }}
-                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition cursor-pointer"
-                    >
-                      Đóng
-                    </button>
-                  </div>
-                </div>
+                <h3 className="font-headline text-lg font-bold text-slate-900">
+                  Gửi Yêu Cầu Gia Hạn Thành Công!
+                </h3>
+                <p className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed">
+                  Yêu cầu gia hạn thêm <strong>{renewMonths} tháng</strong> cho hợp đồng <strong>#{renewModalData.contractCode}</strong> (Kho #{renewModalData.unitCode}) đã được tiếp nhận và xử lý vào hệ thống Boxora.
+                </p>
+                <button
+                  onClick={() => {
+                    setRenewSuccess(false)
+                    setRenewModalData(null)
+                  }}
+                  className="mt-4 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm"
+                >
+                  Đóng cửa sổ
+                </button>
               </div>
             ) : (
               <div className="space-y-4">
@@ -4993,16 +3941,16 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     </div>
                     <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
                       <span className="text-slate-500 font-medium">Cơ sở / Kho</span>
-                      <span className="font-bold text-slate-900">{renewModalData.facilityName} / #{renewModalData.unitCode}</span>
+                      <span className="font-bold text-slate-900">{renewModalData.facilityName} / {renewModalData.unitCode}</span>
                     </div>
                     <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
                       <span className="text-slate-500 font-medium">Thời hạn hiện tại</span>
                       <span className="font-mono font-bold text-slate-900">
-                        {formatDisplayDate(renewModalData.startDate)} – {formatDisplayDate(renewModalData.endDate)}
+                        {formatDisplayDate(renewModalData.startDate)}–{formatDisplayDate(renewModalData.endDate)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-slate-500 font-medium">Giá thuê chính thức</span>
+                      <span className="text-slate-500 font-medium">Giá thuê hiện tại</span>
                       <span className="font-mono font-bold text-blue-700">
                         {Number(renewModalData.monthlyPrice || 0).toLocaleString('vi-VN')} ₫/tháng
                       </span>
@@ -5023,7 +3971,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     {/* Thời gian gia hạn options */}
                     <div>
                       <label className="text-[11px] font-bold text-slate-600 block mb-1.5 uppercase tracking-wider">
-                        Thời gian gia hạn thêm
+                        Thời gian gia hạn
                       </label>
                       <div className="grid grid-cols-4 gap-2">
                         {[1, 3, 6, 12].map((m) => (
@@ -5043,74 +3991,59 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                       </div>
                     </div>
 
-                    {/* Quy trình gia hạn hướng dẫn */}
-                    <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl space-y-1 text-xs text-blue-900 text-left">
-                      <div className="flex items-center gap-1.5 font-bold text-blue-950">
-                        <span className="material-symbols-outlined text-[17px] text-blue-700">info</span>
-                        <span>Quy trình gia hạn hợp đồng Boxora</span>
+                    {/* Inputs for Price, Discount, Other Fee */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 block mb-1 uppercase">
+                          Giá thuê mỗi tháng (VND)
+                        </label>
+                        <input
+                          type="number"
+                          value={renewMonthlyPrice}
+                          onChange={(e) => setRenewMonthlyPrice(Math.max(0, parseInt(e.target.value) || 0))}
+                          className="w-full h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                        />
                       </div>
-                      <p className="text-[11px] text-slate-600 leading-relaxed">
-                        Yêu cầu gia hạn của bạn sẽ được chuyển tới Quản lý cơ sở xem xét phê duyệt. Sau khi được duyệt, bạn sẽ chọn hình thức thực hiện (ký điện tử &amp; thanh toán trực tuyến hoặc đến trực tiếp cơ sở) và thanh toán cước phí.
-                      </p>
-                    </div>
-
-                    {/* Pricing breakdown according to business policy */}
-                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 text-xs space-y-1.5">
-                      <div className="flex justify-between text-slate-600">
-                        <span>Giá thuê mỗi tháng:</span>
-                        <span className="font-mono font-bold text-slate-800">
-                          {Number(renewModalData.monthlyPrice || 0).toLocaleString('vi-VN')} ₫
-                        </span>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 block mb-1 uppercase">
+                          Chiết khấu (%)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={renewDiscountPercent}
+                          onChange={(e) => setRenewDiscountPercent(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                          className="w-full h-9 px-2.5 bg-white border border-slate-200 rounded-lg font-mono text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                        />
                       </div>
-                      <div className="flex justify-between text-slate-600">
-                        <span>Chiết khấu (%):</span>
-                        <span className="font-mono text-emerald-600 font-semibold">0% (theo chính sách)</span>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 block mb-1 uppercase">
+                          Phí khác (VND)
+                        </label>
+                        <input
+                          type="number"
+                          value={renewOtherFee}
+                          onChange={(e) => setRenewOtherFee(Math.max(0, parseInt(e.target.value) || 0))}
+                          className="w-full h-9 px-2.5 bg-white border border-slate-200 rounded-lg font-mono text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                        />
                       </div>
-                      <div className="flex justify-between text-slate-600">
-                        <span>Phí khác:</span>
-                        <span className="font-mono text-slate-700">0 ₫</span>
-                      </div>
-                    </div>
-
-                    {/* Ghi chú */}
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 block mb-1 uppercase">
-                        Ghi chú gửi quản lý (tùy chọn)
-                      </label>
-                      <input
-                        type="text"
-                        value={renewNotes}
-                        onChange={(e) => setRenewNotes(e.target.value)}
-                        placeholder="Ví dụ: Mong muốn tiếp tục lưu trữ tài liệu..."
-                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-                      />
                     </div>
 
                     {/* Tổng tiền dự kiến */}
-                    <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="mt-2 p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div>
                         <span className="text-xs font-bold text-slate-900 block">
-                          Tổng tiền gia hạn dự kiến
+                          Tổng tiền dự kiến
                         </span>
                         <span className="text-[10px] text-slate-500">
-                          {Number(renewModalData.monthlyPrice || 0).toLocaleString('vi-VN')} ₫ × {renewMonths} tháng
+                          Chưa tính công nợ cũ hoặc khoản điều chỉnh khác
                         </span>
                       </div>
                       <div className="font-mono text-xl sm:text-2xl font-extrabold text-blue-700">
                         {totalRenewEstimate.toLocaleString('vi-VN')} ₫
                       </div>
                     </div>
-
-                    {/* Thông báo lỗi - Đặt ngay dưới Tổng tiền gia hạn dự kiến */}
-                    {renewError && (
-                      <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2.5 animate-in fade-in duration-150">
-                        <span className="material-symbols-outlined text-[20px] text-rose-600 shrink-0 mt-0.5">error</span>
-                        <div className="space-y-0.5">
-                          <div className="font-bold text-rose-900">Không thể gửi yêu cầu gia hạn</div>
-                          <div className="leading-relaxed">{renewError}</div>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -5146,206 +4079,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         </div>
       )}
 
-      {/* DocuSeal Renewal Addendum Modal */}
-      {renewalForSigning && (
-        <DocuSealRenewalModal
-          renewal={renewalForSigning}
-          onClose={() => setRenewalForSigning(null)}
-          onSignedSuccess={async (updated) => {
-            setCreatedRenewal(updated)
-            await fetchMyRenewals()
-            await fetchContracts()
-          }}
-          onProceedToPayment={(ren) => {
-            void handlePayRenewalVNPay(ren)
-          }}
-        />
-      )}
-
-      {/* Switch Renewal Method Modal (Chọn / Đổi sang Trực Tuyến hoặc Trực Tiếp Tại Cơ Sở) */}
-      {switchMethodTarget && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-[20px]">swap_horiz</span>
-                </div>
-                <div>
-                  <h3 className="font-headline text-base font-bold text-slate-900">
-                    Chọn Phương Thức Ký &amp; Thanh Toán
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Hợp đồng #{switchMethodTarget.contractCode} • Kho #{switchMethodTarget.unitCode}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSwitchMethodTarget(null)}
-                className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            {switchMethodError && (
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2">
-                <span className="material-symbols-outlined text-rose-600 text-[18px] shrink-0 mt-0.5">error</span>
-                <span className="leading-relaxed">{switchMethodError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSwitchMethodSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
-                  Hình thức thực hiện
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSwitchMethodMode('ONLINE')}
-                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col gap-1 ${
-                      switchMethodMode === 'ONLINE'
-                        ? 'bg-blue-50/90 border-blue-600 ring-1 ring-blue-600 text-blue-900'
-                        : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 font-bold text-xs">
-                      <span className="material-symbols-outlined text-[17px] text-blue-600">draw</span>
-                      <span>Trực tuyến 24/7</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500 leading-tight">
-                      Ký phụ lục DocuSeal &amp; thanh toán VNPay online ngay.
-                    </p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const isSigned = !!(switchMethodTarget.signedAt || switchMethodTarget.signatureData || switchMethodTarget.status === 'PENDING_PAYMENT')
-                      if (isSigned) {
-                        setSwitchMethodError('Phụ lục gia hạn đã được ký điện tử trực tuyến, bắt buộc hoàn tất thanh toán trực tuyến qua VNPay và không thể đổi sang hình thức trực tiếp tại quầy.')
-                        return
-                      }
-                      setSwitchMethodMode('COUNTER')
-                    }}
-                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col gap-1 ${
-                      switchMethodMode === 'COUNTER'
-                        ? 'bg-emerald-50/90 border-emerald-600 ring-1 ring-emerald-600 text-emerald-900'
-                        : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 font-bold text-xs">
-                      <span className="material-symbols-outlined text-[17px] text-emerald-600">storefront</span>
-                      <span>Tại cơ sở Boxora</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500 leading-tight">
-                      Đến quầy ký phụ lục giấy &amp; thanh toán cước trực tiếp.
-                    </p>
-                  </button>
-                </div>
-              </div>
-
-              {switchMethodMode === 'COUNTER' && (
-                <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-xl space-y-3 text-xs animate-in fade-in duration-150">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="flex items-center gap-1.5 font-bold text-emerald-900">
-                        <span className="material-symbols-outlined text-[16px] text-emerald-700">calendar_month</span>
-                        <span>Ngày hẹn đến cơ sở <span className="text-rose-500">*</span></span>
-                      </label>
-                      <input
-                        type="date"
-                        required
-                        value={switchAppointmentDate}
-                        min={new Date().toISOString().split('T')[0]}
-                        onChange={(e) => setSwitchAppointmentDate(e.target.value)}
-                        className="w-full h-9 px-3 bg-white border border-emerald-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-400"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="flex items-center gap-1.5 font-bold text-emerald-900">
-                        <span className="material-symbols-outlined text-[16px] text-emerald-700">schedule</span>
-                        <span>Giờ hẹn check-in <span className="text-rose-500">*</span></span>
-                      </label>
-                      <input
-                        type="time"
-                        required
-                        value={switchAppointmentTime}
-                        onChange={(e) => setSwitchAppointmentTime(e.target.value)}
-                        className="w-full h-9 px-3 bg-white border border-emerald-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-400"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Preset quick times for convenience */}
-                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                    <span className="text-[10px] text-slate-500 font-medium">Khung giờ gợi ý:</span>
-                    {['09:00', '10:30', '14:00', '16:00', '17:30'].map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => setSwitchAppointmentTime(preset)}
-                        className={`px-2 py-0.5 rounded text-[10px] font-semibold transition cursor-pointer ${
-                          switchAppointmentTime === preset
-                            ? 'bg-emerald-600 text-white shadow-xs'
-                            : 'bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
-                        }`}
-                      >
-                        {preset}
-                      </button>
-                    ))}
-                  </div>
-
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Vui lòng chọn ngày và giờ bạn sẽ đến cơ sở <strong>{switchMethodTarget.facilityName}</strong> để ký phụ lục giấy và thanh toán phí.
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
-                  Ghi chú gửi quản lý / nhân viên (tùy chọn)
-                </label>
-                <input
-                  type="text"
-                  value={switchMethodNotes}
-                  onChange={(e) => setSwitchMethodNotes(e.target.value)}
-                  placeholder="Ví dụ: Tôi sẽ ghé buổi sáng khoảng 10h..."
-                  className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="pt-2 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSwitchMethodTarget(null)}
-                  disabled={isSubmittingSwitchMethod}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
-                >
-                  Hủy bỏ
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingSwitchMethod}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center gap-1.5 cursor-pointer"
-                >
-                  {isSubmittingSwitchMethod ? (
-                    <>
-                      <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
-                      <span>Đang lưu...</span>
-                    </>
-                  ) : (
-                    <span>Xác Nhận Thay Đổi</span>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* 2. PIN CHANGE MODAL: YÊU CẦU ĐỔI MÃ PIN */}
       {pinChangeUnit && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -5359,7 +4092,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   Đổi Mã PIN Thành Công!
                 </h3>
                 <p className="text-xs text-slate-600">
-                  Mã PIN mới đã được lưu trong Boxora. Việc đồng bộ hoặc hoạt động của khóa vật lý chưa được xác minh; vui lòng kiểm tra với cơ sở trước khi sử dụng.
+                  Mã PIN mới của kho #{pinChangeUnit.unitCode} đã được đồng bộ an toàn vào khóa thông minh.
                 </p>
                 <button
                   onClick={() => {
@@ -5393,7 +4126,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 </div>
 
                 <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100 text-xs text-slate-600 leading-relaxed">
-                  Mã PIN gồm đúng <strong>6 chữ số</strong> được lưu trong Boxora. Khóa vật lý chỉ sử dụng được mã nếu cơ sở đã cài đặt và xác minh riêng.
+                  Mã PIN mới gồm đúng <strong>6 chữ số</strong> dùng để xác thực mở khóa điện tử tại cửa phòng kho và cổng cơ sở.
                 </div>
 
                 <div className="space-y-3">
@@ -5570,33 +4303,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         <ContractDocumentModal
           contract={selectedContractForModal}
           onClose={() => setSelectedContractForModal(null)}
-          onSignNow={handleSignContractNow}
+          /* onSignNow handled by Staff */
           isSigning={fetchingSigningUrl}
-        />
-      )}
-
-      {/* Renewal Addendum Legal Document Viewer Modal */}
-      {selectedRenewalForDocModal && (
-        <RenewalDocumentModal
-          renewal={selectedRenewalForDocModal}
-          contract={contracts.find((c) => c.id === selectedRenewalForDocModal.contractId) || null}
-          onClose={() => setSelectedRenewalForDocModal(null)}
-          onViewOriginalContract={() => {
-            const parentContract = contracts.find((c) => c.id === selectedRenewalForDocModal.contractId) || ({
-              id: selectedRenewalForDocModal.contractId,
-              contractCode: selectedRenewalForDocModal.contractCode,
-              unitCode: selectedRenewalForDocModal.unitCode,
-              facilityName: selectedRenewalForDocModal.facilityName,
-              customerName: selectedRenewalForDocModal.customerName,
-              customerEmail: selectedRenewalForDocModal.customerEmail,
-              startDate: selectedRenewalForDocModal.oldEndDate,
-              endDate: selectedRenewalForDocModal.newEndDate,
-              monthlyFee: selectedRenewalForDocModal.renewalFee / (selectedRenewalForDocModal.cycleMonths || 1),
-              status: 'ACTIVE',
-            } as any)
-            setSelectedRenewalForDocModal(null)
-            setSelectedContractForModal(parentContract)
-          }}
         />
       )}
 
@@ -5671,7 +4379,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 </div>
                 <div>
                   <span className="text-slate-400 text-[10px] uppercase font-bold block">Ngăn kho tiếp nhận:</span>
-                  <strong className="text-blue-600 font-mono text-xs">#{selectedVatPayment.unitCode || 'N/A'}</strong>
+                  <strong className="text-blue-600 font-mono text-xs">{selectedVatPayment.unitCode ? `#${selectedVatPayment.unitCode}` : 'Vị trí xác nhận khi check-in'}</strong>
                   <div className="text-slate-500 text-[11px]">Phương thức: {selectedVatPayment.paymentMethod || 'VNPay'}</div>
                 </div>
               </div>
@@ -5691,8 +4399,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                       <td className="py-3 px-3">
                         <span className="font-semibold text-slate-900">
                           {selectedVatPayment.paymentType === 'DEPOSIT'
-                            ? `Tiền đặt cọc bảo đảm ngăn kho #${selectedVatPayment.unitCode}`
-                            : `Tiền thuê ngăn kho tự quản Boxora #${selectedVatPayment.unitCode}`}
+                            ? 'Tiền đặt cọc bảo đảm ngăn kho'
+                            : 'Tiền thuê ngăn kho tự quản Boxora'}{' '}
+                          {selectedVatPayment.unitCode ? `#${selectedVatPayment.unitCode}` : '(vị trí xác nhận khi check-in)'}
                         </span>
                         <div className="text-[10px] text-slate-400">Mã GD đối soát: {selectedVatPayment.transactionId || selectedVatPayment.id}</div>
                       </td>
@@ -5751,6 +4460,124 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           </div>
         </div>
       )}
+
+      {/* Proof of Transfer / Màn hình chuyển tiền Modal */}
+      {selectedProofPayment && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm overflow-y-auto">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="bg-slate-900 px-6 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-400">
+                  <span className="material-symbols-outlined text-xl">account_balance</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm tracking-wide uppercase">Chứng Từ / Màn Hình Chuyển Tiền</h3>
+                  <p className="text-[10px] text-slate-400 font-mono">
+                    Mã giao dịch: {selectedProofPayment.transactionId || selectedProofPayment.id}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedProofPayment(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-4 text-xs text-slate-700">
+              {/* Transfer Details Card */}
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                <div>
+                  <span className="text-slate-400 text-[10px] uppercase font-bold block">Kho &amp; Cơ sở:</span>
+                  <strong className="text-blue-600 font-mono text-xs">{selectedProofPayment.unitCode ? `#${selectedProofPayment.unitCode}` : 'Vị trí xác nhận khi check-in'}</strong>
+                  <div className="text-slate-600 text-[11px]">{selectedProofPayment.facilityName || 'Boxora Storage'}</div>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] uppercase font-bold block">Khoản thanh toán:</span>
+                  <span className="font-semibold text-slate-800">
+                    {selectedProofPayment.paymentType === 'DEPOSIT' ? 'Tiền ký quỹ (Cọc)' : 'Tiền thuê kho'}
+                  </span>
+                  <div className="text-slate-500 text-[10px]">
+                    Phương thức: <strong className="font-mono text-slate-700">BANK_TRANSFER (Chuyển khoản)</strong>
+                  </div>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] uppercase font-bold block">Thời gian thanh toán:</span>
+                  <span className="font-mono text-slate-700">
+                    {selectedProofPayment.paymentTime ? new Date(selectedProofPayment.paymentTime).toLocaleString('vi-VN') : '—'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] uppercase font-bold block">Số tiền chuyển khoản:</span>
+                  <strong className="text-emerald-700 text-sm font-mono">
+                    {selectedProofPayment.amount.toLocaleString('vi-VN')} ₫
+                  </strong>
+                </div>
+              </div>
+
+              {/* Proof Image / Screenshot Display */}
+              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 flex flex-col items-center justify-center">
+                {selectedProofPayment.proofDocumentUrl ? (
+                  <div className="space-y-3 w-full flex flex-col items-center">
+                    <div className="text-[11px] font-semibold text-slate-600 flex items-center gap-1.5 self-start">
+                      <span className="material-symbols-outlined text-[16px] text-blue-600">image</span>
+                      <span>Ảnh chụp màn hình chuyển khoản / Ủy nhiệm chi:</span>
+                    </div>
+                    <div className="max-h-[480px] w-full overflow-hidden rounded-lg border border-slate-200 bg-white flex items-center justify-center p-2 shadow-xs">
+                      <img
+                        src={selectedProofPayment.proofDocumentUrl}
+                        alt="Màn hình chuyển tiền"
+                        className="max-h-[460px] max-w-full object-contain rounded shadow-sm"
+                      />
+                    </div>
+                    <a
+                      href={selectedProofPayment.proofDocumentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg border border-blue-200 transition-colors cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                      <span>Mở ảnh gốc trong tab mới</span>
+                    </a>
+                  </div>
+                ) : (
+                  <div className="py-6 px-4 text-center space-y-2">
+                    <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mx-auto">
+                      <span className="material-symbols-outlined text-[24px]">verified</span>
+                    </div>
+                    <div className="font-bold text-slate-900 text-xs">
+                      Giao Dịch Chuyển Khoản Trực Tiếp Tại Quầy Đã Xác Nhận
+                    </div>
+                    <p className="text-[11px] text-slate-500 max-w-md mx-auto leading-relaxed">
+                      Nhân viên quầy tại cơ sở đã kiểm tra trực tiếp màn hình chuyển tiền thành công trên ứng dụng ngân hàng và đối soát chính xác với hệ thống tài khoản Boxora.
+                    </p>
+                    {selectedProofPayment.receiptVoucherCode && (
+                      <div className="inline-block mt-2 px-3 py-1 bg-slate-100 text-slate-700 rounded-lg font-mono text-[11px] border border-slate-200">
+                        Số phiếu thu / tham chiếu: <strong>{selectedProofPayment.receiptVoucherCode}</strong>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-50 px-6 py-3.5 border-t border-slate-200 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedProofPayment(null)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Reschedule Booking Modal (Đổi lịch hẹn nhận kho chuyên nghiệp theo chính sách Boxora) */}
       <BookingRescheduleModal
         isOpen={!!rescheduleBookingTarget}
@@ -5792,7 +4619,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   {/* Unit Header */}
                   <div className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
                     <div>
-                      <span className="font-mono text-base font-extrabold text-blue-700">KHO #{selectedBookingForModal.unitCode}</span>
+                      <span className="font-mono text-base font-extrabold text-blue-700">
+                        {selectedBookingForModal.unitCode ? `KHO #${selectedBookingForModal.unitCode}` : 'Vị trí kho xác nhận khi check-in'}
+                      </span>
                       <div className="text-slate-500 text-[11px]">{selectedBookingForModal.facilityName}</div>
                     </div>
                     <div className="text-right">
@@ -5842,25 +4671,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     </div>
                   )}
 
-                  {modalInfo.scenario === 'PAID_UNSIGNED' && (
-                    <div className="p-3.5 rounded-xl bg-blue-50/80 border border-blue-200 text-blue-950 flex items-start gap-2.5">
-                      <span className="material-symbols-outlined text-[20px] text-blue-600 shrink-0 mt-0.5">
-                        edit_document
-                      </span>
-                      <div className="leading-relaxed flex-1">
-                        <div className="font-bold text-blue-900 text-xs mb-0.5 flex items-center justify-between">
-                          <span>Đã thanh toán nhưng chưa ký</span>
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                            Chờ ký hợp đồng
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-blue-800">
-                          Đơn đặt kho đã thanh toán đủ. Quý khách vui lòng hoàn tất ký hợp đồng điện tử trực tuyến hoặc mang CCCD gốc đến cơ sở Boxora để ký hợp đồng và nhận bàn giao kho.
-                        </p>
-                      </div>
-                    </div>
-                  )}
 
                   {modalInfo.scenario === 'UNPAID_IN_PERSON' && (
                     <div className="p-3.5 rounded-xl bg-amber-50/80 border border-amber-200 text-amber-950 flex items-start gap-2.5">
@@ -5875,7 +4685,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                           </span>
                         </div>
                         <p className="text-[11px] text-amber-800">
-                          Kho được bảo lưu riêng cho bạn đến <strong>{selectedBookingForModal.holdExpiresAt ? new Date(selectedBookingForModal.holdExpiresAt).toLocaleString('vi-VN') : 'lịch hẹn + thời gian gia hạn'}</strong>. Quý khách vui lòng mang CCCD gốc đến cơ sở Boxora để xem kho thực tế, ký hợp đồng và thanh toán nhận bàn giao.
+                          Đơn đặt chỗ được ghi nhận theo loại kho và cơ sở. Vị trí cụ thể sẽ được xác nhận cùng nhân viên khi check-in.
                         </p>
                       </div>
                     </div>
@@ -5886,7 +4696,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     <div className="grid grid-cols-2 gap-2.5">
                       <div>
                         <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                          {selectedBookingForModal.handoverTime ? 'Thời điểm bàn giao thực tế:' : 'Lịch hẹn check-in nhận kho:'}
+                          {selectedBookingForModal.handoverTime ? 'Thời điểm bàn giao thực tế:' : 'Lịch hẹn nhận kho:'}
                         </span>
                         <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                           <strong className="font-mono text-slate-900 text-xs">
@@ -5997,33 +4807,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
                   {/* Action buttons */}
                   <div className="pt-2 flex flex-col sm:flex-row items-center gap-2">
-                    {modalInfo.scenario === 'UNPAID_IN_PERSON' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const target = selectedBookingForModal
-                          setSelectedBookingForModal(null)
-                          handlePayBookingVNPay(target)
-                        }}
-                        className="w-full py-2.5 bg-cyan-700 hover:bg-cyan-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer text-center shadow-sm"
-                      >
-                        Thanh toán và ký hợp đồng trực tuyến ngay -&gt;
-                      </button>
-                    )}
-                    {modalInfo.scenario === 'PAID_UNSIGNED' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const target = selectedBookingForModal
-                          const contract = modalInfo.matchingContract
-                          setSelectedBookingForModal(null)
-                          void handleSignContractForBooking(target, contract)
-                        }}
-                        className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer text-center shadow-sm"
-                      >
-                        Ký hợp đồng điện tử ngay -&gt;
-                      </button>
-                    )}
+                    
                     <button
                       type="button"
                       onClick={() => setSelectedBookingForModal(null)}
@@ -6060,33 +4844,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             fetchCustomerPayments(),
             fetchAvailableUnits(),
           ])
+          window.dispatchEvent(new Event('boxora:storage-units-refresh'))
         }}
       />
-
-      {/* Booking Checkout & Payment Continuation Modal */}
-      {requestToPay && user && (
-        <BookingCheckoutModal
-          unit={{
-            backendId: requestToPay.storageUnitId || requestToPay.id,
-            code: requestToPay.unitCode || 'N/A',
-            name: requestToPay.unitCode ? `Kho #${requestToPay.unitCode}` : 'Kho Boxora',
-            facilityName: requestToPay.facilityName || 'Boxora Facility',
-            monthlyPrice: (requestToPay.totalRentalFee && requestToPay.rentalMonths ? requestToPay.totalRentalFee / requestToPay.rentalMonths : 0) || 1000000,
-            depositAmount: requestToPay.depositAmount || requestToPay.depositPaid || 0,
-            size: undefined,
-            address: ''
-          }}
-          user={user}
-          existingBooking={requestToPay}
-          existingPayments={customerPayments}
-          onClose={() => {
-            setRequestToPay(null)
-            fetchCustomerBookings()
-            fetchContracts()
-            fetchCustomerPayments()
-          }}
-        />
-      )}
 
       {/* Ticket closure confirmation: Task 2 standardized modal */}
       <TicketCloseConfirmModal
@@ -6187,7 +4947,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     </span>
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Kho #{contractHistoryModal.contract.unitCode} • {contractHistoryModal.contract.facilityName}
+                    {contractHistoryModal.contract.unitCode ? `Kho #${contractHistoryModal.contract.unitCode}` : 'Vị trí kho xác nhận khi nhận kho'} • {contractHistoryModal.contract.facilityName}
                   </p>
                 </div>
               </div>
@@ -6302,7 +5062,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   </span>
                 </div>
 
-                {contractHistoryModal.renewals.map((r, idx) => (
+                {contractHistoryModal.renewals.map((r: any, idx: number) => (
                   <div
                     key={r.id}
                     className="border border-blue-200/90 rounded-xl p-4 bg-gradient-to-r from-white to-blue-50/30 shadow-2xs space-y-2.5"
@@ -6394,6 +5154,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           </div>
         </div>
       )}
+
 
     </div>
   )

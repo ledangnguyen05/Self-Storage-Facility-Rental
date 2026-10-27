@@ -55,4 +55,8 @@ public class BookingResponse {
     private String staffAssignmentNotes;
     private String identityCardNumber;
     private String identityCardType;
+    private UUID contractId;
+    private String contractCode;
+    private String contractStatus;
+    private Boolean contractSigned;
 }

@@ -5,6 +5,7 @@ import { facilityService } from '../../services/facilityService'
 import { facilityPolicyService } from '../../services/facilityPolicyService'
 import { reportService } from '../../services/reportService'
 import { bookingService } from '../../services/bookingService'
+import { contractService } from '../../services/contractService'
 import { supportTicketService, SupportTicketRecord } from '../../services/supportTicketService'
 import { useLanguage } from '../../context/LanguageContext'
 import { useAuth } from '../../context/AuthContext'
@@ -18,6 +19,7 @@ import { AssetSealingModal } from './modals/AssetSealingModal'
 import { CreateStorageUnitModal } from './modals/CreateStorageUnitModal'
 import { FacilityPolicyViewModal } from './modals/FacilityPolicyViewModal'
 import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
+import { EarlyCheckInConfirmModal, isBookingBeforeCheckInTime, EarlyCheckInActionType } from '../../components/modals/EarlyCheckInConfirmModal'
 import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
 import { HandoverCheckInWorkbench } from '../staff/components/HandoverCheckInWorkbench'
 
@@ -53,6 +55,7 @@ export const ManagerDashboard: React.FC = () => {
     facilities?: Facility[]
   }>() || {}
 
+  const isAdmin = role === 'ADMIN'
   const isFacilityScoped = role === 'FACILITY_MANAGER' || role === 'STAFF'
   const assignedFacilityId = user?.facilityId
 
@@ -118,6 +121,7 @@ export const ManagerDashboard: React.FC = () => {
   const [activeRentals, setActiveRentals] = useState<Booking[]>([])
   const [showAllRentals, setShowAllRentals] = useState(false)
   const [tickets, setTickets] = useState<SupportTicketRecord[]>([])
+  const [renewalsCount, setRenewalsCount] = useState<number>(0)
 
   // Check-in Filter & Claim States
   const [checkinTimeframe, setCheckinTimeframe] = useState<'current' | 'today' | 'past' | 'future' | 'all'>('all')
@@ -127,6 +131,11 @@ export const ManagerDashboard: React.FC = () => {
   const [activeBookingId, setActiveBookingId] = useState<string>(
     searchParams.get('bookingId') || searchParams.get('checkinBookingId') || ''
   )
+  const [earlyConfirmState, setEarlyConfirmState] = useState<{
+    booking: Booking
+    actionType: EarlyCheckInActionType
+    onConfirm: () => void
+  } | null>(null)
 
   useEffect(() => {
     const bId = searchParams.get('bookingId') || searchParams.get('checkinBookingId')
@@ -134,6 +143,14 @@ export const ManagerDashboard: React.FC = () => {
       setActiveBookingId(bId)
     }
   }, [searchParams])
+
+  // Handover / Reception pagination
+  const [handoverPage, setHandoverPage] = useState<number>(1)
+  const [handoverPageSize] = useState<number>(5)
+
+  // Expiring rentals / Return inspection pagination
+  const [rentalPage, setRentalPage] = useState<number>(1)
+  const [rentalPageSize] = useState<number>(5)
 
   // Tickets queue pagination
   const [ticketCurrentPage, setTicketCurrentPage] = useState<number>(1)
@@ -220,7 +237,7 @@ export const ManagerDashboard: React.FC = () => {
         ? facId
         : (selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : facilities[0]?.id)
 
-      const [unitsRes, debtRes, polRes, arrivalsRes, rentalsRes, ticketsRes] = await Promise.allSettled([
+      const [unitsRes, debtRes, polRes, arrivalsRes, rentalsRes, ticketsRes, renewalsRes] = await Promise.allSettled([
         storageUnitService.getUnits(targetId ? { facilityId: targetId } : undefined),
         reportService.getOverdueDebtReport(targetId ? { facilityId: targetId } : undefined),
         targetId ? facilityPolicyService.getByFacilityId(targetId) : Promise.resolve(null),
@@ -231,6 +248,7 @@ export const ManagerDashboard: React.FC = () => {
         }),
         bookingService.getAll({ status: 'ACTIVE', size: 100, facilityId: targetId }),
         supportTicketService.getQueue(targetId ? { facilityId: targetId } : undefined),
+        contractService.getRenewals({ facilityId: targetId, size: 100 }),
       ])
 
       // 1. Process Storage Units
@@ -327,8 +345,10 @@ export const ManagerDashboard: React.FC = () => {
           filteredArrivals = filteredArrivals.filter(b => b.facilityId === targetId)
         }
         setUpcomingHandovers(filteredArrivals)
+        setHandoverPage(1)
       } else {
         setUpcomingHandovers([])
+        setHandoverPage(1)
       }
 
       // 5. Active Rentals / Returns
@@ -338,6 +358,7 @@ export const ManagerDashboard: React.FC = () => {
           filteredRentals = filteredRentals.filter(b => b.facilityId === targetId)
         }
         setActiveRentals(filteredRentals)
+        setRentalPage(1)
       } else {
         setActiveRentals([])
       }
@@ -349,6 +370,14 @@ export const ManagerDashboard: React.FC = () => {
         setTickets([])
       }
 
+      // 7. Renewals Count
+      if (renewalsRes.status === 'fulfilled' && renewalsRes.value) {
+        const count = renewalsRes.value.totalElements ?? (renewalsRes.value.content ? renewalsRes.value.content.length : 0)
+        setRenewalsCount(count)
+      } else {
+        setRenewalsCount(0)
+      }
+
     } catch {
       setUnits([])
       setOverdueItems([])
@@ -358,6 +387,7 @@ export const ManagerDashboard: React.FC = () => {
       setUpcomingHandovers([])
       setActiveRentals([])
       setTickets([])
+      setRenewalsCount(0)
     } finally {
       setIsLoading(false)
     }
@@ -388,28 +418,34 @@ export const ManagerDashboard: React.FC = () => {
           filteredArrivals = filteredArrivals.filter(b => b.facilityId === targetId)
         }
         setUpcomingHandovers(filteredArrivals)
+        setHandoverPage(1)
       } else {
         setUpcomingHandovers([])
+        setHandoverPage(1)
       }
     } catch {
       setUpcomingHandovers([])
+      setHandoverPage(1)
     }
   }
 
   const handleCheckinTimeframeChange = (tf: 'current' | 'today' | 'past' | 'future' | 'all') => {
     setCheckinTimeframe(tf)
+    setHandoverPage(1)
     fetchUpcomingHandovers(selectedFacilityId, tf, checkinFromDate, checkinToDate)
   }
 
   const handleCheckinDateFilterApply = (from: string, to: string) => {
     setCheckinFromDate(from)
     setCheckinToDate(to)
+    setHandoverPage(1)
     fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, from, to)
   }
 
   const handleResetCheckinDateFilter = () => {
     setCheckinFromDate('')
     setCheckinToDate('')
+    setHandoverPage(1)
     fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, '', '')
   }
 
@@ -422,8 +458,13 @@ export const ManagerDashboard: React.FC = () => {
         assignedStaffId: updated.assignedStaffId || user?.id,
         assignedStaffName: updated.assignedStaffName || user?.fullName || 'Quản lý cơ sở'
       } : b))
-      setActionSuccessMessage(`Đã tiếp nhận lượt đón khách của đơn ${booking.bookingCode} thành công!`)
+      setActiveBookingId(booking.id)
+      setActionSuccessMessage(`Đã tiếp nhận lượt đón khách của đơn ${booking.bookingCode} thành công! Bàn vận hành quầy đã sẵn sàng để đối soát & bàn giao.`)
       setTimeout(() => setActionSuccessMessage(null), 4000)
+      setTimeout(() => {
+        const el = document.getElementById('handover-workbench-section')
+        if (el) el.scrollIntoView({ behavior: 'smooth' })
+      }, 100)
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Không thể tiếp nhận khách: Bạn chỉ có thể tiếp nhận khi có ca làm việc vào ngày hẹn check-in tại cơ sở và đã điểm danh vào ca trực.'
       setReceptionAlertData({
@@ -595,6 +636,31 @@ export const ManagerDashboard: React.FC = () => {
 
   const facilityProfile = useMemo(() => parseFacilityLayoutConfig(currentFacility?.layoutConfig), [currentFacility])
   const selectedUnitOverdue = overdueItems.find(item => item.unitCode === selectedUnit?.id)
+
+  // Handover & Return paginated datasets
+  const totalHandoverPages = Math.max(1, Math.ceil(upcomingHandovers.length / handoverPageSize))
+  const paginatedUpcomingHandovers = useMemo(() => {
+    const start = (handoverPage - 1) * handoverPageSize
+    return upcomingHandovers.slice(start, start + handoverPageSize)
+  }, [upcomingHandovers, handoverPage, handoverPageSize])
+
+  const totalRentalPages = Math.max(1, Math.ceil(activeRentals.length / rentalPageSize))
+  const paginatedRentals = useMemo(() => {
+    const start = (rentalPage - 1) * rentalPageSize
+    return activeRentals.slice(start, start + rentalPageSize)
+  }, [activeRentals, rentalPage, rentalPageSize])
+
+  useEffect(() => {
+    if (handoverPage > totalHandoverPages) {
+      setHandoverPage(totalHandoverPages)
+    }
+  }, [totalHandoverPages, handoverPage])
+
+  useEffect(() => {
+    if (rentalPage > totalRentalPages) {
+      setRentalPage(totalRentalPages)
+    }
+  }, [totalRentalPages, rentalPage])
 
   // Current shift identification
   const currentShiftText = useMemo(() => {
@@ -1010,6 +1076,13 @@ export const ManagerDashboard: React.FC = () => {
         >
           <span className="material-symbols-outlined text-[18px]">grid_view</span>
           <span>1. Sơ Đồ Kho &amp; Thiết Bị</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            activeTab === 'overview'
+              ? 'bg-white text-slate-900'
+              : 'bg-slate-200 text-slate-800'
+          }`}>
+            {totalUnitsCount} kho
+          </span>
         </button>
 
         <button
@@ -1023,6 +1096,13 @@ export const ManagerDashboard: React.FC = () => {
         >
           <span className="material-symbols-outlined text-[18px]">autorenew</span>
           <span>2. Xử Lý Gia Hạn Hợp Đồng</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            activeTab === 'renewals'
+              ? 'bg-white text-slate-900'
+              : 'bg-emerald-100 text-emerald-800'
+          }`}>
+            {renewalsCount} đơn
+          </span>
         </button>
 
         <button
@@ -1034,8 +1114,15 @@ export const ManagerDashboard: React.FC = () => {
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <span className="material-symbols-outlined text-[18px]">fact_check</span>
-          <span>2. Bàn Giao &amp; Trả Kho ({upcomingHandovers.length})</span>
+          <span className="material-symbols-outlined text-[18px]">badge</span>
+          <span>3. Bàn Vận Hành Quầy &amp; Tiếp Đón</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            activeTab === 'handovers-returns'
+              ? 'bg-white text-slate-900'
+              : 'bg-blue-100 text-blue-800'
+          }`}>
+            {upcomingHandovers.length} đơn
+          </span>
         </button>
 
         <button
@@ -1048,7 +1135,14 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">build_circle</span>
-          <span>3. Sự Cố &amp; SLA ({tickets.filter(t => t.status !== 'RESOLVED').length})</span>
+          <span>4. Sự Cố &amp; SLA</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            activeTab === 'tickets'
+              ? 'bg-white text-slate-900'
+              : 'bg-rose-100 text-rose-800'
+          }`}>
+            {tickets.filter(t => t.status !== 'RESOLVED').length} ca
+          </span>
         </button>
 
         {role !== 'STAFF' && (
@@ -1320,7 +1414,7 @@ export const ManagerDashboard: React.FC = () => {
                     className="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-[18px]">verified</span>
-                    <span>Xem Hồ Sơ &amp; 4 Điều Kiện Bàn Giao</span>
+                    <span>Xem Hồ Sơ &amp; 3 Điều Kiện Bàn Giao</span>
                   </button>
                 )}
 
@@ -1421,19 +1515,59 @@ export const ManagerDashboard: React.FC = () => {
       )}
 
       {/* ============================================================== */}
-      {/* TAB 2: BÀN GIAO & TRẢ KHO (GIÁM SÁT TIẾN ĐỘ) */}
+      {/* TAB 3: BÀN VẬN HÀNH QUẦY & TIẾP ĐÓN BÀN GIAO */}
       {/* ============================================================== */}
       {activeTab === 'handovers-returns' && (
         <section className="flex flex-col gap-6">
           
-          {/* Supervisory Notice Banner */}
-          <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex items-start gap-3">
-            <span className="material-symbols-outlined text-blue-600 text-[24px] shrink-0 mt-0.5">policy</span>
-            <div className="text-xs text-blue-900 leading-relaxed">
-              <strong className="block text-sm font-bold mb-0.5">Phân định thẩm quyền vận hành:</strong>
-              Màn hình này cung cấp <strong>chế độ giám sát tiến độ</strong> dành cho Quản lý cơ sở. Toàn bộ quy trình tiếp đón khách, đối soát CCCD, nghiệm thu hiện trường 5 hạng mục và phát hành mã PIN bàn giao được thực hiện trực tiếp bởi <strong>Nhân viên quầy (Facility Staff)</strong> tại Bàn Vận Hành Quầy &amp; Tiếp Đón.
+          {/* Header Bàn Vận Hành Quầy & Tiếp Đón */}
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center border border-cyan-400/30 shrink-0">
+                <span className="material-symbols-outlined text-[26px]">badge</span>
+              </div>
+              <div>
+                <h3 className="font-headline text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                  Bàn Vận Hành Quầy &amp; Tiếp Đón Bàn Giao
+                  <span className="px-2 py-0.5 rounded-full bg-cyan-400/20 text-cyan-300 text-[10px] font-mono font-bold border border-cyan-400/30">
+                    Facility Manager Desk
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
+                  Quản lý cơ sở trực tiếp tiếp nhận khách hàng, đối soát CCCD / giấy tờ tùy thân, nghiệm thu hiện trường 5 hạng mục và cấp phát mã PIN bảo mật bàn giao kho.
+                </p>
+              </div>
             </div>
+            {activeBookingId && !isAdmin && (
+              <button
+                type="button"
+                onClick={() => setActiveBookingId('')}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[15px]">close</span>
+                <span>Thu gọn bàn thao tác</span>
+              </button>
+            )}
           </div>
+
+          {/* BÀN THAO TÁC CHECK-IN & BÀN GIAO KHO (Chỉ dành cho Quản lý cơ sở & Nhân viên quầy thực địa, Admin chỉ giám sát) */}
+          {!isAdmin && (
+            <div id="handover-workbench-section" className="scroll-mt-6">
+              <HandoverCheckInWorkbench
+                facilityId={selectedFacilityId || user?.facilityId}
+                arrivals={upcomingHandovers}
+                activeBookingId={activeBookingId}
+                onSelectBooking={setActiveBookingId}
+                onHandoverComplete={(bookingId) => {
+                  setActiveBookingId('')
+                  fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, checkinFromDate, checkinToDate)
+                  const targetFac = selectedFacilityId || user?.facilityId
+                  if (targetFac) void fetchUnits(targetFac)
+                  triggerAction('Đã hoàn tất bàn giao kho và cấp phát mã PIN cho khách hàng thành công!')
+                }}
+              />
+            </div>
+          )}
 
           {/* Upcoming Handovers Table */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
@@ -1522,11 +1656,11 @@ export const ManagerDashboard: React.FC = () => {
                       <th className="py-2.5 px-3">Ngày Check-in</th>
                       <th className="py-2.5 px-3">Trạng Thái Đơn</th>
                       <th className="py-2.5 px-3">Cọc Giữ Chỗ</th>
-                      <th className="py-2.5 px-3 rounded-r-lg text-right">Chi Tiết / Tiếp Nhận</th>
+                      <th className="py-2.5 px-3 rounded-r-lg text-right">Hành Động</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {upcomingHandovers.map(b => (
+                    {paginatedUpcomingHandovers.map(b => (
                       <tr key={b.id} className="hover:bg-slate-50/80">
                         <td className="py-3 px-3">
                           <span className="font-bold text-slate-900 block">{b.customerName || 'N/A'}</span>
@@ -1570,16 +1704,32 @@ export const ManagerDashboard: React.FC = () => {
                                 <span className="material-symbols-outlined text-[14px] text-emerald-600">person_check</span>
                                 <span>{b.assignedStaffName}</span>
                               </div>
-                            ) : (
+                            ) : (role === 'FACILITY_MANAGER' || role === 'STAFF') && !isAdmin ? (
                               <button
                                 type="button"
                                 disabled={claimingBookingId === b.id}
-                                onClick={() => handleManagerClaimReception(b)}
+                                onClick={() => {
+                                  const { isPremature } = isBookingBeforeCheckInTime(b)
+                                  if (isPremature) {
+                                    setEarlyConfirmState({
+                                      booking: b,
+                                      actionType: 'CLAIM_RECEPTION',
+                                      onConfirm: () => handleManagerClaimReception(b),
+                                    })
+                                  } else {
+                                    handleManagerClaimReception(b)
+                                  }
+                                }}
                                 className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
                               >
                                 <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
-                                <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận'}</span>
+                                <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận & Mở bàn'}</span>
                               </button>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-semibold">
+                                <span className="material-symbols-outlined text-[14px] text-amber-600">hourglass_empty</span>
+                                <span>Chờ tiếp nhận</span>
+                              </span>
                             )}
 
                             <button
@@ -1588,9 +1738,9 @@ export const ManagerDashboard: React.FC = () => {
                                 setReadOnlyTargetBookingId(b.id)
                                 setShowReadOnlyBookingModal(true)
                               }}
-                              className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold transition cursor-pointer"
+                              className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-[11px] transition cursor-pointer"
                             >
-                              Xem hồ sơ đối soát
+                              Xem chi tiết
                             </button>
                           </div>
                         </td>
@@ -1598,6 +1748,78 @@ export const ManagerDashboard: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
+
+                {/* Table 1 Pagination - Centered */}
+                {upcomingHandovers.length > 0 && (
+                  <div className="relative flex flex-col md:flex-row items-center justify-between gap-3 pt-3.5 mt-2 border-t border-slate-100 text-xs text-slate-500">
+                    <div className="text-center md:text-left">
+                      Hiển thị <span className="font-semibold text-slate-800 font-mono">{paginatedUpcomingHandovers.length}</span> trên tổng số{' '}
+                      <span className="font-semibold text-slate-800 font-mono">{upcomingHandovers.length}</span> đơn hẹn
+                    </div>
+
+                    {/* Center: Pagination Controls */}
+                    <div className="flex items-center justify-center gap-1.5 md:absolute md:left-1/2 md:-translate-x-1/2">
+                      <button
+                        type="button"
+                        onClick={() => setHandoverPage(p => Math.max(1, p - 1))}
+                        disabled={handoverPage === 1}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-xs font-semibold text-slate-700 transition flex items-center gap-1 shadow-2xs"
+                        title="Trang trước"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+                        <span className="hidden md:inline">Trước</span>
+                      </button>
+
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: totalHandoverPages }, (_, i) => i + 1).map(pageNum => {
+                          if (
+                            totalHandoverPages > 6 &&
+                            pageNum !== 1 &&
+                            pageNum !== totalHandoverPages &&
+                            Math.abs(pageNum - handoverPage) > 1
+                          ) {
+                            if (pageNum === 2 || pageNum === totalHandoverPages - 1) {
+                              return (
+                                <span key={pageNum} className="px-1 text-slate-400 font-mono">
+                                  ...
+                                </span>
+                              )
+                            }
+                            return null
+                          }
+                          const isActive = handoverPage === pageNum
+                          return (
+                            <button
+                              key={pageNum}
+                              type="button"
+                              onClick={() => setHandoverPage(pageNum)}
+                              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer ${
+                                isActive
+                                  ? 'bg-slate-900 text-white shadow-xs'
+                                  : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                              }`}
+                            >
+                              {pageNum}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setHandoverPage(p => Math.min(totalHandoverPages, p + 1))}
+                        disabled={handoverPage === totalHandoverPages}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-xs font-semibold text-slate-700 transition flex items-center gap-1 shadow-2xs"
+                        title="Trang sau"
+                      >
+                        <span className="hidden md:inline">Sau</span>
+                        <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                      </button>
+                    </div>
+
+                    <div className="hidden md:block w-28 pointer-events-none" aria-hidden="true" />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1627,11 +1849,11 @@ export const ManagerDashboard: React.FC = () => {
                       <th className="py-2.5 px-3">Hạn Kết Thúc</th>
                       <th className="py-2.5 px-3">Hết Hạn Sau</th>
                       <th className="py-2.5 px-3">Tiền Cọc Bảo Lãnh</th>
-                      <th className="py-2.5 px-3 rounded-r-lg text-right">Hành Động Quản Lý</th>
+                      <th className="py-2.5 px-3 rounded-r-lg text-right">Hành Động</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {(showAllRentals ? activeRentals : activeRentals.slice(0, 10)).map(r => {
+                    {paginatedRentals.map(r => {
                       const countdown = getExpirationCountdown(r.endDate)
                       return (
                         <tr key={r.id} className="hover:bg-slate-50/80">
@@ -1672,18 +1894,75 @@ export const ManagerDashboard: React.FC = () => {
                   </tbody>
                 </table>
 
-                {activeRentals.length > 10 && (
-                  <div className="pt-3.5 mt-2 flex items-center justify-between border-t border-slate-100 text-xs text-slate-500">
-                    <span>
-                      Hiển thị <strong>{showAllRentals ? activeRentals.length : 10}</strong> trên tổng số <strong>{activeRentals.length}</strong> hợp đồng
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setShowAllRentals(!showAllRentals)}
-                      className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition cursor-pointer shadow-2xs"
-                    >
-                      {showAllRentals ? 'Thu gọn (10 hợp đồng)' : `Xem tất cả ${activeRentals.length} hợp đồng`}
-                    </button>
+                {/* Table 2 Pagination - Centered */}
+                {activeRentals.length > 0 && (
+                  <div className="relative flex flex-col md:flex-row items-center justify-between gap-3 pt-3.5 mt-2 border-t border-slate-100 text-xs text-slate-500">
+                    <div className="text-center md:text-left">
+                      Hiển thị <span className="font-semibold text-slate-800 font-mono">{paginatedRentals.length}</span> trên tổng số{' '}
+                      <span className="font-semibold text-slate-800 font-mono">{activeRentals.length}</span> hợp đồng
+                    </div>
+
+                    {/* Center: Pagination Controls */}
+                    <div className="flex items-center justify-center gap-1.5 md:absolute md:left-1/2 md:-translate-x-1/2">
+                      <button
+                        type="button"
+                        onClick={() => setRentalPage(p => Math.max(1, p - 1))}
+                        disabled={rentalPage === 1}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-xs font-semibold text-slate-700 transition flex items-center gap-1 shadow-2xs"
+                        title="Trang trước"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+                        <span className="hidden md:inline">Trước</span>
+                      </button>
+
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: totalRentalPages }, (_, i) => i + 1).map(pageNum => {
+                          if (
+                            totalRentalPages > 6 &&
+                            pageNum !== 1 &&
+                            pageNum !== totalRentalPages &&
+                            Math.abs(pageNum - rentalPage) > 1
+                          ) {
+                            if (pageNum === 2 || pageNum === totalRentalPages - 1) {
+                              return (
+                                <span key={pageNum} className="px-1 text-slate-400 font-mono">
+                                  ...
+                                </span>
+                              )
+                            }
+                            return null
+                          }
+                          const isActive = rentalPage === pageNum
+                          return (
+                            <button
+                              key={pageNum}
+                              type="button"
+                              onClick={() => setRentalPage(pageNum)}
+                              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer ${
+                                isActive
+                                  ? 'bg-slate-900 text-white shadow-xs'
+                                  : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                              }`}
+                            >
+                              {pageNum}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setRentalPage(p => Math.min(totalRentalPages, p + 1))}
+                        disabled={rentalPage === totalRentalPages}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-xs font-semibold text-slate-700 transition flex items-center gap-1 shadow-2xs"
+                        title="Trang sau"
+                      >
+                        <span className="hidden md:inline">Sau</span>
+                        <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                      </button>
+                    </div>
+
+                    <div className="hidden md:block w-28 pointer-events-none" aria-hidden="true" />
                   </div>
                 )}
               </div>
@@ -2216,6 +2495,19 @@ export const ManagerDashboard: React.FC = () => {
           role={role || 'FACILITY_MANAGER'}
         />
       )}
+
+      {/* 12. Early Check-In Confirmation Modal */}
+      <EarlyCheckInConfirmModal
+        isOpen={Boolean(earlyConfirmState)}
+        booking={earlyConfirmState?.booking || null}
+        actionType={earlyConfirmState?.actionType || 'CLAIM_RECEPTION'}
+        onConfirm={() => {
+          const action = earlyConfirmState?.onConfirm
+          setEarlyConfirmState(null)
+          if (action) action()
+        }}
+        onClose={() => setEarlyConfirmState(null)}
+      />
 
     </div>
   )

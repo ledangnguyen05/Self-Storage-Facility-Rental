@@ -122,8 +122,8 @@ export const BoxoraFacilitiesMap: React.FC<BoxoraFacilitiesMapProps> = ({
       }).addTo(map)
 
       const popupHtml = `
-        <div style="font-family: inherit; min-width: 200px; padding: 4px;">
-          <div style="font-size: 10px; font-weight: 800; color: #0284c7; text-transform: uppercase; font-family: monospace;">
+        <div style="font-family: 'Be Vietnam Pro', sans-serif; min-width: 200px; padding: 4px;">
+          <div style="font-size: 10px; font-weight: 800; color: #0284c7; text-transform: uppercase; font-family: 'Be Vietnam Pro', sans-serif;">
             ${facility.code}
           </div>
           <div style="font-size: 13px; font-weight: 700; color: #0f172a; margin-top: 2px;">

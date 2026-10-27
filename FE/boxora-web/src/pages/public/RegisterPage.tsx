@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import {
   User,
   Mail,
@@ -30,12 +30,14 @@ import { AuthAnimatedBackground } from '../../components/auth/AuthAnimatedBackgr
 import boxoraLogo from '../../assets/boxora-logo.png'
 import { TermsAndStandardsModal } from '../../components/common/TermsAndStandardsModal'
 import { GoogleAuthButton } from '../../components/auth/GoogleAuthButton'
-import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
+import { markUserAsNewCustomer } from '../../utils/rentalAccess'
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { loginWithGoogle } = useAuth()
+  const [searchParams] = useSearchParams()
+  const redirect = searchParams.get('redirect')
+  const { login, loginWithGoogle } = useAuth()
 
   const googleRedirectState = location.state as {
     fromGoogleLogin?: boolean
@@ -82,10 +84,19 @@ export const RegisterPage: React.FC = () => {
       const user = await loginWithGoogle(idToken, 'REGISTER')
       setSocialNotice(null)
       const userRole = user?.role?.name || 'CUSTOMER'
+      if (user && userRole === 'CUSTOMER') {
+        markUserAsNewCustomer(user.id, user.username, user.email)
+      }
       if (userRole === 'ADMIN') {
         navigate('/portal/admin')
+      } else if (redirect) {
+        navigate(decodeURIComponent(redirect))
+      } else if (sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft')) {
+        navigate('/booking')
       } else {
-        navigate('/portal/customer')
+        navigate('/booking', {
+          state: { welcomeMessage: 'Tài khoản đã tạo thành công! Hãy chọn kho lưu trữ gần bạn nhất.' }
+        })
       }
     } catch (err: any) {
       console.error('Google register error:', err)
@@ -117,7 +128,7 @@ export const RegisterPage: React.FC = () => {
         <rect width="160" height="50" rx="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
         <path d="M 5 20 Q 80 5 155 35" stroke="#38bdf8" stroke-width="2" fill="none" opacity="0.6"/>
         <path d="M 10 35 Q 90 45 150 15" stroke="#94a3b8" stroke-width="1.5" fill="none" opacity="0.5"/>
-        <text x="20" y="34" font-family="monospace, sans-serif" font-size="24" font-weight="bold" fill="#0284c7" letter-spacing="4">${code}</text>
+        <text x="20" y="34" font-family="'Be Vietnam Pro', sans-serif" font-size="24" font-weight="bold" fill="#0284c7" letter-spacing="4">${code}</text>
       </svg>
     `.trim()
     const base64 = `data:image/svg+xml;base64,${btoa(svg)}`
@@ -208,10 +219,29 @@ export const RegisterPage: React.FC = () => {
         localStorage.setItem('boxora_user_cccd', formData.identityCardNumber.trim())
       }
 
-      setSuccess(true)
-      navigate('/units', {
-        state: { welcomeMessage: 'Tài khoản đã tạo thành công! Hãy chọn kho lưu trữ gần bạn nhất.' }
-      })
+      // Auto login immediately so user is authenticated without having to manually log in again
+      try {
+        await login(formData.email.trim(), formData.password)
+        setSuccess(true)
+        const targetRedirect = redirect
+          ? decodeURIComponent(redirect)
+          : (sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft') ? '/booking' : null)
+        if (targetRedirect) {
+          navigate(targetRedirect)
+        } else {
+          navigate('/booking', {
+            state: { welcomeMessage: 'Tài khoản đã tạo thành công! Hãy chọn kho lưu trữ gần bạn nhất.' }
+          })
+        }
+      } catch (loginErr) {
+        console.warn('Auto login after registration failed, redirecting to login:', loginErr)
+        setSuccess(true)
+        const target = redirect || (sessionStorage.getItem('boxora_booking_draft') ? '/booking' : null)
+        const loginUrl = target
+          ? `/login?redirect=${encodeURIComponent(target)}&email=${encodeURIComponent(formData.email.trim())}`
+          : `/login?email=${encodeURIComponent(formData.email.trim())}`
+        navigate(loginUrl)
+      }
     } catch (err: any) {
       console.error(err)
       setError(err?.response?.data?.message || 'Đăng ký không thành công. Vui lòng kiểm tra lại thông tin.')
@@ -222,7 +252,7 @@ export const RegisterPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen w-full relative flex flex-col justify-between overflow-x-hidden font-sans text-slate-800 dark:text-slate-100 bg-[#f8fafc] dark:bg-slate-950">
+    <div className="min-h-screen w-full relative flex flex-col justify-between overflow-x-hidden font-sans text-slate-800 dark:text-slate-200 bg-[#f4f8ff] dark:bg-slate-950">
       
       {/* 1. BACKGROUND                                                */}
       {/* ============================================================ */}
@@ -234,7 +264,7 @@ export const RegisterPage: React.FC = () => {
       <header className="relative z-20 w-full px-6 sm:px-10 lg:px-14 py-4 sm:py-6 flex items-center justify-between">
         
         {/* Brand Logo & Slogan Glass Pill */}
-        <div className="inline-flex items-center px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-2xl bg-white/90 dark:bg-slate-900/90 hover:bg-white dark:hover:bg-slate-900 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 shadow-xs transition-all">
+        <div className="inline-flex items-center px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-2xl bg-white/90 hover:bg-white/95 backdrop-blur-md border border-white/80 shadow-xs transition-all">
           <Link to="/" className="flex items-center group cursor-pointer" title="Về trang chủ Boxora">
             <img
               src={boxoraLogo}
@@ -244,18 +274,16 @@ export const RegisterPage: React.FC = () => {
           </Link>
 
           {/* Vertical divider */}
-          <div className="hidden sm:block h-7 w-[1.5px] bg-slate-200 dark:bg-slate-800 mx-3" />
+          <div className="hidden sm:block h-7 w-[1.5px] bg-slate-200 mx-3" />
 
           {/* Slogan */}
           <div className="hidden sm:flex flex-col text-left justify-center">
-            <span className="font-extrabold text-xs sm:text-[13px] text-slate-900 dark:text-white tracking-wider uppercase font-mono leading-tight">
+            <span className="font-extrabold text-xs sm:text-[13px] text-slate-900 tracking-wider uppercase font-mono leading-tight">
               KHO TỰ QUẢN THÔNG MINH
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <QuickThemeLanguageToggle />
         {/* Back to Home Button */}
         <Link
           to="/"
@@ -266,7 +294,6 @@ export const RegisterPage: React.FC = () => {
           <span>Về trang chủ</span>
         </Link>
 
-        </div>
       </header>
 
       {/* ============================================================ */}
@@ -283,23 +310,32 @@ export const RegisterPage: React.FC = () => {
           <div className="max-w-xl space-y-4 text-left">
             
             {/* Tagline label */}
-            <div className="flex items-center gap-2.5 text-blue-600 dark:text-blue-400 font-black text-xs sm:text-sm tracking-[0.2em] uppercase font-mono ">
+            <div className="flex items-center gap-2.5 text-teal-700 font-black text-xs sm:text-sm tracking-[0.2em] uppercase font-mono ">
               <span>BOXORA</span>
-              <span className="w-10 h-0.5 bg-blue-600 dark:bg-blue-400 rounded-full shadow-[0_0_8px_rgba(8,102,245,0.25)]" />
+              <span className="w-10 h-0.5 bg-teal-600 rounded-full shadow-[0_0_8px_rgba(13,148,136,0.25)]" />
             </div>
 
             {/* Clean & Punchy Headings directly on background */}
             <div className="space-y-2">
-              <h1 className="text-3xl sm:text-4xl lg:text-[42px] font-black text-slate-950 dark:text-white tracking-tight leading-[1.12]">
+              <h1
+                className="text-3xl sm:text-4xl lg:text-[42px] font-black text-slate-950 tracking-tight leading-[1.12]"
+               
+              >
                 KHÔNG GIAN LƯU TRỮ THÔNG MINH
               </h1>
-              <h2 className="text-xl sm:text-2xl lg:text-[28px] font-black tracking-tight leading-snug text-blue-600 dark:text-blue-400">
+              <h2
+                className="text-xl sm:text-2xl lg:text-[28px] font-black tracking-tight leading-snug text-teal-700"
+               
+              >
                 AN TOÀN • TIỆN NGHI • HIỆN ĐẠI
               </h2>
             </div>
 
             {/* Description */}
-            <p className="text-sm sm:text-[15px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium max-w-lg">
+            <p
+              className="text-sm sm:text-[15px] text-slate-700 leading-relaxed font-medium max-w-lg"
+             
+            >
               Đăng ký tài khoản khách thuê chỉ trong 1 phút để sở hữu ô kho cá nhân an toàn, riêng tư tuyệt đối và trải nghiệm hệ sinh thái kho số tự động hóa toàn diện.
             </p>
 
@@ -307,45 +343,63 @@ export const RegisterPage: React.FC = () => {
             <div className="flex flex-wrap items-center gap-y-3 pt-3">
               
               {/* Badge 1: Bảo mật đa lớp */}
-              <div className="flex items-center gap-3 pr-4 sm:pr-6 border-r border-slate-200 dark:border-slate-800">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0 shadow-xs">
+              <div className="flex items-center gap-3 pr-4 sm:pr-6 border-r border-teal-200/80">
+                <div className="w-8 h-8 rounded-xl bg-teal-50/80 border border-teal-200 flex items-center justify-center text-teal-700 shrink-0 shadow-[0_2px_8px_rgba(13,148,136,0.12)]">
                   <ShieldCheck className="w-5 h-5 stroke-[2.2]" />
                 </div>
                 <div className="text-left leading-tight">
-                  <span className="block text-xs sm:text-[13px] font-black text-slate-950 dark:text-white">
+                  <span
+                    className="block text-xs sm:text-[13px] font-black text-slate-950"
+                   
+                  >
                     Bảo mật
                   </span>
-                  <span className="block text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  <span
+                    className="block text-[10px] sm:text-[11px] font-semibold text-slate-600"
+                   
+                  >
                     đa lớp
                   </span>
                 </div>
               </div>
 
               {/* Badge 2: Quản lý thông minh */}
-              <div className="flex items-center gap-3 px-4 sm:px-6 border-r border-slate-200 dark:border-slate-800">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0 shadow-xs">
+              <div className="flex items-center gap-3 px-4 sm:px-6 border-r border-teal-200/80">
+                <div className="w-8 h-8 rounded-xl bg-teal-50/80 border border-teal-200 flex items-center justify-center text-teal-700 shrink-0 shadow-[0_2px_8px_rgba(13,148,136,0.12)]">
                   <Sliders className="w-5 h-5 stroke-[2.2]" />
                 </div>
                 <div className="text-left leading-tight">
-                  <span className="block text-xs sm:text-[13px] font-black text-slate-950 dark:text-white">
+                  <span
+                    className="block text-xs sm:text-[13px] font-black text-slate-950"
+                   
+                  >
                     Quản lý
                   </span>
-                  <span className="block text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  <span
+                    className="block text-[10px] sm:text-[11px] font-semibold text-slate-600"
+                   
+                  >
                     thông minh
                   </span>
                 </div>
               </div>
 
               {/* Badge 3: Tiết kiệm thời gian */}
-              <div className="flex items-center gap-3 px-4 sm:px-6 border-r border-slate-200 dark:border-slate-800">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0 shadow-xs">
+              <div className="flex items-center gap-3 px-4 sm:px-6 border-r border-teal-200/80">
+                <div className="w-8 h-8 rounded-xl bg-teal-50/80 border border-teal-200 flex items-center justify-center text-teal-700 shrink-0 shadow-[0_2px_8px_rgba(13,148,136,0.12)]">
                   <Clock className="w-5 h-5 stroke-[2.2]" />
                 </div>
                 <div className="text-left leading-tight">
-                  <span className="block text-xs sm:text-[13px] font-black text-slate-950 dark:text-white">
+                  <span
+                    className="block text-xs sm:text-[13px] font-black text-slate-950"
+                   
+                  >
                     Tiết kiệm
                   </span>
-                  <span className="block text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  <span
+                    className="block text-[10px] sm:text-[11px] font-semibold text-slate-600"
+                   
+                  >
                     thời gian
                   </span>
                 </div>
@@ -353,14 +407,20 @@ export const RegisterPage: React.FC = () => {
 
               {/* Badge 4: Tối ưu không gian */}
               <div className="flex items-center gap-3 pl-4 sm:pl-6">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0 shadow-xs">
+                <div className="w-8 h-8 rounded-xl bg-teal-50/80 border border-teal-200 flex items-center justify-center text-teal-700 shrink-0 shadow-[0_2px_8px_rgba(13,148,136,0.12)]">
                   <Box className="w-5 h-5 stroke-[2.2]" />
                 </div>
                 <div className="text-left leading-tight">
-                  <span className="block text-xs sm:text-[13px] font-black text-slate-950 dark:text-white">
+                  <span
+                    className="block text-xs sm:text-[13px] font-black text-slate-950"
+                   
+                  >
                     Tối ưu
                   </span>
-                  <span className="block text-[10px] sm:text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  <span
+                    className="block text-[10px] sm:text-[11px] font-semibold text-slate-600"
+                   
+                  >
                     không gian
                   </span>
                 </div>
@@ -377,7 +437,7 @@ export const RegisterPage: React.FC = () => {
         {/* ========================================================== */}
         <div className="w-full max-w-[490px] lg:w-[470px] xl:w-[490px] shrink-0 my-auto">
           
-          <div className="w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-6 sm:p-8 lg:p-8 relative z-30 transition-all text-left space-y-3.5">
+          <div className="w-full bg-white/98 backdrop-blur-md rounded-[32px] sm:rounded-[36px] border-2 border-teal-100 shadow-[0_20px_50px_rgba(15,23,42,0.12),0_0_40px_rgba(13,148,136,0.08)] p-6 sm:p-8 lg:p-8 relative z-30 transition-all text-left space-y-3.5">
             
             {/* Top Logo inside the Card */}
             <div className="flex items-center justify-start">
@@ -390,25 +450,26 @@ export const RegisterPage: React.FC = () => {
 
             {/* Header Title */}
             <div className="space-y-1">
-              <h2 className="text-2xl sm:text-[28px] font-black text-slate-950 dark:text-white tracking-tight">
+              <h2 className="text-2xl sm:text-[28px] font-black text-slate-950 tracking-tight">
                 Khởi tạo tài khoản kho
               </h2>
-              <p className="text-xs sm:text-[13px] text-slate-500 dark:text-slate-400 font-medium">
+              <p className="text-xs sm:text-[13px] text-slate-600 font-medium">
                 Sở hữu không gian lưu trữ số cá nhân an toàn chỉ sau 1 phút
               </p>
             </div>
 
+
             {/* Notice when redirected from Google Login */}
             {googleNotice && (
-              <div className="p-3.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-950 dark:text-blue-200 text-xs flex items-start justify-between gap-2 shadow-xs animate-fadeIn">
+              <div className="p-3.5 rounded-2xl bg-teal-50 border border-teal-200 text-teal-950 text-xs flex items-start justify-between gap-2 shadow-xs animate-fadeIn">
                 <div className="flex items-start gap-2.5">
-                  <ShieldCheck className="w-4.5 h-4.5 shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" />
+                  <ShieldCheck className="w-4.5 h-4.5 shrink-0 text-teal-700 mt-0.5" />
                   <div>
-                    <span className="font-bold text-slate-900 dark:text-white block mb-0.5">Tài khoản chưa được đăng ký:</span>
-                    <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                    <span className="font-bold text-slate-900 block mb-0.5">Tài khoản chưa được đăng ký:</span>
+                    <p className="text-[11px] text-slate-700 leading-relaxed font-medium">
                       {googleNotice}
                     </p>
-                    <p className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1">
+                    <p className="text-[10px] text-teal-700 font-bold mt-1">
                       👉 Bạn có thể bấm nút <u>"Đăng ký bằng Google"</u> bên dưới để hoàn tất ngay, hoặc hoàn thiện thông tin form.
                     </p>
                   </div>
@@ -416,7 +477,7 @@ export const RegisterPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setGoogleNotice(null)}
-                  className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-0.5 rounded cursor-pointer"
+                  className="text-slate-400 hover:text-slate-700 p-0.5 rounded cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -425,7 +486,7 @@ export const RegisterPage: React.FC = () => {
 
             {/* Error banner */}
             {error && (
-              <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-400 text-xs flex items-center gap-2 shadow-xs">
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2 shadow-xs">
                 <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
                 <span className="font-medium">{error}</span>
               </div>
@@ -434,17 +495,17 @@ export const RegisterPage: React.FC = () => {
             {/* Success View */}
             {success ? (
               <div className="py-8 text-center space-y-3">
-                <div className="w-14 h-14 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto shadow-xs">
+                <div className="w-14 h-14 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
                   <CheckCircle2 className="w-7 h-7" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">Đăng Ký Thành Công!</h3>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 max-w-xs mx-auto">
-                    Tài khoản của bạn đã được kích hoạt. Đang chuyển hướng bạn tới trang đăng nhập...
+                  <h3 className="text-xl font-bold text-slate-900">Đăng Ký Thành Công!</h3>
+                  <p className="text-xs text-slate-600 max-w-xs mx-auto">
+                    Tài khoản đã được tạo. Đang mở trang tìm kho để bạn chọn vị trí phù hợp...
                   </p>
                 </div>
                 <div className="pt-2">
-                  <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                  <div className="w-6 h-6 border-2 border-teal-700 border-t-transparent rounded-full animate-spin mx-auto" />
                 </div>
               </div>
             ) : (
@@ -464,7 +525,7 @@ export const RegisterPage: React.FC = () => {
 
                 {/* Field 1: Họ và tên */}
                 <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <label className="block text-xs font-bold text-slate-800">
                     Họ và tên
                   </label>
                   <div className="relative flex items-center">
@@ -477,7 +538,7 @@ export const RegisterPage: React.FC = () => {
                       onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
                       placeholder="Nguyễn Văn A"
                       required
-                      className="w-full h-10.5 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all font-medium"
+                      className="w-full h-10.5 pl-10 pr-4 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
                     />
                   </div>
                 </div>
@@ -485,7 +546,7 @@ export const RegisterPage: React.FC = () => {
                 {/* Field 2 & 3: Email & Số điện thoại (2 columns) */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <div className="space-y-1">
-                    <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                    <label className="block text-xs font-bold text-slate-800">
                       Địa chỉ Email
                     </label>
                     <div className="relative flex items-center">
@@ -498,13 +559,13 @@ export const RegisterPage: React.FC = () => {
                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                         placeholder="nguyen@gmail.com"
                         required
-                        className="w-full h-10.5 pl-9 pr-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all font-medium"
+                        className="w-full h-10.5 pl-9 pr-3.5 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-1">
-                    <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                    <label className="block text-xs font-bold text-slate-800">
                       Số điện thoại
                     </label>
                     <div className="relative flex items-center">
@@ -517,16 +578,40 @@ export const RegisterPage: React.FC = () => {
                         onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                         placeholder="0912 345 678"
                         required
-                        className="w-full h-10.5 pl-9 pr-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all font-medium"
+                        className="w-full h-10.5 pl-9 pr-3.5 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
                       />
                     </div>
+                  </div>
+                </div>
+
+                {/* Field: So CCCD / Dinh danh ca nhan */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                      Số CCCD / Hộ chiếu
+                    </label>
+                    <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">
+                      Tự động điền khi thuê kho &amp; cấp mã PIN
+                    </span>
+                  </div>
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3.5 text-slate-400 pointer-events-none">
+                      <CreditCard className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      value={formData.identityCardNumber}
+                      onChange={(e) => setFormData({ ...formData, identityCardNumber: e.target.value.replace(/\D/g, '').slice(0, 12) })}
+                      placeholder="Nhập 12 số CCCD (VD: 079123456789)"
+                      className="w-full h-10.5 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all font-mono"
+                    />
                   </div>
                 </div>
 
                 {/* Field 4 & 5: Mật khẩu & Nhập lại mật khẩu (2 columns) */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <div className="space-y-1">
-                    <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                    <label className="block text-xs font-bold text-slate-800">
                       Mật khẩu
                     </label>
                     <div className="relative flex items-center">
@@ -539,12 +624,12 @@ export const RegisterPage: React.FC = () => {
                         onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                         placeholder="••••••••"
                         required
-                        className="w-full h-10.5 pl-9 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all font-medium"
+                        className="w-full h-10.5 pl-9 pr-8 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
                       />
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                        className="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer"
                       >
                         {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                       </button>
@@ -552,7 +637,7 @@ export const RegisterPage: React.FC = () => {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                    <label className="block text-xs font-bold text-slate-800">
                       Xác nhận mật khẩu
                     </label>
                     <div className="relative flex items-center">
@@ -565,27 +650,27 @@ export const RegisterPage: React.FC = () => {
                         onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                         placeholder="••••••••"
                         required
-                        className="w-full h-10.5 pl-9 pr-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all font-medium"
+                        className="w-full h-10.5 pl-9 pr-3.5 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 focus:bg-white text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all shadow-2xs font-medium"
                       />
                     </div>
                   </div>
                 </div>
 
                 {/* Anti-Bot Captcha Security Box */}
-                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1.5">
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
-                      <ShieldCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                      <ShieldCheck className="w-3.5 h-3.5 text-teal-700" />
                       <span>Xác thực Captcha chống bot</span>
                     </div>
-                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200">
                       <Bot className="w-3 h-3 text-slate-400" />
                       Mã bảo vệ
                     </span>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <div className="relative flex-shrink-0 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 shadow-2xs overflow-hidden h-[40px] flex items-center justify-center min-w-[120px]">
+                    <div className="relative flex-shrink-0 bg-white rounded-lg border border-slate-200 p-0.5 shadow-2xs overflow-hidden h-[40px] flex items-center justify-center min-w-[120px]">
                       {captchaImage ? (
                         <img
                           src={captchaImage}
@@ -594,7 +679,7 @@ export const RegisterPage: React.FC = () => {
                         />
                       ) : (
                         <div className="text-[10px] text-slate-400 px-2 py-1 flex items-center gap-1">
-                          <RefreshCw className="w-3 h-3 animate-spin text-blue-600" />
+                          <RefreshCw className="w-3 h-3 animate-spin" />
                           Đang tải mã...
                         </div>
                       )}
@@ -605,9 +690,9 @@ export const RegisterPage: React.FC = () => {
                       onClick={loadCaptcha}
                       disabled={isCaptchaLoading}
                       title="Đổi mã khác"
-                      className="p-2 text-slate-500 hover:text-blue-600 hover:bg-white dark:hover:bg-slate-800 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+                      className="p-2 text-slate-500 hover:text-teal-800 hover:bg-white bg-white border border-slate-200 rounded-lg transition-colors cursor-pointer shrink-0 disabled:opacity-50"
                     >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isCaptchaLoading ? 'animate-spin text-blue-600' : ''}`} />
+                      <RefreshCw className={`w-3.5 h-3.5 ${isCaptchaLoading ? 'animate-spin text-teal-700' : ''}`} />
                     </button>
 
                     <div className="flex-1">
@@ -618,7 +703,7 @@ export const RegisterPage: React.FC = () => {
                         onChange={(e) => setCaptchaInput(e.target.value.toUpperCase())}
                         placeholder="MÃ 5 KÝ TỰ"
                         maxLength={6}
-                        className="w-full h-[40px] px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold tracking-widest text-slate-800 dark:text-white placeholder:text-xs placeholder:font-sans placeholder:font-normal placeholder:tracking-normal focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all uppercase"
+                        className="w-full h-[40px] px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold tracking-widest text-slate-800 placeholder:text-xs placeholder:font-sans placeholder:font-normal placeholder:tracking-normal focus:outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 transition-all uppercase"
                       />
                     </div>
                   </div>
@@ -627,10 +712,10 @@ export const RegisterPage: React.FC = () => {
                 {/* Circular Selection: Đồng ý với điều khoản kho Boxora */}
                 <div
                   onClick={() => setAgreeTerms(!agreeTerms)}
-                  className="flex items-start gap-2.5 cursor-pointer text-xs text-slate-700 dark:text-slate-300 font-medium select-none group pt-0.5"
+                  className="flex items-start gap-2.5 cursor-pointer text-xs text-slate-700 font-medium select-none group pt-0.5"
                 >
                   <div className={`w-4.5 h-4.5 mt-0.5 rounded-full flex items-center justify-center transition-all shrink-0 ${
-                    agreeTerms ? 'bg-blue-600 text-white shadow-xs' : 'border-2 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 group-hover:border-slate-400'
+                    agreeTerms ? 'bg-teal-700 text-white shadow-xs' : 'border-2 border-slate-300 bg-white group-hover:border-slate-400'
                   }`}>
                     {agreeTerms && <Check className="w-3 h-3 stroke-[3]" />}
                   </div>
@@ -642,10 +727,10 @@ export const RegisterPage: React.FC = () => {
                         e.stopPropagation()
                         setShowTermsModal(true)
                       }}
-                      className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline font-bold inline-flex items-center gap-1 cursor-pointer"
+                      className="text-teal-700 hover:text-teal-800 hover:underline font-bold inline-flex items-center gap-1 cursor-pointer"
                     >
                       <span>Điều khoản &amp; Quy chuẩn an toàn kho Boxora</span>
-                      <ExternalLink className="w-3 h-3 text-blue-600 dark:text-blue-400 inline" />
+                      <ExternalLink className="w-3 h-3 text-teal-600 inline" />
                     </button>
                   </span>
                 </div>
@@ -654,7 +739,7 @@ export const RegisterPage: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full h-11 sm:h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm tracking-wide uppercase shadow-md shadow-blue-600/20 hover:shadow-blue-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed mt-1.5"
+                  className="w-full h-11 sm:h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md shadow-blue-600/20 text-xs sm:text-sm tracking-wider uppercase shadow-lg shadow-slate-900/15 hover:shadow-slate-900/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed mt-1.5"
                 >
                   {isLoading ? (
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -674,9 +759,9 @@ export const RegisterPage: React.FC = () => {
                 {/* Divider */}
                 <div className="relative py-1 text-center my-1">
                   <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-slate-200 dark:border-slate-800" />
+                    <div className="w-full border-t border-slate-200" />
                   </div>
-                  <div className="relative inline-block px-3 bg-white dark:bg-slate-900 text-[10px] font-mono tracking-widest text-slate-400 uppercase font-bold">
+                  <div className="relative inline-block px-3 bg-white text-[10px] font-mono tracking-widest text-slate-400 uppercase font-bold">
                     HOẶC TIẾP TỤC VỚI
                   </div>
                 </div>
@@ -694,21 +779,25 @@ export const RegisterPage: React.FC = () => {
 
             {/* Social notice feedback */}
             {socialNotice && (
-              <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 text-[11px] font-mono text-center flex items-center justify-between">
+              <div className="p-2 rounded-xl bg-teal-50 border border-teal-200 text-teal-800 text-[11px] font-mono text-center flex items-center justify-between">
                 <span>{socialNotice}</span>
-                <button onClick={() => setSocialNotice(null)} className="text-blue-600 hover:text-slate-800 dark:hover:text-white">
+                <button onClick={() => setSocialNotice(null)} className="text-teal-700 hover:text-slate-800">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}
 
             {/* Back to Login Link */}
-            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-center">
-              <span className="text-xs text-slate-500 dark:text-slate-400">
+            <div className="pt-2 border-t border-slate-100 text-center">
+              <span className="text-xs text-slate-600">
                 Đã có tài khoản lưu kho?{' '}
                 <Link
-                  to="/login"
-                  className="font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline inline-flex items-center gap-1"
+                  to={
+                    redirect
+                      ? `/login?redirect=${encodeURIComponent(redirect)}`
+                      : (sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft') ? `/login?redirect=${encodeURIComponent('/booking')}` : '/login')
+                  }
+                  className="font-bold text-teal-700 hover:text-teal-800 hover:underline inline-flex items-center gap-1"
                 >
                   <span>Đăng nhập ngay</span>
                   <ArrowRight className="w-3.5 h-3.5" />
@@ -725,12 +814,12 @@ export const RegisterPage: React.FC = () => {
       {/* ============================================================ */}
       {/* 4. FOOTER (CLEAN & PROFESSIONAL)                             */}
       {/* ============================================================ */}
-      <footer className="relative z-20 w-full px-6 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-500 font-mono">
-        <span className="font-medium">
+      <footer className="relative z-20 w-full px-6 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-600 font-mono">
+        <span className="text-slate-500 font-medium">
           &copy; {new Date().getFullYear()} BOXORA Smart Storage. Bản quyền thuộc về Boxora.
         </span>
-        <span className="font-medium bg-white/75 dark:bg-slate-900/75 backdrop-blur-md px-3.5 py-1 rounded-full border border-slate-200/60 dark:border-slate-800 shadow-2xs">
-          Hotline hỗ trợ 24/7: <strong className="text-blue-600 dark:text-blue-400 font-bold">1900-6868</strong>
+        <span className="text-slate-600 font-medium bg-white/75 backdrop-blur-md px-3.5 py-1 rounded-full border border-slate-200/60 shadow-2xs">
+          Hotline hỗ trợ 24/7: <strong className="text-teal-700 font-bold">1900-6868</strong>
         </span>
       </footer>
 

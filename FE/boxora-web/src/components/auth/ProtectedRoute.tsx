@@ -42,22 +42,13 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
         case 'STAFF':
           return '/portal/staff'
         case 'CUSTOMER':
-        default: {
-          const access = checkCustomerPortalAccess(user)
-          return access.hasAccess ? '/portal/customer' : '/#units'
-        }
+        default:
+          return '/portal/customer'
       }
     }
     return <Navigate to={getTargetPortal(role)} replace />
   }
 
-  // Customer cannot enter /portal until they sign contract and pay
-  if (role === 'CUSTOMER' && location.pathname.startsWith('/portal')) {
-    const access = checkCustomerPortalAccess(user)
-    if (!access.hasAccess) {
-      return <Navigate to="/my-bookings" replace />
-    }
-  }
   return children
 }
 

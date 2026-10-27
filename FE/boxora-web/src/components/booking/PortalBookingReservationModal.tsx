@@ -546,7 +546,7 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
                       onClose()
                       onNavigate?.('my-units')
                     }}
-                    className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm"
+                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-md shadow-blue-500/20"
                   >
                     Đến Kho Của Tôi
                   </button>
@@ -555,7 +555,7 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
                   <button
                     type="button"
                     onClick={() => { setBookingSuccess(false); onClose() }}
-                    className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm"
+                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-md shadow-blue-500/20"
                   >
                     Quay lại tìm kho
                   </button>
@@ -1123,7 +1123,7 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
                       !bookingPolicyAccepted || isLoadingQuote || !!quoteError || isCheckInTimeTooSoon || isFacilitySuspended
                         ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
                         : bookingWorkflow === 'HOLD_ONLY'
-                        ? 'bg-slate-900 hover:bg-slate-800'
+                        ? 'bg-blue-600 hover:bg-blue-700'
                         : 'bg-blue-600 hover:bg-blue-700'
                     }`}
                   >

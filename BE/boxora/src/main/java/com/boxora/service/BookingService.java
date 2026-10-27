@@ -33,4 +33,9 @@ public interface BookingService {
     com.boxora.dto.response.BookingRescheduleEligibilityResponse getRescheduleEligibility(UUID id);
     com.boxora.dto.response.BookingRescheduleResponse rescheduleBookingDetailed(UUID id, com.boxora.dto.request.BookingRescheduleRequest request);
     List<com.boxora.dto.response.BookingRescheduleHistoryResponse> getRescheduleHistory(UUID id);
+    BookingResponse assignUnitAndProvision(UUID bookingId, UUID unitId, String notes);
+    BookingResponse assignUnitAndProvisionByCode(String bookingCode, UUID unitId, String notes);
+    BookingResponse getByBookingCode(String bookingCode);
+    BookingResponse confirmBooking(UUID bookingId, String notes);
+    BookingResponse confirmBookingByCode(String bookingCode, String notes);
 }

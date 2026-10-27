@@ -10,7 +10,17 @@ import {
 import { PageResult } from './userService'
 
 export interface BookingCreatePayload {
-  storageUnitId: string
+  storageUnitId?: string
+  facilityId?: string
+  unitTypeId?: string
+  fullName?: string
+  phone?: string
+  email?: string
+  customerName?: string
+  customerPhone?: string
+  customerEmail?: string
+  specialNotes?: string
+  initialStatus?: string
   customerId?: string
   startDate: string
   expectedArrivalAt?: string
@@ -18,6 +28,7 @@ export interface BookingCreatePayload {
   rentalMonths: number
   totalRentalFee?: number
   depositPaid?: number
+  depositAmount?: number
   signingMethod?: 'ONLINE' | 'IN_PERSON'
   expectedCheckInAt?: string
   checkInTime?: string
@@ -199,10 +210,45 @@ export const bookingService = {
     return response.data?.data as BookingCancellationPreview
   },
 
-  async cancelBooking(id: string, cancellationReason?: string) {
-    const response = await api.post(`/api/v1/bookings/${id}/cancel`, {
+  async cancelBooking(idOrCode: string, cancellationReason?: string) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idOrCode)
+    const url = isUuid
+      ? `/api/v1/bookings/${idOrCode}/cancel`
+      : `/api/v1/bookings/code/${encodeURIComponent(idOrCode)}/cancel`
+    const response = await api.post(url, {
       cancellationReason: cancellationReason?.trim() || undefined,
     })
+    window.dispatchEvent(new Event('boxora:notifications-refresh'))
     return response.data?.data as BookingCancelResponse
+  },
+
+  async confirmBooking(idOrCode: string, notes?: string) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idOrCode)
+    const url = isUuid
+      ? `/api/v1/bookings/${idOrCode}/confirm`
+      : `/api/v1/bookings/code/${encodeURIComponent(idOrCode)}/confirm`
+    const response = await api.post(url, {
+      notes: notes?.trim() || undefined,
+    })
+    window.dispatchEvent(new Event('boxora:notifications-refresh'))
+    return response.data?.data as Booking
+  },
+
+    async assignUnitAndProvision(idOrCode: string, unitId: string, notes?: string) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idOrCode)
+    const url = isUuid
+      ? `/api/v1/bookings/${idOrCode}/assign-unit`
+      : `/api/v1/bookings/code/${encodeURIComponent(idOrCode)}/assign-unit`
+    const response = await api.post(url, {
+      unitId,
+      notes,
+    })
+    window.dispatchEvent(new Event('boxora:notifications-refresh'))
+    return response.data?.data as Booking
+  },
+
+  async getByBookingCode(code: string) {
+    const response = await api.get(`/api/v1/bookings/code/${encodeURIComponent(code)}`)
+    return response.data?.data as Booking
   },
 }

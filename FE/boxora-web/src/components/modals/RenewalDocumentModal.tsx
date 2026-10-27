@@ -35,11 +35,12 @@ export const RenewalDocumentModal: React.FC<RenewalDocumentModalProps> = ({
   const isPendingPayment = renewal.status === 'PENDING_PAYMENT'
 
   return (
-    <div className="fixed inset-0 z-[85] flex items-center justify-center bg-slate-950/75 p-3 sm:p-6 backdrop-blur-sm overflow-y-auto print:p-0 print:bg-white print:fixed-none">
-      <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:border-none print:rounded-none">
+    <div className="fixed inset-0 z-[9999] overflow-y-auto bg-slate-950/80 backdrop-blur-sm p-3 sm:p-6 print:p-0 print:bg-white print:fixed-none">
+      <div className="min-h-full flex items-center justify-center py-6">
+        <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:border-none print:rounded-none">
 
         {/* Modal Top Bar - Hidden when printing */}
-        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white print:hidden shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-50 via-white to-cyan-50 border-b border-slate-200 text-slate-900 print:hidden shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-blue-400">
               <span className="material-symbols-outlined text-[20px]">history_edu</span>
@@ -91,7 +92,7 @@ export const RenewalDocumentModal: React.FC<RenewalDocumentModalProps> = ({
             <button
               type="button"
               onClick={handlePrint}
-              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700"
+              className="px-3.5 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700"
               title="In hoặc lưu PDF"
             >
               <span className="material-symbols-outlined text-[16px]">print</span>
@@ -101,7 +102,7 @@ export const RenewalDocumentModal: React.FC<RenewalDocumentModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+              className="w-8 h-8 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors cursor-pointer"
             >
               <span className="material-symbols-outlined text-[20px]">close</span>
             </button>
@@ -109,7 +110,7 @@ export const RenewalDocumentModal: React.FC<RenewalDocumentModalProps> = ({
         </div>
 
         {/* Content - Formatted as Legal Document */}
-        <div className="flex-1 overflow-y-auto p-6 sm:p-12 text-slate-800 font-serif leading-relaxed print:p-0 print:overflow-visible">
+        <div className="flex-1 overflow-y-auto p-6 sm:p-12 text-slate-800 font-sans leading-relaxed print:p-0 print:overflow-visible">
           {/* Header Quốc Hiệu */}
           <div className="text-center pb-6 border-b border-slate-300">
             <h3 className="font-bold text-xs uppercase tracking-widest text-slate-900 font-sans">
@@ -394,13 +395,14 @@ export const RenewalDocumentModal: React.FC<RenewalDocumentModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
             >
               Đóng
             </button>
           </div>
         </div>
 
+        </div>
       </div>
     </div>
   )
