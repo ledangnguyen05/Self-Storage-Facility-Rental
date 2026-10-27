@@ -101,7 +101,6 @@ export const StaffDashboard: React.FC = () => {
     return 'pending_orders'
   })
   const [pendingSearchTerm, setPendingSearchTerm] = useState('')
-  const [pendingFilterStatus, setPendingFilterStatus] = useState<'PENDING_CONFIRMATION' | 'CONFIRMED' | 'CANCELLED' | 'ALL'>('ALL')
   const [highlightedBookingCode, setHighlightedBookingCode] = useState<string | null>(null)
   const [assignModalBooking, setAssignModalBooking] = useState<Booking | null>(null)
 
@@ -553,11 +552,15 @@ export const StaffDashboard: React.FC = () => {
     let cancelled = 0
     arrivals.forEach((b) => {
       const s = (b.status as string) || ''
+      const isPaidPending = s === 'PAID_PENDING_ASSIGNMENT' || s === 'PAID_AND_SIGNED' || (s === 'CONFIRMED' && !b.storageUnitId)
+      const isPending = s === 'PENDING_CONTACT' || s === 'PENDING_CONFIRMATION' || s === 'PENDING_APPROVAL' || s === 'PENDING_PAYMENT' || (s as string) === 'PENDING_SIGNATURE' || isPaidPending
+      const isConfirmedCheckIn = (s === 'CONFIRMED' && Boolean(b.storageUnitId)) || s === 'AWAITING_CHECKIN'
+
       if (s === 'ACTIVE') active++
       else if (s === 'COMPLETED') completed++
       else if (s === 'CANCELLED') cancelled++
-      else if (s === 'PENDING_CONTACT' || s === 'PENDING_CONFIRMATION') pendingConfirmation++
-      else if (s === 'CONFIRMED' || s === 'AWAITING_CHECKIN') confirmedCheckIn++
+      else if (isConfirmedCheckIn) confirmedCheckIn++
+      else if (isPending) pendingConfirmation++
       else pendingConfirmation++
     })
     return {
@@ -571,18 +574,15 @@ export const StaffDashboard: React.FC = () => {
     }
   }, [arrivals])
 
-  // Filtered pending reservations for "Đơn chờ xử lý" tab
+  // Filtered pending reservations for Tab 1 "Đơn chờ xử lý" - CHỈ hiển thị đơn chờ xử lý
   const filteredPendingOrders = useMemo(() => {
     return arrivals.filter((b) => {
       const s = (b.status as string) || ''
       const isPaidPending = s === 'PAID_PENDING_ASSIGNMENT' || s === 'PAID_AND_SIGNED' || (s === 'CONFIRMED' && !b.storageUnitId)
-      const isPending = s === 'PENDING_CONTACT' || s === 'PENDING_CONFIRMATION' || s === 'PENDING_APPROVAL' || s === 'PENDING_PAYMENT' || isPaidPending
-      const isConfirmed = s === 'CONFIRMED' || s === 'AWAITING_CHECKIN'
-      const isCancelled = s === 'CANCELLED'
+      const isPending = s === 'PENDING_CONTACT' || s === 'PENDING_CONFIRMATION' || s === 'PENDING_APPROVAL' || s === 'PENDING_PAYMENT' || (s as string) === 'PENDING_SIGNATURE' || isPaidPending
 
-      if (pendingFilterStatus === 'PENDING_CONFIRMATION' && !isPending) return false
-      if (pendingFilterStatus === 'CONFIRMED' && !isConfirmed) return false
-      if (pendingFilterStatus === 'CANCELLED' && !isCancelled) return false
+      // Mục số 1 chỉ hiển thị các đơn chờ xử lý
+      if (!isPending) return false
 
       if (pendingSearchTerm.trim()) {
         const q = pendingSearchTerm.trim().toLowerCase()
@@ -609,10 +609,7 @@ export const StaffDashboard: React.FC = () => {
       const getPriority = (item: Booking) => {
         const st = String(item.status || '')
         if (st === 'PAID_PENDING_ASSIGNMENT' || st === 'PAID_AND_SIGNED' || (st === 'CONFIRMED' && !item.storageUnitId)) return 10
-        if (st === 'CONFIRMED' && item.contractSigned) return 4
         if (st === 'PENDING_CONTACT' || st === 'PENDING_CONFIRMATION' || st === 'PENDING_APPROVAL' || st === 'PENDING_PAYMENT') return 3
-        if (st === 'CONFIRMED' || st === 'AWAITING_CHECKIN') return 2
-        if (st === 'ACTIVE' || st === 'COMPLETED') return 1
         return 0
       }
       const pDiff = getPriority(b) - getPriority(a)
@@ -622,7 +619,38 @@ export const StaffDashboard: React.FC = () => {
       const timeA = new Date((a as any).createdAt || a.expectedCheckInAt || a.startDate || 0).getTime()
       return timeB - timeA
     })
-  }, [arrivals, pendingFilterStatus, pendingSearchTerm, highlightedBookingCode])
+  }, [arrivals, pendingSearchTerm, highlightedBookingCode])
+
+  // Lọc danh sách đơn chờ check-in cho Tab 2 "Bàn Tiếp Đón & Trả Kho"
+  const checkInArrivals = useMemo(() => {
+    return arrivals.filter((b) => {
+      const s = (b.status as string) || ''
+      const isConfirmedCheckIn = (s === 'CONFIRMED' && Boolean(b.storageUnitId)) || s === 'AWAITING_CHECKIN'
+      if (!isConfirmedCheckIn) return false
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase()
+        const code = (b.bookingCode || '').toLowerCase()
+        const name = (b.customerName || '').toLowerCase()
+        const phone = (b.customerPhone || '').toLowerCase()
+        const unit = (b.unitCode || '').toLowerCase()
+        const fac = (b.facilityName || '').toLowerCase()
+        const ctr = (b.contractCode || '').toLowerCase()
+        if (!code.includes(q) && !name.includes(q) && !phone.includes(q) && !unit.includes(q) && !fac.includes(q) && !ctr.includes(q)) {
+          return false
+        }
+      }
+      return true
+    })
+  }, [arrivals, searchQuery])
+
+  // Danh sách cho HandoverCheckInWorkbench
+  const workbenchArrivals = useMemo(() => {
+    return arrivals.filter((b) => {
+      const s = (b.status as string) || ''
+      return (s === 'CONFIRMED' && Boolean(b.storageUnitId)) || s === 'AWAITING_CHECKIN' || b.id === activeBookingId
+    })
+  }, [arrivals, activeBookingId])
 
   // Filtered arrivals based on Search, Floor, Shift / Timeframe, Date range, Status
   const filteredArrivals = useMemo(() => {
@@ -1156,6 +1184,15 @@ export const StaffDashboard: React.FC = () => {
         >
           <span className="material-symbols-outlined text-[18px]">desk</span>
           <span>2. Bàn Tiếp Đón &amp; Trả Kho</span>
+          {arrivalStatusCounts.confirmedCheckIn > 0 && (
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              staffActiveTab === 'reception'
+                ? 'bg-white text-cyan-800'
+                : 'bg-cyan-100 text-cyan-800'
+            }`}>
+              {arrivalStatusCounts.confirmedCheckIn} chờ check-in
+            </span>
+          )}
         </button>
 
         <button
@@ -1206,117 +1243,6 @@ export const StaffDashboard: React.FC = () => {
             </button>
           </div>
 
-          {/* 4 Stats Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div
-              onClick={() => setPendingFilterStatus(prev => prev === 'PENDING_CONFIRMATION' ? 'ALL' : 'PENDING_CONFIRMATION')}
-              className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-                pendingFilterStatus === 'PENDING_CONFIRMATION'
-                  ? 'bg-amber-50/80 border-amber-400 ring-2 ring-amber-400/50 shadow-sm'
-                  : 'bg-white border-slate-200 hover:border-amber-300'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] uppercase tracking-wider font-bold text-amber-800 font-mono">
-                  Chờ Xác Nhận
-                </span>
-                <span className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-[18px]">mark_chat_unread</span>
-                </span>
-              </div>
-              <div className="mt-3 flex items-baseline gap-1.5">
-                <span className="font-headline text-2xl font-extrabold text-amber-900 tabular-nums">
-                  {arrivalStatusCounts.pendingConfirmation}
-                </span>
-                <span className="text-xs text-amber-700">đơn mới</span>
-              </div>
-              <span className="text-[11px] text-amber-600 font-medium block mt-1">
-                ⚡ Cần nhân viên xác nhận
-              </span>
-            </div>
-
-            <div
-              onClick={() => setPendingFilterStatus(prev => prev === 'CONFIRMED' ? 'ALL' : 'CONFIRMED')}
-              className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-                pendingFilterStatus === 'CONFIRMED'
-                  ? 'bg-cyan-50/80 border-cyan-400 ring-2 ring-cyan-400/50 shadow-sm'
-                  : 'bg-white border-slate-200 hover:border-cyan-300'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] uppercase tracking-wider font-bold text-cyan-800 font-mono">
-                  Chờ Check In
-                </span>
-                <span className="w-8 h-8 rounded-lg bg-cyan-100 text-cyan-700 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-[18px]">hourglass_top</span>
-                </span>
-              </div>
-              <div className="mt-3 flex items-baseline gap-1.5">
-                <span className="font-headline text-2xl font-extrabold text-cyan-900 tabular-nums">
-                  {arrivalStatusCounts.confirmedCheckIn}
-                </span>
-                <span className="text-xs text-cyan-700">đơn đã duyệt</span>
-              </div>
-              <span className="text-[11px] text-cyan-600 font-medium block mt-1">
-                ✓ Sẵn sàng đón tại cơ sở
-              </span>
-            </div>
-
-            <div
-              onClick={() => setPendingFilterStatus(prev => prev === 'CANCELLED' ? 'ALL' : 'CANCELLED')}
-              className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-                pendingFilterStatus === 'CANCELLED'
-                  ? 'bg-rose-50/80 border-rose-400 ring-2 ring-rose-400/50 shadow-sm'
-                  : 'bg-white border-slate-200 hover:border-rose-300'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] uppercase tracking-wider font-bold text-rose-800 font-mono">
-                  Đã Hủy / Từ Chối
-                </span>
-                <span className="w-8 h-8 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-[18px]">cancel</span>
-                </span>
-              </div>
-              <div className="mt-3 flex items-baseline gap-1.5">
-                <span className="font-headline text-2xl font-extrabold text-rose-900 tabular-nums">
-                  {arrivalStatusCounts.cancelled}
-                </span>
-                <span className="text-xs text-rose-700">đơn</span>
-              </div>
-              <span className="text-[11px] text-rose-600 font-medium block mt-1">
-                Đã giải phóng vị trí kho
-              </span>
-            </div>
-
-            <div
-              onClick={() => setPendingFilterStatus('ALL')}
-              className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-                pendingFilterStatus === 'ALL'
-                  ? 'bg-slate-100 border-slate-400 ring-2 ring-slate-400/50 shadow-sm'
-                  : 'bg-white border-slate-200 hover:border-slate-300'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] uppercase tracking-wider font-bold text-slate-600 font-mono">
-                  Tổng Đơn Tiếp Nhận
-                </span>
-                <span className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-[18px]">inventory_2</span>
-                </span>
-              </div>
-              <div className="mt-3 flex items-baseline gap-1.5">
-                <span className="font-headline text-2xl font-extrabold text-slate-900 tabular-nums">
-                  {arrivals.length}
-                </span>
-                <span className="text-xs text-slate-500">tất cả đơn</span>
-              </div>
-              <span className="text-[11px] text-slate-500 font-medium block mt-1">
-                Xem toàn bộ hồ sơ đặt chỗ
-              </span>
-            </div>
-          </div>
-
           {/* Search Box */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 bg-white border border-slate-200 rounded-2xl shadow-2xs">
             <div className="relative flex-1 max-w-md">
@@ -1343,16 +1269,9 @@ export const StaffDashboard: React.FC = () => {
                 </button>
               )}
             </div>
-            {pendingFilterStatus !== 'ALL' && (
-              <button
-                type="button"
-                onClick={() => setPendingFilterStatus('ALL')}
-                className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer self-start sm:self-auto"
-              >
-                <span>Đang lọc: <strong>{pendingFilterStatus === 'PENDING_CONFIRMATION' ? 'Chờ xác nhận' : pendingFilterStatus === 'CONFIRMED' ? 'Chờ check in' : 'Đã từ chối'}</strong></span>
-                <span className="underline ml-1">(Hiển thị tất cả)</span>
-              </button>
-            )}
+            <div className="text-xs text-slate-500 font-medium">
+              Đang hiển thị <strong className="text-amber-700">{filteredPendingOrders.length}</strong> đơn chờ xử lý
+            </div>
           </div>
 
           {/* Orders Table */}
@@ -1845,7 +1764,7 @@ export const StaffDashboard: React.FC = () => {
 
       {/* Full-Width Handover & Check-in Operator Workbench */}
       <HandoverCheckInWorkbench
-        arrivals={arrivals}
+        arrivals={workbenchArrivals}
         activeBookingId={activeBookingId}
         onHandoverComplete={(bookingId) => {
           setCheckInSuccessMsg(`Hoàn tất quy trình check-in bàn giao buồng kho cho đơn #${bookingId}`)
@@ -1862,13 +1781,14 @@ export const StaffDashboard: React.FC = () => {
         <div className="xl:col-span-8 flex flex-col gap-6 min-w-0">
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 min-w-0">
 
-            {/* Upcoming Appointments Table */}
+            {/* Upcoming Appointments Table: Chỉ hiển thị các đơn chờ Check-in */}
             <div className="flex items-center justify-between mb-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-900 font-mono">
-                Danh sách hẹn nhận kho &amp; Hợp đồng tại cơ sở
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-900 font-mono flex items-center gap-2">
+                <span className="material-symbols-outlined text-cyan-600 text-[18px]">how_to_reg</span>
+                Danh sách khách hàng chờ Check-in tại cơ sở
               </span>
-              <span className="text-xs text-slate-500 font-mono">
-                {arrivals.length} lượt khách
+              <span className="text-xs text-slate-500 font-mono font-bold">
+                {checkInArrivals.length} khách chờ check-in
               </span>
             </div>
 
@@ -1879,21 +1799,21 @@ export const StaffDashboard: React.FC = () => {
                     <th className="py-2.5 px-3 rounded-l-lg font-semibold">Khách hàng</th>
                     <th className="py-2.5 px-3 font-semibold">Mã Đơn &amp; Hợp Đồng</th>
                     <th className="py-2.5 px-3 font-semibold">Kho Đăng Ký</th>
-                    <th className="py-2.5 px-3 font-semibold">Ngày Bắt Đầu</th>
+                    <th className="py-2.5 px-3 font-semibold">Thời gian tiếp đón</th>
                     <th className="py-2.5 px-3 font-semibold">Trạng Thái &amp; Chữ Ký</th>
                     <th className="py-2.5 px-3 font-semibold">Cọc Giữ Chỗ</th>
                     <th className="py-2.5 px-3 rounded-r-lg text-right font-semibold">Hành động</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {arrivals.length === 0 ? (
+                  {checkInArrivals.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="py-8 text-center text-slate-400 text-xs">
-                        Không có lịch hẹn nhận kho nào đang chờ trong ca trực hiện tại.
+                        Không có lịch hẹn nhận kho nào đang chờ check-in trong ca trực hiện tại.
                       </td>
                     </tr>
                   ) : (
-                    arrivals.map((b) => {
+                    checkInArrivals.map((b) => {
                       const isContractSigned = Boolean(b.contractSigned) || b.contractStatus === 'PENDING_ACTIVATION' || b.contractStatus === 'ACTIVE'
                       const hasContract = Boolean(b.contractCode || b.contractId || b.paymentStatus === 'PAID' || b.status === 'CONFIRMED' || b.status === 'ACTIVE')
                       return (
@@ -1912,7 +1832,11 @@ export const StaffDashboard: React.FC = () => {
                             <span className="font-mono font-bold text-cyan-700">Kho #{b.unitCode}</span>
                             <span className="text-slate-500 block text-[10px]">{b.facilityName || 'Boxora'}</span>
                           </td>
-                          <td className="py-3.5 px-3 font-mono tabular-nums text-slate-700">{b.startDate}</td>
+                          <td className="py-3.5 px-3 font-mono tabular-nums text-slate-700">
+                            {b.expectedCheckInAt
+                              ? `${new Date(b.expectedCheckInAt).toLocaleDateString('vi-VN')} ${new Date(b.expectedCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
+                              : ((b as any).checkInDate || b.startDate)}
+                          </td>
                           <td className="py-3.5 px-3">
                             <div className="flex flex-col items-start gap-1">
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
@@ -1952,12 +1876,13 @@ export const StaffDashboard: React.FC = () => {
                               <button
                                 onClick={() => {
                                   setActiveBookingId(b.id)
-                                  setFocusedBookingNotice(`Đã chọn tiếp đón khách hàng ${b.customerName} (${b.bookingCode})`)
+                                  setFocusedBookingNotice(`Đã chọn check-in khách hàng ${b.customerName} (${b.bookingCode})`)
                                   document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
                                 }}
-                                className="px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg font-semibold text-[11px] transition-colors cursor-pointer"
+                                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-[11px] transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
                               >
-                                Tiếp đón
+                                <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
+                                <span>Check-in</span>
                               </button>
                             </div>
                           </td>
