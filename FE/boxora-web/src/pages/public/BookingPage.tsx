@@ -1046,8 +1046,11 @@ export const BookingPage: React.FC = () => {
         const res = await bookingService.createBooking({
           facilityId: selectedFacility?.id,
           unitTypeId: resolvedUnitTypeId,
+          fullName: customerName.trim(),
+          phone: customerPhone.trim().replace(/[\s.-]/g, ''),
+          email: customerEmail.trim(),
           customerName: customerName.trim(),
-          customerPhone: customerPhone.trim(),
+          customerPhone: customerPhone.trim().replace(/[\s.-]/g, ''),
           customerEmail: customerEmail.trim(),
           startDate: startDate,
           rentalMonths: isCustomDuration ? Math.max(1, Math.round(customDays / 30)) : rentalMonths,
@@ -1059,7 +1062,8 @@ export const BookingPage: React.FC = () => {
           expectedCheckInAt: expectedCheckInStr,
           checkInTime: cleanTime,
           identityCardNumber: customerIdCard.trim(),
-          identityCardType: 'CCCD',
+          identityCardType: idCardType,
+          specialNotes: specialNotes.trim() || undefined,
         })
 
         if (res?.bookingCode || res?.id) {
@@ -1070,7 +1074,16 @@ export const BookingPage: React.FC = () => {
         }
       } catch (apiErr: any) {
         console.warn('Backend booking API error:', apiErr)
-        const msg = apiErr?.response?.data?.message || apiErr?.message
+        const fieldErrors = apiErr?.response?.data?.errors
+        const detailedFieldMsg =
+          fieldErrors && typeof fieldErrors === 'object' && Object.keys(fieldErrors).length > 0
+            ? `Chi tiết trường không hợp lệ: ${Object.entries(fieldErrors)
+                .map(([k, v]) => `${k} (${String(v)})`)
+                .join(' | ')}`
+            : ''
+        const msg = detailedFieldMsg
+          ? `${apiErr?.response?.data?.message || 'Dữ liệu yêu cầu không hợp lệ.'} — ${detailedFieldMsg}`
+          : apiErr?.response?.data?.message || apiErr?.message
         if (selectedMethod === 'ONLINE') {
           throw new Error(msg || 'Không thể tạo phiên giữ chỗ trên hệ thống để kết nối cổng thanh toán. Quý khách vui lòng thử lại hoặc chọn Thanh toán sau khi nhận kho.')
         }
@@ -1101,6 +1114,7 @@ export const BookingPage: React.FC = () => {
         setShowDocuSealModal(true)
         setIsSubmitting(false)
         return
+      } else {
         // Thanh toán sau khi nhận kho: Lưu đơn PENDING_CONTACT (chọn kho khi check-in tại quầy)
         setIsOnlinePaid(false)
         sendReservationToStaff(
@@ -1223,8 +1237,11 @@ export const BookingPage: React.FC = () => {
           customDays,
           checkInDate,
           selectedPeriodId,
+          fullName: customerName.trim(),
+          phone: customerPhone.trim().replace(/[\s.-]/g, ''),
+          email: customerEmail.trim(),
           customerName: customerName.trim(),
-          customerPhone: customerPhone.trim(),
+          customerPhone: customerPhone.trim().replace(/[\s.-]/g, ''),
           customerEmail: customerEmail.trim(),
           specialNotes: specialNotes.trim(),
           idCardType,
@@ -3285,8 +3302,11 @@ export const BookingPage: React.FC = () => {
                     customDays,
                     checkInDate,
                     selectedPeriodId,
-                    customerName: customerName.trim(),
-                    customerPhone: customerPhone.trim(),
+                    fullName: customerName.trim(),
+          phone: customerPhone.trim().replace(/[\s.-]/g, ''),
+          email: customerEmail.trim(),
+          customerName: customerName.trim(),
+                    customerPhone: customerPhone.trim().replace(/[\s.-]/g, ''),
                     customerEmail: customerEmail.trim(),
                     specialNotes: specialNotes.trim(),
                     idCardType,
@@ -3314,8 +3334,11 @@ export const BookingPage: React.FC = () => {
                     customDays,
                     checkInDate,
                     selectedPeriodId,
-                    customerName: customerName.trim(),
-                    customerPhone: customerPhone.trim(),
+                    fullName: customerName.trim(),
+          phone: customerPhone.trim().replace(/[\s.-]/g, ''),
+          email: customerEmail.trim(),
+          customerName: customerName.trim(),
+                    customerPhone: customerPhone.trim().replace(/[\s.-]/g, ''),
                     customerEmail: customerEmail.trim(),
                     specialNotes: specialNotes.trim(),
                     idCardType,

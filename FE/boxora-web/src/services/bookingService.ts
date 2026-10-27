@@ -14,6 +14,8 @@ export interface BookingCreatePayload {
   facilityId?: string
   unitTypeId?: string
   fullName?: string
+  phone?: string
+  email?: string
   customerName?: string
   customerPhone?: string
   customerEmail?: string
