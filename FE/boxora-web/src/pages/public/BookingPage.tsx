@@ -328,7 +328,15 @@ export const resolveUnitTypeIdForSelectedSize = (size: StorageSizeUnitDef): stri
 export const BookingPage: React.FC = () => {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { user, isAuthenticated, logout } = useAuth()
+  const { user, isAuthenticated, isLoading, logout } = useAuth()
+
+  // Yêu cầu đăng nhập trước khi vào màn hình đặt giữ chỗ kho
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      const currentUrl = window.location.pathname + window.location.search
+      navigate(`/login?redirect=${encodeURIComponent(currentUrl)}`, { replace: true })
+    }
+  }, [isLoading, isAuthenticated, navigate])
   const { t } = useLanguage()
 
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
@@ -1303,6 +1311,17 @@ export const BookingPage: React.FC = () => {
     navigator.clipboard.writeText(bookingCode)
     setCopiedCode(true)
     setTimeout(() => setCopiedCode(false), 2500)
+  }
+
+  if (isLoading || !isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] dark:bg-slate-950 flex flex-col items-center justify-center gap-3">
+        <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-600 rounded-full animate-spin" />
+        <span className="font-mono text-xs text-slate-500 font-semibold tracking-wider uppercase">
+          Đang xác thực phiên làm việc Boxora...
+        </span>
+      </div>
+    )
   }
 
   return (

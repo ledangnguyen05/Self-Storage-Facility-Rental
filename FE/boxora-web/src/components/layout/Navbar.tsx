@@ -74,7 +74,10 @@ export const Navbar: React.FC = () => {
 
           {/* Desktop Navigation Links */}
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
-            <Link to="/booking" className="text-cyan-800 font-bold hover:text-cyan-900 transition-colors flex items-center gap-1">
+            <Link
+              to={user ? '/booking' : `/login?redirect=${encodeURIComponent('/booking')}`}
+              className="text-cyan-800 font-bold hover:text-cyan-900 transition-colors flex items-center gap-1"
+            >
               <span>{t('Đặt Thuê Kho', 'Rent Storage')}</span>
             </Link>
             <Link to="/facilities" className="hover:text-slate-900 transition-colors">
