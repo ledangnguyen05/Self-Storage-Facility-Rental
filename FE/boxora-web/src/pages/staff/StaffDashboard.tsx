@@ -1670,9 +1670,9 @@ export const StaffDashboard: React.FC = () => {
                       const isContractSigned = Boolean(b.contractSigned) || b.contractStatus === 'PENDING_ACTIVATION' || b.contractStatus === 'ACTIVE'
                       const hasContract = Boolean(b.contractCode || b.contractId || b.paymentStatus === 'PAID')
                       const isPaidPending = s === 'PENDING_PAYMENT' && b.paymentStatus === 'PAID'
-                      const isPending = s === 'PENDING_CONTACT' || s === 'PENDING_PAYMENT' || s === 'PENDING_APPROVAL'
                       const isConfirmed = s === 'CONFIRMED' || (s as string) === 'CHECKIN_STEP1_COMPLETED' || isPaidPending
                       const isActiveOrCompleted = s === 'ACTIVE' || s === 'COMPLETED'
+                      const isPending = s === 'PENDING_CONTACT' || s === 'PENDING_PAYMENT' || s === 'PENDING_APPROVAL' || (s as string) === 'PENDING_SIGNATURE' || (!isConfirmed && !isActiveOrCompleted && !isCancelled)
                       const isInPerson = b.signingMethod === 'IN_PERSON' 
                         || (b as any).signingMethod === 'in_person' 
                         || (b as any).paymentMethod === 'AT_FACILITY' 
@@ -1836,95 +1836,41 @@ export const StaffDashboard: React.FC = () => {
 
                           <td className="py-3.5 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                              {/* TH1: Đối với đơn ký giấy & thanh toán tại quầy chưa hoàn thành: chỉ hiển thị 2 button [Xác nhận] và [Từ chối] (thêm [Hủy đơn] nếu quá 48h) */}
-                              {isInPerson && !isActiveOrCompleted ? (
-                                isPending ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleStaffConfirmBooking(b)}
-                                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
-                                      title="Xác nhận đơn"
-                                    >
-                                      <span className="material-symbols-outlined text-[15px]">check_circle</span>
-                                      <span>Xác nhận</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => openRejectModal(b)}
-                                      className="px-2.5 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                                      title="Từ chối đơn và điền lý do"
-                                    >
-                                      <span className="material-symbols-outlined text-[15px]">cancel</span>
-                                      <span>Từ chối</span>
-                                    </button>
-                                    {isOverdue48h && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleCancelOverdueBooking(b)}
-                                        className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
-                                        title="Đã quá 48h sau lịch hẹn check-in khách chưa đến tiếp nhận: Hủy đơn và giải phóng kho"
-                                      >
-                                        <span className="material-symbols-outlined text-[15px]">event_busy</span>
-                                        <span>Hủy đơn</span>
-                                      </button>
-                                    )}
-                                  </>
-                                ) : isConfirmed ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const proceed = () => {
-                                          setActiveBookingId(b.id)
-                                          setStaffActiveTab('reception')
-                                          setSearchParams({ tab: 'reception' })
-                                          setTimeout(() => {
-                                            document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-                                          }, 100)
-                                        }
-                                        const { isPremature } = isBookingBeforeCheckInTime(b)
-                                        if (isPremature) {
-                                          setEarlyConfirmState({
-                                            booking: b,
-                                            actionType: 'ENTER_RECEPTION',
-                                            onConfirm: proceed,
-                                          })
-                                        } else {
-                                          proceed()
-                                        }
-                                      }}
-                                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
-                                      title="Chuyển sang Bàn Tiếp Đón để đón khách làm thủ tục ký giấy & thanh toán tại quầy"
-                                    >
-                                      <span className="material-symbols-outlined text-[15px]">desk</span>
-                                      <span>Check-in</span>
-                                    </button>
-                                    {isOverdue48h && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleCancelOverdueBooking(b)}
-                                        className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
-                                        title="Đã quá 48h sau lịch hẹn check-in khách chưa đến tiếp nhận: Hủy đơn và giải phóng kho"
-                                      >
-                                        <span className="material-symbols-outlined text-[15px]">event_busy</span>
-                                        <span>Hủy đơn</span>
-                                      </button>
-                                    )}
-                                  </>
-                                ) : isOverdue48h ? (
+                              {/* Đối với đơn đang chờ xử lý / chờ xác nhận / chờ ký: chỉ hiển thị 2 button [Xác nhận] và [Từ chối] (thêm [Hủy đơn] nếu quá 48h) */}
+                              {isPending ? (
+                                <>
                                   <button
                                     type="button"
-                                    onClick={() => handleCancelOverdueBooking(b)}
-                                    className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
-                                    title="Đã quá 48h sau lịch hẹn check-in khách chưa đến tiếp nhận: Hủy đơn và giải phóng kho"
+                                    onClick={() => handleStaffConfirmBooking(b)}
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                    title="Xác nhận đơn"
                                   >
-                                    <span className="material-symbols-outlined text-[15px]">event_busy</span>
-                                    <span>Hủy đơn</span>
+                                    <span className="material-symbols-outlined text-[15px]">check_circle</span>
+                                    <span>Xác nhận</span>
                                   </button>
-                                ) : null
+                                  <button
+                                    type="button"
+                                    onClick={() => openRejectModal(b)}
+                                    className="px-2.5 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                                    title="Từ chối đơn và điền lý do"
+                                  >
+                                    <span className="material-symbols-outlined text-[15px]">cancel</span>
+                                    <span>Từ chối</span>
+                                  </button>
+                                  {isOverdue48h && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCancelOverdueBooking(b)}
+                                      className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                      title="Đã quá 48h sau lịch hẹn check-in khách chưa đến tiếp nhận: Hủy đơn và giải phóng kho"
+                                    >
+                                      <span className="material-symbols-outlined text-[15px]">event_busy</span>
+                                      <span>Hủy đơn</span>
+                                    </button>
+                                  )}
+                                </>
                               ) : (
-                                 <>
+                                <>
                                   <button
                                     type="button"
                                     onClick={() => setReviewDetailBooking(b)}
@@ -1956,90 +1902,59 @@ export const StaffDashboard: React.FC = () => {
                                       <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
                                       <span>Check-in</span>
                                     </button>
-                                  ) : (s === 'PENDING_CONTACT' || (s as string) === 'PENDING_SIGNATURE') ? (
+                                  ) : (isConfirmed || isActiveOrCompleted) ? (
                                     <>
                                       <button
                                         type="button"
-                                        onClick={() => handleCreatePaymentLinkForCustomer(b)}
-                                        className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                                        title="Tạo link thanh toán VNPay gửi cho khách hàng"
+                                        onClick={() => {
+                                          const proceed = () => {
+                                            setActiveBookingId(b.id)
+                                            setStaffActiveTab('reception')
+                                            setSearchParams({ tab: 'reception' })
+                                            setTimeout(() => {
+                                              document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                                            }, 100)
+                                          }
+                                          const { isPremature } = isBookingBeforeCheckInTime(b)
+                                          if (isPremature && !isActiveOrCompleted) {
+                                            setEarlyConfirmState({
+                                              booking: b,
+                                              actionType: 'ENTER_RECEPTION',
+                                              onConfirm: proceed,
+                                            })
+                                          } else {
+                                            proceed()
+                                          }
+                                        }}
+                                        className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                        title={isInPerson ? "Chuyển sang Bàn Tiếp Đón để đón khách làm thủ tục ký giấy & thanh toán tại quầy" : "Chuyển sang Bàn Tiếp Đón & Nghiệm Thu Bàn Giao Kho"}
                                       >
-                                        <span className="material-symbols-outlined text-[14px]">link</span>
-                                        <span>Gửi link TT</span>
+                                        <span className="material-symbols-outlined text-[15px]">desk</span>
+                                        <span>{isActiveOrCompleted ? 'Hồ Sơ Bàn Giao' : 'Check-in'}</span>
                                       </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleStaffConfirmBooking(b)}
-                                        className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
-                                        title="Xác nhận đơn"
-                                      >
-                                        <span className="material-symbols-outlined text-[14px]">check_circle</span>
-                                        <span>Xác nhận</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => openRejectModal(b)}
-                                        className="px-2 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                                        title="Từ chối đơn và điền lý do"
-                                      >
-                                        <span className="material-symbols-outlined text-[14px]">cancel</span>
-                                        <span>Từ chối</span>
-                                      </button>
+                                      {isInPerson && isOverdue48h && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCancelOverdueBooking(b)}
+                                          className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                          title="Đã quá 48h sau lịch hẹn check-in khách chưa đến tiếp nhận: Hủy đơn và giải phóng kho"
+                                        >
+                                          <span className="material-symbols-outlined text-[15px]">event_busy</span>
+                                          <span>Hủy đơn</span>
+                                        </button>
+                                      )}
                                     </>
-                                  ) : isPending ? (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleStaffConfirmBooking(b)}
-                                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
-                                        title="Xác nhận đơn và chuyển sang Chờ check in"
-                                      >
-                                        <span className="material-symbols-outlined text-[15px]">check_circle</span>
-                                        <span>Xác nhận</span>
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        onClick={() => openRejectModal(b)}
-                                        className="px-2.5 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                                        title="Từ chối đơn và điền lý do"
-                                      >
-                                        <span className="material-symbols-outlined text-[15px]">cancel</span>
-                                        <span>Từ chối</span>
-                                      </button>
-                                    </>
-                                  ) : null}
-
-                                  {(isConfirmed || isActiveOrCompleted) && (
+                                  ) : isOverdue48h ? (
                                     <button
                                       type="button"
-                                      onClick={() => {
-                                        const proceed = () => {
-                                          setActiveBookingId(b.id)
-                                          setStaffActiveTab('reception')
-                                          setSearchParams({ tab: 'reception' })
-                                          setTimeout(() => {
-                                            document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-                                          }, 100)
-                                        }
-                                        const { isPremature } = isBookingBeforeCheckInTime(b)
-                                        if (isPremature && !isActiveOrCompleted) {
-                                          setEarlyConfirmState({
-                                            booking: b,
-                                            actionType: 'ENTER_RECEPTION',
-                                            onConfirm: proceed,
-                                          })
-                                        } else {
-                                          proceed()
-                                        }
-                                      }}
-                                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
-                                      title="Chuyển sang Bàn Tiếp Đón &amp; Nghiệm Thu Bàn Giao Kho"
+                                      onClick={() => handleCancelOverdueBooking(b)}
+                                      className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                      title="Đã quá 48h sau lịch hẹn check-in khách chưa đến tiếp nhận: Hủy đơn và giải phóng kho"
                                     >
-                                      <span className="material-symbols-outlined text-[15px]">desk</span>
-                                      <span>{isActiveOrCompleted ? 'Hồ Sơ Bàn Giao' : 'Check-in'}</span>
+                                      <span className="material-symbols-outlined text-[15px]">event_busy</span>
+                                      <span>Hủy đơn</span>
                                     </button>
-                                  )}
+                                  ) : null}
                                 </>
                               )}
                             </div>
