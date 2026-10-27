@@ -254,7 +254,7 @@ export const AssignPhysicalUnitModal: React.FC<AssignPhysicalUnitModalProps> = (
             const syncedBooking = await bookingService.createBooking({
               bookingCode: booking.bookingCode,
               facilityId: selectedUnit?.facilityId || targetFacilityId,
-              unitTypeId: selectedUnit?.unitTypeId || booking.unitTypeId,
+              unitTypeId: (selectedUnit?.unitTypeId || booking.unitTypeId) ?? undefined,
               customerName: cleanName,
               customerPhone: validPhone,
               customerEmail: validEmail,

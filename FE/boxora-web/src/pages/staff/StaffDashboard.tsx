@@ -16,7 +16,6 @@ import { extractFloor, resolveBookingFloor, filterArrivals, AppointmentStatusFil
 import { reservationEmailService } from '../../services/reservationEmailService'
 
 import { HandoverCheckInWorkbench } from './components/HandoverCheckInWorkbench'
-import { QrCameraCheckInModal } from './components/QrCameraCheckInModal'
 import { StaffPolicyGuideModal } from './components/StaffPolicyGuideModal'
 import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
 import { AssignPhysicalUnitModal } from '../../components/modals/AssignPhysicalUnitModal'
@@ -141,7 +140,6 @@ export const StaffDashboard: React.FC = () => {
 
 
   // QR Code Scanner State
-  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false)
 
   // Dynamic arrivals & active rentals from BE
   const [arrivals, setArrivals] = useState<Booking[]>([])
@@ -880,27 +878,14 @@ export const StaffDashboard: React.FC = () => {
     setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: 'RESOLVED' } : t))
   }
 
-  // Quick Walkin Modal
-  const [isWalkinOpen, setIsWalkinOpen] = useState(false)
-  const [walkinName, setWalkinName] = useState('')
-  const [walkinPhone, setWalkinPhone] = useState('')
-  const [walkinSuccess, setWalkinSuccess] = useState(false)
+
   const [activeEvidenceModal, setActiveEvidenceModal] = useState<{
     ticketId: string
     title: string
     images: string[]
   } | null>(null)
 
-  const handleWalkinSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    setWalkinSuccess(true)
-    setTimeout(() => {
-      setWalkinSuccess(false)
-      setIsWalkinOpen(false)
-      setWalkinName('')
-      setWalkinPhone('')
-    }, 1500)
-  }
+
 
   // Danh sách các yêu cầu hoàn trả kho của khách hàng
   const customerReturnRequests = useMemo(() => {
@@ -1100,24 +1085,7 @@ export const StaffDashboard: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-            <button
-              type="button"
-              onClick={() => setIsQrScannerOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[18px]">qr_code_scanner</span>
-              <span>Quét QR Check-in</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsWalkinOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-colors border border-slate-200 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[18px]">person_add</span>
-              <span>Khách Walk-in Vãng Lai</span>
-            </button>
-          </div>
+
         </div>
       </div>
 
@@ -2338,86 +2306,7 @@ export const StaffDashboard: React.FC = () => {
         </>
       )}
 
-      {/* Walkin Modal */}
-      {isWalkinOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
-            {walkinSuccess ? (
-              <div className="py-8 text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-                  <span className="material-symbols-outlined text-[28px]">check_circle</span>
-                </div>
-                <h3 className="font-headline text-lg font-bold text-slate-900">
-                  Đã Đăng Ký Khách Vãng Lai!
-                </h3>
-                <p className="text-xs text-slate-600">
-                  Mã thẻ tạm #WALK-{Math.floor(100 + Math.random() * 900)} đã được kích hoạt cho khách tham quan.
-                </p>
-              </div>
-            ) : (
-              <form onSubmit={handleWalkinSubmit} className="space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <h3 className="font-headline text-base font-bold text-slate-900">
-                    Tiếp Đón Khách Vãng Lai (Walk-in)
-                  </h3>
-                  <button type="button" onClick={() => setIsWalkinOpen(false)} className="text-slate-400 hover:text-slate-600">
-                    <span className="material-symbols-outlined text-[20px]">close</span>
-                  </button>
-                </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase">Họ và tên khách</label>
-                  <input
-                    type="text"
-                    required
-                    value={walkinName}
-                    onChange={(e) => setWalkinName(e.target.value)}
-                    placeholder="Nguyễn Văn A"
-                    className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-400"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase">Số điện thoại liên hệ</label>
-                  <input
-                    type="tel"
-                    required
-                    value={walkinPhone}
-                    onChange={(e) => setWalkinPhone(e.target.value)}
-                    placeholder="0901234567"
-                    className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-slate-400"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase">Nhu cầu kho dự kiến</label>
-                  <select className="w-full h-10 px-3 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none">
-                    <option value="mini">Kho Mini (2-5 m²)</option>
-                    <option value="home">Kho Gia Đình (6-12 m²)</option>
-                    <option value="biz">Kho Doanh Nghiệp (15-30 m²)</option>
-                  </select>
-                </div>
-
-                <div className="pt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsWalkinOpen(false)}
-                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold"
-                  >
-                    Hủy bỏ
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
-                  >
-                    Cấp Thẻ Tham Quan
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Evidence Image Preview Modal */}
       {activeEvidenceModal && (
@@ -2713,13 +2602,7 @@ export const StaffDashboard: React.FC = () => {
         </div>
       )}
 
-      <QrCameraCheckInModal
-        isOpen={isQrScannerOpen}
-        onClose={() => setIsQrScannerOpen(false)}
-        onSelectBookingForWorkbench={(bookingId) => {
-          setActiveBookingId(bookingId)
-        }}
-      />
+
 
 
       {/* MODAL NHẬP LÝ DO TỪ CHỐI ĐƠN ĐẶT GIỮ CHỖ */}
