@@ -47,6 +47,15 @@ public class StorageUnit extends BaseEntity {
     @Column(name = "image_url", length = 1000)
     private String imageUrl;
 
+    @Column(name = "maintenance_reason", length = 500)
+    private String maintenanceReason;
+
+    @Column(name = "maintenance_by", length = 150)
+    private String maintenanceBy;
+
+    @Column(name = "maintenance_at")
+    private java.time.LocalDateTime maintenanceAt;
+
     public java.math.BigDecimal getEffectiveBasePrice() {
         if (pricePerMonth != null) {
             return pricePerMonth;

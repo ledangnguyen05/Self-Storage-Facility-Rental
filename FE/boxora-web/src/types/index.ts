@@ -147,6 +147,9 @@ export interface StorageUnit {
   imageUrl?: string
   images?: string[]
   primaryImageUrl?: string
+  maintenanceReason?: string
+  maintenanceBy?: string
+  maintenanceAt?: string
 }
 
 export type BookingStatusType =

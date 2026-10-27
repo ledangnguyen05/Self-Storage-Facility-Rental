@@ -46,8 +46,8 @@ export const storageUnitService = {
     return response.data
   },
 
-  async toggleMaintenance(id: string) {
-    const response = await api.patch(`/api/v1/storage-units/${id}/toggle-maintenance`)
+  async toggleMaintenance(id: string, data?: { reason?: string; maintenanceBy?: string }) {
+    const response = await api.patch(`/api/v1/storage-units/${id}/toggle-maintenance`, data || {})
     return response.data?.data as StorageUnit
   },
 
