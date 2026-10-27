@@ -330,11 +330,13 @@ export const StaffDashboard: React.FC = () => {
                 bookingCode: r.bookingCode,
                 customerName: r.customer?.fullName || r.customerName || 'Khách đặt giữ chỗ',
                 customerPhone: r.customer?.phone || r.customerPhone || 'N/A',
-                identityCardNumber: r.customer?.idCard || r.identityCardNumber,
+                identityCardNumber: r.customer?.idCard || r.customerIdCard || r.identityCardNumber,
                 customerEmail: r.customer?.email || r.customerEmail,
                 facilityId: r.facility?.id || r.facilityId || targetId || '',
                 facilityName: r.facility?.name || r.facilityName || assignedFacilityName || 'Cơ sở Boxora',
-                unitCode: r.unitCode || r.size?.volumeText || 'Kho tự quản',
+                unitTypeId: r.unitTypeId,
+                unitTypeName: r.unitTypeName || r.sizeName || r.size?.volumeText,
+                unitCode: r.unitCode || r.sizeName || r.size?.volumeText || 'Kho tự quản',
                 storageUnitId: r.storageUnitId || '',
                 startDate: r.startDate || new Date().toISOString().slice(0, 10),
                 endDate: r.rentalEndDate || '',
@@ -344,7 +346,7 @@ export const StaffDashboard: React.FC = () => {
                 customerId: r.customerId || 'guest',
                 accessCode: r.accessCode || r.bookingCode || '',
                 rentalMonths: r.rentalMonths || 1,
-                totalRentalFee: r.totalRentalFee || 0,
+                totalRentalFee: r.totalRentalFee || r.totalRent || 0,
                 depositAmount: r.depositAmount || 0,
                 depositPaid: r.depositPaid ?? (r.paymentStatus === 'PAID' ? (r.depositAmount || 0) : 0),
                 paymentStatus: r.paymentStatus === 'PAID' ? 'PAID' : 'UNPAID',
@@ -375,11 +377,13 @@ export const StaffDashboard: React.FC = () => {
                 bookingCode: r.bookingCode,
                 customerName: r.customer?.fullName || r.customerName || 'Khách đặt giữ chỗ',
                 customerPhone: r.customer?.phone || r.customerPhone || 'N/A',
-                identityCardNumber: r.customer?.idCard || r.identityCardNumber,
+                identityCardNumber: r.customer?.idCard || r.customerIdCard || r.identityCardNumber,
                 customerEmail: r.customer?.email || r.customerEmail,
                 facilityId: r.facility?.id || r.facilityId || targetId || '',
                 facilityName: r.facility?.name || r.facilityName || assignedFacilityName || 'Cơ sở Boxora',
-                unitCode: r.unitCode || r.size?.volumeText || 'Kho tự quản',
+                unitTypeId: r.unitTypeId,
+                unitTypeName: r.unitTypeName || r.sizeName || r.size?.volumeText,
+                unitCode: r.unitCode || r.sizeName || r.size?.volumeText || 'Kho tự quản',
                 storageUnitId: r.storageUnitId || '',
                 startDate: r.startDate || new Date().toISOString().slice(0, 10),
                 endDate: r.rentalEndDate || '',
@@ -389,7 +393,7 @@ export const StaffDashboard: React.FC = () => {
                 customerId: r.customerId || 'guest',
                 accessCode: r.accessCode || r.bookingCode || '',
                 rentalMonths: r.rentalMonths || 1,
-                totalRentalFee: r.totalRentalFee || 0,
+                totalRentalFee: r.totalRentalFee || r.totalRent || 0,
                 depositAmount: r.depositAmount || 0,
                 depositPaid: r.depositPaid ?? (r.paymentStatus === 'PAID' ? (r.depositAmount || 0) : 0),
                 paymentStatus: r.paymentStatus === 'PAID' ? 'PAID' : 'UNPAID',
@@ -665,13 +669,14 @@ export const StaffDashboard: React.FC = () => {
   const executeStaffConfirmBooking = async (booking: Booking, notes?: string) => {
     setIsConfirmingSubmitting(true)
     try {
-      const isBackendId = booking.id && !booking.id.startsWith('LOCAL-RES-')
+      const isBackendId = Boolean(booking.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(booking.id.trim()))
       const targetIdOrCode = isBackendId ? booking.id : booking.bookingCode
       await bookingService.confirmBooking(targetIdOrCode, notes)
     } catch (err: any) {
       console.warn('Backend confirm booking error:', err)
       const errMsg = err.response?.data?.message || err.message
-      if (!booking.id?.startsWith('LOCAL-RES-')) {
+      const isLocalOnly = !booking.id || booking.id.startsWith('LOCAL-RES-') || booking.id.startsWith('res_') || err?.response?.status === 404 || err?.response?.data?.errorCode === 'BOOKING_NOT_FOUND'
+      if (!isLocalOnly) {
         alert(`Không thể xác nhận đơn trên máy chủ: ${errMsg}`)
         setIsConfirmingSubmitting(false)
         return
@@ -714,13 +719,14 @@ export const StaffDashboard: React.FC = () => {
 
     setIsRejectingSubmitting(true)
     try {
-      const isBackendId = booking.id && !booking.id.startsWith('LOCAL-RES-')
+      const isBackendId = Boolean(booking.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(booking.id.trim()))
       const targetIdOrCode = isBackendId ? booking.id : booking.bookingCode
       await bookingService.cancelBooking(targetIdOrCode, reason.trim())
     } catch (err: any) {
       console.error('Backend cancel booking error on reject:', err)
       const errMsg = err.response?.data?.message || err.message || 'Lỗi xử lý hủy đơn trên máy chủ'
-      if (!booking.id?.startsWith('LOCAL-RES-')) {
+      const isLocalOnly = !booking.id || booking.id.startsWith('LOCAL-RES-') || booking.id.startsWith('res_') || err?.response?.status === 404 || err?.response?.data?.errorCode === 'BOOKING_NOT_FOUND'
+      if (!isLocalOnly) {
         alert(`Không thể từ chối đơn trên máy chủ: ${errMsg}`)
         setIsRejectingSubmitting(false)
         return
@@ -3155,7 +3161,7 @@ export const StaffDashboard: React.FC = () => {
       {/* MODAL NHẬP LÝ DO TỪ CHỐI ĐƠN ĐẶT GIỮ CHỖ */}
       {rejectingBooking && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-lg rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col text-left animate-in zoom-in-95 duration-200">
+          <div className="w-full max-w-lg max-h-[92vh] rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col text-left animate-in zoom-in-95 duration-200">
             <div className="bg-slate-900 text-white p-5 flex items-center justify-between border-b border-slate-800">
               <div className="flex items-center gap-2.5">
                 <span className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold">
@@ -3176,7 +3182,7 @@ export const StaffDashboard: React.FC = () => {
               </button>
             </div>
 
-            <div className="p-5 space-y-4 text-xs sm:text-sm">
+            <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs sm:text-sm">
               <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-1 font-mono text-xs">
                 <div>Khách hàng: <strong className="text-slate-900 dark:text-white">{rejectingBooking.customerName}</strong> ({rejectingBooking.customerPhone})</div>
                 <div>Cơ sở: <strong>{rejectingBooking.facilityName}</strong> · Kho {rejectingBooking.unitCode || 'Chưa gán kho vật lý'}</div>
@@ -3251,7 +3257,7 @@ export const StaffDashboard: React.FC = () => {
       {/* MODAL XÁC NHẬN ĐƠN ĐẶT GIỮ CHỖ CỦA NHÂN VIÊN */}
       {confirmingBooking && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-lg rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col text-left animate-in zoom-in-95 duration-200">
+          <div className="w-full max-w-lg max-h-[92vh] rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col text-left animate-in zoom-in-95 duration-200">
             <div className="bg-emerald-700 text-white p-5 flex items-center justify-between border-b border-emerald-800">
               <div className="flex items-center gap-2.5">
                 <span className="w-9 h-9 rounded-xl bg-white/20 text-white flex items-center justify-center font-bold">
@@ -3272,7 +3278,7 @@ export const StaffDashboard: React.FC = () => {
               </button>
             </div>
 
-            <div className="p-5 space-y-4 text-xs sm:text-sm">
+            <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs sm:text-sm">
               <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/50 space-y-1.5 font-mono text-xs">
                 <div>Khách hàng: <strong className="text-slate-900 dark:text-white font-sans">{confirmingBooking.customerName}</strong> ({confirmingBooking.customerPhone || 'Không có SĐT'})</div>
                 {confirmingBooking.customerEmail && (
@@ -3339,7 +3345,7 @@ export const StaffDashboard: React.FC = () => {
       {/* MODAL XEM CHI TIẾT ĐƠN ĐẶT GIỮ CHỖ CỦA STAFF */}
       {reviewDetailBooking && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-xl rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col text-left animate-in zoom-in-95 duration-200">
+          <div className="w-full max-w-xl max-h-[92vh] rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col text-left animate-in zoom-in-95 duration-200">
             <div className="bg-slate-900 text-white p-5 flex items-center justify-between border-b border-slate-800">
               <div className="flex items-center gap-2.5">
                 <span className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold">
@@ -3502,7 +3508,7 @@ export const StaffDashboard: React.FC = () => {
       <AssignPhysicalUnitModal
         isOpen={Boolean(assignModalBooking)}
         booking={assignModalBooking}
-        facilityId={selectedFacility || assignModalBooking?.facilityId}
+        facilityId={assignModalBooking?.facilityId || (selectedFacility !== 'ALL' ? selectedFacility : undefined)}
         onClose={() => setAssignModalBooking(null)}
         onSuccess={(_updated) => {
           setAssignModalBooking(null)

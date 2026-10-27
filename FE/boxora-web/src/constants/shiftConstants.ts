@@ -170,3 +170,30 @@ export const formatShiftTimeRange = (
   return std ? std.timeRange : ''
 }
 
+export const isShiftInPast = (
+  assignedDate?: string | null,
+  shift?: BoxoraShiftType | string | null,
+  now = new Date()
+): boolean => {
+  if (!assignedDate) return false
+  const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  if (assignedDate < todayLocal) return true
+  if (assignedDate > todayLocal) return false
+  const win = getAssignmentWindow({ assignedDate, shift })
+  if (!win) return false
+  return now.getTime() >= win.end.getTime()
+}
+
+export const getFirstAvailableShiftForDate = (
+  assignedDate: string,
+  now = new Date()
+): 'MORNING' | 'AFTERNOON' | 'NIGHT' | null => {
+  for (const s of STANDARD_SHIFTS_LIST) {
+    if (!isShiftInPast(assignedDate, s.type, now)) {
+      return s.type as 'MORNING' | 'AFTERNOON' | 'NIGHT'
+    }
+  }
+  return null
+
+}
+

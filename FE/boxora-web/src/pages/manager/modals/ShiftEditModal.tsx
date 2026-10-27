@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { staffAssignmentService, StaffAssignmentResponse } from '../../../services/staffAssignmentService'
-import { STANDARD_SHIFTS_LIST } from '../../../constants/shiftConstants'
+import { STANDARD_SHIFTS_LIST, isShiftInPast, getFirstAvailableShiftForDate } from '../../../constants/shiftConstants'
 
 interface ShiftEditModalProps {
   isOpen: boolean
@@ -15,7 +15,7 @@ export const ShiftEditModal: React.FC<ShiftEditModalProps> = ({
   assignment,
   onSave
 }) => {
-  const [shiftType, setShiftType] = useState<'MORNING' | 'AFTERNOON' | 'NIGHT' | 'FULL_DAY'>('AFTERNOON')
+  const [shiftType, setShiftType] = useState<'MORNING' | 'AFTERNOON' | 'NIGHT'>('AFTERNOON')
   const [targetZone, setTargetZone] = useState('Phân khu A (Hành lang Aisle North)')
   const [roleInShift, setRoleInShift] = useState('PRIMARY_STAFF')
   const [notes, setNotes] = useState('')
@@ -24,7 +24,9 @@ export const ShiftEditModal: React.FC<ShiftEditModalProps> = ({
 
   useEffect(() => {
     if (assignment) {
-      setShiftType(assignment.shift || 'AFTERNOON')
+      const initialShift = assignment.shift === 'FULL_DAY' ? 'MORNING' : (assignment.shift || 'AFTERNOON')
+      const validShift = isShiftInPast(assignment.assignedDate, initialShift) ? (getFirstAvailableShiftForDate(assignment.assignedDate) || initialShift) : initialShift
+      setShiftType(validShift as 'MORNING' | 'AFTERNOON' | 'NIGHT')
       setTargetZone(assignment.assignedZone || 'Phân khu A (Hành lang Aisle North)')
       setRoleInShift(assignment.roleInShift || 'PRIMARY_STAFF')
       setNotes(assignment.notes || '')
@@ -36,6 +38,10 @@ export const ShiftEditModal: React.FC<ShiftEditModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isShiftInPast(assignment.assignedDate, shiftType)) {
+      setErrorMessage('Khung giờ ca trực đã chọn đã trôi qua. Chỉ được phân ca cho thời gian hiện tại đến tương lai.')
+      return
+    }
     setIsSubmitting(true)
     setErrorMessage(null)
 
@@ -58,7 +64,7 @@ export const ShiftEditModal: React.FC<ShiftEditModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 flex flex-col gap-4">
+      <div className="bg-white rounded-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl border border-slate-200 flex flex-col gap-4">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
           <div className="flex items-center gap-3">
@@ -95,24 +101,48 @@ export const ShiftEditModal: React.FC<ShiftEditModalProps> = ({
               Ca làm việc
             </label>
             <div className="grid grid-cols-3 gap-2">
-              {[
-                { type: 'MORNING' as const, label: 'Ca Sáng', time: '06:00 - 14:00' },
-                { type: 'AFTERNOON' as const, label: 'Ca Chiều', time: '14:00 - 22:00' },
-                { type: 'NIGHT' as const, label: 'Ca Đêm', time: '22:00 - 06:00' }
-              ].map(s => (
+              {STANDARD_SHIFTS_LIST.map(s => {
+                const isPastShift = isShiftInPast(assignment.assignedDate, s.type)
+                return (
                 <button
                   key={s.type}
                   type="button"
-                  onClick={() => setShiftType(s.type)}
+                  disabled={isPastShift}
+                  onClick={() => {
+                    if (!isPastShift) {
+                      setShiftType(s.type as 'MORNING' | 'AFTERNOON' | 'NIGHT')
+                    }
+                  }}
+                  title={isPastShift ? 'Khung giờ ca này đã trôi qua, không thể phân công' : s.label}
+                  className={`p-2 rounded-lg border text-center transition-all ${
+                    isPastShift
+                      ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
+                      : shiftType === s.type
+                      ? 'bg-slate-900 text-white border-slate-900 shadow-xs cursor-pointer'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 cursor-pointer'
+                  }`}
+                >
+                  <span className="font-bold block">{s.shortLabel}</span>
+                  <span className={`text-[10px] block mt-0.5 ${isPastShift ? 'text-rose-500 font-semibold' : shiftType === s.type ? 'text-slate-300' : 'text-slate-500'}`}>
+                    {isPastShift ? `${s.timeRange} (Đã qua)` : s.timeRange}
+                  </span>
+                </button>
+                )
+              })}
+              {false && STANDARD_SHIFTS_LIST.map(s => (
+                <button
+                  key={s.type}
+                  type="button"
+                  onClick={() => setShiftType(s.type as 'MORNING' | 'AFTERNOON' | 'NIGHT')}
                   className={`p-2 rounded-lg border text-center transition-all cursor-pointer ${
                     shiftType === s.type
                       ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="font-bold block">{s.label}</span>
+                  <span className="font-bold block">{s.shortLabel}</span>
                   <span className={`text-[10px] block mt-0.5 ${shiftType === s.type ? 'text-slate-300' : 'text-slate-500'}`}>
-                    {s.time}
+                    {s.timeRange}
                   </span>
                 </button>
               ))}
