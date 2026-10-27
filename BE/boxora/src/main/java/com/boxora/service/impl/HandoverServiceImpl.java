@@ -237,7 +237,7 @@ public class HandoverServiceImpl implements HandoverService {
             } else if (today.isEqual(apptDate) && now.isBefore(expectedCheckIn)) {
                 checkInTimeMet = false;
                 checkInTimeStatus = "BEFORE_TIME";
-                checkInTimeMessage = String.format("Chưa đến ngày check-in. Thời điểm đúng để thực hiện tiếp nhận kho từ: %s.",
+                checkInTimeMessage = String.format("Chưa đến giờ check-in. Thời điểm đúng để thực hiện tiếp nhận kho từ: %s.",
                         expectedCheckIn.format(CHECKIN_DT_FMT));
             } else if (today.isEqual(apptDate)) {
                 checkInTimeMet = true;
@@ -492,7 +492,7 @@ public class HandoverServiceImpl implements HandoverService {
                         log.warn("[CHECKIN-TIME] Handover check-in rejected for booking {}. Current time {} is before expected check-in time {}",
                                 booking.getBookingCode(), now, expectedCheckIn);
                         throw new AppException(ErrorCode.HANDOVER_BEFORE_CHECKIN_TIME,
-                                String.format("Chưa đến ngày check-in. Thời điểm đúng để thực hiện tiếp nhận kho từ: %s.",
+                                String.format("Chưa đến giờ check-in. Thời điểm đúng để thực hiện tiếp nhận kho từ: %s.",
                                         expectedCheckIn.format(CHECKIN_DT_FMT)));
                     }
                 }
